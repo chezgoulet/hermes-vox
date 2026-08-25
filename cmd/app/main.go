@@ -2,14 +2,16 @@
 
 package main
 
-import "github.com/hajimehoshi/ebiten/v2"
+import (
+	"github.com/chezgoulet/hermes-vox/game"
+	"github.com/hajimehoshi/ebiten/v2"
+)
 
-// main is the desktop / js-wasm entrypoint (no golang.org/x/mobile/app here —
-// that package is mobile-only and would break non-Android builds).
+// main is the desktop / js-wasm entrypoint.
 func main() {
-	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
+	ebiten.SetWindowSize(game.ScreenWidth, game.ScreenHeight)
 	ebiten.SetWindowTitle("Hermes Vox")
-	if err := ebiten.RunGame(NewGame()); err != nil {
+	if err := ebiten.RunGame(game.NewGame()); err != nil {
 		panic(err)
 	}
 }
