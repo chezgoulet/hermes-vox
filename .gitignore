@@ -18,3 +18,4 @@
 *.rejected.json
 *.rejected.txt
 mobile.aar
+mobile-sources.jar
