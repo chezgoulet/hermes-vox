@@ -35,7 +35,7 @@ type runStartResp struct {
 }
 
 // StartRun creates an agent run and returns its run_id. The agent reasons +
-// calls tools server-side; subscribe via RunStatus/events, or poll to completion.
+// calls tools server-side; poll RunStatus to completion, or CancelRun to abort.
 func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousResponseID, instructions string) (string, error) {
 	body := map[string]any{"model": c.model, "input": input}
 	if previousResponseID != "" {
@@ -80,32 +80,34 @@ type runStatusResp struct {
 	Output interface{} `json:"output"`
 }
 
-// RunStatus returns the current run status; when complete, returns the agent's
-// reply (extracts text defensively from common output shapes).
-func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (reply string, done bool, err error) {
+// RunStatus returns the agent's reply when the run is complete; "" while the run
+// is still working (poll until non-empty, or a timeout). An error indicates a run
+// failure (failed/error/cancelled). gomobile bind supports at most (T, error).
+func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/runs/"+runID, nil)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
-		return "", false, fmt.Errorf("hermes run status %s: %s", resp.Status, string(b))
+		return "", fmt.Errorf("hermes run status %s: %s", resp.Status, string(b))
 	}
 	var out runStatusResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", false, err
+		return "", err
 	}
-	done = out.Status == "completed" || out.Status == "succeeded" || out.Status == "complete"
-	reply = extractRunText(out.Output)
-	return reply, done, nil
+	if out.Status == "failed" || out.Status == "error" || out.Status == "cancelled" {
+		return "", fmt.Errorf("hermes run %s", out.Status)
+	}
+	return extractRunText(out.Output), nil
 }
 
 // CancelRun aborts a running agent generation — the barge-in (run_stop). The

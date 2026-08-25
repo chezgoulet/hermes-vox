@@ -31,7 +31,6 @@ func NewHermesSession(baseURL, apiKey, model string) *HermesSession {
 }
 
 // TurnText sends a text turn to the entity (blocking) and returns its reply.
-// The native shell calls this from a background thread so the UI isn't blocked.
 func (s *HermesSession) TurnText(text string) (string, error) {
 	if s == nil || s.conv == nil {
 		return "", fmt.Errorf("voice: no Hermes session — call NewHermesSession first (the entity IS Hermes)")
@@ -68,10 +67,11 @@ func (s *HermesSession) StartRun(text string) (string, error) {
 	return s.runs.StartRun(ctx, text, "", "")
 }
 
-// RunStatus polls a run; when done returns the agent's reply.
-func (s *HermesSession) RunStatus(runID string) (string, bool, error) {
+// RunStatus polls a run; returns the agent's reply when complete, "" while the
+// run is still working. gomobile bind supports at most (T, error).
+func (s *HermesSession) RunStatus(runID string) (string, error) {
 	if s == nil || s.runs == nil {
-		return "", false, fmt.Errorf("voice: no Hermes session")
+		return "", fmt.Errorf("voice: no Hermes session")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

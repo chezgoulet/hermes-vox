@@ -67,12 +67,9 @@ func TestRunStatusComplete(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewHermesRunClient(srv.URL, "k", "m")
-	reply, done, err := c.RunStatus(context.Background(), "run_1")
+	reply, err := c.RunStatus(context.Background(), "run_1")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !done {
-		t.Fatal("expected done")
 	}
 	if reply != "the voice of Hermes" {
 		t.Fatalf("reply = %q", reply)
