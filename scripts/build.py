@@ -252,7 +252,7 @@ def build_target_matrix() -> list[Target]:
         # Hermes Vox: Android via gomobile (ROADMAP Phase 3). Output is an .apk.
         Target(goos="android", goarch="arm64", name="android-arm64",
                output_ext=".apk", output_name="latest.apk"),
-        Target(goos="android", goarch="armeabi-v7a", name="android-armeabi-v7a",
+        Target(goos="android", goarch="arm", name="android-arm",
                output_ext=".apk", output_name="latest.apk"),
         Target(goos="js",      goarch="wasm",  name="js-wasm",
                output_ext=".wasm", output_name="latest.wasm"),
@@ -318,7 +318,7 @@ def _run_build(target: Target) -> bool:
         target.output_path = out_dir / target.output_name
         env = _go_environment()
         cmd = [gomobile, "build", "-target", f"{target.goos}/{target.goarch}",
-               "-o", str(target.output_path), "./cmd/app"]
+               "-androidapi", "23", "-o", str(target.output_path), "./cmd/app"]
         print(f"  $ gomobile build -target={target.goos}/{target.goarch} -o {target.output_path.name}")
         start = time.monotonic()
         try:
