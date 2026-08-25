@@ -5,55 +5,53 @@ import (
 	"fmt"
 )
 
+// The three mode backends localize ONLY the voice (audio->text, text->audio).
+// They deliberately do not own the Hermes connector — the Conversation does.
+// That keeps the Backend a pure, pluggable voice surface (so any STT/TTS —
+// Mozilla Moonshine, piper/kokoro, ChatTTS, Kokoro-82M, Orpheus, VibeVoice,
+// MiniCPM-o full-duplex, etc.) can sit behind it, matching the "agnostic
+// engine" goal. Hermes (the entity) is always the Conversation's concern.
+
+// errNotImplemented marks a platform-specific STT/TTS hook that isn't wired on
+// this build yet. It is the honest default for the interface contract — the
+// stub is explicit, never a silent no-op.
 func errNotImplemented(what string) error {
 	return fmt.Errorf("voice: %s not wired on this platform yet", what)
 }
 
-// Cloud voices with Hermes-hosted/cloud STT + TTS — the default when convenience
-// is the priority (Hermes's own speech stack, or a cloud provider). Hermes is
-// still the mind; this is the voice localization.
-type Cloud struct{ Hermes *HermesClient }
+// Cloud localizes the voice with Hermes-hosted/cloud STT + TTS — the default
+// when convenience is the priority.
+type Cloud struct{}
 
-func (c *Cloud) Name() string { return "cloud" }
-func (c *Cloud) Transcribe(ctx context.Context, audio []byte) (string, error) {
+func (*Cloud) Name() string { return "cloud" }
+func (*Cloud) Transcribe(context.Context, []byte) (string, error) {
 	return "", errNotImplemented("cloud Transcribe")
 }
-func (c *Cloud) Synthesize(ctx context.Context, text string) ([]byte, error) {
+func (*Cloud) Synthesize(context.Context, string) ([]byte, error) {
 	return nil, errNotImplemented("cloud Synthesize")
 }
 
-// Local voices with on-device STT/TTS (Gemma-4-E2B via LiteRT-LM + Moonshine /
-// piper) — offline, sovereign. Hermes is the mind (on-device small or server).
-type Local struct{ Hermes *HermesClient }
+// Local localizes the voice with on-device STT/TTS (Gemma-4-E2B via LiteRT-LM
+// + Moonshine STT + piper/kokoro TTS) — offline, sovereign.
+type Local struct{}
 
-func (l *Local) Name() string { return "local" }
-func (l *Local) Transcribe(ctx context.Context, audio []byte) (string, error) {
+func (*Local) Name() string { return "local" }
+func (*Local) Transcribe(context.Context, []byte) (string, error) {
 	return "", errNotImplemented("local Transcribe")
 }
-func (l *Local) Synthesize(ctx context.Context, text string) ([]byte, error) {
+func (*Local) Synthesize(context.Context, string) ([]byte, error) {
 	return nil, errNotImplemented("local Synthesize")
 }
 
-// SelfHosted voices via the Thelio/Odroid model server (lemonade/llama.cpp/VLLM/
-// Ollama) running MiniCPM-o for full-duplex realtime — sovereign, no cloud.
-type SelfHosted struct{ Hermes *HermesClient }
+// SelfHosted localizes the voice via the Thelio/Odroid model server
+// (lemonade/llama.cpp/VLLM/Ollama) running MiniCPM-o for full-duplex realtime —
+// sovereign, no cloud.
+type SelfHosted struct{}
 
-func (s *SelfHosted) Name() string { return "selfhosted" }
-func (s *SelfHosted) Transcribe(ctx context.Context, audio []byte) (string, error) {
+func (*SelfHosted) Name() string { return "selfhosted" }
+func (*SelfHosted) Transcribe(context.Context, []byte) (string, error) {
 	return "", errNotImplemented("selfhosted Transcribe")
 }
-func (s *SelfHosted) Synthesize(ctx context.Context, text string) ([]byte, error) {
+func (*SelfHosted) Synthesize(context.Context, string) ([]byte, error) {
 	return nil, errNotImplemented("selfhosted Synthesize")
-}
-
-// mockBackend is a test double: returns canned text/audio so the interface and
-// the Hermes connector can be tested without real audio or a live server.
-type mockBackend struct{ name string }
-
-func (m *mockBackend) Name() string                     { return m.name }
-func (m *mockBackend) Transcribe(context.Context, []byte) (string, error) {
-	return "user said hi", nil
-}
-func (m *mockBackend) Synthesize(context.Context, string) ([]byte, error) {
-	return []byte("AUDIO"), nil
 }

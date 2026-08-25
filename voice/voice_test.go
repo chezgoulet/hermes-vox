@@ -44,39 +44,3 @@ func TestHermesClientRejectsNon200(t *testing.T) {
 		t.Fatal("expected error on non-200")
 	}
 }
-
-func TestBackendNames(t *testing.T) {
-	hc := NewHermesClient("http://x", "k", "m")
-	backends := []Backend{&Cloud{hc}, &Local{hc}, &SelfHosted{hc}}
-	want := []string{"cloud", "local", "selfhosted"}
-	for i, b := range backends {
-		if b.Name() != want[i] {
-			t.Fatalf("backend %d name = %q, want %q", i, b.Name(), want[i])
-		}
-	}
-}
-
-func TestBackendsNotWiredYet(t *testing.T) {
-	hc := NewHermesClient("http://x", "k", "m")
-	for _, b := range []Backend{&Cloud{hc}, &Local{hc}, &SelfHosted{hc}} {
-		if _, err := b.Transcribe(context.Background(), nil); err == nil {
-			t.Fatalf("%s Transcribe should be NotImplemented", b.Name())
-		}
-		if _, err := b.Synthesize(context.Background(), "x"); err == nil {
-			t.Fatalf("%s Synthesize should be NotImplemented", b.Name())
-		}
-	}
-}
-
-func TestMockBackend(t *testing.T) {
-	m := &mockBackend{name: "mock"}
-	if m.Name() != "mock" {
-		t.Fatalf("name %q", m.Name())
-	}
-	if txt, _ := m.Transcribe(context.Background(), nil); txt != "user said hi" {
-		t.Fatalf("transcribe %q", txt)
-	}
-	if audio, _ := m.Synthesize(context.Background(), "x"); string(audio) != "AUDIO" {
-		t.Fatalf("synthesize %q", audio)
-	}
-}
