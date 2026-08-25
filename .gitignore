@@ -1,0 +1,19 @@
+# Local reference checkout; never track its source or nested submodules.
+/third_party/apparat/
+
+# Local Go build cache and tooling populated by the Makefile / build scripts.
+/.tools/
+
+# Host-local Agentic Pipelines configuration, dependencies, and execution evidence.
+/.agentic-pipelines/
+/api.yaml
+/state/
+/artifacts/
+/threads/
+/reports/
+/releases/
+/failures/
+/runs/
+*.rejected.md
+*.rejected.json
+*.rejected.txt

@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Ebitengine Pipeline: Governance Run",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bash \"${workspaceFolder}/scripts/pipeline-bootstrap.sh\" run --api-config api.yaml --pipeline pipeline.yaml",
+      "windows": {
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\pipeline-bootstrap.ps1\" run --api-config api.yaml --pipeline pipeline.yaml"
+      },
+      "cwd": "${workspaceFolder}",
+      "presentation": {"group": "pipeline", "order": 1}
+    }
+  ]
+}

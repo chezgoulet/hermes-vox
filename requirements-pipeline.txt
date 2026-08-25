@@ -1,0 +1,2 @@
+# Host-specific Python dependencies for Agentic Pipelines.
+# Add only dependencies required by approved host pipeline code.

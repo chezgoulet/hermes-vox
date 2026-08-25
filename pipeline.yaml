@@ -1,0 +1,52 @@
+schema_version: 2
+pipeline_id: ebe-build-governance
+contract:
+  goal: Analyse the declared no-flag build contract and supplied build evidence without executing host builds.
+  allowed_changes: [textual build assessment, target-matrix analysis, evidence findings]
+  protected_invariants: [no-flag design, bootstrap boundary, no build execution, exit 130 on Ctrl+C, progress reporting]
+source:
+  root: scripts
+  glob: "**/*.py"
+paths:
+  state: state/ebe-build-governance.sqlite
+  artifacts: artifacts
+  threads: threads
+  reports: reports
+  output_schema: "@framework/schemas/prompt_outputs.schema.json"
+stages:
+  worker:
+    prompt: prompts/worker.md
+    id: ebe.build_worker
+    version: 1.0.0
+    output: worker_result
+    llm_justification: Interpreting supplied build evidence and its relation to the declared contract requires semantic judgment beyond pattern matching.
+    max_attempts: 1
+  self_review:
+    prompt: prompts/self_review.md
+    id: ebe.build_self_review
+    version: 1.0.0
+    output: reviewer_verdict
+    llm_justification: Verifying that supplied build evidence is complete and internally consistent requires semantic assessment of the full evidence set.
+    max_attempts: 1
+  reviewer:
+    prompt: prompts/reviewer.md
+    id: ebe.build_reviewer
+    version: 1.0.0
+    output: reviewer_verdict
+    llm_justification: Confirming artifact integrity and cross-target consistency cannot be reduced to a single structural check.
+    max_attempts: 2
+validation:
+  required_substrings: []
+  protected_substrings: []
+  max_change_ratio: 0.30
+  require_front_matter: false
+  require_balanced_fences: false
+runtime:
+  lease_seconds: 900
+  lock_stale_seconds: 3600
+  max_repairs: 0
+  max_source_bytes: 1000000
+  max_candidate_bytes: 1000000
+promotion:
+  enabled: false
+  backup_root: artifacts/backups

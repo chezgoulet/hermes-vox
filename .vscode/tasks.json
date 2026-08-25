@@ -1,0 +1,87 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "entityId",
+      "type": "promptString",
+      "description": "Pipeline entity identifier"
+    },
+    {
+      "id": "pipelineDefinition",
+      "type": "pickString",
+      "options": ["pipeline.yaml"],
+      "description": "Host-owned pipeline definition file"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "Ebitengine Build (Main)",
+      "type": "process",
+      "command": "python3",
+      "args": ["${workspaceFolder}/scripts/build.py"],
+      "windows": {
+        "command": "python",
+        "args": ["${workspaceFolder}\\scripts\\build.py"]
+      },
+      "presentation": {"reveal": "always", "panel": "dedicated", "focus": true, "group": "pipeline", "order": 1},
+      "problemMatcher": []
+    },
+    {
+      "label": "Ebitengine Run Artifact",
+      "type": "process",
+      "command": "python",
+      "args": ["${workspaceFolder}/scripts/run_artifact.py"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "presentation": {"reveal": "always", "panel": "dedicated", "focus": true, "group": "pipeline", "order": 2},
+      "problemMatcher": []
+    },
+    {
+      "label": "Ebitengine Deploy (Example)",
+      "type": "process",
+      "command": "bash",
+      "args": ["echo", "Deploy workflow placeholder: publish the built artifacts under releases/ to your target (e.g. `gh release upload` or a store submission)."],
+      "windows": {
+        "command": "powershell.exe",
+        "args": ["-NoProfile", "-Command", "Write-Host 'Deploy workflow placeholder: publish the built artifacts under releases/ to your target (e.g. a GitHub release or store submission).'"]
+      },
+      "presentation": {"reveal": "always", "panel": "shared", "group": "pipeline", "order": 3},
+      "problemMatcher": []
+    },
+    {
+      "label": "Ebitengine Pipeline: Preflight",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/pipeline-bootstrap.sh", "preflight", "--api-config", "api.yaml", "--pipeline", "pipeline.yaml"],
+      "windows": {
+        "command": "powershell.exe",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\pipeline-bootstrap.ps1", "preflight", "--api-config", "api.yaml", "--pipeline", "pipeline.yaml"]
+      },
+      "presentation": {"reveal": "always", "panel": "dedicated", "focus": true},
+      "problemMatcher": []
+    },
+    {
+      "label": "Ebitengine Pipeline: Discover",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/pipeline-bootstrap.sh", "discover", "--pipeline", "pipeline.yaml"],
+      "windows": {
+        "command": "powershell.exe",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\pipeline-bootstrap.ps1", "discover", "--pipeline", "pipeline.yaml"]
+      },
+      "presentation": {"reveal": "always", "panel": "dedicated", "focus": true},
+      "problemMatcher": []
+    },
+    {
+      "label": "Ebitengine Pipeline: Inspect Entity",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/pipeline-bootstrap.sh", "inspect-entity", "--pipeline", "pipeline.yaml", "${input:entityId}"],
+      "windows": {
+        "command": "powershell.exe",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\pipeline-bootstrap.ps1", "inspect-entity", "--pipeline", "pipeline.yaml", "${input:entityId}"]
+      },
+      "presentation": {"reveal": "always", "panel": "dedicated", "focus": true},
+      "problemMatcher": []
+    }
+  ]
+}
