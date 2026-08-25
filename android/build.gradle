@@ -1,0 +1,20 @@
+// Top-level build file — common config for all sub-projects/modules.
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24'
+    }
+}
+allprojects {
+    repositories {
+        mavenCentral()
+        google()
+    }
+}
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}
