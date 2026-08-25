@@ -61,7 +61,7 @@ func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousRe
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 202 {
 		b, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("hermes run %s: %s", resp.Status, string(b))
 	}
