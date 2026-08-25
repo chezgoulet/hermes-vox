@@ -164,6 +164,21 @@ def _cgo_compiler() -> str | None:
     return shutil.which(compiler) if compiler else None
 
 
+def _android_missing_components() -> list[str]:
+    """Return the Android tooling a gomobile .apk build needs but the host lacks."""
+    missing: list[str] = []
+    if not (os.environ.get("JAVA_HOME") or shutil.which("java")):
+        missing.append("JDK")
+    if not shutil.which("gomobile"):
+        missing.append("gomobile")
+    and_home = os.environ.get("ANDROID_HOME") or ""
+    ndk = os.environ.get("ANDROID_NDK_HOME") or os.path.join(and_home, "ndk")
+    has_ndk = bool(ndk and os.path.isdir(ndk) and any(os.scandir(ndk)))
+    if not (and_home and has_ndk):
+        missing.append("Android SDK/NDK")
+    return missing
+
+
 def _evaluate_feasibility(target: Target) -> None:
     """Mark a target feasible or infeasible with a reason.
 
@@ -184,6 +199,19 @@ def _evaluate_feasibility(target: Target) -> None:
         return
     # JS/WASM is always feasible (pure Go).
     if target.goos == "js" and target.goarch == "wasm":
+        return
+
+    # Android/gomobile requires a JDK, gomobile, and the Android SDK/NDK.
+    if target.goos == "android":
+        missing = _android_missing_components()
+        if missing:
+            target.feasible = False
+            target.infeasible_reason = (
+                f"Android ({target.goos}/{target.goarch}) needs a JDK, gomobile, "
+                f"and the Android SDK/NDK; this host lacks: {', '.join(missing)}. "
+                "Provision them (gomobile init, ndk, JAVA_HOME, ANDROID_HOME) "
+                "and it becomes POSSIBLE."
+            )
         return
 
     if target.goos == host_os and target.goarch == host_arch:
@@ -221,6 +249,11 @@ def build_target_matrix() -> list[Target]:
                output_ext=".exe", output_name="latest.exe"),
         Target(goos="windows", goarch="386",   name="windows-386",
                output_ext=".exe", output_name="latest.exe"),
+        # Hermes Vox: Android via gomobile (ROADMAP Phase 3). Output is an .apk.
+        Target(goos="android", goarch="arm64", name="android-arm64",
+               output_ext=".apk", output_name="latest.apk"),
+        Target(goos="android", goarch="armeabi-v7a", name="android-armeabi-v7a",
+               output_ext=".apk", output_name="latest.apk"),
         Target(goos="js",      goarch="wasm",  name="js-wasm",
                output_ext=".wasm", output_name="latest.wasm"),
     ]
@@ -273,6 +306,38 @@ def _run_build(target: Target) -> bool:
         target.infeasible_reason = "Go toolchain not found on PATH"
         target.feasible = False
         return False
+
+    # For Android, the build is gomobile (not `go build`), producing an .apk.
+    if target.goos == "android":
+        gomobile = shutil.which("gomobile")
+        if not gomobile:
+            target.infeasible_reason = "gomobile not found on PATH (run `go install golang.org/x/mobile/cmd/gomobile@latest`)"
+            target.feasible = False
+            return False
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target.output_path = out_dir / target.output_name
+        env = _go_environment()
+        cmd = [gomobile, "build", "-target", f"{target.goos}/{target.goarch}",
+               "-o", str(target.output_path), "./cmd/app"]
+        print(f"  $ gomobile build -target={target.goos}/{target.goarch} -o {target.output_path.name}")
+        start = time.monotonic()
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
+                                    cwd=str(REPO_ROOT), env=env)
+            target.build_seconds = time.monotonic() - start
+            target.build_log = (result.stdout or "") + (result.stderr or "")
+            if result.returncode == 0:
+                target.build_ok = True
+                return True
+            target.infeasible_reason = result.stderr.strip()[-500:]
+            return False
+        except subprocess.TimeoutExpired:
+            target.build_seconds = time.monotonic() - start
+            target.infeasible_reason = "Android build timed out after 900s"
+            return False
+        except (FileNotFoundError, OSError) as exc:
+            target.infeasible_reason = str(exc)
+            return False
 
     # For js/wasm, use GOOS=js GOARCH=wasm with pure-Go.
     env = _go_environment()
