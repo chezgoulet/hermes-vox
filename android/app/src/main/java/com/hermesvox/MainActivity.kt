@@ -83,7 +83,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         reply.text = "…"
         Thread {
             try {
-                val r = s.turnText(text) // the entity replies
+                val r = s.turnStored(text)  // /v1/responses: the entity keeps context server-side // the entity replies
                 runOnUiThread { reply.text = r; speak(r) }
             } catch (e: Throwable) {
                 runOnUiThread { reply.text = "Hmm: ${e.message}" }
