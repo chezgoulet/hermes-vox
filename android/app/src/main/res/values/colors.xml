@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hermes Vox sci-fi palette (default = dark) -->
+    <color name="hv_bg">#000000</color>
+    <color name="hv_surface">#0b0f17</color>
+    <color name="hv_accent">#00e5ff</color>
+    <color name="hv_accent2">#8b5cf6</color>
+    <color name="hv_text">#eef2f8</color>
+    <color name="hv_text_dim">#8f9aad</color>
+    <color name="hv_border">#1e2937</color>
+    <color name="hv_input">#10151d</color>
+    <color name="hv_button">#141c28</color>
+</resources>

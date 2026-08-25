@@ -38,7 +38,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         this.onListening = onListening
         this.onReplyText = onReply
         this.onError = onError
-        tts = TextToSpeech(context) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.US }
+        try {
+            tts = TextToSpeech(context) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.US }
+        } catch (_: Throwable) {}
         listen()
     }
 
@@ -49,15 +51,16 @@ class VoiceController(private val context: Context, private val session: HermesS
         stopBargeInWatch()
         currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }
         currentRunId = null
-        tts?.shutdown()
+        try { tts?.shutdown() } catch (_: Throwable) {}
     }
 
-    // --- Listening (on-device STT via SpeechRecognizer) ---
+    // --- Listening (on-device STT via SpeechRecognizer; guarded for the emulator) ---
     private fun listen() {
         stopTts()
         onListening?.invoke()
         recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { r ->
+        try {
+            val r = SpeechRecognizer.createSpeechRecognizer(context)
             r.setRecognitionListener(object : android.speech.RecognitionListener {
                 override fun onReadyForSpeech(p: Bundle?) { onListening?.invoke() }
                 override fun onBeginningOfSpeech() { onListening?.invoke() }
@@ -72,16 +75,19 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 override fun onError(e: Int) {
                     if (e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || e == SpeechRecognizer.ERROR_NO_MATCH) listen()
-                    else onError?.invoke("speech: error $e")
+                    else onError?.invoke("speech error $e")
                 }
             })
+            recognizer = r
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            }
+            r.startListening(intent)
+        } catch (e: Throwable) {
+            onError?.invoke("speech unavailable: ${e.message}")
         }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        }
-        recognizer?.startListening(intent)
     }
 
     // --- Turn: start a cancellable run, poll to completion, then speak ---
@@ -96,7 +102,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 while (!done && tries < 120) {
                     val r = session.runStatus(runId)
                     reply = r
-                    done = r.isNotBlank() // empty = the run is still working
+                    done = r.isNotBlank()
                     if (done) break
                     Thread.sleep(250)
                     tries++
@@ -107,7 +113,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     onReplyText?.invoke(finalReply)
                     speaking = true
                     bargeInArmed = true
-                    tts?.speak(finalReply, TextToSpeech.QUEUE_FLUSH, null, "hv")
+                    try { tts?.speak(finalReply, TextToSpeech.QUEUE_FLUSH, null, "hv") } catch (_: Throwable) {}
                     startBargeInWatch()
                 }
             } catch (e: Throwable) {
@@ -121,23 +127,25 @@ class VoiceController(private val context: Context, private val session: HermesS
         val minBuf = AudioRecord.getMinBufferSize(
             16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return
-        record = AudioRecord(
-            MediaRecorder.AudioSource.MIC, 16000,
-            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
-        val r = record ?: return
-        if (r.state != AudioRecord.STATE_INITIALIZED) return
-        r.startRecording()
-        thread {
-            val buf = ShortArray(minBuf)
-            while (bargeInArmed && r.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val n = r.read(buf, 0, buf.size)
-                if (n <= 0) continue
-                var sum = 0.0
-                for (i in 0 until n) sum += (buf[i] * buf[i]).toDouble()
-                val rms = Math.sqrt(sum / n) / Short.MAX_VALUE
-                if (rms > RMS_THRESHOLD) { main.post { bargeIn() }; break }
+        try {
+            record = AudioRecord(
+                MediaRecorder.AudioSource.MIC, 16000,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            val r = record ?: return
+            if (r.state != AudioRecord.STATE_INITIALIZED) return
+            r.startRecording()
+            thread {
+                val buf = ShortArray(minBuf)
+                while (bargeInArmed && r.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    val n = r.read(buf, 0, buf.size)
+                    if (n <= 0) continue
+                    var sum = 0.0
+                    for (i in 0 until n) sum += (buf[i] * buf[i]).toDouble()
+                    val rms = Math.sqrt(sum / n) / Short.MAX_VALUE
+                    if (rms > RMS_THRESHOLD) { main.post { bargeIn() }; break }
+                }
             }
-        }
+        } catch (_: Throwable) {}
     }
 
     private fun bargeIn() {
@@ -145,7 +153,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         bargeInArmed = false
         stopBargeInWatch()
         stopTts()
-        currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }  // abort the agent
+        currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }
         currentRunId = null
         onError?.invoke("(interrupted)")
         listen()
@@ -159,5 +167,5 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
 
-    companion object { const val RMS_THRESHOLD = 0.02 } // tune: the "hear you" threshold
+    companion object { const val RMS_THRESHOLD = 0.02 }
 }

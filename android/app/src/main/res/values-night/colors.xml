@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night (system dark / OLED) — true black, slightly deeper surfaces -->
+    <color name="hv_bg">#000000</color>
+    <color name="hv_surface">#070a10</color>
+    <color name="hv_accent">#00e5ff</color>
+    <color name="hv_accent2">#8b5cf6</color>
+    <color name="hv_text">#eef2f8</color>
+    <color name="hv_text_dim">#7d8799</color>
+    <color name="hv_border">#182027</color>
+    <color name="hv_input">#0b1018</color>
+    <color name="hv_button">#0f1620</color>
+</resources>

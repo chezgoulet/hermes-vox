@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.HermesVox" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:colorBackground">@color/hv_bg</item>
+        <item name="android:windowBackground">@color/hv_bg</item>
+        <item name="colorAccent">@color/hv_accent</item>
+        <item name="colorPrimary">@color/hv_accent</item>
+        <item name="colorPrimaryDark">@color/hv_bg</item>
+        <item name="android:statusBarColor">@color/hv_bg</item>
+        <item name="android:navigationBarColor">@color/hv_bg</item>
+        <item name="android:textColorPrimary">@color/hv_text</item>
+        <item name="android:textColorSecondary">@color/hv_text_dim</item>
+    </style>
+
+    <!-- Buttons: rounded, sci-fi filled -->
+    <style name="HvButton" parent="Widget.AppCompat.Button">
+        <item name="android:background">@drawable/hv_button_bg</item>
+        <item name="android:textColor">@color/hv_text</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+    </style>
+
+    <!-- Inputs: dark surface with a subtle border -->
+    <style name="HvInput" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/hv_input_bg</item>
+        <item name="android:textColor">@color/hv_text</item>
+        <item name="android:textColorHint">@color/hv_text_dim</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+    </style>
+</resources>

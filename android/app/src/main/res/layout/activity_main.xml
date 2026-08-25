@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/hv_bg">
     <LinearLayout
         android:orientation="vertical"
         android:layout_width="match_parent"
@@ -17,83 +18,86 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Hermes Vox — the voice of Hermes"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/hv_accent" />
 
         <EditText
             android:id="@+id/url"
+            style="@style/HvInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Hermes URL (e.g. http://100.84.47.125:8642)"
+            android:hint="Hermes URL (e.g. http://host:8642)"
             android:inputType="textUri"
-            android:layout_marginTop="12dp" />
+            android:layout_marginTop="14dp" />
         <EditText
             android:id="@+id/key"
+            style="@style/HvInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Hermes API key (your gateway key)"
-            android:inputType="textPassword" />
+            android:inputType="textPassword"
+            android:layout_marginTop="8dp" />
         <EditText
             android:id="@+id/model"
+            style="@style/HvInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Model (hermes-agent)"
-            android:inputType="text" />
+            android:inputType="text"
+            android:layout_marginTop="8dp" />
 
         <Button
             android:id="@+id/connect"
+            style="@style/HvButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Connect"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="12dp" />
         <TextView
             android:id="@+id/status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Not connected"
+            android:textColor="@color/hv_text_dim"
             android:layout_marginTop="4dp" />
 
         <EditText
             android:id="@+id/input"
+            style="@style/HvInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Talk to the entity…"
-            android:layout_marginTop="12dp" />
+            android:layout_marginTop="14dp" />
         <LinearLayout
             android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp">
-            <Button
-                android:id="@+id/send"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Send" />
-            <Button
-                android:id="@+id/mic"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Talk" />
-            <Button
-                android:id="@+id/settings"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Settings" />
-            <Button
-                android:id="@+id/clear"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Clear" />
+            <Button android:id="@+id/send" style="@style/HvButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Send" />
+            <Button android:id="@+id/mic" style="@style/HvButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Talk" />
+            <Button android:id="@+id/settings" style="@style/HvButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Settings" />
+            <Button android:id="@+id/realtime" style="@style/HvButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Realtime" />
+            <Button android:id="@+id/clear" style="@style/HvButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Clear" />
         </LinearLayout>
         <TextView
             android:id="@+id/reply"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
+            android:textColor="@color/hv_text"
             android:textSize="16sp" />
+        <!-- the streamed / SSE call log -->
+        <TextView
+            android:id="@+id/stream"
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:layout_marginTop="12dp"
+            android:padding="10dp"
+            android:background="@color/hv_surface"
+            android:typeface="monospace"
+            android:textSize="11sp"
+            android:textColor="@color/hv_text_dim"
+            android:text="// stream log — watch the agent work" />
     </LinearLayout>
 </ScrollView>

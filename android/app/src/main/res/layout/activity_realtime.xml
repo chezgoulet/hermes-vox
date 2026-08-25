@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/hv_bg"
+    android:padding="16dp">
+    <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.3" />
+    <com.hermesvox.AvatarView
+        android:id="@+id/rt_avatar"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1.2" />
+    <TextView
+        android:id="@+id/rt_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textSize="18sp"
+        android:textColor="@color/hv_text"
+        android:text="…" />
+    <TextView
+        android:id="@+id/rt_stream"
+        android:layout_width="match_parent"
+        android:layout_height="130dp"
+        android:layout_marginTop="10dp"
+        android:padding="10dp"
+        android:background="@color/hv_surface"
+        android:typeface="monospace"
+        android:textSize="11sp"
+        android:textColor="@color/hv_text_dim"
+        android:text="// stream log" />
+    <Button
+        android:id="@+id/rt_back"
+        style="@style/HvButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="← Back to setup" />
+</LinearLayout>
