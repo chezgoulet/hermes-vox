@@ -3,7 +3,6 @@ package com.hermesvox
 import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Bundle
@@ -18,10 +17,10 @@ import kotlin.concurrent.thread
 
 /**
  * VoiceController is the phone-side "front of house." It owns the warm voice
- * turn: listen (SpeechRecognizer, on-device STT) -> the entity (HermesSession
- * turnStored, server-side context) -> speak (TextToSpeech). While the reply is
- * spoken it watches the mic (AudioRecord RMS) and, on speech above the threshold,
- * barge-in: stop the TTS + signal a cancel + listen again.
+ * turn: listen (SpeechRecognizer, on-device STT) -> the entity (HermesSession, a
+ * CANCELLABLE run — StartRun + RunStatus poll) -> speak (TextToSpeech). While the
+ * reply is spoken it watches the mic (AudioRecord RMS) and, on speech over the
+ * threshold, barge-in: CancelRun (abort the agent) + stop the TTS + re-listen.
  */
 class VoiceController(private val context: Context, private val session: HermesSession) {
     private var recognizer: SpeechRecognizer? = null
@@ -30,13 +29,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
+    @Volatile private var currentRunId: String? = null
     private var onListening: (() -> Unit)? = null
-    private var onReply: ((String) -> Unit)? = null
+    private var onReplyText: ((String) -> Unit)? = null
     private var onError: ((String) -> Unit)? = null
 
     fun start(onListening: () -> Unit, onReply: (String) -> Unit, onError: (String) -> Unit) {
         this.onListening = onListening
-        this.onReply = onReply
+        this.onReplyText = onReply
         this.onError = onError
         tts = TextToSpeech(context) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.US }
         listen()
@@ -47,6 +47,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         recognizer = null
         stopTts()
         stopBargeInWatch()
+        currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }
+        currentRunId = null
         tts?.shutdown()
     }
 
@@ -82,30 +84,39 @@ class VoiceController(private val context: Context, private val session: HermesS
         recognizer?.startListening(intent)
     }
 
-    // --- Turn: the entity reasons server-side, then we speak ---
+    // --- Turn: start a cancellable run, poll to completion, then speak ---
     private fun runTurn(text: String) {
         thread {
-            val reply = try {
-                session.turnStored(text) // /v1/responses: server-side context
+            try {
+                val runId = session.startRun(text)
+                currentRunId = runId
+                var reply = ""
+                var done = false
+                var tries = 0
+                while (!done && tries < 120) {
+                    val r = session.runStatus(runId)
+                    reply = r
+                    done = r.isNotBlank() // empty = the run is still working
+                    if (done) break
+                    Thread.sleep(250)
+                    tries++
+                }
+                currentRunId = null
+                val finalReply = reply.takeIf { it.isNotBlank() } ?: "(no reply)"
+                main.post {
+                    onReplyText?.invoke(finalReply)
+                    speaking = true
+                    bargeInArmed = true
+                    tts?.speak(finalReply, TextToSpeech.QUEUE_FLUSH, null, "hv")
+                    startBargeInWatch()
+                }
             } catch (e: Throwable) {
                 main.post { onError?.invoke("hermes: ${e.message}"); listen() }
-                return@thread
-            }
-            main.post {
-                onReply?.invoke(reply)
-                speak(reply)
             }
         }
     }
 
-    private fun speak(reply: String) {
-        speaking = true
-        bargeInArmed = true
-        tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "hv")
-        startBargeInWatch()
-    }
-
-    // --- Barge-in: watch the mic (RMS) while the reply is spoken; cut + stop ---
+    // --- Barge-in: watch the mic RMS while the reply is spoken; cut + cancel ---
     private fun startBargeInWatch() {
         val minBuf = AudioRecord.getMinBufferSize(
             16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -124,10 +135,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var sum = 0.0
                 for (i in 0 until n) sum += (buf[i] * buf[i]).toDouble()
                 val rms = Math.sqrt(sum / n) / Short.MAX_VALUE
-                if (rms > RMS_THRESHOLD) { // speech over the threshold -> barge-in
-                    main.post { bargeIn() }
-                    break
-                }
+                if (rms > RMS_THRESHOLD) { main.post { bargeIn() }; break }
             }
         }
     }
@@ -137,8 +145,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         bargeInArmed = false
         stopBargeInWatch()
         stopTts()
-        // TODO: send a cancel to the Hermes run (cancellation is supported by the
-        // /v1/responses + runs API on the server) so the generation aborts.
+        currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }  // abort the agent
+        currentRunId = null
         onError?.invoke("(interrupted)")
         listen()
     }
