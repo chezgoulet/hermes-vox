@@ -51,6 +51,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var bargeInArmed = false
     @Volatile private var currentStream: String? = null
     @Volatile private var turnInFlight = false
+    @Volatile private var loopActive = false
+    private var warmTries = 0
     @Volatile private var listening = false
     private var listener: Listener? = null
     private var bargeInEnabled = true
@@ -87,12 +89,23 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
+    /** True once the offline STT + TTS (+ VAD) are fully loaded/warm. */
+    fun isWarm() = sttReady && ttsReady && (vad?.isAvailable != false)
+
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
 
     /** Begins the listening loop. Returns true when STT is actually running. */
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
+        // Don't open the mic until the models are fully warm (Christopher: the delayed
+        // first turn + the double-fire both came from listening before the pipeline loaded).
+        if (!isWarm()) {
+            listener?.onState("warming")
+            if (warmTries++ < 30) { main.postDelayed({ if (listener === l) start(l, enabled) }, 500); return true }
+            warmTries = 0
+        }
+        warmTries = 0
         return if (stt != null) listenOffline() else postListen()   // on-device Whisper, else platform STT
     }
 
@@ -104,6 +117,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun listenOffline(): Boolean {
+        if (loopActive) return false   // only ONE listen loop may run at a time
+        loopActive = true
         listener?.onState("listening"); listening = true
         val sr = 16000
         val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -270,6 +285,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                loopActive = false
             }
         }
     }
