@@ -10,60 +10,91 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
 import com.hermesvox.mobile.HermesSession
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
- * VoiceController is the phone-side "front of house." It owns the warm voice
- * turn: listen (SpeechRecognizer, on-device STT) -> the entity (HermesSession, a
- * CANCELLABLE run — StartRun + RunStatus poll) -> speak (TextToSpeech). While the
- * reply is spoken it watches the mic (AudioRecord RMS) and, on speech over the
- * threshold, barge-in: CancelRun (abort the agent) + stop the TTS + re-listen.
+ * VoiceController is the phone-side "front of house" for a warm voice turn:
+ * listen (on-device STT, guarded) -> the entity via a REAL STREAMED turn
+ * (HermesSession.startStream/pollStreamJSON/cancelStream — the SSE events as
+ * they arrive) -> speak (a VoxTts, warm when configured+present, else system),
+ * with an AudioRecord-RMS barge-in that cancels the streamed turn and re-listens.
+ *
+ * It drives the UI through a [Listener] so the app renders the entity's work
+ * live: state changes, incremental text, tool-progress lines, final reply.
  */
 class VoiceController(private val context: Context, private val session: HermesSession) {
+
+    /** UI render callbacks — all dispatched on the main thread. */
+    interface Listener {
+        fun onState(state: String)      // idle | listening | thinking | speaking
+        fun onDelta(text: String)       // incremental assistant text (live)
+        fun onLog(line: String)         // stream-console line (events, tool progress)
+        fun onReply(finalText: String)  // assembled final reply (for TTS + settle)
+        fun onError(msg: String)
+    }
+
     private var recognizer: SpeechRecognizer? = null
-    private var tts: TextToSpeech? = null
+    private var tts: VoxTts? = null
     private var record: AudioRecord? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
-    @Volatile private var currentRunId: String? = null
-    private var onListening: (() -> Unit)? = null
-    private var onReplyText: ((String) -> Unit)? = null
-    private var onError: ((String) -> Unit)? = null
+    @Volatile private var currentStream: String? = null
+    @Volatile private var listening = false
+    private var listener: Listener? = null
+    private var bargeInEnabled = true
+    @Volatile private var ttsReady = false
 
-    fun start(onListening: () -> Unit, onReply: (String) -> Unit, onError: (String) -> Unit) {
-        this.onListening = onListening
-        this.onReplyText = onReply
-        this.onError = onError
-        try {
-            tts = TextToSpeech(context) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.US }
-        } catch (_: Throwable) {}
-        listen()
+    init { tts = buildTts(context, prefString("tts", "system")) }
+
+    /** Set/replace the render callbacks (works for text turns too — the send path). */
+    fun attachListeners(l: Listener) { listener = l }
+
+    /** Begins the listening loop. Returns true when STT is actually running. */
+    fun start(l: Listener, enabled: Boolean): Boolean {
+        listener = l; bargeInEnabled = enabled
+        // Best-effort TTS init (never gates listening; speak() guards on ttsReady).
+        tts?.init { ttsReady = it }
+        return listen()
     }
 
     fun stop() {
-        recognizer?.destroy()
-        recognizer = null
+        listening = false
+        recognizer?.destroy(); recognizer = null
         stopTts()
         stopBargeInWatch()
-        currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }
-        currentRunId = null
-        try { tts?.shutdown() } catch (_: Throwable) {}
+        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
+        currentStream = null
+        tts?.shutdown()
     }
 
-    // --- Listening (on-device STT via SpeechRecognizer; guarded for the emulator) ---
-    private fun listen() {
+    /** A text turn (the Send path / the Realtime text-mode fallback). */
+    fun sendText(text: String) {
+        if (text.isBlank()) return
         stopTts()
-        onListening?.invoke()
+        runStreamedTurn(text)
+    }
+
+    private fun initTts(): Boolean {
+        tts?.init { ttsReady = it }
+        return true
+    }
+
+    // --- Listening (on-device STT; guarded for a headless emulator / missing service) ---
+    private fun listen(): Boolean {
+        stopTts()
+        listening = true
+        listener?.onState("listening")
         recognizer?.destroy()
-        try {
+        return try {
             val r = SpeechRecognizer.createSpeechRecognizer(context)
             r.setRecognitionListener(object : android.speech.RecognitionListener {
-                override fun onReadyForSpeech(p: Bundle?) { onListening?.invoke() }
-                override fun onBeginningOfSpeech() { onListening?.invoke() }
+                override fun onReadyForSpeech(p: Bundle?) {}
+                override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(b: ByteArray?) {}
                 override fun onEndOfSpeech() {}
@@ -71,66 +102,154 @@ class VoiceController(private val context: Context, private val session: HermesS
                 override fun onEvent(t: Int, p: Bundle?) {}
                 override fun onResults(p: Bundle) {
                     val text = p.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: return
-                    if (text.isNotBlank()) runTurn(text) else listen()
+                    if (text.isNotBlank()) runStreamedTurn(text) else if (listening) listen()
                 }
                 override fun onError(e: Int) {
-                    if (e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || e == SpeechRecognizer.ERROR_NO_MATCH) listen()
-                    else onError?.invoke("speech error $e")
+                    if (e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || e == SpeechRecognizer.ERROR_NO_MATCH) {
+                        if (listening) listen()
+                    } else {
+                        listening = false
+                        listener?.onError("speech unavailable ($e)")
+                        listener?.onState("idle")
+                    }
                 }
             })
             recognizer = r
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             }
             r.startListening(intent)
+            listener?.onLog("// hear → listening")
+            true
         } catch (e: Throwable) {
-            onError?.invoke("speech unavailable: ${e.message}")
+            listening = false
+            listener?.onError("speech unavailable: ${e.message}")
+            listener?.onState("idle")
+            false
         }
     }
 
-    // --- Turn: start a cancellable run, poll to completion, then speak ---
-    private fun runTurn(text: String) {
+    // --- The streamed entity turn (REAL SSE) ---
+    private fun runStreamedTurn(text: String) {
+        listener?.onState("thinking")
+        listener?.onLog("// you → $text")
         thread {
             try {
-                val runId = session.startRun(text)
-                currentRunId = runId
-                var reply = ""
+                val sid = session.startStream(text)
+                VoxLog.d("startStream -> $sid")
+                currentStream = sid
                 var done = false
                 var tries = 0
-                while (!done && tries < 120) {
-                    val r = session.runStatus(runId)
-                    reply = r
-                    done = r.isNotBlank()
+                while (!done && tries < 600) {
+                    var payload: String? = null
+                    try { payload = session.pollStreamJSON(sid) } catch (_: Exception) {} // gomobile raises on error
+                    if (payload != null) {
+                        val obj = JSONObject(payload)
+                        val evts = obj.optJSONArray("events")
+                        VoxLog.d("poll ev=${evts?.length() ?: 0} done=${obj.optBoolean("done")} err=${obj.optString("error","").take(70)} textLen=${obj.optString("text","").length}")
+                        emitEvents(evts)
+                        if (obj.optBoolean("done")) {
+                            done = true
+                            val err = obj.optString("error", "")
+                            val finalText = obj.optString("text", "")
+                            if (err.isNotBlank()) {
+                                main.post {
+                                    listener?.onError("hermes: $err")
+                                    listener?.onState("idle")
+                                }
+                            } else if (finalText.isNotBlank()) {
+                                main.post { settleReply(finalText) }
+                            } else {
+                                main.post { listener?.onState("idle") }
+                            }
+                        }
+                    }
                     if (done) break
-                    Thread.sleep(250)
+                    Thread.sleep(240)
                     tries++
                 }
-                currentRunId = null
-                val finalReply = reply.takeIf { it.isNotBlank() } ?: "(no reply)"
-                main.post {
-                    onReplyText?.invoke(finalReply)
-                    speaking = true
-                    bargeInArmed = true
-                    try { tts?.speak(finalReply, TextToSpeech.QUEUE_FLUSH, null, "hv") } catch (_: Throwable) {}
-                    startBargeInWatch()
-                }
+                if (!done) throw Exception("timeout")
             } catch (e: Throwable) {
-                main.post { onError?.invoke("hermes: ${e.message}"); listen() }
+                main.post {
+                    listener?.onError("hermes: ${e.message}")
+                    listener?.onState("idle")
+                }
+            } finally {
+                currentStream = null
             }
         }
     }
 
-    // --- Barge-in: watch the mic RMS while the reply is spoken; cut + cancel ---
+    private fun emitEvents(arr: JSONArray?) {
+        if (arr == null) return
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            when (e.optString("type")) {
+                "response.created" ->
+                    listener?.onLog("// entity responding…")
+                "response.output_item.added" -> when (e.optString("item_type")) {
+                    "function_call" -> {
+                        val name = e.optString("name")
+                        val args = e.optString("arguments")
+                        main.post { listener?.onLog("◆ tool: $name ${args.take(80)}") }
+                    }
+                    "function_call_output" -> {
+                        val out = e.optString("output").replace("\n", " ")
+                        main.post { listener?.onLog("◆ tool · ${out.take(120)}") }
+                    }
+                }
+                "response.output_text.delta" -> {
+                    val d = e.optString("delta")
+                    if (d.isNotBlank()) main.post {
+                        listener?.onDelta(d)
+                        bumpSpeakLevel()
+                    }
+                }
+                "response.completed" -> main.post { listener?.onLog("// response completed") }
+            }
+        }
+    }
+
+    private fun settleReply(finalText: String) {
+        listener?.onLog("// agent → ${finalText.take(120)}")
+        listener?.onReply(finalText)
+        speak(finalText)
+    }
+
+    private fun bumpSpeakLevel() {
+        // The avatar's speaking level follows real deltas; armed briefly for the voice animation.
+        speakerPulse = 1f
+        main.postDelayed({ speakerPulse = 0.5f }, 220)
+    }
+    @Volatile private var speakerPulse = 0f
+
+    private fun speak(text: String) {
+        val t = tts
+        if (t == null || !ttsReady) {
+            // No usable engine — never hang the "speaking" state; settle quietly.
+            listener?.onState("idle")
+            return
+        }
+        speaking = true
+        listener?.onState("speaking")
+        t.speak(text) {
+            speaking = false
+            listener?.onState("idle")
+            if (bargeInArmed) stopBargeInWatch()
+            if (listening) listen()
+        }
+        if (bargeInEnabled) startBargeInWatch()
+    }
+
+    // --- Barge-in: watch the mic RMS while speaking; cut + cancel + re-listen ---
     private fun startBargeInWatch() {
-        val minBuf = AudioRecord.getMinBufferSize(
-            16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        bargeInArmed = true
+        val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return
         try {
-            record = AudioRecord(
-                MediaRecorder.AudioSource.MIC, 16000,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            record = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
             val r = record ?: return
             if (r.state != AudioRecord.STATE_INITIALIZED) return
             r.startRecording()
@@ -153,10 +272,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         bargeInArmed = false
         stopBargeInWatch()
         stopTts()
-        currentRunId?.let { try { session.cancelRun(it) } catch (_: Exception) {} }
-        currentRunId = null
-        onError?.invoke("(interrupted)")
-        listen()
+        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
+        currentStream = null
+        listener?.onLog("// (interrupted)")
+        listener?.onState("listening")
+        if (listening) listen()
     }
 
     private fun stopBargeInWatch() {
@@ -166,6 +286,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
+
+    private fun prefString(k: String, d: String) =
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
 
     companion object { const val RMS_THRESHOLD = 0.02 }
 }

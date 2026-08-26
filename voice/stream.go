@@ -20,24 +20,22 @@ import (
 //	response.created            -> ResponseID (start of the turn)
 //	response.output_item.added  -> item: message | function_call | function_call_output
 //	response.output_text.delta  -> Delta (incremental assistant text)
-//	response.output_text.done   -> final text of the item
 //	response.completed          -> final ResponseID + usage
 //
-// Tool progress arrives as function_call/function_call_output ITEMS (this
-// build does NOT emit a separate hermes.tool.progress event) — ToolName +
-// ToolArgs + ToolOutput carry them so the UI can render the entity's work
-// live and drive the avatar's "working" state from real progress.
+// NOTE: the json tags MUST mirror what the Android/Kotlin side reads
+// (e.optString("type") / optString("item_type") / …). A struct without tags
+// serializes capitalized field names and the app renders nothing.
 type StreamEvent struct {
-	Type       string // SSE event name, e.g. "response.output_text.delta"
-	ResponseID string // set on created/completed
-	ItemType   string // "message" | "function_call" | "function_call_output" (item events)
-	ItemID     string
-	Name       string // tool name (function_call)
-	Arguments  string // raw JSON arguments (function_call)
-	Output     string // tool output text (function_call_output)
-	Delta      string // incremental text (output_text.delta)
-	Text       string // accumulated assistant text so far (every event)
-	Done       bool   // true once response.completed was consumed
+	Type       string `json:"type"`        // SSE event name, e.g. "response.output_text.delta"
+	ResponseID string `json:"response_id"` // set on created/completed
+	ItemType   string `json:"item_type"`   // "message" | "function_call" | "function_call_output"
+	ItemID     string `json:"item_id"`
+	Name       string `json:"name"`      // tool name (function_call)
+	Arguments  string `json:"arguments"` // raw JSON arguments (function_call)
+	Output     string `json:"output"`    // tool output text (function_call_output)
+	Delta      string `json:"delta"`     // incremental text (output_text.delta)
+	Text       string `json:"text"`      // accumulated assistant text so far
+	Done       bool   `json:"done"`      // true once response.completed was consumed
 }
 
 // StreamResult is the finished outcome of a streamed turn.
@@ -80,12 +78,18 @@ type streamState struct {
 	cancel context.CancelFunc
 }
 
-// Stream sends a turn with stream:true and consumes the SSE body, invoking h
-// for every event (in arrival order). It blocks until the stream completes or
-// ctx is cancelled (barge-in: cancel the ctx — closing the HTTP connection is
-// the abort signal for an in-flight /v1/responses generation). Returns the
-// assembled reply + response id (for previous_response_id chaining).
+// Stream sends a turn with stream:true and invokes h for EVERY event in
+// arrival order. It blocks until the stream completes or ctx is cancelled
+// (barge-in). Returns the assembled reply + response id for chaining.
 func (c *HermesResponsesClient) Stream(ctx context.Context, input string, previousResponseID string, h func(StreamEvent)) (*StreamResult, error) {
+	st := &streamState{}
+	return c.streamInto(ctx, input, previousResponseID, st, h)
+}
+
+// streamInto is the shared SSE consumer. StartStream passes its own
+// map-registered streamState so buffered events land where the app polls them.
+// (Stream() creates a private one for the callback path.)
+func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, previousResponseID string, st *streamState, h func(StreamEvent)) (*StreamResult, error) {
 	body := map[string]any{"model": c.model, "input": input, "stream": true}
 	if previousResponseID != "" {
 		body["previous_response_id"] = previousResponseID
@@ -115,7 +119,6 @@ func (c *HermesResponsesClient) Stream(ctx context.Context, input string, previo
 		return nil, fmt.Errorf("hermes stream %s: %s", resp.Status, string(b))
 	}
 
-	st := &streamState{}
 	var result StreamResult
 	evName := ""
 	scanner := bufio.NewScanner(resp.Body)
@@ -144,7 +147,7 @@ func (c *HermesResponsesClient) Stream(ctx context.Context, input string, previo
 				case "function_call":
 					ev.Name = env.Item.Name
 					ev.Arguments = strings.Trim(string(env.Item.Arguments), `"`)
-					st.text.WriteString(fmt.Sprintf("\n[tool:%s]", ev.Name)) // keep Text a live transcript incl. work
+					st.text.WriteString(fmt.Sprintf("\n[tool:%s]", ev.Name))
 					ev.Text = st.text.String()
 				case "function_call_output":
 					ev.Output = extractToolOutput(env.Item.Output)
@@ -199,12 +202,14 @@ func (c *HermesResponsesClient) Stream(ctx context.Context, input string, previo
 			}
 			dispatch(data)
 		}
-		// blank lines separate frames; dispatch happens per data line (verified shape)
 	}
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		return &result, fmt.Errorf("hermes stream read: %w", err)
 	}
-	if result.Reply == "" && !st.done {
+	st.mu.Lock()
+	completed := st.done
+	st.mu.Unlock()
+	if result.Reply == "" && !completed {
 		return &result, fmt.Errorf("hermes stream: ended without completion")
 	}
 	result.Reply = plainText(st.text.String())
@@ -257,7 +262,10 @@ var (
 )
 
 // StartStream launches a streamed turn in the background and returns a
-// streamID. Drain with PollStream; abort with CancelStream (barge-in).
+// streamID. Drain with PollStreamJSON; abort with CancelStream (barge-in).
+// IMPORTANT: the goroutine consumes the SSE into the SAME map-registered
+// streamState that PollStreamJSON drains (via streamInto), so events the app
+// renders are the events the gateway actually sent.
 func (c *HermesResponsesClient) StartStream(input string, previousResponseID string) (string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	st := &streamState{cancel: cancel}
@@ -267,7 +275,7 @@ func (c *HermesResponsesClient) StartStream(input string, previousResponseID str
 	streams[id] = st
 	streamsMu.Unlock()
 	go func() {
-		_, err := c.Stream(ctx, input, previousResponseID, nil)
+		_, err := c.streamInto(ctx, input, previousResponseID, st, nil)
 		st.mu.Lock()
 		st.done = true
 		if err != nil {
@@ -280,11 +288,10 @@ func (c *HermesResponsesClient) StartStream(input string, previousResponseID str
 	return id, nil
 }
 
-// PollStreamJSON returns the events buffered since the last poll as a JSON
-// array (each object mirrors StreamEvent), or "" while the stream is running
-// with nothing new. The FINAL poll (after completion) returns {"done":true,
-// "reply":..., "response_id":..., "error":"...", "events":[...]}. gomobile:
-// max (T, error).
+// PollStreamJSON returns the events buffered since the last poll as one JSON
+// payload: {"done":bool,"events":[...],"text":...,"transcript":...,
+// "response_id":...,"error":"..."} — "" is not returned; the current snapshot
+// is always returned. The FINAL poll (done=true) retires the entry.
 func (c *HermesResponsesClient) PollStreamJSON(streamID string) (string, error) {
 	streamsMu.Lock()
 	st := streams[streamID]
@@ -302,7 +309,6 @@ func (c *HermesResponsesClient) PollStreamJSON(streamID string) (string, error) 
 	respID := st.respID
 	st.mu.Unlock()
 	if done {
-		// Final payload delivered — retire the entry; further polls miss.
 		streamsMu.Lock()
 		delete(streams, streamID)
 		streamsMu.Unlock()

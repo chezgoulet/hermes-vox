@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hermes Vox type scale + dimensions. -->
+    <dimen name="gap_xs">6dp</dimen>
+    <dimen name="gap_s">10dp</dimen>
+    <dimen name="gap_m">16dp</dimen>
+    <dimen name="gap_l">24dp</dimen>
+    <dimen name="gap_xl">40dp</dimen>
+    <dimen name="corner_m">14dp</dimen>
+    <dimen name="corner_l">22dp</dimen>
+    <dimen name="corner_full">999dp</dimen>
+    <dimen name="avatar_size">260dp</dimen>
+    <dimen name="mic_size">66dp</dimen>
+
+    <style name="TextVox.Title" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/hv_text</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+    <style name="TextVox.Tag" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/hv_cyan</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:letterSpacing">0.12</item>
+    </style>
+    <style name="TextVox.Label" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/hv_text_dim</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:letterSpacing">0.10</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+    <style name="TextVox.Body" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/hv_text</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+    <style name="TextVox.Reply" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/hv_text</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:lineSpacingExtra">4dp</item>
+    </style>
+    <style name="TextVox.Console" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/hv_cyan</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+    </style>
+</resources>

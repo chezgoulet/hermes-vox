@@ -1,0 +1,145 @@
+package com.hermesvox
+
+import android.content.Context
+import android.os.Bundle
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.SwitchCompat
+import com.hermesvox.mobile.HermesSession
+
+/**
+ * SettingsActivity — a real settings screen. Sections: Entity (endpoint/model/
+ * key, new conversation), Voice pipeline (STT/TTS/voice, barge-in), Appearance
+ * (theme), About. Values are stored as stable TOKENS (the logic reads tokens,
+ * e.g. buildTts checks "kokoro"/"piper"); the UI renders human labels.
+ */
+class SettingsActivity : AppCompatActivity() {
+    private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        if (prefs.getString("theme", "system") == "dark") AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_settings)
+
+        findViewById<android.view.View>(R.id.settings_back).setOnClickListener { finish(); overridePendingTransition(R.anim.fade_in, R.anim.fade_out) }
+        bindEntity()
+        bindFlows()
+        bindAppearance()
+        findViewById<TextView>(R.id.set_about_val).text = "0.2.0"
+    }
+
+    private fun bindEntity() {
+        findViewById<LinearLayout>(R.id.row_reset).setOnClickListener {
+            try {
+                val u = prefs.getString("url", "").orEmpty()
+                val k = prefs.getString("key", "").orEmpty()
+                val m = prefs.getString("model", "hermes-agent").orEmpty()
+                if (u.isNotBlank() && k.isNotBlank()) HermesSession(u, k, m).resetConversation()
+                Toast.makeText(this, "New conversation (context cleared)", Toast.LENGTH_SHORT).show()
+            } catch (_: Throwable) {}
+        }
+        findViewById<LinearLayout>(R.id.row_entity).setOnClickListener {
+            val view = layoutInflater.inflate(R.layout.dialog_entity, null)
+            val eurl = view.findViewById<EditText>(R.id.d_url)
+            val emodel = view.findViewById<EditText>(R.id.d_model)
+            val ekey = view.findViewById<EditText>(R.id.d_key)
+            eurl.setText(prefs.getString("url", ""))
+            emodel.setText(prefs.getString("model", "hermes-agent"))
+            ekey.setText(prefs.getString("key", ""))
+            AlertDialog.Builder(this)
+                .setTitle("Entity")
+                .setView(view)
+                .setPositiveButton("Save") { _, _ ->
+                    prefs.edit().putString("url", eurl.text.toString().trim())
+                        .putString("model", emodel.text.toString().trim().ifEmpty { "hermes-agent" })
+                        .putString("key", ekey.text.toString().trim()).apply()
+                    refreshEntityVal()
+                }
+                .setNegativeButton("Cancel", null).show()
+        }
+        refreshEntityVal()
+    }
+
+    private fun refreshEntityVal() {
+        val u = prefs.getString("url", "").orEmpty()
+        findViewById<TextView>(R.id.set_entity_val).text =
+            if (u.isBlank()) "—" else "$u · ${prefs.getString("model", "hermes-agent")}"
+    }
+
+    private fun bindFlows() {
+        findViewById<LinearLayout>(R.id.row_stt).setOnClickListener {
+            pick("Speech-to-text",
+                arrayOf("On-device", "RX 590", "Odroid"),
+                arrayOf("on-device", "rx590", "odroid"), "stt", R.id.set_stt_val)
+        }
+        findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
+            pick("Text-to-speech",
+                arrayOf("System (fallback)", "Kokoro", "Piper", "RX 590", "Odroid"),
+                arrayOf("system", "kokoro", "piper", "rx590", "odroid"), "tts", R.id.set_tts_val)
+        }
+        findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
+            pick("Voice", arrayOf("System", "Warm", "Bright", "Deep"),
+                arrayOf("system", "warm", "bright", "deep"), "voice", R.id.set_voice_val)
+        }
+        val barge = findViewById<SwitchCompat>(R.id.set_bargein)
+        barge.isChecked = prefs.getBoolean("duplex", true)
+        barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
+
+        refreshFlowVals()
+    }
+
+    private fun refreshFlowVals() {
+        findViewById<TextView>(R.id.set_stt_val).text = label("stt", "on-device")
+        findViewById<TextView>(R.id.set_tts_val).text = label("tts", "system")
+        findViewById<TextView>(R.id.set_voice_val).text = label("voice", "system")
+    }
+
+    private fun bindAppearance() {
+        findViewById<LinearLayout>(R.id.row_theme).setOnClickListener {
+            pick("Theme", arrayOf("System", "Dark", "Light"),
+                arrayOf("system", "dark", "light"), "theme", R.id.set_theme_val) {
+                applyTheme(prefs.getString("theme", "system")!!)
+                recreate()
+            }
+        }
+        findViewById<TextView>(R.id.set_theme_val).text = label("theme", "system")
+    }
+
+    /** Store the TOKEN; render its human label. */
+    private fun pick(title: String, labels: Array<String>, tokens: Array<String>, prefKey: String, valId: Int, onApplied: (() -> Unit)? = null) {
+        val cur = prefs.getString(prefKey, "") ?: ""
+        val idx = tokens.indexOfFirst { it == cur }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(labels, idx) { d, which ->
+                prefs.edit().putString(prefKey, tokens[which]).apply()
+                findViewById<TextView>(valId).text = labels[which]
+                d.dismiss(); onApplied?.invoke()
+            }
+            .show()
+    }
+
+    private fun label(prefKey: String, default: String): String {
+        val tok = prefs.getString(prefKey, default) ?: default
+        return when (tok) {
+            "on-device" -> "On-device"; "rx590" -> "RX 590"; "odroid" -> "Odroid"
+            "system" -> "System"; "kokoro" -> "Kokoro"; "piper" -> "Piper"
+            "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
+            "dark" -> "Dark"; "light" -> "Light"
+            else -> tok
+        }
+    }
+
+    private fun applyTheme(mode: String) {
+        when (mode) {
+            "dark" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            "light" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        }
+    }
+}

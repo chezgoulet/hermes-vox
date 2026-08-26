@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Night (system dark / OLED) — true black, slightly deeper surfaces -->
+    <!-- Hermes Vox design tokens — OLED DARK palette (the hero, values-night/). -->
     <color name="hv_bg">#000000</color>
-    <color name="hv_surface">#070a10</color>
-    <color name="hv_accent">#00e5ff</color>
-    <color name="hv_accent2">#8b5cf6</color>
-    <color name="hv_text">#eef2f8</color>
-    <color name="hv_text_dim">#7d8799</color>
-    <color name="hv_border">#182027</color>
-    <color name="hv_input">#0b1018</color>
-    <color name="hv_button">#0f1620</color>
+    <color name="hv_surface">#0A0F16</color>
+    <color name="hv_surface_high">#101724</color>
+    <color name="hv_border">#1C2A3A</color>
+    <color name="hv_cyan">#00E5FF</color>
+    <color name="hv_cyan_soft">#2A6A7A</color>
+    <color name="hv_violet">#8B5CF6</color>
+    <color name="hv_violet_soft">#4A3C6E</color>
+    <color name="hv_text">#E6EDF7</color>
+    <color name="hv_text_dim">#8B98AC</color>
+    <color name="hv_ok">#34D399</color>
+    <color name="hv_warn">#FBBF24</color>
+    <color name="hv_danger">#F87171</color>
+    <color name="hv_avatar_idle">#00E5FF</color>
+    <color name="hv_avatar_listen">#34D399</color>
+    <color name="hv_avatar_think">#FBBF24</color>
+    <color name="hv_avatar_speak">#8B5CF6</color>
 </resources>

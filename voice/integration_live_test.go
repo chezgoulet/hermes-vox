@@ -219,3 +219,39 @@ func TestLiveStreamCancelMidFlight(t *testing.T) {
 	}
 	t.Logf("mid-flight barge-in ok: aborted after %.1fs", elapsed.Seconds())
 }
+
+// 7. POLL-DRAIN path (what the Android app uses): StartStream into a goroutine,
+// then PollStreamJSON must yield the real SSE events the app renders.
+func TestLivePollDrain(t *testing.T) {
+	c := liveResponses(t)
+	id, err := c.StartStream("Use your shell tool to run exactly: echo vox-poll-live and reply with just its output.", "")
+	if err != nil {
+		t.Fatalf("StartStream: %v", err)
+	}
+	seen := map[string]bool{}
+	var final string
+	for i := 0; i < 120; i++ {
+		time.Sleep(500 * time.Millisecond)
+		p, err := c.PollStreamJSON(id)
+		if err != nil {
+			t.Fatalf("PollStream %d: %v", i, err)
+		}
+		if strings.Contains(p, "\"type\":\"response.output_item.added\"") {
+			seen["added"] = true
+		}
+		if strings.Contains(p, "\"item_type\":\"function_call\"") {
+			seen["call"] = true
+		}
+		if strings.Contains(p, "\"done\":true") {
+			final = p
+			break
+		}
+	}
+	if final == "" {
+		t.Fatalf("no done within 60s; seen=%v", seen)
+	}
+	if !seen["call"] {
+		t.Fatalf("no function_call in drained JSON; seen=%v", seen)
+	}
+	t.Logf("poll-drain ok: events=%v final-len=%d", seen, len(final))
+}

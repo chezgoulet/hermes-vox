@@ -8,60 +8,174 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.hermesvox.mobile.HermesSession
 import go.Seq
-import kotlin.concurrent.thread
 
+/**
+ * MainActivity — the front-of-house surface. Hosts the avatar, the live reply,
+ * the stream console, and the voice/text input. Runs the entity via
+ * VoiceController (streamed SSE turns) and renders the entity's real work.
+ * First run routes to OnboardingActivity; subsequent launches auto-connect.
+ */
 class MainActivity : AppCompatActivity() {
-    private lateinit var url: EditText
-    private lateinit var key: EditText
-    private lateinit var model: EditText
+    private lateinit var status: TextView
     private lateinit var input: EditText
     private lateinit var reply: TextView
-    private lateinit var status: TextView
-    private lateinit var avatar: AvatarView
     private lateinit var stream: TextView
+    private lateinit var avatar: AvatarView
     private var session: HermesSession? = null
     private var controller: VoiceController? = null
+    private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Apply the persisted theme before the UI inflates (System/Dark/Light).
-        val prefs = getSharedPreferences("hv", Context.MODE_PRIVATE)
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Seq.setContext(applicationContext)
+        VoxLog.init(applicationContext)
 
-        url = findViewById(R.id.url)
-        key = findViewById(R.id.key)
-        model = findViewById(R.id.model)
+        status = findViewById(R.id.status)
         input = findViewById(R.id.input)
         reply = findViewById(R.id.reply)
-        status = findViewById(R.id.status)
-        avatar = findViewById(R.id.avatar)
         stream = findViewById(R.id.stream)
+        avatar = findViewById(R.id.avatar)
 
-        // No pre-filled IP — the user enters the Hermes endpoint (release-safe).
-        url.setText(prefs.getString("url", ""))
-        model.setText(prefs.getString("model", "hermes-agent"))
-        key.setText(prefs.getString("key", ""))
+        // First run → onboarding (no stored endpoint/key yet).
+        if (prefs.getString("url", "").orEmpty().isBlank() || prefs.getString("key", "").orEmpty().isBlank()) {
+            openOnboarding(); return
+        }
 
-        findViewById<Button>(R.id.connect).setOnClickListener { connect() }
+        intentExtras()
+        connectFromPrefs()
+        wireButtons()
+        startAvatarLoop()
+    }
+
+    private fun openOnboarding() {
+        startActivity(Intent(this, OnboardingActivity::class.java))
+        finish()
+    }
+
+    private fun intentExtras() {
+        // adb/E2E deep-link: connect + send without touching the UI by hand.
+        val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
+        val m = intent.getStringExtra("model"); val say = intent.getStringExtra("say")
+        if (!u.isNullOrBlank() && !k.isNullOrBlank()) {
+            prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").putString("key", k).apply()
+        }
+        if (!say.isNullOrBlank()) { intent.removeExtra("say"); autoSend = say }
+    }
+    private var autoSend: String? = null
+
+    private fun connectFromPrefs() {
+        val u = prefs.getString("url", "").orEmpty()
+        val k = prefs.getString("key", "").orEmpty()
+        val m = prefs.getString("model", "hermes-agent").orEmpty()
+        if (u.isBlank() || k.isBlank()) return
+        session = HermesSession(u, k, m)
+        status.text = getString(R.string.hv_connected)
+        appendStream("// connected → $u")
+        // Auto-send a routed turn (E2E proof path).
+        autoSend?.let { send(it) }
+    }
+
+    private fun wireButtons() {
         findViewById<Button>(R.id.send).setOnClickListener { send(input.text.toString()) }
         findViewById<Button>(R.id.mic).setOnClickListener { talk() }
-        findViewById<Button>(R.id.settings).setOnClickListener { showSettings() }
+        findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.realtime).setOnClickListener { openRealtime() }
         findViewById<Button>(R.id.clear).setOnClickListener {
             controller?.stop(); controller = null
-            input.text.clear(); reply.text = ""; status.text = "Not connected"; setAvatar("idle"); stream.text = "// stream log"
+            session?.resetConversation()
+            input.text.clear(); reply.text = ""; status.text = getString(R.string.hv_not_connected)
+            avatar.setState("idle"); stream.text = "// stream log — watch the agent work"
         }
-        startAvatarLoop()
+        input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
+    }
+
+    private fun send(text: String) {
+        val s = session ?: run { status.text = "Connect first"; return }
+        if (text.isBlank()) return
+        input.text.clear()
+        val c = controller ?: VoiceController(this, s).also { controller = it }
+        c.attachListeners(listener)
+        c.sendText(text)
+    }
+
+    private fun talk() {
+        val s = session ?: run { status.text = "Connect first"; return }
+        val needAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        val needNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needAudio || needNotif) {
+            ActivityCompat.requestPermissions(this,
+                listOfNotNull(
+                    Manifest.permission.RECORD_AUDIO.takeIf { needAudio },
+                    Manifest.permission.POST_NOTIFICATIONS.takeIf { needNotif }
+                ).toTypedArray(), 100)
+            return
+        }
+        // The voice pipeline runs in a foreground service so it survives backgrounding
+        // (microphone type; START_STICKY). The activity controller drives the UI.
+        VoiceService.start(this)
+        val c = controller ?: VoiceController(this, s).also { controller = it }
+        val duplex = prefs.getBoolean("duplex", true)
+        c.start(listener, duplex)
+    }
+
+    private val listener = object : VoiceController.Listener {
+        override fun onState(state: String) {
+            runOnUiThread {
+                status.text = when (state) {
+                    "listening" -> "Listening…"
+                    "thinking" -> "The entity is working…"
+                    "speaking" -> "Speaking…"
+                    else -> getString(R.string.hv_connected)
+                }
+                avatar.setStateLevel(state,
+                    if (state == "listening") 0.4f else if (state == "speaking") 0.6f else 0f,
+                    state == "thinking")
+            }
+        }
+        override fun onDelta(text: String) { runOnUiThread {
+            reply.append(text)
+            stream.post { stream.scrollTo(0, stream.bottom) }
+        } }
+        override fun onLog(line: String) { runOnUiThread {
+            appendStream(line)
+            if (line.startsWith("◆ tool")) avatar.pulseTool()
+        } }
+        override fun onReply(finalText: String) { runOnUiThread { reply.setText(finalText) } }
+        override fun onError(msg: String) { runOnUiThread {
+            status.text = if (msg.contains("interrupt")) "You interrupted" else msg
+            avatar.setState("idle"); appendStream("// $msg")
+        } }
+    }
+
+    private fun openSettings() { startActivity(Intent(this, SettingsActivity::class.java)); overridePendingTransition(R.anim.slide_in, R.anim.fade_out) }
+    private fun openRealtime() {
+        val u = prefs.getString("url", "").orEmpty(); val k = prefs.getString("key", "").orEmpty()
+        if (u.isBlank() || k.isBlank()) { status.text = "Connect first"; return }
+        startActivity(Intent(this, RealtimeActivity::class.java)
+            .putExtra("url", u).putExtra("key", k).putExtra("model", prefs.getString("model", "hermes-agent"))); overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+    }
+
+    private fun appendStream(line: String) {
+        val t = stream.text.toString()
+        stream.text = ("$t\n$line").trim().takeLast(1600)
+        stream.post { stream.scrollTo(0, stream.height) }
+    }
+
+    private fun startAvatarLoop() {
+        val tick = object : Runnable {
+            override fun run() { avatar.invalidate(); avatar.postDelayed(this, 30) }
+        }
+        avatar.post(tick)
     }
 
     private fun applyTheme(mode: String) {
@@ -72,120 +186,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startAvatarLoop() {
-        val tick = object : Runnable {
-            override fun run() { avatar.invalidate(); avatar.postDelayed(this, 30) }
-        }
-        avatar.post(tick)
+    override fun onStop() {
+        super.onStop()
+        controller?.stop()
+        VoiceService.stop(this)
     }
-
-    private fun setAvatar(s: String) {
-        avatar.setStateLevel(s, if (s == "listening") 0.35f else if (s == "speaking") 0.7f else 0f, s == "thinking")
-    }
-
-    private fun appendStream(line: String) {
-        val t = stream.text.toString()
-        stream.text = ("$t\n$line").trim().takeLast(1200)
-        stream.post { stream.scrollTo(0, stream.height) }
-    }
-
-    private fun connect() {
-        val u = url.text.toString().trim()
-        val k = key.text.toString().trim()
-        val m = model.text.toString().trim().ifEmpty { "hermes-agent" }
-        if (u.isBlank() || k.isBlank()) { status.text = "Enter the Hermes URL and API key"; return }
-        session = HermesSession(u, k, m)
-        getSharedPreferences("hv", Context.MODE_PRIVATE).edit()
-            .putString("url", u).putString("model", m).putString("key", k).apply()
-        status.text = "Connected → the entity"
-        setAvatar("idle")
-        appendStream("// connected → " + u)
-        Toast.makeText(this, "Connected", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun send(text: String) {
-        val s = session ?: run { status.text = "Connect first"; return }
-        if (text.isBlank()) return
-        reply.text = "…"
-        setAvatar("thinking")
-        appendStream("// you → " + text)
-        thread {
-            val r = try {
-                appendStream("// agent working…")
-                s.turnStored(text)
-            } catch (e: Throwable) { "hermes: ${e.message}" }
-            runOnUiThread { reply.text = r; setAvatar("idle"); appendStream("// agent → " + r.take(90)) }
-        }
-    }
-
-    private fun talk() {
-        val s = session ?: run { status.text = "Connect first (enter your key)"; return }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 100)
-            return
-        }
-        if (controller == null) controller = VoiceController(this, s)
-        controller?.start(
-            onListening = { runOnUiThread { status.text = "Listening…"; setAvatar("listening"); appendStream("// hear → listening") } },
-            onReply = { r -> runOnUiThread { reply.text = r; status.text = "Speaking…"; setAvatar("speaking"); appendStream("// agent → " + r.take(90)) } },
-            onError = { e -> runOnUiThread {
-                status.text = if (e.contains("interrupt")) "You interrupted" else e
-                setAvatar("idle"); appendStream("// $e")
-            } }
-        )
-    }
-
-    private fun openRealtime() {
-        val u = url.text.toString().trim()
-        val k = key.text.toString().trim()
-        if (u.isBlank() || k.isBlank()) { status.text = "Connect first (enter the URL and key)"; return }
-        startActivity(Intent(this, RealtimeActivity::class.java)
-            .putExtra("url", u).putExtra("key", k).putExtra("model", model.text.toString().trim().ifEmpty { "hermes-agent" }))
-    }
-
-    private fun showSettings() {
-        val prefs = getSharedPreferences("hv", Context.MODE_PRIVATE)
-        val theme = prefs.getString("theme", "system")!!
-        val stt = prefs.getString("stt", "on-device")!!
-        val tts = prefs.getString("tts", "on-device")!!
-        val voice = prefs.getString("voice", "system")!!
-        val duplex = prefs.getBoolean("duplex", true)
-        val items = arrayOf(
-            "Theme: $theme",
-            "Speech-to-text: $stt",
-            "Text-to-speech: $tts",
-            "Voice: $voice",
-            "Barge-in (duplex): ${if (duplex) "on" else "off"}",
-            "Entity: ${url.text} · ${model.text}"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("Hermes Vox settings")
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> pickOne("Theme", arrayOf("system", "dark", "light"), "theme", prefs)
-                    1 -> pickOne("Speech-to-text", arrayOf("on-device", "RX 590", "Odroid"), "stt", prefs)
-                    2 -> pickOne("Text-to-speech", arrayOf("on-device", "Kokoro", "Piper", "RX 590", "Odroid"), "tts", prefs)
-                    3 -> pickOne("Voice", arrayOf("system", "Warm", "Bright", "Deep"), "voice", prefs)
-                    4 -> prefs.edit().putBoolean("duplex", !duplex).apply().also { showSettings() }
-                }
-            }
-            .setNeutralButton("Close", null)
-            .setNegativeButton("Apply theme") { _, _ -> recreate() } // re-apply theme on recreate
-            .show()
-    }
-
-    private fun pickOne(title: String, options: Array<String>, prefKey: String, prefs: android.content.SharedPreferences) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setSingleChoiceItems(options, 0) { d, which ->
-                prefs.edit().putString(prefKey, options[which]).apply()
-                if (prefKey == "theme") { applyTheme(options[which]); recreate() }
-                d.dismiss()
-            }
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
-    override fun onStop() { super.onStop(); controller?.stop() }
 }

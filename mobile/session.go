@@ -84,36 +84,7 @@ func (s *HermesSession) StartStream(text string) (string, error) {
 		return "", fmt.Errorf("voice: no Hermes session")
 	}
 	prev := s.lastID
-	id, err := s.streams.StartStream(text, prev)
-	if err == nil {
-		s.watchChain(id)
-	}
-	return id, err
-}
-
-// watchChain captures the response id from the stream's final poll so the next
-// turn chains onto it (server-side conversation continuity).
-func (s *HermesSession) watchChain(streamID string) {
-	go func() {
-		for i := 0; i < 600; i++ { // up to ~5 min alongside the stream goroutine
-			time.Sleep(500 * time.Millisecond)
-			payload, err := s.streams.PollStreamJSON(streamID)
-			if err != nil {
-				return // retired after the final drain elsewhere
-			}
-			var m struct {
-				Done       bool   `json:"done"`
-				ResponseID string `json:"response_id"`
-			}
-			if json.Unmarshal([]byte(payload), &m) == nil && m.Done && m.ResponseID != "" {
-				s.lastID = m.ResponseID
-				return
-			}
-			if m.Done {
-				return
-			}
-		}
-	}()
+	return s.streams.StartStream(text, prev)
 }
 
 // PollStreamJSON drains the events buffered since the last poll as one JSON
@@ -125,7 +96,17 @@ func (s *HermesSession) PollStreamJSON(streamID string) (string, error) {
 	if s == nil || s.streams == nil {
 		return "", fmt.Errorf("voice: no Hermes session")
 	}
-	return s.streams.PollStreamJSON(streamID)
+	payload, err := s.streams.PollStreamJSON(streamID)
+	if err == nil && payload != "" {
+		var m struct {
+			Done       bool   `json:"done"`
+			ResponseID string `json:"response_id"`
+		}
+		if json.Unmarshal([]byte(payload), &m) == nil && m.ResponseID != "" {
+			s.lastID = m.ResponseID
+		}
+	}
+	return payload, err
 }
 
 // CancelStream aborts an in-flight streamed turn — the barge-in for the

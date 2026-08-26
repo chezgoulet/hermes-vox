@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.HermesVox" parent="Theme.AppCompat.Light.NoActionBar">
-        <!-- LIGHT variant of the sci-fi identity. Hero is dark. -->
+    <style name="Theme.HermesVox" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <!-- OLED DARK — the hero identity for Hermes Vox. -->
         <item name="colorPrimary">@color/hv_cyan</item>
         <item name="colorAccent">@color/hv_violet</item>
         <item name="android:windowBackground">@color/hv_bg</item>
@@ -9,7 +9,7 @@
         <item name="android:textColor">@color/hv_text</item>
         <item name="android:statusBarColor">@color/hv_bg</item>
         <item name="android:navigationBarColor">@color/hv_bg</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

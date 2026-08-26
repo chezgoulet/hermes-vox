@@ -1,40 +1,113 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/hv_bg"
-    android:padding="16dp">
-    <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.3" />
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Immersive header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            style="@style/TextVox.Title"
+            android:text="REALTIME" />
+
+        <Button
+            android:id="@+id/rt_back"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_button_ghost"
+            android:paddingHorizontal="14dp"
+            android:text="←"
+            android:textColor="@color/hv_text"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/rt_mode_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_chip"
+        android:padding="10dp"
+        android:visibility="gone"
+        style="@style/TextVox.Label"
+        android:textColor="@color/hv_warn"
+        android:text="voice playback unavailable here — type to the entity" />
+
+    <!-- Full-height avatar -->
     <com.hermesvox.AvatarView
         android:id="@+id/rt_avatar"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1.2" />
+        android:layout_weight="1"
+        android:layout_marginTop="4dp" />
+
+    <!-- Live text -->
     <TextView
         android:id="@+id/rt_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:textSize="18sp"
-        android:textColor="@color/hv_text"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_surface"
+        android:minHeight="64dp"
+        android:padding="14dp"
+        style="@style/TextVox.Reply"
         android:text="…" />
+
+    <!-- Stream console -->
     <TextView
         android:id="@+id/rt_stream"
         android:layout_width="match_parent"
-        android:layout_height="130dp"
-        android:layout_marginTop="10dp"
-        android:padding="10dp"
-        android:background="@color/hv_surface"
-        android:typeface="monospace"
-        android:textSize="11sp"
-        android:textColor="@color/hv_text_dim"
-        android:text="// stream log" />
-    <Button
-        android:id="@+id/rt_back"
-        style="@style/HvButton"
+        android:layout_height="110dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_log"
+        android:padding="8dp"
+        android:text="// stream log"
+        android:scrollbars="vertical"
+        style="@style/TextVox.Console" />
+
+    <!-- Text-mode fallback (voice unavailable) -->
+    <LinearLayout
+        android:id="@+id/rt_textmode"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="← Back to setup" />
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/rt_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_input"
+            android:hint="@string/hv_input_hint"
+            android:imeOptions="actionSend"
+            android:inputType="textCapSentences"
+            android:padding="12dp"
+            android:textColor="@color/hv_text"
+            android:textColorHint="@color/hv_text_dim"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/rt_send"
+            android:layout_width="56dp"
+            android:layout_height="@dimen/mic_size"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_button_primary"
+            android:elevation="4dp"
+            android:text="@string/hv_send"
+            android:textColor="@color/hv_bg"
+            android:textSize="22sp" />
+    </LinearLayout>
 </LinearLayout>

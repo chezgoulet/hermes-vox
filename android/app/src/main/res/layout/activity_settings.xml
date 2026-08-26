@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/hv_bg"
+    android:orientation="vertical">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="20dp">
+
+        <Button
+            android:id="@+id/settings_back"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_button_ghost"
+            android:paddingHorizontal="14dp"
+            android:text="←"
+            android:textColor="@color/hv_text"
+            android:textSize="18sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            style="@style/TextVox.Title"
+            android:text="Settings" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/TextVox.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="@string/hv_label_entity" />
+
+            <LinearLayout
+                android:id="@+id/row_entity"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Entity endpoint"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_entity_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="—"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_reset"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="New conversation (clear context)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="reset"
+                    style="@style/HvRowAction" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/TextVox.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/hv_label_flows" />
+
+            <LinearLayout
+                android:id="@+id/row_stt"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Speech-to-text"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_stt_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="On-device"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_tts"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Text-to-speech"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_tts_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="System (warm fallback)"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_voice"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Voice"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_voice_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="System"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_bargein"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Barge-in (interrupt)"
+                    style="@style/HvRowTitle" />
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/set_bargein"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/TextVox.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/hv_label_appearance" />
+
+            <LinearLayout
+                android:id="@+id/row_theme"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Theme"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_theme_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="System"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/TextVox.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/hv_label_about" />
+
+            <LinearLayout
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Hermes Vox"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_about_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0.2.0"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

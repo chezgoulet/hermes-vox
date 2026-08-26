@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="HvRow">
+        <item name="android:background">@drawable/bg_surface</item>
+        <item name="android:padding">16dp</item>
+        <item name="android:layout_marginBottom">8dp</item>
+    </style>
+    <style name="HvRowTitle">
+        <item name="android:textColor">@color/hv_text</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+    <style name="HvRowValue">
+        <item name="android:textColor">@color/hv_text_dim</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:layout_marginTop">2dp</item>
+    </style>
+    <style name="HvRowAction">
+        <item name="android:textColor">@color/hv_cyan</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+</resources>

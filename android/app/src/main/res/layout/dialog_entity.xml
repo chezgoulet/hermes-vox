@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <EditText
+        android:id="@+id/d_url"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/hv_url_hint"
+        android:inputType="textUri"
+        android:padding="12dp"
+        android:textColor="@color/hv_text"
+        android:textColorHint="@color/hv_text_dim"
+        android:textSize="16sp" />
+
+    <EditText
+        android:id="@+id/d_model"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/hv_model_hint"
+        android:inputType="text"
+        android:padding="12dp"
+        android:textColor="@color/hv_text"
+        android:textColorHint="@color/hv_text_dim"
+        android:textSize="16sp" />
+
+    <EditText
+        android:id="@+id/d_key"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/hv_key_hint"
+        android:inputType="textPassword"
+        android:padding="12dp"
+        android:textColor="@color/hv_text"
+        android:textColorHint="@color/hv_text_dim"
+        android:textSize="16sp" />
+</LinearLayout>
