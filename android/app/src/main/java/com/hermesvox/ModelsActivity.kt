@@ -101,11 +101,21 @@ class ModelsActivity : AppCompatActivity() {
         c.state.text = "✓ Installed"
         c.action.text = "Installed"
         c.action.isEnabled = false
-        refreshCard(id)
     }
 
+    // Sets the card's UI from the installed state. Does NOT call finishInstall
+    // (that was the StackOverflow recursion: finishInstall -> refreshCard ->
+    // finishInstall -> ...).
     private fun refreshCard(id: String) {
         val c = cards[id] ?: return
-        if (ModelCatalog.isInstalled(this, id)) { finishInstall(id) }
+        if (ModelCatalog.isInstalled(this, id)) {
+            c.state.text = "✓ Installed"
+            c.action.text = "Installed"
+            c.action.isEnabled = false
+        } else {
+            c.state.text = "Not installed"
+            c.action.text = "Download"
+            c.action.isEnabled = true
+        }
     }
 }
