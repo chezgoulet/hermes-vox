@@ -147,6 +147,20 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
+        findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
+            val log = CrashLog.read(this)
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Debug / crash log")
+                .setMessage(log)
+                .setPositiveButton("Copy") { _, _ ->
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("crash", log))
+                    android.widget.Toast.makeText(this, "copied", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                .setNeutralButton("Clear") { _, _ -> CrashLog.clear(this); findViewById<TextView>(R.id.set_debug_val).text = "view" }
+                .setNegativeButton("Close", null)
+                .show()
+        }
     }
 
     /** Store the TOKEN; render its human label. */

@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         Seq.setContext(applicationContext)
         VoxLog.init(applicationContext)
+        CrashLog.init(applicationContext)
         maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
