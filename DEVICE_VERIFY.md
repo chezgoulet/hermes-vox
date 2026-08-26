@@ -35,9 +35,10 @@ enhancement (downloadable, runtime is the last integrate step).
 
 - **Realtime** — hands-free open line: talk, the being listens (VAD) + barge-in,
   Hermes answers, warm Piper speaks. Keyboard works too.
-- **Enhanced Realtime** — same + the on-device **Gemma 4 E2B** expression layer
-  (download `gemma-e2b` in Voice models). Until the LiteRT-LM runtime lands it
-  gracefully uses the routed stand-in (the phone-call glue still works).
+- **Enhanced Realtime** — same + the on-device **Gemma 4 E2B** expression layer.
+  Download **Gemma 4 E2B (presence)** in **Settings → Voice models** (in-app,
+  sha256-verified) — it's ~2 GB. Until then it gracefully uses the routed
+  stand-in (the phone-call glue still works).
 - **Walkie Talkie** — hold **PTT** to talk (release to send), or type + **SEND**.
 
 ## Verify on the device (the emulator is function-only; real mic/NPU here)
@@ -47,8 +48,10 @@ enhancement (downloadable, runtime is the last integrate step).
 2. **Barge-in** — talk over Hermes mid-answer → it cuts + re-listens.
 3. **The being** — reacts to real tool calls (terminal→bracket, web→scan,
    file→fold, memory→constellation).
-4. **Gemma download** — `gemma-e2b` (~0.8 GB) downloads; `GemmaExpress loaded`
-   logs once the LiteRT-LM runtime is wired (TODO(device) in GemmaExpress.kt).
+4. **Gemma (Enhanced)** — download `gemma-e2b` in Voice models; the device loads
+   it via LiteRT-LM + the being narrates the work in the phone-call voice
+   (`GemmaExpress loaded:` logs). Note: the LiteRT-LM runtime targets the device
+   NPU — the x86_64 emulator can't load it; verify on the Pixel.
 5. **Heartbeat of the design** — the Star-Wars reply crawl, the eye-being,
    Rajdhani type, the three modes.
 

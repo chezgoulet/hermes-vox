@@ -142,7 +142,10 @@ offline). Point the app at your Hermes gateway; the entity is your agent.
 
 ## Status
 
-The MVP is installable + the emulator-proven design language, pipeline, and
-orchestration are in. The on-device Gemma LiteRT-LM model integration (the
-"Enhanced Realtime" expression layer) is the next device-verify step. Cloud voice
-processing + full-duplex realtime are after-MVP.
+The MVP is installable + the design language, pipeline, orchestration, and
+three-mode system are in. **Enhanced Realtime is wired end-to-end**: the
+on-device **Gemma 4 E2B (presence)** model downloads in-app (Settings → Voice
+models, sha256-verified) and `GemmaExpress` loads it via LiteRT-LM's Engine to
+voice the phone-call glue (graceful stand-in fallback). The on-device
+load/generate verify is the device step (the LiteRT-LM runtime targets the
+device NPU). Cloud voice processing + full-duplex realtime are after-MVP.
