@@ -57,7 +57,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var sttReady = false
 
     init {
-        tts = buildTts(context, prefString("tts", "system"))
+        // Blessed default: auto-use the warm on-device Piper voice once it's
+        // installed; fall back to System only if Piper isn't present. (The old
+        // default of "system" left the app speaking via a silent system TTS.)
+        val voice = prefString("tts", if (ModelCatalog.isInstalled(context, "piper-lessac")) "piper" else "system")
+        tts = buildTts(context, voice)
+        VoxLog.d("pipeline: tts=${tts?.name} (voice=$voice) ttsReady=$ttsReady")
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
         tts?.init { ttsReady = it }
         // STT backend/model from Settings: on-device Whisper (selected model),
