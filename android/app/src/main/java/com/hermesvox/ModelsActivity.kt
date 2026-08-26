@@ -41,7 +41,7 @@ class ModelsActivity : AppCompatActivity() {
             Toast.makeText(this, "Source set", Toast.LENGTH_SHORT).show()
         }
         findViewById<Button>(R.id.m_download_all).setOnClickListener {
-            ModelCatalog.blessed.forEach { if (!ModelCatalog.isInstalled(this, it.id)) start(it) }
+            ModelCatalog.blessed.filter { it.recommended }.forEach { if (!ModelCatalog.isInstalled(this, it.id)) start(it) }
         }
 
         buildCards()

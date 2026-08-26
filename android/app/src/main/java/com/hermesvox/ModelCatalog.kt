@@ -42,7 +42,7 @@ object ModelCatalog {
             "42b6d91ac52bee3ddcd7ee6fbaa9590778b915d11bd838f0aafc8c701485f001", true),
         ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "whisper-tiny.zip", 86.0,
             "Offline STT · fastest, lightest", true, 3,
-            "b5cd001147d9933d148f8c701b3a984ab5f8dfc03dc7fe3fb885ca5526c0f3b3", true),
+            "b5cd001147d9933d148f8c701b3a984ab5f8dfc03dc7fe3fb885ca5526c0f3b3", false),
         ModelSpec("whisper-base", "Whisper base.en", "stt", "whisper-base.zip", 162.0,
             "Offline STT · blessed default (balanced)", true, 4,
             "1b9ce55b15fbf2f09893640a1dd1c1062f4963fa90b2d0f97a13eca2e0f9ab84", true),
@@ -51,7 +51,7 @@ object ModelCatalog {
             "b1549f51778a7d919b787883505e02c15501766e32e4ff8ad0572e92c2c5abe8", false),
         ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-e2b.zip", 2050.0,
             "On-device expression layer (Enhanced Realtime)", true, 6,
-            "877db5533f7ddb7f0438e3fa4cedc49dedebd4c4f66f22e5295cee351e75aadc", true)
+            "877db5533f7ddb7f0438e3fa4cedc49dedebd4c4f66f22e5295cee351e75aadc", false)
     )
 
     /** The on-device STT model -> model-id map (Settings STT model picker). */
