@@ -42,8 +42,19 @@ class OfflineWhisperStt(private val context: Context) : VoxStt {
             try {
                 val e = File(dir, "encoder.onnx"); val d = File(dir, "decoder.onnx"); val t = File(dir, "tokens.txt")
                 if (!e.exists() || !d.exists() || !t.exists()) { onReady(false); return@thread }
+                // sherpa-off-community shape (official kotlin-api + issue #2071):
+                // the whisper model's TOKENS path + modelType belong on
+                // OfflineModelConfig, and the config is built via the no-arg ctor
+                // + setters (NOT the full-arg ctor, whose non-whisper model fields
+                // default to empty instances and confuse the native picker).
                 val whisper = OfflineWhisperModelConfig(e.absolutePath, d.absolutePath, "en", "transcribe", 0, false, false)
-                val modelCfg = OfflineModelConfig(whisper = whisper, numThreads = 1, provider = "cpu")
+                val modelCfg = OfflineModelConfig().apply {
+                    this.whisper = whisper
+                    this.tokens = t.absolutePath
+                    this.modelType = "whisper"
+                    this.numThreads = 1
+                    this.provider = "cpu"
+                }
                 val feat = FeatureConfig(16000, 80, 0f)
                 val hr = HomophoneReplacerConfig("", "", "")
                 val cfg = OfflineRecognizerConfig(feat, modelCfg, hr, "greedy_search", 4, "", 0f, "", "", 0f)
