@@ -160,6 +160,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val text = try { stt?.transcribe(collected.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
                     VoxLog.d("stt: speechStarted=$speechStarted samples=${collected.size} transcript=${text?.take(120)}")
                     if (text.isNullOrBlank()) continue
+                    val t = text.trim()
+                    // Noise rejection: whisper returns (static)/(buzzing)/(clicking)/[SOUND]/[BLANK_AUDIO]
+                    // for the TTS's own output / ambient noise — never fire those as a user turn.
+                    if (t.length < 3 || t.matches(Regex("\\(.*?\\)")) || t.startsWith("[") || t.startsWith("(")) continue
                     turnDone = java.util.concurrent.CountDownLatch(1)
                     val latch = turnDone
                     main.post { runStreamedTurn(text) }
@@ -379,7 +383,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             speaking = false
             listener?.onState("idle")
             if (bargeInArmed) stopBargeInWatch()
-            if (listening) listen()
         }
         // Arm barge-in AFTER a short delay + at a higher threshold so the mic
         // doesn't cancel the TTS on its own output (the "hears itself" cut).
