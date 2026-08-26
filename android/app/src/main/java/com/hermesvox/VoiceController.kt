@@ -320,6 +320,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             return
         }
         glueSpeaking = false      // Hermes preempts Gemma
+        stopTts()                 // cut any in-flight glue so the reply isn't truncated
         speaking = true
         listener?.onState("speaking")
         t.speak(text) {

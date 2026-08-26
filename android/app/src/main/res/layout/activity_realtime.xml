@@ -12,14 +12,12 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal">
-
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             style="@style/TextVox.Title"
             android:text="REALTIME" />
-
         <Button
             android:id="@+id/rt_back"
             android:layout_width="wrap_content"
@@ -31,19 +29,21 @@
             android:textSize="18sp" />
     </LinearLayout>
 
+    <!-- Ambient notice (soft) -->
     <TextView
         android:id="@+id/rt_mode_notice"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:background="@drawable/bg_chip"
-        android:padding="10dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="5dp"
         android:visibility="gone"
-        style="@style/TextVox.Label"
+        style="@style/TextVox.Tag"
         android:textColor="@color/hv_warn"
-        android:text="voice playback unavailable here — type to the entity" />
+        android:text="voice unavailable — typing" />
 
-    <!-- Full-height avatar -->
+    <!-- The being -->
     <com.hermesvox.AvatarView
         android:id="@+id/rt_avatar"
         android:layout_width="match_parent"
@@ -51,31 +51,15 @@
         android:layout_weight="1"
         android:layout_marginTop="4dp" />
 
-    <!-- Live text -->
-    <TextView
-        android:id="@+id/rt_text"
+    <!-- Reply: the same Star-Wars crawl as the Main (no boxes) -->
+    <com.hermesvox.CrawlView
+        android:id="@+id/rt_crawl"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:background="@drawable/bg_surface"
-        android:minHeight="64dp"
-        android:padding="14dp"
-        style="@style/TextVox.Reply"
-        android:text="…" />
+        android:layout_marginTop="2dp"
+        android:minHeight="90dp" />
 
-    <!-- Stream console -->
-    <TextView
-        android:id="@+id/rt_stream"
-        android:layout_width="match_parent"
-        android:layout_height="110dp"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/bg_log"
-        android:padding="8dp"
-        android:text="// stream log"
-        android:scrollbars="vertical"
-        style="@style/TextVox.Console" />
-
-    <!-- Text-mode fallback (voice unavailable) -->
+    <!-- Input -->
     <LinearLayout
         android:id="@+id/rt_textmode"
         android:layout_width="match_parent"
@@ -84,7 +68,6 @@
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:visibility="gone">
-
         <EditText
             android:id="@+id/rt_input"
             android:layout_width="0dp"
@@ -98,7 +81,6 @@
             android:textColor="@color/hv_text"
             android:textColorHint="@color/hv_text_dim"
             android:textSize="16sp" />
-
         <Button
             android:id="@+id/rt_send"
             android:layout_width="56dp"

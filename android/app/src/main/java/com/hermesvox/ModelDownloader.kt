@@ -62,15 +62,17 @@ class ModelDownloader(private val context: Context) {
         FileOutputStream(tmp).use { out ->
             BufferedInputStream(conn.inputStream).use { inp ->
                 val buf = ByteArray(64 * 1024)
-                var dl = 0L
+                var dl = 0L; var lastReport = 0L
                 while (true) {
                     if (cancelled) break
                     val n = inp.read(buf)
                     if (n < 0) break
                     out.write(buf, 0, n); dl += n
-                    val shown: Long = if (totalL > 0) totalL else dl
-                    listener.onProgress(spec.id, dl, shown)
+                    val now = System.currentTimeMillis()
+                    // throttle UI progress (~4/s) so a >2 GB download doesn't flood the main thread
+                    if (now - lastReport > 250) { listener.onProgress(spec.id, dl, totalL); lastReport = now }
                 }
+                listener.onProgress(spec.id, dl, totalL)  // final
             }
         }
         conn.disconnect()

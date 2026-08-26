@@ -17,12 +17,12 @@ import go.Seq
  */
 class RealtimeActivity : AppCompatActivity() {
     private lateinit var avatar: AvatarView
-    private lateinit var stream: TextView
-    private lateinit var text: TextView
+    private lateinit var crawl: CrawlView
     private lateinit var notice: TextView
     private lateinit var textMode: android.widget.LinearLayout
     private lateinit var input: EditText
     private var controller: VoiceController? = null
+    private var replyBuf = ""
     private var session: HermesSession? = null
     @Volatile private var voiceUp = false
 
@@ -32,8 +32,7 @@ class RealtimeActivity : AppCompatActivity() {
         Seq.setContext(applicationContext)
 
         avatar = findViewById(R.id.rt_avatar)
-        stream = findViewById(R.id.rt_stream)
-        text = findViewById(R.id.rt_text)
+        crawl = findViewById(R.id.rt_crawl); crawl.setRole("reply")
         notice = findViewById(R.id.rt_mode_notice)
         textMode = findViewById(R.id.rt_textmode)
         input = findViewById(R.id.rt_input)
@@ -43,7 +42,7 @@ class RealtimeActivity : AppCompatActivity() {
         val model = intent.getStringExtra("model") ?: "hermes-agent"
         if (url.isNotBlank() && key.isNotBlank()) {
             session = HermesSession(url, key, model)
-            append("// connected → the entity")
+            VoxLog.d("// connected → the entity")
             startVoice()
         } else {
             enableTextMode("connect first (URL + key)")
@@ -81,20 +80,16 @@ class RealtimeActivity : AppCompatActivity() {
 
     private val listener = object : VoiceController.Listener {
         override fun onState(state: String) { runOnUiThread { avatar.setState(state) } }
-        override fun onDelta(d: String) { runOnUiThread { text.text = text.text.toString() + d } }
-        override fun onLog(line: String) { runOnUiThread { append(line); if (line.startsWith("◆ tool")) avatar.pulseTool() } }
-        override fun onReply(finalText: String) { runOnUiThread { text.text = finalText } }
+        override fun onDelta(d: String) { runOnUiThread { replyBuf += d; crawl.setText(replyBuf) } }
+        override fun onLog(line: String) { runOnUiThread { VoxLog.d(line); if (line.startsWith("◆ tool")) avatar.pulseTool() } }
+        override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; crawl.setText(replyBuf) } }
         override fun onError(msg: String) { runOnUiThread {
             append("// $msg")
             if (msg.contains("speech unavailable")) enableTextMode("voice unavailable here — type to the entity")
         } }
     }
 
-    private fun append(line: String) {
-        val t = stream.text.toString()
-        stream.text = ("$t\n$line").trim().takeLast(1400)
-        stream.post { stream.scrollTo(0, stream.height) }
-    }
+    private fun append(line: String) { VoxLog.d(line) }
 
     private fun startAvatarLoop() {
         val tick = object : Runnable { override fun run() { avatar.invalidate(); avatar.postDelayed(this, 30) } }
