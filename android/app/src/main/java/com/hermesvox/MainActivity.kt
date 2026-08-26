@@ -77,13 +77,11 @@ class MainActivity : AppCompatActivity() {
             openOnboarding(); return
         }
 
-        intentExtras()
-        connectFromPrefs()
-        wireButtons()
-        startAvatarLoop()
-        applyParticlePrefs()
-        // Warming splash: covers the whole screen until the voice models are loaded,
-        // so the user clearly sees the app is waiting (Christopher: can't tell if warm).
+        // Warming splash: created BEFORE the connection flow so autoOpenLine can
+        // toggle it. (Originally created after connectFromPrefs, so on a device where
+        // the mic permission + models are present autoOpenLine read warming.visibility
+        // before it was initialized -> UninitializedPropertyAccessException -> the app
+        // would not open at all. Cold-launch regression was 0.3.8.)
         warming = android.widget.TextView(this).apply {
             text = "Preparing your voice\u2026"
             textSize = 18f
@@ -97,6 +95,12 @@ class MainActivity : AppCompatActivity() {
         }
         (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
             .addView(warming, 0)
+
+        intentExtras()
+        connectFromPrefs()
+        wireButtons()
+        startAvatarLoop()
+        applyParticlePrefs()
         stageEntrance()
     }
 
@@ -133,13 +137,13 @@ class MainActivity : AppCompatActivity() {
         val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
         if (sttInstalled && !c.isWarm()) {
             // Models still loading: show the splash, re-check, don't open the mic.
-            warming.visibility = android.view.View.VISIBLE
+            if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
             status.text = "Warming up\u2026"
             mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
             return
         }
         lineOpen = true   // only now: we're about to run the line (re-entry guard held)
-        warming.visibility = android.view.View.GONE
+        if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // Keep the mic-type foreground service alive so the loop can use the mic
         // (Android 14+ needs a foreground mic service); it does NOT own a second
         // controller.
