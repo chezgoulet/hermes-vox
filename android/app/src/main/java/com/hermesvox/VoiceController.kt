@@ -47,6 +47,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val exec: ExecutorService = Executors.newCachedThreadPool()
     @Volatile private var commitRequested = false
     private val main = Handler(Looper.getMainLooper())
+    @Volatile private var turnDone = java.util.concurrent.CountDownLatch(1)
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
     @Volatile private var currentStream: String? = null
@@ -129,28 +130,42 @@ class VoiceController(private val context: Context, private val session: HermesS
             record = r
             r.startRecording()
             listener?.onLog("// hear → listening (offline whisper)")
+            val shortBuf = ShortArray(1024)
+            val collected = ArrayList<Float>(sr)
             exec.execute {
-                val shortBuf = ShortArray(1024)
-                val collected = ArrayList<Float>(sr)  // ~1s headroom, grows
-                var speechStarted = false; var silentMs = 0; val startMs = android.os.SystemClock.uptimeMillis()
-                while (listening && collected.size < sr * 15 && !commitRequested) {  // max 15s
-                    val n = r.read(shortBuf, 0, shortBuf.size)
-                    if (n <= 0) continue
-                    val frames = FloatArray(n); var rms = 0.0
-                    for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; rms += shortBuf[i].toDouble() * shortBuf[i] }
-                    val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
-                    else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.02f)   // sensitive RMS fallback
-                    if (spoke) { speechStarted = true; silentMs = 0 } else if (speechStarted) { silentMs += 64; if (silentMs > 800) break }
-                    if (speechStarted) { for (f in frames) collected.add(f) }
-                    if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
+                // ONE clean self-cycling loop. The OLD code re-listened via main.post{listenOffline()},
+                // spawning a SECOND loop while the first's audio was draining -> two clips -> two streams
+                // -> gateway 401 (double-fire). Now: capture -> VAD -> transcribe -> turn -> AWAIT -> re-listen.
+                while (listening) {
+                    loopActive = true
+                    commitRequested = false
+                    try { r.startRecording() } catch (_: Throwable) { break }
+                    listener?.onState("listening")
+                    listener?.onLog("// hear → listening (offline whisper)")
+                    var speechStarted = false; var silentMs = 0; val startMs = android.os.SystemClock.uptimeMillis()
+                    collected.clear()
+                    while (listening && collected.size < sr * 15 && !commitRequested) {
+                        val n = r.read(shortBuf, 0, shortBuf.size)
+                        if (n <= 0) continue
+                        val frames = FloatArray(n); var rms = 0.0
+                        for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; rms += shortBuf[i].toDouble() * shortBuf[i] }
+                        val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
+                        else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.02f)   // sensitive RMS fallback
+                        if (spoke) { speechStarted = true; silentMs = 0 } else if (speechStarted) { silentMs += 64; if (silentMs > 1000) break }
+                        if (speechStarted) for (f in frames) collected.add(f)
+                        if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
+                    }
+                    try { r.stop() } catch (_: Throwable) {}
+                    if (!speechStarted || collected.size < sr / 4) continue   // no speech -> cycle back
+                    val text = try { stt?.transcribe(collected.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
+                    VoxLog.d("stt: speechStarted=$speechStarted samples=${collected.size} transcript=${text?.take(120)}")
+                    if (text.isNullOrBlank()) continue
+                    turnDone = java.util.concurrent.CountDownLatch(1)
+                    val latch = turnDone
+                    main.post { runStreamedTurn(text) }
+                    try { latch.await() } catch (_: Throwable) {}
                 }
-                try { r.stop() } catch (_: Throwable) {}
-                try { r.release() } catch (_: Throwable) {}
-                commitRequested = false
-                if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (stt != null) listenOffline() else postListen() }; return@execute }
-                val text = stt?.transcribe(collected.toFloatArray(), sr)
-                VoxLog.d("stt: speechStarted=$speechStarted samples=${collected.size} transcript=${text?.take(120)}")
-                if (!text.isNullOrBlank()) runStreamedTurn(text) else if (listening) main.post { listenOffline() }
+                listener?.onState("idle")
             }
             true
         } catch (e: Throwable) {
@@ -286,6 +301,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 currentStream = null
                 turnInFlight = false
                 loopActive = false
+                turnDone.countDown()
             }
         }
     }
