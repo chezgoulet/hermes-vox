@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private var session: HermesSession? = null
     private var controller: VoiceController? = null
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
+    private var prevIdx = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
@@ -44,6 +45,14 @@ class MainActivity : AppCompatActivity() {
         reply = findViewById(R.id.reply)
         stream = findViewById(R.id.stream)
         avatar = findViewById(R.id.avatar)
+        // Tap the presence to cycle through its states/shapes (dev affordance +
+        // a delightful easter egg). Cleared on a real turn.
+        avatar.setOnClickListener {
+            prevIdx = (prevIdx + 1) % AvatarView.SHAPES.size
+            val n = AvatarView.SHAPES[prevIdx]
+            avatar.preview(n)
+            status.text = "presence: $n"
+        }
 
         // First run → onboarding (no stored endpoint/key yet).
         if (prefs.getString("url", "").orEmpty().isBlank() || prefs.getString("key", "").orEmpty().isBlank()) {

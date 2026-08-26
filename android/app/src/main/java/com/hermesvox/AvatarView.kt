@@ -3,194 +3,269 @@ package com.hermesvox
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
-import kotlin.math.abs
+import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 /**
- * AvatarView is the visual entity. A polished sci-fi orb that reacts + moves
- * with the REAL agent state fed by the streamed turn (state transitions,
- * incremental speech, tool-progress pulses). States:
- *   idle     — calm breathing orb with a soft cyan glow
- *   listening— attends, expands, a green ring reacts to the mic
- *   thinking — the agent is working: a rotating energy arc (brighter/faster
- *              when a tool is actually running), a work shimmer
- *   speaking — a geometric waveform "mouth" + violet glow, pulsing to the voice
- * Tool-progress is a dedicated flash ([pulseTool]) — the SSE function_call feed.
+ * AvatarView — the generative particle-being of Hermes Vox ("a wisp of the
+ * House"). A field of light-points that = the presence. By default they form a
+ * soft iris aperture (the gaze); they REARRANGE into shapes that express the
+ * agent's work — reacting to state, workload, and the tool being called.
+ *
+ * Each particle is a physics point that springs toward a target emitted by the
+ * active Shape. Shapes are GENERATIVE (parametric functions of time, workload,
+ * and a per-call seed), so no two states ever look identical — this is the
+ * generative-UI layer Christopher asked for.
  */
 class AvatarView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    private val orb = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val path = Path()
-    private val shaderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var shaderCache: Shader? = null
-    private var shaderColor = 0
+    private data class P(
+        var x: Float, var y: Float, var vx: Float, var vy: Float,
+        var color: Int, var alpha: Float, var size: Float, val phase: Float,
+        var bright: Float
+    )
 
-    private var t = 0f
-    @Volatile private var level = 0f            // 0..1 (mic/voice energy)
-    @Volatile private var working = false       // a tool is actually running
-    @Volatile private var state = "idle"
-    @Volatile private var stateBlend = 1f       // eased transition between states
-    @Volatile private var targetColor = Color.rgb(0, 229, 255)
-    @Volatile private var color = targetColor
-    @Volatile private var toolPulse = 0f        // decays after each tool call
-    private val max = kotlin.math.max(0f, 1f)
+    companion object {
+        const val COUNT = 240
+        val SHAPES = listOf("iris", "listening", "vortex", "scan", "bracket",
+            "constellation", "lumen", "waveform", "bloom")
+    }
 
-    private val idle = Color.rgb(0, 229, 255)
-    private val listen = Color.rgb(52, 211, 153)
-    private val think = Color.rgb(251, 191, 36)
-    private val speak = Color.rgb(139, 92, 246)
+    private val parts = ArrayList<P>(COUNT)
+    private var state = "idle"; private var tool: String? = null
+    private var workload = 0f; private var amp = 0f
+    private var time = 0f; private var lastNanos = 0L
+    private var seed = 1
+    private val rnd = Random(seed)
+    private val cIdle = 0xFF6FB7C9.toInt(); private val cListen = 0xFF34D399.toInt()
+    private val cThink = 0xFFFBBF24.toInt(); private val cSpeak = 0xFF8B5CF6.toInt()
+    private val cCyan = 0xFF2AC3DC.toInt(); private val cViolet = 0xFF8B5CF6.toInt();
+    private val cWhite = 0xFFEAF7FF.toInt()
 
-    fun setState(s: String) { state = s.lowercase(); invalidate() }
-    fun setLevel(l: Float) { level = l.coerceIn(0f, 1f); invalidate() }
-    fun setWorking(w: Boolean) { working = w; invalidate() }
-    fun setStateLevel(s: String, l: Float, w: Boolean) { state = s.lowercase(); level = l.coerceIn(0f, 1f); working = w; invalidate() }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var glowShader: Shader? = null
+    private var centered = false
 
-    /** Flash when a tool call arrives (feed from SSE function_call items). */
-    fun pulseTool() { toolPulse = 1f; invalidate() }
+    private val cx get() = width / 2f; private val cy get() = height / 2f
+    private val R get() = (minOf(width, height) * 0.32f).coerceAtLeast(60f)
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        t += 0.02f
-        stateBlend = (stateBlend + 0.06f).coerceAtMost(1f)
-        toolPulse = (toolPulse - 0.03f).coerceAtLeast(0f)
-
-        val cx = width / 2f
-        val cy = height / 2f
-        val r = min(width, height) * 0.30f
-
-        targetColor = when (state) {
-            "listening" -> listen
-            "thinking" -> think
-            "speaking" -> speak
-            else -> idle
-        }
-        color = lerpColor(color, targetColor, 0.12f)
-
-        drawGlow(canvas, cx, cy, r)
-        when (state) {
-            "listening" -> drawListening(canvas, cx, cy, r)
-            "thinking" -> drawThinking(canvas, cx, cy, r)
-            "speaking" -> drawSpeaking(canvas, cx, cy, r)
-            else -> drawIdle(canvas, cx, cy, r)
+    init {
+        val r = Random(7)
+        for (i in 0 until COUNT) {
+            val ph = i / COUNT.toFloat()
+            parts.add(P(
+                cx + (r.nextFloat() - 0.5f) * 40f, cy + (r.nextFloat() - 0.5f) * 40f,
+                0f, 0f, cIdle, 0.5f, 2f + r.nextFloat() * 3f, ph, 1f
+            ))
         }
     }
 
-    private fun drawGlow(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        // A soft radial aura that swells with energy/tool activity.
-        val pulseR = r * (1.6f + 0.18f * sin(t * 1.6f) + 0.6f * toolPulse + 0.35f * level)
-        val a = ((120 + 90 * level + 150 * toolPulse).toInt()).coerceAtMost(220)
-        if (shaderColor != color || shaderCache == null) {
-            shaderColor = color
-            shaderCache = RadialGradient(cx, cy, pulseR, color, 0x00000000, Shader.TileMode.CLAMP)
+    // ---- Public API (work-aware) -----------------------------------------
+
+    /** Principal entry: state idle|listening|thinking|streaming|speaking.
+     *  tool e.g. "shell","web","file","memory","download","tts" (null = none).
+     *  workload 0..1 (effort intensity). amp 0..1 (voice amplitude). */
+    fun setPresent(state: String, tool: String?, workload: Float, amp: Float) {
+        this.state = state.lowercase()
+        this.tool = tool
+        this.workload = workload.coerceIn(0f, 1f)
+        this.amp = amp.coerceIn(0f, 1f)
+    }
+
+    fun setState(s: String) { state = s.lowercase() }
+    fun setStateLevel(s: String, l: Float, w: Boolean) {
+        state = s.lowercase(); amp = l.coerceIn(0f, 1f); workload = if (w) maxOf(workload, 0.4f) else 0f
+    }
+    fun setWorking(w: Boolean) { setPresent(state, tool, if (w) maxOf(workload, 0.5f) else 0f, amp) }
+    fun pulseTool() { seed++; setPresent("thinking", tool, minOf(1f, workload + 0.35f), amp) }
+
+    /** Preview/checkpoint hook: force an explicit shape + state for screenshots. */
+    fun preview(name: String) {
+        val n = name.lowercase()
+        val (st, tk) = when (n) {
+            "listening" -> "listening" to null
+            "vortex" -> "thinking" to null
+            "scan" -> "thinking" to "web"      // search/scan motif
+            "bracket" -> "thinking" to "shell" // terminal motif
+            "constellation" -> "thinking" to "memory"
+            "lumen" -> "streaming" to null
+            "waveform" -> "speaking" to null
+            "bloom" -> "settle" to null
+            else -> "idle" to null
         }
-        shaderPaint.shader = shaderCache
-        shaderPaint.alpha = a
-        canvas.drawCircle(cx, cy, pulseR, shaderPaint)
-        shaderPaint.shader = null
+        state = st; tool = tk; workload = if (st == "thinking") 0.7f else 0.15f; amp = 0.4f
+        invalidate()
     }
 
-    // Calm breathing orb.
-    private fun drawIdle(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val pulse = 1f + 0.045f * sin(t)
-        orb.style = Paint.Style.FILL
-        orb.color = color
-        orb.shader = LinearGradient(cx - r, cy - r, cx + r, cy + r,
-            withAlpha(color, 255), withAlpha(color, 170), Shader.TileMode.CLAMP)
-        canvas.drawCircle(cx, cy, r * pulse, orb)
-        orb.shader = null
-        ring.strokeWidth = 2f
-        ring.color = withAlpha(color, 110)
-        canvas.drawCircle(cx, cy, r * pulse + 6f, ring)
-        // tiny inner pulse
-        orb.style = Paint.Style.FILL
-        orb.color = withAlpha(Color.WHITE, (12 + 10 * sin(t)).toInt())
-        canvas.drawCircle(cx, cy, r * pulse * 0.5f, orb)
+    // ---- Physics + draw ---------------------------------------------------
+
+    private fun tick() {
+        val now = System.nanoTime()
+        val dt = if (lastNanos == 0L) 0.016f else ((now - lastNanos) / 1e9f).coerceIn(0.001f, 0.05f)
+        lastNanos = now
+        time += dt
+        for (p in parts) {
+            val tgt = targetOf(p)
+            val stiff = 120f
+            p.vx += -(p.x - tgt.first) * stiff * dt * 0.5f
+            p.vy += -(p.y - tgt.second) * stiff * dt * 0.5f
+            p.vx *= (1f - 2.4f * dt); p.vy *= (1f - 2.4f * dt)
+            val bob = sin(time * 1.4f + p.phase * 8f) * 6f / sqrt(1f + workload * 3f)
+            p.x += p.vx * dt * 60f + bob * dt * 30f
+            p.y += p.vy * dt * 60f + cos(time * 1.1f + p.phase * 7f) * 4f * dt * 30f
+        }
     }
 
-    // Attends / listens: expands with the mic level, green ring reacts.
-    private fun drawListening(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val perked = 1f + 0.14f * level
-        orb.style = Paint.Style.FILL
-        orb.color = color
-        canvas.drawCircle(cx, cy - 6f * level, r * perked, orb)
-        // two "eyes" that widen with the level
-        canvas.drawCircle(cx - r * 0.34f, cy - r * 0.16f, r * (0.11f + 0.07f * level), orb)
-        canvas.drawCircle(cx + r * 0.34f, cy - r * 0.16f, r * (0.11f + 0.07f * level), orb)
-        // soft outer ring pulsing with the voice
-        ring.strokeWidth = 3f
-        ring.color = withAlpha(color, (110 + 160 * level).toInt())
-        canvas.drawCircle(cx, cy, r * (1.3f + 0.06f * sin(t)), ring)
-    }
+    private fun targetOf(p: P): Pair<Float, Float> = place(p, state, tool, time, workload, cx, cy, R, seed)
 
-    // The agent is reasoning / doing work: a rotating energy arc + shimmer.
-    private fun drawThinking(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val speed = if (working) 4f else 1.5f
-        val beat = 1f + 0.05f * sin(t * 2f)
-        orb.style = Paint.Style.FILL
-        orb.color = withAlpha(color, 200)
-        canvas.drawCircle(cx, cy, r * 0.82f * beat, orb)
-        // pulsing ring = effort
-        ring.strokeWidth = 4f
-        ring.color = withAlpha(color, 180)
-        canvas.drawCircle(cx, cy, r * (1.22f + 0.15f * sin(t * 3f)), ring)
-        // rotating energy arc
-        canvas.save()
-        canvas.rotate(t * 60f * speed, cx, cy)
-        ring.strokeWidth = 6f
-        ring.color = withAlpha(color, 220)
-        val span = if (working || toolPulse > 0f) 200f else 120f
-        canvas.drawArc(cx - r * 0.6f, cy - r * 0.6f, cx + r * 0.6f, cy + r * 0.6f, 0f, span, false, ring)
-        canvas.restore()
-        if (working) {
-            // chatter shimmer — the agent is calling tools
-            orb.color = withAlpha(Color.WHITE, (30 + 30 * toolPulse).toInt())
-            val n = 3
-            for (i in 0 until n) {
-                val a = t * 2f + i * (Math.PI * 2 / n).toFloat()
-                canvas.drawCircle(cx + cos(a) * r * 0.7f, cy + sin(a) * r * 0.7f, r * 0.05f, orb)
+    /** The generative shape function. Returns (x, y) target for a particle. */
+    private fun place(p: P, st: String, tk: String?, t: Float, wl: Float,
+                      cx: Float, cy: Float, R: Float, seed: Int): Pair<Float, Float> {
+        val ph = p.phase; val a = ph * 2f * PI.toFloat()
+        return when (st) {
+            "listening" -> {
+                val open = 1f
+                val r = R * (0.62f + 0.34f * open) * (1f + 0.05f * sin(t * 2f + ph * 6f))
+                cx + cos(a) * r to cy + sin(a) * r * 0.9f
+            }
+            "thinking" -> when (tk) {
+                "web", "search" -> { // radial scan: sweeping arcs
+                    val speed = 1.6f + wl * 2.2f
+                    val band = (ph * 3f + wl * 2f)
+                    val rr = R * (0.5f + 0.5f * frac(ph * 3f + t * 0.4f * speed))
+                    val ang = a * 0.6f + t * speed
+                    cx + cos(ang + band) * rr to cy + sin(ang + band) * rr
+                }
+                "shell" -> { // terminal bracket: a sharp [ ] frame
+                    val seg = (ph * 12f).toInt(); val fx = frac(ph * 4f)
+                    val jx = hash(ph, seed, 0) * R * 0.4f - R * 0.2f
+                    val jy = hash(ph, seed, 1) * R * 0.4f - R * 0.2f
+                    when {
+                        seg < 2 -> cx - R * 0.9f to cy - R + fx * 2f * R
+                        seg < 4 -> cx - R * 0.9f + fx * R * 1.8f to cy - R
+                        seg < 6 -> cx - R * 0.9f + fx * R * 1.8f to cy + R
+                        seg < 8 -> cx + R * 0.9f to cy - R + fx * 2f * R
+                        seg < 10 -> cx - R * 0.65f + fx * R * 1.3f to cy + (jy)
+                        else -> cx + jx to cy + jy   // blinking cursor cluster
+                    }
+                }
+                "memory" -> { // constellation: seeded nodes + threads
+                    val n = (seed % 8) + 3
+                    val node = (ph * n).toInt().coerceIn(0, n - 1)
+                    val na = (node / n.toFloat()) * 2f * PI.toFloat() + (seed % 10) * 0.3f
+                    val nr = R * 0.7f * (0.6f + (node % 3) * 0.2f)
+                    cx + cos(na) * nr to cy + sin(na) * nr
+                }
+                "file" -> { // fold: a serpentine write-line
+                    val fx = frac(ph * 2f + t * 0.35f)
+                    cx - R * 0.9f + fx * R * 1.8f to cy + sin(fx * 6f) * R * 0.4f
+                }
+                else -> { // vortex: a genuine spiraling gyre (log-spiral arm, rotating)
+                    val arm = p.phase                       // 0..1 along the arm
+                    val ang = arm * 2f * 2f * PI.toFloat()  // ~2 turns
+                    val r = R * (0.16f + 0.74f * arm) * (1f + 0.06f * sin(t * 4f + arm * 9f))
+                    val spin = t * (2f + wl * 5f)           // effort ramps the spin
+                    cx + cos(ang + spin) * r to cy + sin(ang + spin) * r * 0.96f
+                }
+            }
+            "streaming" -> { // lumen: a light-streamer trailing the reply
+                val fx = frac(ph * 2f + t * 0.6f)
+                cx - R * 0.8f + fx * R * 2.2f to cy + sin(fx * 9f + t * 2f) * R * 0.5f * (1f - fx * 0.4f)
+            }
+            "speaking" -> { // waveform mouth that pulses with the voice
+                val r = R * 0.72f
+                val x = cx + cos(a) * r; val y = cy + sin(a) * r
+                // open a mouth aperture toward the bottom; pulse with amp
+                val mouth = sin(ph * 6f + t * 12f) * amp * R * 0.22f
+                x to y + (if (sin(a) > 0.2f) mouth else 0f)
+            }
+            "settle", "bloom" -> { // outward burst from the busy shape
+                val p = frac(t * 0.7f)
+                val rr = R * (0.2f + p * 0.9f)
+                cx + cos(a) * rr to cy + sin(a) * rr
+            }
+            else -> { // iris: default soft aperture (the gaze)
+                val open = 1f - 0.3f * wl
+                val ring = R * 0.7f
+                val inner = R * 0.28f
+                // form an annulus; particles near the center form the aperture rim
+                val r = if (frac(p.phase * 2f) < 0.82f) {
+                    ring * (0.94f + 0.06f * sin(t * 1.4f + ph * 6f))
+                } else inner * open
+                cx + cos(a) * r to cy + sin(a) * r
             }
         }
     }
 
-    // Speaking: a geometric waveform "mouth", violet glow pulsing to the voice.
-    private fun drawSpeaking(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        orb.style = Paint.Style.FILL
-        orb.color = withAlpha(color, 220)
-        canvas.drawCircle(cx, cy, r * 0.9f, orb)
-        path.reset()
-        val n = 7
-        val bw = r * 0.10f
-        val gap = r * 0.055f
-        val startX = cx - (n * (bw + gap)) / 2f
-        val v = (level * 0.7f + 0.3f).coerceAtLeast(0.15f)
-        for (i in 0 until n) {
-            val h = r * (0.12f + 0.7f * v * (0.4f + 0.6f * absSin(t * 6f + i)))
-            path.addRect(startX + i * (bw + gap), cy - h / 2f, startX + i * (bw + gap) + bw, cy + h / 2f, Path.Direction.CW)
+    override fun onDraw(canvas: Canvas) {
+        if (!centered && width > 0 && height > 0) {
+            val r = java.util.Random(7)
+            for (p in parts) {
+                p.x = cx + (r.nextFloat() - 0.5f) * minOf(width, height) * 0.25f
+                p.y = cy + (r.nextFloat() - 0.5f) * minOf(width, height) * 0.25f
+            }
+            centered = true
         }
-        canvas.drawPath(path, orb)
+        tick()
+        val t = time; val wl = workload
+        val base = stateColor(state)
+        for (p in parts) {
+            // ease color toward the state hue (drift particles for context)
+            p.color = lerpColor(p.color, base, 0.06f)
+            val ta = baseAlpha(state, p, wl)
+            p.alpha = p.alpha + (ta - p.alpha) * 0.08f
+            p.size = 2.6f + p.phase * 2.0f + wl * 1.6f
+            // glowing dot
+            val r = p.size
+            glowShader = RadialGradient(p.x, p.y, r * 4.5f,
+                intArrayOf(withAlpha(p.color, (p.alpha * 255).toInt()),
+                    withAlpha(p.color, 0)), null, Shader.TileMode.CLAMP)
+            fill.shader = glowShader
+            canvas.drawCircle(p.x, p.y, r * 4.5f, fill)
+            fill.shader = null
+            // bright core
+            fill.color = withAlpha(Color.WHITE, (p.alpha * 255).toInt())
+            canvas.drawCircle(p.x, p.y, r * 0.62f, fill)
+        }
+        // always animate
+        postInvalidateOnAnimation()
     }
 
-    private fun absSin(x: Float): Float = if (sin(x) >= 0) sin(x) else -sin(x)
-
-    private fun withAlpha(c: Int, a: Int): Int = Color.argb(a.coerceIn(0, 255), Color.red(c), Color.green(c), Color.blue(c))
-
-    private fun lerpColor(a: Int, b: Int, f: Float): Int =
-        Color.rgb(
-            (Color.red(a) + (Color.red(b) - Color.red(a)) * f).toInt(),
-            (Color.green(a) + (Color.green(b) - Color.green(a)) * f).toInt(),
-            (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * f).toInt()
+    private fun stateColor(st: String): Int = when (st) {
+        "listening" -> cListen
+        "thinking" -> if (workload > 0.55f) lerpColor(cThink, cViolet, 0.4f) else cThink
+        "streaming" -> cCyan
+        "speaking" -> lerpColor(cViolet, cCyan, 0.4f + amp * 0.2f)
+        else -> lerpColor(cIdle, cCyan, 0.3f + amp * 0.2f)
+    }
+    private fun baseAlpha(st: String, p: P, wl: Float): Float = when (st) {
+        "speaking" -> 0.6f + amp * 0.4f
+        "thinking" -> 0.6f + wl * 0.32f
+        "streaming" -> 0.62f + 0.3f * sin(time * 4f + p.phase * 6f)
+        else -> 0.55f + 0.12f * sin(time * 2f + p.phase * 6f)
+    }
+    private fun lerpColor(a: Int, b: Int, f: Float): Int {
+        val ff = f.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(a) * (1 - ff) + Color.red(b) * ff).toInt(),
+            (Color.green(a) * (1 - ff) + Color.green(b) * ff).toInt(),
+            (Color.blue(a) * (1 - ff) + Color.blue(b) * ff).toInt()
         )
+    }
+    private fun hash(a: Float, b: Int, k: Int): Float {
+        val x = a * 127.1f + b * 311.7f + k * 74.7f
+        return frac(x * 1000f)  // deterministic 0..1
+    }
+    private fun withAlpha(c: Int, a: Int): Int = Color.argb(a.coerceIn(0, 255), Color.red(c), Color.green(c), Color.blue(c))
+    private fun frac(x: Float): Float = x - Math.floor(x.toDouble()).toFloat()
 }
