@@ -33,8 +33,9 @@ class ModelDownloader(private val context: Context) {
             // Keep the CPU/network alive so a large download survives Doze /
             // backgrounding (the app is often backgrounded during a download).
             val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-            val wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:model-dl")
-            wl.acquire(30 * 60 * 1000L)
+            var wl: android.os.PowerManager.WakeLock? = null
+            try { wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:model-dl"); wl.acquire(30 * 60 * 1000L) } catch (_: Throwable) {}
+
             try {
                 val err = doDownload(spec, listener)
                 if (cancelled) listener.onError(spec.id, "cancelled")
