@@ -14,7 +14,8 @@ import com.hermesvox.mobile.HermesSession
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
-import kotlin.concurrent.thread
+import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorService
 
 /**
  * VoiceController is the phone-side "front of house" for a warm voice turn:
@@ -42,6 +43,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var stt: VoxStt? = null
     private var vad: SileroVadGate? = null
     private var record: AudioRecord? = null
+    private var bargeRecord: AudioRecord? = null
+    private val exec: ExecutorService = Executors.newCachedThreadPool()
+    @Volatile private var commitRequested = false
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
@@ -99,11 +103,11 @@ class VoiceController(private val context: Context, private val session: HermesS
             record = r
             r.startRecording()
             listener?.onLog("// hear → listening (offline whisper)")
-            thread {
+            exec.execute {
                 val shortBuf = ShortArray(1024)
                 val collected = ArrayList<Float>(sr)  // ~1s headroom, grows
                 var speechStarted = false; var silentMs = 0; val startMs = android.os.SystemClock.uptimeMillis()
-                while (listening && collected.size < sr * 15) {  // max 15s
+                while (listening && collected.size < sr * 15 && !commitRequested) {  // max 15s
                     val n = r.read(shortBuf, 0, shortBuf.size)
                     if (n <= 0) continue
                     val frames = FloatArray(n); var rms = 0.0
@@ -114,7 +118,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
                 }
                 r.stop(); r.release()
-                if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (sttReady) listenOffline() else listen() }; return@thread }
+                commitRequested = false
+                if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (sttReady) listenOffline() else listen() }; return@execute }
                 val text = stt?.transcribe(collected.toFloatArray(), sr)
                 if (!text.isNullOrBlank()) runStreamedTurn(text) else if (listening) main.post { listenOffline() }
             }
@@ -125,13 +130,17 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
+    /** Walkie PTT release: commit the current utterance now (process the buffer). */
+    fun commitUtterance() { commitRequested = true }
+
     fun stop() {
         listening = false
         recognizer?.destroy(); recognizer = null
         stopTts()
         stopBargeInWatch()
         try { record?.stop(); record?.release() } catch (_: Exception) {}
-        record = null
+        try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
+        record = null; bargeRecord = null
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
         tts?.shutdown()
@@ -201,7 +210,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun runStreamedTurn(text: String) {
         listener?.onState("thinking")
         listener?.onLog("// you → $text")
-        thread {
+        exec.execute {
             try {
                 val sid = session.startStream(text)
                 VoxLog.d("startStream -> $sid")
@@ -329,11 +338,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return
         try {
-            record = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
-            val r = record ?: return
+            bargeRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            val r = bargeRecord ?: return
             if (r.state != AudioRecord.STATE_INITIALIZED) return
             r.startRecording()
-            thread {
+            exec.execute {
                 val buf = ShortArray(minBuf)
                 while (bargeInArmed && r.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                     val n = r.read(buf, 0, buf.size)
@@ -362,8 +371,8 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun stopBargeInWatch() {
         bargeInArmed = false
-        try { record?.stop(); record?.release() } catch (_: Exception) {}
-        record = null
+        try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
+        bargeRecord = null
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }

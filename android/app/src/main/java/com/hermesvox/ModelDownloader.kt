@@ -82,10 +82,16 @@ class ModelDownloader(private val context: Context) {
     }
 
     private fun unpkg(zip: File, dir: File) {
+        val canon = dir.canonicalPath
         ZipInputStream(BufferedInputStream(zip.inputStream())).use { zis ->
             var e = zis.nextEntry
             while (e != null) {
-                val target = File(dir, e.name).apply { parentFile?.mkdirs() }
+                val target = File(dir, e.name)
+                // zip-slip guard: never let an entry escape the model dir
+                if (!target.canonicalPath.startsWith(canon + File.separator)) {
+                    zis.closeEntry(); e = zis.nextEntry; continue
+                }
+                target.parentFile?.mkdirs()
                 if (!e.isDirectory) {
                     FileOutputStream(target).use { out ->
                         val buf = ByteArray(64 * 1024); var n: Int

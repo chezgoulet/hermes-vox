@@ -71,7 +71,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // First run → onboarding (no stored endpoint/key yet).
-        if (prefs.getString("url", "").orEmpty().isBlank() || prefs.getString("key", "").orEmpty().isBlank()) {
+        if (prefs.getString("url", "").orEmpty().isBlank() || storedKey().isBlank()) {
             openOnboarding(); return
         }
 
@@ -92,7 +92,7 @@ class MainActivity : AppCompatActivity() {
         val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
         val m = intent.getStringExtra("model"); val say = intent.getStringExtra("say")
         if (!u.isNullOrBlank() && !k.isNullOrBlank()) {
-            prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").putString("key", k).apply()
+            prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").putString("key", (SecureStore.encrypt(k) ?: k)).apply()
         }
         if (!say.isNullOrBlank()) { intent.removeExtra("say"); autoSend = say }
     }
@@ -113,9 +113,12 @@ class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
     }
 
+    // The entity API key is encrypted at rest (Keystore); legacy plaintext decrypts as-is.
+    private fun storedKey() = SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty()
+
     private fun connectFromPrefs() {
         val u = prefs.getString("url", "").orEmpty()
-        val k = prefs.getString("key", "").orEmpty()
+        val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
         if (u.isBlank() || k.isBlank()) return
         session = HermesSession(u, k, m)
@@ -133,7 +136,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.send).setOnClickListener { send(input.text.toString()) }
         findViewById<Button>(R.id.mic).setOnTouchListener { v, ev ->
             if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) { talk(); v.isPressed = true }
-            else if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) { v.isPressed = false }
+            else if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) { v.isPressed = false; controller?.commitUtterance() }
+            else if (ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL) { v.isPressed = false; controller?.commitUtterance() }
             true
         }
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
@@ -251,7 +255,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openRealtime() {
-        val u = prefs.getString("url", "").orEmpty(); val k = prefs.getString("key", "").orEmpty()
+        val u = prefs.getString("url", "").orEmpty(); val k = storedKey()
         if (u.isBlank() || k.isBlank()) { status.text = "Connect first"; return }
         startActivity(Intent(this, RealtimeActivity::class.java)
             .putExtra("url", u).putExtra("key", k).putExtra("model", prefs.getString("model", "hermes-agent"))); overridePendingTransition(R.anim.fade_in, R.anim.fade_out)

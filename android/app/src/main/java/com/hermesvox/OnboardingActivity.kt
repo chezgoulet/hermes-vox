@@ -34,7 +34,7 @@ class OnboardingActivity : AppCompatActivity() {
         model = findViewById(R.id.model)
         model.setText(prefs.getString("model", "hermes-agent"))
         url.setText(prefs.getString("url", ""))
-        key.setText(prefs.getString("key", ""))
+        key.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
 
         findViewById<Button>(R.id.connect).setOnClickListener { connectAndVerify() }
         findViewById<TextView>(R.id.skip).setOnClickListener { goMain() }
@@ -54,7 +54,7 @@ class OnboardingActivity : AppCompatActivity() {
             runOnUiThread {
                 btn.isEnabled = true; btn.text = getString(R.string.hv_connect_verify)
                 if (ok) {
-                    prefs.edit().putString("url", u).putString("model", m).putString("key", k).apply()
+                    prefs.edit().putString("url", u).putString("model", m).putString("key", (SecureStore.encrypt(k) ?: k)).apply()
                     Toast.makeText(this, "Connected → the entity", Toast.LENGTH_SHORT).show()
                     goMain()
                 } else {

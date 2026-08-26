@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -37,6 +38,7 @@ class AvatarView @JvmOverloads constructor(
 
     companion object {
         const val COUNT = 320
+        const val GLOW_PX = 64f
         val SHAPES = listOf("iris", "listening", "vortex", "scan", "bracket",
             "constellation", "lumen", "waveform", "bloom")
     }
@@ -53,7 +55,8 @@ class AvatarView @JvmOverloads constructor(
     private val cWhite = 0xFFEAF7FF.toInt()
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var glowShader: Shader? = null
+    private val glows = HashMap<Int, Bitmap>()
+    private val mat = android.graphics.Matrix()
     private var centered = false
 
     private val cx get() = width / 2f; private val cy get() = height / 2f
@@ -68,6 +71,18 @@ class AvatarView @JvmOverloads constructor(
                 0f, 0f, cIdle, 0.5f, 2f + r.nextFloat() * 3f, ph, 1f
             ))
         }
+        // Pre-bake the glow for the finite state colors (no per-frame gradient alloc).
+        for (c in intArrayOf(cIdle, cListen, cThink, cSpeak, cCyan)) glows[c] = glowBitmap(c)
+    }
+
+    private fun glowBitmap(color: Int): Bitmap {
+        val s = GLOW_PX.toInt()
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.shader = RadialGradient(s / 2f, s / 2f, s / 2f, color, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        c.drawCircle(s / 2f, s / 2f, s / 2f, p)
+        return bmp
     }
 
     // ---- Public API (work-aware) -----------------------------------------
@@ -235,25 +250,33 @@ class AvatarView @JvmOverloads constructor(
         val t = time; val wl = workload
         val base = stateColor(state)
         for (p in parts) {
-            // ease color toward the state hue (drift particles for context)
             p.color = lerpColor(p.color, base, 0.06f)
             val ta = baseAlpha(state, p, wl)
             p.alpha = p.alpha + (ta - p.alpha) * 0.08f
             p.size = 3.2f + p.phase * 2.4f + wl * 2.0f
-            // glowing dot
             val r = p.size
-            glowShader = RadialGradient(p.x, p.y, r * 5.5f,
-                intArrayOf(withAlpha(p.color, (p.alpha * 255).toInt()),
-                    withAlpha(p.color, 0)), null, Shader.TileMode.CLAMP)
-            fill.shader = glowShader
-            canvas.drawCircle(p.x, p.y, r * 5.5f, fill)
-            fill.shader = null
+            // single pre-made glow bitmap, drawn scaled — NO per-frame gradient alloc
+            val glow = glowFor(p.color)
+            fill.alpha = (p.alpha * 255).toInt()
+            mat.reset()
+            mat.setTranslate(p.x, p.y)
+            mat.preScale((r * 5.5f) / GLOW_PX, (r * 5.5f) / GLOW_PX)
+            mat.preTranslate(-GLOW_PX / 2f, -GLOW_PX / 2f)
+            canvas.drawBitmap(glow, mat, fill)
             // bright core
             fill.color = withAlpha(Color.WHITE, (p.alpha * 255).toInt())
             canvas.drawCircle(p.x, p.y, r * 0.68f, fill)
         }
+        fill.alpha = 255
         // always animate
         postInvalidateOnAnimation()
+    }
+
+    private fun glowFor(color: Int): Bitmap =
+        glows.keys.minByOrNull { colDist(it, color) }?.let { glows[it] } ?: glows.values.firstOrNull()!!
+    private fun colDist(a: Int, b: Int): Int {
+        val dr = Color.red(a) - Color.red(b); val dg = Color.green(a) - Color.green(b); val db = Color.blue(a) - Color.blue(b)
+        return dr * dr + dg * dg + db * db
     }
 
     private fun stateColor(st: String): Int = when (st) {
