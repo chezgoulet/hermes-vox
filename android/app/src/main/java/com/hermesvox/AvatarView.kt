@@ -82,6 +82,17 @@ class AvatarView @JvmOverloads constructor(
         this.amp = amp.coerceIn(0f, 1f)
     }
 
+    /** LIVE tool-call hook: the being gathers into the work-state + the tool's
+     *  motif, and ramps its energy with the workload. Re-seeds the generative
+     *  shape so each call is distinct. */
+    fun onTool(tool: String?, workload: Float) {
+        this.tool = tool
+        this.state = "thinking"
+        this.workload = workload.coerceIn(0f, 1f)
+        seed++
+        invalidate()
+    }
+
     fun setState(s: String) { state = s.lowercase() }
     fun setStateLevel(s: String, l: Float, w: Boolean) {
         state = s.lowercase(); amp = l.coerceIn(0f, 1f); workload = if (w) maxOf(workload, 0.4f) else 0f
@@ -116,10 +127,10 @@ class AvatarView @JvmOverloads constructor(
         time += dt
         for (p in parts) {
             val tgt = targetOf(p)
-            val stiff = 120f
+            val stiff = 240f
             p.vx += -(p.x - tgt.first) * stiff * dt * 0.5f
             p.vy += -(p.y - tgt.second) * stiff * dt * 0.5f
-            p.vx *= (1f - 2.4f * dt); p.vy *= (1f - 2.4f * dt)
+            p.vx *= (1f - 3.6f * dt); p.vy *= (1f - 3.6f * dt)
             val bob = sin(time * 1.4f + p.phase * 8f) * 6f / sqrt(1f + workload * 3f)
             p.x += p.vx * dt * 60f + bob * dt * 30f
             p.y += p.vy * dt * 60f + cos(time * 1.1f + p.phase * 7f) * 4f * dt * 30f

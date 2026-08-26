@@ -34,6 +34,7 @@ class MainActivity : AppCompatActivity() {
     private var prevIdx = 0
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
+    private var toolCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
@@ -145,6 +146,7 @@ class MainActivity : AppCompatActivity() {
     private val listener = object : VoiceController.Listener {
         override fun onState(state: String) {
             runOnUiThread {
+                if (state != "thinking") toolCount = 0   // a new turn begins
                 status.text = when (state) {
                     "listening" -> "Listening…"
                     "thinking" -> "The entity is working…"
@@ -161,13 +163,30 @@ class MainActivity : AppCompatActivity() {
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
-            if (line.startsWith("◆ tool")) avatar.pulseTool()
+            if (line.startsWith("◆ tool: ")) {
+                // a tool was CALLED — the being gathers into the tool's motif + ramps
+                toolCount++
+                val nm = line.removePrefix("◆ tool: ").substringBefore('{').substringBefore(' ').trim()
+                avatar.onTool(mapTool(nm), minOf(1f, toolCount * 0.3f))
+            } else if (line.startsWith("◆ tool · ")) {
+                avatar.pulseTool()   // a tool RESULT landed — brief work pulse
+            }
         } }
         override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; reply.setText(replyBuf) } }
         override fun onError(msg: String) { runOnUiThread {
             status.text = if (msg.contains("interrupt")) "You interrupted" else msg
             avatar.setState("idle"); appendStream("// $msg")
         } }
+    }
+
+    // SSE tool name -> being shape motif (null = default vortex/compile gyre).
+    private fun mapTool(name: String): String? = when {
+        name.contains("terminal") || name.contains("shell") || name.contains("exec") -> "shell"
+        name.contains("web") || name.contains("search") || name.contains("extract") -> "web"
+        name.contains("file") || name.contains("write") || name.contains("read") || name.contains("search_files") -> "file"
+        name.contains("memory") || name.contains("recall") || name.contains("ragamuffin") -> "memory"
+        name.contains("download") || name.contains("model") -> "download"
+        else -> null
     }
 
     private fun openSettings() { startActivity(Intent(this, SettingsActivity::class.java)); overridePendingTransition(R.anim.slide_in, R.anim.fade_out) }
