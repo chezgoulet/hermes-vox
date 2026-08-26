@@ -91,8 +91,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
-                arrayOf("System (fallback)", "Kokoro", "Piper", "RX 590", "Odroid"),
-                arrayOf("system", "kokoro", "piper", "rx590", "odroid"), "tts", R.id.set_tts_val)
+                arrayOf("System (fallback)", "Kokoro", "Piper (on-device)"),
+                arrayOf("system", "kokoro", "piper"), "tts", R.id.set_tts_val)
         }
         findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
             pick("Voice", arrayOf("System", "Warm", "Bright", "Deep"),
@@ -101,6 +101,9 @@ class SettingsActivity : AppCompatActivity() {
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
+        val speak = findViewById<SwitchCompat>(R.id.set_speak)
+        speak.isChecked = prefs.getBoolean("speak_responses", true)
+        speak.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("speak_responses", on).apply() }
         val devc = findViewById<SwitchCompat>(R.id.set_devconsole)
         devc.isChecked = prefs.getBoolean("dev_console", false)
         devc.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("dev_console", on).apply() }

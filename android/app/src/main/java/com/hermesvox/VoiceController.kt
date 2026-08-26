@@ -289,7 +289,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
-        speak(finalText)
+        if (prefString("speak_responses", "true").toBoolean()) speak(finalText)
+        else listener?.onState("idle")
     }
 
     private fun bumpSpeakLevel() {
@@ -306,6 +307,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  isn't in a reply, this just voices the presence glue. */
     fun speakGlue(text: String) {
         if (text.isBlank()) return
+        if (!prefString("speak_responses", "true").toBoolean()) return   // voice toggle off
         glueSpeaking = true
         main.post {
             tts?.speak(text) { glueSpeaking = false }
