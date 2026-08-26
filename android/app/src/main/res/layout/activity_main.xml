@@ -50,6 +50,7 @@
     <!-- Crawl area: reply (bright) + SSE (smaller, darker) over the black.
          Text drifts up + fades near the top, before touching the particle field. -->
     <FrameLayout
+        android:id="@+id/crawl_area"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -121,6 +122,7 @@
         android:orientation="horizontal">
         <Button
             android:id="@+id/settings"
+            style="@style/HvGhostButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_button_ghost"
@@ -130,6 +132,7 @@
             android:textAllCaps="false" />
         <Button
             android:id="@+id/realtime"
+            style="@style/HvGhostButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
@@ -140,6 +143,7 @@
             android:textAllCaps="false" />
         <Button
             android:id="@+id/clear"
+            style="@style/HvGhostButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"

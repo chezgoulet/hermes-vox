@@ -12,21 +12,27 @@
     <dimen name="avatar_size">260dp</dimen>
     <dimen name="mic_size">66dp</dimen>
 
+    <!-- Sci-fi display face (Rajdhani, OFL) for headings/labels/buttons; the
+         crawl + console stay monospace (the "House terminal" voice). -->
     <style name="TextVox.Title" parent="android:Widget.TextView">
         <item name="android:textColor">@color/hv_text</item>
-        <item name="android:textSize">28sp</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:letterSpacing">0.02</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:fontFamily">@font/rajdhani_semibold</item>
+        <item name="android:letterSpacing">0.08</item>
     </style>
     <style name="TextVox.Tag" parent="android:Widget.TextView">
         <item name="android:textColor">@color/hv_cyan</item>
-        <item name="android:textSize">13sp</item>
-        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">@font/rajdhani_semibold</item>
+        <item name="android:letterSpacing">0.16</item>
+        <item name="android:textAllCaps">true</item>
     </style>
     <style name="TextVox.Label" parent="android:Widget.TextView">
         <item name="android:textColor">@color/hv_text_dim</item>
         <item name="android:textSize">11sp</item>
-        <item name="android:letterSpacing">0.10</item>
+        <item name="android:fontFamily">@font/rajdhani_medium</item>
+        <item name="android:letterSpacing">0.14</item>
         <item name="android:textAllCaps">true</item>
     </style>
     <style name="TextVox.Body" parent="android:Widget.TextView">
@@ -43,5 +49,13 @@
         <item name="android:textSize">12sp</item>
         <item name="android:fontFamily">monospace</item>
         <item name="android:lineSpacingExtra">2dp</item>
+    </style>
+
+    <!-- Ghost action buttons (Settings/Realtime/Clear) -->
+    <style name="HvGhostButton" parent="android:Widget.Button">
+        <item name="android:fontFamily">@font/rajdhani_medium</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:textAllCaps">false</item>
     </style>
 </resources>

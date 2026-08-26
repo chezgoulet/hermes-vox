@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
         connectFromPrefs()
         wireButtons()
         startAvatarLoop()
+        stageEntrance()
     }
 
     private fun openOnboarding() {
@@ -202,6 +203,22 @@ class MainActivity : AppCompatActivity() {
         sseBuf = (sseBuf + "\n" + line).trim().takeLast(1600)
         stream.setText(sseBuf)
     }
+
+    // Staged entrance: the being blooms + the crawl/controls rise, staggered,
+    // for that alive, "materializing presence" feel on first launch.
+    private fun stageEntrance() {
+        val rows = listOf<View>(avatar, findViewById(R.id.crawl_area), input,
+            findViewById(R.id.settings))
+        rows.forEachIndexed { i, v ->
+            v.alpha = 0f; v.translationY = dp(24f)
+            v.animate().alpha(1f).translationY(0f)
+                .setStartDelay(140L + i * 90L)
+                .setDuration(480L)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+        }
+    }
+    private fun dp(v: Float) = v * resources.displayMetrics.density + 0.5f
 
     // The raw SSE console is a dev drawer — hidden unless "Developer console"
     // is toggled in Settings. Keeps the main screen clean + presence-first.
