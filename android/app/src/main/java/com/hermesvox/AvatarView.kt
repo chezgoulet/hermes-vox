@@ -36,7 +36,7 @@ class AvatarView @JvmOverloads constructor(
     )
 
     companion object {
-        const val COUNT = 240
+        const val COUNT = 320
         val SHAPES = listOf("iris", "listening", "vortex", "scan", "bracket",
             "constellation", "lumen", "waveform", "bloom")
     }
@@ -127,13 +127,19 @@ class AvatarView @JvmOverloads constructor(
         time += dt
         for (p in parts) {
             val tgt = targetOf(p)
-            val stiff = 240f
-            p.vx += -(p.x - tgt.first) * stiff * dt * 0.5f
-            p.vy += -(p.y - tgt.second) * stiff * dt * 0.5f
-            p.vx *= (1f - 3.6f * dt); p.vy *= (1f - 3.6f * dt)
-            val bob = sin(time * 1.4f + p.phase * 8f) * 6f / sqrt(1f + workload * 3f)
-            p.x += p.vx * dt * 60f + bob * dt * 30f
-            p.y += p.vy * dt * 60f + cos(time * 1.1f + p.phase * 7f) * 4f * dt * 30f
+            // Critically-damped spring toward the shape target (STABLE — the old
+            // stiff=240 step was unstable and blew the particles off-screen).
+            val stiff = 42f
+            val damp = 2f * sqrt(stiff)          // ~12.9, critical damping
+            p.vx += (tgt.first - p.x) * stiff * dt
+            p.vy += (tgt.second - p.y) * stiff * dt
+            p.vx /= (1f + damp * dt)
+            p.vy /= (1f + damp * dt)
+            p.x += p.vx * dt
+            p.y += p.vy * dt
+            // gentle per-particle drift for life (small, stable)
+            p.x += sin(time * 1.2f + p.phase * 8f) * 4f * dt
+            p.y += cos(time * 1.0f + p.phase * 7f) * 4f * dt
         }
     }
 
@@ -206,12 +212,12 @@ class AvatarView @JvmOverloads constructor(
                 cx + cos(a) * rr to cy + sin(a) * rr
             }
             else -> { // at-rest: a soft, dispersed, breathing aura (NOT an eye)
-                val r = R * (0.34f + 0.28f * hash(p.phase, seed, 2)) *
+                val r = R * (0.2f + 0.34f * hash(p.phase, seed, 2)) *
                         (1f + 0.16f * sin(t * 1.1f + p.phase * 9f))   // slow breath
                 val ang = p.phase * 2f * PI.toFloat() + t * 0.28f     // gentle drift
-                val jx = (hash(p.phase, seed, 3) - 0.5f) * R * 0.24f
-                val jy = (hash(p.phase, seed, 4) - 0.5f) * R * 0.24f
-                cx + cos(ang) * r + jx to cy + sin(ang) * r * 0.92f + jy
+                val jx = (hash(p.phase, seed, 3) - 0.5f) * R * 0.18f
+                val jy = (hash(p.phase, seed, 4) - 0.5f) * R * 0.18f
+                cx + cos(ang) * r + jx to cy + sin(ang) * r * 0.9f + jy
             }
         }
     }
@@ -233,18 +239,18 @@ class AvatarView @JvmOverloads constructor(
             p.color = lerpColor(p.color, base, 0.06f)
             val ta = baseAlpha(state, p, wl)
             p.alpha = p.alpha + (ta - p.alpha) * 0.08f
-            p.size = 2.6f + p.phase * 2.0f + wl * 1.6f
+            p.size = 3.2f + p.phase * 2.4f + wl * 2.0f
             // glowing dot
             val r = p.size
-            glowShader = RadialGradient(p.x, p.y, r * 4.5f,
+            glowShader = RadialGradient(p.x, p.y, r * 5.5f,
                 intArrayOf(withAlpha(p.color, (p.alpha * 255).toInt()),
                     withAlpha(p.color, 0)), null, Shader.TileMode.CLAMP)
             fill.shader = glowShader
-            canvas.drawCircle(p.x, p.y, r * 4.5f, fill)
+            canvas.drawCircle(p.x, p.y, r * 5.5f, fill)
             fill.shader = null
             // bright core
             fill.color = withAlpha(Color.WHITE, (p.alpha * 255).toInt())
-            canvas.drawCircle(p.x, p.y, r * 0.62f, fill)
+            canvas.drawCircle(p.x, p.y, r * 0.68f, fill)
         }
         // always animate
         postInvalidateOnAnimation()
@@ -252,16 +258,16 @@ class AvatarView @JvmOverloads constructor(
 
     private fun stateColor(st: String): Int = when (st) {
         "listening" -> cListen
-        "thinking" -> if (workload > 0.55f) lerpColor(cThink, cViolet, 0.4f) else cThink
+        "thinking" -> cThink   // warm gold (the gold->violet workload lerp made salmon)
         "streaming" -> cCyan
         "speaking" -> lerpColor(cViolet, cCyan, 0.4f + amp * 0.2f)
         else -> lerpColor(cIdle, cCyan, 0.3f + amp * 0.2f)
     }
     private fun baseAlpha(st: String, p: P, wl: Float): Float = when (st) {
-        "speaking" -> 0.6f + amp * 0.4f
-        "thinking" -> 0.6f + wl * 0.32f
-        "streaming" -> 0.62f + 0.3f * sin(time * 4f + p.phase * 6f)
-        else -> 0.55f + 0.12f * sin(time * 2f + p.phase * 6f)
+        "speaking" -> 0.68f + amp * 0.32f
+        "thinking" -> 0.7f + wl * 0.25f
+        "streaming" -> 0.72f + 0.3f * sin(time * 4f + p.phase * 6f)
+        else -> 0.62f + 0.14f * sin(time * 2f + p.phase * 6f)
     }
     private fun lerpColor(a: Int, b: Int, f: Float): Int {
         val ff = f.coerceIn(0f, 1f)

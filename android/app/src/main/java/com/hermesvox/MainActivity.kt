@@ -204,10 +204,11 @@ class MainActivity : AppCompatActivity() {
         stream.setText(sseBuf)
     }
 
-    // Staged entrance: the being blooms + the crawl/controls rise, staggered,
-    // for that alive, "materializing presence" feel on first launch.
+    // Staged entrance: the crawl/controls rise staggered for that alive,
+    // "materializing presence" feel. The being is NOT alpha-gated here — it
+    // self-animates and must never be hidden by the staging.
     private fun stageEntrance() {
-        val rows = listOf<View>(avatar, findViewById(R.id.crawl_area), input,
+        val rows = listOf<View>(findViewById(R.id.crawl_area), input,
             findViewById(R.id.settings))
         rows.forEachIndexed { i, v ->
             v.alpha = 0f; v.translationY = dp(24f)
