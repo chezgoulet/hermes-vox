@@ -50,6 +50,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
     @Volatile private var currentStream: String? = null
+    @Volatile private var turnInFlight = false
     @Volatile private var listening = false
     private var listener: Listener? = null
     private var bargeInEnabled = true
@@ -221,6 +222,8 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     // --- The streamed entity turn (REAL SSE) ---
     private fun runStreamedTurn(text: String) {
+        if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); return }
+        turnInFlight = true
         listener?.onState("thinking")
         listener?.onLog("// you → $text")
         exec.execute {
@@ -266,6 +269,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
             } finally {
                 currentStream = null
+                turnInFlight = false
             }
         }
     }
