@@ -150,6 +150,16 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
+                findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
+            val u = prefs.getString("url", ""); val k = prefs.getString("key", "")
+            val c = com.hermesvox.VoiceController(this, com.hermesvox.HermesSession(u ?: "", k ?: "", ""))
+            val r = c.testConnection()
+            findViewById<TextView>(R.id.set_test_val)?.text = "done"
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Connection test")
+                .setMessage(r)
+                .setPositiveButton("OK", null).show()
+        }
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
             val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
             val crash = CrashLog.read(this)

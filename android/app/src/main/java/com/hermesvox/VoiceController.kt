@@ -178,6 +178,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val latch = turnDone
                     main.post { runStreamedTurn(text) }
                     try { latch.await() } catch (_: Throwable) {}
+                    // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
+                    try { r.stop() } catch (_: Throwable) {}
+                    android.os.SystemClock.sleep(450L)
                 }
                 loopActive = false
                 listener?.onState("idle")
@@ -449,6 +452,32 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
 
     private fun speakEnabled() = context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("speak_responses", true)
+
+
+    fun testConnection(): String {
+        val u = prefString("url", ""); val k = prefString("key", "")
+        if (u.isBlank()) return "no endpoint set"
+        var out = "endpoint=" + u
+        try {
+            val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000
+            c.setRequestProperty("Authorization", "Bearer " + k)
+            out += "\nping -> " + c.responseCode
+        } catch (e: Throwable) { out += "\nping error: " + e.message }
+        try {
+            val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
+            c.setRequestProperty("Authorization", "Bearer " + k)
+            c.setRequestProperty("Content-Type", "application/json")
+            val payload = "{\"model\":\"\",\"input\":\"hello\",\"stream\":true}"
+            c.outputStream.use { it.write(payload.toByteArray()) }
+            val code = c.responseCode
+            val body = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            out += "\nstream -> " + code + " " + body.take(200)
+        } catch (e: Throwable) { out += "\nstream error: " + e.message }
+        VoxLog.d("conn-test: " + out)
+        return out
+    }
 
     private fun micInt(k: String, d: Int): Int =
         context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getInt(k, d)

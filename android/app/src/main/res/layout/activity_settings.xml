@@ -340,7 +340,20 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/row_debug"
+                android:id="@+id/row_test_conn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="14dp">
+            <TextView style="@style/TextVox.Label" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="Test connection" />
+            <TextView android:id="@+id/set_test_val" style="@style/TextVox.Label"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="run" />
+        </LinearLayout>
+<LinearLayout
+
+android:id="@+id/row_debug"
                 style="@style/HvRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
