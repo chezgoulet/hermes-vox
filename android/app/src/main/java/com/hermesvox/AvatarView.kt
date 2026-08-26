@@ -48,7 +48,7 @@ class AvatarView @JvmOverloads constructor(
     private var seed = 1
     private val rnd = Random(seed)
     private val cIdle = 0xFF6FB7C9.toInt(); private val cListen = 0xFF34D399.toInt()
-    private val cThink = 0xFFFBBF24.toInt(); private val cSpeak = 0xFF8B5CF6.toInt()
+    private val cThink = 0xFFFFC24D.toInt(); private val cSpeak = 0xFF8B5CF6.toInt()
     private val cCyan = 0xFF2AC3DC.toInt(); private val cViolet = 0xFF8B5CF6.toInt();
     private val cWhite = 0xFFEAF7FF.toInt()
 
@@ -194,15 +194,13 @@ class AvatarView @JvmOverloads constructor(
                 val rr = R * (0.2f + p * 0.9f)
                 cx + cos(a) * rr to cy + sin(a) * rr
             }
-            else -> { // iris: default soft aperture (the gaze)
-                val open = 1f - 0.3f * wl
-                val ring = R * 0.7f
-                val inner = R * 0.28f
-                // form an annulus; particles near the center form the aperture rim
-                val r = if (frac(p.phase * 2f) < 0.82f) {
-                    ring * (0.94f + 0.06f * sin(t * 1.4f + ph * 6f))
-                } else inner * open
-                cx + cos(a) * r to cy + sin(a) * r
+            else -> { // at-rest: a soft, dispersed, breathing aura (NOT an eye)
+                val r = R * (0.34f + 0.28f * hash(p.phase, seed, 2)) *
+                        (1f + 0.16f * sin(t * 1.1f + p.phase * 9f))   // slow breath
+                val ang = p.phase * 2f * PI.toFloat() + t * 0.28f     // gentle drift
+                val jx = (hash(p.phase, seed, 3) - 0.5f) * R * 0.24f
+                val jy = (hash(p.phase, seed, 4) - 0.5f) * R * 0.24f
+                cx + cos(ang) * r + jx to cy + sin(ang) * r * 0.92f + jy
             }
         }
     }

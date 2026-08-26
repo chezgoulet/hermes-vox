@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- console glass: darker, tighter so it recedes; faint neon hairline -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <gradient
+                android:angle="270"
+                android:startColor="#0A22D3EE"
+                android:centerColor="#07000000"
+                android:endColor="#06000000" />
+            <stroke android:width="1dp" android:color="#2200B8D4" />
+        </shape>
+    </item>
+</layer-list>

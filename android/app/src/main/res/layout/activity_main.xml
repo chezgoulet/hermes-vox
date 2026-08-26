@@ -4,9 +4,9 @@
     android:layout_height="match_parent"
     android:background="@color/hv_bg"
     android:orientation="vertical"
-    android:padding="20dp">
+    android:padding="18dp">
 
-    <!-- Header -->
+    <!-- Header: title + status -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -18,13 +18,11 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical">
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 style="@style/TextVox.Title"
                 android:text="HERMES VOX" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -43,45 +41,39 @@
             android:text="@string/hv_not_connected" />
     </LinearLayout>
 
-    <!-- Avatar -->
+    <!-- Presence hero (fills — the being is the center of gravity) -->
     <com.hermesvox.AvatarView
         android:id="@+id/avatar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/avatar_size"
-        android:layout_marginTop="8dp" />
-
-    <!-- Reply card -->
-    <FrameLayout
-        android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/bg_surface"
-        android:padding="16dp">
+        android:layout_marginTop="4dp" />
 
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
+    <!-- Reply: a slim glassy card for the agent's words -->
+    <TextView
+        android:id="@+id/reply"
+        style="@style/TextVox.Reply"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/bg_panel_glass"
+        android:ellipsize="end"
+        android:maxLines="5"
+        android:padding="14dp" />
 
-            <TextView
-                android:id="@+id/reply"
-                style="@style/TextVox.Reply"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-        </ScrollView>
-    </FrameLayout>
-
-    <!-- Stream console -->
+    <!-- Stream console: a compact dev drawer that recedes -->
     <TextView
         android:id="@+id/stream"
+        style="@style/TextVox.Console"
         android:layout_width="match_parent"
-        android:layout_height="140dp"
-        android:layout_marginTop="10dp"
-        android:background="@drawable/bg_log"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/bg_console_glass"
+        android:maxHeight="120dp"
+        android:maxLines="6"
         android:padding="10dp"
-        android:text="// stream log — watch the agent work"
         android:scrollbars="vertical"
-        style="@style/TextVox.Console" />
+        android:text="// stream log — watch the agent work" />
 
     <!-- Input row -->
     <LinearLayout
