@@ -179,14 +179,15 @@ class MainActivity : AppCompatActivity() {
         avatar.post(tick)
     }
 
-    /** If a probe.wav is present in the whisper model dir, transcribe it (proof hook). */
+    /** If a probe.wav is present in the selected STT model dir, transcribe it (proof hook). */
     private fun maybeRunWhisperProbe() {
-        val probe = java.io.File(filesDir, "models/whisper-tiny/probe.wav")
+        val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
+        val probe = java.io.File(filesDir, "models/$model/probe.wav")
         if (!probe.exists()) return
         Thread {
-            val text = OfflineWhisperStt.transcribeWave(this, probe.absolutePath)
-            VoxLog.d("WHISPER PROBE transcript=<$text>")
-            runOnUiThread { status.text = "whisper probe: ${text ?: "no transcript"}" }
+            val text = OfflineWhisperStt.transcribeWave(this, model, probe.absolutePath)
+            VoxLog.d("WHISPER PROBE($model) transcript=<$text>")
+            runOnUiThread { status.text = "whisper probe($model): ${text ?: "no transcript"}" }
         }.start()
     }
 

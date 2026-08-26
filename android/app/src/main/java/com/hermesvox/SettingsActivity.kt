@@ -73,9 +73,28 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun bindFlows() {
         findViewById<LinearLayout>(R.id.row_stt).setOnClickListener {
-            pick("Speech-to-text",
-                arrayOf("On-device", "RX 590", "Odroid"),
-                arrayOf("on-device", "rx590", "odroid"), "stt", R.id.set_stt_val)
+            pick("Speech-to-text (backend)",
+                arrayOf("On-device (offline)", "House GPU (tailnet)", "Platform (Google)"),
+                arrayOf(ModelCatalog.BACKEND_ONDEVICE, ModelCatalog.BACKEND_HOUSE, ModelCatalog.BACKEND_PLATFORM),
+                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val)
+        }
+        findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener {
+            val labels = ModelCatalog.sttModels.map { it.second }.toTypedArray()
+            val tokens = ModelCatalog.sttModels.map { it.first }.toTypedArray()
+            pick("STT model (on-device)", labels, tokens, ModelCatalog.KEY_STT_MODEL, R.id.set_stt_model_val)
+        }
+        findViewById<LinearLayout>(R.id.row_stt_house).setOnClickListener {
+            val current = prefs.getString(ModelCatalog.KEY_STT_HOUSE_URL, "http://100.68.43.34:13305") ?: "http://100.68.43.34:13305"
+            val view = layoutInflater.inflate(R.layout.dialog_entity, null)
+            val eurl = view.findViewById<EditText>(R.id.d_url); eurl.setText(current)
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("House STT endpoint")
+                .setView(view)
+                .setPositiveButton("Save") { _, _ ->
+                    prefs.edit().putString(ModelCatalog.KEY_STT_HOUSE_URL, eurl.text.toString().trim().ifEmpty { "http://100.68.43.34:13305" }).apply()
+                    refreshFlowVals()
+                }
+                .setNegativeButton("Cancel", null).show()
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
@@ -100,9 +119,19 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshFlowVals() {
-        findViewById<TextView>(R.id.set_stt_val).text = label("stt", "on-device")
+        findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
+        val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
+        findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
+        findViewById<TextView>(R.id.set_stt_house_val).text =
+            prefs.getString(ModelCatalog.KEY_STT_HOUSE_URL, "http://100.68.43.34:13305") ?: "http://100.68.43.34:13305"
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", "system")
         findViewById<TextView>(R.id.set_voice_val).text = label("voice", "system")
+    }
+
+    private fun sttBackendLabel(tok: String): String = when (tok) {
+        ModelCatalog.BACKEND_HOUSE -> "House GPU (tailnet)"
+        ModelCatalog.BACKEND_PLATFORM -> "Platform (Google)"
+        else -> "On-device (offline)"
     }
 
     private fun bindAppearance() {

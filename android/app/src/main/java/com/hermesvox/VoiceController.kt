@@ -39,7 +39,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private var recognizer: SpeechRecognizer? = null
     private var tts: VoxTts? = null
-    private var stt: OfflineWhisperStt? = null
+    private var stt: VoxStt? = null
     private var vad: SileroVadGate? = null
     private var record: AudioRecord? = null
     private val main = Handler(Looper.getMainLooper())
@@ -56,14 +56,26 @@ class VoiceController(private val context: Context, private val session: HermesS
         tts = buildTts(context, prefString("tts", "system"))
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
         tts?.init { ttsReady = it }
-        // On-device Whisper STT + Silero VAD when their blessed models are installed.
-        if (ModelCatalog.isInstalled(context, "whisper-tiny")) {
-            stt = OfflineWhisperStt(context); stt?.init { sttReady = it }
-        }
+        // STT backend/model from Settings: on-device Whisper (selected model),
+        // house GPU (lemonade), or platform (SpeechRecognizer fallback).
+        stt = buildStt()
+        stt?.init { sttReady = it }
         if (ModelCatalog.isInstalled(context, "silero-vad")) {
             vad = SileroVadGate(context); vad?.init {}
         }
-        VoxLog.d("pipeline: sttReady=$sttReady vad=${vad?.isAvailable}")
+        VoxLog.d("pipeline: stt=${stt?.name} sttReady=$sttReady vad=${vad?.isAvailable}")
+    }
+
+    private fun buildStt(): VoxStt? {
+        val backend = prefString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
+        return when (backend) {
+            ModelCatalog.BACKEND_HOUSE -> HouseStt(context)
+            ModelCatalog.BACKEND_PLATFORM -> null   // use the platform SpeechRecognizer
+            else -> {
+                val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+                if (ModelCatalog.isInstalled(context, model)) OfflineWhisperStt(context, model) else null
+            }
+        }
     }
 
     /** Set/replace the render callbacks (works for text turns too — the send path). */
