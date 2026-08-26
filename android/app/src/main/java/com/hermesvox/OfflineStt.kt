@@ -83,6 +83,46 @@ class OfflineWhisperStt(private val context: Context) : VoxStt {
 
     override fun shutdown() { rec?.release(); rec = null }
 
+    companion object {
+        /** PROOF HOOK: build a fresh whisper STT, transcribe a WAV file, return text.
+         *  Used for the wave-feed verification (real audio through the engine). */
+        fun transcribeWave(context: Context, wavePath: String): String? {
+            val stt = OfflineWhisperStt(context)
+            var ready = false
+            stt.init { ready = it }
+            for (i in 0 until 60) { if (ready) break; Thread.sleep(100) }
+            if (!ready) return null
+            val samples = readWav16kMono(File(wavePath)) ?: return null
+            return stt.transcribe(samples, 16000)
+        }
+
+        /** Read a 16-bit PCM mono 16 kHz WAV into a FloatArray (-1..1). */
+        private fun readWav16kMono(f: File): FloatArray? {
+            return try {
+                val bytes = f.readBytes()
+                // data chunk offset (skip RIFF header + fmt, find 'data')
+                var i = 12
+                var dataOff = -1; var dataLen = 0
+                while (i + 8 <= bytes.size) {
+                    val id = String(bytes, i, 4)
+                    val len = leInt(bytes, i + 4)
+                    if (id == "data") { dataOff = i + 8; dataLen = len; break }
+                    i += 8 + len + (len and 1)
+                }
+                if (dataOff < 0) return null
+                val n = dataLen / 2
+                val out = FloatArray(n)
+                for (j in 0 until n) {
+                    val lo = bytes[dataOff + j * 2].toInt() and 0xFF
+                    val hi = bytes[dataOff + j * 2 + 1].toInt()
+                    out[j] = ((hi shl 8) or lo).toShort() / 32768f
+                }
+                out
+            } catch (e: Throwable) { VoxLog.e("readWav: ${e.message}"); null }
+        }
+        private fun leInt(b: ByteArray, o: Int): Int = (b[o].toInt() and 0xFF) or ((b[o+1].toInt() and 0xFF) shl 8) or ((b[o+2].toInt() and 0xFF) shl 16) or ((b[o+3].toInt() and 0xFF) shl 24)
+    }
+
     private fun resample(inp: FloatArray, fromHz: Int, toHz: Int): FloatArray {
         if (fromHz == toHz) return inp
         val ratio = toHz.toFloat() / fromHz

@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         Seq.setContext(applicationContext)
         VoxLog.init(applicationContext)
+        maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
         input = findViewById(R.id.input)
@@ -176,6 +177,17 @@ class MainActivity : AppCompatActivity() {
             override fun run() { avatar.invalidate(); avatar.postDelayed(this, 30) }
         }
         avatar.post(tick)
+    }
+
+    /** If a probe.wav is present in the whisper model dir, transcribe it (proof hook). */
+    private fun maybeRunWhisperProbe() {
+        val probe = java.io.File(filesDir, "models/whisper-tiny/probe.wav")
+        if (!probe.exists()) return
+        Thread {
+            val text = OfflineWhisperStt.transcribeWave(this, probe.absolutePath)
+            VoxLog.d("WHISPER PROBE transcript=<$text>")
+            runOnUiThread { status.text = "whisper probe: ${text ?: "no transcript"}" }
+        }.start()
     }
 
     private fun applyTheme(mode: String) {
