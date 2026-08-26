@@ -71,8 +71,18 @@ object ModelCatalog {
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
     const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
 
-    fun source(context: Context): String =
-        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE
+    fun source(context: Context): String {
+        val p = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val s = p.getString(KEY_SOURCE, "") ?: ""
+        if (s.isNotBlank()) return s
+        // Auto-derive the model store from the SAME host as the entity URL (the
+        // onboarding endpoint) — the store is a sibling service on port STORE_PORT.
+        val url = p.getString("url", "") ?: ""
+        val host = runCatching { Regex("https?://([^/:]+)").find(url)?.groupValues?.get(1) ?: "" }.getOrDefault("")
+        return if (host.isBlank()) "" else "http://" + host + ":" + STORE_PORT
+    }
+
+    const val STORE_PORT = 8899
 
     fun modelDir(context: Context, id: String) = File(context.filesDir, "models/$id")
 
