@@ -157,9 +157,11 @@ class MainActivity : AppCompatActivity() {
             true
         }
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
-        findViewById<Button>(R.id.realtime).setOnClickListener { openRealtime() }
+        findViewById<Button>(R.id.realtime).setOnClickListener { toggleRealtimeMode() }
         findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
         input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
+        findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.walkie_voice_toggle)
+            .setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("speak_responses", on).apply() }
     }
 
     private fun send(text: String) {
@@ -270,11 +272,13 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun openRealtime() {
-        val u = prefs.getString("url", "").orEmpty(); val k = storedKey()
-        if (u.isBlank() || k.isBlank()) { status.text = "Connect first"; return }
-        startActivity(Intent(this, RealtimeActivity::class.java)
-            .putExtra("url", u).putExtra("key", k).putExtra("model", prefs.getString("model", "hermes-agent"))); overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+    // Bottom "Realtime" button = toggle the Voice-mode (Realtime/Enhanced <-> Walkie),
+    // keeping it consistent with the Settings Voice-mode toggle (not a separate screen).
+    private fun toggleRealtimeMode() {
+        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
+        val next = if (mode == ModelCatalog.MODE_WALKIE) ModelCatalog.MODE_REALTIME else ModelCatalog.MODE_WALKIE
+        prefs.edit().putString(ModelCatalog.KEY_VOICE_MODE, next).apply()
+        applyVoiceMode(); handleModeUi()
     }
 
     // Presence (default) vs Conversation — user-facing Fork-2 customization
@@ -299,6 +303,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.mic).visibility = if (walkie) View.VISIBLE else View.GONE
         findViewById<View>(R.id.send).visibility = if (walkie) View.VISIBLE else View.GONE
         input.hint = if (walkie) "Type + SEND, or hold PTT" else getString(R.string.hv_input_hint)
+        // bottom "Realtime" button reflects the *other* mode (tapping switches to it)
+        findViewById<android.widget.Button>(R.id.realtime).text = if (walkie) "Realtime" else "Walkie"
+        // inline voice toggle (walkie): speak responses on/off
+        findViewById<View>(R.id.walkie_voice_toggle)?.visibility = if (walkie) View.VISIBLE else View.GONE
+        val vs = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.walkie_voice_toggle)
+        if (vs != null) { vs.isChecked = prefs.getBoolean("speak_responses", true) }
     }
 
     private fun appendStream(line: String) {

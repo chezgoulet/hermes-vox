@@ -116,7 +116,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (speechStarted) { for (f in frames) collected.add(f) }
                     if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
                 }
-                r.stop(); r.release()
+                try { r.stop() } catch (_: Throwable) {}
+                try { r.release() } catch (_: Throwable) {}
                 commitRequested = false
                 if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (sttReady) listenOffline() else listen() }; return@execute }
                 val text = stt?.transcribe(collected.toFloatArray(), sr)
@@ -331,7 +332,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             if (bargeInArmed) stopBargeInWatch()
             if (listening) listen()
         }
-        if (bargeInEnabled) startBargeInWatch()
+        // Arm barge-in AFTER a short delay + at a higher threshold so the mic
+        // doesn't cancel the TTS on its own output (the "hears itself" cut).
+        if (bargeInEnabled) main.postDelayed({ if (speaking) startBargeInWatch() }, 700L)
     }
 
     // --- Barge-in: watch the mic while speaking; cut + cancel (Silero VAD, else RMS) ---
@@ -382,5 +385,5 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun prefString(k: String, d: String) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
 
-    companion object { const val RMS_THRESHOLD = 0.02 }
+    companion object { const val RMS_THRESHOLD = 0.09f }
 }
