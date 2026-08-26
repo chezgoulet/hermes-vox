@@ -290,7 +290,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
-        if (prefString("speak_responses", "true").toBoolean()) speak(finalText)
+        if (speakEnabled()) speak(finalText)
         else listener?.onState("idle")
     }
 
@@ -308,7 +308,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  isn't in a reply, this just voices the presence glue. */
     fun speakGlue(text: String) {
         if (text.isBlank()) return
-        if (!prefString("speak_responses", "true").toBoolean()) return   // voice toggle off
+        if (!speakEnabled()) return   // voice toggle off
         glueSpeaking = true
         main.post {
             tts?.speak(text) { glueSpeaking = false }
@@ -391,6 +391,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
+
+    private fun speakEnabled() = context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("speak_responses", true)
 
     private fun prefString(k: String, d: String) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
