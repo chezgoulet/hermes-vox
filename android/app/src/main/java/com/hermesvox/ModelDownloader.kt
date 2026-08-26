@@ -55,8 +55,8 @@ class ModelDownloader(private val context: Context) {
         }
         conn.connect()
         if (conn.responseCode != 200) return "HTTP ${conn.responseCode}"
-        val total: Int = conn.contentLength
-        val totalL: Long = if (total > 0) total.toLong() else 0L
+        val totalL: Long = conn.contentLengthLong   // Long: contentLength (Int) overflows >2 GB
+        if (totalL < 0) return "unknown-length"
 
         val tmp = File(context.filesDir, "${spec.id}.zip.part")
         FileOutputStream(tmp).use { out ->
@@ -68,7 +68,7 @@ class ModelDownloader(private val context: Context) {
                     val n = inp.read(buf)
                     if (n < 0) break
                     out.write(buf, 0, n); dl += n
-                    val shown: Long = if (total > 0) totalL else dl
+                    val shown: Long = if (totalL > 0) totalL else dl
                     listener.onProgress(spec.id, dl, shown)
                 }
             }

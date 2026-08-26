@@ -77,8 +77,10 @@ class ModelsActivity : AppCompatActivity() {
         downloader.download(spec, object : ModelDownloader.Listener {
             override fun onProgress(id: String, downloaded: Long, total: Long) {
                 runOnUiThread {
-                    c.progress.max = total.toInt().coerceAtLeast(1)
-                    c.progress.progress = downloaded.toInt()
+                    // Use KB so a >2 GB download doesn't overflow Int (the Gemma
+                    // zip is 2.2 GB; total.toInt()/downloaded.toInt() overflows).
+                    c.progress.max = (total / 1024).toInt().coerceAtLeast(1)
+                    c.progress.progress = (downloaded / 1024).toInt().coerceIn(0, c.progress.max)
                     c.state.text = "Downloading ${downloaded / 1024} / ${total / 1024} KB"
                 }
             }
