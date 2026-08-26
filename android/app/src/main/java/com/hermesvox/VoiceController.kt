@@ -39,6 +39,8 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private var recognizer: SpeechRecognizer? = null
     private var tts: VoxTts? = null
+    private var stt: OfflineWhisperStt? = null
+    private var vad: SileroVadGate? = null
     private var record: AudioRecord? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var speaking = false
@@ -48,11 +50,20 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var listener: Listener? = null
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
+    @Volatile private var sttReady = false
 
     init {
         tts = buildTts(context, prefString("tts", "system"))
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
         tts?.init { ttsReady = it }
+        // On-device Whisper STT + Silero VAD when their blessed models are installed.
+        if (ModelCatalog.isInstalled(context, "whisper-tiny")) {
+            stt = OfflineWhisperStt(context); stt?.init { sttReady = it }
+        }
+        if (ModelCatalog.isInstalled(context, "silero-vad")) {
+            vad = SileroVadGate(context); vad?.init {}
+        }
+        VoxLog.d("pipeline: sttReady=$sttReady vad=${vad?.isAvailable}")
     }
 
     /** Set/replace the render callbacks (works for text turns too — the send path). */
@@ -61,7 +72,45 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Begins the listening loop. Returns true when STT is actually running. */
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
-        return listen()
+        return if (sttReady) listenOffline() else listen()   // on-device Whisper, else platform STT
+    }
+
+    // --- On-device Whisper loop: capture mic -> VAD/silence -> transcribe -> turn ---
+    private fun listenOffline(): Boolean {
+        listener?.onState("listening"); listening = true
+        val sr = 16000
+        val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (minBuf <= 0) return listen()
+        return try {
+            val r = AudioRecord(MediaRecorder.AudioSource.MIC, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf)
+            if (r.state != AudioRecord.STATE_INITIALIZED) return listen()
+            record = r
+            r.startRecording()
+            listener?.onLog("// hear → listening (offline whisper)")
+            thread {
+                val shortBuf = ShortArray(1024)
+                val collected = ArrayList<Float>(sr)  // ~1s headroom, grows
+                var speechStarted = false; var silentMs = 0; val startMs = android.os.SystemClock.uptimeMillis()
+                while (listening && collected.size < sr * 15) {  // max 15s
+                    val n = r.read(shortBuf, 0, shortBuf.size)
+                    if (n <= 0) continue
+                    val frames = FloatArray(n); var rms = 0.0
+                    for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; rms += shortBuf[i].toDouble() * shortBuf[i] }
+                    val spoke = if (vad != null) vad!!.feed(frames) else (Math.sqrt(rms / n) / Short.MAX_VALUE > RMS_THRESHOLD)
+                    if (spoke) { speechStarted = true; silentMs = 0 } else if (speechStarted) { silentMs += 64; if (silentMs > 800) break }
+                    if (speechStarted) { for (f in frames) collected.add(f) }
+                    if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
+                }
+                r.stop(); r.release()
+                if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (sttReady) listenOffline() else listen() }; return@thread }
+                val text = stt?.transcribe(collected.toFloatArray(), sr)
+                if (!text.isNullOrBlank()) runStreamedTurn(text) else if (listening) main.post { listenOffline() }
+            }
+            true
+        } catch (e: Throwable) {
+            VoxLog.e("offline listen: ${e.message}")
+            return listen()   // degrade to platform STT
+        }
     }
 
     fun stop() {
@@ -69,9 +118,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         recognizer?.destroy(); recognizer = null
         stopTts()
         stopBargeInWatch()
+        try { record?.stop(); record?.release() } catch (_: Exception) {}
+        record = null
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
         tts?.shutdown()
+        stt?.shutdown(); vad?.shutdown()
     }
 
     /** A text turn (the Send path / the Realtime text-mode fallback). */
@@ -245,7 +297,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (bargeInEnabled) startBargeInWatch()
     }
 
-    // --- Barge-in: watch the mic RMS while speaking; cut + cancel + re-listen ---
+    // --- Barge-in: watch the mic while speaking; cut + cancel (Silero VAD, else RMS) ---
     private fun startBargeInWatch() {
         bargeInArmed = true
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -260,10 +312,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                 while (bargeInArmed && r.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                     val n = r.read(buf, 0, buf.size)
                     if (n <= 0) continue
-                    var sum = 0.0
-                    for (i in 0 until n) sum += (buf[i] * buf[i]).toDouble()
-                    val rms = Math.sqrt(sum / n) / Short.MAX_VALUE
-                    if (rms > RMS_THRESHOLD) { main.post { bargeIn() }; break }
+                    var rms = 0.0
+                    val frames = FloatArray(n)
+                    for (i in 0 until n) { frames[i] = buf[i] / 32768f; rms += buf[i].toDouble() * buf[i] }
+                    val spoke = if (vad != null) vad!!.feed(frames) else (Math.sqrt(rms / n) / Short.MAX_VALUE > RMS_THRESHOLD)
+                    if (spoke) { main.post { bargeIn() }; break }
                 }
             }
         } catch (_: Throwable) {}
