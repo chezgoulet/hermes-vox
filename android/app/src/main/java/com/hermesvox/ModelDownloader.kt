@@ -30,6 +30,11 @@ class ModelDownloader(private val context: Context) {
         thread {
             activeId = spec.id
             cancelled = false
+            // Keep the CPU/network alive so a large download survives Doze /
+            // backgrounding (the app is often backgrounded during a download).
+            val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:model-dl")
+            wl.acquire(30 * 60 * 1000L)
             try {
                 val err = doDownload(spec, listener)
                 if (cancelled) listener.onError(spec.id, "cancelled")
@@ -37,7 +42,7 @@ class ModelDownloader(private val context: Context) {
                 else listener.onDone(spec.id)
             } catch (e: Throwable) {
                 if (!cancelled) listener.onError(spec.id, e.message ?: "download failed")
-            } finally { activeId = null }
+            } finally { activeId = null; try { wl.release() } catch (_: Exception) {} }
         }
     }
 

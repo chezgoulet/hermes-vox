@@ -154,25 +154,6 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/row_stt_house"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="House STT endpoint (GPU)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_stt_house_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="http://100.68.43.34:13305"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
                 android:id="@+id/row_tts"
                 style="@style/HvRow"
                 android:layout_width="match_parent"

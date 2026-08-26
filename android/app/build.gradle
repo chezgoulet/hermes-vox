@@ -8,8 +8,8 @@ android {
         applicationId "com.hermesvox"
         minSdkVersion 24
         targetSdkVersion 34
-        versionCode 3
-        versionName "0.2.0-rc2"
+        versionCode 4
+        versionName "0.2.0-rc3"
 
         // Inject the Hermes gateway API key at BUILD time from the environment
         // (secret-safe — never committed). Empty -> the entity connector errors
@@ -46,7 +46,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
-    implementation 'com.google.ai.edge.litertlm:litertlm-android:0.16.1'
+    implementation('com.google.ai.edge.litertlm:litertlm-android:0.16.1') { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-reflect' }
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
     testImplementation 'junit:junit:4.13.2'
 }

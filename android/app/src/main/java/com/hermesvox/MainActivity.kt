@@ -108,9 +108,24 @@ class MainActivity : AppCompatActivity() {
         if (lineOpen) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
         lineOpen = true
+        // Start the mic foreground service so the process + voice line survive
+        // Android backgrounding / process killing (always-on).
+        try { VoiceService.start(this) } catch (_: Exception) {}
+        acquireVoiceWake()
         val c = controller ?: VoiceController(this, s).also { controller = it }
         c.attachListeners(listener)
         c.start(listener, prefs.getBoolean("duplex", true))
+    }
+
+    // Hold a wake lock while the hands-free line is open so it isn't Dozed.
+    private var voiceWake: android.os.PowerManager.WakeLock? = null
+    private fun acquireVoiceWake() {
+        if (voiceWake?.isHeld == true) return
+        try {
+            val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            voiceWake = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:voice")
+            voiceWake?.acquire()
+        } catch (_: Exception) {}
     }
 
     // The entity API key is encrypted at rest (Keystore); legacy plaintext decrypts as-is.

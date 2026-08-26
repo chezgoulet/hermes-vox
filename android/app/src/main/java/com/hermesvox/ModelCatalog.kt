@@ -28,10 +28,9 @@ data class ModelSpec(
 
 object ModelCatalog {
     const val KEY_SOURCE = "model_source"
-    // House Thelio model store (tailnet). On the emulator, adb reverse maps
-    // 127.0.0.1:8899 -> the emulator host, and the source can be overridden to
-    // http://127.0.0.1:8899 for a no-tailnet local demo.
-    const val DEFAULT_SOURCE = "http://100.68.43.34:8899"
+    // The model source URL is user-entered (Settings -> Voice models). Generic —
+    // no house-specific default. Leave empty so the user supplies their own.
+    const val DEFAULT_SOURCE = ""
 
     val blessed: List<ModelSpec> = listOf(
         ModelSpec("silero-vad", "Silero VAD", "vad", "silero-vad.zip", 0.5,
@@ -65,10 +64,8 @@ object ModelCatalog {
 
     const val KEY_STT_BACKEND = "stt_backend"
     const val KEY_STT_MODEL = "stt_model"
-    const val KEY_STT_HOUSE_URL = "stt_house_url"
     const val KEY_VOICE_MODE = "voice_mode"
     const val BACKEND_ONDEVICE = "on-device"
-    const val BACKEND_HOUSE = "house"
     const val BACKEND_PLATFORM = "platform"
     const val MODE_REALTIME = "realtime"          // emulated call, local S2P + Hermes
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer

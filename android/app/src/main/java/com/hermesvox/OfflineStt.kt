@@ -10,12 +10,7 @@ import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.concurrent.thread
 
 /** Abstraction over the STT leg so the pipeline can pick on-device Whisper, the
@@ -123,88 +118,6 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
         val ratio = toHz.toFloat() / fromHz; val nOut = (inp.size * ratio).toInt(); val out = FloatArray(nOut)
         for (i in 0 until nOut) { val idx = i / ratio; val i0 = idx.toInt(); val i1 = (i0 + 1).coerceAtMost(inp.size - 1); val fr = idx - i0; out[i] = inp[i0] * (1 - fr) + inp[i1] * fr }
         return out
-    }
-}
-
-/**
- * HouseStt — STT on the house box (Thelio lemonade, Whisper-Large-v3-Turbo on
- * GPU): max accuracy + speed when the tailnet is up. The app records mic ->
- * serializes a 16k mono WAV -> POSTs multipart to /v1/audio/transcriptions.
- * Falls back gracefully when the house isn't reachable (returns null).
- */
-class HouseStt(private val context: Context) : VoxStt {
-    private val prefs get() = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
-    override val name get() = "House (GPU)"
-    // placeholder; real availability checked per-call (needs the tailnet).
-    private var _ready = false
-    override val isAvailable get() = _ready
-
-    private fun houseUrl(): String =
-        prefs.getString("stt_house_url", "http://100.68.43.34:13305") ?: "http://100.68.43.34:13305"
-
-    override fun init(onReady: (Boolean) -> Unit) {
-        // Lazy ping the house endpoint; if reachable mark ready.
-        thread {
-            try {
-                val c = URL(houseUrl() + "/v1/models").openConnection() as HttpURLConnection
-                c.connectTimeout = 8000; c.readTimeout = 8000
-                c.connect()
-                _ready = c.responseCode == 200
-                c.disconnect()
-            } catch (_: Throwable) { _ready = false }
-            onReady(_ready)
-        }
-    }
-
-    override fun transcribe(samples: FloatArray, sampleRate: Int): String? {
-        return try {
-            val wav = wav16k(samples, sampleRate)
-            val boundary = "----HVBoundary${System.currentTimeMillis()}"
-            val conn = URL(houseUrl() + "/v1/audio/transcriptions").openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"; conn.connectTimeout = 20000; conn.readTimeout = 60000
-            conn.doOutput = true; conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            val body = buildMultipart(boundary, wav)
-            conn.outputStream.use { it.write(body) }
-            if (conn.responseCode != 200) return null
-            val resp = conn.inputStream.bufferedReader().use { it.readText() }
-            JSONObject(resp).optString("text").ifBlank { null }
-        } catch (e: Throwable) { VoxLog.e("house stt: ${e.message}"); null }
-    }
-
-    override fun shutdown() {}
-
-    private fun wav16k(samples: FloatArray, sr: Int): ByteArray {
-        val rate = 16000
-        val data = if (sr == rate) samples else resampleLin(samples, sr, rate)
-        val pcm = ByteArray(data.size * 2)
-        for (i in data.indices) { val s = (data[i].coerceIn(-1f, 1f) * 32767).toInt(); pcm[i*2] = (s and 0xFF).toByte(); pcm[i*2+1] = ((s shr 8) and 0xFF).toByte() }
-        val baos = ByteArrayOutputStream(); val ds = DataOutputStream(baos)
-        ds.writeBytes("RIFF"); ds.writeInt(36 + pcm.size); ds.writeBytes("WAVE")
-        ds.writeBytes("fmt "); ds.writeInt(16); ds.writeShort(1); ds.writeShort(1)
-        ds.writeInt(rate); ds.writeInt(rate * 2); ds.writeShort(2); ds.writeShort(16)
-        ds.writeBytes("data"); ds.writeInt(pcm.size)
-        ds.flush()
-        return baos.toByteArray() + pcm
-    }
-
-    private fun buildMultipart(boundary: String, wav: ByteArray): ByteArray {
-        val baos = ByteArrayOutputStream(); val ds = DataOutputStream(baos)
-        ds.writeBytes("--$boundary\r\n")
-        ds.writeBytes("Content-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n")
-        ds.writeBytes("--$boundary\r\n")
-        ds.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\n")
-        ds.writeBytes("Content-Type: audio/wav\r\n\r\n")
-        ds.write(wav)
-        ds.writeBytes("\r\n--$boundary--\r\n")
-        ds.flush()
-        return baos.toByteArray()
-    }
-
-    private fun resampleLin(inp: FloatArray, from: Int, to: Int): FloatArray {
-        if (from == to) return inp
-        val ratio = to.toFloat() / from; val n = (inp.size * ratio).toInt(); val o = FloatArray(n)
-        for (i in 0 until n) { val idx = i / ratio; val i0 = idx.toInt(); val i1 = (i0+1).coerceAtMost(inp.size-1); val fr = idx-i0; o[i] = inp[i0]*(1-fr)+inp[i1]*fr }
-        return o
     }
 }
 

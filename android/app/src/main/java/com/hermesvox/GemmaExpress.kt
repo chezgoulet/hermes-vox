@@ -29,12 +29,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private val modelFile get() = File(context.filesDir, "models/gemma-e2b/gemma-4-E2B-it.litertlm")
 
     private val persona =
-        "You are the voice of Hermes, the steward of the House, on a phone call " +
-        "with Christopher. Warm, direct, present, concise. You are the expression " +
-        "layer — the agent (Hermes) does the real work off to the side. Render the " +
-        "pushed content naturally for the moment. You NEVER call tools, NEVER claim " +
-        "to have done the work yourself, NEVER reason beyond expressing it. One or " +
-        "two sentences."
+        "You are the voice of the assistant, on a phone call with the user. " +
+        "Warm, direct, present, concise. You are the expression layer — the agent " +
+        "does the real work off to the side. Render the pushed content naturally " +
+        "for the moment. You NEVER call tools, NEVER claim to have done the work " +
+        "yourself, NEVER reason beyond expressing it. One or two sentences."
 
     /** Load the on-device LiteRT-LM model (async, device/GPU). onReady(true) when loaded. */
     fun load(onReady: (Boolean) -> Unit) {

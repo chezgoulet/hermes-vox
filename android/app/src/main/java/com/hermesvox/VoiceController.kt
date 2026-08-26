@@ -73,8 +73,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun buildStt(): VoxStt? {
         val backend = prefString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
         return when (backend) {
-            ModelCatalog.BACKEND_HOUSE -> HouseStt(context)
-            ModelCatalog.BACKEND_PLATFORM -> null   // use the platform SpeechRecognizer
+            ModelCatalog.BACKEND_PLATFORM -> null   // use the on-device Whisper model, else platform STT fallback
             else -> {
                 val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
                 if (ModelCatalog.isInstalled(context, model)) OfflineWhisperStt(context, model) else null
