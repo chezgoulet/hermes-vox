@@ -66,6 +66,23 @@
             android:id="@+id/reply_crawl"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <!-- Conversation mode: a persistent, readable transcript (a11y). -->
+        <ScrollView
+            android:id="@+id/conversation"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/convo_text"
+                style="@style/TextVox.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="6dp"
+                android:padding="14dp"
+                android:textColor="@color/hv_text" />
+        </ScrollView>
     </FrameLayout>
 
     <!-- Input row -->

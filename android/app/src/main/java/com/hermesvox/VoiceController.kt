@@ -291,6 +291,19 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
     @Volatile private var speakerPulse = 0f
 
+    @Volatile private var glueSpeaking = false
+
+    /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
+     *  Preempted by the authoritative Hermes reply (see speak). If the controller
+     *  isn't in a reply, this just voices the presence glue. */
+    fun speakGlue(text: String) {
+        if (text.isBlank()) return
+        glueSpeaking = true
+        main.post {
+            tts?.speak(text) { glueSpeaking = false }
+        }
+    }
+
     private fun speak(text: String) {
         val t = tts
         if (t == null || !ttsReady) {
@@ -298,6 +311,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             listener?.onState("idle")
             return
         }
+        glueSpeaking = false      // Hermes preempts Gemma
         speaking = true
         listener?.onState("speaking")
         t.speak(text) {

@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
     private var toolCount = 0
+    private val express = RoutedExpress()
+    private val orch = VoiceOrchestrator(express)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
@@ -169,6 +171,13 @@ class MainActivity : AppCompatActivity() {
                 toolCount++
                 val nm = line.removePrefix("◆ tool: ").substringBefore('{').substringBefore(' ').trim()
                 avatar.onTool(mapTool(nm), minOf(1f, toolCount * 0.3f))
+                // phone-call presence: Gemma narrates the work (Hermes preempts on the real reply)
+                if (prefs.getBoolean("presence", true)) {
+                    orch.onWorkNarration()?.let { glue ->
+                        status.text = glue
+                        controller?.speakGlue(glue)
+                    }
+                }
             } else if (line.startsWith("◆ tool · ")) {
                 avatar.pulseTool()   // a tool RESULT landed — brief work pulse
             }
