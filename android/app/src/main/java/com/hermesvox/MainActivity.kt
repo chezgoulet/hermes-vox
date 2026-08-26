@@ -304,7 +304,7 @@ class MainActivity : AppCompatActivity() {
         val walkie = mode == ModelCatalog.MODE_WALKIE
         findViewById<View>(R.id.mic).visibility = if (walkie) View.VISIBLE else View.GONE
         findViewById<View>(R.id.send).visibility = if (walkie) View.VISIBLE else View.GONE
-        input.hint = if (walkie) "Type + SEND, or hold PTT" else getString(R.string.hv_input_hint)
+        input.visibility = if (walkie) View.VISIBLE else View.GONE
         // bottom "Realtime" button reflects the *other* mode (tapping switches to it)
         findViewById<android.widget.Button>(R.id.realtime).text = if (walkie) "Realtime" else "Walkie"
         // inline voice toggle (walkie): speak responses on/off
