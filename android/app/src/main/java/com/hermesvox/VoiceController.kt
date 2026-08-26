@@ -49,7 +49,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
 
-    init { tts = buildTts(context, prefString("tts", "system")) }
+    init {
+        tts = buildTts(context, prefString("tts", "system"))
+        // Load the TTS engine up front so a reply is always voiced (text OR mic).
+        tts?.init { ttsReady = it }
+    }
 
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
@@ -57,8 +61,6 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Begins the listening loop. Returns true when STT is actually running. */
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
-        // Best-effort TTS init (never gates listening; speak() guards on ttsReady).
-        tts?.init { ttsReady = it }
         return listen()
     }
 

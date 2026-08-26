@@ -16,6 +16,9 @@ export GOTOOLCHAIN=go1.26.4
 export GOMOBIN=$GOBIN
 export PATH=$JAVA_HOME/bin:$GOBIN:$PATH
 
+echo "== [0/5] fetch pinned runtime deps =="
+bash scripts/fetch-runtime.sh
+
 echo "== [1/5] go vet =="
 # Scope per handoff §10: ./voice (+ ./mobile via the wasm build below).
 # A full-tree vet pulls Ebitengine's DESKTOP glfw path (needs X11 headers) —

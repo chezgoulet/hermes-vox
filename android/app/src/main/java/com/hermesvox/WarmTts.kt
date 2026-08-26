@@ -90,8 +90,12 @@ class WarmTts(private val context: Context) : VoxTts {
     }
 }
 
-/** Builds the configured VoxTts (warm when available + selected, else system). */
+/** Builds the configured VoxTts. BLESSED DEFAULT: once the warm on-device
+ *  Piper model is downloaded, it is used automatically (fully offline); the
+ *  System TTS is the seamless fallback when the model isn't present. */
 fun buildTts(context: Context, prefer: String): VoxTts {
-    val warm = WarmTts(context)
-    return if (prefer == "kokoro" || prefer == "piper") warm else SystemTts(context)
+    return try {
+        if (ModelCatalog.isInstalled(context, "piper-lessac")) SherpaTts(context)
+        else SystemTts(context)
+    } catch (_: Throwable) { SystemTts(context) }
 }

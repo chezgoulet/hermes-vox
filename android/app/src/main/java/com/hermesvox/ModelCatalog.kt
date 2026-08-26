@@ -37,9 +37,9 @@ object ModelCatalog {
         ModelSpec("silero-vad", "Silero VAD", "vad", "silero-vad.zip", 0.5,
             "Barge-in / wake trigger (replaces the RMS hack)", true, 1,
             "2a886b4485cc092bccf0f4dc9604ff0bd9c654c04cab89f78bd020205620a7b2", true),
-        ModelSpec("piper-lessac", "Piper · en-US (Lessac)", "tts", "piper-lessac.zip", 56.0,
+        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "piper-lessac.zip", 78.0,
             "Warm on-device TTS (sherpa-onnx)", true, 2,
-            "3d501911d359e6bd09806681430c46f72583ccacf9381d1360b7ac294ecdfc93", true),
+            "42b6d91ac52bee3ddcd7ee6fbaa9590778b915d11bd838f0aafc8c701485f001", true),
         ModelSpec("whisper-tiny", "Whisper (tiny.en)", "stt", "whisper-tiny.zip", 86.0,
             "Offline speech-to-text (replaces Google STT)", true, 3,
             "b5cd001147d9933d148f8c701b3a984ab5f8dfc03dc7fe3fb885ca5526c0f3b3", true)
