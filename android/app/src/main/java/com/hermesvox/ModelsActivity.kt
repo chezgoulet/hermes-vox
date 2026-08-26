@@ -21,7 +21,6 @@ import androidx.appcompat.app.AppCompatActivity
 class ModelsActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private lateinit var list: LinearLayout
-    private lateinit var source: EditText
     private val downloader = ModelDownloader(this)
     private val cards = mutableMapOf<String, CardUi>()
 
@@ -32,14 +31,8 @@ class ModelsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_models)
         list = findViewById(R.id.m_list)
-        source = findViewById(R.id.m_source)
-        source.setText(ModelCatalog.source(this))
 
         findViewById<android.view.View>(R.id.m_back).setOnClickListener { finish() }
-        findViewById<Button>(R.id.m_apply_source).setOnClickListener {
-            prefs.edit().putString(ModelCatalog.KEY_SOURCE, source.text.toString().trim()).apply()
-            Toast.makeText(this, "Source set", Toast.LENGTH_SHORT).show()
-        }
         findViewById<Button>(R.id.m_download_all).setOnClickListener {
             ModelCatalog.blessed.filter { it.recommended }.forEach { if (!ModelCatalog.isInstalled(this, it.id)) start(it) }
         }

@@ -92,10 +92,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Begins the listening loop. Returns true when STT is actually running. */
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
-        return if (sttReady) listenOffline() else listen()   // on-device Whisper, else platform STT
+        return if (stt != null) listenOffline() else postListen()   // on-device Whisper, else platform STT
     }
 
     // --- On-device Whisper loop: capture mic -> VAD/silence -> transcribe -> turn ---
+    // Platform SpeechRecognizer must run on the MAIN thread; post it.
+    private fun postListen(): Boolean {
+        main.post { listen() }
+        return true
+    }
+
     private fun listenOffline(): Boolean {
         listener?.onState("listening"); listening = true
         val sr = 16000
@@ -125,7 +131,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 try { r.stop() } catch (_: Throwable) {}
                 try { r.release() } catch (_: Throwable) {}
                 commitRequested = false
-                if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (sttReady) listenOffline() else listen() }; return@execute }
+                if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (stt != null) listenOffline() else postListen() }; return@execute }
                 val text = stt?.transcribe(collected.toFloatArray(), sr)
                 VoxLog.d("stt: speechStarted=$speechStarted samples=${collected.size} transcript=${text?.take(120)}")
                 if (!text.isNullOrBlank()) runStreamedTurn(text) else if (listening) main.post { listenOffline() }
