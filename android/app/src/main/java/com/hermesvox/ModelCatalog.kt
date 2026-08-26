@@ -63,9 +63,13 @@ object ModelCatalog {
     const val KEY_STT_BACKEND = "stt_backend"
     const val KEY_STT_MODEL = "stt_model"
     const val KEY_STT_HOUSE_URL = "stt_house_url"
+    const val KEY_VOICE_MODE = "voice_mode"
     const val BACKEND_ONDEVICE = "on-device"
     const val BACKEND_HOUSE = "house"
     const val BACKEND_PLATFORM = "platform"
+    const val MODE_REALTIME = "realtime"          // emulated call, local S2P + Hermes
+    const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
+    const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
 
     fun source(context: Context): String =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE

@@ -100,15 +100,18 @@
             android:textSize="16sp" />
         <Button
             android:id="@+id/mic"
-            android:layout_width="@dimen/mic_size"
+            android:layout_width="72dp"
             android:layout_height="@dimen/mic_size"
             android:layout_marginStart="10dp"
             android:background="@drawable/bg_mic"
             android:elevation="6dp"
-            android:text="🎤"
+            android:gravity="center"
+            android:text="PTT"
             android:textColor="@color/hv_bg"
-            android:textSize="24sp"
-            android:contentDescription="Talk" />
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:contentDescription="Push to talk" />
         <Button
             android:id="@+id/send"
             android:layout_width="56dp"
@@ -116,10 +119,12 @@
             android:layout_marginStart="8dp"
             android:background="@drawable/bg_button_primary"
             android:elevation="4dp"
-            android:text="@string/hv_send"
+            android:text="SEND"
             android:textColor="@color/hv_bg"
-            android:textSize="22sp"
-            android:contentDescription="Send" />
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:contentDescription="Send text" />
     </LinearLayout>
 
     <!-- Secondary actions: gear (left) · realtime (center toggle) · commands (right) -->

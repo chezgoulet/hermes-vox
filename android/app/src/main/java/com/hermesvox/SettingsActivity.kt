@@ -72,6 +72,12 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun bindFlows() {
+        findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
+            pick("Voice mode",
+                arrayOf("Realtime", "Enhanced Realtime", "Walkie Talkie"),
+                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED, ModelCatalog.MODE_WALKIE),
+                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val)
+        }
         findViewById<LinearLayout>(R.id.row_stt).setOnClickListener {
             pick("Speech-to-text (backend)",
                 arrayOf("On-device (offline)", "House GPU (tailnet)", "Platform (Google)"),
@@ -122,6 +128,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshFlowVals() {
+        findViewById<TextView>(R.id.set_mode_val).text = modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
         findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
         val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
@@ -136,6 +143,11 @@ class SettingsActivity : AppCompatActivity() {
         ModelCatalog.BACKEND_PLATFORM -> "Platform (Google)"
         else -> "On-device (offline)"
     }
+    private fun modeLabel(tok: String): String = when (tok) {
+        ModelCatalog.MODE_ENHANCED -> "Enhanced Realtime"
+        ModelCatalog.MODE_WALKIE -> "Walkie Talkie"
+        else -> "Realtime"
+    }
 
     private fun bindAppearance() {
         findViewById<LinearLayout>(R.id.row_theme).setOnClickListener {
@@ -146,6 +158,11 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         findViewById<TextView>(R.id.set_theme_val).text = label("theme", "system")
+        findViewById<LinearLayout>(R.id.row_layout).setOnClickListener {
+            pick("Layout", arrayOf("Presence", "Conversation"),
+                arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
+        }
+        findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
     }
 
     /** Store the TOKEN; render its human label. */

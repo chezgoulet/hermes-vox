@@ -96,6 +96,26 @@
                 android:text="@string/hv_label_flows" />
 
             <LinearLayout
+                android:id="@+id/row_mode"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Voice mode"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mode_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Realtime"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/row_stt"
                 style="@style/HvRow"
                 android:layout_width="match_parent"
@@ -270,6 +290,26 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="System"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_layout"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Layout"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_layout_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Presence"
                     style="@style/HvRowValue" />
             </LinearLayout>
 

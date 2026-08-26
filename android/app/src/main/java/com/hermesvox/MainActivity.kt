@@ -58,7 +58,7 @@ class MainActivity : AppCompatActivity() {
         avatar = findViewById(R.id.avatar)
         conversation = findViewById(R.id.conversation)
         convoText = findViewById(R.id.convo_text)
-        applyLayoutMode()
+        handleModeUi()
         updateStreamVisibility()
         // Tap the presence to cycle through its states/shapes (dev affordance +
         // a delightful easter egg). Cleared on a real turn.
@@ -250,6 +250,16 @@ class MainActivity : AppCompatActivity() {
         if (conversation.visibility == View.VISIBLE) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
     }
 
+    // Voice mode: Realtime / Enhanced Realtime (hands-free open line + keyboard)
+    // vs Walkie Talkie (PTT + SEND buttons). Per Christopher, 2026-08-26.
+    private fun applyVoiceMode() {
+        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
+        val walkie = mode == ModelCatalog.MODE_WALKIE
+        findViewById<View>(R.id.mic).visibility = if (walkie) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.send).visibility = if (walkie) View.VISIBLE else View.GONE
+        input.hint = if (walkie) "Type + SEND, or hold PTT" else getString(R.string.hv_input_hint)
+    }
+
     private fun appendStream(line: String) {
         if (stream.visibility == View.GONE) return   // dev console off
         sseBuf = (sseBuf + "\n" + line).trim().takeLast(1600)
@@ -278,7 +288,9 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); applyLayoutMode() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi() } }
+
+    private fun handleModeUi() { applyLayoutMode(); applyVoiceMode() }
 
     private fun startAvatarLoop() {
         val tick = object : Runnable {
