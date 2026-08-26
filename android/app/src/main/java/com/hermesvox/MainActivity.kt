@@ -25,13 +25,15 @@ import go.Seq
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var input: EditText
-    private lateinit var reply: TextView
-    private lateinit var stream: TextView
+    private lateinit var reply: CrawlView
+    private lateinit var stream: CrawlView
     private lateinit var avatar: AvatarView
     private var session: HermesSession? = null
     private var controller: VoiceController? = null
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var prevIdx = 0
+    private var replyBuf = ""
+    private var sseBuf = "// stream log — watch the agent work"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
@@ -43,9 +45,10 @@ class MainActivity : AppCompatActivity() {
 
         status = findViewById(R.id.status)
         input = findViewById(R.id.input)
-        reply = findViewById(R.id.reply)
-        stream = findViewById(R.id.stream)
+        reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
+        stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
+        updateStreamVisibility()
         // Tap the presence to cycle through its states/shapes (dev affordance +
         // a delightful easter egg). Cleared on a real turn.
         avatar.setOnClickListener {
@@ -102,9 +105,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.clear).setOnClickListener {
             controller?.stop(); controller = null
             session?.resetConversation()
-            input.text.clear(); reply.text = ""; status.text = getString(R.string.hv_not_connected)
-            avatar.setState("idle"); stream.text = "// stream log — watch the agent work"
-            updateReplyVisibility()
+            input.text.clear(); replyBuf = ""; reply.setText(""); status.text = getString(R.string.hv_not_connected)
+            avatar.setState("idle"); sseBuf = "// stream log — watch the agent work"; stream.setText(sseBuf)
         }
         input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
     }
@@ -155,14 +157,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         override fun onDelta(text: String) { runOnUiThread {
-            reply.append(text); updateReplyVisibility()
-            stream.post { stream.scrollTo(0, stream.bottom) }
+            replyBuf += text; reply.setText(replyBuf)
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
             if (line.startsWith("◆ tool")) avatar.pulseTool()
         } }
-        override fun onReply(finalText: String) { runOnUiThread { reply.setText(finalText); updateReplyVisibility() } }
+        override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; reply.setText(replyBuf) } }
         override fun onError(msg: String) { runOnUiThread {
             status.text = if (msg.contains("interrupt")) "You interrupted" else msg
             avatar.setState("idle"); appendStream("// $msg")
@@ -178,16 +179,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun appendStream(line: String) {
-        val t = stream.text.toString()
-        stream.text = ("$t\n$line").trim().takeLast(1600)
-        stream.post { stream.scrollTo(0, stream.height) }
+        if (stream.visibility == View.GONE) return   // dev console off
+        sseBuf = (sseBuf + "\n" + line).trim().takeLast(1600)
+        stream.setText(sseBuf)
     }
 
-    // Live captions: the reply strip is only present when there's content
-    // (the agent is speaking/answering); it vanishes when idle.
-    private fun updateReplyVisibility() {
-        reply.visibility = if (reply.text.isBlank()) View.GONE else View.VISIBLE
-    }
     // The raw SSE console is a dev drawer — hidden unless "Developer console"
     // is toggled in Settings. Keeps the main screen clean + presence-first.
     private fun updateStreamVisibility() {

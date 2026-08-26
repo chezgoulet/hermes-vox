@@ -12,7 +12,6 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal">
-
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -29,7 +28,6 @@
                 style="@style/TextVox.Tag"
                 android:text="@string/hv_tag" />
         </LinearLayout>
-
         <TextView
             android:id="@+id/status"
             android:layout_width="wrap_content"
@@ -41,41 +39,33 @@
             android:text="@string/hv_not_connected" />
     </LinearLayout>
 
-    <!-- Presence hero (fills — the being is the center of gravity) -->
+    <!-- Presence hero (the being occupies the upper field) -->
     <com.hermesvox.AvatarView
         android:id="@+id/avatar"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_weight="1.4"
         android:layout_marginTop="4dp" />
 
-    <!-- Reply: a live caption strip — only present while the agent is answering -->
-    <TextView
-        android:id="@+id/reply"
-        style="@style/TextVox.Reply"
+    <!-- Crawl area: reply (bright) + SSE (smaller, darker) over the black.
+         Text drifts up + fades near the top, before touching the particle field. -->
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:background="@drawable/bg_panel_glass"
-        android:ellipsize="end"
-        android:maxLines="5"
-        android:padding="14dp"
-        android:visibility="gone" />
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="2dp">
 
-    <!-- Stream console: a dev drawer — hidden unless toggled in Settings -->
-    <TextView
-        android:id="@+id/stream"
-        style="@style/TextVox.Console"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:background="@drawable/bg_console_glass"
-        android:maxHeight="120dp"
-        android:maxLines="6"
-        android:padding="10dp"
-        android:scrollbars="vertical"
-        android:text="// stream log — watch the agent work"
-        android:visibility="gone" />
+        <com.hermesvox.CrawlView
+            android:id="@+id/stream"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <com.hermesvox.CrawlView
+            android:id="@+id/reply_crawl"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
 
     <!-- Input row -->
     <LinearLayout
@@ -84,7 +74,6 @@
         android:layout_marginTop="12dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
-
         <EditText
             android:id="@+id/input"
             android:layout_width="0dp"
@@ -94,12 +83,11 @@
             android:hint="@string/hv_input_hint"
             android:imeOptions="actionSend"
             android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="3"
+            android:maxLines="1"
             android:padding="12dp"
             android:textColor="@color/hv_text"
             android:textColorHint="@color/hv_text_dim"
             android:textSize="16sp" />
-
         <Button
             android:id="@+id/mic"
             android:layout_width="@dimen/mic_size"
@@ -111,7 +99,6 @@
             android:textColor="@color/hv_bg"
             android:textSize="24sp"
             android:contentDescription="Talk" />
-
         <Button
             android:id="@+id/send"
             android:layout_width="56dp"
@@ -132,7 +119,6 @@
         android:layout_marginTop="8dp"
         android:gravity="center"
         android:orientation="horizontal">
-
         <Button
             android:id="@+id/settings"
             android:layout_width="wrap_content"
@@ -142,7 +128,6 @@
             android:text="Settings"
             android:textColor="@color/hv_text"
             android:textAllCaps="false" />
-
         <Button
             android:id="@+id/realtime"
             android:layout_width="wrap_content"
@@ -153,7 +138,6 @@
             android:text="Realtime"
             android:textColor="@color/hv_text"
             android:textAllCaps="false" />
-
         <Button
             android:id="@+id/clear"
             android:layout_width="wrap_content"
