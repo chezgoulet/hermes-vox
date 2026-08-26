@@ -151,12 +151,13 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
+            val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
             val crash = CrashLog.read(this)
             val runtime = try {
                 val f = java.io.File(filesDir, "logs/hermes-vox.log")
                 if (f.exists()) f.readText().takeLast(9000) else "no runtime log"
             } catch (_: Throwable) { "no runtime log" }
-            val log = "=== CRASH LOG ===\n$crash\n\n=== RUNTIME LOG (tail) ===\n$runtime"
+            val log = "=== Hermes Vox DEBUG — version $ver ===\n\n=== CRASH LOG ===\n$crash\n\n=== RUNTIME LOG (tail) ===\n$runtime"
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Debug / logs")
                 .setMessage(log)
