@@ -35,6 +35,9 @@ class MainActivity : AppCompatActivity() {
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
     private var toolCount = 0
+    private lateinit var conversation: android.widget.ScrollView
+    private lateinit var convoText: android.widget.TextView
+    private var convoBuf = ""
     private val express = RoutedExpress()
     private val orch = VoiceOrchestrator(express)
 
@@ -51,6 +54,9 @@ class MainActivity : AppCompatActivity() {
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
+        conversation = findViewById(R.id.conversation)
+        convoText = findViewById(R.id.convo_text)
+        applyLayoutMode()
         updateStreamVisibility()
         // Tap the presence to cycle through its states/shapes (dev affordance +
         // a delightful easter egg). Cleared on a real turn.
@@ -119,6 +125,7 @@ class MainActivity : AppCompatActivity() {
         val s = session ?: run { status.text = "Connect first"; return }
         if (text.isBlank()) return
         input.text.clear()
+        appendConvo("You: $text")
         val c = controller ?: VoiceController(this, s).also { controller = it }
         c.attachListeners(listener)
         c.sendText(text)
@@ -182,7 +189,7 @@ class MainActivity : AppCompatActivity() {
                 avatar.pulseTool()   // a tool RESULT landed — brief work pulse
             }
         } }
-        override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; reply.setText(replyBuf) } }
+        override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; reply.setText(replyBuf); appendConvo("Agent: $finalText") } }
         override fun onError(msg: String) { runOnUiThread {
             status.text = if (msg.contains("interrupt")) "You interrupted" else msg
             avatar.setState("idle"); appendStream("// $msg")
@@ -205,6 +212,20 @@ class MainActivity : AppCompatActivity() {
         if (u.isBlank() || k.isBlank()) { status.text = "Connect first"; return }
         startActivity(Intent(this, RealtimeActivity::class.java)
             .putExtra("url", u).putExtra("key", k).putExtra("model", prefs.getString("model", "hermes-agent"))); overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+    }
+
+    // Presence (default) vs Conversation — user-facing Fork-2 customization
+    // (a11y: Conversation gives a persistent, readable transcript instead of the
+    // fading crawl). Persisted via Settings layout_mode (presence|conversation).
+    private fun applyLayoutMode() {
+        val conv = prefs.getString("layout_mode", "presence") == "conversation"
+        conversation.visibility = if (conv) View.VISIBLE else View.GONE
+        reply.visibility = if (conv) View.GONE else View.VISIBLE
+        if (conv) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
+    }
+    private fun appendConvo(line: String) {
+        convoBuf = (convoBuf + "\n" + line).trim().takeLast(4000)
+        if (conversation.visibility == View.VISIBLE) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
     }
 
     private fun appendStream(line: String) {
@@ -235,7 +256,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); applyLayoutMode() } }
 
     private fun startAvatarLoop() {
         val tick = object : Runnable {
