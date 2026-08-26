@@ -209,6 +209,24 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/row_devconsole"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Developer console (stream log)"
+                    style="@style/HvRowTitle" />
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/set_devconsole"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/row_models"
                 style="@style/HvRow"
                 android:layout_width="match_parent"

@@ -49,7 +49,7 @@
         android:layout_weight="1"
         android:layout_marginTop="4dp" />
 
-    <!-- Reply: a slim glassy card for the agent's words -->
+    <!-- Reply: a live caption strip — only present while the agent is answering -->
     <TextView
         android:id="@+id/reply"
         style="@style/TextVox.Reply"
@@ -59,9 +59,10 @@
         android:background="@drawable/bg_panel_glass"
         android:ellipsize="end"
         android:maxLines="5"
-        android:padding="14dp" />
+        android:padding="14dp"
+        android:visibility="gone" />
 
-    <!-- Stream console: a compact dev drawer that recedes -->
+    <!-- Stream console: a dev drawer — hidden unless toggled in Settings -->
     <TextView
         android:id="@+id/stream"
         style="@style/TextVox.Console"
@@ -73,7 +74,8 @@
         android:maxLines="6"
         android:padding="10dp"
         android:scrollbars="vertical"
-        android:text="// stream log — watch the agent work" />
+        android:text="// stream log — watch the agent work"
+        android:visibility="gone" />
 
     <!-- Input row -->
     <LinearLayout

@@ -108,6 +108,9 @@ class SettingsActivity : AppCompatActivity() {
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
+        val devc = findViewById<SwitchCompat>(R.id.set_devconsole)
+        devc.isChecked = prefs.getBoolean("dev_console", false)
+        devc.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("dev_console", on).apply() }
         findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
             startActivity(android.content.Intent(this, ModelsActivity::class.java))
         }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -103,6 +104,7 @@ class MainActivity : AppCompatActivity() {
             session?.resetConversation()
             input.text.clear(); reply.text = ""; status.text = getString(R.string.hv_not_connected)
             avatar.setState("idle"); stream.text = "// stream log — watch the agent work"
+            updateReplyVisibility()
         }
         input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
     }
@@ -153,14 +155,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
         override fun onDelta(text: String) { runOnUiThread {
-            reply.append(text)
+            reply.append(text); updateReplyVisibility()
             stream.post { stream.scrollTo(0, stream.bottom) }
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
             if (line.startsWith("◆ tool")) avatar.pulseTool()
         } }
-        override fun onReply(finalText: String) { runOnUiThread { reply.setText(finalText) } }
+        override fun onReply(finalText: String) { runOnUiThread { reply.setText(finalText); updateReplyVisibility() } }
         override fun onError(msg: String) { runOnUiThread {
             status.text = if (msg.contains("interrupt")) "You interrupted" else msg
             avatar.setState("idle"); appendStream("// $msg")
@@ -180,6 +182,18 @@ class MainActivity : AppCompatActivity() {
         stream.text = ("$t\n$line").trim().takeLast(1600)
         stream.post { stream.scrollTo(0, stream.height) }
     }
+
+    // Live captions: the reply strip is only present when there's content
+    // (the agent is speaking/answering); it vanishes when idle.
+    private fun updateReplyVisibility() {
+        reply.visibility = if (reply.text.isBlank()) View.GONE else View.VISIBLE
+    }
+    // The raw SSE console is a dev drawer — hidden unless "Developer console"
+    // is toggled in Settings. Keeps the main screen clean + presence-first.
+    private fun updateStreamVisibility() {
+        stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
+    }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility() } }
 
     private fun startAvatarLoop() {
         val tick = object : Runnable {
