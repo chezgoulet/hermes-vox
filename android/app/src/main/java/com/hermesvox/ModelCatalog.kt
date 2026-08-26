@@ -17,37 +17,39 @@ data class ModelSpec(
     val id: String,
     val name: String,
     val kind: String,        // "vad" | "tts" | "stt" | "llm"
-    val file: String,        // <source>/<file>.zip
+    val file: String,        // <source>/<file> (canonical artifact on DEFAULT_SOURCE)
     val sizeMB: Double,
     val desc: String,
     val blessed: Boolean,
     val order: Int,
     val sha256: String,
-    val recommended: Boolean
+    val recommended: Boolean,
+    val url: String = ""   // optional full canonical URL override (else <source>/<file>)
 )
 
 object ModelCatalog {
     const val KEY_SOURCE = "model_source"
     // The model source URL is user-entered (Settings -> Voice models). Generic —
     // no house-specific default. Leave empty so the user supplies their own.
-    const val DEFAULT_SOURCE = ""
+    const val DEFAULT_SOURCE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 
     val blessed: List<ModelSpec> = listOf(
-        ModelSpec("silero-vad", "Silero VAD", "vad", "silero-vad.zip", 0.5,
+        ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.5,
             "Barge-in / wake trigger (replaces the RMS hack)", true, 1,
-            "2a886b4485cc092bccf0f4dc9604ff0bd9c654c04cab89f78bd020205620a7b2", true),
-        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "piper-lessac.zip", 78.0,
+            "", true),
+        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "", 78.0,
             "Warm on-device TTS (sherpa-onnx)", true, 2,
-            "42b6d91ac52bee3ddcd7ee6fbaa9590778b915d11bd838f0aafc8c701485f001", true),
-        ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "whisper-tiny.zip", 86.0,
+            "", true,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/piper/piper-en_US-libritts_r-medium.tar.bz2"),
+        ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 86.0,
             "Offline STT · fastest, lightest", true, 3,
-            "b5cd001147d9933d148f8c701b3a984ab5f8dfc03dc7fe3fb885ca5526c0f3b3", false),
-        ModelSpec("whisper-base", "Whisper base.en", "stt", "whisper-base.zip", 162.0,
+            "", false),
+        ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 162.0,
             "Offline STT · blessed default (balanced)", true, 4,
-            "1b9ce55b15fbf2f09893640a1dd1c1062f4963fa90b2d0f97a13eca2e0f9ab84", true),
-        ModelSpec("whisper-small", "Whisper small.en", "stt", "whisper-small.zip", 540.0,
+            "", true),
+        ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 540.0,
             "Offline STT · best accuracy, heaviest", true, 5,
-            "b1549f51778a7d919b787883505e02c15501766e32e4ff8ad0572e92c2c5abe8", false),
+            "", false),
         ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-e2b.zip", 2050.0,
             "On-device expression layer (Enhanced Realtime)", true, 6,
             "877db5533f7ddb7f0438e3fa4cedc49dedebd4c4f66f22e5295cee351e75aadc", false)
@@ -71,18 +73,10 @@ object ModelCatalog {
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
     const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
 
-    fun source(context: Context): String {
-        val p = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
-        val s = p.getString(KEY_SOURCE, "") ?: ""
-        if (s.isNotBlank()) return s
-        // Auto-derive the model store from the SAME host as the entity URL (the
-        // onboarding endpoint) — the store is a sibling service on port STORE_PORT.
-        val url = p.getString("url", "") ?: ""
-        val host = runCatching { Regex("https?://([^/:]+)").find(url)?.groupValues?.get(1) ?: "" }.getOrDefault("")
-        return if (host.isBlank()) "" else "http://" + host + ":" + STORE_PORT
-    }
+    fun source(context: Context): String =
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE
 
-    const val STORE_PORT = 8899
+    // custom model-store URI is a roadmap feature (field kept for later)
 
     fun modelDir(context: Context, id: String) = File(context.filesDir, "models/$id")
 

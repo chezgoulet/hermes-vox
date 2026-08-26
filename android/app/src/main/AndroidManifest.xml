@@ -54,5 +54,14 @@
             android:name=".VoiceService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.hermesvox.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
     </application>
 </manifest>

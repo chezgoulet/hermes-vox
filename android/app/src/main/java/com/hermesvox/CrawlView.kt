@@ -56,7 +56,7 @@ class CrawlView @JvmOverloads constructor(
         val tl = layout ?: StaticLayout.Builder
             .obtain(full, 0, full.length, paint, (width - dp(16f)).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setLineSpacing(0f, 1.05f)
+            .setLineSpacing(dp(3f), 1.18f)
             .build().also { layout = it }
 
         // Slow, continuous upward crawl (Star-Wars drift), consuming the reply.

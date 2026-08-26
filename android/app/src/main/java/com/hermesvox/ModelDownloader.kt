@@ -9,11 +9,14 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 import kotlin.concurrent.thread
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
 /**
- * ModelDownloader — streams a blessed model ZIP into app-private storage
- * (no cloud APIs, no third-party SDK; HttpURLConnection + built-in zip), verifies
- * the sha256, and unpacks to filesDir/models/<id>/. Supports cancel + progress.
+ * ModelDownloader — streams a blessed model from its CANONICAL UPSTREAM URL
+ * (the k2-fsa sherpa-onnx model zoo by default) into app-private storage,
+ * handles the upstream formats (zip / tar.bz2 / a bare onnx), and unpacks to
+ * filesDir/models/<id>/. Supports cancel + progress.
  */
 class ModelDownloader(private val context: Context) {
 
@@ -30,8 +33,6 @@ class ModelDownloader(private val context: Context) {
         thread {
             activeId = spec.id
             cancelled = false
-            // Keep the CPU/network alive so a large download survives Doze /
-            // backgrounding (the app is often backgrounded during a download).
             val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
             var wl: android.os.PowerManager.WakeLock? = null
             try { wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:model-dl"); wl.acquire(30 * 60 * 1000L) } catch (_: Throwable) {}
@@ -51,15 +52,16 @@ class ModelDownloader(private val context: Context) {
 
     private fun doDownload(spec: ModelSpec, listener: Listener): String? {
         val base = ModelCatalog.source(context).trimEnd('/')
-        val conn = (URL("$base/${spec.file}").openConnection() as HttpURLConnection).apply {
+        val urlStr = if (spec.url.isNotBlank()) spec.url else "$base/${spec.file}"
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
         }
         conn.connect()
-        if (conn.responseCode != 200) return "HTTP ${conn.responseCode}"
-        val totalL: Long = conn.contentLengthLong   // Long: contentLength (Int) overflows >2 GB
+        if (conn.responseCode != 200) return "HTTP ${conn.responseCode} for $urlStr"
+        val totalL: Long = conn.contentLengthLong
         if (totalL < 0) return "unknown-length"
 
-        val tmp = File(context.filesDir, "${spec.id}.zip.part")
+        val tmp = File(context.filesDir, "${spec.id}.part")
         FileOutputStream(tmp).use { out ->
             BufferedInputStream(conn.inputStream).use { inp ->
                 val buf = ByteArray(64 * 1024)
@@ -70,32 +72,70 @@ class ModelDownloader(private val context: Context) {
                     if (n < 0) break
                     out.write(buf, 0, n); dl += n
                     val now = System.currentTimeMillis()
-                    // throttle UI progress (~4/s) so a >2 GB download doesn't flood the main thread
                     if (now - lastReport > 250) { listener.onProgress(spec.id, dl, totalL); lastReport = now }
                 }
-                listener.onProgress(spec.id, dl, totalL)  // final
+                listener.onProgress(spec.id, dl, totalL)
             }
         }
         conn.disconnect()
         if (cancelled) { tmp.delete(); return "cancelled" }
 
-        val digest = sha256(tmp)
-        if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch (corrupt download)" }
+        if (spec.sha256.isNotBlank()) {
+            val digest = sha256(tmp)
+            if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch (corrupt download)" }
+        }
 
         val dir = ModelCatalog.modelDir(context, spec.id)
         dir.deleteRecursively(); dir.mkdirs()
-        unpkg(tmp, dir)
+        unpkg(tmp, dir, spec.file)
         tmp.delete()
         return null
     }
 
-    private fun unpkg(zip: File, dir: File) {
+    // Handles zip, tar.bz2, and a bare onnx file.
+    private fun unpkg(src: File, dir: File, fileName: String) {
+        val name = fileName.lowercase()
+        when {
+            name.endsWith(".tar.bz2") -> untarBz2(src, dir)
+            name.endsWith(".zip") -> unpkgZip(src, dir)
+            else -> {  // bare onnx (e.g. silero_vad.onnx) — just place it
+                File(dir, fileName).writeBytes(src.readBytes())
+            }
+        }
+        // Canonical tarballs use a top-level dir (e.g. sherpa-onnx-whisper-tiny.en/);
+        // hoist its contents up so the pipeline finds encoder.onnx at the model root.
+        hoist(dir)
+    }
+
+    private fun untarBz2(src: File, dir: File) {
+        BZip2CompressorInputStream(BufferedInputStream(src.inputStream())).use { bz ->
+            TarArchiveInputStream(bz).use { tar ->
+                val canon = dir.canonicalPath
+                var e = tar.nextEntry
+                while (e != null) {
+                    val target = File(dir, e.name)
+                    if (target.canonicalPath.startsWith(canon + File.separator)) {
+                        if (e.isDirectory) target.mkdirs()
+                        else {
+                            target.parentFile?.mkdirs()
+                            FileOutputStream(target).use { out ->
+                                val buf = ByteArray(64 * 1024); var n: Int
+                                while (tar.read(buf).also { n = it } > 0) out.write(buf, 0, n)
+                            }
+                        }
+                    }
+                    e = tar.nextEntry
+                }
+            }
+        }
+    }
+
+    private fun unpkgZip(zip: File, dir: File) {
         val canon = dir.canonicalPath
         ZipInputStream(BufferedInputStream(zip.inputStream())).use { zis ->
             var e = zis.nextEntry
             while (e != null) {
                 val target = File(dir, e.name)
-                // zip-slip guard: never let an entry escape the model dir
                 if (!target.canonicalPath.startsWith(canon + File.separator)) {
                     zis.closeEntry(); e = zis.nextEntry; continue
                 }
@@ -109,6 +149,18 @@ class ModelDownloader(private val context: Context) {
                 zis.closeEntry(); e = zis.nextEntry
             }
         }
+    }
+
+    // Lift a single wrapping directory's contents to the model root (canonical tarball layout).
+    private fun hoist(dir: File) {
+        val sub = dir.listFiles()?.filter { it.isDirectory }?.firstOrNull() ?: return
+        // Only hoist when there is exactly one top-level dir (a wrapping folder), not a flat layout.
+        if (dir.listFiles()?.count() ?: 0 != 1) return
+        sub.listFiles()?.forEach { f ->
+            val dest = File(dir, f.name)
+            if (f.isDirectory) f.copyRecursively(dest, true) else f.copyTo(dest, true)
+        }
+        sub.deleteRecursively()
     }
 
     private fun sha256(f: File): String {
