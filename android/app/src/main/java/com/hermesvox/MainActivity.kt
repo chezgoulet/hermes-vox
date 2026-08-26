@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var conversation: android.widget.ScrollView
     private lateinit var convoText: android.widget.TextView
     private var convoBuf = ""
-    private val express = RoutedExpress()
+    private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
     private var lineOpen = false
 
@@ -315,7 +315,14 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); autoOpenLine() } }
 
-    private fun handleModeUi() { applyLayoutMode(); applyVoiceMode() }
+    private fun handleModeUi() {
+        applyLayoutMode(); applyVoiceMode()
+        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
+        if (mode == ModelCatalog.MODE_ENHANCED) {
+            val g = express as? GemmaExpress
+            if (g != null && !g.available) g.load {}   // load the on-device model once
+        }
+    }
 
     private fun startAvatarLoop() {
         val tick = object : Runnable {
