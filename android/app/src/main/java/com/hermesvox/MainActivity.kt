@@ -164,6 +164,8 @@ class MainActivity : AppCompatActivity() {
             .setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("speak_responses", on).apply() }
     }
 
+    private fun modeIsRealtime() = (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) != ModelCatalog.MODE_WALKIE
+
     private fun send(text: String) {
         val s = session ?: run { status.text = "Connect first"; return }
         if (text.isBlank()) return

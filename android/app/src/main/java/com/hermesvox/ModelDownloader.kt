@@ -43,7 +43,7 @@ class ModelDownloader(private val context: Context) {
                 else listener.onDone(spec.id)
             } catch (e: Throwable) {
                 if (!cancelled) listener.onError(spec.id, e.message ?: "download failed")
-            } finally { activeId = null; try { wl.release() } catch (_: Exception) {} }
+            } finally { activeId = null; try { wl?.release() } catch (_: Exception) {} }
         }
     }
 
