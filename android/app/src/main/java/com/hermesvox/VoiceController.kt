@@ -116,7 +116,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (n <= 0) continue
                     val frames = FloatArray(n); var rms = 0.0
                     for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; rms += shortBuf[i].toDouble() * shortBuf[i] }
-                    val spoke = if (vad != null) vad!!.feed(frames) else (Math.sqrt(rms / n) / Short.MAX_VALUE > RMS_THRESHOLD)
+                    val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
+                    else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.02f)   // sensitive RMS fallback
                     if (spoke) { speechStarted = true; silentMs = 0 } else if (speechStarted) { silentMs += 64; if (silentMs > 800) break }
                     if (speechStarted) { for (f in frames) collected.add(f) }
                     if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
@@ -126,6 +127,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 commitRequested = false
                 if (!speechStarted || collected.size < sr / 4) { if (listening) main.post { if (sttReady) listenOffline() else listen() }; return@execute }
                 val text = stt?.transcribe(collected.toFloatArray(), sr)
+                VoxLog.d("stt: speechStarted=$speechStarted samples=${collected.size} transcript=${text?.take(120)}")
                 if (!text.isNullOrBlank()) runStreamedTurn(text) else if (listening) main.post { listenOffline() }
             }
             true
@@ -362,7 +364,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var rms = 0.0
                     val frames = FloatArray(n)
                     for (i in 0 until n) { frames[i] = buf[i] / 32768f; rms += buf[i].toDouble() * buf[i] }
-                    val spoke = if (vad != null) vad!!.feed(frames) else (Math.sqrt(rms / n) / Short.MAX_VALUE > RMS_THRESHOLD)
+                    val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
+                    else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.06f)   // higher: avoid self-trigger on the phone
                     if (spoke) { main.post { bargeIn() }; break }
                 }
             }
