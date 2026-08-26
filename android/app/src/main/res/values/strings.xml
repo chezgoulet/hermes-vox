@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hermes Vox</string>
-    <string name="hv_tag">the voice of Hermes</string>
-    <string name="hv_sub">talk to the same mind that runs your world</string>
+    <string name="hv_tag">A Voice for Hermes Agent</string>
+    <string name="hv_sub">enter the credentials for your hermes agent instance</string>
     <string name="hv_connect_verify">Connect &amp; verify</string>
     <string name="hv_skip">I already have a session</string>
     <string name="hv_url_hint">Entity endpoint  ·  http://…</string>
@@ -14,6 +14,6 @@
     <string name="hv_label_entity">ENTITY</string>
     <string name="hv_label_appearance">APPEARANCE</string>
     <string name="hv_label_about">ABOUT</string>
-    <string name="hv_connected">Connected → the entity</string>
+    <string name="hv_connected">Connected</string>
     <string name="hv_not_connected">Not connected</string>
 </resources>
