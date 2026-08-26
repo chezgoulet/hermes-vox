@@ -125,14 +125,11 @@ class MainActivity : AppCompatActivity() {
         val s = session ?: return
         if (lineOpen) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
-        lineOpen = true
-        // Start the mic foreground service so the process + voice line survive
-        // Android backgrounding / process killing (always-on).
-        try { VoiceService.start(this) } catch (_: Exception) {}
-        acquireVoiceWake()
+        // Single-owner: `controller` is the ONE VoiceController (the Activity owns
+        // the loop; VoiceService is a keepalive). lineOpen is set ONLY just before
+        // we actually run the line, so the warm-up retry can re-enter.
         val c = controller ?: VoiceController(this, s).also { controller = it }
         c.attachListeners(listener)
-        if (lineOpen) return
         val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
         if (sttInstalled && !c.isWarm()) {
             // Models still loading: show the splash, re-check, don't open the mic.
@@ -141,7 +138,13 @@ class MainActivity : AppCompatActivity() {
             mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
             return
         }
+        lineOpen = true   // only now: we're about to run the line (re-entry guard held)
         warming.visibility = android.view.View.GONE
+        // Keep the mic-type foreground service alive so the loop can use the mic
+        // (Android 14+ needs a foreground mic service); it does NOT own a second
+        // controller.
+        try { VoiceService.start(this) } catch (_: Exception) {}
+        acquireVoiceWake()
         c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
     }
 

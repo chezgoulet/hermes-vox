@@ -9,45 +9,32 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.hermesvox.mobile.HermesSession
 
 /**
- * VoiceService — the background foreground service that owns the voice turn
- * loop (microphone type on Android 14+). The app keeps listening + responding
- * even when the Activity isn't in the foreground. Started/stopped by the UI;
- * START_STICKY + a persistent notification keeps it alive.
+ * VoiceService — the foreground keepalive for the voice line (microphone type on
+ * Android 14+). It keeps the process + the mic-type notification alive so the
+ * Activity's single VoiceController can access the mic and survive backgrounding.
+ * It does NOT own a VoiceController (single-owner). Started/stopped by the UI.
  */
 class VoiceService : Service() {
-    private var session: HermesSession? = null
-    private var controller: VoiceController? = null
+    // SINGLE-OWNER (best-practice, 2026-08-26): this foreground service ONLY keeps
+    // the process + the microphone-type notification alive so the Activity's ONE
+    // VoiceController can run (it reuses the entity session). It does NOT create
+    // its own VoiceController — a second VoiceController/second AudioRecord was
+    // the realtime double-fire root.
     private val CHANNEL = "hermes_vox_voice"
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        val prefs = getSharedPreferences("hv", Context.MODE_PRIVATE)
-        val u = prefs.getString("url", "").orEmpty()
-        val k = prefs.getString("key", "").orEmpty()
-        val m = prefs.getString("model", "hermes-agent").orEmpty()
-        if (u.isNotBlank() && k.isNotBlank()) {
-            session = HermesSession(u, k, m)
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(1, buildNotification())
-        startVoice()
         return START_STICKY
     }
 
-    private fun startVoice() {
-        val s = session ?: return
-        controller = VoiceController(this, s)
-        controller?.start(listener, true)
-    }
-
     override fun onDestroy() {
-        controller?.stop(); controller = null
         super.onDestroy()
     }
 
@@ -68,14 +55,6 @@ class VoiceService : Service() {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-
-    private val listener = object : VoiceController.Listener {
-        override fun onState(s: String) {}
-        override fun onDelta(t: String) {}
-        override fun onLog(l: String) {}
-        override fun onReply(r: String) {}
-        override fun onError(e: String) {}
-    }
 
     companion object {
         fun start(context: Context) {
