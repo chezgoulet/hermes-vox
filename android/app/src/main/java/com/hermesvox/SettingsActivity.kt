@@ -153,11 +153,14 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
             val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
             val crash = CrashLog.read(this)
-            val runtime = try {
+            val full = try {
                 val f = java.io.File(filesDir, "logs/hermes-vox.log")
-                if (f.exists()) f.readText().takeLast(9000) else "no runtime log"
+                if (f.exists()) f.readText() else "no runtime log"
             } catch (_: Throwable) { "no runtime log" }
-            val log = "=== Hermes Vox DEBUG — version $ver ===\n\n=== CRASH LOG ===\n$crash\n\n=== RUNTIME LOG (tail) ===\n$runtime"
+            // Full session log (this file is the WHOLE log since app start, so send the
+            // whole thing — not a tail). Cap the inline dialog view only.
+            val runtime = full.takeLast(60000).ifEmpty { "no runtime log" }
+            val log = "=== Hermes Vox DEBUG — version $ver ===\n\n=== CRASH LOG ===\n$crash\n\n=== RUNTIME LOG (full) ===\n$runtime"
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Debug / logs")
                 .setMessage(log)
@@ -166,7 +169,15 @@ class SettingsActivity : AppCompatActivity() {
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("vox-debug", log))
                     android.widget.Toast.makeText(this, "copied", android.widget.Toast.LENGTH_SHORT).show()
                 }
-                .setNeutralButton("Clear crash log") { _, _ -> CrashLog.clear(this); findViewById<TextView>(R.id.set_debug_val).text = "view" }
+                .setNeutralButton("Share full log") { _, _ ->
+                    val f = java.io.File(filesDir, "logs/hermes-vox.log")
+                    val uri = androidx.core.content.FileProvider.getUriForFile(this, packageName + ".fileprovider", f)
+                    val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(android.content.Intent.EXTRA_STREAM, uri); addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(android.content.Intent.createChooser(i, "Send full Hermes Vox log"))
+                }
+                .setNegativeButton("Clear crash log") { _, _ -> CrashLog.clear(this); findViewById<TextView>(R.id.set_debug_val).text = "view" }
                 .setNegativeButton("Close", null)
                 .show()
         }
