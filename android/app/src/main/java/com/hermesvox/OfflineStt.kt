@@ -32,6 +32,7 @@ interface VoxStt {
  */
 class OfflineWhisperStt(private val context: Context, private val modelId: String = "whisper-base") : VoxStt {
     private var rec: OfflineRecognizer? = null
+    @Volatile private var ready = false
     override val name get() = "Whisper-$modelId"
     override val isAvailable get() = rec != null
 
@@ -56,6 +57,7 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
                 val feat = FeatureConfig(16000, 80, 0f)
                 val cfg = OfflineRecognizerConfig(feat, modelCfg, HomophoneReplacerConfig("", "", ""), "greedy_search", 4, "", 0f, "", "", 0f)
                 rec = OfflineRecognizer(null, cfg)   // assetManager=null: absolute-path model
+                ready = true
                 VoxLog.d("OfflineWhisperStt loaded: $modelId")
                 onReady(true)
             } catch (e: Throwable) {
@@ -65,7 +67,8 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
         }
     }
 
-    override fun transcribe(samples: FloatArray, sampleRate: Int): String? {
+    @Synchronized override fun transcribe(samples: FloatArray, sampleRate: Int): String? {
+        if (!ready) return null
         val r = rec ?: return null
         return try {
             val s = r.createStream()
