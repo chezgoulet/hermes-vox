@@ -118,58 +118,68 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun listenOffline(): Boolean {
-        if (loopActive) return false   // only ONE listen loop may run at a time
-        loopActive = true
+        if (loopActive) return false
         listener?.onState("listening"); listening = true
         val sr = 16000
         val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return listen()
         return try {
-            val r = AudioRecord(MediaRecorder.AudioSource.MIC, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf)
+            // Hardware noise suppression + echo cancel on the capture side (many devices
+            // enable real AEC/NS from VOICE_COMMUNICATION). Default on; the mic settings
+            // let the user switch back to raw MIC.
+            val source = if (micBool("mic_aec", true)) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.MIC
+            val r = AudioRecord(source, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf)
             if (r.state != AudioRecord.STATE_INITIALIZED) return listen()
             record = r
-            r.startRecording()
-            listener?.onLog("// hear → listening (offline whisper)")
             val shortBuf = ShortArray(1024)
-            val collected = ArrayList<Float>(sr)
+            // Mic settings (user-changeable, logged so their impact is visible).
+            val silenceMs = micInt("vad_silence_ms", 800)      // "the pause" that ends your turn
+            val maxMs = micInt("vad_max_ms", 15000)
+            val minSpeechMs = micInt("vad_min_speech_ms", 300)
+            val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
+            VoxLog.d("mic: source=$sourceName threshold=${micInt("vad_threshold", 0)} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms")
             exec.execute {
-                // ONE clean self-cycling loop. The OLD code re-listened via main.post{listenOffline()},
-                // spawning a SECOND loop while the first's audio was draining -> two clips -> two streams
-                // -> gateway 401 (double-fire). Now: capture -> VAD -> transcribe -> turn -> AWAIT -> re-listen.
+                val seg = ArrayList<Float>(sr)
+                // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
+                // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
+                // (turnDone.await through speech-complete) enforces that.
                 while (listening) {
                     loopActive = true
                     commitRequested = false
                     try { r.startRecording() } catch (_: Throwable) { break }
                     listener?.onState("listening")
-                    listener?.onLog("// hear → listening (offline whisper)")
-                    var speechStarted = false; var silentMs = 0; val startMs = android.os.SystemClock.uptimeMillis()
-                    collected.clear()
-                    while (listening && collected.size < sr * 15 && !commitRequested) {
+                    listener?.onLog("// hear → listening")
+                    var inSpeech = false; var silentMs = 0
+                    val segStart = android.os.SystemClock.uptimeMillis()
+                    seg.clear()
+                    // VAD-driven segmentation: gather one utterance; close it on a pause.
+                    while (listening && !commitRequested) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
-                        val frames = FloatArray(n); var rms = 0.0
-                        for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; rms += shortBuf[i].toDouble() * shortBuf[i] }
-                        val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
-                        else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.02f)   // sensitive RMS fallback
-                        if (spoke) { speechStarted = true; silentMs = 0 } else if (speechStarted) { silentMs += 64; if (silentMs > 1000) break }
-                        if (speechStarted) for (f in frames) collected.add(f)
-                        if (android.os.SystemClock.uptimeMillis() - startMs > 15000) break
+                        val frames = FloatArray(n)
+                        for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
+                        val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
+                        if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += 64
+                        if (inSpeech) for (f in frames) seg.add(f)
+                        if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
+                        if (android.os.SystemClock.uptimeMillis() - segStart > maxMs) break
                     }
                     try { r.stop() } catch (_: Throwable) {}
-                    if (!speechStarted || collected.size < sr / 4) continue   // no speech -> cycle back
-                    val text = try { stt?.transcribe(collected.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
-                    VoxLog.d("stt: speechStarted=$speechStarted samples=${collected.size} transcript=${text?.take(120)}")
-                    if (text.isNullOrBlank()) continue
+                    val text = if (inSpeech && seg.size >= (sr * minSpeechMs / 1000)) {
+                        try { stt?.transcribe(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
+                    } else null
+                    VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} text=${text?.take(120)}")
+                    if (text.isNullOrBlank()) continue                  // noise / no-speech -> keep listening
                     val t = text.trim()
-                    // Noise rejection: whisper returns (static)/(buzzing)/(clicking)/[SOUND]/[BLANK_AUDIO]
-                    // for the TTS's own output / ambient noise — never fire those as a user turn.
-                    if (t.length < 3 || t.matches(Regex("\\(.*?\\)")) || t.startsWith("[") || t.startsWith("(")) continue
+                    // Reject non-speech (static/buzzing/[SOUND]) + too-short fragments.
+                    if (t.length < 3 || t.startsWith("[") || t.startsWith("(")) continue
+                    // HARD SPEAK-GATE: block until the reply AND its speech finish.
                     turnDone = java.util.concurrent.CountDownLatch(1)
                     val latch = turnDone
                     main.post { runStreamedTurn(text) }
                     try { latch.await() } catch (_: Throwable) {}
                 }
-                loopActive = false   // loop exited (stop/deactivate) — release the mic ownership
+                loopActive = false
                 listener?.onState("idle")
             }
             true
@@ -305,7 +315,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
-                turnDone.countDown()
+                // (speak-gate released in the speak-complete callback, not here)
             }
         }
     }
@@ -383,6 +393,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             speaking = false
             listener?.onState("idle")
             if (bargeInArmed) stopBargeInWatch()
+            turnDone.countDown()   // release the realtime loop's speak-gate after speech finishes
         }
         // Arm barge-in AFTER a short delay + at a higher threshold so the mic
         // doesn't cancel the TTS on its own output (the "hears itself" cut).
@@ -438,6 +449,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
 
     private fun speakEnabled() = context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("speak_responses", true)
+
+    private fun micInt(k: String, d: Int): Int =
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getInt(k, d)
+    private fun micBool(k: String, d: Boolean): Boolean =
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean(k, d)
 
     private fun prefString(k: String, d: String) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
