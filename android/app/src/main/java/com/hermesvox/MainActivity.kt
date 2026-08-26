@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private var convoBuf = ""
     private val express = RoutedExpress()
     private val orch = VoiceOrchestrator(express)
+    private var lineOpen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
@@ -97,6 +98,21 @@ class MainActivity : AppCompatActivity() {
     }
     private var autoSend: String? = null
 
+    // Hands-free Realtime / Enhanced Realtime: auto-open the voice line (VAD +
+    // barge-in) once the session is live + mic permission granted. Walkie is
+    // explicit (hold to talk), so it's skipped. idempotent (lineOpen).
+    private fun autoOpenLine() {
+        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
+        if (mode == ModelCatalog.MODE_WALKIE) return
+        val s = session ?: return
+        if (lineOpen) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
+        lineOpen = true
+        val c = controller ?: VoiceController(this, s).also { controller = it }
+        c.attachListeners(listener)
+        c.start(listener, prefs.getBoolean("duplex", true))
+    }
+
     private fun connectFromPrefs() {
         val u = prefs.getString("url", "").orEmpty()
         val k = prefs.getString("key", "").orEmpty()
@@ -110,11 +126,16 @@ class MainActivity : AppCompatActivity() {
         appendStream("// connected → $u")
         // Auto-send a routed turn (E2E proof path).
         autoSend?.let { send(it) }
+        autoOpenLine()
     }
 
     private fun wireButtons() {
         findViewById<Button>(R.id.send).setOnClickListener { send(input.text.toString()) }
-        findViewById<Button>(R.id.mic).setOnClickListener { talk() }
+        findViewById<Button>(R.id.mic).setOnTouchListener { v, ev ->
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) { talk(); v.isPressed = true }
+            else if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) { v.isPressed = false }
+            true
+        }
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.realtime).setOnClickListener { openRealtime() }
         findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
@@ -288,7 +309,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); autoOpenLine() } }
 
     private fun handleModeUi() { applyLayoutMode(); applyVoiceMode() }
 
