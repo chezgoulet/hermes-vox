@@ -30,7 +30,7 @@ class SettingsActivity : AppCompatActivity() {
         bindEntity()
         bindFlows()
         bindAppearance()
-        findViewById<TextView>(R.id.set_about_val).text = "0.2.0"
+        findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
     }
 
     private fun bindEntity() {
