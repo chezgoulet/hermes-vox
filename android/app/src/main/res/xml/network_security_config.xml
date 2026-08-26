@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hermes Vox is local-first: the entity endpoint and the model store are
+     LAN/tailnet hosts over plain http by design (no cloud, house network). So
+     cleartext HTTP is permitted. If a host is ever publicly reachable, serve it
+     over TLS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>

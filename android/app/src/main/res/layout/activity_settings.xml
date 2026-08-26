@@ -170,6 +170,25 @@
                     android:layout_height="wrap_content" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/row_models"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Voice models"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_models_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0/3 installed"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
             <TextView
                 style="@style/TextVox.Label"
                 android:layout_width="wrap_content"

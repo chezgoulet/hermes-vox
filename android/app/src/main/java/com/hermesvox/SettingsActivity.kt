@@ -89,6 +89,12 @@ class SettingsActivity : AppCompatActivity() {
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
+        findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
+            startActivity(android.content.Intent(this, ModelsActivity::class.java))
+        }
+        val installed = ModelCatalog.blessed.count { ModelCatalog.isInstalled(this, it.id) }
+        findViewById<TextView>(R.id.set_models_val).text =
+            "$installed/${ModelCatalog.blessed.size} installed · on-device, offline"
 
         refreshFlowVals()
     }

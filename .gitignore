@@ -19,3 +19,4 @@
 *.rejected.txt
 mobile.aar
 mobile-sources.jar
+models-store/
