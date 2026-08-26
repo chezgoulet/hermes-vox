@@ -6,33 +6,25 @@
     android:orientation="vertical"
     android:padding="18dp">
 
-    <!-- Header: title + status -->
+    <!-- Header: agent name (center-top) + status pill directly beneath -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                style="@style/TextVox.Title"
-                android:text="HERMES VOX" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                style="@style/TextVox.Tag"
-                android:text="@string/hv_tag" />
-        </LinearLayout>
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
         <TextView
-            android:id="@+id/status"
+            android:id="@+id/agent_name"
+            style="@style/TextVox.Title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="HERMES VOX" />
+        <TextView
+            android:id="@+id/status"
             style="@style/TextVox.Tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
             android:background="@drawable/bg_chip"
             android:paddingHorizontal="12dp"
             android:paddingVertical="6dp"
@@ -130,44 +122,51 @@
             android:contentDescription="Send" />
     </LinearLayout>
 
-    <!-- Secondary actions -->
+    <!-- Secondary actions: gear (left) · realtime (center toggle) · commands (right) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:gravity="center"
+        android:gravity="center_vertical"
         android:orientation="horizontal">
         <Button
             android:id="@+id/settings"
             style="@style/HvGhostButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="48dp"
+            android:layout_height="40dp"
             android:background="@drawable/bg_button_ghost"
-            android:paddingHorizontal="18dp"
-            android:text="Settings"
+            android:text="⚙"
             android:textColor="@color/hv_text"
-            android:textAllCaps="false" />
+            android:textSize="18sp"
+            android:contentDescription="Settings" />
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
         <Button
             android:id="@+id/realtime"
             style="@style/HvGhostButton"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_height="40dp"
             android:background="@drawable/bg_button_ghost"
             android:paddingHorizontal="18dp"
             android:text="Realtime"
             android:textColor="@color/hv_text"
-            android:textAllCaps="false" />
-        <Button
-            android:id="@+id/clear"
-            style="@style/HvGhostButton"
-            android:layout_width="wrap_content"
+            android:textAllCaps="false"
+            android:contentDescription="Realtime call" />
+        <Space
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_weight="1" />
+        <Button
+            android:id="@+id/commands"
+            style="@style/HvGhostButton"
+            android:layout_width="56dp"
+            android:layout_height="40dp"
             android:background="@drawable/bg_button_ghost"
-            android:paddingHorizontal="18dp"
-            android:text="Clear"
+            android:text="/"
             android:textColor="@color/hv_text"
-            android:textAllCaps="false" />
+            android:textSize="17sp"
+            android:contentDescription="Commands" />
     </LinearLayout>
 </LinearLayout>

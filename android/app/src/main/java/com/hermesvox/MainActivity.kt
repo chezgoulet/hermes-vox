@@ -24,6 +24,7 @@ import go.Seq
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var agentName: TextView
     private lateinit var input: EditText
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
@@ -50,6 +51,7 @@ class MainActivity : AppCompatActivity() {
         maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
+        agentName = findViewById(R.id.agent_name)
         input = findViewById(R.id.input)
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
@@ -102,6 +104,9 @@ class MainActivity : AppCompatActivity() {
         if (u.isBlank() || k.isBlank()) return
         session = HermesSession(u, k, m)
         status.text = getString(R.string.hv_connected)
+        // The header shows the agent's name (the Hermes profile name, or the name
+        // entered in onboarding) — center-top, with the status pill beneath.
+        agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { m }.uppercase()
         appendStream("// connected → $u")
         // Auto-send a routed turn (E2E proof path).
         autoSend?.let { send(it) }
@@ -112,12 +117,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.mic).setOnClickListener { talk() }
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.realtime).setOnClickListener { openRealtime() }
-        findViewById<Button>(R.id.clear).setOnClickListener {
-            controller?.stop(); controller = null
-            session?.resetConversation()
-            input.text.clear(); replyBuf = ""; reply.setText(""); status.text = getString(R.string.hv_not_connected)
-            avatar.setState("idle"); sseBuf = "// stream log — watch the agent work"; stream.setText(sseBuf)
-        }
+        findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
         input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
     }
 
@@ -207,6 +207,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() { startActivity(Intent(this, SettingsActivity::class.java)); overridePendingTransition(R.anim.slide_in, R.anim.fade_out) }
+
+    /** Expose the Hermes instance's /commands. For the MVP a curated set; the
+     *  live command list is a follow-up (query the gateway). */
+    private fun showCommands() {
+        val cmds = arrayOf(
+            "/clear", "/reset", "/status", "/models", "/help")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Commands")
+            .setItems(cmds) { _, w ->
+                val cmd = cmds[w]
+                if (cmd == "/clear" || cmd == "/reset") {
+                    controller?.stop(); controller = null
+                    session?.resetConversation()
+                    input.text.clear(); replyBuf = ""; reply.setText("")
+                    avatar.setState("idle"); status.text = getString(R.string.hv_connected)
+                } else if (cmd != "/help") {
+                    send(cmd)   // let Hermes handle the command
+                }
+            }
+            .show()
+    }
+
     private fun openRealtime() {
         val u = prefs.getString("url", "").orEmpty(); val k = prefs.getString("key", "").orEmpty()
         if (u.isBlank() || k.isBlank()) { status.text = "Connect first"; return }
