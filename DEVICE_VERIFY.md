@@ -1,33 +1,64 @@
-# Hermes Vox — on-device test / verify checklist (the "nearly-complete MVP")
+# Hermes Vox — sideload & on-device verify (the "make it work on the phone" guide)
 
-Sideload `android/app/build/outputs/apk/debug/app-debug.apk` on the Pixel (or
-`adb install` on emulator-5554). Point it at the entity gateway
-(`http://<tailnet-ip>:8642`, key user-entered in-app) + download the blessed
-models in Settings → Voice models.
+The APK is a thin voice client whose mind is your Hermes agent. It must be on the
+**same network as the Hermes gateway + the model store** (tailnet or LAN). The
+**core (Realtime / Walkie Talkie) works on-device** with the blessed models
+downloaded in-app; the on-device **Gemma model** is the Enhanced-Realtime
+enhancement (downloadable, runtime is the last integrate step).
 
-## What to verify on the DEVICE (the emulator is x86_64/no-NPU — function + logic
-here; real speech + NPU are the device's job)
+## Sideload
 
-1. **Voice pipeline on real mic + speaker** (the emulator has a virtual mic only):
-   - Tap 🎤 → talk → the being gathers (working) → on-device Whisper STT →
-     Hermes answers → on-device Piper TTS speaks. Warm voice, no cloud.
-   - Barge-in: talk over Hermes mid-answer → it cuts + re-listens (Silero VAD).
-2. **The phone-call glue (Gemma presence, orchestration):** on a tool call, the
-   being narrates ("let me dig into that...") via `speakGlue`, then Hermes's real
-   answer preempts it. Give Hermes a tool-heavy prompt to see the narration.
-3. **Gemma 4 E2B model (the on-device expression backend):**
-   - Put `gemma-4-E2B-it.litertlm` (~0.8 GB text-only,
-     `litert-community/gemma-4-E2B-it-litert-lm`) at
-     `filesDir/models/gemma-e2b/gemma-4-E2B-it.litertlm`.
-   - `GemmaExpress.load()` should log `GemmaExpress loaded`; until the LiteRT-LM
-     runtime is wired (TODO(device) in GemmaExpress.kt), it falls back to the
-     RoutedExpress stand-in — the phone-call orchestration still works either way.
-4. **The design language:** presence-first being (dispersed aura → golden gyre →
-   white sparkle), Star-Wars reply crawl (bright) + SSE (dim, dev console toggle),
-   Rajdhani type, no pills.
+- **APK:** `android/app/build/outputs/apk/release/app-release.apk` (signed,
+  sideloadable; 193 MB — bundles the on-device speech native libs).
+  (Dev: `.../debug/app-debug.apk` also installs.)
+- `adb install -r app-release.apk` on the device, or copy + tap to install
+  (allow "install from unknown sources").
 
-## Still to build (the MVP tail)
-- **The Gemma on-device runtime** (LiteRT-LM native init + call at the
-  GemmaExpress TODO) — the real on-device expression model.
-- **MiniCPM-o-on-Thelio realtime** (option 3): full-duplex S2S streamed from the
-  house box to the phone (sovereign).
+## First-run (onboarding)
+
+1. **Entity endpoint** — `http://<host>:8642` (the Hermes API-server gateway on
+   the tailnet). The device must reach it.
+2. **API key** — user-entered (encrypted at rest, never committed). The entity
+   connector does a real Ping (never fake-success).
+3. **Agent name** — the Hermes profile name; shown center-top after connect.
+
+## Download the blessed models (on-device)
+
+**Settings → Voice models.** The blessed set downloads from the in-app source
+(default the House store, configurable), stream → sha256-verify → unpack
+(no cloud, no sideload):
+- **Silero VAD** (barge-in)
+- **Piper · en-US** (warm on-device TTS)
+- **Whisper base.en** (on-device STT; tiny/small are options)
+
+## Which mode does what
+
+- **Realtime** — hands-free open line: talk, the being listens (VAD) + barge-in,
+  Hermes answers, warm Piper speaks. Keyboard works too.
+- **Enhanced Realtime** — same + the on-device **Gemma 4 E2B** expression layer
+  (download `gemma-e2b` in Voice models). Until the LiteRT-LM runtime lands it
+  gracefully uses the routed stand-in (the phone-call glue still works).
+- **Walkie Talkie** — hold **PTT** to talk (release to send), or type + **SEND**.
+
+## Verify on the device (the emulator is function-only; real mic/NPU here)
+
+1. **Voice turn** — tap 🎤/PTT → talk → being gathers (working) → Hermes answers
+   → Piper speaks. No cloud.
+2. **Barge-in** — talk over Hermes mid-answer → it cuts + re-listens.
+3. **The being** — reacts to real tool calls (terminal→bracket, web→scan,
+   file→fold, memory→constellation).
+4. **Gemma download** — `gemma-e2b` (~0.8 GB) downloads; `GemmaExpress loaded`
+   logs once the LiteRT-LM runtime is wired (TODO(device) in GemmaExpress.kt).
+5. **Heartbeat of the design** — the Star-Wars reply crawl, the eye-being,
+   Rajdhani type, the three modes.
+
+## Troubleshooting
+
+- **"Connect first" / ping fails** — the device can't reach the gateway; check
+  the tailnet/LAN + the endpoint (`/v1/models` must be reachable).
+- **Model download fails** — the store source isn't reachable on the device; set
+  a reachable source in Settings → Voice models.
+- **STT unavailable** — the on-device Whisper model isn't installed (download it)
+  or the backend is "Platform (Google)" without it. On-device Whisper is the
+  local-first default.
+- **No warm voice** — Piper isn't installed; it falls back to the system TTS.

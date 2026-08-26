@@ -15,9 +15,18 @@ android {
         // (secret-safe — never committed). Empty -> the entity connector errors
         // rather than faking a reply.
     }
+    signingConfigs {
+        release {
+            storeFile file("${System.getProperty('user.home')}/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
         }
     }
     namespace 'com.hermesvox'
