@@ -152,7 +152,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
                 findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
             val u = prefs.getString("url", ""); val k = prefs.getString("key", "")
-            val c = com.hermesvox.VoiceController(this, com.hermesvox.HermesSession(u ?: "", k ?: "", ""))
+            val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(u ?: "", k ?: "", ""))
             val r = c.testConnection()
             findViewById<TextView>(R.id.set_test_val)?.text = "done"
             androidx.appcompat.app.AlertDialog.Builder(this)
