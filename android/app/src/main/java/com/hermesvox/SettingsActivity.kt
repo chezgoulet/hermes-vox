@@ -30,6 +30,8 @@ class SettingsActivity : AppCompatActivity() {
         bindEntity()
         bindFlows()
         bindAppearance()
+        bindMicSettings()
+        bindParticles()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
     }
 
@@ -191,6 +193,97 @@ class SettingsActivity : AppCompatActivity() {
                 .setNegativeButton("Close", null)
                 .show()
         }
+    }
+
+    // ---- Mic / capture settings (prefs were wired + logged in VoiceController;
+    // these rows make them user-visible + settable) -------------------------
+    private fun bindMicSettings() {
+        val aec = findViewById<SwitchCompat>(R.id.set_mic_aec)
+        aec.isChecked = prefs.getBoolean("mic_aec", true)
+        aec.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("mic_aec", on).apply() }
+
+        val vadLabels = arrayOf("Sensitive", "Balanced", "Strict")
+        val vadVals = floatArrayOf(0.3f, 0.5f, 0.7f)
+        setFloatVal(R.id.set_mic_vad_val, vadLabels, vadVals, prefs.getFloat("vad_threshold", 0.5f))
+        findViewById<LinearLayout>(R.id.row_mic_vad).setOnClickListener {
+            micChoiceFloat("Mic sensitivity (VAD)", vadLabels, vadVals, "vad_threshold", R.id.set_mic_vad_val)
+        }
+
+        val minLabels = arrayOf("Short", "Normal", "Long")
+        val minVals = intArrayOf(200, 300, 600)
+        setIntVal(R.id.set_mic_min_speech_val, minLabels, minVals, prefs.getInt("vad_min_speech_ms", 300))
+        findViewById<LinearLayout>(R.id.row_mic_min_speech).setOnClickListener {
+            micChoiceInt("Min speech before a turn", minLabels, minVals, "vad_min_speech_ms", R.id.set_mic_min_speech_val)
+        }
+
+        val silLabels = arrayOf("Quick", "Normal", "Relaxed")
+        val silVals = intArrayOf(400, 800, 1500)
+        setIntVal(R.id.set_mic_silence_val, silLabels, silVals, prefs.getInt("vad_silence_ms", 800))
+        findViewById<LinearLayout>(R.id.row_mic_silence).setOnClickListener {
+            micChoiceInt("Pause to end your turn", silLabels, silVals, "vad_silence_ms", R.id.set_mic_silence_val)
+        }
+
+        val maxLabels = arrayOf("15s", "30s", "60s")
+        val maxVals = intArrayOf(15000, 30000, 60000)
+        setIntVal(R.id.set_mic_max_val, maxLabels, maxVals, prefs.getInt("vad_max_ms", 15000))
+        findViewById<LinearLayout>(R.id.row_mic_max).setOnClickListener {
+            micChoiceInt("Max speech per turn", maxLabels, maxVals, "vad_max_ms", R.id.set_mic_max_val)
+        }
+    }
+
+    // ---- Particles / presence settings (moved off the raw avatar tap; tap = stop) ----
+    private fun bindParticles() {
+        val themeLabels = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation")
+        val themeVals = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation")
+        val theme = prefs.getString("particles_theme", "aura") ?: "aura"
+        setStringVal(R.id.set_particle_theme_val, themeLabels, themeVals, theme)
+        findViewById<LinearLayout>(R.id.row_particle_theme).setOnClickListener {
+            micChoiceString("Presence shape / theme", themeLabels, themeVals, "particles_theme", R.id.set_particle_theme_val)
+        }
+        val cyc = findViewById<SwitchCompat>(R.id.set_particle_cycle)
+        cyc.isChecked = prefs.getBoolean("particles_cycle", true)
+        cyc.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("particles_cycle", on).apply() }
+    }
+
+    // Numeric value-labels (find the closest slot, render its human label).
+    private fun setIntVal(valId: Int, labels: Array<String>, vals: IntArray, cur: Int) {
+        val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
+        findViewById<TextView>(valId).text = labels[idx]
+    }
+    private fun setFloatVal(valId: Int, labels: Array<String>, vals: FloatArray, cur: Float) {
+        val idx = vals.indices.minByOrNull { kotlin.math.abs(vals[it] - cur) } ?: 0
+        findViewById<TextView>(valId).text = labels[idx]
+    }
+    private fun setStringVal(valId: Int, labels: Array<String>, vals: Array<String>, cur: String) {
+        val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
+        findViewById<TextView>(valId).text = labels[idx]
+    }
+    private fun micChoiceFloat(title: String, labels: Array<String>, vals: FloatArray, key: String, valId: Int) {
+        val cur = prefs.getFloat(key, vals.getOrElse(vals.size / 2) { 0.5f })
+        val idx = vals.indices.minByOrNull { kotlin.math.abs(vals[it] - cur) } ?: 0
+        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, idx) { d, which ->
+            prefs.edit().putFloat(key, vals[which]).apply()
+            findViewById<TextView>(valId).text = labels[which]
+            d.dismiss()
+        }.show()
+    }
+    private fun micChoiceInt(title: String, labels: Array<String>, vals: IntArray, key: String, valId: Int) {
+        val cur = prefs.getInt(key, vals.getOrElse(vals.size / 2) { 0 })
+        val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
+        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, idx) { d, which ->
+            prefs.edit().putInt(key, vals[which]).apply()
+            findViewById<TextView>(valId).text = labels[which]
+            d.dismiss()
+        }.show()
+    }
+    private fun micChoiceString(title: String, labels: Array<String>, vals: Array<String>, key: String, valId: Int) {
+        val cur = prefs.getString(key, vals.getOrElse(0) { "aura" }) ?: "aura"
+        val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
+        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, idx) { d, which ->
+            prefs.edit().putString(key, vals[which]).apply()
+            findViewById<TextView>(valId).text = labels[which]
+            d.dismiss()
+        }.show()
     }
 
     /** Store the TOKEN; render its human label. */

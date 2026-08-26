@@ -128,7 +128,7 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
  * SileroVadGate — on-device voice-activity detection for the barge-in / wake
  * trigger. Replaces the RMS threshold when the model is installed.
  */
-class SileroVadGate(private val context: Context) {
+class SileroVadGate(private val context: Context, private val threshold: Float = 0.5f) {
     private var vad: Vad? = null
     val isAvailable get() = vad != null
     val dir get() = File(context.filesDir, "models/silero-vad")
@@ -138,7 +138,7 @@ class SileroVadGate(private val context: Context) {
             try {
                 val m = File(dir, "silero_vad.onnx")
                 if (!m.exists()) { onReady(false); return@thread }
-                val sil = SileroVadModelConfig(m.absolutePath, 0.5f, 0.5f, 0.25f, 512, 20f)
+                val sil = SileroVadModelConfig(m.absolutePath, threshold.coerceIn(0.01f, 0.99f), 0.5f, 0.25f, 512, 20f)
                 val cfg = VadModelConfig(sileroVadModelConfig = sil, sampleRate = 16000, numThreads = 1, provider = "cpu")
                 vad = Vad(null, cfg)
                 VoxLog.d("SileroVadGate loaded: silero-vad")

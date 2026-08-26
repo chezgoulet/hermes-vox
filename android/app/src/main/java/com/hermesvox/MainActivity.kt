@@ -34,7 +34,6 @@ class MainActivity : AppCompatActivity() {
     private var session: HermesSession? = null
     private var controller: VoiceController? = null
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
-    private var prevIdx = 0
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
     private var toolCount = 0
@@ -64,13 +63,13 @@ class MainActivity : AppCompatActivity() {
         convoText = findViewById(R.id.convo_text)
         handleModeUi()
         updateStreamVisibility()
-        // Tap the presence to cycle through its states/shapes (dev affordance +
-        // a delightful easter egg). Cleared on a real turn.
+        // Tap the presence = STOP (hush): interrupt the reply + cancel the stream
+        // and settle to idle/return to listening. The shape/theme selection now
+        // lives in Settings (Particles), not on the raw tap.
         avatar.setOnClickListener {
-            prevIdx = (prevIdx + 1) % AvatarView.SHAPES.size
-            val n = AvatarView.SHAPES[prevIdx]
-            avatar.preview(n)
-            status.text = "presence: $n"
+            controller?.hush()
+            avatar.setState("idle")
+            status.text = getString(R.string.hv_connected)
         }
 
         // First run → onboarding (no stored endpoint/key yet).
@@ -82,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         connectFromPrefs()
         wireButtons()
         startAvatarLoop()
+        applyParticlePrefs()
         // Warming splash: covers the whole screen until the voice models are loaded,
         // so the user clearly sees the app is waiting (Christopher: can't tell if warm).
         warming = android.widget.TextView(this).apply {
@@ -368,7 +368,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); autoOpenLine() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); autoOpenLine(); applyParticlePrefs() } }
 
     private fun handleModeUi() {
         applyLayoutMode(); applyVoiceMode()
@@ -377,6 +377,13 @@ class MainActivity : AppCompatActivity() {
             val g = express as? GemmaExpress
             if (g != null && !g.available) g.load {}   // load the on-device model once
         }
+    }
+
+    // Presence appearance: idle shape/theme + auto-cycle (Settings -> Particles).
+    private fun applyParticlePrefs() {
+        val theme = prefs.getString("particles_theme", "aura") ?: "aura"
+        avatar.setIdleTheme(theme)
+        avatar.setCycleThemes(prefs.getBoolean("particles_cycle", true))
     }
 
     private fun startAvatarLoop() {

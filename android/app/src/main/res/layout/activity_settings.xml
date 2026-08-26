@@ -270,6 +270,108 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
+                android:text="Mic / capture" />
+
+            <LinearLayout
+                android:id="@+id/row_mic_aec"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Noise &amp; echo cancel (mic AEC/NS)"
+                    style="@style/HvRowTitle" />
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/set_mic_aec"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_vad"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Mic sensitivity (VAD gate)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mic_vad_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Balanced"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_min_speech"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Min speech before a turn"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mic_min_speech_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Normal"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_silence"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pause to end your turn"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mic_silence_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Normal"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_max"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Max speech per turn"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mic_max_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="15s"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/TextVox.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
                 android:text="@string/hv_label_appearance" />
 
             <LinearLayout
@@ -310,6 +412,51 @@
                     android:layout_height="wrap_content"
                     android:text="Presence"
                     style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/TextVox.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:text="Particles / presence" />
+
+            <LinearLayout
+                android:id="@+id/row_particle_theme"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Presence shape / theme"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_particle_theme_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Aura"
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_particle_cycle"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Cycle themes while idle"
+                    style="@style/HvRowTitle" />
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/set_particle_cycle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
             </LinearLayout>
 
             <TextView

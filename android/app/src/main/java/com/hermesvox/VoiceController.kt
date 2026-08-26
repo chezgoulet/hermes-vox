@@ -74,7 +74,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         stt = buildStt()
         stt?.init { sttReady = it }
         if (ModelCatalog.isInstalled(context, "silero-vad")) {
-            vad = SileroVadGate(context); vad?.init {}
+            vad = SileroVadGate(context, micFloat("vad_threshold", 0.5f)); vad?.init {}
         }
         VoxLog.d("pipeline: stt=${stt?.name} sttReady=$sttReady vad=${vad?.isAvailable}")
     }
@@ -137,7 +137,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val maxMs = micInt("vad_max_ms", 15000)
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
-            VoxLog.d("mic: source=$sourceName threshold=${micInt("vad_threshold", 0)} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms")
+            VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms")
             exec.execute {
                 val seg = ArrayList<Float>(sr)
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
@@ -297,11 +297,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 main.post {
                                     listener?.onError("hermes: $err")
                                     listener?.onState("idle")
+                                    releaseTurnGate()
                                 }
                             } else if (finalText.isNotBlank()) {
                                 main.post { settleReply(finalText) }
                             } else {
-                                main.post { listener?.onState("idle") }
+                                main.post { listener?.onState("idle"); releaseTurnGate() }
                             }
                         }
                     }
@@ -314,6 +315,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 main.post {
                     listener?.onError("hermes: ${e.message}")
                     listener?.onState("idle")
+                    releaseTurnGate()
                 }
             } finally {
                 currentStream = null
@@ -357,7 +359,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
         if (speakEnabled()) speak(finalText)
-        else listener?.onState("idle")
+        else { listener?.onState("idle"); releaseTurnGate() }   // no speech -> release the loop's speak-gate
     }
 
     private fun bumpSpeakLevel() {
@@ -386,6 +388,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (t == null || !ttsReady) {
             // No usable engine — never hang the "speaking" state; settle quietly.
             listener?.onState("idle")
+            releaseTurnGate()   // no speech will run -> release the loop's speak-gate
             return
         }
         glueSpeaking = false      // Hermes preempts Gemma
@@ -440,6 +443,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         currentStream = null
         listener?.onLog("// (interrupted)")
         listener?.onState("listening")
+        releaseTurnGate()   // a barge-in aborts the reply -> release the loop's speak-gate
         if (listening) listen()
     }
 
@@ -450,6 +454,27 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
+
+    /** Release the realtime loop's speak-gate (idempotent). Called from EVERY
+     *  settle/error/barge-in path so the loop NEVER deadlocks waiting for a
+     *  speech-complete callback that didn't run (stream error, speak disabled,
+     *  or no usable TTS). Without this the first failed/reply-less turn hangs
+     *  the loop forever — the "one-turn-then-stops" symptom. */
+    private fun releaseTurnGate() { try { turnDone.countDown() } catch (_: Throwable) {} }
+
+    /** User "hush": stop the current reply + cancel the stream; the half-duplex
+     *  loop is released back to listening. Bound to the presence tap (tap = STOP). */
+    fun hush() {
+        speaking = false
+        bargeInArmed = false
+        stopBargeInWatch()
+        stopTts()
+        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
+        currentStream = null
+        releaseTurnGate()
+        listener?.onLog("// (stopped)")
+        if (listening) listener?.onState("listening")
+    }
 
     private fun speakEnabled() = context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("speak_responses", true)
 
@@ -481,6 +506,8 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun micInt(k: String, d: Int): Int =
         context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getInt(k, d)
+    private fun micFloat(k: String, d: Float): Float =
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getFloat(k, d)
     private fun micBool(k: String, d: Boolean): Boolean =
         context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean(k, d)
 

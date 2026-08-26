@@ -58,6 +58,11 @@ class AvatarView @JvmOverloads constructor(
     private val glows = HashMap<Int, Bitmap>()
     private val mat = android.graphics.Matrix()
     private var centered = false
+    // Idle appearance: a user-picked shape/theme ("aura" = default dispersed
+    // breathing) + optional auto-cycle so the being stays alive between turns.
+    private var idleTheme = "aura"
+    private var cycleThemes = false
+    private var cycleSec = 8f
 
     private val cx get() = width / 2f; private val cy get() = height / 2f
     private val R get() = (minOf(width, height) * 0.32f).coerceAtLeast(60f)
@@ -133,6 +138,12 @@ class AvatarView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** Idle shape/theme: "aura" (default dispersed breath) or one of SHAPES. */
+    fun setIdleTheme(theme: String) { idleTheme = theme.lowercase(); invalidate() }
+    /** Auto-advance the idle theme every cycleSec (false = stay on one). */
+    fun setCycleThemes(cycle: Boolean) { cycleThemes = cycle; invalidate() }
+    fun setCycleSec(sec: Float) { cycleSec = sec; invalidate() }
+
     // ---- Physics + draw ---------------------------------------------------
 
     private fun tick() {
@@ -164,6 +175,16 @@ class AvatarView @JvmOverloads constructor(
     private fun place(p: P, st: String, tk: String?, t: Float, wl: Float,
                       cx: Float, cy: Float, R: Float, seed: Int): Pair<Float, Float> {
         val ph = p.phase; val a = ph * 2f * PI.toFloat()
+        // Idle theme override: when at rest, render the user-chosen shape instead
+        // of the default aura. "Cycle" advances the theme over time. This reuses
+        // the existing shape functions via a state map, so the geometry stays
+        // generative; the avatar's `state` field remains idle so the COLOR keeps
+        // the presence hue.
+        if (st == "idle" || st == "settle" || st == "bloom") {
+            val th = if (cycleThemes) cyclingTheme(t) else idleTheme
+            val mapped = themeShape(th)
+            if (mapped != null) return place(p, mapped.first, mapped.second, t, wl, cx, cy, R, seed)
+        }
         return when (st) {
             "listening" -> {
                 val open = 1f
@@ -306,4 +327,23 @@ class AvatarView @JvmOverloads constructor(
     }
     private fun withAlpha(c: Int, a: Int): Int = Color.argb(a.coerceIn(0, 255), Color.red(c), Color.green(c), Color.blue(c))
     private fun frac(x: Float): Float = x - Math.floor(x.toDouble()).toFloat()
+
+    /** Idle theme -> (shape-state, tool) so the existing shape funcs render it.
+     *  null = fall through to the default dispersed aura. */
+    private fun themeShape(th: String): Pair<String, String?>? = when (th) {
+        "iris" -> "listening" to null
+        "vortex" -> "thinking" to null
+        "waveform" -> "speaking" to null
+        "scan" -> "thinking" to "web"
+        "constellation" -> "thinking" to "memory"
+        "bracket" -> "thinking" to "shell"
+        else -> null   // "aura" / unknown -> default aura
+    }
+
+    /** The theme to show now when cycling (advances every cycleSec). */
+    private fun cyclingTheme(t: Float): String {
+        val list = listOf("aura", "iris", "vortex", "waveform", "scan", "constellation")
+        val idx = ((t / cycleSec).toInt()).mod(list.size)
+        return list[idx]
+    }
 }
