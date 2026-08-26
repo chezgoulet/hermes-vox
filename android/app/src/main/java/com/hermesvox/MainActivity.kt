@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
         acquireVoiceWake()
         val c = controller ?: VoiceController(this, s).also { controller = it }
         c.attachListeners(listener)
-        c.start(listener, prefs.getBoolean("duplex", true))
+        c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
     }
 
     // Hold a wake lock while the hands-free line is open so it isn't Dozed.
@@ -192,7 +192,7 @@ class MainActivity : AppCompatActivity() {
         // (microphone type; START_STICKY). The activity controller drives the UI.
         VoiceService.start(this)
         val c = controller ?: VoiceController(this, s).also { controller = it }
-        val duplex = prefs.getBoolean("duplex", true)
+        val duplex = prefs.getBoolean("duplex", true) && modeIsRealtime()
         c.start(listener, duplex)
     }
 

@@ -343,13 +343,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return
         try {
-            // AEC-aware barge-in: record from VOICE_COMMUNICATION + set the device
-            // to communication mode so the OS CANCELS the speaker's TTS from the mic.
-            // Without this the mic hears the device's own reply and cancels it
-            // mid-word. Now it only triggers on the USER's voice.
-            val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-            am.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
-            bargeRecord = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            // NOTE: the rc9/rc10 MODE_IN_COMMUNICATION + VOICE_COMMUNICATION rerouted
+            // the audio (broke mic capture + TTS playback). Reverted to plain MIC.
+            bargeRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
             val r = bargeRecord ?: return
             if (r.state != AudioRecord.STATE_INITIALIZED) return
             r.startRecording()
@@ -384,10 +380,6 @@ class VoiceController(private val context: Context, private val session: HermesS
         bargeInArmed = false
         try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
         bargeRecord = null
-        try {
-            val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-            if (am.mode == android.media.AudioManager.MODE_IN_COMMUNICATION) am.mode = android.media.AudioManager.MODE_NORMAL
-        } catch (_: Exception) {}
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
