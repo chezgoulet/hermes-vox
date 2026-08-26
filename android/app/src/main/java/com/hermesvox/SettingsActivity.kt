@@ -151,16 +151,21 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
-            val log = CrashLog.read(this)
+            val crash = CrashLog.read(this)
+            val runtime = try {
+                val f = java.io.File(filesDir, "logs/hermes-vox.log")
+                if (f.exists()) f.readText().takeLast(9000) else "no runtime log"
+            } catch (_: Throwable) { "no runtime log" }
+            val log = "=== CRASH LOG ===\n$crash\n\n=== RUNTIME LOG (tail) ===\n$runtime"
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Debug / crash log")
+                .setTitle("Debug / logs")
                 .setMessage(log)
-                .setPositiveButton("Copy") { _, _ ->
+                .setPositiveButton("Copy all") { _, _ ->
                     val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("crash", log))
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("vox-debug", log))
                     android.widget.Toast.makeText(this, "copied", android.widget.Toast.LENGTH_SHORT).show()
                 }
-                .setNeutralButton("Clear") { _, _ -> CrashLog.clear(this); findViewById<TextView>(R.id.set_debug_val).text = "view" }
+                .setNeutralButton("Clear crash log") { _, _ -> CrashLog.clear(this); findViewById<TextView>(R.id.set_debug_val).text = "view" }
                 .setNegativeButton("Close", null)
                 .show()
         }
