@@ -24,6 +24,8 @@ import go.Seq
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var warming: android.widget.TextView
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
     private lateinit var input: EditText
     private lateinit var reply: CrawlView
@@ -80,6 +82,21 @@ class MainActivity : AppCompatActivity() {
         connectFromPrefs()
         wireButtons()
         startAvatarLoop()
+        // Warming splash: covers the whole screen until the voice models are loaded,
+        // so the user clearly sees the app is waiting (Christopher: can't tell if warm).
+        warming = android.widget.TextView(this).apply {
+            text = "Preparing your voice\u2026"
+            textSize = 18f
+            setTextColor(0xFFD6F4FF.toInt())
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(0xFF06070B.toInt())
+            typeface = android.graphics.Typeface.MONOSPACE
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+        (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
+            .addView(warming, 0)
         stageEntrance()
     }
 
@@ -115,6 +132,16 @@ class MainActivity : AppCompatActivity() {
         acquireVoiceWake()
         val c = controller ?: VoiceController(this, s).also { controller = it }
         c.attachListeners(listener)
+        if (lineOpen) return
+        val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
+        if (sttInstalled && !c.isWarm()) {
+            // Models still loading: show the splash, re-check, don't open the mic.
+            warming.visibility = android.view.View.VISIBLE
+            status.text = "Warming up\u2026"
+            mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
+            return
+        }
+        warming.visibility = android.view.View.GONE
         c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
     }
 
