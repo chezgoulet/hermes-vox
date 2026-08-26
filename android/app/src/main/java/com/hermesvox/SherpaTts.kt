@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
-import com.k2fsa.sherpa.onnx.GeneratedAudio
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
@@ -58,7 +57,7 @@ class SherpaTts(private val context: Context) : VoxTts {
         val t = tts ?: return onDone()
         thread {
             try {
-                val audio: GeneratedAudio = t.generate(text, 0, 1.0f)
+                val audio = t.generate(text, 0, 1.0f)
                 val samples = audio.samples ?: return@thread onDone()
                 val sr = audio.sampleRate
                 VoxLog.d("piper generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
@@ -74,6 +73,8 @@ class SherpaTts(private val context: Context) : VoxTts {
     private fun play(samples: FloatArray, sr: Int) {
         try {
             val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+            // Use a normal playback buffer (~250 ms), NOT tied to the whole audio.
+            val bufBytes = maxOf(minBuf, (sr / 4) * 4)
             val t = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -82,14 +83,20 @@ class SherpaTts(private val context: Context) : VoxTts {
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(sr)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-                .setBufferSizeInBytes(minBuf.coerceAtLeast(samples.size * 2))
+                .setBufferSizeInBytes(bufBytes)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
             t.play()
             t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            t.stop()
-            t.release()
-            VoxLog.d("piper played ${samples.size} samples")
+            // WAIT for the full audio to PLAY (the old code stopped immediately,
+            // silencing the tail of every reply — the mid-synthesis truncation).
+            var waited = 0
+            while (t.playState == AudioTrack.PLAYSTATE_PLAYING && waited < 120000) {
+                if (t.getPlaybackHeadPosition().toLong() >= samples.size.toLong() - 1L) break
+                Thread.sleep(8); waited += 8
+            }
+            t.stop(); t.release()
+            VoxLog.d("piper played ${samples.size} samples (waited ${waited}ms)")
         } catch (e: Throwable) {
             VoxLog.e("piper play: ${e.message}")
         }
