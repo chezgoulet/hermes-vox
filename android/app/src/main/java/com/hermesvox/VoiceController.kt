@@ -165,6 +165,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { runStreamedTurn(text) }
                     try { latch.await() } catch (_: Throwable) {}
                 }
+                loopActive = false   // loop exited (stop/deactivate) — release the mic ownership
                 listener?.onState("idle")
             }
             true
@@ -300,7 +301,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
-                loopActive = false
                 turnDone.countDown()
             }
         }
