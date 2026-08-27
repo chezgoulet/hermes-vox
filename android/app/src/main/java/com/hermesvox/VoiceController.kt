@@ -63,6 +63,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
     @Volatile private var sttReady = false
+    // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
+    @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
     private val TURN_GATE_TIMEOUT_MS = 60000L
 
@@ -114,6 +116,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Begins the listening loop. Returns true when STT is actually running. */
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
+        // Re-initialize any pipeline leg that stopped warming (e.g. after stop() reset the
+        // ready flags) so a fresh start doesn't listen against a dead TTS/STT/VAD.
+        ensureWarm()
         // Don't open the mic until the models are fully warm (Christopher: the delayed
         // first turn + the double-fire both came from listening before the pipeline loaded).
         if (!isWarm()) {
@@ -241,6 +246,23 @@ class VoiceController(private val context: Context, private val session: HermesS
         currentStream = null
         tts?.shutdown()
         stt?.shutdown(); vad?.shutdown()
+        // After shutting the legs down the pipeline is no longer warm: reset the ready
+        // flags so isWarm() reflects reality (a stale true left transcribe returning null).
+        ttsReady = false
+        sttReady = false
+    }
+
+    /** Idempotent re-init: for each leg whose ready flag is false, re-call its init so
+     *  start() can warm the pipeline again after a stop(). Guarded so overlapping
+     *  start() calls never double-init a leg. */
+    private fun ensureWarm() {
+        if (initializing) return
+        initializing = true
+        try {
+            if (tts != null && !ttsReady) tts?.init { ttsReady = it }
+            if (stt != null && !sttReady) stt?.init { sttReady = it }
+            if (vad != null && !vad.isAvailable) vad?.init {}
+        } finally { initializing = false }
     }
 
     /** A text turn (the Send path / the Realtime text-mode fallback). */
