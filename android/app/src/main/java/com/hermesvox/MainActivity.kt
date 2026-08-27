@@ -169,13 +169,14 @@ class MainActivity : AppCompatActivity() {
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // MIC-TYPE FOREGROUND SERVICE keeps the process + the loop alive after the app
         // is closed / the screen is off, so a live call persists. It does NOT own a
-        // second liveController (single-owner).
+        // second liveController (single-owner). Started BEFORE the loop so no onStop can
+        // land in a half-started window (callLive is true before the loop opens).
         try { VoiceService.start(this) } catch (_: Exception) {}
         acquireVoiceWake()
-        c.continuous = true
-        c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
+        c.continuous = true
+        c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
         enterCallUi()
         setStatus("On call", false)
     }
@@ -192,15 +193,19 @@ class MainActivity : AppCompatActivity() {
         avatar.setState("idle")
     }
 
-    /** If a call is still live (loop running after an app-close/resume), reflect it. */
+    /** If a call is still live (started, not hung up), re-arm the loop on resume. */
     private fun resumeLiveCallIfAny() {
         val c = liveController
-        if (c != null && c.isListening() && !callLive) {
-            callLive = true
-            callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
-            enterCallUi()
-            setStatus("On call", false)
-        }
+        if (c == null || callLive || callStartedAt == 0L) return
+        // The loop may have died while backgrounded (the teardown window / a stopped
+        // turn). Re-arm it rather than only reflecting isListening(); c.start is
+        // idempotent, so a loop that is still running is left untouched.
+        c.continuous = true
+        c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
+        callLive = true
+        callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
+        enterCallUi()
+        setStatus("On call", false)
     }
 
     private fun enterCallUi() {
