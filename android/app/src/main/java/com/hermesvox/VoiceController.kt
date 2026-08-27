@@ -399,13 +399,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                 exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate() }
             } else speak(finalText)
         }
-        else { listener?.onState("idle"); releaseTurnGate() }   // no speech -> release the loop's speak-gate
+        else { stopStreaming(); listener?.onState("idle"); releaseTurnGate() }   // no speech -> terminate streaming + release the loop's speak-gate
     }
 
     // ---- Streaming TTS engine ----
     @Volatile private var streamed = false
     private fun streamBegin() {
         streamed = false   // clear before arming a new streaming turn
+        if (sRunning && sClosed) sRunning = false   // re-arm a drained worker (stuck sRunning) so this new turn can start
         synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false }
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
@@ -606,6 +607,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         stopTts()
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
+        stopStreaming()
         releaseTurnGate()
         listener?.onLog("// (stopped)")
         if (listening) listener?.onState("listening")
