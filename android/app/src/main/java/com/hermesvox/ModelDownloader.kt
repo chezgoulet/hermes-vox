@@ -62,34 +62,42 @@ class ModelDownloader(private val context: Context) {
         if (totalL < 0) return "unknown-length"
 
         val tmp = File(context.filesDir, "${spec.id}.part")
-        FileOutputStream(tmp).use { out ->
-            BufferedInputStream(conn.inputStream).use { inp ->
-                val buf = ByteArray(64 * 1024)
-                var dl = 0L; var lastReport = 0L
-                while (true) {
-                    if (cancelled) break
-                    val n = inp.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n); dl += n
-                    val now = System.currentTimeMillis()
-                    if (now - lastReport > 250) { listener.onProgress(spec.id, dl, totalL); lastReport = now }
+        try {
+            var dl = 0L
+            FileOutputStream(tmp).use { out ->
+                BufferedInputStream(conn.inputStream).use { inp ->
+                    val buf = ByteArray(64 * 1024)
+                    var lastReport = 0L
+                    while (true) {
+                        if (cancelled) break
+                        val n = inp.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n); dl += n
+                        val now = System.currentTimeMillis()
+                        if (now - lastReport > 250) { listener.onProgress(spec.id, dl, totalL); lastReport = now }
+                    }
+                    listener.onProgress(spec.id, dl, totalL)
                 }
-                listener.onProgress(spec.id, dl, totalL)
             }
-        }
-        conn.disconnect()
-        if (cancelled) { tmp.delete(); return "cancelled" }
+            conn.disconnect()
+            if (cancelled) { tmp.delete(); return "cancelled" }
 
-        if (spec.sha256.isNotBlank()) {
+            if (dl != totalL) { tmp.delete(); return "truncated download" }
+
+            if (spec.sha256.isBlank()) { tmp.delete(); return "model has no pinned sha256" }
             val digest = sha256(tmp)
-            if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch (corrupt download)" }
-        }
+            if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch" }
 
-        val dir = ModelCatalog.modelDir(context, spec.id)
-        dir.deleteRecursively(); dir.mkdirs()
-        unpkg(tmp, dir, spec.file)
-        tmp.delete()
-        return null
+            val dir = ModelCatalog.modelDir(context, spec.id)
+            dir.deleteRecursively(); dir.mkdirs()
+            unpkg(tmp, dir, spec.file)
+            return null
+        } catch (e: Throwable) {
+            tmp.delete()
+            throw e
+        } finally {
+            tmp.delete()
+        }
     }
 
     // Handles zip, tar.bz2, and a bare onnx file.
