@@ -173,7 +173,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
                         val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
-                        if (!inSpeech) {
+                        // Pre-roll ONLY the frames BEFORE the VAD fires. If we add the
+                        // speech-detected batch here AND again in the seg-accumulator below,
+                        // the utterance START is double-counted -> a short word like "Hello"
+                        // repeats at the front and whisper-base hallucinates "Hello Hello ... 16x".
+                        if (!inSpeech && !spoke) {
                             // roll a pre-roll (recent ~250ms) so we don't clip the utterance start
                             for (f in frames) { preBuf.add(f); while (preBuf.size * 1000 / sr > 250) preBuf.removeAt(0) }
                         }
