@@ -185,7 +185,7 @@ class ModelDownloader(private val context: Context) {
                 rename(".*-tokens\\.txt", "tokens.txt")
             }
             "piper-lessac" -> {
-                rename(".*-\\.onnx", "model.onnx")
+                rename(".*\\.onnx", "model.onnx")
             }
         }
     }
