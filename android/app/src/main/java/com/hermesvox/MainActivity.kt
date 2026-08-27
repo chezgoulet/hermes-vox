@@ -32,7 +32,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var stream: CrawlView
     private lateinit var avatar: AvatarView
     private var session: HermesSession? = null
-    private var controller: VoiceController? = null
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
@@ -66,7 +65,7 @@ class MainActivity : AppCompatActivity() {
         // and settle to idle/return to listening. The shape/theme selection now
         // lives in Settings (Particles), not on the raw tap.
         avatar.setOnClickListener {
-            controller?.hush()
+            liveController?.hush()
             avatar.setState("idle")
             status.text = getString(R.string.hv_connected)
         }
@@ -97,6 +96,7 @@ class MainActivity : AppCompatActivity() {
 
         intentExtras()
         connectFromPrefs()
+        resumeLiveCallIfAny()
         wireButtons()
         startAvatarLoop()
         applyParticlePrefs()
@@ -119,37 +119,42 @@ class MainActivity : AppCompatActivity() {
     }
     private var autoSend: String? = null
     private var warmRetries = 0
+    @Volatile private var callLive = false
+    private var callSeconds = 0
+    private val callHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val callTicker = object : Runnable {
+        override fun run() {
+            if (!callLive) return
+            callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt()
+            val mm = callSeconds / 60; val ss = callSeconds % 60
+            findViewById<android.widget.TextView>(R.id.call_timer)?.text = String.format("%02d:%02d", mm, ss)
+            callHandler.postDelayed(this, 1000)
+        }
+    }
 
     // Hands-free Realtime / Enhanced Realtime: auto-open the voice line (VAD +
     // barge-in) once the session is live + mic permission granted. Walkie is
     // explicit (hold to talk), so it's skipped. idempotent (lineOpen).
-    private fun autoOpenLine() {
-        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
-        if (mode == ModelCatalog.MODE_WALKIE) return
-        val s = session ?: return
-        // Gate re-open on the controller's ACTUAL loop state, not a sticky flag:
-        // the loop can stop on background/turn/error, and a sticky lineOpen would
-        // lock realtime out forever (the realtime-never-listens bug).
-        if (controller?.isListening() == true) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
-        // Single-owner: `controller` is the ONE VoiceController (the Activity owns
-        // the loop; VoiceService is a keepalive). The warm-up retry re-enters this
-        // method (isListening is false while warming) until the models are warm.
-        val c = controller ?: VoiceController(this, s).also { controller = it }
+    /** Start the real-time call: warm + open the continuous voice line and set the
+     *  live-call UI (red hang-up button + running timer). The call PERSISTS across
+     *  app-close / screen-off (the mic-type foreground service + loop keep running). */
+    private fun startCall() {
+        val s = session ?: run { status.text = "Connect first"; return }
+        if (callLive) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            status.text = "Mic permission needed to start the call"; return
+        }
+        val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
         c.attachListeners(listener)
-        val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
-        if (sttInstalled && !c.isWarm()) {
-            // Models still loading: show the splash, re-check, don't open the mic. The
-            // models normally load in ~2.5s (see log). We never silently open a broken
-            // line after a timeout: log the warm breakdown so the cause is visible, and
-            // after a long SAFETY bound stop retrying + surface the failure.
-            if (warmRetries++ % 10 == 0) {
-                VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
-            }
-            if (warmRetries < 180) {   // ~90s safety; normal warm-up is ~2.5s
+        if (!ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)) {
+            status.text = "Voice model not installed — Settings > Voice models"; return
+        }
+        if (!c.isWarm()) {
+            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
+            if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
                 status.text = "Warming up\u2026"
-                mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
+                mainHandler.postDelayed({ if (!isFinishing) startCall() }, 500)
                 return
             }
             warmRetries = 0
@@ -158,15 +163,72 @@ class MainActivity : AppCompatActivity() {
             status.text = "Voice models failed to load"
             return
         }
+        warmRetries = 0
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
-        // Keep the mic-type foreground service alive so the loop can use the mic
-        // (Android 14+ needs a foreground mic service); it does NOT own a second
-        // controller.
+        // MIC-TYPE FOREGROUND SERVICE keeps the process + the loop alive after the app
+        // is closed / the screen is off, so a live call persists. It does NOT own a
+        // second liveController (single-owner).
         try { VoiceService.start(this) } catch (_: Exception) {}
         acquireVoiceWake()
-        c.continuous = true   // Realtime/Enhanced: hands-free, re-listens after each turn
+        c.continuous = true
         c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
+        callStartedAt = android.os.SystemClock.elapsedRealtime()
+        callLive = true; callSeconds = 0
+        enterCallUi()
+        status.text = "On call"
     }
+
+    /** Hang up: stop the voice line + the foreground service, reset the UI. */
+    private fun endCall() {
+        callLive = false
+        callHandler.removeCallbacks(callTicker)
+        liveController?.stop(); liveController = null
+        stopVoiceWake()
+        VoiceService.stop(this)
+        exitCallUi()
+        status.text = getString(R.string.hv_connected)
+        avatar.setState("idle")
+    }
+
+    /** If a call is still live (loop running after an app-close/resume), reflect it. */
+    private fun resumeLiveCallIfAny() {
+        val c = liveController
+        if (c != null && c.isListening() && !callLive) {
+            callLive = true
+            callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
+            enterCallUi()
+            status.text = "On call"
+        }
+    }
+
+    private fun enterCallUi() {
+        findViewById<android.widget.TextView>(R.id.call_timer)?.text = String.format("%02d:%02d", callSeconds / 60, callSeconds % 60)
+        findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.VISIBLE
+        callHandler.postDelayed(callTicker, 1000)
+        updateCallButton()
+        setCallTone(true)
+    }
+    private fun exitCallUi() {
+        callHandler.removeCallbacks(callTicker)
+        findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.GONE
+        updateCallButton()
+        setCallTone(false)
+    }
+
+    private fun updateCallButton() {
+        val b = findViewById<Button>(R.id.call) ?: return
+        if (callLive) { b.text = "\u2706"; b.setTextColor(0xFFFF5B5B.toInt()); b.contentDescription = "Hang up call" }
+        else { b.text = "\u2706"; b.setTextColor(0xFF35D07F.toInt()); b.contentDescription = "Start call" }
+    }
+    private fun setCallTone(live: Boolean) {
+        try { status.setTextColor(if (live) 0xFF35D07F.toInt() else 0xFFD6F4FF.toInt()) } catch (_: Throwable) {}
+    }
+    private fun stopVoiceWake() {
+        try { voiceWake?.release() } catch (_: Exception) {}
+        voiceWake = null
+    }
+    private fun modeIsEnhanced() =
+        (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
 
     // Hold a wake lock while the hands-free line is open so it isn't Dozed.
     private var voiceWake: android.os.PowerManager.WakeLock? = null
@@ -182,6 +244,12 @@ class MainActivity : AppCompatActivity() {
     // The entity API key is encrypted at rest (Keystore); legacy plaintext decrypts as-is.
     private fun storedKey() = SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty()
 
+    // App-scoped call start time so a live call's timer survives activity recreation.
+    companion object {
+        @Volatile var callStartedAt = 0L
+        @Volatile var liveController: VoiceController? = null
+    }
+
     private fun connectFromPrefs() {
         val u = prefs.getString("url", "").orEmpty()
         val k = storedKey()
@@ -195,19 +263,21 @@ class MainActivity : AppCompatActivity() {
         appendStream("// connected → $u")
         // Auto-send a routed turn (E2E proof path).
         autoSend?.let { send(it) }
-        autoOpenLine()
+        // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
+        // (surviving an app-close) is detected on create and resumed below.
     }
 
     private fun wireButtons() {
         findViewById<Button>(R.id.send).setOnClickListener { send(input.text.toString()) }
         findViewById<Button>(R.id.mic).setOnTouchListener { v, ev ->
             if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) { talk(); v.isPressed = true }
-            else if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) { v.isPressed = false; controller?.commitUtterance() }
-            else if (ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL) { v.isPressed = false; controller?.commitUtterance() }
+            else if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) { v.isPressed = false; liveController?.commitUtterance() }
+            else if (ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL) { v.isPressed = false; liveController?.commitUtterance() }
             true
         }
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.realtime).setOnClickListener { toggleRealtimeMode() }
+        findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
         findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
         input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
         findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.walkie_voice_toggle)
@@ -221,7 +291,7 @@ class MainActivity : AppCompatActivity() {
         if (text.isBlank()) return
         input.text.clear()
         appendConvo("You: $text")
-        val c = controller ?: VoiceController(this, s).also { controller = it }
+        val c = liveController ?: VoiceController(this, s).also { liveController = it }
         c.attachListeners(listener)
         c.sendText(text)
     }
@@ -241,9 +311,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         // The voice pipeline runs in a foreground service so it survives backgrounding
-        // (microphone type; START_STICKY). The activity controller drives the UI.
+        // (microphone type; START_STICKY). The activity liveController drives the UI.
         VoiceService.start(this)
-        val c = controller ?: VoiceController(this, s).also { controller = it }
+        val c = liveController ?: VoiceController(this, s).also { liveController = it }
         val duplex = prefs.getBoolean("duplex", true) && modeIsRealtime()
         c.continuous = false   // Walkie PTT: one turn, then stop until the next push
         c.start(listener, duplex)
@@ -278,7 +348,9 @@ class MainActivity : AppCompatActivity() {
                 if (prefs.getBoolean("presence", true)) {
                     orch.onWorkNarration()?.let { glue ->
                         status.text = glue
-                        controller?.speakGlue(glue)
+                        // Narration split: real-time signals (quiet/visual); only enhanced
+                        // voices the mid-work chatter (Gemma presence).
+                        if (modeIsEnhanced()) liveController?.speakGlue(glue)
                     }
                 }
             } else if (line.startsWith("◆ tool · ")) {
@@ -314,7 +386,7 @@ class MainActivity : AppCompatActivity() {
             .setItems(cmds) { _, w ->
                 val cmd = cmds[w]
                 if (cmd == "/clear" || cmd == "/reset") {
-                    controller?.stop(); controller = null
+                    liveController?.stop(); liveController = null
                     session?.resetConversation()
                     input.text.clear(); replyBuf = ""; reply.setText("")
                     avatar.setState("idle"); status.text = getString(R.string.hv_connected)
@@ -356,8 +428,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.mic).visibility = if (walkie) View.VISIBLE else View.GONE
         findViewById<View>(R.id.send).visibility = if (walkie) View.VISIBLE else View.GONE
         input.visibility = if (walkie) View.VISIBLE else View.GONE
-        // bottom "Realtime" button reflects the *other* mode (tapping switches to it)
-        findViewById<android.widget.Button>(R.id.realtime).text = if (walkie) "Realtime" else "Walkie"
+        val realtimeLike = !walkie
+        findViewById<android.view.View>(R.id.call).visibility = if (realtimeLike) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<android.view.View>(R.id.realtime).visibility = if (walkie) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<android.widget.Button>(R.id.realtime).text = "Realtime"
+        updateCallButton()
         // inline voice toggle (walkie): speak responses on/off
         findViewById<View>(R.id.walkie_voice_toggle)?.visibility = if (walkie) View.VISIBLE else View.GONE
         val vs = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.walkie_voice_toggle)
@@ -392,7 +467,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); autoOpenLine(); applyParticlePrefs() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny() } }
 
     private fun handleModeUi() {
         applyLayoutMode(); applyVoiceMode()
@@ -439,7 +514,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        controller?.stop()
-        VoiceService.stop(this)
+        // A live call persists (foreground service keeps the loop + process alive), so we
+        // do NOT stop the liveController here. Stop only when there's no active call.
+        if (!callLive) { liveController?.stop(); VoiceService.stop(this) }
     }
 }
