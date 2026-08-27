@@ -62,6 +62,7 @@ class ModelDownloader(private val context: Context) {
         if (totalL < 0) return "unknown-length"
 
         val tmp = File(context.filesDir, "${spec.id}.part")
+        var tmpDir: File? = null
         try {
             var dl = 0L
             FileOutputStream(tmp).use { out ->
@@ -88,20 +89,19 @@ class ModelDownloader(private val context: Context) {
             val digest = sha256(tmp)
             if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch" }
 
-            val dir = ModelCatalog.modelDir(context, spec.id)
-            dir.deleteRecursively(); dir.mkdirs()
-            unpkg(tmp, dir, spec.file)
-            return null
+            val tmpDir = File(context.filesDir, spec.id + ".tmp"); tmpDir.deleteRecursively(); tmpDir.mkdirs(); unpkg(tmp, tmpDir, spec.file, spec.id); val dir = ModelCatalog.modelDir(context, spec.id); dir.deleteRecursively(); if (!tmpDir.renameTo(dir)) { tmpDir.deleteRecursively(); return "unpack swap failed" }; return null
         } catch (e: Throwable) {
+            tmpDir?.deleteRecursively()
             tmp.delete()
             throw e
         } finally {
+            tmpDir?.deleteRecursively()
             tmp.delete()
         }
     }
 
     // Handles zip, tar.bz2, and a bare onnx file.
-    private fun unpkg(src: File, dir: File, fileName: String) {
+    private fun unpkg(src: File, dir: File, fileName: String, specId: String) {
         val name = fileName.lowercase()
         when {
             name.endsWith(".tar.bz2") -> untarBz2(src, dir)
@@ -113,7 +113,7 @@ class ModelDownloader(private val context: Context) {
         // Canonical tarballs use a top-level dir (e.g. sherpa-onnx-whisper-tiny.en/);
         // hoist its contents up so the pipeline finds encoder.onnx at the model root.
         hoist(dir)
-        normalizeNames(dir, dir.name)
+        normalizeNames(dir, specId)
     }
 
     private fun untarBz2(src: File, dir: File) {
