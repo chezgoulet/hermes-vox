@@ -62,6 +62,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
     @Volatile private var sttReady = false
+    // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
+    private val TURN_GATE_TIMEOUT_MS = 60000L
 
     init {
         // Blessed default: auto-use the warm on-device Piper voice once it's
@@ -202,7 +204,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     turnDone = java.util.concurrent.CountDownLatch(1)
                     val latch = turnDone
                     main.post { runStreamedTurn(text) }
-                    try { latch.await() } catch (_: Throwable) {}
+                    try { latch.await(TURN_GATE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) {}
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
                     try { r.stop() } catch (_: Throwable) {}
                     android.os.SystemClock.sleep(450L)
@@ -299,7 +301,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     // --- The streamed entity turn (REAL SSE) ---
     private fun runStreamedTurn(text: String) {
-        if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); return }
+        if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(); return }
         turnInFlight = true
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
