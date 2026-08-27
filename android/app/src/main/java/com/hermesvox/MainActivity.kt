@@ -142,6 +142,7 @@ class MainActivity : AppCompatActivity() {
     private fun startCall() {
         val s = session ?: run { setStatus("Connect first", true); return }
         if (callLive) return
+        s.resetConversation()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             setStatus("Mic permission needed to start the call", true); return
         }
@@ -297,7 +298,10 @@ class MainActivity : AppCompatActivity() {
         if (text.isBlank()) return
         input.text.clear()
         appendConvo("You: $text")
-        val c = liveController ?: VoiceController(this, s).also { liveController = it }
+        val c = liveController ?: VoiceController(this, s).also {
+            liveController = it
+            s.resetConversation()
+        }
         c.attachListeners(listener)
         c.sendText(text)
     }
@@ -319,7 +323,10 @@ class MainActivity : AppCompatActivity() {
         // The voice pipeline runs in a foreground service so it survives backgrounding
         // (microphone type; START_STICKY). The activity liveController drives the UI.
         VoiceService.start(this)
-        val c = liveController ?: VoiceController(this, s).also { liveController = it }
+        val c = liveController ?: VoiceController(this, s).also {
+            liveController = it
+            s.resetConversation()
+        }
         val duplex = prefs.getBoolean("duplex", true) && modeIsRealtime()
         c.continuous = false   // Walkie PTT: one turn, then stop until the next push
         c.start(listener, duplex)
