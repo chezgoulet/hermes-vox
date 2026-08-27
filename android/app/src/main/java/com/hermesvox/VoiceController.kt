@@ -162,6 +162,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     listener?.onState("listening")
                     listener?.onLog("// hear → listening")
                     var inSpeech = false; var silentMs = 0
+                    val preBuf = ArrayList<Float>()   // ~250ms pre-roll so the VAD's start-detection
+                                                     // delay doesn't clip the first word(s) the user says
                     val segStart = android.os.SystemClock.uptimeMillis()
                     seg.clear()
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
@@ -171,8 +173,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
                         val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
+                        if (!inSpeech) {
+                            // roll a pre-roll (recent ~250ms) so we don't clip the utterance start
+                            for (f in frames) { preBuf.add(f); while (preBuf.size * 1000 / sr > 250) preBuf.removeAt(0) }
+                        }
                         if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += 64
-                        if (inSpeech) for (f in frames) seg.add(f)
+                        if (inSpeech) {
+                            if (seg.isEmpty() && preBuf.isNotEmpty()) { seg.addAll(preBuf); preBuf.clear() }
+                            for (f in frames) seg.add(f)
+                        }
                         if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
                         if (android.os.SystemClock.uptimeMillis() - segStart > maxMs) break
                     }
@@ -405,14 +414,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                             c
                         }
                         if (chunk == null) break            // closed + drained
-                        if (!speaking && speakingEnabledByUser() && tts?.supportsStreaming == true) {
+                        // Play EVERY chunk: gate on the engine, NOT on !speaking. (The earlier
+                        // keep-speaking-true change made speaking stuck true so only the first
+                        // chunk played and the rest was drained silently -> "small chunks".)
+                        if (tts?.supportsStreaming == true) {
                             speaking = true
                             // Arm barge-in (user can interrupt the streamed reply) once.
                             if (bargeInEnabled && !bargeInArmed) {
-                                main.postDelayed({ if (speaking) startBargeInWatch() }, 700L)
+                                main.postDelayed({ if (speaking && !bargeInArmed) startBargeInWatch() }, 700L)
                             }
                             try { (tts as? SherpaTts)?.streamChunk(chunk) } catch (_: Throwable) {}
-                            // keep speaking=true across chunks so the barge-in watch stays armed
+                            // speaking stays true for the whole reply (barge-in armed, UI state)
                         }
                     }
                 } finally {
