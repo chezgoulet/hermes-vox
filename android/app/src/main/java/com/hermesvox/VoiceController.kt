@@ -405,6 +405,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     // ---- Streaming TTS engine ----
     @Volatile private var streamed = false
     private fun streamBegin() {
+        streamed = false   // clear before arming a new streaming turn
         synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false }
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
@@ -446,6 +447,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
     private fun streamFeed(delta: String) {
         if (delta.isBlank()) return
+        if (!streamed || sClosed) return   // not active, or stream closed
         if (tts?.supportsStreaming != true) return   // non-streaming TTS -> full-text fallback, no queue
         synchronized(sLock) {
             sAccum.append(delta)
@@ -463,6 +465,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
     private fun streamFinish() {
+        streamed = false
         synchronized(sLock) {
             val rest = sAccum.toString().trim()
             if (rest.isNotBlank()) sQueue.add(rest)
@@ -477,6 +480,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
     private fun speakingEnabledByUser() = speakEnabled()
     private fun stopStreaming() {
+        streamed = false
         synchronized(sLock) { sQueue.clear(); sClosed = true; sAccum.setLength(0); sLock.notifyAll() }
     }
 
