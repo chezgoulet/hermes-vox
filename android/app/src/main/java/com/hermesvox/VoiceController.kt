@@ -96,6 +96,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** True once the offline STT + TTS (+ VAD) are fully loaded/warm. */
     fun isWarm() = sttReady && ttsReady && (vad?.isAvailable != false)
 
+    /** True when the listen loop is actually running (capturing). NOT a sticky flag:
+     *  the Activity gates re-open on this, so it can restart after a stop/background/
+     *  turn instead of being locked out forever. */
+    fun isListening() = listening && loopActive
+
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
 

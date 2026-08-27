@@ -42,7 +42,6 @@ class MainActivity : AppCompatActivity() {
     private var convoBuf = ""
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
-    private var lineOpen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
@@ -127,11 +126,14 @@ class MainActivity : AppCompatActivity() {
         val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
         if (mode == ModelCatalog.MODE_WALKIE) return
         val s = session ?: return
-        if (lineOpen) return
+        // Gate re-open on the controller's ACTUAL loop state, not a sticky flag:
+        // the loop can stop on background/turn/error, and a sticky lineOpen would
+        // lock realtime out forever (the realtime-never-listens bug).
+        if (controller?.isListening() == true) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
         // Single-owner: `controller` is the ONE VoiceController (the Activity owns
-        // the loop; VoiceService is a keepalive). lineOpen is set ONLY just before
-        // we actually run the line, so the warm-up retry can re-enter.
+        // the loop; VoiceService is a keepalive). The warm-up retry re-enters this
+        // method (isListening is false while warming) until the models are warm.
         val c = controller ?: VoiceController(this, s).also { controller = it }
         c.attachListeners(listener)
         val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
@@ -142,7 +144,6 @@ class MainActivity : AppCompatActivity() {
             mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
             return
         }
-        lineOpen = true   // only now: we're about to run the line (re-entry guard held)
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // Keep the mic-type foreground service alive so the loop can use the mic
         // (Android 14+ needs a foreground mic service); it does NOT own a second
