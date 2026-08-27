@@ -53,6 +53,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var currentStream: String? = null
     @Volatile private var turnInFlight = false
     @Volatile private var loopActive = false
+    // MODE-GATED RE-LISTEN: true (Realtime/Enhanced) keeps the loop going after a
+    // turn; false (Walkie PTT) does exactly one turn then stops until the next PTT.
+    @Volatile var continuous = false
     private var warmTries = 0
     @Volatile private var listening = false
     private var listener: Listener? = null
@@ -181,6 +184,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
                     try { r.stop() } catch (_: Throwable) {}
                     android.os.SystemClock.sleep(450L)
+                    // Walkie (PTT): one turn, then stop listening until the user
+                    // pushes-to-talk again. Realtime keeps going (hands-free).
+                    if (!continuous) { listening = false; break }
                 }
                 loopActive = false
                 listener?.onState("idle")

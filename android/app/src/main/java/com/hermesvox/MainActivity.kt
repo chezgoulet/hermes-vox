@@ -149,6 +149,7 @@ class MainActivity : AppCompatActivity() {
         // controller.
         try { VoiceService.start(this) } catch (_: Exception) {}
         acquireVoiceWake()
+        c.continuous = true   // Realtime/Enhanced: hands-free, re-listens after each turn
         c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
     }
 
@@ -229,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         VoiceService.start(this)
         val c = controller ?: VoiceController(this, s).also { controller = it }
         val duplex = prefs.getBoolean("duplex", true) && modeIsRealtime()
+        c.continuous = false   // Walkie PTT: one turn, then stop until the next push
         c.start(listener, duplex)
     }
 
