@@ -180,7 +180,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val text = if (inSpeech && seg.size >= (sr * minSpeechMs / 1000)) {
                         try { stt?.transcribe(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
                     } else null
-                    VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} text=${text?.take(120)}")
+                    VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} text=${if (logTranscripts()) text?.take(120) else "<hidden>"}")
                     if (text.isNullOrBlank()) continue                  // noise / no-speech -> keep listening
                     val t = text.trim()
                     // Reject non-speech (static/buzzing/[SOUND]) + too-short fragments.
@@ -214,6 +214,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         listening = false
         recognizer?.destroy(); recognizer = null
         stopTts()
+        stopStreaming()
         stopBargeInWatch()
         try { record?.stop(); record?.release() } catch (_: Exception) {}
         try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
@@ -288,7 +289,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); return }
         turnInFlight = true
         listener?.onState("thinking")
-        listener?.onLog("// you → $text")
+        listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
+        if (speakEnabled() && tts?.supportsStreaming == true) streamBegin()
         exec.execute {
             try {
                 val sid = session.startStream(text)
@@ -309,6 +311,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val err = obj.optString("error", "")
                             val finalText = obj.optString("text", "")
                             if (err.isNotBlank()) {
+                                stopStreaming()   // abort: close the streaming worker + release the track
                                 main.post {
                                     listener?.onError("hermes: $err")
                                     listener?.onState("idle")
@@ -317,6 +320,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             } else if (finalText.isNotBlank()) {
                                 main.post { settleReply(finalText) }
                             } else {
+                                stopStreaming()   // empty reply: still close the streaming worker
                                 main.post { listener?.onState("idle"); releaseTurnGate() }
                             }
                         }
@@ -327,6 +331,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 if (!done) throw Exception("timeout")
             } catch (e: Throwable) {
+                stopStreaming()   // timeout/exception: close the streaming worker
                 main.post {
                     listener?.onError("hermes: ${e.message}")
                     listener?.onState("idle")
@@ -402,11 +407,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (chunk == null) break            // closed + drained
                         if (!speaking && speakingEnabledByUser() && tts?.supportsStreaming == true) {
                             speaking = true
+                            // Arm barge-in (user can interrupt the streamed reply) once.
+                            if (bargeInEnabled && !bargeInArmed) {
+                                main.postDelayed({ if (speaking) startBargeInWatch() }, 700L)
+                            }
                             try { (tts as? SherpaTts)?.streamChunk(chunk) } catch (_: Throwable) {}
-                            speaking = false
+                            // keep speaking=true across chunks so the barge-in watch stays armed
                         }
                     }
                 } finally {
+                    speaking = false
+                    stopBargeInWatch()
                     synchronized(sLock) { if (sQueue.isEmpty()) {} }
                     try { (tts as? SherpaTts)?.finishStreaming() } catch (_: Throwable) {}
                     sRunning = false
@@ -417,13 +428,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
     private fun streamFeed(delta: String) {
         if (delta.isBlank()) return
-        streamBegin()                                       // ensure the worker is up (idempotent)
+        if (tts?.supportsStreaming != true) return   // non-streaming TTS -> full-text fallback, no queue
         synchronized(sLock) {
             sAccum.append(delta)
-            val text = sAccum.toString()
-            var b = indexOfSentenceEnd(text)
+            // Slice from the LIVE accumulator, not a snapshot: after the first sentence
+            // our boundary index is relative to the shortened sAccum, so slicing the
+            // snapshot re-extracted the start (duplicate sentences -> garbage chunks).
+            var b = indexOfSentenceEnd(sAccum.toString())
             while (b >= 0) {
-                val sent = text.substring(0, b + 1).trim()
+                val sent = sAccum.substring(0, b + 1).trim()
                 sAccum.replace(0, b + 1, "")
                 if (sent.isNotBlank()) sQueue.add(sent)
                 b = indexOfSentenceEnd(sAccum.toString())
@@ -538,6 +551,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         bargeInArmed = false
         stopBargeInWatch()
         stopTts()
+        stopStreaming()   // stop the streaming worker: exit + release the track cleanly
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
         listener?.onLog("// (interrupted)")
@@ -602,6 +616,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         VoxLog.d("conn-test: " + out)
         return out
     }
+
+    /** Settings "Log spoken transcript" (default OFF): when false, the user's words are
+     *  NOT written to the runtime log or dev console (a genuine privacy backstop). */
+    private fun logTranscripts(): Boolean =
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("log_transcripts", false)
 
     private fun micInt(k: String, d: Int): Int =
         context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getInt(k, d)

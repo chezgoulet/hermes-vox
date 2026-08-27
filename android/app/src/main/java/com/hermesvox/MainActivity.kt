@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity() {
         maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
+        status.visibility = android.view.View.GONE
         agentName = findViewById(R.id.agent_name)
         input = findViewById(R.id.input)
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
@@ -67,7 +68,7 @@ class MainActivity : AppCompatActivity() {
         avatar.setOnClickListener {
             liveController?.hush()
             avatar.setState("idle")
-            status.text = getString(R.string.hv_connected)
+            setStatus(getString(R.string.hv_connected), false)
         }
 
         // First run → onboarding (no stored endpoint/key yet).
@@ -139,28 +140,28 @@ class MainActivity : AppCompatActivity() {
      *  live-call UI (red hang-up button + running timer). The call PERSISTS across
      *  app-close / screen-off (the mic-type foreground service + loop keep running). */
     private fun startCall() {
-        val s = session ?: run { status.text = "Connect first"; return }
+        val s = session ?: run { setStatus("Connect first", true); return }
         if (callLive) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            status.text = "Mic permission needed to start the call"; return
+            setStatus("Mic permission needed to start the call", true); return
         }
         val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
         c.attachListeners(listener)
         if (!ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)) {
-            status.text = "Voice model not installed — Settings > Voice models"; return
+            setStatus("Voice model not installed — Settings > Voice models", true); return
         }
         if (!c.isWarm()) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
-                status.text = "Warming up\u2026"
+                setStatus("Warming up\u2026", true)
                 mainHandler.postDelayed({ if (!isFinishing) startCall() }, 500)
                 return
             }
             warmRetries = 0
             if (::warming.isInitialized) warming.visibility = android.view.View.GONE
             VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
-            status.text = "Voice models failed to load"
+            setStatus("Voice models failed to load", true)
             return
         }
         warmRetries = 0
@@ -175,7 +176,7 @@ class MainActivity : AppCompatActivity() {
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
         enterCallUi()
-        status.text = "On call"
+        setStatus("On call", false)
     }
 
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
@@ -186,7 +187,7 @@ class MainActivity : AppCompatActivity() {
         stopVoiceWake()
         VoiceService.stop(this)
         exitCallUi()
-        status.text = getString(R.string.hv_connected)
+        setStatus(getString(R.string.hv_connected), false)
         avatar.setState("idle")
     }
 
@@ -197,7 +198,7 @@ class MainActivity : AppCompatActivity() {
             callLive = true
             callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
             enterCallUi()
-            status.text = "On call"
+            setStatus("On call", false)
         }
     }
 
@@ -220,6 +221,11 @@ class MainActivity : AppCompatActivity() {
         if (callLive) { b.text = "\u2706"; b.setTextColor(0xFFFF5B5B.toInt()); b.contentDescription = "Hang up call" }
         else { b.text = "\u2706"; b.setTextColor(0xFF35D07F.toInt()); b.contentDescription = "Start call" }
     }
+    private fun setStatus(text: String, show: Boolean) {
+        status.text = text
+        status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+    }
+
     private fun setCallTone(live: Boolean) {
         try { status.setTextColor(if (live) 0xFF35D07F.toInt() else 0xFFD6F4FF.toInt()) } catch (_: Throwable) {}
     }
@@ -256,7 +262,7 @@ class MainActivity : AppCompatActivity() {
         val m = prefs.getString("model", "hermes-agent").orEmpty()
         if (u.isBlank() || k.isBlank()) return
         session = HermesSession(u, k, m)
-        status.text = getString(R.string.hv_connected)
+        setStatus(getString(R.string.hv_connected), false)
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { m }.uppercase()
@@ -287,7 +293,7 @@ class MainActivity : AppCompatActivity() {
     private fun modeIsRealtime() = (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) != ModelCatalog.MODE_WALKIE
 
     private fun send(text: String) {
-        val s = session ?: run { status.text = "Connect first"; return }
+        val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
         input.text.clear()
         appendConvo("You: $text")
@@ -297,7 +303,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun talk() {
-        val s = session ?: run { status.text = "Connect first"; return }
+        val s = session ?: run { setStatus("Connect first", true); return }
         val needAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         val needNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -323,12 +329,12 @@ class MainActivity : AppCompatActivity() {
         override fun onState(state: String) {
             runOnUiThread {
                 if (state != "thinking") toolCount = 0   // a new turn begins
-                status.text = when (state) {
+                setStatus(when (state) {
                     "listening" -> "Listening…"
                     "thinking" -> "The entity is working…"
                     "speaking" -> "Speaking…"
                     else -> getString(R.string.hv_connected)
-                }
+                }, false)
                 avatar.setStateLevel(state,
                     if (state == "listening") 0.4f else if (state == "speaking") 0.6f else 0f,
                     state == "thinking")
@@ -347,7 +353,7 @@ class MainActivity : AppCompatActivity() {
                 // phone-call presence: Gemma narrates the work (Hermes preempts on the real reply)
                 if (prefs.getBoolean("presence", true)) {
                     orch.onWorkNarration()?.let { glue ->
-                        status.text = glue
+                        setStatus(glue, false)
                         // Narration split: real-time signals (quiet/visual); only enhanced
                         // voices the mid-work chatter (Gemma presence).
                         if (modeIsEnhanced()) liveController?.speakGlue(glue)
@@ -359,7 +365,7 @@ class MainActivity : AppCompatActivity() {
         } }
         override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; reply.setText(replyBuf); appendConvo("Agent: $finalText") } }
         override fun onError(msg: String) { runOnUiThread {
-            status.text = if (msg.contains("interrupt")) "You interrupted" else msg
+            setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             avatar.setState("idle"); appendStream("// $msg")
         } }
     }
@@ -389,7 +395,7 @@ class MainActivity : AppCompatActivity() {
                     liveController?.stop(); liveController = null
                     session?.resetConversation()
                     input.text.clear(); replyBuf = ""; reply.setText("")
-                    avatar.setState("idle"); status.text = getString(R.string.hv_connected)
+                    avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
                 } else if (cmd != "/help") {
                     send(cmd)   // let Hermes handle the command
                 }
@@ -500,7 +506,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             val text = OfflineWhisperStt.transcribeWave(this, model, probe.absolutePath)
             VoxLog.d("WHISPER PROBE($model) transcript=<$text>")
-            runOnUiThread { status.text = "whisper probe($model): ${text ?: "no transcript"}" }
+            runOnUiThread { setStatus("whisper probe($model): ${text ?: "no transcript"}", true) }
         }.start()
     }
 

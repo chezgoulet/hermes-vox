@@ -109,6 +109,9 @@ class SettingsActivity : AppCompatActivity() {
         val devc = findViewById<SwitchCompat>(R.id.set_devconsole)
         devc.isChecked = prefs.getBoolean("dev_console", false)
         devc.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("dev_console", on).apply() }
+        val ltr = findViewById<SwitchCompat>(R.id.set_logtranscripts)
+        ltr.isChecked = prefs.getBoolean("log_transcripts", false)
+        ltr.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("log_transcripts", on).apply() }
         findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
             startActivity(android.content.Intent(this, ModelsActivity::class.java))
         }

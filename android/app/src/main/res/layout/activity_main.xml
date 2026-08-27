@@ -51,7 +51,8 @@
         <com.hermesvox.CrawlView
             android:id="@+id/stream"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="120dp"
+            android:layout_gravity="bottom"
             android:visibility="gone" />
 
         <com.hermesvox.CrawlView
