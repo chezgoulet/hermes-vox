@@ -46,3 +46,9 @@ A fresh install → download (from the canonical k2-fsa upstream) → **verified
 - Build + install + boot on `emulator-5554` (compile gate, no crash).
 - Device-free JVM tests incl. the new `ModelCatalog.source()` scheme table-test.
 - Confirm loader paths are consistent (model root has the exact files `OfflineStt`/`SherpaTts` read).
+## Decisions (approved by owner, 2026-08-27)
+
+- **D1 — Piper loader path:** use the **canonical** names. Change `SherpaTts.kt` to read `model.onnx` / `tokens.txt` / `espeak-ng-data` (do NOT rename to `voz.*`). Loader logic matches upstream.
+- **D2 — espeak-ng-data:** **multi-artifact** (the more canonical path). The piper spec also fetches `espeak-ng-data.tar.bz2` (a separate k2-fsa `tts-models` asset) into the same model dir. **FIRST** inspect the downloaded canonical piper tarball to confirm it does not bundle `espeak-ng-data/`; if it does, just normalize names; if not (expected), add the second-artifact fetch.
+- **D3 — `isInstalled` hardening:** make `ModelCatalog.isInstalled` require model-specific marker files (whisper: `encoder.onnx`+`decoder.onnx`+`tokens.txt`; piper: model+tokens+`espeak-ng-data`; silero: `silero_vad.onnx`; gemma: `gemma-4-E2B-it.litertlm`), so a corrupt/partial dir reports not-installed.
+- **D4 — sources:** `whisper`/`piper`/`silero` download from the **canonical k2-fsa sherpa-onnx upstream** (per the canonical-upstream decision). **gemma-e2b has NO canonical k2-fsa/Google artifact** — the k2-fsa releases host ASR/TTS/VAD only, not Gemma; gemma is a Google LiteRT-LM `.litertlm` model hosted only in our house store ZIP (`models-store/gemma-e2b.zip`, sha256 `877db…adc`). So gemma is the ONE forced exception: it ships from the **house store**, and its pinned sha256 is the house ZIP's hash; the k2-fsa-sourced models pin the hash of the **actual k2-fsa artifact** they download (never a repackaged house zip).
