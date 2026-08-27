@@ -36,23 +36,24 @@ object ModelCatalog {
     val blessed: List<ModelSpec> = listOf(
         ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.5,
             "Barge-in / wake trigger (replaces the RMS hack)", true, 1,
-            "", true),
-        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "", 78.0,
-            "Warm on-device TTS (sherpa-onnx)", true, 2,
-            "", true,
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/piper/piper-en_US-libritts_r-medium.tar.bz2"),
+            "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", true),
+        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 78.0,
+            "Piper en-US canonical LibriTTS-R medium", true, 2,
+            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", true,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2"),
         ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 86.0,
             "Offline STT · fastest, lightest", true, 3,
-            "", false),
+            "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd", false),
         ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 162.0,
             "Offline STT · blessed default (balanced)", true, 4,
-            "", true),
+            "475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542", true),
         ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 540.0,
             "Offline STT · best accuracy, heaviest", true, 5,
-            "", false),
-        ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-e2b.zip", 2050.0,
+            "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false),
+        ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2050.0,
             "On-device expression layer (Enhanced Realtime)", true, 6,
-            "877db5533f7ddb7f0438e3fa4cedc49dedebd4c4f66f22e5295cee351e75aadc", false)
+            "ee3c29acd58e68bea04006a144cd2e40b3b34dcf5c08200a013744c518b15115", false,
+            "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm")
     )
 
     /** The on-device STT model -> model-id map (Settings STT model picker). */
