@@ -113,7 +113,7 @@ class ModelDownloader(private val context: Context) {
         // Canonical tarballs use a top-level dir (e.g. sherpa-onnx-whisper-tiny.en/);
         // hoist its contents up so the pipeline finds encoder.onnx at the model root.
         hoist(dir)
-        normalizeNames(dir, spec.id)
+        normalizeNames(dir, dir.name)
     }
 
     private fun untarBz2(src: File, dir: File) {
