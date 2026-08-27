@@ -113,6 +113,7 @@ class ModelDownloader(private val context: Context) {
         // Canonical tarballs use a top-level dir (e.g. sherpa-onnx-whisper-tiny.en/);
         // hoist its contents up so the pipeline finds encoder.onnx at the model root.
         hoist(dir)
+        normalizeNames(dir, spec.id)
     }
 
     private fun untarBz2(src: File, dir: File) {
@@ -169,6 +170,21 @@ class ModelDownloader(private val context: Context) {
             if (f.isDirectory) f.copyRecursively(dest, true) else f.copyTo(dest, true)
         }
         sub.deleteRecursively()
+    }
+
+    private fun normalizeNames(dir: File, specId: String) {
+        val files = dir.listFiles() ?: return
+        fun rename(pat: String, to: String) {
+            val m = files.firstOrNull { it.name.matches(Regex(pat)) } ?: return
+            if (!m.name.equals(to)) m.renameTo(File(dir, to))
+        }
+        when (specId) {
+            "whisper-tiny", "whisper-base", "whisper-small" -> {
+                rename(".*-encoder\\.onnx", "encoder.onnx")
+                rename(".*-decoder\\.onnx", "decoder.onnx")
+                rename(".*-tokens\\.txt", "tokens.txt")
+            }
+        }
     }
 
     private fun sha256(f: File): String {
