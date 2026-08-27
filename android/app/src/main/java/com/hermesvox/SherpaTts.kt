@@ -34,8 +34,8 @@ class SherpaTts(private val context: Context) : VoxTts {
     override fun init(onReady: (Boolean) -> Unit) {
         thread {
             try {
-                val model = File(dir, "voz.onnx")
-                val tokens = File(dir, "voz.txt")
+                val model = File(dir, "model.onnx")
+                val tokens = File(dir, "tokens.txt")
                 if (!model.exists() || !tokens.exists()) { onReady(false); return@thread }
                 // data_dir must point at the espeak-ng-data dir itself (it holds
                 // the phontab + G2P dicts the phoneme-based model needs).
