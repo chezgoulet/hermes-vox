@@ -73,8 +73,13 @@ object ModelCatalog {
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
     const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
 
-    fun source(context: Context): String =
-        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE
+    fun source(context: Context): String {
+        // Enforce the canonical-upstream decision: a BLANK/missing override falls back to
+        // the k2-fsa web upstream, so the downloader never builds a scheme-less "/file"
+        // URL (the "no protocol" error). Only a genuine non-blank custom source overrides.
+        val v = context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(KEY_SOURCE, DEFAULT_SOURCE)
+        return if (v.isNullOrBlank()) DEFAULT_SOURCE else v.trim()
+    }
 
     // custom model-store URI is a roadmap feature (field kept for later)
 
