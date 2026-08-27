@@ -102,7 +102,14 @@ object ModelCatalog {
 
     fun isInstalled(context: Context, id: String): Boolean {
         val d = modelDir(context, id)
-        return d.exists() && d.listFiles()?.isNotEmpty() == true
+        val markers = when (id) {
+            "whisper-tiny", "whisper-base", "whisper-small" -> listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
+            "silero-vad" -> listOf("silero_vad.onnx")
+            "piper-lessac" -> listOf("model.onnx", "tokens.txt")
+            "gemma-e2b" -> listOf("gemma-4-E2B-it.litertlm")
+            else -> return d.exists() && (d.listFiles()?.isNotEmpty() == true)
+        }
+        return markers.all { File(d, it).exists() }
     }
 
     /** The blessed default for a pipeline kind; null if not yet downloaded. */
