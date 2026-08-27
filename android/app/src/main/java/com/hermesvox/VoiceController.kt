@@ -259,9 +259,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (initializing) return
         initializing = true
         try {
-            if (tts != null && !ttsReady) tts?.init { ttsReady = it }
-            if (stt != null && !sttReady) stt?.init { sttReady = it }
-            if (vad != null && !vad.isAvailable) vad?.init {}
+            val t = tts; if (t != null && !ttsReady) t.init { ttsReady = it }
+            val s = stt; if (s != null && !sttReady) s.init { sttReady = it }
+            val v = vad; if (v != null && !v.isAvailable) v.init {}
         } finally { initializing = false }
     }
 
