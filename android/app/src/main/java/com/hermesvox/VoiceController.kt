@@ -360,9 +360,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 "response.output_text.delta" -> {
                     val d = e.optString("delta")
-                    if (d.isNotBlank()) main.post {
-                        listener?.onDelta(d)
-                        bumpSpeakLevel()
+                    if (d.isNotBlank()) {
+                        streamFeed(d)   // start speaking as it streams
+                        main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
                 }
                 "response.completed" -> main.post { listener?.onLog("// response completed") }
@@ -373,8 +373,77 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
-        if (speakEnabled()) speak(finalText)
+        if (speakEnabled()) {
+            if (streamed && (tts?.supportsStreaming == true)) {
+                streamFinish()   // flush the last chunk(s) + let the worker drain
+                exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate() }
+            } else speak(finalText)
+        }
         else { listener?.onState("idle"); releaseTurnGate() }   // no speech -> release the loop's speak-gate
+    }
+
+    // ---- Streaming TTS engine ----
+    @Volatile private var streamed = false
+    private fun streamBegin() {
+        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false }
+        streamed = true
+        sDone = java.util.concurrent.CountDownLatch(1)
+        if (!sRunning) {
+            sRunning = true
+            exec.execute {
+                try {
+                    while (true) {
+                        val chunk = synchronized(sLock) {
+                            var c = sQueue.poll()
+                            while (c == null && !sClosed) { try { sLock.wait(200) } catch (_: Throwable) {}; c = sQueue.poll() }
+                            c
+                        }
+                        if (chunk == null) break            // closed + drained
+                        if (!speaking && speakingEnabledByUser() && tts?.supportsStreaming == true) {
+                            speaking = true
+                            try { tts?.speakBlocking(chunk) } catch (_: Throwable) {}
+                        }
+                    }
+                } finally {
+                    synchronized(sLock) { if (sQueue.isEmpty()) {} }
+                    sRunning = false
+                }
+                sDone.countDown()
+            }
+        }
+    }
+    private fun streamFeed(delta: String) {
+        if (delta.isBlank()) return
+        streamBegin()                                       // ensure the worker is up (idempotent)
+        synchronized(sLock) {
+            sAccum.append(delta)
+            val text = sAccum.toString()
+            var b = indexOfSentenceEnd(text)
+            while (b >= 0) {
+                val sent = text.substring(0, b + 1).trim()
+                sAccum.replace(0, b + 1, "")
+                if (sent.isNotBlank()) sQueue.add(sent)
+                b = indexOfSentenceEnd(sAccum.toString())
+            }
+            sLock.notifyAll()
+        }
+    }
+    private fun streamFinish() {
+        synchronized(sLock) {
+            val rest = sAccum.toString().trim()
+            if (rest.isNotBlank()) sQueue.add(rest)
+            sAccum.setLength(0)
+            sClosed = true
+            sLock.notifyAll()
+        }
+    }
+    private fun indexOfSentenceEnd(s: String): Int {
+        for (i in s.indices) when (s[i]) { '.', '!', '?', '\n' -> return i }
+        return -1
+    }
+    private fun speakingEnabledByUser() = speakEnabled()
+    private fun stopStreaming() {
+        synchronized(sLock) { sQueue.clear(); sClosed = true; sAccum.setLength(0); sLock.notifyAll() }
     }
 
     private fun bumpSpeakLevel() {
@@ -385,6 +454,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var speakerPulse = 0f
 
     @Volatile private var glueSpeaking = false
+    // Streaming TTS: speak the reply as it streams (sync with the crawl), not after the
+    // whole response lands. A worker plays sentence-chunks sequentially.
+    private val sAccum = StringBuilder()
+    private val sQueue = java.util.ArrayDeque<String>()
+    private val sLock = Object()
+    @Volatile private var sClosed = false
+    private var sDone = java.util.concurrent.CountDownLatch(1)
+    @Volatile private var sRunning = false
 
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller

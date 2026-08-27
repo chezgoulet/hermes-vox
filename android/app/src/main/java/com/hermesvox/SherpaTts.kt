@@ -22,6 +22,7 @@ class SherpaTts(private val context: Context) : VoxTts {
     private var tts: OfflineTts? = null
     override val name: String get() = "Piper"
     override val isWarm: Boolean get() = tts != null
+    override val supportsStreaming: Boolean get() = isWarm
     override val warmReason: String
         get() = if (tts != null) "" else "piper model not loaded"
 
@@ -100,6 +101,19 @@ class SherpaTts(private val context: Context) : VoxTts {
         } catch (e: Throwable) {
             VoxLog.e("piper play: ${e.message}")
         }
+    }
+
+    /** Blocking synth + play on the calling thread (used by the streaming worker,
+     *  which plays reply chunks sequentially so audio tracks the incoming text). */
+    override fun speakBlocking(text: String): Boolean {
+        val t = tts ?: return false
+        return try {
+            val audio = t.generate(text, 0, 1.0f)
+            val samples = audio.samples ?: return false
+            VoxLog.d("piper gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
+            play(samples, audio.sampleRate)
+            true
+        } catch (e: Throwable) { VoxLog.e("piper speakBlocking: ${e.message}"); false }
     }
 
     override fun stop() {}

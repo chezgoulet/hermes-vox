@@ -194,7 +194,6 @@ class SettingsActivity : AppCompatActivity() {
                     try { java.io.File(filesDir, "logs/hermes-vox.log").delete() } catch (_: Throwable) {}
                     findViewById<TextView>(R.id.set_debug_val).text = "view"
                 }
-                .setNegativeButton("Close", null)
                 .show()
         }
     }

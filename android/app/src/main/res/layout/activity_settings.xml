@@ -42,6 +42,35 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <LinearLayout
+                android:id="@+id/row_test_conn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="20dp"
+                android:background="@drawable/bg_chip"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="Test connection"
+                    style="@style/HvRowTitle"
+                    android:textColor="@color/hv_cyan" />
+                <TextView
+                    android:id="@+id/set_test_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="run"
+                    android:textColor="@color/hv_cyan"
+                    android:textAllCaps="true"
+                    android:letterSpacing="0.08"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
             <TextView
                 style="@style/TextVox.Label"
                 android:layout_width="wrap_content"
@@ -486,18 +515,6 @@
                     style="@style/HvRowValue" />
             </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/row_test_conn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="14dp">
-            <TextView style="@style/TextVox.Label" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="Test connection" />
-            <TextView android:id="@+id/set_test_val" style="@style/TextVox.Label"
-                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="run" />
-        </LinearLayout>
 <LinearLayout
 
 android:id="@+id/row_debug"

@@ -22,6 +22,10 @@ interface VoxTts {
     val warmReason: String         // why warm audio is/in't available ("", "model missing", …)
     fun init(onReady: (Boolean) -> Unit)
     fun speak(text: String, onDone: () -> Unit)
+    /** True when this engine can synth+play chunks sequentially (reply-streaming TTS). */
+    val supportsStreaming: Boolean get() = false
+    /** Blocking synth+play on the caller's thread; false if unsupported / not warm. */
+    fun speakBlocking(text: String): Boolean = false
     fun stop()
     fun shutdown()
 }
