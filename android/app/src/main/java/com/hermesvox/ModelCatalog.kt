@@ -73,12 +73,26 @@ object ModelCatalog {
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
     const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
 
+    /**
+     * Pure resolver for a model-source override. Blank/null input falls back to
+     * [DEFAULT_SOURCE]. Any input that does not match the scheme `^https?://`
+     * (case-insensitive) is rejected (a scheme-less `host:8899` or `host.lan`
+     * would otherwise reach `URL()` and throw "no protocol"/"unknown protocol");
+     * such values also fall back to [DEFAULT_SOURCE]. Otherwise the trimmed
+     * input is returned as-is.
+     */
+    fun resolveSource(input: String?): String {
+        if (input.isNullOrBlank()) return DEFAULT_SOURCE
+        val v = input.trim()
+        return if (v.matches(Regex("^https?://.*", RegexOption.IGNORE_CASE))) v else DEFAULT_SOURCE
+    }
+
     fun source(context: Context): String {
         // Enforce the canonical-upstream decision: a BLANK/missing override falls back to
         // the k2-fsa web upstream, so the downloader never builds a scheme-less "/file"
         // URL (the "no protocol" error). Only a genuine non-blank custom source overrides.
         val v = context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(KEY_SOURCE, DEFAULT_SOURCE)
-        return if (v.isNullOrBlank()) DEFAULT_SOURCE else v.trim()
+        return resolveSource(v)
     }
 
     // custom model-store URI is a roadmap feature (field kept for later)
