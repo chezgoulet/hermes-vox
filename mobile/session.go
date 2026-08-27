@@ -123,6 +123,7 @@ func (s *HermesSession) CancelStream(streamID string) error {
 func (s *HermesSession) ResetConversation() {
 	if s != nil {
 		s.lastID = ""
+		s.conv.Reset()
 	}
 }
 

@@ -27,6 +27,13 @@ func NewConversation(b Backend, h *HermesClient) *Conversation {
 	return &Conversation{Backend: b, Hermes: h}
 }
 
+// Reset drops the server-side response id chain and the client-side chat history,
+// starting a fresh conversation.
+func (c *Conversation) Reset() {
+	c.lastResponseID = ""
+	c.History = nil
+}
+
 // TurnText sends a text turn straight to Hermes (the mind) and returns its reply.
 // Used on non-audio platforms (the shell emits text; the Backend covers audio).
 // History is kept client-side (the stateless chat path).
