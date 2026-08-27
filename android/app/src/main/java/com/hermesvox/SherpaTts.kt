@@ -20,6 +20,9 @@ import kotlin.concurrent.thread
  */
 class SherpaTts(private val context: Context) : VoxTts {
     private var tts: OfflineTts? = null
+    private var streamTrack: AudioTrack? = null
+    private var streamWritten = 0
+    private var streamSR = 0
     override val name: String get() = "Piper"
     override val isWarm: Boolean get() = tts != null
     override val supportsStreaming: Boolean get() = isWarm
@@ -116,6 +119,57 @@ class SherpaTts(private val context: Context) : VoxTts {
         } catch (e: Throwable) { VoxLog.e("piper speakBlocking: ${e.message}"); false }
     }
 
-    override fun stop() {}
+    /** Start a single persistent playback track for reply-streaming TTS. Writing each
+     *  synthesized chunk into ONE track (not a fresh track per chunk) keeps the speech
+     *  continuous and avoids dropping the start of every phrase. */
+    fun startStreaming() {
+        try {
+            val sr = 22050
+            val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+            val bufBytes = maxOf(minBuf, (sr / 4) * 4)
+            val t = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setSampleRate(sr).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setBufferSizeInBytes(bufBytes).setTransferMode(AudioTrack.MODE_STREAM).build()
+            t.play()
+            streamTrack = t; streamWritten = 0; streamSR = sr
+        } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
+    }
+
+    /** Synthesize a sentence-chunk + append it to the persistent track (non-blocking-set). */
+    fun streamChunk(text: String): Boolean {
+        val t = streamTrack ?: return false
+        val eng = tts ?: return false
+        return try {
+            val audio = eng.generate(text, 0, 1.0f)
+            val samples = audio.samples ?: return false
+            if (streamSR == 0) streamSR = audio.sampleRate
+            VoxLog.d("piper chunk ${samples.size} smp @${audio.sampleRate}Hz (${text.length} ch)")
+            t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+            streamWritten += samples.size
+            true
+        } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
+    }
+
+    /** Wait for the whole reply to play out, then release the persistent track. */
+    fun finishStreaming(timeoutMs: Int = 120000) {
+        val t = streamTrack ?: return
+        try {
+            var waited = 0
+            while (t.playState == AudioTrack.PLAYSTATE_PLAYING && waited < timeoutMs) {
+                if (t.getPlaybackHeadPosition().toLong() >= streamWritten.toLong() - 1L) break
+                Thread.sleep(8); waited += 8
+            }
+        } catch (_: Throwable) {}
+        stopStreaming()
+    }
+    fun stopStreaming() {
+        try { streamTrack?.stop(); streamTrack?.release() } catch (_: Throwable) {}
+        streamTrack = null; streamWritten = 0
+    }
+
+    override fun stop() { stopStreaming() }
     override fun shutdown() { tts = null }
 }

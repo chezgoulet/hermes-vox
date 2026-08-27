@@ -360,9 +360,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 "response.output_text.delta" -> {
                     val d = e.optString("delta")
-                    if (d.isNotBlank()) main.post {
-                        listener?.onDelta(d)
-                        bumpSpeakLevel()
+                    if (d.isNotBlank()) {
+                        streamFeed(d)   // start speaking as it streams
+                        main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
                 }
                 "response.completed" -> main.post { listener?.onLog("// response completed") }
@@ -373,7 +373,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
-        if (speakEnabled()) speak(finalText)
+        if (speakEnabled()) {
+            if (streamed && (tts?.supportsStreaming == true)) {
+                streamFinish()
+                exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate() }
+            } else speak(finalText)
+        }
         else { listener?.onState("idle"); releaseTurnGate() }   // no speech -> release the loop's speak-gate
     }
 
@@ -383,6 +388,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false }
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
+        try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
         if (!sRunning) {
             sRunning = true
             exec.execute {
@@ -396,12 +402,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (chunk == null) break            // closed + drained
                         if (!speaking && speakingEnabledByUser() && tts?.supportsStreaming == true) {
                             speaking = true
-                            try { tts?.speakBlocking(chunk) } catch (_: Throwable) {}
-                            speaking = false   // release speak flag after a streamed chunk
+                            try { (tts as? SherpaTts)?.streamChunk(chunk) } catch (_: Throwable) {}
+                            speaking = false
                         }
                     }
                 } finally {
                     synchronized(sLock) { if (sQueue.isEmpty()) {} }
+                    try { (tts as? SherpaTts)?.finishStreaming() } catch (_: Throwable) {}
                     sRunning = false
                 }
                 sDone.countDown()
