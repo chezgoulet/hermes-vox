@@ -50,6 +50,26 @@ func TestResponsesRejectsNon200(t *testing.T) {
 	}
 }
 
+func TestResponsesOmitsPreviousIDWhenEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), "previous_response_id") {
+			t.Fatalf("previous_response_id should be omitted: %s", b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`)
+	}))
+	defer srv.Close()
+	c := NewHermesResponsesClient(srv.URL, "testkey", "hermes-agent")
+	res, err := c.Response(context.Background(), "hi", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Reply != "ok" {
+		t.Fatalf("reply = %q", res.Reply)
+	}
+}
+
 func TestResponsesNoText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
