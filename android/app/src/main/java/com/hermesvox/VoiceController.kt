@@ -101,6 +101,10 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  turn instead of being locked out forever. */
     fun isListening() = listening && loopActive
 
+    /** Warm-up breakdown for diagnostics: which leg is not yet ready. */
+    fun warmDiagnostics(): String =
+        "sttReady=$sttReady ttsReady=$ttsReady vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null}"
+
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
 

@@ -139,15 +139,24 @@ class MainActivity : AppCompatActivity() {
         c.attachListeners(listener)
         val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
         if (sttInstalled && !c.isWarm()) {
-            // Models still loading: show the splash, re-check, don't open the mic.
-            // BOUNDED (~20s) so a never-warm pipeline can't hang the UI on "warming up".
-            if (warmRetries++ < 40) {
+            // Models still loading: show the splash, re-check, don't open the mic. The
+            // models normally load in ~2.5s (see log). We never silently open a broken
+            // line after a timeout: log the warm breakdown so the cause is visible, and
+            // after a long SAFETY bound stop retrying + surface the failure.
+            if (warmRetries++ % 10 == 0) {
+                VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
+            }
+            if (warmRetries < 180) {   // ~90s safety; normal warm-up is ~2.5s
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
                 status.text = "Warming up\u2026"
                 mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
                 return
             }
             warmRetries = 0
+            if (::warming.isInitialized) warming.visibility = android.view.View.GONE
+            VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
+            status.text = "Voice models failed to load"
+            return
         }
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // Keep the mic-type foreground service alive so the loop can use the mic
