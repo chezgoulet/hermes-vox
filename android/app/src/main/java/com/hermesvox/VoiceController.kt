@@ -388,6 +388,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun speakGlue(text: String) {
         if (text.isBlank()) return
         if (!speakEnabled()) return   // voice toggle off
+        if (speaking) return          // the authoritative reply has precedence — never talk over it
+        // One voice at a time: stop any in-flight glue before the new one so we never
+        // get two concurrent TTS (the double-voice bug). Latest narration wins.
+        stopTts()
         glueSpeaking = true
         main.post {
             tts?.speak(text) { glueSpeaking = false }

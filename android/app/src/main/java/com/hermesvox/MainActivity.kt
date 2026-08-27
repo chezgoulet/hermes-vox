@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         if (!say.isNullOrBlank()) { intent.removeExtra("say"); autoSend = say }
     }
     private var autoSend: String? = null
+    private var warmRetries = 0
 
     // Hands-free Realtime / Enhanced Realtime: auto-open the voice line (VAD +
     // barge-in) once the session is live + mic permission granted. Walkie is
@@ -139,10 +140,14 @@ class MainActivity : AppCompatActivity() {
         val sttInstalled = ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)
         if (sttInstalled && !c.isWarm()) {
             // Models still loading: show the splash, re-check, don't open the mic.
-            if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
-            status.text = "Warming up\u2026"
-            mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
-            return
+            // BOUNDED (~20s) so a never-warm pipeline can't hang the UI on "warming up".
+            if (warmRetries++ < 40) {
+                if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
+                status.text = "Warming up\u2026"
+                mainHandler.postDelayed({ if (!isFinishing) autoOpenLine() }, 500)
+                return
+            }
+            warmRetries = 0
         }
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // Keep the mic-type foreground service alive so the loop can use the mic

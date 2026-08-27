@@ -189,7 +189,11 @@ class SettingsActivity : AppCompatActivity() {
                     }
                     startActivity(android.content.Intent.createChooser(i, "Send full Hermes Vox log"))
                 }
-                .setNegativeButton("Clear crash log") { _, _ -> CrashLog.clear(this); findViewById<TextView>(R.id.set_debug_val).text = "view" }
+                .setNegativeButton("Clear logs") { _, _ ->
+                    CrashLog.clear(this)
+                    try { java.io.File(filesDir, "logs/hermes-vox.log").delete() } catch (_: Throwable) {}
+                    findViewById<TextView>(R.id.set_debug_val).text = "view"
+                }
                 .setNegativeButton("Close", null)
                 .show()
         }
