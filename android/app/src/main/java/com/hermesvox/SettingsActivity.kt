@@ -10,7 +10,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
-import com.hermesvox.mobile.HermesSession
 
 /**
  * SettingsActivity — a real settings screen. Sections: Entity (endpoint/model/
@@ -38,10 +37,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun bindEntity() {
         findViewById<LinearLayout>(R.id.row_reset).setOnClickListener {
             try {
-                val u = prefs.getString("url", "").orEmpty()
-                val k = prefs.getString("key", "").orEmpty()
-                val m = prefs.getString("model", "hermes-agent").orEmpty()
-                if (u.isNotBlank() && k.isNotBlank()) HermesSession(u, k, m).resetConversation()
+                MainActivity.resetActiveConversation()
                 Toast.makeText(this, "New conversation (context cleared)", Toast.LENGTH_SHORT).show()
             } catch (_: Throwable) {}
         }

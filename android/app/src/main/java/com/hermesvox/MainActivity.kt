@@ -31,7 +31,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
     private lateinit var avatar: AvatarView
-    private var session: HermesSession? = null
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
@@ -45,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
+        active = this
         setContentView(R.layout.activity_main)
         Seq.setContext(applicationContext)
         VoxLog.init(applicationContext)
@@ -258,8 +258,35 @@ class MainActivity : AppCompatActivity() {
 
     // App-scoped call start time so a live call's timer survives activity recreation.
     companion object {
+        // Single canonical HermesSession: MainActivity, the live controller, and
+        // Settings all share THIS instance so a reset reaches the same conversation.
+        @Volatile var session: HermesSession? = null
+        @Volatile private var sesUrl: String? = null
+        @Volatile private var sesKey: String? = null
+        @Volatile private var sesModel: String? = null
+        @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
+
+        /** Reset the canonical session's conversation and clear the display/reply
+         *  buffers. Reaches the LIVE session (MainActivity + live controller), so a
+         *  Settings "New conversation" clears the same context an active call sees. */
+        fun resetActiveConversation() {
+            session?.resetConversation()
+            liveController?.stop()
+            liveController = null
+            active?.clearConversationUi()
+        }
+    }
+
+    private fun clearConversationUi() {
+        input.text.clear()
+        replyBuf = ""
+        reply.setText("")
+        convoBuf = ""
+        convoText.setText("")
+        avatar.setState("idle")
+        setStatus(getString(R.string.hv_connected), false)
     }
 
     private fun connectFromPrefs() {
@@ -267,7 +294,10 @@ class MainActivity : AppCompatActivity() {
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
         if (u.isBlank() || k.isBlank()) return
-        session = HermesSession(u, k, m)
+        if (session == null || sesUrl != u || sesKey != k || sesModel != m) {
+            session = HermesSession(u, k, m)
+            sesUrl = u; sesKey = k; sesModel = m
+        }
         setStatus(getString(R.string.hv_connected), false)
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
@@ -535,5 +565,10 @@ class MainActivity : AppCompatActivity() {
         // A live call persists (foreground service keeps the loop + process alive), so we
         // do NOT stop the liveController here. Stop only when there's no active call.
         if (!callLive) { liveController?.stop(); VoiceService.stop(this) }
+    }
+
+    override fun onDestroy() {
+        if (active === this) active = null
+        super.onDestroy()
     }
 }
