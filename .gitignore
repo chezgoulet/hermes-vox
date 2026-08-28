@@ -21,3 +21,4 @@ mobile.aar
 mobile-sources.jar
 models-store/
 android/app/libs/sherpa-onnx-1.13.6.aar
+keystore/
