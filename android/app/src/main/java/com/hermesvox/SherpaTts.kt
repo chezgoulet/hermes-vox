@@ -37,6 +37,10 @@ class SherpaTts(private val context: Context) : VoxTts {
 
     private val dir get() = File(context.filesDir, "models/piper-lessac")
 
+    /** The synthesis register from the `voice` pref (speed on the Piper engine).
+     *  system=1.0 (shipped default) -> output identical when untouched. */
+    private val voiceSpeed: Float by lazy { voiceRegister(currentVoiceRegister(context)).first }
+
     override fun init(onReady: (Boolean) -> Unit) {
         thread {
             try {
@@ -67,7 +71,7 @@ class SherpaTts(private val context: Context) : VoxTts {
         val t = tts ?: return onDone()
         thread {
             try {
-                val audio = t.generate(text, 0, 1.0f)
+                val audio = t.generate(text, 0, voiceSpeed)
                 val samples = audio.samples ?: return@thread onDone()
                 val sr = audio.sampleRate
                 VoxLog.d("piper generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
@@ -117,7 +121,7 @@ class SherpaTts(private val context: Context) : VoxTts {
     override fun speakBlocking(text: String): Boolean {
         val t = tts ?: return false
         return try {
-            val audio = t.generate(text, 0, 1.0f)
+            val audio = t.generate(text, 0, voiceSpeed)
             val samples = audio.samples ?: return false
             VoxLog.d("piper gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
             play(samples, audio.sampleRate)
@@ -160,7 +164,7 @@ class SherpaTts(private val context: Context) : VoxTts {
     fun streamChunk(text: String): Boolean {
         val eng = tts ?: return false
         return try {
-            val audio = eng.generate(text, 0, 1.0f)
+            val audio = eng.generate(text, 0, voiceSpeed)
             val samples = audio.samples ?: return false
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack

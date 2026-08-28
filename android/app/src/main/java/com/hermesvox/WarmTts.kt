@@ -38,10 +38,15 @@ class SystemTts(private val context: Context) : VoxTts {
     override val isWarm get() = false
     override val warmReason get() = ""
     override fun init(onReady: (Boolean) -> Unit) {
+        val (rate, pitch) = voiceRegister(currentVoiceRegister(context))
         try {
             tts?.shutdown()
             tts = TextToSpeech(context) { code ->
-                if (code == TextToSpeech.SUCCESS) tts?.language = Locale.US
+                if (code == TextToSpeech.SUCCESS) {
+                    tts?.setPitch(pitch)
+                    tts?.setSpeechRate(rate)
+                    tts?.language = Locale.US
+                }
                 onReady(code == TextToSpeech.SUCCESS)
             }
         } catch (_: Throwable) { onReady(false) }
@@ -94,12 +99,45 @@ class WarmTts(private val context: Context) : VoxTts {
     }
 }
 
-/** Builds the configured VoxTts. BLESSED DEFAULT: once the warm on-device
- *  Piper model is downloaded, it is used automatically (fully offline); the
- *  System TTS is the seamless fallback when the model isn't present. */
+/** Builds the configured VoxTts, HONORING the `tts` pref (#31). `system` yields
+ *  SystemTts, `piper` yields SherpaTts (when the Piper model is installed, else an
+ *  honest fallback to System), and `kokoro` yields the Kokoro backend (WarmTts)
+ *  when it can honestly produce audio, else an honest fallback to System. An
+ *  unknown/blank token resolves to SystemTts — never a silent or ignore-the-pref
+ *  engine. */
 fun buildTts(context: Context, prefer: String): VoxTts {
     return try {
-        if (ModelCatalog.isInstalled(context, "piper-lessac")) SherpaTts(context)
-        else SystemTts(context)
+        when (prefer) {
+            "piper" -> if (ModelCatalog.isInstalled(context, "piper-lessac")) SherpaTts(context)
+                else { VoxLog.d("tts: piper requested but model not installed -> system fallback"); SystemTts(context) }
+            "kokoro" -> kokoroBackend(context)
+            else -> SystemTts(context)   // "system" (and unknown tokens) -> system
+        }
     } catch (_: Throwable) { SystemTts(context) }
+}
+
+/** The Kokoro backend: WarmTts. Its runtime is a stub (isWarm=false until a real
+ *  kokoro model ships), so pick it only when it can actually produce audio and
+ *  otherwise fall back to SystemTts — never a silent reply. */
+private fun kokoroBackend(context: Context): VoxTts {
+    val warm = WarmTts(context)
+    return if (warm.isWarm) warm else {
+        VoxLog.d("tts: kokoro runtime unavailable -> system fallback")
+        SystemTts(context)
+    }
+}
+
+/** The current `voice` register token (system/bright/deep). Default "system". */
+fun currentVoiceRegister(context: Context): String =
+    context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getString("voice", "system") ?: "system"
+
+/** Map the `voice` pref to a synthesis register: how faster/higher (bright) or
+ *  slower/lower (deep) the selected engine speaks vs the neutral register
+ *  (system). Returns (speechRate/speed, pitch). The dead "warm" option was
+ *  removed (WarmTts is a no-op stub, so it is not offered). Register 1.0/1.0
+ *  keeps output identical to the shipped default when untouched. */
+fun voiceRegister(pref: String): Pair<Float, Float> = when (pref) {
+    "bright" -> 1.12f to 1.15f
+    "deep" -> 0.88f to 0.85f
+    else -> 1.0f to 1.0f   // system (default)
 }

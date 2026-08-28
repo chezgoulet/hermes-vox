@@ -93,9 +93,13 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf("System (fallback)", "Kokoro", "Piper (on-device)"),
                 arrayOf("system", "kokoro", "piper"), "tts", R.id.set_tts_val)
         }
+        // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
+        // option was removed — WarmTts is a no-op stub, so it never produced
+        // audio (never offer an option that doesn't work). The engines now honor
+        // this pref (see voiceRegister), so the picker really affects output.
         findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
-            pick("Voice", arrayOf("System", "Warm", "Bright", "Deep"),
-                arrayOf("system", "warm", "bright", "deep"), "voice", R.id.set_voice_val)
+            pick("Voice (register)", arrayOf("System", "Bright", "Deep"),
+                arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val)
         }
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
