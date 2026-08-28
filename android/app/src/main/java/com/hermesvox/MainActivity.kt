@@ -359,7 +359,7 @@ class MainActivity : AppCompatActivity() {
         if (text.isBlank()) return
         input.text.clear()
         appendConvo("You: $text")
-        val c = liveController ?: VoiceController(this, s).also {
+        val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             s.resetConversation()
         }
@@ -384,7 +384,7 @@ class MainActivity : AppCompatActivity() {
         // The voice pipeline runs in a foreground service so it survives backgrounding
         // (microphone type; START_STICKY). The activity liveController drives the UI.
         VoiceService.start(this)
-        val c = liveController ?: VoiceController(this, s).also {
+        val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             s.resetConversation()
         }
