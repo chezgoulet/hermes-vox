@@ -50,7 +50,6 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var turnDone = java.util.concurrent.CountDownLatch(1)
     @Volatile private var turnGen = 0L
-    @Volatile private var turnReleased = false   // #60: exactly-once gate release per turn
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
     @Volatile private var currentStream: String? = null
@@ -65,6 +64,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
     @Volatile private var sttReady = false
+    @Volatile private var partialRunning = false
+    @Volatile private var partialEnabled = false
+    private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 450).toLong())
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
@@ -177,7 +179,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val segStart = android.os.SystemClock.uptimeMillis()
                     seg.clear()
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
-                    while (listening && !commitRequested) {
+                    val partialEnabled = micBool("partial_stt", true)
+                    var lastPartialMs = android.os.SystemClock.uptimeMillis()
+                    var earlyStartText: String? = null
+                    while (listening && !commitRequested && earlyStartText == null) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
                         val frames = FloatArray(n)
@@ -198,14 +203,43 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                         if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
                         if (android.os.SystemClock.uptimeMillis() - segStart > maxMs) break
+                        // #38 partial STT: on a SEPARATE worker (never block capture),
+                        // snapshot a bounded tail + transcribe; start the turn EARLY on
+                        // a stable partial (unchanged hypothesis + a >=450ms pause).
+                        if (partialEnabled && inSpeech && !turnInFlight &&
+                            android.os.SystemClock.uptimeMillis() - lastPartialMs >= 900 &&
+                            seg.size >= (sr * minSpeechMs / 1000)) {
+                            lastPartialMs = android.os.SystemClock.uptimeMillis()
+                            if (!partialRunning) {
+                                partialRunning = true
+                                val snap = seg.subList(maxOf(0, seg.size - sr * 6), seg.size).toFloatArray()
+                                val now = android.os.SystemClock.uptimeMillis()
+                                val sm = silentMs.toLong()   // immutable snapshot: don't read the mutable silentMs in the lambda
+                                exec.execute partial@{
+                                    try {
+                                        val t = runCatching { stt?.transcribe(snap, sr) }.getOrNull()
+                                        if (t.isNullOrBlank()) return@partial
+                                        if (voiceState.mayStart(t, sm, now)) {
+                                            main.post {
+                                                if (!turnInFlight && !commitRequested) {
+                                                    listener?.onLog(if (logTranscripts()) "// partial → ${t.take(120)}" else "// (partial)")
+                                                    earlyStartText = t
+                                                    commitRequested = true   // drain the loop; the turn runs below
+                                                }
+                                            }
+                                        }
+                                    } finally { partialRunning = false }
+                                }
+                            }
+                        }
                     }
                     try { r.stop() } catch (_: Throwable) {}
                     val text = if (inSpeech && seg.size >= (sr * minSpeechMs / 1000)) {
                         try { stt?.transcribe(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
                     } else null
-                    VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} text=${if (logTranscripts()) text?.take(120) else "<hidden>"}")
-                    if (text.isNullOrBlank()) continue                  // noise / no-speech -> keep listening
-                    val t = text.trim()
+                    val t = (earlyStartText ?: text ?: "").trim()
+                    VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} early=${earlyStartText != null} text=${if (logTranscripts()) t.take(120) else "<hidden>"}")
+                    if (t.isBlank()) continue                           // noise / no-speech -> keep listening
                     // Reject non-speech (static/buzzing/[SOUND]) + too-short fragments.
                     if (t.length < 3 || t.startsWith("[") || t.startsWith("(")) continue
                     // HARD SPEAK-GATE: block until the reply AND its speech finish.
@@ -213,7 +247,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val latch = turnDone
                     turnGen++
                     val myGen = turnGen
-                    main.post { runStreamedTurn(text, myGen) }
+                    main.post { runStreamedTurn(t, myGen) }
                     try { latch.await(TURN_GATE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) {}
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
                     try { r.stop() } catch (_: Throwable) {}
@@ -241,6 +275,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         stopTts()
         stopStreaming()
         stopBargeInWatch()
+        // #8: wait (bounded) for the capture loop + partial worker to exit their
+        // native calls (vad.feed / stt.transcribe / record.read) before releasing
+        // the native handles -> no use-after-free on a background/teardown race.
+        val drainStart = android.os.SystemClock.uptimeMillis()
+        var waited = 0L
+        while ((loopActive || partialRunning) && waited < 500L) {
+            android.os.SystemClock.sleep(20L); waited = android.os.SystemClock.uptimeMillis() - drainStart
+        }
         try { record?.stop(); record?.release() } catch (_: Exception) {}
         try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
         record = null; bargeRecord = null
@@ -252,6 +294,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // flags so isWarm() reflects reality (a stale true left transcribe returning null).
         ttsReady = false
         sttReady = false
+        voiceState.reset()
     }
 
     /** Idempotent re-init: for each leg whose ready flag is false, re-call its init so
@@ -330,7 +373,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun runStreamedTurn(text: String, gen: Long) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen); return }
         turnInFlight = true
-        turnReleased = false   // #60: re-arm exactly-once for this turn
+        voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
+        val t0 = android.os.SystemClock.uptimeMillis()
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
         if (speakEnabled() && tts?.supportsStreaming == true) streamBegin()
@@ -617,8 +661,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun releaseTurnGate(gen: Long) {
         if (gen != turnGen) return
-        if (turnReleased) return   // #60: a turn's gate releases exactly once
-        turnReleased = true
+        if (!voiceState.release()) return   // #60: exactly once per epoch (race-safe)
         try { turnDone.countDown() } catch (_: Throwable) {}
     }
 
