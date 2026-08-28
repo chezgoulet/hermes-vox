@@ -536,9 +536,20 @@ class MainActivity : AppCompatActivity() {
                         ids += prov.optString("slug"); provs += prov.optString("slug")
                     } else {
                         for (m in 0 until models.length()) {
-                            val mm = models.optJSONObject(m) ?: continue
-                            val mLabel = mm.optString("name").ifEmpty { mm.optString("id") }
-                            val mId = mm.optString("id").ifEmpty { mm.optString("slug") }
+                            // The live gateway /api/model/options returns model IDs as plain
+                            // STRINGS (e.g. "minimax-m3", "kimi-k3"); other builds may return
+                            // model OBJECTS ({id,slug,name}). Read both shapes so the chooser
+                            // renders the real models instead of silently dropping them (the
+                            // old optJSONObject-only path yielded an empty list for every
+                            // configured provider).
+                            val entry = models.opt(m)
+                            val mLabel: String
+                            val mId: String
+                            if (entry is String) { mLabel = entry; mId = entry }
+                            else if (entry is org.json.JSONObject) {
+                                mLabel = entry.optString("name").ifEmpty { entry.optString("id").ifEmpty { entry.optString("slug") } }
+                                mId = entry.optString("id").ifEmpty { entry.optString("slug").ifEmpty { entry.optString("name") } }
+                            } else continue
                             labels += ((if (cur) "* " else "") + pname + " - " + mLabel + (if (auth.isNotBlank()) " ($auth)" else ""))
                             ids += mId; provs += prov.optString("slug")
                         }
