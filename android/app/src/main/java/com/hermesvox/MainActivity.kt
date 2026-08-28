@@ -133,7 +133,22 @@ class MainActivity : AppCompatActivity() {
         if (callLive) return
         s.resetConversation()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            setStatus("Mic permission needed to start the call", true); return
+            if (!callStartPending) {
+                callStartPending = true
+                val rationale = ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO)
+                setStatus(if (rationale) "Mic needs to be enabled to start the call" else "Mic permission needed to start the call", true)
+                val needNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                // Mirror the working talk() path (lines 333-344): RECORD_AUDIO always
+                // requested for the mic-type foreground service; POST_NOTIFICATIONS only
+                // when missing (a fg-service notification renders for Android 13+).
+                ActivityCompat.requestPermissions(this,
+                    listOfNotNull(
+                        Manifest.permission.RECORD_AUDIO,
+                        Manifest.permission.POST_NOTIFICATIONS.takeIf { needNotif }
+                    ).toTypedArray(), REQ_MIC_CALL)
+            }
+            return
         }
         val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
         c.attachListeners(listener)
@@ -180,6 +195,26 @@ class MainActivity : AppCompatActivity() {
         exitCallUi()
         setStatus(getString(R.string.hv_connected), false)
         avatar.setState("idle")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_MIC_CALL) {
+            callStartPending = false
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                startCall()   // mic granted -> the call proceeds (warm + open the line)
+            } else {
+                setStatus("Mic permission denied — tap call to retry", true)
+            }
+        } else if (requestCode == 100) {
+            // talk() path: previously it just returned; now proceed on grant so a
+            // single tap grants + opens the walkie line.
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                talk()
+            } else {
+                setStatus("Mic permission denied", true)
+            }
+        }
     }
 
     /** If a call is still live (started, not hung up), re-arm the loop on resume. */
@@ -256,6 +291,10 @@ class MainActivity : AppCompatActivity() {
         @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
+        // #61: dedicated call-start permission request code + pending flag so the
+        // warm-retry path never re-requests while the dialog is up / after denial.
+        const val REQ_MIC_CALL = 101
+        @Volatile var callStartPending = false
 
         /** Reset the canonical session's conversation and clear the display/reply
          *  buffers. Reaches the LIVE session (MainActivity + live controller), so a
