@@ -52,7 +52,7 @@ object ModelCatalog {
             "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false),
         ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2050.0,
             "On-device expression layer (Enhanced Realtime)", true, 6,
-            "ee3c29acd58e68bea04006a144cd2e40b3b34dcf5c08200a013744c518b15115", false,
+            "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", false,
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm")
     )
 
