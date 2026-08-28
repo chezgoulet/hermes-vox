@@ -44,6 +44,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var vad: SileroVadGate? = null
     private var record: AudioRecord? = null
     private var bargeRecord: AudioRecord? = null
+    private var bargeAec: android.media.audiofx.AcousticEchoCanceler? = null
     private val exec: ExecutorService = Executors.newCachedThreadPool()
     @Volatile private var commitRequested = false
     private val main = Handler(Looper.getMainLooper())
@@ -575,7 +576,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return
         try {
-            bargeRecord = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            val ecSession = (tts as? SherpaTts)?.playbackSession ?: 0
+            bargeRecord = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION).setAudioFormat(AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(minBuf * 2).apply { if (ecSession != 0) setAudioSessionId(ecSession) }.build()
+            bargeAec?.release()
+            bargeAec = if (android.media.audiofx.AcousticEchoCanceler.isAvailable() && ecSession != 0) android.media.audiofx.AcousticEchoCanceler.create(ecSession)?.also { it.enabled = true } else null
             val r = bargeRecord ?: return
             if (r.state != AudioRecord.STATE_INITIALIZED) return
             r.startRecording()
@@ -609,6 +613,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun stopBargeInWatch() {
         bargeInArmed = false
+        bargeAec?.release(); bargeAec = null
         try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
         bargeRecord = null
     }

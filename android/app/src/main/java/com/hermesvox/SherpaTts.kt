@@ -21,6 +21,7 @@ import kotlin.concurrent.thread
 class SherpaTts(private val context: Context) : VoxTts {
     private var tts: OfflineTts? = null
     private var streamTrack: AudioTrack? = null
+    val playbackSession: Int get() = streamTrack?.audioSessionId ?: 0
     private var streamWritten = 0
     private var streamSR = 0
     override val name: String get() = "Piper"
