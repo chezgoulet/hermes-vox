@@ -145,6 +145,25 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/row_mode_reset"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Restore defaults (Mode)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="reset"
+                    style="@style/HvRowAction" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/row_stt"
                 style="@style/HvRow"
                 android:layout_width="match_parent"
@@ -183,6 +202,25 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/row_stt_reset"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Restore defaults (STT)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="reset"
+                    style="@style/HvRowAction" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/row_tts"
                 style="@style/HvRow"
                 android:layout_width="match_parent"
@@ -197,8 +235,27 @@
                     android:id="@+id/set_tts_val"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="System (warm fallback)"
+                    android:text="System"
                     style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_tts_reset"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Restore defaults (TTS)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="reset"
+                    style="@style/HvRowAction" />
             </LinearLayout>
 
             <LinearLayout
@@ -218,6 +275,25 @@
                     android:layout_height="wrap_content"
                     android:text="System"
                     style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_voice_reset"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Restore defaults (Voice)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="reset"
+                    style="@style/HvRowAction" />
             </LinearLayout>
 
             <LinearLayout

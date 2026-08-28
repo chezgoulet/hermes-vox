@@ -101,6 +101,12 @@ class SettingsActivity : AppCompatActivity() {
             pick("Voice (register)", arrayOf("System", "Bright", "Deep"),
                 arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val)
         }
+
+        // Per sub-menu RESTORE DEFAULTS (via the central restoreDefaults helper).
+        bindRestoreRow(R.id.row_mode_reset, GROUP_MODE, "Mode")
+        bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "STT")
+        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "TTS")
+        bindRestoreRow(R.id.row_voice_reset, GROUP_VOICE, "Voice")
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
@@ -224,6 +230,13 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
             restoreDefaults(GROUP_MIC)
             Toast.makeText(this, "Mic / Speech defaults restored", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun bindRestoreRow(rowId: Int, group: String, label: String) {
+        findViewById<android.view.View>(rowId).setOnClickListener {
+            restoreDefaults(group)
+            Toast.makeText(this, "$label defaults restored", Toast.LENGTH_SHORT).show()
         }
     }
 
