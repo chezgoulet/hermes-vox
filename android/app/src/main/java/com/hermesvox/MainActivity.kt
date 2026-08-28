@@ -586,11 +586,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state. */
+    /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state.
+     *  The server-side response id must be captured on the bg thread BEFORE the
+     *  client chain is dropped (resetConversation clears lastID), so the delete and
+     *  the reset run on the SAME thread, in order. */
     private fun newSession() {
         val s = session
-        if (s != null) kotlin.concurrent.thread { try { s.deleteLastResponse() } catch (_: Throwable) {} }
-        resetActiveConversation()   // stop, clear chain + UI (existing helper)
+        if (s != null) {
+            kotlin.concurrent.thread {
+                try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
+                s.resetConversation()   // then drop the client chain + lastID
+            }
+        }
+        liveController?.setVoiceChannelOpen(false)
+        liveController?.stop(); liveController = null
+        stopVoiceWake()
+        clearConversationUi()
         setStatus("New session started", true)
     }
 
