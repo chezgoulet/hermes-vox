@@ -42,6 +42,9 @@ func NewHermesClient(baseURL, apiKey, model string) *HermesClient {
 	}
 }
 
+// SetModel overrides the model route the client sends in /v1/chat/completions.
+func (c *HermesClient) SetModel(model string) { c.model = model }
+
 // Chat sends the conversation to Hermes and returns its reply. This is how the
 // entity (Hermes) actually reasons and acts — the backend is only the voice.
 func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string, error) {

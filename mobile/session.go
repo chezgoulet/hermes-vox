@@ -18,6 +18,7 @@ type HermesSession struct {
 	conv    *voice.Conversation
 	streams *voice.HermesResponsesClient
 	runs    *voice.HermesRunClient
+	gw      *voice.HermesGatewayClient
 	lastID  string // server-side context: the latest response id (chained automatically)
 }
 
@@ -34,7 +35,35 @@ func NewHermesSession(baseURL, apiKey, model string) *HermesSession {
 		conv:    conv,
 		streams: responses,
 		runs:    voice.NewHermesRunClient(baseURL, apiKey, model),
+		gw:      voice.NewHermesGatewayClient(baseURL, apiKey),
 	}
+}
+
+// SetModel overrides the model route across every connector the session uses
+// (/v1/responses, /v1/chat/completions, /v1/runs). The /models chooser sets it
+// so the gateway switches the entity's inference backend per request.
+func (s *HermesSession) SetModel(model string) {
+	if s == nil {
+		return
+	}
+	if s.conv != nil && s.conv.Hermes != nil {
+		s.conv.Hermes.SetModel(model)
+	}
+	if s.streams != nil {
+		s.streams.SetModel(model)
+	}
+	if s.runs != nil {
+		s.runs.SetModel(model)
+	}
+}
+
+// SetProvider sets the per-request provider override sent in /v1/responses
+// ("" = gateway default). The app writes this alongside model from the catalog.
+func (s *HermesSession) SetProvider(provider string) {
+	if s == nil || s.streams == nil {
+		return
+	}
+	s.streams.SetProvider(provider)
 }
 
 // Ping verifies the entity connection (GET /v1/models, bearer auth). Non-nil
@@ -44,6 +73,37 @@ func (s *HermesSession) Ping() error {
 		return fmt.Errorf("voice: no Hermes session")
 	}
 	return s.streams.Ping()
+}
+
+// ModelOptions returns the raw /api/model/options catalog JSON
+// ({providers:[{slug,name,models[],total_models,is_current,authenticated,source,capabilities,warning}]}).
+// This is the REAL gateway catalog the /models native chooser reads (the
+// on-device ModelCatalog is separate — device models, not gateway models).
+func (s *HermesSession) ModelOptions() (string, error) {
+	if s == nil || s.gw == nil {
+		return "", fmt.Errorf("voice: no Hermes session")
+	}
+	return s.gw.ModelOptions()
+}
+
+// GatewayHealth returns the raw /v1/health JSON (status/version) — the /health card.
+func (s *HermesSession) GatewayHealth() (string, error) {
+	if s == nil || s.gw == nil {
+		return "", fmt.Errorf("voice: no Hermes session")
+	}
+	return s.gw.Health()
+}
+
+// DeleteLastResponse drops the stored server-side response id (the /new session
+// reset): DELETE /v1/responses/{id} where {id} is the current chained response.
+func (s *HermesSession) DeleteLastResponse() error {
+	if s == nil || s.gw == nil {
+		return fmt.Errorf("voice: no Hermes session")
+	}
+	if s.lastID == "" {
+		return nil // nothing stored server-side to clear
+	}
+	return s.gw.DeleteResponse(s.lastID)
 }
 
 // TurnText sends a text turn to the entity (blocking) and returns its reply.

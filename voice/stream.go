@@ -96,9 +96,9 @@ func (c *HermesResponsesClient) Stream(ctx context.Context, input string, previo
 // map-registered streamState so buffered events land where the app polls them.
 // (Stream() creates a private one for the callback path.)
 func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, previousResponseID string, st *streamState, h func(StreamEvent)) (*StreamResult, error) {
-	body := map[string]any{"model": c.model, "input": input, "stream": true}
-	if previousResponseID != "" {
-		body["previous_response_id"] = previousResponseID
+	body, err := c.buildBody(input, previousResponseID, true)
+	if err != nil {
+		return nil, err
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {

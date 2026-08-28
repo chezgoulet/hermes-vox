@@ -30,6 +30,9 @@ func NewHermesRunClient(baseURL, apiKey, model string) *HermesRunClient {
 	}
 }
 
+// SetModel overrides the model route the client sends in /v1/runs.
+func (c *HermesRunClient) SetModel(model string) { c.model = model }
+
 type runStartResp struct {
 	RunID string `json:"run_id"`
 }

@@ -311,6 +311,7 @@ class MainActivity : AppCompatActivity() {
         @Volatile private var sesUrl: String? = null
         @Volatile private var sesKey: String? = null
         @Volatile private var sesModel: String? = null
+        @Volatile private var sesProvider: String? = null
         @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
@@ -346,10 +347,15 @@ class MainActivity : AppCompatActivity() {
         val u = prefs.getString("url", "").orEmpty()
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
+        val p = prefs.getString("provider", "").orEmpty()
         if (u.isBlank() || k.isBlank()) return
-        if (session == null || sesUrl != u || sesKey != k || sesModel != m) {
+        if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p) {
             session = HermesSession(u, k, m)
-            sesUrl = u; sesKey = k; sesModel = m
+            // The provider is a per-request override the Go /v1/responses client sends
+            // (the blessed LIGHT PATH) — set it after construction so every connector
+            // (stream/chat/runs) forwards the chosen gateway backend.
+            session?.setProvider(p)
+            sesUrl = u; sesKey = k; sesModel = m; sesProvider = p
         }
         setStatus(getString(R.string.hv_connected), false)
         // The header shows the agent's name (the Hermes profile name, or the name
@@ -477,25 +483,146 @@ class MainActivity : AppCompatActivity() {
     private fun openSettings() { startActivity(Intent(this, SettingsActivity::class.java)); overridePendingTransition(R.anim.slide_in, R.anim.fade_out) }
 
     /** Expose the Hermes instance's /commands. For the MVP a curated set; the
-     *  live command list is a follow-up (query the gateway). */
+     *  live command list is a follow-up (query the gateway). WS4b: the /models,
+     *  /health, /new, /reconnect commands open NATIVE mini-UIs fed by real gateway
+     *  data — the agent only does conversation, never command-UI strings. */
     private fun showCommands() {
         val cmds = arrayOf(
-            "/clear", "/reset", "/status", "/models", "/help")
+            "/models", "/health", "/new", "/reconnect", "/clear", "/reset", "/status", "/help")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
             .setItems(cmds) { _, w ->
-                val cmd = cmds[w]
-                if (cmd == "/clear" || cmd == "/reset") {
-                    liveController?.stop(); liveController = null
-                    session?.resetConversation()
-                    input.text.clear(); replyBuf = ""; reply.setText("")
-                    avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
-                } else if (cmd != "/help") {
-                    send(cmd)   // let Hermes handle the command
+                when (cmds[w]) {
+                    "/models"    -> showModelChooser()
+                    "/health",
+                    "/status"    -> showHealthCard()
+                    "/new"       -> newSession()
+                    "/reconnect" -> reconnect()
+                    "/clear",
+                    "/reset" -> {
+                        liveController?.stop(); liveController = null
+                        session?.resetConversation()
+                        input.text.clear(); replyBuf = ""; reply.setText("")
+                        avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
+                    }
+                    else         -> showHelpCard()   // /help
                 }
             }
             .show()
     }
+
+    /** /models — native chooser from the REAL gateway catalog (GET /api/model/options).
+     *  Selecting a model sets the app model+provider prefs that the Go /v1/responses
+     *  client sends per request (the blessed LIGHT PATH) — the gateway overrides the
+     *  entity's inference backend, while the entity's memory/skills/context stay. */
+    private fun showModelChooser() {
+        val s = session ?: run { setStatus("Connect first", true); return }
+        setStatus("Loading gateway models…", true)
+        kotlin.concurrent.thread {
+            val raw = try { s.modelOptions() } catch (e: Throwable) { null }
+            runOnUiThread {
+                setStatus(getString(R.string.hv_connected), false)
+                if (raw.isNullOrBlank()) { toast("Couldn't reach the model catalog"); return@runOnUiThread }
+                val providers = org.json.JSONObject(raw).optJSONArray("providers") ?: return@runOnUiThread
+                val labels = mutableListOf<String>(); val ids = mutableListOf<String>(); val provs = mutableListOf<String>()
+                for (p in 0 until providers.length()) {
+                    val prov = providers.optJSONObject(p) ?: continue
+                    val pname = prov.optString("name").ifEmpty { prov.optString("slug") }
+                    val cur = prov.optBoolean("is_current", false)
+                    val auth = prov.optString("source", "")
+                    val models = prov.optJSONArray("models")
+                    if (models == null || models.length() == 0) {
+                        labels += ((if (cur) "* " else "") + pname + " - " + prov.optInt("total_models", 0) + " models")
+                        ids += prov.optString("slug"); provs += prov.optString("slug")
+                    } else {
+                        for (m in 0 until models.length()) {
+                            val mm = models.optJSONObject(m) ?: continue
+                            val mLabel = mm.optString("name").ifEmpty { mm.optString("id") }
+                            val mId = mm.optString("id").ifEmpty { mm.optString("slug") }
+                            labels += ((if (cur) "* " else "") + pname + " - " + mLabel + (if (auth.isNotBlank()) " ($auth)" else ""))
+                            ids += mId; provs += prov.optString("slug")
+                        }
+                    }
+                }
+                if (labels.isEmpty()) { toast("No models in catalog"); return@runOnUiThread }
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Gateway models (choose your agent's brain)")
+                    .setSingleChoiceItems(labels.toTypedArray(), 0) { d, which ->
+                        d.dismiss()
+                        val modelId = ids[which]; val prov = provs[which]
+                        // Persist the choice so it survives restart; then set it on the
+                        // LIVE session so the next turn sends provider+model per request.
+                        prefs.edit().putString("model", modelId).putString("provider", prov).apply()
+                        val ok = try {
+                            s.setModel(modelId); s.setProvider(prov); true
+                        } catch (e: Throwable) { false }
+                        runOnUiThread {
+                            toast(if (ok) "Model set -> $prov/$modelId" else "Couldn't set the model")
+                            s.resetConversation()   // re-init the session under the new backend
+                            sesModel = modelId; sesProvider = prov
+                            agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { modelId }.uppercase()
+                        }
+                    }
+                    .setNegativeButton("Cancel", null).show()
+            }
+        }
+    }
+
+    /** /health — native health card (GET /v1/health). */
+    private fun showHealthCard() {
+        val s = session ?: run { setStatus("Connect first", true); return }
+        kotlin.concurrent.thread {
+            val raw = try { s.gatewayHealth() } catch (e: Throwable) { null }
+            runOnUiThread {
+                val card = if (raw.isNullOrBlank()) "Health: unreachable\n(debug: check network + address)"
+                            else try {
+                                val o = org.json.JSONObject(raw)
+                                "Status: " + o.optString("status", "?") +
+                                "\nVersion: " + o.optString("version", o.optString("service_version", "?"))
+                            } catch (e: Throwable) { "Health: ok\n$raw" }
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Agent health").setMessage(card).setPositiveButton("OK", null).show()
+            }
+        }
+    }
+
+    /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state. */
+    private fun newSession() {
+        val s = session
+        if (s != null) kotlin.concurrent.thread { try { s.deleteLastResponse() } catch (_: Throwable) {} }
+        resetActiveConversation()   // stop, clear chain + UI (existing helper)
+        setStatus("New session started", true)
+    }
+
+    /** /reconnect — re-ping /v1/health (via gateway) + re-init the session. */
+    private fun reconnect() {
+        setStatus("Reconnecting…", true)
+        kotlin.concurrent.thread {
+            val u = prefs.getString("url", "").orEmpty()
+            val k = storedKey()
+            val m = prefs.getString("model", "hermes-agent").orEmpty()
+            val ok = try { com.hermesvox.mobile.HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
+            runOnUiThread {
+                resetActiveConversation()
+                connectFromPrefs()   // re-init session from prefs (incl. the provider override)
+                setStatus(if (ok) "Reconnected" else "Reconnect failed — check network + address", true)
+            }
+        }
+    }
+
+    private fun showHelpCard() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Commands")
+            .setMessage("/models - choose the gateway model (provider + model)\n" +
+                "/health - agent health (status + version)\n" +
+                "/new - reset the conversation + server chain\n" +
+                "/reconnect - re-ping the gateway\n" +
+                "/clear /reset - clear the local conversation\n" +
+                "/status - agent health")
+            .setPositiveButton("OK", null).show()
+    }
+
+    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     // Bottom "Realtime" button = toggle the Voice-mode (Realtime/Enhanced <-> Walkie),
     // keeping it consistent with the Settings Voice-mode toggle (not a separate screen).
