@@ -125,12 +125,23 @@ class SherpaTts(private val context: Context) : VoxTts {
         } catch (e: Throwable) { VoxLog.e("piper speakBlocking: ${e.message}"); false }
     }
 
-    /** Start a single persistent playback track for reply-streaming TTS. Writing each
-     *  synthesized chunk into ONE track (not a fresh track per chunk) keeps the speech
-     *  continuous and avoids dropping the start of every phrase. */
+    /** #25: arm reply-streaming TTS. The persistent playback track is built LAZILY on
+     *  the first synthesized chunk at the voice model's ACTUAL sample rate — a hardcoded
+     *  rate (22050Hz) played a different-rate voice pitch- and speed-shifted, silently.
+     *  Do NOT build the track here; the real rate is only known once a chunk is generated. */
     fun startStreaming() {
         try {
-            val sr = 22050
+            synchronized(trackLock) {
+                streamTrack = null
+                streamWritten = 0
+                streamSR = 0
+            }
+        } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
+    }
+
+    /** Build + play a single persistent AudioTrack at the given rate (the actual one). */
+    private fun buildStreamTrack(sr: Int): AudioTrack? {
+        return try {
             val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
             val bufBytes = maxOf(minBuf, (sr / 4) * 4)
             val t = AudioTrack.Builder()
@@ -140,23 +151,31 @@ class SherpaTts(private val context: Context) : VoxTts {
                     .setSampleRate(sr).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                 .setBufferSizeInBytes(bufBytes).setTransferMode(AudioTrack.MODE_STREAM).build()
             t.play()
-            streamTrack = t; streamWritten = 0; streamSR = sr
-        } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
+            t
+        } catch (e: Throwable) { VoxLog.e("buildStreamTrack: ${e.message}"); null }
     }
 
-    /** Synthesize a sentence-chunk + append it to the persistent track (non-blocking-set). */
+    /** Synthesize a chunk + append it to the persistent track (built at the first chunk's
+     *  actual rate). Writing each chunk into ONE track keeps the speech continuous. */
     fun streamChunk(text: String): Boolean {
         val eng = tts ?: return false
         return try {
             val audio = eng.generate(text, 0, 1.0f)
             val samples = audio.samples ?: return false
-            if (streamSR == 0) streamSR = audio.sampleRate
+            val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
             synchronized(trackLock) {
-                t = streamTrack ?: return false
-                writing = true                 // stopStreaming() waits for this to clear
+                if (streamTrack == null) {
+                    val built = buildStreamTrack(sr)
+                    streamTrack = built; streamWritten = 0
+                    t = built ?: return false
+                } else {
+                    t = streamTrack ?: return false
+                }
+                streamSR = sr
+                writing = true                    // stopStreaming() waits for this to clear
             }
-            VoxLog.d("piper chunk ${samples.size} smp @${audio.sampleRate}Hz (${text.length} ch)")
+            VoxLog.d("piper chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
             try { t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING); streamWritten += samples.size; true }
             finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
         } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
