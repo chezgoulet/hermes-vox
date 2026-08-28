@@ -48,14 +48,14 @@ class SettingsActivity : AppCompatActivity() {
             val ekey = view.findViewById<EditText>(R.id.d_key)
             eurl.setText(prefs.getString("url", ""))
             emodel.setText(prefs.getString("model", "hermes-agent"))
-            ekey.setText(prefs.getString("key", ""))
+            ekey.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
             AlertDialog.Builder(this)
                 .setTitle("Entity")
                 .setView(view)
                 .setPositiveButton("Save") { _, _ ->
                     prefs.edit().putString("url", eurl.text.toString().trim())
                         .putString("model", emodel.text.toString().trim().ifEmpty { "hermes-agent" })
-                        .putString("key", ekey.text.toString().trim()).apply()
+                        .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim())).apply()
                     refreshEntityVal()
                 }
                 .setNegativeButton("Cancel", null).show()
@@ -152,7 +152,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
                 findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
-            val u = prefs.getString("url", ""); val k = prefs.getString("key", "")
+            val u = prefs.getString("url", ""); val k = SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty()
             val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(u ?: "", k ?: "", ""))
             val r = c.testConnection()
             findViewById<TextView>(R.id.set_test_val)?.text = "done"

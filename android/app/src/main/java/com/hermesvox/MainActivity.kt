@@ -95,7 +95,6 @@ class MainActivity : AppCompatActivity() {
         (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
             .addView(warming, 0)
 
-        intentExtras()
         connectFromPrefs()
         resumeLiveCallIfAny()
         wireButtons()
@@ -109,16 +108,6 @@ class MainActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun intentExtras() {
-        // adb/E2E deep-link: connect + send without touching the UI by hand.
-        val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
-        val m = intent.getStringExtra("model"); val say = intent.getStringExtra("say")
-        if (!u.isNullOrBlank() && !k.isNullOrBlank()) {
-            prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").putString("key", (SecureStore.encrypt(k) ?: k)).apply()
-        }
-        if (!say.isNullOrBlank()) { intent.removeExtra("say"); autoSend = say }
-    }
-    private var autoSend: String? = null
     private var warmRetries = 0
     @Volatile private var callLive = false
     private var callSeconds = 0
@@ -303,8 +292,6 @@ class MainActivity : AppCompatActivity() {
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { m }.uppercase()
         appendStream("// connected → $u")
-        // Auto-send a routed turn (E2E proof path).
-        autoSend?.let { send(it) }
         // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
         // (surviving an app-close) is detected on create and resumed below.
     }

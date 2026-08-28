@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Hermes Vox is local-first: the entity endpoint and the model store are
-     LAN/tailnet hosts over plain http by design (no cloud, house network). So
-     cleartext HTTP is permitted. If a host is ever publicly reachable, serve it
-     over TLS. -->
+<!-- Hermes Vox is local-first: the entity endpoint is a LAN/tailnet host over
+     plain http (no cloud, house network). Cleartext is permitted ONLY for the
+     local hosts listed below; every other host (public/cloud) requires TLS.
+     Note: model downloads already go over HTTPS (huggingface.co) and are covered
+     by the base-config. If a host is ever publicly reachable, serve it over TLS. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <!-- Default: everything not explicitly listed must be HTTPS. -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system"/>
         </trust-anchors>
     </base-config>
+
+    <!-- Local entity endpoint + any LAN gateway (plain http allowed). List the
+         actual entity host(s)/subnet(s) the user connects to (IP range of the
+         Hermes relay/gateway you run). -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">100.84.47.125</domain>
+        <domain includeSubdomains="false">192.168.1.1</domain>
+        <!-- add your LAN gateway / tailnet host(s) here -->
+    </domain-config>
 </network-security-config>
