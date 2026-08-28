@@ -20,19 +20,74 @@ import androidx.appcompat.widget.SwitchCompat
  */
 class SettingsActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
+    // WS1: which nested sub-view is currently shown (null = the Settings home list).
+    private var currentSection: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         if (prefs.getString("theme", "system") == "dark") AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
-        findViewById<android.view.View>(R.id.settings_back).setOnClickListener { finish(); overridePendingTransition(R.anim.fade_in, R.anim.fade_out) }
+        // Back button is section-aware: inside a sub-view it returns to the group
+        // list; at the home list it finishes the Activity.
+        findViewById<android.view.View>(R.id.settings_back).setOnClickListener {
+            if (currentSection != null) { showGroupList() } else { finish(); overridePendingTransition(R.anim.fade_in, R.anim.fade_out) }
+        }
         bindEntity()
         bindFlows()
         bindAppearance()
         bindMicSettings()
         bindParticles()
+        bindGroups()
+        bindSectionRestoreRows()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
+    }
+
+    /** WS1: open a nested sub-view (hide the group list, show the section container). */
+    private fun showSection(section: String) {
+        currentSection = section
+        findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.GONE
+        val ids = mapOf(
+            SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
+            SECTION_STT to R.id.sec_stt, SECTION_TTS to R.id.sec_tts,
+            SECTION_MODELS to R.id.sec_models, SECTION_APPEARANCE to R.id.sec_appearance,
+            SECTION_ABOUT to R.id.sec_about)
+        ids.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
+        findViewById<android.view.View>(ids[section]!!).visibility = android.view.View.VISIBLE
+        findViewById<android.widget.ScrollView>(R.id.settings_scroll).scrollTo(0, 0)
+        findViewById<TextView>(R.id.set_title).text = when (section) {
+            SECTION_ENTITY -> "Entity & Connection"; SECTION_SPEECH -> "Speech & Mic"
+            SECTION_STT -> "STT & Transcription"; SECTION_TTS -> "TTS & Voice"
+            SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Presence"
+            else -> "About & Diagnostics"
+        }
+    }
+
+    /** WS1: return to the Settings home (group list). */
+    private fun showGroupList() {
+        currentSection = null
+        findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.VISIBLE
+        val ids = listOf(R.id.sec_entity, R.id.sec_speech, R.id.sec_stt, R.id.sec_tts,
+            R.id.sec_models, R.id.sec_appearance, R.id.sec_about)
+        ids.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
+        findViewById<TextView>(R.id.set_title).text = "Settings"
+    }
+
+    private fun bindGroups() {
+        findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { showSection(SECTION_MODELS) }
+        findViewById<android.view.View>(R.id.row_grp_entity)?.setOnClickListener { showSection(SECTION_ENTITY) }
+        findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
+        findViewById<android.view.View>(R.id.row_grp_stt)?.setOnClickListener { showSection(SECTION_STT) }
+        findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
+        findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
+        findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
+    }
+
+    private fun bindSectionRestoreRows() {
+        bindRestoreRow(R.id.row_restore_entity, GROUP_ENTITY, "Entity & Connection")
+        bindRestoreRow(R.id.row_restore_models, GROUP_MODELS, "Models")
+        bindRestoreRow(R.id.row_restore_appearance, GROUP_APPEARANCE, "Appearance")
+        bindRestoreRow(R.id.row_restore_about, GROUP_ABOUT, "About")
     }
 
     private fun bindEntity() {
@@ -122,9 +177,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
             startActivity(android.content.Intent(this, ModelsActivity::class.java))
         }
-        val installed = ModelCatalog.blessed.count { ModelCatalog.isInstalled(this, it.id) }
-        findViewById<TextView>(R.id.set_models_val).text =
-            "$installed/${ModelCatalog.blessed.size} installed · on-device, offline"
+        refreshModelsVal()
 
         refreshFlowVals()
     }
@@ -136,6 +189,14 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", "system")
         findViewById<TextView>(R.id.set_voice_val).text = label("voice", "system")
+    }
+
+    /** The install-progress caption for the Models section (group row + sub-view row). */
+    private fun refreshModelsVal() {
+        val installed = ModelCatalog.blessed.count { ModelCatalog.isInstalled(this, it.id) }
+        val text = "$installed/${ModelCatalog.blessed.size} installed · on-device, offline"
+        findViewById<TextView>(R.id.set_models_val)?.text = text
+        findViewById<TextView>(R.id.set_models_grpval)?.text = text
     }
 
     private fun sttBackendLabel(tok: String): String = when (tok) {
@@ -363,13 +424,30 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
-            GROUP_TTS -> e.putString("tts", "system")
+            GROUP_TTS -> e
+                .putString("tts", "system")
+                .putString("voice", "system")   // the TTS register now resets with the engine
             GROUP_VOICE -> e.putString("voice", "system")
             GROUP_MODE -> e.putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)
+            GROUP_ENTITY -> e
+                .putString("model", "hermes-agent")
+                .putString("provider", "")      // clear the per-request provider override
+                .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // url/key untouched (identity)
+            GROUP_APPEARANCE -> e
+                .putString("theme", "system")
+                .putString("layout_mode", "presence")
+                .putString("particles_theme", "aura")
+                .putBoolean("particles_cycle", true)
+            GROUP_ABOUT -> e
+                .putBoolean("dev_console", false)
+                .putBoolean("log_transcripts", false)
+            GROUP_MODELS -> e.putString(ModelCatalog.KEY_SOURCE, ModelCatalog.DEFAULT_SOURCE)   // source only; files untouched
         }
         e.apply()
         when (group) {
             GROUP_MIC -> bindMicSettings()
+            GROUP_APPEARANCE -> bindParticles()
+            GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals() }
             else -> refreshFlowVals()
         }
     }
@@ -388,5 +466,17 @@ class SettingsActivity : AppCompatActivity() {
         const val GROUP_TTS = "tts"
         const val GROUP_VOICE = "voice"
         const val GROUP_MODE = "mode"
+        const val GROUP_ENTITY = "entity"
+        const val GROUP_APPEARANCE = "appearance"
+        const val GROUP_ABOUT = "about"
+        const val GROUP_MODELS = "models"
+
+        const val SECTION_ENTITY = "entity"
+        const val SECTION_SPEECH = "speech"
+        const val SECTION_STT = "stt"
+        const val SECTION_TTS = "tts"
+        const val SECTION_MODELS = "models"
+        const val SECTION_APPEARANCE = "appearance"
+        const val SECTION_ABOUT = "about"
     }
 }

@@ -24,6 +24,7 @@
             android:textSize="18sp" />
 
         <TextView
+            android:id="@+id/set_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
@@ -32,6 +33,7 @@
     </LinearLayout>
 
     <ScrollView
+        android:id="@+id/settings_scroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true"
@@ -42,691 +44,939 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <!-- ══ Group list (the Settings home: section rows only) ══ -->
             <LinearLayout
-                android:id="@+id/row_test_conn"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:layout_marginBottom="20dp"
-                android:background="@drawable/bg_chip"
-                android:clickable="true"
-                android:focusable="true">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="Test connection"
-                    style="@style/HvRowTitle"
-                    android:textColor="@color/hv_cyan" />
-                <TextView
-                    android:id="@+id/set_test_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="run"
-                    android:textColor="@color/hv_cyan"
-                    android:textAllCaps="true"
-                    android:letterSpacing="0.08"
-                    android:textSize="14sp" />
-            </LinearLayout>
-
-            <TextView
-                style="@style/TextVox.Label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="@string/hv_label_entity" />
-
-            <LinearLayout
-                android:id="@+id/row_entity"
-                style="@style/HvRow"
+                android:id="@+id/grp_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Entity endpoint"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_entity_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="—"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/row_reset"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="New conversation (clear context)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="reset"
-                    style="@style/HvRowAction" />
-            </LinearLayout>
-
-            <TextView
-                style="@style/TextVox.Label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/hv_label_flows" />
-
-            <LinearLayout
-                android:id="@+id/row_mode"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Voice mode"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mode_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Realtime"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_mode_reset"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Restore defaults (Mode)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="reset"
-                    style="@style/HvRowAction" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_stt"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Speech-to-text (backend)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_stt_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="On-device"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_stt_model"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="STT model (on-device)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_stt_model_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Whisper base.en"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_stt_reset"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Restore defaults (STT)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="reset"
-                    style="@style/HvRowAction" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_tts"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Text-to-speech"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_tts_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="System"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_tts_reset"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Restore defaults (TTS)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="reset"
-                    style="@style/HvRowAction" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_voice"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Voice"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_voice_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="System"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_voice_reset"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Restore defaults (Voice)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="reset"
-                    style="@style/HvRowAction" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_bargein"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Barge-in (interrupt)"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_bargein"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_speak"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Speak responses (voice reply)"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_speak"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_devconsole"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Developer console (stream log)"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_devconsole"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_logtranscripts"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Log spoken transcript (privacy)"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_logtranscripts"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_models"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Voice models"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_models_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0/3 installed"
-                    style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <TextView
-                style="@style/TextVox.Label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:layout_marginBottom="8dp"
-                android:text="Mic / Speech" />
-
-            <LinearLayout
-                android:id="@+id/row_mic_aec"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Noise &amp; echo cancel (AEC)"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_mic_aec"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_mic_ns"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Extra noise suppression"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_ns_extra"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_mic_partial"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Streaming partial transcripts"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_partial_stt"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_mic_vad"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Mic sensitivity (VAD threshold)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mic_vad_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.50"
-                    style="@style/HvRowValue" />
-                <SeekBar
-                    android:id="@+id/set_seek_vad"
+                <LinearLayout
+                    android:id="@+id/row_grp_models"
+                    style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="16" />
-            </LinearLayout>
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Models — voice engines (needed, offline)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_models_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0/6 installed"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/row_mic_silence"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Pause to end your turn"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mic_silence_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="800 ms"
-                    style="@style/HvRowValue" />
-                <SeekBar
-                    android:id="@+id/set_seek_silence"
+                <LinearLayout
+                    android:id="@+id/row_grp_entity"
+                    style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="36" />
-            </LinearLayout>
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Entity &amp; Connection"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/row_mic_early"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Early-start pause (streaming STT)"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mic_early_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="450 ms"
-                    style="@style/HvRowValue" />
-                <SeekBar
-                    android:id="@+id/set_seek_early"
+                <LinearLayout
+                    android:id="@+id/row_grp_speech"
+                    style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="13" />
-            </LinearLayout>
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Speech &amp; Mic"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/row_mic_min_speech"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Min speech before a turn"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mic_min_speech_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="300 ms"
-                    style="@style/HvRowValue" />
-                <SeekBar
-                    android:id="@+id/set_seek_min"
+                <LinearLayout
+                    android:id="@+id/row_grp_stt"
+                    style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="18" />
-            </LinearLayout>
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="STT &amp; Transcription"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/row_mic_max"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Max speech per turn"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mic_max_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="15000 ms"
-                    style="@style/HvRowValue" />
-                <SeekBar
-                    android:id="@+id/set_seek_max"
+                <LinearLayout
+                    android:id="@+id/row_grp_tts"
+                    style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="44" />
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TTS &amp; Voice"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_grp_appearance"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Appearance &amp; Presence"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_grp_about"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="About &amp; Diagnostics"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
 
+            <!-- ══ sec_entity: Entity & Connection ══ -->
             <LinearLayout
-                android:id="@+id/row_mic_reset"
-                style="@style/HvRow"
+                android:id="@+id/sec_entity"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_test_conn"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Restore defaults (Mic &amp; Speech)"
-                    style="@style/HvRowTitle" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@drawable/bg_chip"
+                    android:clickable="true"
+                    android:focusable="true">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="Test connection"
+                        style="@style/HvRowTitle"
+                        android:textColor="@color/hv_cyan" />
+                    <TextView
+                        android:id="@+id/set_test_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="run"
+                        android:textColor="@color/hv_cyan"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
                 <TextView
+                    style="@style/TextVox.Label"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="reset"
-                    style="@style/HvRowAction" />
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/hv_label_entity" />
+
+                <LinearLayout
+                    android:id="@+id/row_entity"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Entity endpoint"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_entity_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="New conversation (clear context)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/TextVox.Label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/hv_label_flows" />
+
+                <LinearLayout
+                    android:id="@+id/row_mode"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Voice mode"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mode_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Realtime"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mode_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Mode)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_restore_entity"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Entity &amp; Connection)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
 
-            <TextView
-                style="@style/TextVox.Label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/hv_label_appearance" />
-
+            <!-- ══ sec_speech: Speech & Mic ══ -->
             <LinearLayout
-                android:id="@+id/row_theme"
-                style="@style/HvRow"
+                android:id="@+id/sec_speech"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:orientation="vertical"
+                android:visibility="gone">
+
                 <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Theme"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_theme_val"
+                    style="@style/TextVox.Label"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="System"
-                    style="@style/HvRowValue" />
+                    android:layout_marginBottom="8dp"
+                    android:text="Mic / Speech" />
+
+                <LinearLayout
+                    android:id="@+id/row_bargein"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Barge-in (interrupt)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_bargein"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_aec"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Noise &amp; echo cancel (AEC)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_mic_aec"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_ns"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Extra noise suppression"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_ns_extra"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_partial"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Streaming partial transcripts"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_partial_stt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_vad"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Mic sensitivity (VAD threshold)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_vad_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.50"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_vad"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="16" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_silence"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Pause to end your turn"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_silence_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="800 ms"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_silence"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="36" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_early"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Early-start pause (streaming STT)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_early_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="450 ms"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_early"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="13" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_min_speech"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Min speech before a turn"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_min_speech_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="300 ms"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_min"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="18" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_max"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Max speech per turn"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_max_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="15000 ms"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_max"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="44" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Mic &amp; Speech)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
 
+            <!-- ══ sec_stt: STT & Transcription ══ -->
             <LinearLayout
-                android:id="@+id/row_layout"
-                style="@style/HvRow"
+                android:id="@+id/sec_stt"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_stt"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Layout"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_layout_val"
-                    android:layout_width="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Speech-to-text (backend)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="On-device"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_stt_model"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Presence"
-                    style="@style/HvRowValue" />
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="STT model (on-device)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_model_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Whisper base.en"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_stt_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (STT)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
 
-            <TextView
-                style="@style/TextVox.Label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:layout_marginBottom="8dp"
-                android:text="Particles / presence" />
-
+            <!-- ══ sec_tts: TTS & Voice ══ -->
             <LinearLayout
-                android:id="@+id/row_particle_theme"
-                style="@style/HvRow"
+                android:id="@+id/sec_tts"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_tts"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Presence shape / theme"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_particle_theme_val"
-                    android:layout_width="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Text-to-speech"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_tts_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="System"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_tts_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Aura"
-                    style="@style/HvRowValue" />
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (TTS)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_voice"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_voice_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="System"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_voice_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Voice)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_speak"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Speak responses (voice reply)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_speak"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
             </LinearLayout>
 
+            <!-- ══ sec_models: Models ══ -->
             <LinearLayout
-                android:id="@+id/row_particle_cycle"
-                style="@style/HvRow"
+                android:id="@+id/sec_models"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_models"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Cycle themes while idle"
-                    style="@style/HvRowTitle" />
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/set_particle_cycle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice models"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_models_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0/3 installed"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_restore_models"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Models)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
 
-            <TextView
-                style="@style/TextVox.Label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/hv_label_about" />
-
+            <!-- ══ sec_appearance: Appearance & Presence ══ -->
             <LinearLayout
-                style="@style/HvRow"
+                android:id="@+id/sec_appearance"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_theme"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Hermes Vox"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_about_val"
-                    android:layout_width="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Theme"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_theme_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="System"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_layout"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="0.2.0"
-                    style="@style/HvRowValue" />
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Layout"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_layout_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Presence"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_particle_theme"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Presence shape / theme"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_particle_theme_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Aura"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_particle_cycle"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Cycle themes while idle"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_particle_cycle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_restore_appearance"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Appearance)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
 
-<LinearLayout
-
-android:id="@+id/row_debug"
-                style="@style/HvRow"
+            <!-- ══ sec_about: About & Diagnostics ══ -->
+            <LinearLayout
+                android:id="@+id/sec_about"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_devconsole"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Debug / crash log"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_debug_val"
-                    android:layout_width="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Developer console (stream log)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_devconsole"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_logtranscripts"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="view"
-                    style="@style/HvRowValue" />
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Log spoken transcript (privacy)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_logtranscripts"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Hermes Vox"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_about_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.2.0"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_debug"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Debug / crash log"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_debug_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="view"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_restore_about"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (About &amp; Diagnostics)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
