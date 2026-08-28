@@ -64,7 +64,9 @@ class RealtimeActivity : AppCompatActivity() {
 
     private fun sendText() {
         if (input.text.isBlank()) return
-        val c = controller ?: VoiceController(this, session!!).also { controller = it }
+        // #35: single VoiceController owner — startVoice() creates the one instance;
+        // never construct a second (a second AudioRecord owner) from the fallback.
+        val c = controller ?: return
         c.attachListeners(listener)
         c.sendText(input.text.toString())
         input.text.clear()
