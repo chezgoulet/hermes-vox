@@ -165,7 +165,6 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
                 while (listening) {
-                    VoxLog.d("DIAG loop top listening=" + listening + " continuous=" + continuous)
                     loopActive = true
                     commitRequested = false
                     try { r.startRecording() } catch (_: Throwable) { break }
@@ -213,10 +212,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val latch = turnDone
                     turnGen++
                     val myGen = turnGen
-                    VoxLog.d("DIAG turn armed gen=" + myGen)
                     main.post { runStreamedTurn(text, myGen) }
                     try { latch.await(TURN_GATE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) {}
-                    VoxLog.d("DIAG latch.await returned")
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
                     try { r.stop() } catch (_: Throwable) {}
                     android.os.SystemClock.sleep(450L)
@@ -625,7 +622,6 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  speech-complete callback that didn't run (stream error, speak disabled,
      *  or no usable TTS). Without this the first failed/reply-less turn hangs
      *  the loop forever — the "one-turn-then-stops" symptom. */
-    private fun releaseTurnGate(gen: Long) { VoxLog.d("DIAG releaseTurnGate gen=" + gen + " turnGen=" + turnGen + " " + if (gen == turnGen) "FIRE" else "NOOP"); if (gen == turnGen) { try { turnDone.countDown() } catch (_: Throwable) {} } }
 
     /** User "hush": stop the current reply + cancel the stream; the half-duplex
      *  loop is released back to listening. Bound to the presence tap (tap = STOP). */
