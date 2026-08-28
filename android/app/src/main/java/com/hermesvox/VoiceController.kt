@@ -66,6 +66,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var sttReady = false
     @Volatile private var partialRunning = false
     @Volatile private var partialEnabled = false
+    @Volatile private var firstAudioLatch = false   // #40: one first-audio push per turn
     private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 450).toLong())
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
@@ -237,6 +238,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val text = if (inSpeech && seg.size >= (sr * minSpeechMs / 1000)) {
                         try { stt?.transcribe(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
                     } else null
+                    if (text != null) LatencyStats.pushStt(android.os.SystemClock.uptimeMillis() - segStart)   // #40 speech->text
                     val t = (earlyStartText ?: text ?: "").trim()
                     VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} early=${earlyStartText != null} text=${if (logTranscripts()) t.take(120) else "<hidden>"}")
                     if (t.isBlank()) continue                           // noise / no-speech -> keep listening
@@ -374,6 +376,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen); return }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
+        firstAudioLatch = false   // #40: per-turn first-audio latch
         val t0 = android.os.SystemClock.uptimeMillis()
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
@@ -383,16 +386,19 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val sid = session.startStream(text)
                 VoxLog.d("startStream -> $sid")
                 currentStream = sid
+                val firstByteAt = android.os.SystemClock.uptimeMillis()
+                var firstByteDone = false
                 var done = false
                 var tries = 0
                 while (!done && tries < 600) {
                     var payload: String? = null
                     try { payload = session.pollStreamJSON(sid) } catch (_: Exception) {} // gomobile raises on error
                     if (payload != null) {
+                        if (!firstByteDone) { firstByteDone = true; LatencyStats.pushFirstByte(firstByteAt - t0) }   // #40
                         val obj = JSONObject(payload)
                         val evts = obj.optJSONArray("events")
                         VoxLog.d("poll ev=${evts?.length() ?: 0} done=${obj.optBoolean("done")} err=${obj.optString("error","").take(70)} textLen=${obj.optString("text","").length}")
-                        emitEvents(evts)
+                        emitEvents(evts, t0)
                         if (obj.optBoolean("done")) {
                             done = true
                             val err = obj.optString("error", "")
@@ -405,6 +411,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                     releaseTurnGate(gen)
                                 }
                             } else if (finalText.isNotBlank()) {
+                                LatencyStats.pushFullReply(android.os.SystemClock.uptimeMillis() - t0)   // #40 full reply
                                 main.post { settleReply(finalText, gen) }
                             } else {
                                 stopStreaming()   // empty reply: still close the streaming worker
@@ -432,7 +439,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
-    private fun emitEvents(arr: JSONArray?) {
+    private fun emitEvents(arr: JSONArray?, t0: Long) {
         if (arr == null) return
         for (i in 0 until arr.length()) {
             val e = arr.optJSONObject(i) ?: continue
@@ -453,6 +460,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                 "response.output_text.delta" -> {
                     val d = e.optString("delta")
                     if (d.isNotBlank()) {
+                        // #40: push first-audio once per turn (time from launch to first delta)
+                        if (!firstAudioLatch) { firstAudioLatch = true; LatencyStats.pushFirstAudio(android.os.SystemClock.uptimeMillis() - t0) }
                         streamFeed(d)   // start speaking as it streams
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
@@ -663,6 +672,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (gen != turnGen) return
         if (!voiceState.release()) return   // #60: exactly once per epoch (race-safe)
         try { turnDone.countDown() } catch (_: Throwable) {}
+        LatencyStats.log("turn")            // #40: once per settled/aborted turn
     }
 
     private fun stopBargeInWatch() {
