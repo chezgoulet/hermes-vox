@@ -199,6 +199,7 @@ class MainActivity : AppCompatActivity() {
         acquireVoiceWake()
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
+        c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.continuous = true
         c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
         enterCallUi()
@@ -209,6 +210,7 @@ class MainActivity : AppCompatActivity() {
     private fun endCall() {
         callLive = false
         callHandler.removeCallbacks(callTicker)
+        liveController?.setVoiceChannelOpen(false)
         liveController?.stop(); liveController = null
         stopVoiceWake()
         VoiceService.stop(this)
@@ -245,6 +247,7 @@ class MainActivity : AppCompatActivity() {
         // turn). Re-arm it rather than only reflecting isListening(); c.start is
         // idempotent, so a loop that is still running is left untouched.
         c.continuous = true
+        c.setVoiceChannelOpen(true)
         c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
         callLive = true
         callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
@@ -321,6 +324,7 @@ class MainActivity : AppCompatActivity() {
          *  Settings "New conversation" clears the same context an active call sees. */
         fun resetActiveConversation() {
             session?.resetConversation()
+            liveController?.setVoiceChannelOpen(false)
             liveController?.stop()
             liveController = null
             active?.stopVoiceWake()   // #13: conversation reset ends the call -> release the wake lock
@@ -411,6 +415,7 @@ class MainActivity : AppCompatActivity() {
         }
         val duplex = prefs.getBoolean("duplex", true) && modeIsRealtime()
         c.continuous = false   // Walkie PTT: one turn, then stop until the next push
+        c.setVoiceChannelOpen(true)   // a PTT talk opens the voice channel -> replies may speak
         c.start(listener, duplex)
     }
 
@@ -612,6 +617,7 @@ class MainActivity : AppCompatActivity() {
         // A live call persists (foreground service keeps the loop + process alive), so we
         // do NOT stop the liveController here. Stop only when there's no active call.
         if (!callLive) {
+            liveController?.setVoiceChannelOpen(false)
             liveController?.stop()
             liveController = null   // #19: stopped controller is terminal (exec shut down) — never re-arm it
             stopVoiceWake()         // #13: no active call -> drop the wake lock (no Doze hold)

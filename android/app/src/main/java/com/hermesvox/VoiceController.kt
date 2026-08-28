@@ -59,6 +59,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     // MODE-GATED RE-LISTEN: true (Realtime/Enhanced) keeps the loop going after a
     // turn; false (Walkie PTT) does exactly one turn then stops until the next PTT.
     @Volatile var continuous = false
+    // SPEAK GATE (WS4a): voice a reply only when a call / voice channel is open.
+    // Set by the host: MainActivity -> == callLive; RealtimeActivity -> true.
+    // Default false = a reply with no open voice channel is TEXT-ONLY (fixes the
+    // slash-command-speaks-with-no-call bug).
+    @Volatile private var voiceChannelOpen = false
     private var warmTries = 0
     @Volatile private var listening = false
     private var listener: Listener? = null
@@ -412,7 +417,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         val t0 = android.os.SystemClock.uptimeMillis()
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
-        if (speakEnabled() && tts?.supportsStreaming == true) streamBegin()
+        if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin()
         exec.execute {
             try {
                 val sid = session.startStream(text)
@@ -519,7 +524,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             // release site runs for this reply (#60).
             streamFinish()
             exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate(gen) }
-        } else if (speakEnabled()) {
+        } else if (shouldSpeak()) {
             speak(finalText, gen)
         } else {
             stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen)
@@ -652,7 +657,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  isn't in a reply, this just voices the presence glue. */
     fun speakGlue(text: String) {
         if (text.isBlank()) return
-        if (!speakEnabled()) return   // voice toggle off
+        if (!shouldSpeak()) return   // voice channel closed (or voice toggle off)
         if (speaking) return          // the authoritative reply has precedence — never talk over it
         // One voice at a time: stop any in-flight glue before the new one so we never
         // get two concurrent TTS (the double-voice bug). Latest narration wins.
@@ -769,6 +774,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun speakEnabled() = context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("speak_responses", true)
+
+    /** WS4a: open/close the voice channel. The host drives it: a call / live voice
+     *  line opens it (true); no call closes it (false) so replies are text-only. */
+    fun setVoiceChannelOpen(open: Boolean) { voiceChannelOpen = open }
+    private fun shouldSpeak(): Boolean = voiceChannelOpen && speakEnabled()
 
 
     fun testConnection(): String {

@@ -58,6 +58,7 @@ class RealtimeActivity : AppCompatActivity() {
         val c = VoiceController(this, session!!)
         controller = c
         val duplex = getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("duplex", true)
+        c.setVoiceChannelOpen(true)   // the Realtime screen is always a live voice channel
         val started = try { c.start(listener, duplex) } catch (_: Throwable) { false }
         if (!started) enableTextMode("voice unavailable here — type to the entity")
     }
