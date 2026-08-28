@@ -34,11 +34,13 @@ Replace the raw `ping error: null / stream error: null` text with plain language
 
 ### WS4 — Actions actually work
 - **Speak gate:** the reply/`speak()` path must only voice a reply when there's an **active call** (`callLive`). With no call, replies are text-only. (Fixes the slash-command-speaks bug.)
-- **Slash commands as native mini-UIs (NOT agent strings):** each `/command` should bring up a **native panel** for its capability, not send a string to the agent to talk about. Examples:
-  - **`/models` → native model list, organized by provider**, pulled from the gateway `/v1/models` (live data), each row showing provider/name/status.
-  - **`/health` → gateway health card.** **`/new` → new-conversation confirm.** **`/reconnect` → reconnect action.**
-  - The slash menu shows user-friendly labels; tapping opens the panel. The agent is for *conversation*, not command-UIs.
-- Remove/replace the current string-passing slash path.
+- **Slash commands as native mini-UIs (NOT agent strings):** each `/command` should bring up a **native panel** for its capability, not send a string to the agent to talk about. **API grounding (verified):** the OpenAI `/v1/models` returns ONLY `hermes-agent` — too thin. Use **`GET /api/model/options`** which returns the full gateway catalog `{providers:[{slug,name,models[],total_models,is_current,authenticated,source,capabilities,warning}]}`. Examples (all use the same entity url + bearer key):
+  - **`/models` → native provider list** from `/api/model/options`: one row per provider (name, an **auth badge** — authenticated/not + the "run `hermes model` to configure" hint for inactive, and a **current** highlight for `is_current`), expandable to that provider's `models[]`. Grouped by provider, live data.
+  - **`/health` → native health card** from `GET /v1/health` (status/version).
+  - **`/new` → app action:** reset the app session chain + `DELETE /v1/responses/{id}` + fresh state.
+  - **`/reconnect` → app action:** re-ping `/v1/health` + re-init the session.
+  - The agent is for *conversation*; command-UIs read the gateway API directly (never a `"/models"` string to the agent).
+  - **Label distinction:** "Gateway models" (this `/models` → `/api/model/options`) vs "Device models" (the Settings Models-download view → the app's own on-device `ModelCatalog`). Keep them clearly separated.
 
 ## Deferred (after Sprint 6)
 - Enhanced Realtime (Gemma) spike; voice-quality roadmap (streaming STT, latency, enhancement); Google Play; release-signing polish.
