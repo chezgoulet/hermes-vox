@@ -188,8 +188,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onState("listening") }
                     main.post { listener?.onLog("// hear → listening") }
                     var inSpeech = false; var silentMs = 0
-                    val preBuf = ArrayList<Float>()   // ~250ms pre-roll so the VAD's start-detection
-                                                     // delay doesn't clip the first word(s) the user says
+                    // #18: ~250ms pre-roll ring (sr/4 samples @16kHz) so the VAD's
+                    // start-detection delay doesn't clip the first word(s) the user says.
+                    // O(1) append/overwrite — the old ArrayList<Float> did removeAt(0)
+                    // per sample (an O(n) arraycopy + a box per sample, every read).
+                    val preBuf = FloatRing(sr / 4)
                     val segStart = android.os.SystemClock.uptimeMillis()
                     seg.clear()
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
@@ -208,7 +211,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // repeats at the front and whisper-base hallucinates "Hello Hello ... 16x".
                         if (!inSpeech && !spoke) {
                             // roll a pre-roll (recent ~250ms) so we don't clip the utterance start
-                            for (f in frames) { preBuf.add(f); while (preBuf.size * 1000 / sr > 250) preBuf.removeAt(0) }
+                            preBuf.add(frames)
                         }
                         // #17: time-slice silence from the ACTUAL frame duration (n / sr),
                         // not a fixed 64ms. A short read (a partial buffer) would make
@@ -216,7 +219,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // mid-sentence when the pause threshold fired early.
                         if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
                         if (inSpeech) {
-                            if (seg.isEmpty() && preBuf.isNotEmpty()) { seg.addAll(preBuf); preBuf.clear() }
+                            if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
                             for (f in frames) seg.add(f)
                         }
                         if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
@@ -853,3 +856,41 @@ private val STREAM_CHUNK_ABBREVIATIONS = setOf(
 /** #44: an open streaming phrase with no boundary emits as a partial chunk once
  *  this window elapses (so time-to-first-audio isn't gated on a terminator). */
 private const val STREAM_CHUNK_FLUSH_MS = 500L
+
+/** #18: a bounded FIFO ring of float samples — an O(1) append/overwrite sliding
+ *  window used for the ~250ms capture pre-roll. The old `ArrayList<Float>` did
+ *  add() + removeAt(0) per sample (an O(n) arraycopy under the loop + a Float box
+ *  per sample, every read). Fixed capacity = the pre-roll window (sr/4 @16kHz).
+ *  Pure JVM — unit-testable, no Android deps. */
+internal class FloatRing(capacity: Int) {
+    private val buf = FloatArray(capacity.coerceAtLeast(1))
+    private var head = 0
+    private var count = 0
+
+    /** Current number of samples buffered (<= capacity). */
+    val size: Int get() = count
+
+    fun add(batch: FloatArray) {
+        for (v in batch) {
+            if (count == buf.size) {
+                buf[head] = v                      // ring full: overwrite the oldest
+                head = (head + 1) % buf.size
+            } else {
+                buf[(head + count) % buf.size] = v
+                count++
+            }
+        }
+    }
+
+    /** Append the buffered samples in order to dst, then reset (drain-once). */
+    fun drainInto(dst: MutableList<Float>) {
+        for (i in 0 until count) dst.add(buf[(head + i) % buf.size])
+        head = 0
+        count = 0
+    }
+
+    fun clear() {
+        head = 0
+        count = 0
+    }
+}
