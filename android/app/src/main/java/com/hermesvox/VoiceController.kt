@@ -270,6 +270,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (!continuous) { listening = false; break }
                 }
                 loopActive = false
+                // #19: the walkie no-repeat exit (and the stop path) never calls
+                // stop(), so release the native AudioRecord here — otherwise the
+                // next start() overwrites `record` and leaks one audio session per
+                // PTT press until AudioRecord construction starts failing.
+                try { record?.stop(); record?.release() } catch (_: Throwable) {}
+                record = null
                 listener?.onState("idle")
             }
             true
@@ -309,6 +315,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         ttsReady = false
         sttReady = false
         voiceState.reset()
+        // #19: a stopped controller is terminal — shut the executor down
+        // (bounded/graceful) so its threads aren't leaked. Reuse-after-stop is
+        // forbidden: the activity nulls its reference so a dead executor is never
+        // re-armed.
+        exec.shutdown()
     }
 
     /** Idempotent re-init: for each leg whose ready flag is false, re-call its init so

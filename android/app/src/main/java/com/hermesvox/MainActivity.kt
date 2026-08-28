@@ -590,7 +590,11 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         // A live call persists (foreground service keeps the loop + process alive), so we
         // do NOT stop the liveController here. Stop only when there's no active call.
-        if (!callLive) { liveController?.stop(); VoiceService.stop(this) }
+        if (!callLive) {
+            liveController?.stop()
+            liveController = null   // #19: stopped controller is terminal (exec shut down) — never re-arm it
+            VoiceService.stop(this)
+        }
     }
 
     override fun onDestroy() {
