@@ -575,9 +575,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return
         try {
-            // NOTE: the rc9/rc10 MODE_IN_COMMUNICATION + VOICE_COMMUNICATION rerouted
-            // the audio (broke mic capture + TTS playback). Reverted to plain MIC.
-            bargeRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            bargeRecord = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
             val r = bargeRecord ?: return
             if (r.state != AudioRecord.STATE_INITIALIZED) return
             r.startRecording()
@@ -590,7 +588,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val frames = FloatArray(n)
                     for (i in 0 until n) { frames[i] = buf[i] / 32768f; rms += buf[i].toDouble() * buf[i] }
                     val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
-                    else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.06f)   // higher: avoid self-trigger on the phone
+                    else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.11f)   // higher: avoid self-trigger on the phone
                     if (spoke) { main.post { bargeIn() }; break }
                 }
             }
