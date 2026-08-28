@@ -323,6 +323,7 @@ class MainActivity : AppCompatActivity() {
             session?.resetConversation()
             liveController?.stop()
             liveController = null
+            active?.stopVoiceWake()   // #13: conversation reset ends the call -> release the wake lock
             active?.clearConversationUi()
         }
     }
@@ -613,6 +614,7 @@ class MainActivity : AppCompatActivity() {
         if (!callLive) {
             liveController?.stop()
             liveController = null   // #19: stopped controller is terminal (exec shut down) — never re-arm it
+            stopVoiceWake()         // #13: no active call -> drop the wake lock (no Doze hold)
             VoiceService.stop(this)
         }
     }
