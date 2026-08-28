@@ -45,6 +45,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var record: AudioRecord? = null
     private var bargeRecord: AudioRecord? = null
     private var bargeAec: android.media.audiofx.AcousticEchoCanceler? = null
+    private var ns: android.media.audiofx.NoiseSuppressor? = null
     private val exec: ExecutorService = Executors.newCachedThreadPool()
     @Volatile private var commitRequested = false
     private val main = Handler(Looper.getMainLooper())
@@ -156,6 +157,16 @@ class VoiceController(private val context: Context, private val session: HermesS
             val r = AudioRecord(source, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf)
             if (r.state != AudioRecord.STATE_INITIALIZED) return listen()
             record = r
+            // #40/#81: push an extra platform NS on the record's session for the
+            // loud-environment case, on top of VOICE_COMMUNICATION AEC/NS. Optional
+            // (ns_extra) — disable if a device double-processes the speech.
+            try {
+                if (micBool("ns_extra", true) && android.media.audiofx.NoiseSuppressor.isAvailable()) {
+                    ns?.release(); ns = null
+                    ns = android.media.audiofx.NoiseSuppressor.create(r.audioSessionId)?.also { it.enabled = true }
+                    VoxLog.d("mic: extra NoiseSuppressor attached (session ${r.audioSessionId}) enabled=${ns?.enabled}")
+                }
+            } catch (_: Throwable) {}
             val shortBuf = ShortArray(1024)
             // Mic settings (user-changeable, logged so their impact is visible).
             val silenceMs = micInt("vad_silence_ms", 800)      // "the pause" that ends your turn
@@ -288,6 +299,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         try { record?.stop(); record?.release() } catch (_: Exception) {}
         try { bargeRecord?.stop(); bargeRecord?.release() } catch (_: Exception) {}
         record = null; bargeRecord = null
+        try { ns?.release() } catch (_: Exception) {}; ns = null
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
         tts?.shutdown()
