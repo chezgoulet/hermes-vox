@@ -36,4 +36,17 @@ class StreamChunkBoundaryTest {
     @Test fun no_boundary_returns_minus_one() {
         assertEquals(-1, indexOfSentenceEnd("welcome to the party"))
     }
+
+    @Test fun comma_followed_by_space_is_a_soft_seam() {
+        assertEquals(5, indexOfSentenceEnd("hello, world"))
+    }
+
+    @Test fun comma_inside_a_number_is_not_a_seam() {
+        assertEquals(-1, indexOfSentenceEnd("1,000 dollars"))
+    }
+
+    @Test fun colon_and_semicolon_followed_by_space_are_soft_seams() {
+        assertEquals(4, indexOfSentenceEnd("note: important"))
+        assertEquals(10, indexOfSentenceEnd("semicolons; separate"))
+    }
 }
