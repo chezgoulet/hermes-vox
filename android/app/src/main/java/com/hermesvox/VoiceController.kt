@@ -592,10 +592,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             sLock.notifyAll()
         }
     }
-    private fun indexOfSentenceEnd(s: String): Int {
-        for (i in s.indices) when (s[i]) { '.', '!', '?', '\n' -> return i }
-        return -1
-    }
     private fun speakingEnabledByUser() = speakEnabled()
     private fun stopStreaming() {
         streamed = false
@@ -785,3 +781,37 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     companion object { const val RMS_THRESHOLD = 0.09f }
 }
+
+/** #30: sentence-seam helper (pure, unit-testable). Returns the index of the
+ *  next text boundary to split a streaming-TTS chunk at, or -1. '!' / '?' /
+ *  newline are always boundaries; '.' only when it genuinely ends a sentence —
+ *  followed by end-of-text or whitespace + a letter, and NOT an abbreviation
+ *  ("Dr.", "Mr.", "St.") — so "71.5%" and "Dr. Chen" never split into an
+ *  audible seam. */
+internal fun indexOfSentenceEnd(s: String): Int {
+    for (i in s.indices) when (s[i]) {
+        '!', '?', '\n' -> return i
+        '.' -> if (isSentenceDot(s, i)) return i
+    }
+    return -1
+}
+
+private fun isSentenceDot(s: String, i: Int): Boolean {
+    val j = i + 1
+    if (j >= s.length) return true                // "Hello." at the very end -> end
+    if (!s[j].isWhitespace()) return false        // "71.5%" -> '.' then a digit, no space
+    var k = j
+    while (k < s.length && s[k].isWhitespace()) k++
+    if (k >= s.length) return true                // "Hello.   " trailing edge -> end
+    if (!s[k].isLetter()) return false            // '.' + space + punctuation -> not a seam
+    // Only treat as a sentence end if the token before '.' isn't a common
+    // abbreviation (title/initial): "Dr. Chen", "Mr. Smith", "St. Louis".
+    var w = i - 1
+    while (w >= 0 && s[w].isLetterOrDigit()) w--
+    return s.substring(w + 1, i).lowercase() !in STREAM_CHUNK_ABBREVIATIONS
+}
+
+private val STREAM_CHUNK_ABBREVIATIONS = setOf(
+    "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "vs", "etc",
+    "approx", "dept", "inc", "ltd", "co", "ave", "blvd", "mt"
+)
