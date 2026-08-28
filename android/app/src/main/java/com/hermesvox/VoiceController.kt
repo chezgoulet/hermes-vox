@@ -416,6 +416,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var done = false
                 var tries = 0
                 while (!done && tries < 600) {
+                    // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The Go
+                    // side (WaitStream) signals the app the instant an SSE event lands, so
+                    // deltas render as they arrive; the 100ms budget is only the idle floor
+                    // (no data yet -> check again). End-of-stream completion wakes too, so
+                    // `done` is observed promptly and never padded by a poll-tick.
+                    try { session.waitStream(sid, 100) } catch (_: Exception) {} // gomobile raises on a retired stream
                     var payload: String? = null
                     try { payload = session.pollStreamJSON(sid) } catch (_: Exception) {} // gomobile raises on error
                     if (payload != null) {
@@ -446,7 +452,6 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                     }
                     if (done) break
-                    Thread.sleep(240)
                     tries++
                 }
                 if (!done) throw Exception("timeout")

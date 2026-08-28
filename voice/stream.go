@@ -76,6 +76,12 @@ type streamState struct {
 	done   bool
 	err    string
 	cancel context.CancelFunc
+	// notify is the push-side wake (#39): each buffered SSE event (and the
+	// terminal done) signals it so the app wakes the moment data lands instead
+	// of sleeping a fixed 240ms poll tick. Buffered(1) coalesces bursts (one
+	// signal is enough — PollStreamJSON drains the whole batch). nil only for
+	// the callback (non-poll) path, which never calls WaitStream.
+	notify chan struct{}
 }
 
 // Stream sends a turn with stream:true and invokes h for EVERY event in
@@ -185,6 +191,15 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 		result.Reply = plainText(st.text.String())
 		result.ResponseID = st.respID
 		st.mu.Unlock()
+		// #39: a push signal lands with the event, so a Waiting caller wakes the
+		// moment a delta is buffered (not on a poll tick). Buffer capacity is 1:
+		// a burst coalesces to a single wake, which PollStreamJSON drains fully.
+		if st.notify != nil {
+			select {
+			case st.notify <- struct{}{}:
+			default:
+			}
+		}
 		if h != nil {
 			h(ev)
 		}
@@ -269,7 +284,7 @@ var (
 // renders are the events the gateway actually sent.
 func (c *HermesResponsesClient) StartStream(input string, previousResponseID string) (string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	st := &streamState{cancel: cancel}
+	st := &streamState{cancel: cancel, notify: make(chan struct{}, 1)}
 	streamsMu.Lock()
 	streamSeq++
 	id := fmt.Sprintf("hvstream_%d_%d", time.Now().UnixNano(), streamSeq)
@@ -283,6 +298,12 @@ func (c *HermesResponsesClient) StartStream(input string, previousResponseID str
 			st.err = err.Error()
 		}
 		st.mu.Unlock()
+		// #39: wake a Waiter on the terminal path too (a connection error can
+		// complete the turn without a buffered response.completed to signal it).
+		select {
+		case st.notify <- struct{}{}:
+		default:
+		}
 		// Entry stays in the map until the caller drains the done=true poll
 		// (PollStreamJSON deletes it) — no final-poll race.
 	}()
@@ -308,6 +329,13 @@ func (c *HermesResponsesClient) PollStreamJSON(streamID string) (string, error) 
 	text := plainText(st.text.String())
 	transcript := st.text.String()
 	respID := st.respID
+	// Consume any pending push-signal so a drained batch never wakes WaitStream
+	// spuriously on the next call (the signal is paired with the batch). Safe on
+	// a nil/unset notify (callback path) — select's default handles it.
+	select {
+	case <-st.notify:
+	default:
+	}
 	st.mu.Unlock()
 	if done {
 		streamsMu.Lock()
@@ -329,6 +357,42 @@ func (c *HermesResponsesClient) PollStreamJSON(streamID string) (string, error) 
 		return "", err
 	}
 	return string(out), nil
+}
+
+// WaitStream is the push-side wake for the poll-drain surface (#39). It blocks
+// until the stream has NEW data buffered, the turn completes (done), or
+// deadlineMs elapses. Returns true when the caller should PollStreamJSON
+// (something new is ready), false on an idle timeout — NOT an error. This lets
+// the app render deltas the moment they arrive instead of sleeping a fixed poll
+// tick (a 240ms sleep that artificially delayed every token).
+func (c *HermesResponsesClient) WaitStream(streamID string, deadlineMs int) (bool, error) {
+	streamsMu.Lock()
+	st := streams[streamID]
+	streamsMu.Unlock()
+	if st == nil {
+		return false, fmt.Errorf("voice: no such stream %q (already drained or never started)", streamID)
+	}
+	st.mu.Lock()
+	if len(st.events) > 0 || st.done {
+		// Data (or the terminal done) already buffered: consume any paired signal
+		// so the next call doesn't wake instantly, then report "ready now".
+		select {
+		case <-st.notify:
+		default:
+		}
+		st.mu.Unlock()
+		return true, nil
+	}
+	notify := st.notify
+	st.mu.Unlock()
+	timer := time.NewTimer(time.Duration(deadlineMs) * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-notify:
+		return true, nil
+	case <-timer.C:
+		return false, nil
+	}
 }
 
 // CancelStream aborts an in-flight streamed turn (the barge-in for the

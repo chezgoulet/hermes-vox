@@ -109,6 +109,19 @@ func (s *HermesSession) PollStreamJSON(streamID string) (string, error) {
 	return payload, err
 }
 
+// WaitStream is the push-side wake for the poll-drain surface (#39): it blocks
+// until the stream has NEW data buffered, the turn completes (deadlineMs), or
+// the timeout elapses. Returns true when the caller should PollStreamJSON; false
+// on an idle timeout (never an error). The native shell calls this INSTEAD of
+// sleeping a fixed 240ms tick so SSE deltas are rendered as they arrive.
+// gomobile: at most (T, error).
+func (s *HermesSession) WaitStream(streamID string, deadlineMs int) (bool, error) {
+	if s == nil || s.streams == nil {
+		return false, fmt.Errorf("voice: no Hermes session")
+	}
+	return s.streams.WaitStream(streamID, deadlineMs)
+}
+
 // CancelStream aborts an in-flight streamed turn — the barge-in for the
 // streaming path (closing the HTTP connection aborts the gateway generation).
 func (s *HermesSession) CancelStream(streamID string) error {
