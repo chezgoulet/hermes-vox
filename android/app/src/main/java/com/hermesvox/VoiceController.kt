@@ -56,6 +56,17 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var currentStream: String? = null
     @Volatile private var turnInFlight = false
     @Volatile private var loopActive = false
+    // D2 (interrupt-during-generation): a generation-phase mic watch that catches
+    // the user's voice while the agent is still producing (thinking / tool-calls /
+    // first-token latency), not only during playback. It is a SEPARATE recorder so
+    // it runs while the main capture loop is paused on the turn gate (the main
+    // record is stopped for the turn). It self-stops the instant `speaking` flips
+    // (the AEC'd playback barge-in takes over) so it never hears its own reply.
+    @Volatile private var genWatchArmed = false
+    @Volatile private var genRecord: AudioRecord? = null
+    // Set when a barge-in lands before startStream returned (currentStream was
+    // still null), so the stream loop breaks instead of settling a ghost reply.
+    @Volatile private var genCancelled = false
     // MODE-GATED RE-LISTEN: true (Realtime/Enhanced) keeps the loop going after a
     // turn; false (Walkie PTT) does exactly one turn then stops until the next PTT.
     @Volatile var continuous = false
@@ -308,6 +319,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         stopTts()
         stopStreaming()
         stopBargeInWatch()
+        stopGenerationWatch()
         // #8: wait (bounded) for the capture loop + partial worker to exit their
         // native calls (vad.feed / stt.transcribe / record.read) before releasing
         // the native handles -> no use-after-free on a background/teardown race.
@@ -414,6 +426,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
         firstAudioLatch = false   // #40: per-turn first-audio latch
+        genCancelled = false
+        // D2: arm the generation-phase mic watch up front so a voice input interrupts
+        // the agent while it is STILL GENERATING (thinking / tool-calls / first-token
+        // latency) — not just during playback. It stops itself once speech begins.
+        if (bargeInEnabled) armGenerationWatch()
         val t0 = android.os.SystemClock.uptimeMillis()
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
@@ -428,6 +445,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var done = false
                 var tries = 0
                 while (!done && tries < 600) {
+                    // D2: a barge-in during generation (before startStream returned) sets
+                    // genCancelled; break so the turn's worker retires without settling a
+                    // ghost reply (the gate was already released by bargeIn()).
+                    if (genCancelled) break
                     // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The Go
                     // side (WaitStream) signals the app the instant an SSE event lands, so
                     // deltas render as they arrive; the 100ms budget is only the idle floor
@@ -466,7 +487,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (done) break
                     tries++
                 }
-                if (!done) throw Exception("timeout")
+                if (genCancelled) { VoxLog.d("turn interrupted during generation") }
+                else if (!done) throw Exception("timeout")
             } catch (e: Throwable) {
                 stopStreaming()   // timeout/exception: close the streaming worker
                 main.post {
@@ -477,6 +499,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                stopGenerationWatch()   // D2: always retire the generation watch with the turn
                 // (speak-gate released in the speak-complete callback, not here)
             }
         }
@@ -517,6 +540,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String, gen: Long) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
+        stopGenerationWatch()   // D2: the generation watch yields once the reply is resolved
         if (streamed && (tts?.supportsStreaming == true)) {
             // STREAMED reply: the single canonical gate release. streamFinish() closes
             // the queue so the streaming worker drains + finishes; the gate releases
@@ -557,6 +581,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // chunk played and the rest was drained silently -> "small chunks".)
                         if (tts?.supportsStreaming == true) {
                             speaking = true
+                            stopGenerationWatch()   // D2: playback began -> generation watch yields
                             // Arm barge-in (user can interrupt the streamed reply) once.
                             if (bargeInEnabled && !bargeInArmed) {
                                 main.postDelayed({ if (speaking && !bargeInArmed) startBargeInWatch() }, 700L)
@@ -679,6 +704,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         glueSpeaking = false      // Hermes preempts Gemma
         stopTts()                 // cut any in-flight glue so the reply isn't truncated
         speaking = true
+        stopGenerationWatch()   // D2: playback begins -> generation watch yields
         listener?.onState("speaking")
         t.speak(text) {
             speaking = false
@@ -727,6 +753,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         speaking = false
         bargeInArmed = false
         stopBargeInWatch()
+        stopGenerationWatch()
+        genCancelled = true
         stopTts()
         stopStreaming()   // stop the streaming worker: exit + release the track cleanly
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
@@ -734,6 +762,48 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onLog("// (interrupted)")
         listener?.onState("listening")
         releaseTurnGate(turnGen)   // a barge-in aborts the reply -> release the loop's speak-gate
+    }
+
+    // --- Generation-phase barge-in (D2): interrupt while the agent is STILL ---
+    // generating, not just during playback. A separate, AEC-less recorder watches
+    // the mic for the pre-audio window (thinking / tool-calls / first-token). It
+    // never hears its own reply because it can only be armed while NOT speaking
+    // and stops the instant `speaking` flips (the AEC'd playback barge-in then
+    // takes over). The main capture record is already stopped for the turn, so
+    // there is no double-recorder conflict.
+    private fun armGenerationWatch() {
+        if (!bargeInEnabled || genWatchArmed || speaking) return
+        val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (minBuf <= 0) return
+        genWatchArmed = true
+        try {
+            val r = AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(minBuf * 2).build()
+            genRecord = r
+            if (r.state != AudioRecord.STATE_INITIALIZED) { genWatchArmed = false; genRecord = null; return }
+            r.startRecording()
+            exec.execute {
+                val buf = ShortArray(minBuf)
+                try {
+                    while (genWatchArmed && !speaking && turnInFlight) {
+                        if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) break
+                        val n = r.read(buf, 0, buf.size); if (n <= 0) continue
+                        var rms = 0.0
+                        for (i in 0 until n) rms += buf[i].toDouble() * buf[i]
+                        val spoke = Math.sqrt(rms / n) / Short.MAX_VALUE > 0.15f
+                        if (spoke) { main.post { if (turnInFlight && !speaking) bargeIn() }; break }
+                    }
+                } catch (_: Throwable) {}   // raced a stop() release on the record -> exit cleanly
+            }
+        } catch (_: Throwable) { genWatchArmed = false }
+    }
+
+    private fun stopGenerationWatch() {
+        genWatchArmed = false
+        try { genRecord?.stop(); genRecord?.release() } catch (_: Exception) {}
+        genRecord = null
     }
 
     private fun releaseTurnGate(gen: Long) {
@@ -764,6 +834,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         speaking = false
         bargeInArmed = false
         stopBargeInWatch()
+        stopGenerationWatch()
         stopTts()
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
