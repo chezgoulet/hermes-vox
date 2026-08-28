@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -197,41 +198,83 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Mic / capture settings (prefs were wired + logged in VoiceController;
-    // these rows make them user-visible + settable) -------------------------
+    // ---- Mic / Speech tuning (exact-range SeekBars reading + writing the SAME
+    // prefs the pipeline reads; defaults = shipped values; a restore-defaults
+    // button resets all eight) -------------------------------------------
     private fun bindMicSettings() {
-        val aec = findViewById<SwitchCompat>(R.id.set_mic_aec)
-        aec.isChecked = prefs.getBoolean("mic_aec", true)
-        aec.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("mic_aec", on).apply() }
+        bindMicToggle(R.id.set_mic_aec, "mic_aec", true)
+        bindMicToggle(R.id.set_ns_extra, "ns_extra", true)
+        bindMicToggle(R.id.set_partial_stt, "partial_stt", true)
 
-        val vadLabels = arrayOf("Sensitive", "Balanced", "Strict")
-        val vadVals = floatArrayOf(0.3f, 0.5f, 0.7f)
-        setFloatVal(R.id.set_mic_vad_val, vadLabels, vadVals, prefs.getFloat("vad_threshold", 0.5f))
-        findViewById<LinearLayout>(R.id.row_mic_vad).setOnClickListener {
-            micChoiceFloat("Mic sensitivity (VAD)", vadLabels, vadVals, "vad_threshold", R.id.set_mic_vad_val)
-        }
+        bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
+            0.1f, 0.9f, 0.05f, 0.5f) { "%.2f".format(it) }
+        bindIntSeekBar(R.id.set_seek_silence, R.id.set_mic_silence_val, "vad_silence_ms",
+            200, 2000, 50, 800) { "${it} ms" }
+        bindIntSeekBar(R.id.set_seek_early, R.id.set_mic_early_val, "vad_early_silence_ms",
+            150, 800, 50, 450) { "${it} ms" }
+        bindIntSeekBar(R.id.set_seek_min, R.id.set_mic_min_speech_val, "vad_min_speech_ms",
+            100, 1000, 50, 300) { "${it} ms" }
+        bindIntSeekBar(R.id.set_seek_max, R.id.set_mic_max_val, "vad_max_ms",
+            8000, 30000, 500, 15000) { "${it} ms" }
 
-        val minLabels = arrayOf("Short", "Normal", "Long")
-        val minVals = intArrayOf(200, 300, 600)
-        setIntVal(R.id.set_mic_min_speech_val, minLabels, minVals, prefs.getInt("vad_min_speech_ms", 300))
-        findViewById<LinearLayout>(R.id.row_mic_min_speech).setOnClickListener {
-            micChoiceInt("Min speech before a turn", minLabels, minVals, "vad_min_speech_ms", R.id.set_mic_min_speech_val)
-        }
-
-        val silLabels = arrayOf("Quick", "Normal", "Relaxed")
-        val silVals = intArrayOf(400, 800, 1500)
-        setIntVal(R.id.set_mic_silence_val, silLabels, silVals, prefs.getInt("vad_silence_ms", 800))
-        findViewById<LinearLayout>(R.id.row_mic_silence).setOnClickListener {
-            micChoiceInt("Pause to end your turn", silLabels, silVals, "vad_silence_ms", R.id.set_mic_silence_val)
-        }
-
-        val maxLabels = arrayOf("15s", "30s", "60s")
-        val maxVals = intArrayOf(15000, 30000, 60000)
-        setIntVal(R.id.set_mic_max_val, maxLabels, maxVals, prefs.getInt("vad_max_ms", 15000))
-        findViewById<LinearLayout>(R.id.row_mic_max).setOnClickListener {
-            micChoiceInt("Max speech per turn", maxLabels, maxVals, "vad_max_ms", R.id.set_mic_max_val)
+        findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
+            restoreDefaults(GROUP_MIC)
+            Toast.makeText(this, "Mic / Speech defaults restored", Toast.LENGTH_SHORT).show()
         }
     }
+
+    private fun bindMicToggle(id: Int, key: String, def: Boolean) {
+        findViewById<SwitchCompat>(id).apply {
+            isChecked = prefs.getBoolean(key, def)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean(key, on).apply() }
+        }
+    }
+
+    /** An int SeekBar snapped to [step] between [min]..[max]; writes the pref 1:1. */
+    private fun bindIntSeekBar(seekId: Int, valId: Int, key: String,
+                               min: Int, max: Int, step: Int, def: Int, fmt: (Int) -> String) {
+        val seek = findViewById<SeekBar>(seekId)
+        val steps = (max - min) / step
+        seek.max = steps
+        val tv = findViewById<TextView>(valId)
+        seek.progress = snapInt(prefs.getInt(key, def).coerceIn(min, max), min, step)
+        tv.text = fmt(min + seek.progress * step)
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val v = min + p * step
+                prefs.edit().putInt(key, v).apply()
+                tv.text = fmt(v)
+            }
+            override fun onStartTrackingTouch(s: SeekBar) {}
+            override fun onStopTrackingTouch(s: SeekBar) {}
+        })
+    }
+
+    /** A float SeekBar snapped to [step] between [min]..[max]; writes the pref 1:1. */
+    private fun bindFloatSeekBar(seekId: Int, valId: Int, key: String,
+                                 min: Float, max: Float, step: Float, def: Float, fmt: (Float) -> String) {
+        val seek = findViewById<SeekBar>(seekId)
+        val steps = ((max - min) / step).toInt()
+        seek.max = steps
+        val tv = findViewById<TextView>(valId)
+        seek.progress = snapFloat(prefs.getFloat(key, def).coerceIn(min, max), min, step)
+        tv.text = fmt(min + seek.progress * step)
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val v = min + p * step
+                prefs.edit().putFloat(key, v).apply()
+                tv.text = fmt(v)
+            }
+            override fun onStartTrackingTouch(s: SeekBar) {}
+            override fun onStopTrackingTouch(s: SeekBar) {}
+        })
+    }
+
+    private fun snapInt(v: Int, min: Int, step: Int): Int = ((v - min) / step).coerceAtLeast(0)
+    private fun snapFloat(v: Float, min: Float, step: Float): Int =
+        ((v - min) / step).toInt().coerceAtLeast(0)
 
     // ---- Particles / presence settings (moved off the raw avatar tap; tap = stop) ----
     private fun bindParticles() {
@@ -247,36 +290,9 @@ class SettingsActivity : AppCompatActivity() {
         cyc.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("particles_cycle", on).apply() }
     }
 
-    // Numeric value-labels (find the closest slot, render its human label).
-    private fun setIntVal(valId: Int, labels: Array<String>, vals: IntArray, cur: Int) {
-        val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
-        findViewById<TextView>(valId).text = labels[idx]
-    }
-    private fun setFloatVal(valId: Int, labels: Array<String>, vals: FloatArray, cur: Float) {
-        val idx = vals.indices.minByOrNull { kotlin.math.abs(vals[it] - cur) } ?: 0
-        findViewById<TextView>(valId).text = labels[idx]
-    }
     private fun setStringVal(valId: Int, labels: Array<String>, vals: Array<String>, cur: String) {
         val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
         findViewById<TextView>(valId).text = labels[idx]
-    }
-    private fun micChoiceFloat(title: String, labels: Array<String>, vals: FloatArray, key: String, valId: Int) {
-        val cur = prefs.getFloat(key, vals.getOrElse(vals.size / 2) { 0.5f })
-        val idx = vals.indices.minByOrNull { kotlin.math.abs(vals[it] - cur) } ?: 0
-        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, idx) { d, which ->
-            prefs.edit().putFloat(key, vals[which]).apply()
-            findViewById<TextView>(valId).text = labels[which]
-            d.dismiss()
-        }.show()
-    }
-    private fun micChoiceInt(title: String, labels: Array<String>, vals: IntArray, key: String, valId: Int) {
-        val cur = prefs.getInt(key, vals.getOrElse(vals.size / 2) { 0 })
-        val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
-        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, idx) { d, which ->
-            prefs.edit().putInt(key, vals[which]).apply()
-            findViewById<TextView>(valId).text = labels[which]
-            d.dismiss()
-        }.show()
     }
     private fun micChoiceString(title: String, labels: Array<String>, vals: Array<String>, key: String, valId: Int) {
         val cur = prefs.getString(key, vals.getOrElse(0) { "aura" }) ?: "aura"
@@ -313,11 +329,47 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    /** Central restore-defaults: reset a sub-menu's prefs back to the SHIPPED
+     *  defaults, then re-sync the visible controls for that group. */
+    private fun restoreDefaults(group: String) {
+        val e = prefs.edit()
+        when (group) {
+            GROUP_MIC -> e
+                .putFloat("vad_threshold", 0.5f)
+                .putInt("vad_silence_ms", 800)
+                .putInt("vad_early_silence_ms", 450)
+                .putInt("vad_min_speech_ms", 300)
+                .putInt("vad_max_ms", 15000)
+                .putBoolean("partial_stt", true)
+                .putBoolean("mic_aec", true)
+                .putBoolean("ns_extra", true)
+            GROUP_STT -> e
+                .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
+                .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+            GROUP_TTS -> e.putString("tts", "system")
+            GROUP_VOICE -> e.putString("voice", "system")
+            GROUP_MODE -> e.putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)
+        }
+        e.apply()
+        when (group) {
+            GROUP_MIC -> bindMicSettings()
+            else -> refreshFlowVals()
+        }
+    }
+
     private fun applyTheme(mode: String) {
         when (mode) {
             "dark" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             "light" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         }
+    }
+
+    private companion object {
+        const val GROUP_MIC = "mic"
+        const val GROUP_STT = "stt"
+        const val GROUP_TTS = "tts"
+        const val GROUP_VOICE = "voice"
+        const val GROUP_MODE = "mode"
     }
 }

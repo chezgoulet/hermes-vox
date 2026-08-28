@@ -317,7 +317,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
-                android:text="Mic / capture" />
+                android:text="Mic / Speech" />
 
             <LinearLayout
                 android:id="@+id/row_mic_aec"
@@ -329,10 +329,46 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Noise &amp; echo cancel (mic AEC/NS)"
+                    android:text="Noise &amp; echo cancel (AEC)"
                     style="@style/HvRowTitle" />
                 <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/set_mic_aec"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_ns"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Extra noise suppression"
+                    style="@style/HvRowTitle" />
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/set_ns_extra"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_partial"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Streaming partial transcripts"
+                    style="@style/HvRowTitle" />
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/set_partial_stt"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
@@ -346,33 +382,19 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Mic sensitivity (VAD gate)"
+                    android:text="Mic sensitivity (VAD threshold)"
                     style="@style/HvRowTitle" />
                 <TextView
                     android:id="@+id/set_mic_vad_val"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Balanced"
+                    android:text="0.50"
                     style="@style/HvRowValue" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_mic_min_speech"
-                style="@style/HvRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
+                <SeekBar
+                    android:id="@+id/set_seek_vad"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Min speech before a turn"
-                    style="@style/HvRowTitle" />
-                <TextView
-                    android:id="@+id/set_mic_min_speech_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Normal"
-                    style="@style/HvRowValue" />
+                    android:max="16" />
             </LinearLayout>
 
             <LinearLayout
@@ -390,8 +412,61 @@
                     android:id="@+id/set_mic_silence_val"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Normal"
+                    android:text="800 ms"
                     style="@style/HvRowValue" />
+                <SeekBar
+                    android:id="@+id/set_seek_silence"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="36" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_early"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Early-start pause (streaming STT)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mic_early_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="450 ms"
+                    style="@style/HvRowValue" />
+                <SeekBar
+                    android:id="@+id/set_seek_early"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="13" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_min_speech"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Min speech before a turn"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:id="@+id/set_mic_min_speech_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="300 ms"
+                    style="@style/HvRowValue" />
+                <SeekBar
+                    android:id="@+id/set_seek_min"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="18" />
             </LinearLayout>
 
             <LinearLayout
@@ -409,8 +484,32 @@
                     android:id="@+id/set_mic_max_val"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="15s"
+                    android:text="15000 ms"
                     style="@style/HvRowValue" />
+                <SeekBar
+                    android:id="@+id/set_seek_max"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="44" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/row_mic_reset"
+                style="@style/HvRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Restore defaults (Mic &amp; Speech)"
+                    style="@style/HvRowTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="reset"
+                    style="@style/HvRowAction" />
             </LinearLayout>
 
             <TextView
