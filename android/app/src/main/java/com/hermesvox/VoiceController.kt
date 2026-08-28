@@ -796,6 +796,35 @@ class VoiceController(private val context: Context, private val session: HermesS
         return out
     }
 
+    /** Plain-language connection test (WS3): success/failure copy + the raw reason
+     *  in small debug text. Same entity url + bearer key as testConnection(). */
+    fun testConnectionHuman(): String {
+        val u = prefString("url", ""); val k = prefString("key", "")
+        if (u.isBlank()) return "Couldn't reach the gateway. Check that your network is on and the address is right.\n\n(no endpoint set)"
+        var ping = true; var pingRe = ""
+        try {
+            val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000
+            c.setRequestProperty("Authorization", "Bearer " + k)
+            if (c.responseCode != 200) { ping = false; pingRe = "HTTP ${c.responseCode}" }
+        } catch (e: Throwable) { ping = false; pingRe = e.message ?: "unknown" }
+        var stream = true; var streamRe = ""
+        try {
+            val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
+            c.setRequestProperty("Authorization", "Bearer " + k)
+            c.setRequestProperty("Content-Type", "application/json")
+            c.outputStream.use { it.write("{\"model\":\"\",\"input\":\"hello\",\"stream\":true}".toByteArray()) }
+            val code = c.responseCode
+            if (code < 200 || code >= 400) { stream = false; streamRe = "HTTP $code" }
+        } catch (e: Throwable) { stream = false; streamRe = e.message ?: "unknown" }
+        VoxLog.d("conn-test: ping=$ping($pingRe) stream=$stream($streamRe)")
+        val ok = ping && stream
+        if (ok) return "Connected to your agent. Everything's working."
+        val debug = listOfNotNull(if (!ping) "ping: $pingRe" else null, if (!stream) "stream: $streamRe" else null).joinToString(" · ")
+        return "Couldn't reach the gateway. Check that your network is on and the address is right.\n\n(debug: $debug)"
+    }
+
     /** Settings "Log spoken transcript" (default OFF): when false, the user's words are
      *  NOT written to the runtime log or dev console (a genuine privacy backstop). */
     private fun logTranscripts(): Boolean =

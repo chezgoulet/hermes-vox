@@ -224,13 +224,18 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
                 findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
-            val u = prefs.getString("url", ""); val k = SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty()
-            val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(u ?: "", k ?: "", ""))
-            val r = c.testConnection()
-            findViewById<TextView>(R.id.set_test_val)?.text = "done"
+            val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(
+                prefs.getString("url", "").orEmpty(),
+                SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty(), ""))
+            val msg = c.testConnectionHuman()
+            findViewById<TextView>(R.id.set_test_val)?.let {
+                val ok = msg.startsWith("Connected")
+                it.text = if (ok) "ok" else "FAILED"
+                it.setTextColor(if (ok) 0xFF35D07F.toInt() else 0xFFFF5B5B.toInt())
+            }
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Connection test")
-                .setMessage(r)
+                .setTitle(if (msg.startsWith("Connected")) "Connection OK" else "Connection issue")
+                .setMessage(msg)
                 .setPositiveButton("OK", null).show()
         }
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
