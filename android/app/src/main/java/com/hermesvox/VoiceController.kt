@@ -50,6 +50,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var turnDone = java.util.concurrent.CountDownLatch(1)
     @Volatile private var turnGen = 0L
+    @Volatile private var turnReleased = false   // #60: exactly-once gate release per turn
     @Volatile private var speaking = false
     @Volatile private var bargeInArmed = false
     @Volatile private var currentStream: String? = null
@@ -329,6 +330,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun runStreamedTurn(text: String, gen: Long) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen); return }
         turnInFlight = true
+        turnReleased = false   // #60: re-arm exactly-once for this turn
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
         if (speakEnabled() && tts?.supportsStreaming == true) streamBegin()
@@ -419,13 +421,18 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String, gen: Long) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
-        if (speakEnabled()) {
-            if (streamed && (tts?.supportsStreaming == true)) {
-                streamFinish()
-                exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate(gen) }
-            } else speak(finalText, gen)
+        if (streamed && (tts?.supportsStreaming == true)) {
+            // STREAMED reply: the single canonical gate release. streamFinish() closes
+            // the queue so the streaming worker drains + finishes; the gate releases
+            // exactly once here, gated on the worker's completion (sDone). No other
+            // release site runs for this reply (#60).
+            streamFinish()
+            exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate(gen) }
+        } else if (speakEnabled()) {
+            speak(finalText, gen)
+        } else {
+            stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen)
         }
-        else { stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen) }   // no speech -> terminate streaming + release the loop's speak-gate
     }
 
     // ---- Streaming TTS engine ----
@@ -609,7 +616,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun releaseTurnGate(gen: Long) {
-        if (gen == turnGen) { try { turnDone.countDown() } catch (_: Throwable) {} }
+        if (gen != turnGen) return
+        if (turnReleased) return   // #60: a turn's gate releases exactly once
+        turnReleased = true
+        try { turnDone.countDown() } catch (_: Throwable) {}
     }
 
     private fun stopBargeInWatch() {
