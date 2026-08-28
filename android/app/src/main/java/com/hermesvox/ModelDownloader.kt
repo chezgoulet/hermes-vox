@@ -38,12 +38,14 @@ class ModelDownloader(private val context: Context) {
             try { wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:model-dl"); wl.acquire(30 * 60 * 1000L) } catch (_: Throwable) {}
 
             try {
+                VoxLog.d("model " + spec.id + ": downloading " + spec.file)
                 val err = doDownload(spec, listener)
+                VoxLog.d("model " + spec.id + ": result=" + (if (err != null) err else "OK"))
                 if (cancelled) listener.onError(spec.id, "cancelled")
                 else if (err != null) listener.onError(spec.id, err)
                 else listener.onDone(spec.id)
             } catch (e: Throwable) {
-                if (!cancelled) listener.onError(spec.id, e.message ?: "download failed")
+                if (!cancelled) { VoxLog.d("model " + spec.id + ": threw " + e.message); listener.onError(spec.id, e.message ?: "download failed") }
             } finally { activeId = null; try { wl?.release() } catch (_: Exception) {} }
         }
     }
