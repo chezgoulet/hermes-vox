@@ -79,7 +79,7 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
         } catch (e: Throwable) { VoxLog.e("whisper decode: ${e.message}"); null }
     }
 
-    override fun shutdown() { rec?.release(); rec = null }
+    @Synchronized override fun shutdown() { rec?.release(); rec = null }
 
     companion object {
         /** PROOF HOOK: build a fresh STT, transcribe a WAV file, return text. */
@@ -147,10 +147,10 @@ class SileroVadGate(private val context: Context, private val threshold: Float =
         }
     }
 
-    fun feed(samples: FloatArray): Boolean {
+    @Synchronized fun feed(samples: FloatArray): Boolean {
         val v = vad ?: return false
         return try { v.acceptWaveform(samples); v.isSpeechDetected() } catch (_: Throwable) { false }
     }
 
-    fun shutdown() { vad?.release(); vad = null }
+    @Synchronized fun shutdown() { vad?.release(); vad = null }
 }

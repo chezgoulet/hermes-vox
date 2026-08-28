@@ -24,6 +24,11 @@ class SherpaTts(private val context: Context) : VoxTts {
     val playbackSession: Int get() = streamTrack?.audioSessionId ?: 0
     private var streamWritten = 0
     private var streamSR = 0
+    // #7: serialize stream-track writes vs stopStreaming() so release() never races a
+    // WRITE_BLOCKING (the SIGSEGV). stopStreaming() nulls the track under the lock and
+    // waits for an in-flight write to clear before pause/stop/flush/release.
+    private val trackLock = Object()
+    @Volatile private var writing = false
     override val name: String get() = "Piper"
     override val isWarm: Boolean get() = tts != null
     override val supportsStreaming: Boolean get() = isWarm
@@ -141,16 +146,19 @@ class SherpaTts(private val context: Context) : VoxTts {
 
     /** Synthesize a sentence-chunk + append it to the persistent track (non-blocking-set). */
     fun streamChunk(text: String): Boolean {
-        val t = streamTrack ?: return false
         val eng = tts ?: return false
         return try {
             val audio = eng.generate(text, 0, 1.0f)
             val samples = audio.samples ?: return false
             if (streamSR == 0) streamSR = audio.sampleRate
+            val t: AudioTrack
+            synchronized(trackLock) {
+                t = streamTrack ?: return false
+                writing = true                 // stopStreaming() waits for this to clear
+            }
             VoxLog.d("piper chunk ${samples.size} smp @${audio.sampleRate}Hz (${text.length} ch)")
-            t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            streamWritten += samples.size
-            true
+            try { t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING); streamWritten += samples.size; true }
+            finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
         } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
     }
 
@@ -167,10 +175,20 @@ class SherpaTts(private val context: Context) : VoxTts {
         stopStreaming()
     }
     fun stopStreaming() {
-        try { streamTrack?.stop(); streamTrack?.release() } catch (_: Throwable) {}
-        streamTrack = null; streamWritten = 0
+        val t: AudioTrack?
+        synchronized(trackLock) {
+            t = streamTrack
+            streamTrack = null                       // fence: no new write may start
+            while (writing) { try { trackLock.wait(50) } catch (_: Throwable) { break } }
+        }
+        try { t?.pause() } catch (_: Throwable) {}   // stop might block on a full buffer in some builds
+        try { t?.stop() } catch (_: Throwable) {}
+        try { t?.flush() } catch (_: Throwable) {}
+        try { t?.release() } catch (_: Throwable) {} // never concurrent with a WRITE -> no SIGSEGV #7
+        streamWritten = 0
     }
 
     override fun stop() { stopStreaming() }
+    @Synchronized
     override fun shutdown() { tts = null }
 }
