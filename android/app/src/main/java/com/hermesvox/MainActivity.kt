@@ -41,9 +41,29 @@ class MainActivity : AppCompatActivity() {
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent); setIntent(intent); handleDebugHarness(intent)
+    }
+
+    /** DEBUG-ONLY harness entry (inert when !isDebuggable). Lets the emulator
+     *  stress script configure the session + drive a text turn without fighting
+     *  onboarding/IME. NOT reachable in release (debuggable=false), so it does
+     *  NOT reopen the #1 intent-injection surface. */
+    private fun handleDebugHarness(intent: android.content.Intent?) {
+        if (intent == null) return
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
+        val m = intent.getStringExtra("model"); val text = intent.getStringExtra("text")
+        if (!u.isNullOrBlank()) prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").apply()
+        if (!k.isNullOrBlank()) prefs.edit().putString("key", (SecureStore.encrypt(k) ?: k)).apply()
+        if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
+        // defer past onCreate so the Activity views/session are initialized (harness turn)
+        mainHandler.postDelayed({ handleDebugHarness(intent) }, 800L)
         active = this
         setContentView(R.layout.activity_main)
         Seq.setContext(applicationContext)
