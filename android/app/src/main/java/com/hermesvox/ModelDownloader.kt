@@ -109,7 +109,7 @@ class ModelDownloader(private val context: Context) {
             name.endsWith(".tar.bz2") -> untarBz2(src, dir)
             name.endsWith(".zip") -> unpkgZip(src, dir)
             else -> {  // bare onnx (e.g. silero_vad.onnx) — just place it
-                File(dir, fileName).writeBytes(src.readBytes())
+                src.copyTo(File(dir, fileName), overwrite = true)
             }
         }
         // Canonical tarballs use a top-level dir (e.g. sherpa-onnx-whisper-tiny.en/);

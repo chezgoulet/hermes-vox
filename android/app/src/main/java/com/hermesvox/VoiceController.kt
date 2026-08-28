@@ -415,6 +415,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             done = true
                             val err = obj.optString("error", "")
                             val finalText = obj.optString("text", "")
+                            VoxLog.d("turn done: gen=" + gen + " resp=" + obj.optString("response_id", "") + " len=" + finalText.length + " err=" + err.take(40))
                             if (err.isNotBlank()) {
                                 stopStreaming()   // abort: close the streaming worker + release the track
                                 main.post {
