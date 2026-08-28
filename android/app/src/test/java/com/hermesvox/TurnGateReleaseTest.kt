@@ -34,9 +34,10 @@ class TurnGateReleaseTest {
     }
 
     @Test fun stable_partial_gates_early_turn_start() {
-        val state = VoiceLoopState(earlySilenceMs = 350)
-        assertFalse(state.mayStart("hello", silentMs = 200, nowMs = 1_000))   // pause too short -> no early start
-        assertFalse(state.mayStart("he",   silentMs = 500, nowMs = 1_400))   // fragment (len<3) -> no
-        assertTrue(state.mayStart("hello world", silentMs = 500, nowMs = 1_900)) // phrase-pause + non-trivial -> early start
+        val state = VoiceLoopState(earlySilenceMs = 450)
+        assertFalse(state.mayStart("hello", silentMs = 200, nowMs = 1_000))     // pause too short -> no early start
+        assertFalse(state.mayStart("hello", silentMs = 200, nowMs = 1_400))     // short pause -> no
+        assertFalse(state.mayStart("hello world", silentMs = 500, nowMs = 1_900)) // text CHANGED -> no
+        assertTrue(state.mayStart("hello world", silentMs = 500, nowMs = 2_400))  // unchanged + >=450ms -> early start
     }
 }
