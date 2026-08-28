@@ -210,7 +210,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // roll a pre-roll (recent ~250ms) so we don't clip the utterance start
                             for (f in frames) { preBuf.add(f); while (preBuf.size * 1000 / sr > 250) preBuf.removeAt(0) }
                         }
-                        if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += 64
+                        // #17: time-slice silence from the ACTUAL frame duration (n / sr),
+                        // not a fixed 64ms. A short read (a partial buffer) would make
+                        // silence accrue faster than wall-clock and cut the user off
+                        // mid-sentence when the pause threshold fired early.
+                        if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.isNotEmpty()) { seg.addAll(preBuf); preBuf.clear() }
                             for (f in frames) seg.add(f)
