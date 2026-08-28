@@ -587,8 +587,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var rms = 0.0
                     val frames = FloatArray(n)
                     for (i in 0 until n) { frames[i] = buf[i] / 32768f; rms += buf[i].toDouble() * buf[i] }
-                    val spoke = if (vad?.isAvailable == true) vad!!.feed(frames)
-                    else (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.11f)   // higher: avoid self-trigger on the phone
+                    val spoke = (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.15f)
                     if (spoke) { main.post { bargeIn() }; break }
                 }
             }
@@ -606,7 +605,6 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onLog("// (interrupted)")
         listener?.onState("listening")
         releaseTurnGate(turnGen)   // a barge-in aborts the reply -> release the loop's speak-gate
-        if (listening) listen()
     }
 
     private fun stopBargeInWatch() {
