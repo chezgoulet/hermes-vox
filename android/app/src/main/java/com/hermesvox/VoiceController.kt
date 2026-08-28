@@ -608,6 +608,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         releaseTurnGate(turnGen)   // a barge-in aborts the reply -> release the loop's speak-gate
     }
 
+    private fun releaseTurnGate(gen: Long) {
+        if (gen == turnGen) { try { turnDone.countDown() } catch (_: Throwable) {} }
+    }
+
     private fun stopBargeInWatch() {
         bargeInArmed = false
         bargeAec?.release(); bargeAec = null
