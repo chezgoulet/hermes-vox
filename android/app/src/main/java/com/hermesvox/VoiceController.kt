@@ -577,7 +577,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (minBuf <= 0) return
         try {
             val ecSession = (tts as? SherpaTts)?.playbackSession ?: 0
-            bargeRecord = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION).setAudioFormat(AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(minBuf * 2).apply { if (ecSession != 0) setAudioSessionId(ecSession) }.build()
+            bargeRecord = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION).setAudioFormat(AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(minBuf * 2).build()
             bargeAec?.release()
             bargeAec = if (android.media.audiofx.AcousticEchoCanceler.isAvailable() && ecSession != 0) android.media.audiofx.AcousticEchoCanceler.create(ecSession)?.also { it.enabled = true } else null
             val r = bargeRecord ?: return
