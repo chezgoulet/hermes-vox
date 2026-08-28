@@ -183,8 +183,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                     loopActive = true
                     commitRequested = false
                     try { r.startRecording() } catch (_: Throwable) { break }
-                    listener?.onState("listening")
-                    listener?.onLog("// hear → listening")
+                    // #28: listener callbacks must land on the main thread (the
+                    // documented contract) — the capture loop runs on the executor.
+                    main.post { listener?.onState("listening") }
+                    main.post { listener?.onLog("// hear → listening") }
                     var inSpeech = false; var silentMs = 0
                     val preBuf = ArrayList<Float>()   // ~250ms pre-roll so the VAD's start-detection
                                                      // delay doesn't clip the first word(s) the user says
@@ -276,7 +278,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // PTT press until AudioRecord construction starts failing.
                 try { record?.stop(); record?.release() } catch (_: Throwable) {}
                 record = null
-                listener?.onState("idle")
+                main.post { listener?.onState("idle") }
             }
             true
         } catch (e: Throwable) {
@@ -469,7 +471,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val e = arr.optJSONObject(i) ?: continue
             when (e.optString("type")) {
                 "response.created" ->
-                    listener?.onLog("// entity responding…")
+                    main.post { listener?.onLog("// entity responding…") }
                 "response.output_item.added" -> when (e.optString("item_type")) {
                     "function_call" -> {
                         val name = e.optString("name")
@@ -642,9 +644,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onState("speaking")
         t.speak(text) {
             speaking = false
-            listener?.onState("idle")
-            if (bargeInArmed) stopBargeInWatch()
-            releaseTurnGate(gen)   // release the realtime loop's speak-gate after speech finishes
+            // #28: the TTS completion callback runs on the engine thread; the
+            // listener must be dispatched on the main thread per the contract.
+            main.post {
+                listener?.onState("idle")
+                if (bargeInArmed) stopBargeInWatch()
+                releaseTurnGate(gen)   // release the realtime loop's speak-gate after speech finishes
+            }
         }
         // Arm barge-in AFTER a short delay + at a higher threshold so the mic
         // doesn't cancel the TTS on its own output (the "hears itself" cut).
