@@ -133,6 +133,7 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 			name = evName
 		}
 		ev := StreamEvent{Type: name}
+		st.mu.Lock()
 		switch name {
 		case "response.created":
 			if env.Response != nil {
@@ -180,11 +181,10 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 		default:
 			ev.Text = st.text.String()
 		}
-		st.mu.Lock()
 		st.events = append(st.events, ev)
-		st.mu.Unlock()
 		result.Reply = plainText(st.text.String())
 		result.ResponseID = st.respID
+		st.mu.Unlock()
 		if h != nil {
 			h(ev)
 		}
@@ -208,11 +208,12 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 	}
 	st.mu.Lock()
 	completed := st.done
+	reply := plainText(st.text.String())
 	st.mu.Unlock()
 	if result.Reply == "" && !completed {
 		return &result, fmt.Errorf("hermes stream: ended without completion")
 	}
-	result.Reply = plainText(st.text.String())
+	result.Reply = reply
 	return &result, nil
 }
 

@@ -25,8 +25,8 @@ echo "== [1/5] go vet =="
 # irrelevant to this gate's targets (android bind + js-wasm).
 go vet ./voice/...
 
-echo "== [2/5] go test (offline) =="
-go test ./voice/...
+echo "== [2/5] go test -race (offline) =="
+go test -race ./voice/...
 
 echo "== [3/5] js-wasm =="
 GOOS=js GOARCH=wasm CGO_ENABLED=0 go build ./cmd/app
