@@ -68,7 +68,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var partialRunning = false
     @Volatile private var partialEnabled = false
     @Volatile private var firstAudioLatch = false   // #40: one first-audio push per turn
-    private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 450).toLong())
+    private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 350).toLong())
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
@@ -228,7 +228,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // snapshot a bounded tail + transcribe; start the turn EARLY on
                         // a stable partial (unchanged hypothesis + a >=450ms pause).
                         if (partialEnabled && inSpeech && !turnInFlight &&
-                            android.os.SystemClock.uptimeMillis() - lastPartialMs >= 900 &&
+                            android.os.SystemClock.uptimeMillis() - lastPartialMs >= 550 &&
                             seg.size >= (sr * minSpeechMs / 1000)) {
                             lastPartialMs = android.os.SystemClock.uptimeMillis()
                             if (!partialRunning) {

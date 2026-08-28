@@ -30,7 +30,11 @@ class VoiceLoopState(private val earlySilenceMs: Long = 450L) {
 
     @Synchronized fun mayStart(text: String, silentMs: Long, nowMs: Long): Boolean {
         val n = normalize(text)
-        val stable = n.isNotBlank() && silentMs >= earlySilenceMs && n == lastNormalized
+        // #38: fire on a NATURAL phrase-boundary pause (VAD silent >= earlySilenceMs) with a
+        // non-trivial transcript. The old exact-match (n == lastNormalized) never fires on real
+        // speech (partials evolve), so the early-turn-start was dead. A short pause is the
+        // user-completed-though proxy; barge-in handles a too-early fire.
+        val stable = n.isNotBlank() && n.length >= 3 && silentMs >= earlySilenceMs
         if (n != lastNormalized) { lastNormalized = n; lastPartialAt = nowMs }
         return stable
     }
