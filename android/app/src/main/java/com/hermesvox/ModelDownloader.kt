@@ -89,7 +89,7 @@ class ModelDownloader(private val context: Context) {
             val digest = sha256(tmp)
             if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch" }
 
-            val tmpDir = File(context.filesDir, spec.id + ".tmp"); tmpDir.deleteRecursively(); tmpDir.mkdirs(); unpkg(tmp, tmpDir, spec.file, spec.id); val dir = ModelCatalog.modelDir(context, spec.id); dir.deleteRecursively(); if (!tmpDir.renameTo(dir)) { tmpDir.deleteRecursively(); return "unpack swap failed" }; return null
+            val tmpDir = File(context.filesDir, spec.id + ".tmp"); tmpDir.deleteRecursively(); tmpDir.mkdirs(); unpkg(tmp, tmpDir, spec.file, spec.id); val dir = ModelCatalog.modelDir(context, spec.id); dir.deleteRecursively(); dir.parentFile?.mkdirs(); if (!tmpDir.renameTo(dir)) { tmpDir.deleteRecursively(); return "unpack swap failed" }; return null
         } catch (e: Throwable) {
             tmpDir?.deleteRecursively()
             tmp.delete()
