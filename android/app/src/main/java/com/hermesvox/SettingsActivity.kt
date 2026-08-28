@@ -194,7 +194,7 @@ class SettingsActivity : AppCompatActivity() {
     /** The install-progress caption for the Models section (group row + sub-view row). */
     private fun refreshModelsVal() {
         val installed = ModelCatalog.blessed.count { ModelCatalog.isInstalled(this, it.id) }
-        val text = "$installed/${ModelCatalog.blessed.size} installed · on-device, offline"
+        val text = "$installed/${ModelCatalog.blessed.size} installed · needed for your voice"
         findViewById<TextView>(R.id.set_models_val)?.text = text
         findViewById<TextView>(R.id.set_models_grpval)?.text = text
     }

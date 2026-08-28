@@ -37,12 +37,21 @@ class ModelsActivity : AppCompatActivity() {
             ModelCatalog.blessed.filter { it.recommended }.forEach { if (!ModelCatalog.isInstalled(this, it.id)) start(it) }
         }
 
+        // WS2: make the REQUIRED set explicit — list the recommended models that
+        // power the offline voice so the first-run flow is obvious.
+        val required = ModelCatalog.blessed.filter { it.recommended }
+        findViewById<TextView>(R.id.m_subtitle)?.text =
+            "These ${required.size} power your offline voice: " +
+            required.joinToString(", ") { it.name }
+
         buildCards()
     }
 
     private fun buildCards() {
         list.removeAllViews()
-        for (spec in ModelCatalog.blessed) {
+        // WS2: render the RECOMMENDED models first (the "needed now" ones on top),
+        // keeping the same cards map keyed by spec.id so refreshCard/start stay correct.
+        for (spec in ModelCatalog.blessed.sortedBy { if (it.recommended) 0 else 1 }) {
             val v = layoutInflater.inflate(R.layout.model_item, list, false)
             v.findViewById<TextView>(R.id.mi_name).text = spec.name
             v.findViewById<TextView>(R.id.mi_desc).text = spec.desc

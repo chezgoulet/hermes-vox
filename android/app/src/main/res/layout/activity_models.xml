@@ -31,6 +31,15 @@
             android:text="Voice models" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/m_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="8dp"
+        android:textColor="@color/hv_text_dim"
+        android:textSize="14sp" />
+
     <Button
         android:id="@+id/m_download_all"
         android:layout_width="match_parent"
@@ -39,7 +48,7 @@
         android:layout_marginTop="12dp"
         android:background="@drawable/bg_button_primary"
         android:elevation="4dp"
-        android:text="Download recommended (blessed)"
+        android:text="Install the required voice models"
         android:textColor="@color/hv_bg"
         android:textSize="16sp" />
 
