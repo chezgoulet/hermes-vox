@@ -134,9 +134,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_stt).setOnClickListener {
             pick("Speech-to-text (backend)",
-                arrayOf("On-device (offline)", "Platform (Google)"),
-                arrayOf(ModelCatalog.BACKEND_ONDEVICE, ModelCatalog.BACKEND_PLATFORM),
-                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val)
+                arrayOf("On-device (offline)", "Platform (Google)", "Remote (server)"),
+                arrayOf(ModelCatalog.BACKEND_ONDEVICE, ModelCatalog.BACKEND_PLATFORM, ModelCatalog.BACKEND_REMOTE),
+                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val) { refreshSttRemotePanel() }
         }
         findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener {
             val labels = ModelCatalog.sttModels.map { it.second }.toTypedArray()
@@ -181,6 +181,7 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, ModelsActivity::class.java))
         }
         refreshModelsVal()
+        bindSttRemote()
 
         refreshFlowVals()
     }
@@ -192,6 +193,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", "system")
         findViewById<TextView>(R.id.set_voice_val).text = label("voice", "system")
+        refreshSttRemotePanel()
     }
 
     /** The install-progress caption for the Models section (group row + sub-view row). */
@@ -202,8 +204,91 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_models_grpval)?.text = text
     }
 
+    // ---- Remote STT (server) backend: URL/model/key + connection test. This
+    // panel is revealed ONLY when the STT backend picker says "remote"; its
+    // fields write to the SAME prefs RemoteStt reads (stt_remote_*), and the key
+    // goes through SecureStore — never plaintext in the prefs XML. ------
+    private fun refreshSttRemotePanel() {
+        val remote = prefs.getString(ModelCatalog.KEY_STT_BACKEND, "").orEmpty() == ModelCatalog.BACKEND_REMOTE
+        findViewById<android.view.View>(R.id.remote_stt_panel).visibility =
+            if (remote) android.view.View.VISIBLE else android.view.View.GONE
+    }
+
+    private fun bindSttRemote() {
+        // Populate once BEFORE the watchers attach, so loading never writes back.
+        loadSttRemoteFields()
+        bindRemoteTextField(R.id.stt_remote_url, KEY_STT_REMOTE_URL) { it.trim() }
+        bindRemoteTextField(R.id.stt_remote_model, KEY_STT_REMOTE_MODEL) { it.trim() }
+        bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { SecureStore.encrypt(it) ?: it }
+        findViewById<LinearLayout>(R.id.row_test_stt_conn).setOnClickListener { testRemoteStt() }
+        refreshSttRemotePanel()
+    }
+
+    private fun loadSttRemoteFields() {
+        findViewById<EditText>(R.id.stt_remote_url).setText(prefs.getString(KEY_STT_REMOTE_URL, ""))
+        findViewById<EditText>(R.id.stt_remote_model).setText(prefs.getString(KEY_STT_REMOTE_MODEL, DEFAULT_REMOTE_MODEL))
+        findViewById<EditText>(R.id.stt_remote_key).setText(SecureStore.decrypt(prefs.getString(KEY_STT_REMOTE_KEY, null) ?: "").orEmpty())
+    }
+
+    /** Live-save a remote field on every user edit (same UX as the mic SeekBars);
+     *  [toStored] maps the raw field text to its stored form. */
+    private fun bindRemoteTextField(editId: Int, key: String, toStored: (String) -> String) {
+        findViewById<EditText>(editId).addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) {
+                prefs.edit().putString(key, toStored(s?.toString().orEmpty())).apply()
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+    }
+
+    /** Persist the visible field state, then run the SAME init probe RemoteStt
+     *  uses on pipeline start (async, non-throwing). Toast + dd-log the result. */
+    private fun testRemoteStt() {
+        val url = findViewById<EditText>(R.id.stt_remote_url).text.toString().trim()
+        val model = findViewById<EditText>(R.id.stt_remote_model).text.toString().trim()
+        val key = findViewById<EditText>(R.id.stt_remote_key).text.toString()
+        prefs.edit()
+            .putString(KEY_STT_REMOTE_URL, url)
+            .putString(KEY_STT_REMOTE_MODEL, model)
+            .putString(KEY_STT_REMOTE_KEY, SecureStore.encrypt(key) ?: key)
+            .apply()
+        if (sttBaseUrl(url).isBlank()) {
+            VoxLog.dd("event=stt-remote-test ok=false reason=no-url")
+            setRemoteTestResult(false)
+            Toast.makeText(this, "Remote STT: enter a server URL first", Toast.LENGTH_LONG).show()
+            return
+        }
+        setRemoteTestResult(null)
+        RemoteStt(this).init { ok ->
+            runOnUiThread {
+                VoxLog.dd("event=stt-remote-test ok=$ok")
+                setRemoteTestResult(ok)
+                Toast.makeText(this,
+                    if (ok) "Remote STT: connection OK"
+                    else "Remote STT: unreachable — check URL / key",
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun setRemoteTestResult(state: Boolean?) {
+        val tv = findViewById<TextView>(R.id.set_stt_test_val)
+        tv.text = when (state) {
+            true -> "ok"
+            false -> "FAILED"
+            null -> "…"
+        }
+        tv.setTextColor(when (state) {
+            true -> 0xFF35D07F.toInt()
+            false -> 0xFFFF5B5B.toInt()
+            null -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_cyan)
+        })
+    }
+
     private fun sttBackendLabel(tok: String): String = when (tok) {
         ModelCatalog.BACKEND_PLATFORM -> "Platform (Google)"
+        ModelCatalog.BACKEND_REMOTE -> "Remote (server)"
         else -> "On-device (offline)"
     }
     private fun modeLabel(tok: String): String = when (tok) {
@@ -432,6 +517,9 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+                .putString(KEY_STT_REMOTE_URL, "")
+                .putString(KEY_STT_REMOTE_MODEL, "")
+                .putString(KEY_STT_REMOTE_KEY, "")
             GROUP_TTS -> e
                 .putString("tts", "system")
                 .putString("voice", "system")   // the TTS register now resets with the engine
@@ -455,6 +543,7 @@ class SettingsActivity : AppCompatActivity() {
         e.apply()
         when (group) {
             GROUP_MIC -> bindMicSettings()
+            GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
             GROUP_APPEARANCE -> bindParticles()
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }

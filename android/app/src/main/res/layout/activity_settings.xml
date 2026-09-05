@@ -601,6 +601,93 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- Remote STT (server) config — revealed ONLY when the backend
+                     picker above says "remote". The key field stores via
+                     SecureStore (never in prefs XML in clear). -->
+                <LinearLayout
+                    android:id="@+id/remote_stt_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <EditText
+                        android:id="@+id/stt_remote_url"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="6dp"
+                        android:background="@drawable/bg_input"
+                        android:hint="Server URL · http://192.168.1.9:13305/v1 or https://…"
+                        android:inputType="textUri"
+                        android:padding="14dp"
+                        android:textColor="@color/hv_text"
+                        android:textColorHint="@color/hv_text_dim"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Audio is sent to this server for transcription when remote STT is selected."
+                        android:textColor="@color/hv_warn"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/stt_remote_model"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_input"
+                        android:hint="Model · whisper"
+                        android:inputType="text"
+                        android:padding="14dp"
+                        android:textColor="@color/hv_text"
+                        android:textColorHint="@color/hv_text_dim"
+                        android:textSize="16sp" />
+
+                    <EditText
+                        android:id="@+id/stt_remote_key"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_input"
+                        android:hint="API key (optional, stored encrypted)"
+                        android:inputType="textPassword"
+                        android:padding="14dp"
+                        android:textColor="@color/hv_text"
+                        android:textColorHint="@color/hv_text_dim"
+                        android:textSize="16sp" />
+
+                    <LinearLayout
+                        android:id="@+id/row_test_stt_conn"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="16dp"
+                        android:layout_marginTop="10dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="Test connection"
+                            style="@style/HvRowTitle"
+                            android:textColor="@color/hv_cyan" />
+                        <TextView
+                            android:id="@+id/set_stt_test_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="run"
+                            android:textColor="@color/hv_cyan"
+                            android:textAllCaps="true"
+                            android:letterSpacing="0.08"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/row_stt_reset"
                     style="@style/HvRow"
