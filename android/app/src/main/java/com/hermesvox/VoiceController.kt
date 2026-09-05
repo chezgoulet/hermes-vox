@@ -746,15 +746,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun startBargeInWatch() {
         bargeInArmed = true
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        if (minBuf <= 0) return
+        if (minBuf <= 0) { VoxLog.w("event=barge-in-arm-failed reason=min-buffer gen=$turnGen"); return }
         try {
             val ecSession = (tts as? SherpaTts)?.playbackSession ?: 0
             bargeRecord = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION).setAudioFormat(AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(minBuf * 2).build()
             bargeAec?.release()
             bargeAec = if (android.media.audiofx.AcousticEchoCanceler.isAvailable() && ecSession != 0) android.media.audiofx.AcousticEchoCanceler.create(ecSession)?.also { it.enabled = true } else null
             val r = bargeRecord ?: return
-            if (r.state != AudioRecord.STATE_INITIALIZED) return
+            if (r.state != AudioRecord.STATE_INITIALIZED) { VoxLog.w("event=barge-in-arm-failed reason=record-not-initialized gen=$turnGen"); return }
             r.startRecording()
+            VoxLog.d("event=barge-in-armed phase=playback gen=$turnGen ecSession=$ecSession aec=${bargeAec?.enabled ?: false}")
             exec.execute {
                 val buf = ShortArray(minBuf)
                 while (bargeInArmed && r.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
@@ -763,11 +764,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var rms = 0.0
                     val frames = FloatArray(n)
                     for (i in 0 until n) { frames[i] = buf[i] / 32768f; rms += buf[i].toDouble() * buf[i] }
-                    val spoke = (Math.sqrt(rms / n) / Short.MAX_VALUE > 0.15f)
-                    if (spoke) { main.post { bargeIn() }; break }
+                    val level = Math.sqrt(rms / n) / Short.MAX_VALUE
+                    if (level > 0.15f) { VoxLog.d("event=barge-in source=playback-rms rms=${"%.3f".format(level)} gen=$turnGen speaking=$speaking"); main.post { bargeIn() }; break }
                 }
             }
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) { VoxLog.w("event=barge-in-arm-failed reason=${e.message} gen=$turnGen") }
     }
 
     private fun bargeIn() {
@@ -795,7 +796,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun armGenerationWatch() {
         if (!bargeInEnabled || genWatchArmed || speaking) return
         val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        if (minBuf <= 0) return
+        if (minBuf <= 0) { VoxLog.w("event=barge-in-arm-failed reason=min-buffer phase=generation gen=$turnGen"); return }
         genWatchArmed = true
         try {
             val r = AudioRecord.Builder()
@@ -803,8 +804,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                 .setBufferSizeInBytes(minBuf * 2).build()
             genRecord = r
-            if (r.state != AudioRecord.STATE_INITIALIZED) { genWatchArmed = false; genRecord = null; return }
+            if (r.state != AudioRecord.STATE_INITIALIZED) { VoxLog.w("event=barge-in-arm-failed reason=record-not-initialized phase=generation gen=$turnGen"); genWatchArmed = false; genRecord = null; return }
             r.startRecording()
+            VoxLog.d("event=barge-in-armed phase=generation gen=$turnGen")
             exec.execute {
                 val buf = ShortArray(minBuf)
                 try {
@@ -813,12 +815,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val n = r.read(buf, 0, buf.size); if (n <= 0) continue
                         var rms = 0.0
                         for (i in 0 until n) rms += buf[i].toDouble() * buf[i]
-                        val spoke = Math.sqrt(rms / n) / Short.MAX_VALUE > 0.15f
-                        if (spoke) { main.post { if (turnInFlight && !speaking) bargeIn() }; break }
+                        val level = Math.sqrt(rms / n) / Short.MAX_VALUE
+                        if (level > 0.15f) { VoxLog.d("event=barge-in source=genwatch-rms rms=${"%.3f".format(level)} gen=$turnGen turnInFlight=$turnInFlight"); main.post { if (turnInFlight && !speaking) bargeIn() }; break }
                     }
                 } catch (_: Throwable) {}   // raced a stop() release on the record -> exit cleanly
             }
-        } catch (_: Throwable) { genWatchArmed = false }
+        } catch (e: Throwable) { genWatchArmed = false; VoxLog.w("event=barge-in-arm-failed reason=${e.message} phase=generation gen=$turnGen") }
     }
 
     private fun stopGenerationWatch() {
