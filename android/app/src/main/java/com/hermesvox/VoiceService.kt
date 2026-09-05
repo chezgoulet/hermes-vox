@@ -27,14 +27,17 @@ class VoiceService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        VoxLog.d("event=fg-service onCreate")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, buildNotification())
-        return START_STICKY
+        VoxLog.d("event=fg-service start id=$startId")
+        return try { startForeground(1, buildNotification()); START_STICKY }
+        catch (e: Exception) { VoxLog.e("event=fg-service startForeground-failed err=${e.message}"); START_NOT_STICKY }
     }
 
     override fun onDestroy() {
+        VoxLog.d("event=fg-service destroy")
         super.onDestroy()
     }
 
@@ -58,9 +61,13 @@ class VoiceService : Service() {
 
     companion object {
         fun start(context: Context) {
-            val i = Intent(context, VoiceService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
-            else context.startService(i)
+            VoxLog.d("event=fg-service-start requested sdk=${Build.VERSION.SDK_INT}")
+            try {
+                val i = Intent(context, VoiceService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
+                else context.startService(i)
+                VoxLog.d("event=fg-service-start ok")
+            } catch (e: Exception) { VoxLog.e("event=fg-service-start-failed err=${e.message}") }
         }
         fun stop(context: Context) { context.stopService(Intent(context, VoiceService::class.java)) }
     }

@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         // is closed / the screen is off, so a live call persists. It does NOT own a
         // second liveController (single-owner). Started BEFORE the loop so no onStop can
         // land in a half-started window (callLive is true before the loop opens).
-        try { VoiceService.start(this) } catch (_: Exception) {}
+        VoiceService.start(this)
         acquireVoiceWake()
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
@@ -208,6 +208,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
     private fun endCall() {
+        VoxLog.d("event=call-end callLive=$callLive")
         callLive = false
         callHandler.removeCallbacks(callTicker)
         liveController?.setVoiceChannelOpen(false)
@@ -283,6 +284,7 @@ class MainActivity : AppCompatActivity() {
         try { status.setTextColor(if (live) 0xFF35D07F.toInt() else 0xFFD6F4FF.toInt()) } catch (_: Throwable) {}
     }
     private fun stopVoiceWake() {
+        if (voiceWake != null) VoxLog.d("event=wake released")
         try { voiceWake?.release() } catch (_: Exception) {}
         voiceWake = null
     }
@@ -297,7 +299,8 @@ class MainActivity : AppCompatActivity() {
             val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
             voiceWake = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:voice")
             voiceWake?.acquire()
-        } catch (_: Exception) {}
+            VoxLog.d("event=wake acquired")
+        } catch (e: Exception) { VoxLog.e("event=wake-acquire-failed err=${e.message}") }
     }
 
     // The entity API key is encrypted at rest (Keystore); legacy plaintext decrypts as-is.
@@ -766,6 +769,7 @@ class MainActivity : AppCompatActivity() {
         // A live call persists (foreground service keeps the loop + process alive), so we
         // do NOT stop the liveController here. Stop only when there's no active call.
         if (!callLive) {
+            VoxLog.d("event=activity-stop reason=no-live-call controller-stopped")
             liveController?.setVoiceChannelOpen(false)
             liveController?.stop()
             liveController = null   // #19: stopped controller is terminal (exec shut down) — never re-arm it
