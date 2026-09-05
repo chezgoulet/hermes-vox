@@ -174,6 +174,9 @@ class SettingsActivity : AppCompatActivity() {
         val ltr = findViewById<SwitchCompat>(R.id.set_logtranscripts)
         ltr.isChecked = prefs.getBoolean("log_transcripts", false)
         ltr.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("log_transcripts", on).apply() }
+        val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
+        dbl.isChecked = prefs.getBoolean("debug_log", false)
+        dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
         findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
             startActivity(android.content.Intent(this, ModelsActivity::class.java))
         }
@@ -446,6 +449,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_ABOUT -> e
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)
+                .putBoolean("debug_log", false)
             GROUP_MODELS -> e.putString(ModelCatalog.KEY_SOURCE, ModelCatalog.DEFAULT_SOURCE)   // source only; files untouched
         }
         e.apply()
@@ -453,6 +457,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_MIC -> bindMicSettings()
             GROUP_APPEARANCE -> bindParticles()
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals() }
+            GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()
         }
     }
