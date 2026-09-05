@@ -18,17 +18,24 @@ object VoxLog {
     const val TAG = "HermesVox"
     private var file: File? = null
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    @Volatile private var debugFile = false
 
     fun init(context: Context) {
         file = File(context.filesDir, "logs/hermes-vox.log")
         file?.parentFile?.mkdirs()
+        debugFile = context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean("debug_log", false)
         setUncaughtHandler()
     }
+
+    fun setDebugFile(on: Boolean) { debugFile = on }
 
     fun d(msg: String) { Log.d(TAG, msg); append("D", msg) }
     fun w(msg: String) { Log.w(TAG, msg); append("W", msg) }
     fun e(msg: String) { Log.e(TAG, msg); append("E", msg) }
     fun e(tag: String, msg: String) { Log.e(tag, msg); append(tag, msg) }
+
+    /** Debug-detail: logcat always, file only when the debug-file pref is on. */
+    fun dd(msg: String) { Log.d(TAG, msg); if (debugFile) append("D", msg) }
 
     private fun append(level: String, msg: String) {
         try {
