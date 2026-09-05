@@ -40,7 +40,11 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private var recognizer: SpeechRecognizer? = null
     private var tts: VoxTts? = null
-    private var stt: VoxStt? = null
+    @Volatile private var stt: VoxStt? = null
+    // Set while the `remote` backend is selected with a saved http(s) URL. When
+    // RemoteStt's availability probe fails the leg is swapped for the on-device
+    // chain (else platform) so the loop never transcribes against a dead leg.
+    @Volatile private var remoteLeg: RemoteStt? = null
     private var vad: SileroVadGate? = null
     private var record: AudioRecord? = null
     private var bargeRecord: AudioRecord? = null
@@ -99,25 +103,47 @@ class VoiceController(private val context: Context, private val session: HermesS
         VoxLog.d("pipeline: tts=${tts?.name} (voice=$voice) ttsReady=$ttsReady")
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
         tts?.init { ttsReady = it }
-        // STT backend/model from Settings: on-device Whisper (selected model),
-        // house GPU (lemonade), or platform (SpeechRecognizer fallback).
+        // STT backend/model from Settings: on-device Whisper (selected model), a
+        // user-supplied OpenAI-compatible `remote` endpoint, or platform
+        // (SpeechRecognizer fallback).
         stt = buildStt()
-        stt?.init { sttReady = it }
+        stt?.init { onSttReady(it) }
         if (ModelCatalog.isInstalled(context, "silero-vad")) {
             vad = SileroVadGate(context, micFloat("vad_threshold", 0.5f)); vad?.init {}
         }
         VoxLog.d("pipeline: stt=${stt?.name} sttReady=$sttReady vad=${vad?.isAvailable}")
     }
 
+    /** On-device Whisper leg when its model is installed, else platform (null). */
+    private fun onDeviceStt(): VoxStt? {
+        val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+        return if (ModelCatalog.isInstalled(context, model)) OfflineWhisperStt(context, model) else null
+    }
+
     private fun buildStt(): VoxStt? {
         val backend = prefString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
-        return when (backend) {
-            ModelCatalog.BACKEND_PLATFORM -> null   // use the on-device Whisper model, else platform STT fallback
-            else -> {
-                val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
-                if (ModelCatalog.isInstalled(context, model)) OfflineWhisperStt(context, model) else null
-            }
+        val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+        return when (resolveSttLeg(backend, prefString(KEY_STT_REMOTE_URL, ""),
+            ModelCatalog.isInstalled(context, model))) {
+            ModelCatalog.BACKEND_REMOTE -> RemoteStt(context).also { remoteLeg = it }
+            ModelCatalog.BACKEND_ONDEVICE -> OfflineWhisperStt(context, model)
+            else -> null   // platform SpeechRecognizer (Settings -> Platform)
         }
+    }
+
+    /** STT init result. When the `remote` leg was configured but its availability
+     *  probe failed, fall back at runtime to the on-device chain (else platform)
+     *  and log `event=stt-fallback` once, so the degraded mode is visible. The
+     *  final-transcribe already nulls a failed call — this just swaps in a live
+     *  leg so the loop keeps hearing the user instead of a dead RemoteStt. */
+    private fun onSttReady(ok: Boolean) {
+        sttReady = ok
+        if (ok || remoteLeg == null) return
+        remoteLeg = null
+        val fallback = onDeviceStt()
+        VoxLog.w("event=stt-fallback from=remote to=${if (fallback != null) "on-device" else "platform"}")
+        stt = fallback
+        if (fallback != null) fallback.init { onSttReady(it) }
     }
 
     /** True once the offline STT + TTS (+ VAD) are fully loaded/warm. */
@@ -357,7 +383,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         initializing = true
         try {
             val t = tts; if (t != null && !ttsReady) t.init { ttsReady = it }
-            val s = stt; if (s != null && !sttReady) s.init { sttReady = it }
+            val s = stt; if (s != null && !sttReady) s.init { onSttReady(it) }
             val v = vad; if (v != null && !v.isAvailable) v.init {}
         } finally { initializing = false }
     }
@@ -946,6 +972,24 @@ class VoiceController(private val context: Context, private val session: HermesS
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
 
     companion object { const val RMS_THRESHOLD = 0.09f }
+}
+
+/** Pure: the STT leg to build from the stored backend + remote-URL pref + model
+ *  installed state. PRIVACY HARD GATE: `remote` is chosen ONLY when the user
+ *  saved a genuine http(s) URL (sttBaseUrl normalizes — a scheme-less/blank
+ *  value is "not configured", so audio never leaves the device by default).
+ *  Otherwise the sovereignty chain is preserved: on-device Whisper when its
+ *  model is installed, else platform. */
+internal fun resolveSttLeg(backend: String?, remoteUrlPref: String?, onDeviceInstalled: Boolean): String {
+    val base = sttBaseUrl(remoteUrlPref)
+    return when (backend) {
+        ModelCatalog.BACKEND_PLATFORM -> ModelCatalog.BACKEND_PLATFORM
+        ModelCatalog.BACKEND_REMOTE ->
+            if (base.isNotBlank()) ModelCatalog.BACKEND_REMOTE
+            else if (onDeviceInstalled) ModelCatalog.BACKEND_ONDEVICE
+            else ModelCatalog.BACKEND_PLATFORM
+        else -> if (onDeviceInstalled) ModelCatalog.BACKEND_ONDEVICE else ModelCatalog.BACKEND_PLATFORM
+    }
 }
 
 /** #30/#44: chunk-seam helper (pure, unit-testable). Returns the index of the

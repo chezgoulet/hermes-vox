@@ -70,6 +70,7 @@ object ModelCatalog {
     const val KEY_VOICE_MODE = "voice_mode"
     const val BACKEND_ONDEVICE = "on-device"
     const val BACKEND_PLATFORM = "platform"
+    const val BACKEND_REMOTE = "remote"
     const val MODE_REALTIME = "realtime"          // emulated call, local S2P + Hermes
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
     const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
