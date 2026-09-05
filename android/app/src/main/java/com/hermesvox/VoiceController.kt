@@ -445,7 +445,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var firstByteDone = false
                 var done = false
                 var tries = 0
+                var lastEventAt = android.os.SystemClock.uptimeMillis()
+                var stall5 = false
+                var stall15 = false
                 while (!done && tries < 600) {
+                    val tick = android.os.SystemClock.uptimeMillis()
                     // D2: a barge-in during generation (before startStream returned) sets
                     // genCancelled; break so the turn's worker retires without settling a
                     // ghost reply (the gate was already released by bargeIn()).
@@ -455,14 +459,25 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // deltas render as they arrive; the 100ms budget is only the idle floor
                     // (no data yet -> check again). End-of-stream completion wakes too, so
                     // `done` is observed promptly and never padded by a poll-tick.
-                    try { session.waitStream(sid, 100) } catch (_: Exception) {} // gomobile raises on a retired stream
+                    try { session.waitStream(sid, 100) } catch (e: Exception) { if (!genCancelled) VoxLog.w("event=stream-wait err=${e.message?.take(120)} gen=$gen tries=$tries") } // gomobile raises on a retired stream
                     var payload: String? = null
-                    try { payload = session.pollStreamJSON(sid) } catch (_: Exception) {} // gomobile raises on error
+                    try { payload = session.pollStreamJSON(sid) } catch (e: Exception) { if (!genCancelled && !done) VoxLog.w("event=stream-poll-error err=${e.message?.take(120)} gen=$gen tries=$tries") } // gomobile raises on error
                     if (payload != null) {
                         if (!firstByteDone) { firstByteDone = true; LatencyStats.pushFirstByte(firstByteAt - t0) }   // #40
                         val obj = JSONObject(payload)
                         val evts = obj.optJSONArray("events")
-                        VoxLog.d("poll ev=${evts?.length() ?: 0} done=${obj.optBoolean("done")} err=${obj.optString("error","").take(70)} textLen=${obj.optString("text","").length}")
+                        val doneNow = obj.optBoolean("done")
+                        val pollErr = obj.optString("error", "")
+                        val textLen = obj.optString("text", "").length
+                        if ((evts?.length() ?: 0) > 0 || doneNow || pollErr.isNotBlank()) {
+                            lastEventAt = tick
+                            stall5 = false; stall15 = false
+                            VoxLog.dd("event=stream-poll gen=$gen ev=${evts?.length() ?: 0} done=$doneNow textLen=$textLen err=${pollErr.take(70)}")
+                        } else {
+                            val idle = tick - lastEventAt
+                            if (idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s") }
+                            else if (idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s") }
+                        }
                         emitEvents(evts, t0)
                         if (obj.optBoolean("done")) {
                             done = true
@@ -491,11 +506,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                 if (genCancelled) { VoxLog.d("turn interrupted during generation") }
                 else if (!done) throw Exception("timeout")
             } catch (e: Throwable) {
-                stopStreaming()   // timeout/exception: close the streaming worker
+                stopStreaming()
+                VoxLog.e("event=stream-turn-failed gen=$gen err=${e.message}")
                 main.post {
                     listener?.onError("hermes: ${e.message}")
                     listener?.onState("idle")
-                    releaseTurnGate(gen, "stream-error")
+                    releaseTurnGate(gen, if (e.message == "timeout") "turn-timeout" else "stream-error")
                 }
             } finally {
                 currentStream = null
