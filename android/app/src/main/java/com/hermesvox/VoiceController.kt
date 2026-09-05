@@ -286,7 +286,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     turnGen++
                     val myGen = turnGen
                     main.post { runStreamedTurn(t, myGen) }
-                    try { latch.await(TURN_GATE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) {}
+                    val gateReleased = try { latch.await(TURN_GATE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) { false }
+                    if (!gateReleased) VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning bargeInArmed=$bargeInArmed turnInFlight=$turnInFlight")
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
                     try { r.stop() } catch (_: Throwable) {}
                     android.os.SystemClock.sleep(450L)
@@ -547,7 +548,11 @@ class VoiceController(private val context: Context, private val session: HermesS
             // exactly once here, gated on the worker's completion (sDone). No other
             // release site runs for this reply (#60).
             streamFinish()
-            exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate(gen, "stream-done") }
+            exec.execute {
+                val doneOk = try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) { false }
+                if (!doneOk) VoxLog.w("event=gate-timeout await=stream-worker gen=$gen after=120s sRunning=$sRunning streamed=$streamed")
+                releaseTurnGate(gen, if (doneOk) "stream-done" else "stream-done-timeout")
+            }
         } else if (shouldSpeak()) {
             speak(finalText, gen)
         } else {
