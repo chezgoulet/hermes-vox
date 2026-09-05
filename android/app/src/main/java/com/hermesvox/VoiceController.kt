@@ -422,7 +422,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     // --- The streamed entity turn (REAL SSE) ---
     private fun runStreamedTurn(text: String, gen: Long) {
-        if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen); return }
+        if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
         firstAudioLatch = false   // #40: per-turn first-audio latch
@@ -473,14 +473,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 main.post {
                                     listener?.onError("hermes: $err")
                                     listener?.onState("idle")
-                                    releaseTurnGate(gen)
+                                    releaseTurnGate(gen, "reply-error")
                                 }
                             } else if (finalText.isNotBlank()) {
                                 LatencyStats.pushFullReply(android.os.SystemClock.uptimeMillis() - t0)   // #40 full reply
                                 main.post { settleReply(finalText, gen) }
                             } else {
                                 stopStreaming()   // empty reply: still close the streaming worker
-                                main.post { listener?.onState("idle"); releaseTurnGate(gen) }
+                                main.post { listener?.onState("idle"); releaseTurnGate(gen, "empty-reply") }
                             }
                         }
                     }
@@ -494,7 +494,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 main.post {
                     listener?.onError("hermes: ${e.message}")
                     listener?.onState("idle")
-                    releaseTurnGate(gen)
+                    releaseTurnGate(gen, "stream-error")
                 }
             } finally {
                 currentStream = null
@@ -547,11 +547,11 @@ class VoiceController(private val context: Context, private val session: HermesS
             // exactly once here, gated on the worker's completion (sDone). No other
             // release site runs for this reply (#60).
             streamFinish()
-            exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate(gen) }
+            exec.execute { try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}; releaseTurnGate(gen, "stream-done") }
         } else if (shouldSpeak()) {
             speak(finalText, gen)
         } else {
-            stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen)
+            stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen, "text-only")
         }
     }
 
@@ -698,7 +698,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (t == null || !ttsReady) {
             // No usable engine — never hang the "speaking" state; settle quietly.
             listener?.onState("idle")
-            releaseTurnGate(gen)   // no speech will run -> release the loop's speak-gate
+            releaseTurnGate(gen, "no-engine")   // no speech will run -> release the loop's speak-gate
             return
         }
         glueSpeaking = false      // Hermes preempts Gemma
@@ -713,7 +713,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             main.post {
                 listener?.onState("idle")
                 if (bargeInArmed) stopBargeInWatch()
-                releaseTurnGate(gen)   // release the realtime loop's speak-gate after speech finishes
+                releaseTurnGate(gen, "speak-done")   // release the realtime loop's speak-gate after speech finishes
             }
         }
         // Arm barge-in AFTER a short delay + at a higher threshold so the mic
@@ -761,7 +761,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         currentStream = null
         listener?.onLog("// (interrupted)")
         listener?.onState("listening")
-        releaseTurnGate(turnGen)   // a barge-in aborts the reply -> release the loop's speak-gate
+        releaseTurnGate(turnGen, "barge-in")   // a barge-in aborts the reply -> release the loop's speak-gate
     }
 
     // --- Generation-phase barge-in (D2): interrupt while the agent is STILL ---
@@ -806,11 +806,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         genRecord = null
     }
 
-    private fun releaseTurnGate(gen: Long) {
-        if (gen != turnGen) return
-        if (!voiceState.release()) return   // #60: exactly once per epoch (race-safe)
+    private fun releaseTurnGate(gen: Long, reason: String) {
+        if (gen != turnGen) { VoxLog.w("event=gate-release result=stale gen=$gen current=$turnGen reason=$reason"); return }
+        if (!voiceState.release()) { VoxLog.w("event=gate-release result=duplicate gen=$gen reason=$reason"); return }
         try { turnDone.countDown() } catch (_: Throwable) {}
-        LatencyStats.log("turn")            // #40: once per settled/aborted turn
+        VoxLog.d("event=gate-release gen=$gen reason=$reason")          // (audit's epoch= dropped — private)
+        LatencyStats.log("turn", reason, gen)
     }
 
     private fun stopBargeInWatch() {
@@ -839,7 +840,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
         stopStreaming()
-        releaseTurnGate(turnGen)
+        releaseTurnGate(turnGen, "hush")
         listener?.onLog("// (stopped)")
         if (listening) listener?.onState("listening")
     }
