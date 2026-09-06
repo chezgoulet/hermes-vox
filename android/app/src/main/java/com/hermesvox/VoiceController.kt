@@ -66,6 +66,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     // Set when a barge-in lands before startStream returned (currentStream was
     // still null), so the stream loop breaks instead of settling a ghost reply.
     @Volatile private var genCancelled = false
+    // #D1: wall-clock of the LAST barge decision (the event=barge-in line), so
+    // silenceAll() can log msSinceBarge — the gate-release latency after the
+    // decision (the field 878ms lag was main-thread queueing behind TTS callbacks).
+    @Volatile private var bargeDecisionAt = 0L
     // MODE-GATED RE-LISTEN: true (Realtime/Enhanced) keeps the loop going after a
     // turn; false (Walkie PTT) does exactly one turn then stops until the next PTT.
     @Volatile var continuous = false
@@ -394,6 +398,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         sustainedMs = if (level > floor) sustainedMs + n * 1000L / sr else 0L
                         if (BargeGate.decide(level.toFloat(), if (vadAvailable) vadSpeech else null, sustainedMs, bargeRmsMin, vadAvailable)) {
                             VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
+                            bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
                             main.post { bargeIn() }
                             bargeFired = true
                             sustainedMs = 0L
@@ -431,8 +436,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun stop() {
         listening = false
         recognizer?.destroy(); recognizer = null
-        stopTts()
-        stopStreaming()
+        // #D1: endCall uses the SAME single silence path as barge/hush — stopTts
+        // (closes the SherpaTts fence -> streamChunk returns false -> no track
+        // resurrection), close the streaming worker, cancel the SSE stream, then
+        // release the turn gate, all synchronously on this thread.
+        silenceAll("stop")
         // #8: wait (bounded) for the capture loop + partial worker to exit their
         // native calls (vad.feed / stt.transcribe / record.read) before releasing
         // the native handles -> no use-after-free on a background/teardown race.
@@ -444,8 +452,6 @@ class VoiceController(private val context: Context, private val session: HermesS
         try { record?.stop(); record?.release() } catch (_: Exception) {}
         record = null
         try { ns?.release() } catch (_: Exception) {}; ns = null
-        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
-        currentStream = null
         tts?.shutdown()
         stt?.shutdown(); vad?.shutdown()
         // After shutting the legs down the pipeline is no longer warm: reset the ready
@@ -696,13 +702,23 @@ class VoiceController(private val context: Context, private val session: HermesS
             sRunning = true
             exec.execute {
                 try {
+                    var chunkIdx = 0   // #D1: # chunks already handed to the engine
                     while (true) {
+                        // #D1 immediate silence: a stop (barge/hush/hangup) must cut the
+                        // reply NOW. Check the cancel flags BEFORE each chunk so the worker
+                        // breaks out instead of synthesizing queued sentences the user already
+                        // cut in on (that still-running loop used to resurrect playback after
+                        // every stop). The SherpaTts fence is the backstop for a stop that
+                        // lands mid-chunk.
+                        if (genCancelled || sClosed) { VoxLog.d("event=tts-stop gen=$turnGen worker-break chunkIdx=$chunkIdx"); break }
                         val chunk = synchronized(sLock) {
                             var c = sQueue.poll()
                             while (c == null && !sClosed) { try { sLock.wait(200) } catch (_: Throwable) {}; c = sQueue.poll() }
                             c
                         }
                         if (chunk == null) break            // closed + drained
+                        if (genCancelled || sClosed) { VoxLog.d("event=tts-stop gen=$turnGen worker-break chunkIdx=$chunkIdx"); break }
+                        chunkIdx++
                         // Play EVERY chunk: gate on the engine, NOT on !speaking. (The earlier
                         // keep-speaking-true change made speaking stuck true so only the first
                         // chunk played and the rest was drained silently -> "small chunks".)
@@ -854,13 +870,29 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         speaking = false
         genCancelled = true
-        stopTts()
-        stopStreaming()   // stop the streaming worker: exit + release the track cleanly
-        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
-        currentStream = null
         listener?.onLog("// (interrupted)")
         listener?.onState("listening")
-        releaseTurnGate(turnGen, "barge-in")   // a barge-in aborts the reply -> release the loop's speak-gate
+        // #D1: ONE synchronous silence path — the gate release lands here, on main,
+        // immediately after the barge decision (not queued behind TTS callbacks).
+        silenceAll("barge-in")
+    }
+
+    /** #D1 ONE silence path for every cut (bargeIn / hush / endCall-stop):
+     *  stopTts() -> stopStreaming() -> cancelStream -> releaseTurnGate(gen, reason),
+     *  all SYNCHRONOUS on the caller's thread. stopTts() closes the SherpaTts fence
+     *  so streamChunk() returns false and the stream worker breaks out (no playback
+     *  resurrection); stopStreaming() closes the worker's queue; cancelStream aborts
+     *  the SSE turn. msSinceBarge is the main-queue latency from the barge decision
+     *  (event=barge-in) to this cut — the gate release must land <150ms after it. */
+    private fun silenceAll(reason: String) {
+        val bargeAt = bargeDecisionAt
+        bargeDecisionAt = 0L
+        stopTts()
+        stopStreaming()
+        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
+        currentStream = null
+        VoxLog.d("event=tts-stop reason=$reason msSinceBarge=${if (bargeAt > 0L) android.os.SystemClock.uptimeMillis() - bargeAt else 0L}")
+        releaseTurnGate(turnGen, reason)
     }
 
     private fun releaseTurnGate(gen: Long, reason: String) {
@@ -877,11 +909,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  loop is released back to listening. Bound to the presence tap (tap = STOP). */
     fun hush() {
         speaking = false
-        stopTts()
-        currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
-        currentStream = null
-        stopStreaming()
-        releaseTurnGate(turnGen, "hush")
+        // #D1: the same single silence path as barge/endCall (fence + worker break
+        // + synchronous gate release).
+        silenceAll("hush")
         listener?.onLog("// (stopped)")
         if (listening) listener?.onState("listening")
     }
