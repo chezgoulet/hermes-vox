@@ -242,6 +242,16 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="4dp"
+                    android:layout_marginTop="-4dp"
+                    android:layout_marginBottom="10dp"
+                    android:text="@string/hv_set_network_note"
+                    android:textColor="@color/hv_text_dim"
+                    android:textSize="12sp" />
+
                 <LinearLayout
                     android:id="@+id/row_reset"
                     style="@style/HvRow"
