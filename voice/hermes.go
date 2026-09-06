@@ -30,7 +30,12 @@ type HermesClient struct {
 	baseURL string // e.g. http://<hermes-host>:8642
 	apiKey  string // the Hermes API_SERVER_KEY
 	model   string // Hermes virtual model ("hermes-agent")
-	http    *http.Client
+	// provider is an optional per-request inference-backend override ("" = gateway
+	// default). The gateway honors provider-qualified requests unconditionally (the
+	// direct provider path), so model+provider together switch the entity's backend
+	// — a model-only request would be silently ignored without direct_model_requests.
+	provider string
+	http     *http.Client
 }
 
 func NewHermesClient(baseURL, apiKey, model string) *HermesClient {
@@ -45,10 +50,18 @@ func NewHermesClient(baseURL, apiKey, model string) *HermesClient {
 // SetModel overrides the model route the client sends in /v1/chat/completions.
 func (c *HermesClient) SetModel(model string) { c.model = model }
 
+// SetProvider sets the per-request provider override ("" = gateway default).
+// Mirrors HermesResponsesClient so the chat (send-text) connector rides the same
+// honored provider-qualified gateway path as /v1/responses.
+func (c *HermesClient) SetProvider(provider string) { c.provider = provider }
+
 // Chat sends the conversation to Hermes and returns its reply. This is how the
 // entity (Hermes) actually reasons and acts — the backend is only the voice.
 func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
 	body := map[string]any{"model": c.model, "messages": messages, "stream": false}
+	if c.provider != "" {
+		body["provider"] = c.provider
+	}
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return "", err

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +43,38 @@ func TestHermesClientRejectsNon200(t *testing.T) {
 	c := NewHermesClient(srv.URL, "k", "m")
 	if _, err := c.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "x"}}); err == nil {
 		t.Fatal("expected error on non-200")
+	}
+}
+
+func TestHermesClientChatProviderIncluded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(b), `"provider":"deepseek"`) {
+			t.Fatalf("missing provider in body: %s", b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+	c := NewHermesClient(srv.URL, "testkey", "hermes-agent")
+	c.SetProvider("deepseek")
+	if _, err := c.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHermesClientChatOmitsProviderWhenEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), "provider") {
+			t.Fatalf("provider should be omitted when empty: %s", b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+	c := NewHermesClient(srv.URL, "testkey", "hermes-agent")
+	if _, err := c.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -152,5 +152,13 @@ class SileroVadGate(private val context: Context, private val threshold: Float =
         return try { v.acceptWaveform(samples); v.isSpeechDetected() } catch (_: Throwable) { false }
     }
 
+    /** Drop the VAD's internal windowed state (sherpa Vad.reset()). The barge-in feed
+     *  shares this same SileroVadGate with next-turn segmentation, so the controller
+     *  MUST call reset() at gate close — otherwise frames captured while the agent is
+     *  speaking can corrupt the next utterance's start/end decisions. */
+    @Synchronized fun reset() {
+        try { vad?.reset() } catch (_: Throwable) {}
+    }
+
     @Synchronized fun shutdown() { vad?.release(); vad = null }
 }
