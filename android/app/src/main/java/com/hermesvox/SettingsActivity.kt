@@ -514,6 +514,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("partial_stt", true)
                 .putBoolean("mic_aec", true)
                 .putBoolean("ns_extra", true)
+                .putBoolean("tts_voice_usage", false)   // D2: echo-routing default OFF (field A/B 2026-09-06)
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)

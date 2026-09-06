@@ -44,13 +44,16 @@ class SherpaTts(private val context: Context) : VoxTts {
 
     private val dir get() = File(context.filesDir, "models/piper-lessac")
 
-    /** `tts_voice_usage` kill-switch (default true): route the playback AudioTracks
+    /** `tts_voice_usage` kill-switch (default false): route the playback AudioTracks
      *  through USAGE_VOICE_COMMUNICATION so the VOICE_COMMUNICATION capture's platform
      *  AEC has a proper echo reference for barge-in. false = the old USAGE_MEDIA
      *  attributes. This is a per-track USAGE attribute, NOT the MODE_IN_COMMUNICATION
-     *  global toggle that the handoff lesson warned broke playback. */
+     *  global toggle that the handoff lesson warned broke playback.
+     *  Default OFF — field A/B 2026-09-06: OFF = loud volume AND working barge (single
+     *  capture + double gate); ON = incall-quiet on Pixel. The toggle stays for leaky
+     *  devices. */
     private fun voiceUsage(): Boolean =
-        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("tts_voice_usage", true)
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("tts_voice_usage", false)
 
     private fun speechAttributes(): AudioAttributes = AudioAttributes.Builder()
         .setUsage(if (voiceUsage()) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA)
