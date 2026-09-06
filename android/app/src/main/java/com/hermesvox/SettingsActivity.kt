@@ -328,12 +328,12 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
             val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
             val crash = CrashLog.read(this)
-            val full = try {
-                val f = java.io.File(filesDir, "logs/hermes-vox.log")
-                if (f.exists()) f.readText() else "no runtime log"
-            } catch (_: Throwable) { "no runtime log" }
-            // Full session log (this file is the WHOLE log since app start, so send the
-            // whole thing — not a tail). Cap the inline dialog view only.
+            // K2 (C4): the runtime log is capped + rotated (single generation), so the
+            // WHOLE session since app start now spans TWO files: hermes-vox.log.1 (the
+            // prior full generation, older) + hermes-vox.log (current). mergedRuntimeLog
+            // = .1 then current — the export/copy ships BOTH (the merged pair) so field
+            // logs stay complete across the rotation seam. Cap only the inline dialog view.
+            val full = mergedRuntimeLog()
             val runtime = full.takeLast(60000).ifEmpty { "no runtime log" }
             val log = "=== Hermes Vox DEBUG — version $ver ===\n\n=== CRASH LOG ===\n$crash\n\n=== RUNTIME LOG (full) ===\n$runtime"
             androidx.appcompat.app.AlertDialog.Builder(this)
@@ -345,7 +345,9 @@ class SettingsActivity : AppCompatActivity() {
                     android.widget.Toast.makeText(this, "copied", android.widget.Toast.LENGTH_SHORT).show()
                 }
                 .setNeutralButton("Share full log") { _, _ ->
-                    val f = java.io.File(filesDir, "logs/hermes-vox.log")
+                    // Share the MERGED pair (old .1 generation + current) as one file so a
+                    // recipient sees the whole session, not just the post-rotation current.
+                    val f = mergedLogFile()
                     val uri = androidx.core.content.FileProvider.getUriForFile(this, packageName + ".fileprovider", f)
                     val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"; putExtra(android.content.Intent.EXTRA_STREAM, uri); addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -354,11 +356,43 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 .setNegativeButton("Clear logs") { _, _ ->
                     CrashLog.clear(this)
+                    // K2: clear the whole rotated set — current, prior .1 generation, and any merge snapshot.
                     try { java.io.File(filesDir, "logs/hermes-vox.log").delete() } catch (_: Throwable) {}
+                    try { java.io.File(filesDir, "logs/hermes-vox.log.1").delete() } catch (_: Throwable) {}
+                    try { java.io.File(filesDir, "logs/hermes-vox-merged.log").delete() } catch (_: Throwable) {}
                     findViewById<TextView>(R.id.set_debug_val).text = "view"
                 }
                 .show()
         }
+    }
+
+    /** K2: the full runtime session as text — the rotated prior generation
+     *  (hermes-vox.log.1, older) concatenated with the current hermes-vox.log. */
+    private fun mergedRuntimeLog(): String {
+        val logs = java.io.File(filesDir, "logs")
+        return try {
+            val cur = java.io.File(logs, "hermes-vox.log")
+            val gen = java.io.File(logs, "hermes-vox.log.1")
+            val older = if (gen.exists()) gen.readText() else ""
+            val current = if (cur.exists()) cur.readText() else ""
+            if (older.isEmpty() && current.isEmpty()) "no runtime log" else older + current
+        } catch (_: Throwable) { "no runtime log" }
+    }
+
+    /** K2: a single file holding the merged pair (.1 then current), written under the
+     *  logs dir so the existing FileProvider path serves it. Falls back to the current
+     *  file alone if the merge itself fails. */
+    private fun mergedLogFile(): java.io.File {
+        val logs = java.io.File(filesDir, "logs")
+        val cur = java.io.File(logs, "hermes-vox.log")
+        val merged = java.io.File(logs, "hermes-vox-merged.log")
+        return try {
+            val gen = java.io.File(logs, "hermes-vox.log.1")
+            val older = if (gen.exists()) gen.readText() else ""
+            val current = if (cur.exists()) cur.readText() else ""
+            merged.writeText(older + current)
+            merged
+        } catch (_: Throwable) { cur }
     }
 
     // ---- Mic / Speech tuning (exact-range SeekBars reading + writing the SAME

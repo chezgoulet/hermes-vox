@@ -8,7 +8,9 @@ import org.junit.Test
 /**
  * Proves LatencyStats' per-turn outcome summary (emitted on every gate release)
  * and the rolling P50/P95 window (every 8th turn). Pure JVM — exercises
- * summaryLines()/windowCounts() directly, never touches VoxLog.
+ * summaryLines()/windowCounts() directly, never touches VoxLog. C4: firstText
+ * and firstAudio are BOTH recorded per turn — firstText at the first text delta,
+ * firstAudio at the first real audible streamChunk write.
  */
 class LatencyStatsTest {
 
@@ -16,16 +18,17 @@ class LatencyStatsTest {
         LatencyStats.reset()
         LatencyStats.pushStt(40)
         LatencyStats.pushFirstByte(120)
+        LatencyStats.pushFirstText(150)
         LatencyStats.pushFirstAudio(180)
         LatencyStats.pushFullReply(900)
         val first = LatencyStats.summaryLines("turn", "stream-done", 1L)
         assertEquals(1, first.size)
         assertTrue(first[0], first[0].contains("event=turn label=turn gen=1 outcome=stream-done"))
-        assertTrue(first[0], first[0].contains("stt=40 firstByte=120 firstAudio=180 fullReply=900"))
+        assertTrue(first[0], first[0].contains("stt=40 firstByte=120 firstText=150 firstAudio=180 fullReply=900"))
         // per-turn values clear after every emit
         val second = LatencyStats.summaryLines("turn", "stream-done", 2L)
         assertEquals(1, second.size)
-        assertTrue(second[0], second[0].contains("stt=- firstByte=- firstAudio=- fullReply=-"))
+        assertTrue(second[0], second[0].contains("stt=- firstByte=- firstText=- firstAudio=- fullReply=-"))
     }
 
     @Test fun rolling_p50_every_8th_then_clear() {
@@ -33,33 +36,36 @@ class LatencyStatsTest {
         fun seed() {
             LatencyStats.pushStt(40)
             LatencyStats.pushFirstByte(120)
+            LatencyStats.pushFirstText(150)
             LatencyStats.pushFirstAudio(180)
             LatencyStats.pushFullReply(900)
         }
         for (i in 0L until 7L) { seed(); assertEquals(1, LatencyStats.summaryLines("turn", "stream-done", i).size) }
         seed()
         val eighth = LatencyStats.summaryLines("turn", "stream-done", 7L)
-        assertEquals(5, eighth.size)                                  // 1 turn + 4 event=lat lines
+        assertEquals(6, eighth.size)                                  // 1 turn + 5 event=lat lines (C4 adds first-text)
         assertTrue(eighth[0], eighth[0].startsWith("event=turn"))
-        assertEquals(4, eighth.drop(1).count { it.startsWith("event=lat") })
+        assertEquals(5, eighth.drop(1).count { it.startsWith("event=lat") })
+        assertTrue(eighth.joinToString("\n"), eighth.joinToString("\n").contains("metric=first-text"))
         // rolling window cleared after the 8th emit
         val cleared = LatencyStats.windowCounts()
-        assertArrayEquals(intArrayOf(0, 0, 0, 0), cleared)
+        assertArrayEquals(intArrayOf(0, 0, 0, 0, 0), cleared)
         // a fresh push grows from 0
         LatencyStats.pushStt(50)
         val grown = LatencyStats.windowCounts()
-        assertArrayEquals(intArrayOf(0, 0, 0, 1), grown)
+        assertArrayEquals(intArrayOf(0, 0, 0, 0, 1), grown)
     }
 
     @Test fun reset_zeroes_window() {
         LatencyStats.reset()
         LatencyStats.pushStt(40)
         LatencyStats.pushFirstByte(120)
+        LatencyStats.pushFirstText(150)
         LatencyStats.pushFirstAudio(180)
         LatencyStats.pushFullReply(900)
-        assertArrayEquals(intArrayOf(1, 1, 1, 1), LatencyStats.windowCounts())
+        assertArrayEquals(intArrayOf(1, 1, 1, 1, 1), LatencyStats.windowCounts())
         LatencyStats.reset()
-        assertArrayEquals(intArrayOf(0, 0, 0, 0), LatencyStats.windowCounts())
+        assertArrayEquals(intArrayOf(0, 0, 0, 0, 0), LatencyStats.windowCounts())
     }
 
     @Test fun session_turns_counts_since_reset() {

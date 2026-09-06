@@ -91,7 +91,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var sttReady = false
     @Volatile private var partialRunning = false
     @Volatile private var partialEnabled = false
-    @Volatile private var firstAudioLatch = false   // #40: one first-audio push per turn
+    // C4 K1: two per-turn latches. firstTextLatch arms the first-TEXT-delta push;
+    // firstAudioPushed arms the first-REAL-AUDIO push (see the streamChunk seam in
+    // the streaming worker). Both reset at the top of every runStreamedTurn.
+    @Volatile private var firstTextLatch = false     // #40/C4: one first-text push per turn
+    @Volatile private var firstAudioPushed = false  // C4: one first-audio push per turn (real audio)
+    // C4: wall-clock launch (t0) of the current streamed turn — the streaming worker
+    // reads this so time-to-first-AUDIO is measured from the same origin as stt/Byte/Text.
+    @Volatile private var turnStartedAt = 0L
     private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 450).toLong())
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
@@ -552,9 +559,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
-        firstAudioLatch = false   // #40: per-turn first-audio latch
+        // C4: per-turn latches + origin. firstTextLatch arms the first-delta push;
+        // firstAudioPushed arms the first-REAL-audio push (the streamChunk seam in the
+        // streaming worker). turnStartedAt gives the worker the SAME t0 origin every
+        // other metric is measured from, so firstAudio is comparable to firstByte/Text.
+        firstTextLatch = false
+        firstAudioPushed = false
         genCancelled = false
         val t0 = android.os.SystemClock.uptimeMillis()
+        turnStartedAt = t0
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
         if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin()
@@ -668,8 +681,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 "response.output_text.delta" -> {
                     val d = e.optString("delta")
                     if (d.isNotBlank()) {
-                        // #40: push first-audio once per turn (time from launch to first delta)
-                        if (!firstAudioLatch) { firstAudioLatch = true; LatencyStats.pushFirstAudio(android.os.SystemClock.uptimeMillis() - t0) }
+                        // C4 K1: push firstTEXT once per turn (time from launch to the first
+                        // text delta) — the OLD firstAudio site was a lie (it measured text).
+                        // firstAudio now lives at the real-audio seam in the streaming worker.
+                        if (!firstTextLatch) { firstTextLatch = true; LatencyStats.pushFirstText(android.os.SystemClock.uptimeMillis() - t0) }
                         streamFeed(d)   // start speaking as it streams
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
@@ -750,7 +765,20 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // is already running on the SAME recorder and takes over the
                             // barge check the instant `speaking` flips true (playback mode,
                             // past the grace window).
-                            try { (tts as? SherpaTts)?.streamChunk(chunk) } catch (_: Throwable) {}
+                            // C4 K1 firstAudio seam (controller-side flag, no SherpaTts<->controller
+                            // callback churn): SherpaTts.streamChunk() returns TRUE only after it
+                            // synthesized the chunk AND completed the first blocking write to the
+                            // persistent playback AudioTrack — which buildStreamTrack() has already
+                            // put into PLAYING state before the write — so true == the first real
+                            // AUDIBLE write of the turn is on the wire, not merely a text delta.
+                            // firstAudioPushed (reset per turn in runStreamedTurn) makes the push
+                            // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
+                            // as firstByte/firstText, keeping the fields comparable within a version.
+                            val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk) ?: false } catch (_: Throwable) { false }
+                            if (wrote && !firstAudioPushed) {
+                                firstAudioPushed = true
+                                LatencyStats.pushFirstAudio(android.os.SystemClock.uptimeMillis() - turnStartedAt)
+                            }
                             // speaking stays true for the whole reply (UI state + barge-in mode)
                         }
                     }
