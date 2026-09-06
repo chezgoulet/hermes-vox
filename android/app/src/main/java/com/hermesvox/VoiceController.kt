@@ -208,9 +208,12 @@ class VoiceController(private val context: Context, private val session: HermesS
             // Mic settings (user-changeable, logged so their impact is visible).
             val silenceMs = micInt("vad_silence_ms", 800)      // "the pause" that ends your turn
             val maxMs = micInt("vad_max_ms", 15000)
+            // B2: absolute ceiling — no utterance ever runs past this, but an
+            // ongoing one is never chopped at maxMs (see EndpointRule below).
+            val hardMs = micInt("vad_max_hard_ms", EndpointRule.DEFAULT_HARD_MS).toLong()
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
-            VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms")
+            VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms hard=${hardMs}ms")
             exec.execute {
                 val seg = ArrayList<Float>(sr)
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
@@ -225,6 +228,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onState("listening") }
                     main.post { listener?.onLog("// hear → listening") }
                     var inSpeech = false; var silentMs = 0
+                    var extendedLogged = false   // B2: one endpoint-extended log per utterance
                     // #18: ~250ms pre-roll ring (sr/4 samples @16kHz) so the VAD's
                     // start-detection delay doesn't clip the first word(s) the user says.
                     // O(1) append/overwrite — the old ArrayList<Float> did removeAt(0)
@@ -260,7 +264,19 @@ class VoiceController(private val context: Context, private val session: HermesS
                             for (f in frames) seg.add(f)
                         }
                         if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
-                        if (android.os.SystemClock.uptimeMillis() - segStart > maxMs) break
+                        // B2 VAD-extended endpointing: the old maxMs break chopped a long
+                        // continuous utterance mid-sentence ("The app is." + a "That"
+                        // fragment). EndpointRule stops past maxMs only on a real pause
+                        // (silentMs > 100) or the hard ceiling; otherwise the segment is
+                        // EXTENDED toward vad_max_hard_ms so a 15-25s ramble transcribes
+                        // whole. The partial early-start worker below keeps running inside
+                        // the extension (its snapshot is already bounded to a 6s tail).
+                        val elapsedMs = android.os.SystemClock.uptimeMillis() - segStart
+                        if (EndpointRule.shouldStop(elapsedMs, silentMs.toLong(), maxMs.toLong(), hardMs)) break
+                        if (inSpeech && elapsedMs >= maxMs && !extendedLogged) {
+                            extendedLogged = true
+                            VoxLog.d("event=endpoint-extended ms=$elapsedMs")
+                        }
                         // #38 partial STT: on a SEPARATE worker (never block capture),
                         // snapshot a bounded tail + transcribe; start the turn EARLY on
                         // a stable partial (unchanged hypothesis + a >=450ms pause).
