@@ -545,6 +545,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin()
         exec.execute {
             try {
+                // R2: metadata-only provenance (dd: logcat full, file only in debug
+                // mode) — model/provider ids are config, not user content.
+                VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
                 val sid = session.startStream(text)
                 VoxLog.d("startStream -> $sid")
                 currentStream = sid
