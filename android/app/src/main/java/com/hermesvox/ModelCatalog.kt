@@ -73,7 +73,6 @@ object ModelCatalog {
     const val BACKEND_REMOTE = "remote"
     const val MODE_REALTIME = "realtime"          // emulated call, local S2P + Hermes
     const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
-    const val MODE_WALKIE = "walkie"              // push-to-talk + keyboard
 
     /**
      * Pure resolver for a model-source override. Blank/null input falls back to

@@ -70,9 +70,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     // silenceAll() can log msSinceBarge — the gate-release latency after the
     // decision (the field 878ms lag was main-thread queueing behind TTS callbacks).
     @Volatile private var bargeDecisionAt = 0L
-    // MODE-GATED RE-LISTEN: true (Realtime/Enhanced) keeps the loop going after a
-    // turn; false (Walkie PTT) does exactly one turn then stops until the next PTT.
-    @Volatile var continuous = false
+    // The half-duplex listen loop never self-stops: after a turn (and its speech)
+    // it keeps listening, hands-free, until stop() — the single realtime loop shape.
     // SPEAK GATE (WS4a): voice a reply only when a call / voice channel is open.
     // Set by the host: MainActivity -> == callLive; RealtimeActivity -> true.
     // Default false = a reply with no open voice channel is TEXT-ONLY (fixes the
@@ -410,15 +409,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     try { r.stop() } catch (_: Throwable) {}
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
                     android.os.SystemClock.sleep(450L)
-                    // Walkie (PTT): one turn, then stop listening until the user
-                    // pushes-to-talk again. Realtime keeps going (hands-free).
-                    if (!continuous) { listening = false; break }
                 }
                 loopActive = false
-                // #19: the walkie no-repeat exit (and the stop path) never calls
-                // stop(), so release the native AudioRecord here — otherwise the
-                // next start() overwrites `record` and leaks one audio session per
-                // PTT press until AudioRecord construction starts failing.
+                // #19: the natural loop exit never runs stop() (the caller's terminal
+                // path), so release the native AudioRecord here — otherwise the next
+                // start() overwrites `record` and leaks one audio session per listen.
                 try { record?.stop(); record?.release() } catch (_: Throwable) {}
                 record = null
                 main.post { listener?.onState("idle") }
@@ -429,9 +424,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             return listen()   // degrade to platform STT
         }
     }
-
-    /** Walkie PTT release: commit the current utterance now (process the buffer). */
-    fun commitUtterance() { commitRequested = true }
 
     fun stop() {
         listening = false
