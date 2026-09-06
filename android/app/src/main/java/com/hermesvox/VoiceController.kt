@@ -665,16 +665,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
         if (streamed && (tts?.supportsStreaming == true)) {
-            // STREAMED reply: the single canonical gate release. streamFinish() closes
-            // the queue so the streaming worker drains + finishes; the gate releases
-            // exactly once here, gated on the worker's completion (sDone). No other
-            // release site runs for this reply (#60).
+            // STREAMED reply (R1 single-owner retirement): the text/settle side is NO
+            // LONGER an owner of "done". It only marks the queue final (sFinal) + wakes
+            // the worker; the streaming worker drains every queued sentence, then on its
+            // NATURAL exit closes the stream and posts the single canonical gate release.
+            // No finishStreaming/stopStreaming/releaseTurnGate runs from here (#60). The
+            // realtime loop's TURN_GATE_TIMEOUT_MS stays as the backstop.
             streamFinish()
-            exec.execute {
-                val doneOk = try { sDone.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) { false }
-                if (!doneOk) VoxLog.w("event=gate-timeout await=stream-worker gen=$gen after=120s sRunning=$sRunning streamed=$streamed")
-                releaseTurnGate(gen, if (doneOk) "stream-done" else "stream-done-timeout")
-            }
         } else if (shouldSpeak()) {
             speak(finalText, gen)
         } else {
@@ -687,7 +684,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun streamBegin() {
         streamed = false   // clear before arming a new streaming turn
         if (sRunning && sClosed) sRunning = false   // re-arm a drained worker (stuck sRunning) so this new turn can start
-        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false }
+        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false; sFinal = false }
         lastStreamFlush = android.os.SystemClock.uptimeMillis()   // arm the #44 timer for THIS turn
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
@@ -695,14 +692,29 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (!sRunning) {
             sRunning = true
             exec.execute {
+                // R1 single-owner retirement: after EVERY sentence is handed to the engine
+                // and played, THIS worker is the only party that closes the stream. The
+                // text/settle side only marks sFinal; the exit condition is
+                // sClosed || (sFinal && queue empty), decided by StreamRetirementState so
+                // the rule is testable off-device. RETIRE (final && drained) is the natural
+                // close; ABORT (sClosed) is the barge/hush/stop/error fence.
+                val start = android.os.SystemClock.uptimeMillis()
+                var chunks = 0
+                var retiring = false
                 try {
                     while (true) {
                         val chunk = synchronized(sLock) {
                             var c = sQueue.poll()
-                            while (c == null && !sClosed) { try { sLock.wait(200) } catch (_: Throwable) {}; c = sQueue.poll() }
+                            while (c == null && StreamRetirementState.decide(sFinal, sClosed, queueEmpty = true) == Retirement.WAIT) {
+                                try { sLock.wait(200) } catch (_: Throwable) {}; c = sQueue.poll()
+                            }
+                            if (c == null) retiring = StreamRetirementState.decide(sFinal, sClosed, queueEmpty = true) == Retirement.RETIRE
                             c
                         }
-                        if (chunk == null) break            // closed + drained
+                        if (chunk == null) break            // final+drained (RETIRE) or closed (ABORT)
+                        // Race rule: a barge/hush/stop that landed while the previous chunk
+                        // was synthesizing still wins BEFORE the next chunk starts.
+                        if (genCancelled || sClosed) break
                         // Play EVERY chunk: gate on the engine, NOT on !speaking. (The earlier
                         // keep-speaking-true change made speaking stuck true so only the first
                         // chunk played and the rest was drained silently -> "small chunks".)
@@ -713,22 +725,47 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // barge check the instant `speaking` flips true (playback mode,
                             // past the grace window).
                             try { (tts as? SherpaTts)?.streamChunk(chunk) } catch (_: Throwable) {}
+                            chunks++
                             // speaking stays true for the whole reply (UI state + barge-in mode)
                         }
                     }
                 } finally {
                     speaking = false
-                    synchronized(sLock) { if (sQueue.isEmpty()) {} }
-                    try { (tts as? SherpaTts)?.finishStreaming() } catch (_: Throwable) {}
+                    if (retiring) {
+                        // Natural exit: this worker waits for the playback head of the LAST
+                        // written chunk (the whole tail plays out — no premature close mid
+                        // synth gap), THEN releases the track.
+                        try { (tts as? SherpaTts)?.finishStreaming() } catch (_: Throwable) {}
+                        try { (tts as? SherpaTts)?.stopStreaming() } catch (_: Throwable) {}
+                    } else {
+                        // Abort/cancel/error — unchanged fence: the cancel path already
+                        // released the track (stopTts); finishStreaming() waits any tail
+                        // out and releases, matching the pre-R1 behavior on these exits.
+                        try { (tts as? SherpaTts)?.finishStreaming() } catch (_: Throwable) {}
+                    }
                     sRunning = false
                 }
                 sDone.countDown()
+                if (retiring) {
+                    VoxLog.d("event=tts-retire gen=$turnGen chunks=$chunks ms=${android.os.SystemClock.uptimeMillis() - start}")
+                    // Re-check sClosed AFTER finishStreaming so a late barge that landed
+                    // during the tail drain still wins: it already called stopStreaming +
+                    // released the gate on the cancel path. The releaseTurnGate
+                    // duplicate-guard is the backstop for the race.
+                    if (!synchronized(sLock) { sClosed }) {
+                        main.post {
+                            if (synchronized(sLock) { sClosed }) return@post
+                            listener?.onState("idle")
+                            releaseTurnGate(turnGen, "stream-done")
+                        }
+                    }
+                }
             }
         }
     }
     private fun streamFeed(delta: String) {
         if (delta.isBlank()) return
-        if (!streamed || sClosed) return   // not active, or stream closed
+        if (!streamed || sClosed || sFinal) return   // not active, stream closed, or the queue is final
         if (tts?.supportsStreaming != true) return   // non-streaming TTS -> full-text fallback, no queue
         synchronized(sLock) {
             val now = android.os.SystemClock.uptimeMillis()
@@ -765,19 +802,23 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
     private fun streamFinish() {
+        // R1: natural end of a streamed reply (done=true, ok text). Flush any leftover
+        // tail into the queue, then mark it FINAL — NOT closed. This only says "no more
+        // chunks will arrive" and wakes the worker; it does NOT stop the track or release
+        // the gate. The worker owns the close on its natural (final && drained) exit.
         streamed = false
         synchronized(sLock) {
             val rest = sAccum.toString().trim()
             if (rest.isNotBlank()) sQueue.add(rest)
             sAccum.setLength(0)
-            sClosed = true
+            sFinal = true
             sLock.notifyAll()
         }
     }
     private fun speakingEnabledByUser() = speakEnabled()
     private fun stopStreaming() {
         streamed = false
-        synchronized(sLock) { sQueue.clear(); sClosed = true; sAccum.setLength(0); sLock.notifyAll() }
+        synchronized(sLock) { sQueue.clear(); sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
     }
 
     private fun bumpSpeakLevel() {
@@ -794,6 +835,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val sQueue = java.util.ArrayDeque<String>()
     private val sLock = Object()
     @Volatile private var sClosed = false
+    // R1 single-owner retirement: done=true with ok text marks the queue FINAL (no
+    // more chunks arrive) WITHOUT closing anything. The worker drains what remains
+    // and — only on the natural (sFinal && queue empty) exit — closes the stream
+    // itself. sClosed stays the abort/cancel semantics. Both mutated only under sLock.
+    @Volatile private var sFinal = false
     private var sDone = java.util.concurrent.CountDownLatch(1)
     @Volatile private var sRunning = false
     // #44: time-based partial-audio flush. `lastStreamFlush` is the wall-clock of
