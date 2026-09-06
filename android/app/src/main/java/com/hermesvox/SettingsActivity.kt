@@ -369,6 +369,7 @@ class SettingsActivity : AppCompatActivity() {
         bindMicToggle(R.id.set_mic_aec, "mic_aec", true)
         bindMicToggle(R.id.set_ns_extra, "ns_extra", true)
         bindMicToggle(R.id.set_partial_stt, "partial_stt", true)
+        bindMicToggle(R.id.set_tts_voice_usage, "tts_voice_usage", true)
 
         bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
             0.1f, 0.9f, 0.05f, 0.5f) { "%.2f".format(it) }
@@ -514,6 +515,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("partial_stt", true)
                 .putBoolean("mic_aec", true)
                 .putBoolean("ns_extra", true)
+                .putBoolean("tts_voice_usage", true)
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
