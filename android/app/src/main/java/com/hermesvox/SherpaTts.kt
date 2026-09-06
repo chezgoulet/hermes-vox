@@ -37,6 +37,19 @@ class SherpaTts(private val context: Context) : VoxTts {
 
     private val dir get() = File(context.filesDir, "models/piper-lessac")
 
+    /** `tts_voice_usage` kill-switch (default true): route the playback AudioTracks
+     *  through USAGE_VOICE_COMMUNICATION so the VOICE_COMMUNICATION capture's platform
+     *  AEC has a proper echo reference for barge-in. false = the old USAGE_MEDIA
+     *  attributes. This is a per-track USAGE attribute, NOT the MODE_IN_COMMUNICATION
+     *  global toggle that the handoff lesson warned broke playback. */
+    private fun voiceUsage(): Boolean =
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("tts_voice_usage", true)
+
+    private fun speechAttributes(): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(if (voiceUsage()) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
     /** The synthesis register from the `voice` pref (speed on the Piper engine).
      *  system=1.0 (shipped default) -> output identical when untouched. */
     private val voiceSpeed: Float by lazy { voiceRegister(currentVoiceRegister(context)).first }
@@ -90,9 +103,7 @@ class SherpaTts(private val context: Context) : VoxTts {
             // Use a normal playback buffer (~250 ms), NOT tied to the whole audio.
             val bufBytes = maxOf(minBuf, (sr / 4) * 4)
             val t = AudioTrack.Builder()
-                .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioAttributes(speechAttributes())
                 .setAudioFormat(AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(sr)
@@ -149,8 +160,7 @@ class SherpaTts(private val context: Context) : VoxTts {
             val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
             val bufBytes = maxOf(minBuf, (sr / 4) * 4)
             val t = AudioTrack.Builder()
-                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioAttributes(speechAttributes())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(sr).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                 .setBufferSizeInBytes(bufBytes).setTransferMode(AudioTrack.MODE_STREAM).build()
