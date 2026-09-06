@@ -381,6 +381,10 @@ class SettingsActivity : AppCompatActivity() {
             100, 1000, 50, 300) { "${it} ms" }
         bindIntSeekBar(R.id.set_seek_max, R.id.set_mic_max_val, "vad_max_ms",
             8000, 30000, 500, 15000) { "${it} ms" }
+        bindFloatSeekBar(R.id.set_seek_barge_rms, R.id.set_mic_barge_rms_val, "barge_rms_min",
+            0.04f, 0.30f, 0.01f, 0.10f) { "%.2f".format(it) }
+        bindIntSeekBar(R.id.set_seek_barge_grace, R.id.set_mic_barge_grace_val, "barge_grace_ms",
+            0, 2000, 50, 500) { "${it} ms" }
 
         findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
             restoreDefaults(GROUP_MIC)
@@ -516,6 +520,8 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("mic_aec", true)
                 .putBoolean("ns_extra", true)
                 .putBoolean("tts_voice_usage", true)
+                .putFloat("barge_rms_min", 0.10f)
+                .putInt("barge_grace_ms", 500)
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)

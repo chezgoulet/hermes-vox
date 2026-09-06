@@ -554,6 +554,54 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_mic_barge_rms"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Barge sensitivity"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_barge_rms_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.10"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_barge_rms"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="26" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_mic_barge_grace"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Barge grace"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_barge_grace_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="500 ms"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_barge_grace"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="40" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_mic_reset"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
