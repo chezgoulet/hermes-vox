@@ -81,3 +81,36 @@ func TestResponsesNoText(t *testing.T) {
 		t.Fatal("expected error: no output_text")
 	}
 }
+
+func TestResponsesProviderIncluded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(b), `"provider":"deepseek"`) {
+			t.Fatalf("missing provider in body: %s", b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`)
+	}))
+	defer srv.Close()
+	c := NewHermesResponsesClient(srv.URL, "testkey", "hermes-agent")
+	c.SetProvider("deepseek")
+	if _, err := c.Response(context.Background(), "hi", ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResponsesOmitsProviderWhenEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), "provider") {
+			t.Fatalf("provider should be omitted when empty: %s", b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`)
+	}))
+	defer srv.Close()
+	c := NewHermesResponsesClient(srv.URL, "testkey", "hermes-agent")
+	if _, err := c.Response(context.Background(), "hi", ""); err != nil {
+		t.Fatal(err)
+	}
+}

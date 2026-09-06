@@ -57,13 +57,20 @@ func (s *HermesSession) SetModel(model string) {
 	}
 }
 
-// SetProvider sets the per-request provider override sent in /v1/responses
-// ("" = gateway default). The app writes this alongside model from the catalog.
+// SetProvider sets the per-request provider override ("" = gateway default) on
+// EVERY connector the session uses (/v1/responses + /v1/chat/completions), so a
+// cleared-provider model-only request is never silently ignored. The app writes
+// this alongside model from the catalog.
 func (s *HermesSession) SetProvider(provider string) {
-	if s == nil || s.streams == nil {
+	if s == nil {
 		return
 	}
-	s.streams.SetProvider(provider)
+	if s.conv != nil && s.conv.Hermes != nil {
+		s.conv.Hermes.SetProvider(provider)
+	}
+	if s.streams != nil {
+		s.streams.SetProvider(provider)
+	}
 }
 
 // Ping verifies the entity connection (GET /v1/models, bearer auth). Non-nil
