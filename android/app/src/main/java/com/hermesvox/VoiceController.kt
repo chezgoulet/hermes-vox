@@ -208,8 +208,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             // Mic settings (user-changeable, logged so their impact is visible).
             val silenceMs = micInt("vad_silence_ms", 800)      // "the pause" that ends your turn
             val maxMs = micInt("vad_max_ms", 15000)
-            // B2: absolute ceiling — no utterance ever runs past this, but an
-            // ongoing one is never chopped at maxMs (see EndpointRule below).
+            // B2 (revised): absolute ceiling is an OPT-IN crash-guard for noisy
+            // environments where the VAD never releases; 0 = disabled (default)
+            // so a user talks until their natural pause ends the turn.
             val hardMs = micInt("vad_max_hard_ms", EndpointRule.DEFAULT_HARD_MS).toLong()
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
@@ -264,13 +265,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                             for (f in frames) seg.add(f)
                         }
                         if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
-                        // B2 VAD-extended endpointing: the old maxMs break chopped a long
-                        // continuous utterance mid-sentence ("The app is." + a "That"
-                        // fragment). EndpointRule stops past maxMs only on a real pause
-                        // (silentMs > 100) or the hard ceiling; otherwise the segment is
-                        // EXTENDED toward vad_max_hard_ms so a 15-25s ramble transcribes
-                        // whole. The partial early-start worker below keeps running inside
-                        // the extension (its snapshot is already bounded to a 6s tail).
+                        // B2 (revised): the old maxMs break chopped a long continuous
+                        // utterance mid-sentence ("The app is." + a "That" fragment).
+                        // EndpointRule never chops a still-talking speaker: past maxMs
+                        // it stops only on a real pause (>100ms); the absolute ceiling
+                        // is opt-in (vad_max_hard_ms, default 0 = disabled). The caller's
+                        // 800ms pause rule owns normal turn ends. The partial early-start
+                        // worker keeps running inside an extended segment (6s snapshot).
                         val elapsedMs = android.os.SystemClock.uptimeMillis() - segStart
                         if (EndpointRule.shouldStop(elapsedMs, silentMs.toLong(), maxMs.toLong(), hardMs)) break
                         if (inSpeech && elapsedMs >= maxMs && !extendedLogged) {
