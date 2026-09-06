@@ -128,8 +128,8 @@ class SettingsActivity : AppCompatActivity() {
     private fun bindFlows() {
         findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
             pick("Voice mode",
-                arrayOf("Realtime", "Enhanced Realtime", "Walkie Talkie"),
-                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED, ModelCatalog.MODE_WALKIE),
+                arrayOf("Realtime", "Enhanced Realtime"),
+                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
                 ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val)
         }
         findViewById<LinearLayout>(R.id.row_stt).setOnClickListener {
@@ -293,8 +293,7 @@ class SettingsActivity : AppCompatActivity() {
     }
     private fun modeLabel(tok: String): String = when (tok) {
         ModelCatalog.MODE_ENHANCED -> "Enhanced Realtime"
-        ModelCatalog.MODE_WALKIE -> "Walkie Talkie"
-        else -> "Realtime"
+        else -> "Realtime"   // a stale stored token reads as Realtime (never crashes)
     }
 
     private fun bindAppearance() {

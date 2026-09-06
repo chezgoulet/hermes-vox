@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
-import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -18,7 +17,7 @@ import go.Seq
 
 /**
  * MainActivity — the front-of-house surface. Hosts the avatar, the live reply,
- * the stream console, and the voice/text input. Runs the entity via
+ * the stream console, and the hands-free voice call. Runs the entity via
  * VoiceController (streamed SSE turns) and renders the entity's real work.
  * First run routes to OnboardingActivity; subsequent launches auto-connect.
  */
@@ -27,7 +26,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var warming: android.widget.TextView
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
-    private lateinit var input: EditText
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
     private lateinit var avatar: AvatarView
@@ -74,7 +72,6 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
         status.visibility = android.view.View.GONE
         agentName = findViewById(R.id.agent_name)
-        input = findViewById(R.id.input)
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
@@ -146,9 +143,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Hands-free Realtime / Enhanced Realtime: auto-open the voice line (VAD +
-    // barge-in) once the session is live + mic permission granted. Walkie is
-    // explicit (hold to talk), so it's skipped. idempotent (lineOpen).
     /** Start the real-time call: warm + open the continuous voice line and set the
      *  live-call UI (red hang-up button + running timer). The call PERSISTS across
      *  app-close / screen-off (the mic-type foreground service + loop keep running). */
@@ -164,9 +158,9 @@ class MainActivity : AppCompatActivity() {
                 setStatus(if (rationale) "Mic needs to be enabled to start the call" else "Mic permission needed to start the call", true)
                 val needNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                     PackageManager.PERMISSION_GRANTED
-                // Mirror the working talk() path (lines 333-344): RECORD_AUDIO always
-                // requested for the mic-type foreground service; POST_NOTIFICATIONS only
-                // when missing (a fg-service notification renders for Android 13+).
+                // RECORD_AUDIO is always requested for the mic-type foreground service;
+                // POST_NOTIFICATIONS only when missing (a fg-service notification renders
+                // for Android 13+).
                 ActivityCompat.requestPermissions(this,
                     listOfNotNull(
                         Manifest.permission.RECORD_AUDIO,
@@ -205,8 +199,7 @@ class MainActivity : AppCompatActivity() {
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
-        c.continuous = true
-        c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
+        c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
         setStatus("On call", false)
     }
@@ -234,14 +227,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 setStatus("Mic permission denied — tap call to retry", true)
             }
-        } else if (requestCode == 100) {
-            // talk() path: previously it just returned; now proceed on grant so a
-            // single tap grants + opens the walkie line.
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                talk()
-            } else {
-                setStatus("Mic permission denied", true)
-            }
         }
     }
 
@@ -252,9 +237,8 @@ class MainActivity : AppCompatActivity() {
         // The loop may have died while backgrounded (the teardown window / a stopped
         // turn). Re-arm it rather than only reflecting isListening(); c.start is
         // idempotent, so a loop that is still running is left untouched.
-        c.continuous = true
         c.setVoiceChannelOpen(true)
-        c.start(listener, prefs.getBoolean("duplex", true) && modeIsRealtime())
+        c.start(listener, prefs.getBoolean("duplex", true))
         callLive = true
         callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
         enterCallUi()
@@ -354,7 +338,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearConversationUi() {
-        input.text.clear()
         replyBuf = ""
         reply.setText("")
         convoBuf = ""
@@ -390,29 +373,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun wireButtons() {
-        findViewById<Button>(R.id.send).setOnClickListener { send(input.text.toString()) }
-        findViewById<Button>(R.id.mic).setOnTouchListener { v, ev ->
-            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) { talk(); v.isPressed = true }
-            else if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) { v.isPressed = false; liveController?.commitUtterance() }
-            else if (ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL) { v.isPressed = false; liveController?.commitUtterance() }
-            true
-        }
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
-        findViewById<Button>(R.id.realtime).setOnClickListener { toggleRealtimeMode() }
         findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
         findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
-        input.setOnEditorActionListener { _, _, _ -> send(input.text.toString()); true }
-        findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.walkie_voice_toggle)
-            .setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("speak_responses", on).apply() }
     }
-
-    private fun modeIsRealtime() = (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) != ModelCatalog.MODE_WALKIE
 
     private fun send(text: String) {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
-        input.text.clear()
         appendConvo("You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
@@ -420,34 +389,6 @@ class MainActivity : AppCompatActivity() {
         }
         c.attachListeners(listener)
         c.sendText(text)
-    }
-
-    private fun talk() {
-        if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
-        val s = session ?: run { setStatus("Connect first", true); return }
-        val needAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
-            PackageManager.PERMISSION_GRANTED
-        val needNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        if (needAudio || needNotif) {
-            ActivityCompat.requestPermissions(this,
-                listOfNotNull(
-                    Manifest.permission.RECORD_AUDIO.takeIf { needAudio },
-                    Manifest.permission.POST_NOTIFICATIONS.takeIf { needNotif }
-                ).toTypedArray(), 100)
-            return
-        }
-        // The voice pipeline runs in a foreground service so it survives backgrounding
-        // (microphone type; START_STICKY). The activity liveController drives the UI.
-        VoiceService.start(this)
-        val c = liveController ?: VoiceController(applicationContext, s).also {
-            liveController = it
-            s.resetConversation()
-        }
-        val duplex = prefs.getBoolean("duplex", true) && modeIsRealtime()
-        c.continuous = false   // Walkie PTT: one turn, then stop until the next push
-        c.setVoiceChannelOpen(true)   // a PTT talk opens the voice channel -> replies may speak
-        c.start(listener, duplex)
     }
 
     private val listener = object : VoiceController.Listener {
@@ -527,7 +468,7 @@ class MainActivity : AppCompatActivity() {
                     "/reset" -> {
                         liveController?.stop(); liveController = null
                         session?.resetConversation()
-                        input.text.clear(); replyBuf = ""; reply.setText("")
+                        replyBuf = ""; reply.setText("")
                         avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
                     }
                     else         -> showHelpCard()   // /help
@@ -671,15 +612,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
-    // Bottom "Realtime" button = toggle the Voice-mode (Realtime/Enhanced <-> Walkie),
-    // keeping it consistent with the Settings Voice-mode toggle (not a separate screen).
-    private fun toggleRealtimeMode() {
-        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
-        val next = if (mode == ModelCatalog.MODE_WALKIE) ModelCatalog.MODE_REALTIME else ModelCatalog.MODE_WALKIE
-        prefs.edit().putString(ModelCatalog.KEY_VOICE_MODE, next).apply()
-        applyVoiceMode(); handleModeUi()
-    }
-
     // Presence (default) vs Conversation — user-facing Fork-2 customization
     // (a11y: Conversation gives a persistent, readable transcript instead of the
     // fading crawl). Persisted via Settings layout_mode (presence|conversation).
@@ -694,25 +626,6 @@ class MainActivity : AppCompatActivity() {
         if (conversation.visibility == View.VISIBLE) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
     }
 
-    // Voice mode: Realtime / Enhanced Realtime (hands-free open line + keyboard)
-    // vs Walkie Talkie (PTT + SEND buttons). Per Christopher, 2026-08-26.
-    private fun applyVoiceMode() {
-        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
-        val walkie = mode == ModelCatalog.MODE_WALKIE
-        findViewById<View>(R.id.mic).visibility = if (walkie) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.send).visibility = if (walkie) View.VISIBLE else View.GONE
-        input.visibility = if (walkie) View.VISIBLE else View.GONE
-        val realtimeLike = !walkie
-        findViewById<android.view.View>(R.id.call).visibility = if (realtimeLike) android.view.View.VISIBLE else android.view.View.GONE
-        findViewById<android.view.View>(R.id.realtime).visibility = if (walkie) android.view.View.VISIBLE else android.view.View.GONE
-        findViewById<android.widget.Button>(R.id.realtime).text = "Realtime"
-        updateCallButton()
-        // inline voice toggle (walkie): speak responses on/off
-        findViewById<View>(R.id.walkie_voice_toggle)?.visibility = if (walkie) View.VISIBLE else View.GONE
-        val vs = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.walkie_voice_toggle)
-        if (vs != null) { vs.isChecked = prefs.getBoolean("speak_responses", true) }
-    }
-
     private fun appendStream(line: String) {
         if (stream.visibility == View.GONE) return   // dev console off
         sseBuf = (sseBuf + "\n" + line).trim().takeLast(1600)
@@ -723,8 +636,8 @@ class MainActivity : AppCompatActivity() {
     // "materializing presence" feel. The being is NOT alpha-gated here — it
     // self-animates and must never be hidden by the staging.
     private fun stageEntrance() {
-        val rows = listOf<View>(findViewById(R.id.crawl_area), input,
-            findViewById(R.id.settings))
+        val rows = listOf<View>(findViewById(R.id.crawl_area),
+            findViewById(R.id.call), findViewById(R.id.settings))
         rows.forEachIndexed { i, v ->
             v.alpha = 0f; v.translationY = dp(24f)
             v.animate().alpha(1f).translationY(0f)
@@ -743,8 +656,10 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny() } }
 
+    // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
+    // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
     private fun handleModeUi() {
-        applyLayoutMode(); applyVoiceMode()
+        applyLayoutMode()
         val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
         if (mode == ModelCatalog.MODE_ENHANCED) {
             val g = express as? GemmaExpress

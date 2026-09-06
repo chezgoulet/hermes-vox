@@ -78,67 +78,6 @@
         </ScrollView>
     </FrameLayout>
 
-    <!-- Walkie inline voice toggle (speak responses on/off) -->
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/walkie_voice_toggle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="Voice reply"
-        android:textColor="@color/hv_text"
-        android:textSize="13sp"
-        android:visibility="gone" />
-
-    <!-- Input row -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-        <EditText
-            android:id="@+id/input"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@drawable/bg_input"
-            android:hint="@string/hv_input_hint"
-            android:imeOptions="actionSend"
-            android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="1"
-            android:padding="12dp"
-            android:textColor="@color/hv_text"
-            android:textColorHint="@color/hv_text_dim"
-            android:textSize="16sp" />
-        <Button
-            android:id="@+id/mic"
-            android:layout_width="72dp"
-            android:layout_height="@dimen/mic_size"
-            android:layout_marginStart="10dp"
-            android:background="@drawable/bg_mic"
-            android:elevation="6dp"
-            android:gravity="center"
-            android:text="PTT"
-            android:textColor="@color/hv_bg"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:visibility="gone"
-            android:contentDescription="Push to talk" />
-        <Button
-            android:id="@+id/send"
-            android:layout_width="56dp"
-            android:layout_height="@dimen/mic_size"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_button_primary"
-            android:elevation="4dp"
-            android:text="SEND"
-            android:textColor="@color/hv_bg"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:visibility="gone"
-            android:contentDescription="Send text" />
-    </LinearLayout>
-
     <!-- Call timer (real-time/enhanced, visible only while the call is live) -->
     <TextView
         android:id="@+id/call_timer"
@@ -153,7 +92,7 @@
         android:visibility="gone"
         android:text="00:00" />
 
-    <!-- Secondary actions: gear (left) · realtime (center toggle) · commands (right) -->
+    <!-- Secondary actions: gear (left) · call/hang-up (center) · commands (right) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -184,20 +123,7 @@
             android:text="✆"
             android:textSize="24sp"
             android:textColor="@color/hv_cyan"
-            android:visibility="gone"
             android:contentDescription="Start call" />
-
-        <Button
-            android:id="@+id/realtime"
-            style="@style/HvGhostButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_button_ghost"
-            android:paddingHorizontal="18dp"
-            android:text="Realtime"
-            android:textColor="@color/hv_text"
-            android:textAllCaps="false"
-            android:contentDescription="Realtime call" />
         <Space
             android:layout_width="0dp"
             android:layout_height="wrap_content"
