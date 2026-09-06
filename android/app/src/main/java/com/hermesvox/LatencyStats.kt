@@ -12,6 +12,12 @@ object LatencyStats {
     private val stt = ArrayList<Long>()
     private const val MAX = 128L
     private var turns = 0L
+    // C3 session hygiene (measurement only — NO truncation/summarization behavior):
+    // turns counted since the last resetConversation / new call, surfaced on every
+    // event=turn so gateway context creep is visible in field logs. MainActivity
+    // calls resetSessionTurns() beside every session.resetConversation() (the sites
+    // where a conversation is born); summaryLines increments it per completed turn.
+    private var sessionTurns = 0L
     // Per-turn last values: set by each push*, cleared after each summary emit.
     // Default -1L renders as "-" (no metric this turn).
     private var turnStt = -1L
@@ -26,15 +32,21 @@ object LatencyStats {
 
     private fun trim(l: ArrayList<Long>) { while (l.size > MAX) l.removeAt(0) }
 
+    /** Zero the per-session turn count. Called by the host beside every
+     *  session.resetConversation() (a new call / new conversation). */
+    fun resetSessionTurns() { synchronized(lock) { sessionTurns = 0L } }
+
     fun log(label: String, outcome: String, gen: Long) {
         summaryLines(label, outcome, gen).forEach { VoxLog.d(it) }
     }
 
     internal fun summaryLines(label: String, outcome: String, gen: Long): List<String> = synchronized(lock) {
         turns++
+        sessionTurns++   // C3: cumulative turns since the last resetConversation/new call
         val out = ArrayList<String>()
         out += "event=turn label=$label gen=$gen outcome=$outcome stt=${fmt(turnStt)} " +
-               "firstByte=${fmt(turnFirstByte)} firstAudio=${fmt(turnFirstAudio)} fullReply=${fmt(turnFullReply)}"
+               "firstByte=${fmt(turnFirstByte)} firstAudio=${fmt(turnFirstAudio)} fullReply=${fmt(turnFullReply)} " +
+               "session_turns=$sessionTurns"
         turnStt = -1L; turnFirstByte = -1L; turnFirstAudio = -1L; turnFullReply = -1L
         if (turns % 8L == 0L) {
             out += "event=lat label=$label metric=first-byte p50=${pct(firstByte,0.50)} p95=${pct(firstByte,0.95)} n=${firstByte.size}"
@@ -47,6 +59,6 @@ object LatencyStats {
     }
     private fun fmt(v: Long) = if (v < 0L) "-" else v.toString()
     internal fun windowCounts(): IntArray = synchronized(lock) { intArrayOf(firstByte.size, firstAudio.size, fullReply.size, stt.size) }
-    fun reset() { synchronized(lock) { firstByte.clear(); firstAudio.clear(); fullReply.clear(); stt.clear(); turns = 0 } }
+    fun reset() { synchronized(lock) { firstByte.clear(); firstAudio.clear(); fullReply.clear(); stt.clear(); turns = 0; sessionTurns = 0 } }
     private fun pct(l: List<Long>, p: Double): Long { if (l.isEmpty()) return 0L; val s = l.sorted(); return s[(s.size - 1).toDouble().times(p).toInt()] }
 }

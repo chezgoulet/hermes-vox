@@ -77,6 +77,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     // Default false = a reply with no open voice channel is TEXT-ONLY (fixes the
     // slash-command-speaks-with-no-call bug).
     @Volatile private var voiceChannelOpen = false
+    // C3 audio-focus pause (owner: MainActivity — see acquireVoiceFocus()). A focus
+    // LOSS silences the in-flight turn (silenceAll, the ONE cancel path) and sets
+    // this flag so the capture loop holds the mic CLOSED (loop stays armed) until
+    // the host clears it on AUDIOFOCUS_GAIN. It is NOT stop(): the fg service + the
+    // call stay live so the user can re-accept with one tap.
+    @Volatile private var focusPause = false
     private var warmTries = 0
     @Volatile private var listening = false
     private var listener: Listener? = null
@@ -226,6 +232,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                 while (listening) {
                     loopActive = true
                     commitRequested = false
+                    // C3 focus-loss pause: hold the mic closed (but keep the loop
+                    // armed) until the host clears the flag on AUDIOFOCUS_GAIN — the
+                    // controller is never stopped here (the call stays one tap away).
+                    while (listening && focusPause) android.os.SystemClock.sleep(200L)
+                    if (!listening) break
                     try { r.startRecording() } catch (_: Throwable) { break }
                     // #28: listener callbacks must land on the main thread (the
                     // documented contract) — the capture loop runs on the executor.
@@ -244,7 +255,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val partialEnabled = micBool("partial_stt", true)
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
                     var earlyStartText: String? = null
-                    while (listening && !commitRequested && earlyStartText == null) {
+                    while (listening && !commitRequested && earlyStartText == null && !focusPause) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
                         val frames = FloatArray(n)
@@ -284,7 +295,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // #38 partial STT: on a SEPARATE worker (never block capture),
                         // snapshot a bounded tail + transcribe; start the turn EARLY on
                         // a stable partial (unchanged hypothesis + a >=450ms pause).
-                        if (partialEnabled && inSpeech && !turnInFlight &&
+                        if (partialEnabled && inSpeech && !turnInFlight && !focusPause &&
                             android.os.SystemClock.uptimeMillis() - lastPartialMs >= 900 &&
                             seg.size >= (sr * minSpeechMs / 1000)) {
                             lastPartialMs = android.os.SystemClock.uptimeMillis()
@@ -311,6 +322,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                             }
                         }
                     }
+                    // C3: a focus loss that lands mid-capture closes the mic NOW (no
+                    // transcribe delay) and parks the loop at the pause guard above.
+                    if (focusPause) {
+                        try { r.stop() } catch (_: Throwable) {}
+                        continue
+                    }
                     // B1 single-capture: r STAYS recording through the transcribe + the
                     // turn gate so its VOICE_COMMUNICATION AEC/NS session is the echo
                     // reference while the reply plays (no second recorders). Frames
@@ -326,7 +343,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // Noise / no-speech / non-speech (static/buzzing/[SOUND]) + too-short
                     // fragments: stop r (it must be stopped before the next startRecording)
                     // and keep listening.
-                    if (t.isBlank() || t.length < 3 || t.startsWith("[") || t.startsWith("(")) {
+                    if (focusPause || t.isBlank() || t.length < 3 || t.startsWith("[") || t.startsWith("(")) {
                         try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
@@ -951,6 +968,24 @@ class VoiceController(private val context: Context, private val session: HermesS
         // + synchronous gate release).
         silenceAll("hush")
         listener?.onLog("// (stopped)")
+        if (listening) listener?.onState("listening")
+    }
+
+    /** C3 focus-loss pause (owner: MainActivity — its AUDIOFOCUS_LOSS hook). Silences
+     *  the current reply/stream through silenceAll (the ONE cancel path — not new stop
+     *  logic) and parks the mic: the capture loop holds closed until the flag clears.
+     *  The foreground service + call are NOT stopped (the user can re-accept the call
+     *  later with one tap; an interrupted reply is NOT auto-resumed on GAIN). */
+    fun pauseForFocusLoss() {
+        focusPause = true
+        silenceAll("focus-loss")
+    }
+
+    /** C3 focus-loss resume (owner: MainActivity — its AUDIOFOCUS_GAIN hook). Clears
+     *  the pause so the armed loop re-opens the mic for a FRESH turn window. The old
+     *  reply was already cut by pauseForFocusLoss's silenceAll and stays cut. */
+    fun resumeFromFocusLoss() {
+        focusPause = false
         if (listening) listener?.onState("listening")
     }
 

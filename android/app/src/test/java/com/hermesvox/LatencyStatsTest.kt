@@ -61,4 +61,19 @@ class LatencyStatsTest {
         LatencyStats.reset()
         assertArrayEquals(intArrayOf(0, 0, 0, 0), LatencyStats.windowCounts())
     }
+
+    @Test fun session_turns_counts_since_reset() {
+        LatencyStats.reset()
+        // C3: event=turn carries a per-session cumulative count, reset only where the
+        // host calls resetConversation (resetSessionTurns beside those call sites).
+        val one = LatencyStats.summaryLines("turn", "stream-done", 1L)
+        assertTrue(one[0], one[0].contains("session_turns=1"))
+        val two = LatencyStats.summaryLines("turn", "stream-done", 2L)
+        assertTrue(two[0], two[0].contains("session_turns=2"))
+        val three = LatencyStats.summaryLines("turn", "stream-done", 3L)
+        assertTrue(three[0], three[0].contains("session_turns=3"))
+        LatencyStats.resetSessionTurns()   // what MainActivity does beside resetConversation
+        val again = LatencyStats.summaryLines("turn", "stream-done", 4L)
+        assertTrue(again[0], again[0].contains("session_turns=1"))
+    }
 }

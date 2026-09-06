@@ -151,6 +151,7 @@ class MainActivity : AppCompatActivity() {
         val s = session ?: run { setStatus("Connect first", true); return }
         if (callLive) return
         s.resetConversation()
+        LatencyStats.resetSessionTurns()   // C3: a new call is a fresh session (session_turns counts from here)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             if (!callStartPending) {
                 callStartPending = true
@@ -169,6 +170,13 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
+        openVoiceLine(s)
+    }
+
+    /** Warm-gated "open the voice line" composition — shared by a fresh call start
+     *  and the C3 route-change rebuild (both are start()/stop() compositions; no
+     *  new engine code). The caller has already done the reset/permission checks. */
+    private fun openVoiceLine(s: HermesSession) {
         val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
         c.attachListeners(listener)
         if (!ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)) {
@@ -179,7 +187,7 @@ class MainActivity : AppCompatActivity() {
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
                 setStatus("Warming up\u2026", true)
-                mainHandler.postDelayed({ if (!isFinishing) startCall() }, 500)
+                mainHandler.postDelayed({ if (!isFinishing) openVoiceLine(s) }, 500)
                 return
             }
             warmRetries = 0
@@ -196,6 +204,13 @@ class MainActivity : AppCompatActivity() {
         // land in a half-started window (callLive is true before the loop opens).
         VoiceService.start(this)
         acquireVoiceWake()
+        // C3 H1: request audio focus the moment the wake lock is acquired (same
+        // lifecycle); abandon runs beside every wake-lock release below. Focus is
+        // process-lifetime once granted, so a rebuild/route change re-entry is a no-op.
+        acquireVoiceFocus()
+        // C3 H2: route changes (BT/USB/wired headset) mid-call rebuild capture+playback
+        // so both halves re-attach to the new default route. Registered per call open.
+        registerRouteCallback()
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
@@ -208,10 +223,13 @@ class MainActivity : AppCompatActivity() {
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
         callLive = false
+        mainHandler.removeCallbacks(routeRebuildTask)
         callHandler.removeCallbacks(callTicker)
         liveController?.setVoiceChannelOpen(false)
         liveController?.stop(); liveController = null
         stopVoiceWake()
+        releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
+        unregisterRouteCallback()  // C3: route callback lives exactly as long as the call
         VoiceService.stop(this)
         exitCallUi()
         setStatus(getString(R.string.hv_connected), false)
@@ -292,6 +310,195 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) { VoxLog.e("event=wake-acquire-failed err=${e.message}") }
     }
 
+    // ---------------------------------------------------------------------------
+    // C3 H1 — AUDIO FOCUS. FOCUS OWNER = MainActivity, deliberately NOT
+    // VoiceController: audio focus is a CALL-scoped resource. It is requested here,
+    // at call start, next to the wake-lock acquisition, and abandoned in the exact
+    // paths that release the wake lock today (endCall / newSession /
+    // resetActiveConversation / onStop-no-call), so request and abandon can never
+    // drift out of step. VoiceController.start()/stop() are the audio-engine warm +
+    // teardown hooks, not call boundaries (the warm-retry loop and /clear also call
+    // them), so tying focus there would leak or drop it out of sync with the wake
+    // lock — and the >30s-loss hang-up must run the call state machine (endCall),
+    // which only MainActivity owns. The controller stays the single audio owner for
+    // the MIC/Speaker; focus just tells it when to pause (pauseForFocusLoss) and
+    // resume (resumeFromFocusLoss) via the ONE silenceAll cancel path.
+    // ---------------------------------------------------------------------------
+    private var focusListener: android.media.AudioManager.OnAudioFocusChangeListener? = null
+    private var focusRequest: android.media.AudioFocusRequest? = null
+    @Volatile private var focusHeld = false
+    @Volatile private var focusPauseActive = false
+    private var focusLostAtMs = 0L
+    private val C3_FOCUS_RESUME_MS = 30_000L   // >30s of focus loss -> hang up, no zombie mic
+
+    private fun acquireVoiceFocus() {
+        if (focusHeld) return
+        try {
+            if (focusListener == null) {
+                focusListener = android.media.AudioManager.OnAudioFocusChangeListener { change ->
+                    runOnUiThread { onAudioFocusChange(change) }
+                }
+            }
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            val attrs = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            val res: Int
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attrs)
+                    .setOnAudioFocusChangeListener(focusListener!!)
+                    .build()
+                focusRequest = req
+                res = am.requestAudioFocus(req)
+            } else {
+                // Pre-O: no AudioFocusRequest — request through the same listener on the
+                // voice-call stream (the SPEECH content-type attribution is an O+ concept).
+                res = am.requestAudioFocus(focusListener, android.media.AudioManager.STREAM_VOICE_CALL, android.media.AudioManager.AUDIOFOCUS_GAIN)
+            }
+            focusHeld = res == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            focusPauseActive = false
+            focusLostAtMs = 0L
+            VoxLog.d("event=focus-acquire result=${if (focusHeld) "granted" else "denied"}")
+        } catch (e: Exception) { VoxLog.e("event=focus-acquire-failed err=${e.message}") }
+    }
+
+    private fun releaseVoiceFocus() {
+        if (!focusHeld && focusRequest == null && focusListener == null) return
+        try {
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val req = focusRequest
+                if (req != null) am.abandonAudioFocusRequest(req) else focusListener?.let { am.abandonAudioFocus(it) }
+            } else {
+                focusListener?.let { am.abandonAudioFocus(it) }
+            }
+            if (focusHeld) VoxLog.d("event=focus released")
+        } catch (_: Exception) {}
+        focusRequest = null
+        focusListener = null
+        focusHeld = false
+        focusPauseActive = false
+        focusLostAtMs = 0L
+    }
+
+    /** C3 H1 focus-loss/resume dispatch. LOSS and LOSS_TRANSIENT silence the current
+     *  reply + pause listening (the interrupt is treated like a fresh-turn window on
+     *  GAIN, never an auto-resumed reply). CAN_DUCK is treated as a transient loss too:
+     *  TTS ducking is unavailable on the single-track writer, so silence beats garble
+     *  (logged distinctly). The foreground service is NOT stopped — one tap re-accepts.
+     *  GAIN after >30s of loss ends the call through the existing hang-up path instead
+     *  of re-arming a stale mic. */
+    private fun onAudioFocusChange(change: Int) {
+        when (change) {
+            android.media.AudioManager.AUDIOFOCUS_LOSS,
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                if (!callLive) return   // late loss after the call already ended
+                focusPauseActive = true
+                focusLostAtMs = android.os.SystemClock.elapsedRealtime()
+                val kind = if (change == android.media.AudioManager.AUDIOFOCUS_LOSS) "loss" else "transient"
+                VoxLog.d("event=focus-change state=loss kind=$kind")
+                liveController?.pauseForFocusLoss()
+            }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                if (!callLive) return
+                focusPauseActive = true
+                focusLostAtMs = android.os.SystemClock.elapsedRealtime()
+                VoxLog.d("event=focus-change state=loss kind=can-duck")
+                liveController?.pauseForFocusLoss()
+            }
+            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                if (!focusPauseActive) return   // spurious GAIN (fresh request): nothing to resume
+                focusPauseActive = false
+                val lostMs = if (focusLostAtMs > 0L) android.os.SystemClock.elapsedRealtime() - focusLostAtMs else 0L
+                focusLostAtMs = 0L
+                if (lostMs > C3_FOCUS_RESUME_MS) {
+                    VoxLog.d("event=focus-change state=resume action=hangup reason=over-${C3_FOCUS_RESUME_MS}ms lostMs=$lostMs")
+                    endCall()
+                } else {
+                    VoxLog.d("event=focus-change state=resume lostMs=$lostMs")
+                    liveController?.resumeFromFocusLoss()
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // C3 H2 — AUDIO DEVICE ROUTE CHANGES. Registered per call open, unregistered on
+    // stop (the same wake/focus release paths). When a BT/USB/wired headset appears
+    // or disappears mid-call, capture + playback re-attach to the new default route
+    // with a fresh-call composition: stop the old controller -> 250ms -> openVoiceLine
+    // (start). No SCO routing is added (out of scope): VOICE_COMMUNICATION capture
+    // follows whatever route the platform keeps.
+    // ---------------------------------------------------------------------------
+    @Volatile private var routeCallbackRegistered = false
+    @Volatile private var routeRebuildScheduled = false
+    private val routeRebuildTask = object : Runnable {
+        override fun run() {
+            routeRebuildScheduled = false
+            val s = session ?: return
+            val old = liveController ?: return
+            if (!callLive) return
+            VoxLog.d("event=audio-route action=stop-old-line")
+            old.setVoiceChannelOpen(false)
+            old.stop()
+            liveController = null
+            // 250ms: let the old AudioRecord/AudioTrack fully detach before the fresh
+            // composition re-opens (both halves re-init against the new default route).
+            mainHandler.postDelayed({
+                if (!callLive) return@postDelayed
+                VoxLog.d("event=audio-route action=start-new-line")
+                openVoiceLine(s)
+            }, 250L)
+        }
+    }
+    private val audioDeviceCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>?) { onRouteDevicesChanged(added) }
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>?) { onRouteDevicesChanged(removed) }
+    }
+
+    /** Route callback fires for ANY device change; only the headset-family matters.
+     *  A BT headset commonly reports A2DP first (SCO appears only when the platform
+     *  opens it for VOICE_COMMUNICATION), so A2DP is included alongside SCO —
+     *  otherwise the common connect/disconnect case would never trigger a rebuild. */
+    private fun onRouteDevicesChanged(devices: Array<out android.media.AudioDeviceInfo>?) {
+        if (!callLive || routeRebuildScheduled) return   // a rebuild is already queued
+        val types = devices?.mapNotNull { deviceTypeName(it.type) }?.distinct().orEmpty()
+        if (types.isEmpty()) return
+        VoxLog.d("event=audio-route devices=${types.joinToString("+")}")
+        routeRebuildScheduled = true
+        mainHandler.post(routeRebuildTask)
+    }
+
+    private fun deviceTypeName(t: Int): String? = when (t) {
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "BT_SCO"
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BT_A2DP"
+        android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> "USB_HEADSET"
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> "WIRED_HEADSET"
+        else -> null
+    }
+
+    private fun registerRouteCallback() {
+        if (routeCallbackRegistered) return
+        try {
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
+            routeCallbackRegistered = true
+            VoxLog.d("event=audio-route registered")
+        } catch (e: Exception) { VoxLog.e("event=audio-route-register-failed err=${e.message}") }
+    }
+
+    private fun unregisterRouteCallback() {
+        if (!routeCallbackRegistered) return
+        try {
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.unregisterAudioDeviceCallback(audioDeviceCallback)
+            routeCallbackRegistered = false
+            VoxLog.d("event=audio-route unregistered")
+        } catch (e: Exception) { VoxLog.e("event=audio-route-unregister-failed err=${e.message}") }
+    }
+
     // The entity API key is encrypted at rest (Keystore); legacy plaintext
     // decrypts as-is. C0: user-entered ONLY — GatewayKey.resolve never falls back
     // to a baked/default key; blank or undecryptable storage resolves to "".
@@ -329,10 +536,13 @@ class MainActivity : AppCompatActivity() {
          *  Settings "New conversation" clears the same context an active call sees. */
         fun resetActiveConversation() {
             session?.resetConversation()
+            LatencyStats.resetSessionTurns()   // C3: a reset conversation is a fresh session
             liveController?.setVoiceChannelOpen(false)
             liveController?.stop()
             liveController = null
             active?.stopVoiceWake()   // #13: conversation reset ends the call -> release the wake lock
+            active?.releaseVoiceFocus()
+            active?.unregisterRouteCallback()
             active?.clearConversationUi()
         }
     }
@@ -386,6 +596,7 @@ class MainActivity : AppCompatActivity() {
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             s.resetConversation()
+            LatencyStats.resetSessionTurns()   // C3: first-use controller = fresh session
         }
         c.attachListeners(listener)
         c.sendText(text)
@@ -468,6 +679,7 @@ class MainActivity : AppCompatActivity() {
                     "/reset" -> {
                         liveController?.stop(); liveController = null
                         session?.resetConversation()
+                        LatencyStats.resetSessionTurns()   // C3: cleared conversation = fresh session
                         replyBuf = ""; reply.setText("")
                         avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
                     }
@@ -536,6 +748,7 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             toast(if (ok) "Model set -> $prov/$modelId" else "Couldn't set the model")
                             s.resetConversation()   // re-init the session under the new backend
+                            LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
                             sesModel = modelId; sesProvider = prov
                             agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { modelId }.uppercase()
                         }
@@ -573,11 +786,14 @@ class MainActivity : AppCompatActivity() {
             kotlin.concurrent.thread {
                 try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
                 s.resetConversation()   // then drop the client chain + lastID
+                LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
             }
         }
         liveController?.setVoiceChannelOpen(false)
         liveController?.stop(); liveController = null
         stopVoiceWake()
+        releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
+        unregisterRouteCallback()  // C3: no line -> no route rebuilds
         clearConversationUi()
         setStatus("New session started", true)
     }
@@ -711,6 +927,8 @@ class MainActivity : AppCompatActivity() {
             liveController?.stop()
             liveController = null   // #19: stopped controller is terminal (exec shut down) — never re-arm it
             stopVoiceWake()         // #13: no active call -> drop the wake lock (no Doze hold)
+            releaseVoiceFocus()     // C3: abandon symmetrically with the wake-lock release
+            unregisterRouteCallback()
             VoiceService.stop(this)
         }
     }
