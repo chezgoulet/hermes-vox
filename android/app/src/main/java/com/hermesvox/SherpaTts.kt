@@ -29,6 +29,13 @@ class SherpaTts(private val context: Context) : VoxTts {
     // waits for an in-flight write to clear before pause/stop/flush/release.
     private val trackLock = Object()
     @Volatile private var writing = false
+    // #D1 immediate-silence fence: a chunk may play ONLY while the stream is
+    // started AND not stopped. stopStreaming() closes the fence BEFORE nulling
+    // the track, so a synth worker that keeps iterating after a barge/hush/hangup
+    // sees streamChunk() return false and CANNOT resurrect a playback track (the
+    // null-track "first chunk" rebuild that kept the reply going up to 4s after
+    // the cut). Pure + unit-tested (StreamFence) so the ordering is proven.
+    private val streamFence = StreamFence()
     override val name: String get() = "Piper"
     override val isWarm: Boolean get() = tts != null
     override val supportsStreaming: Boolean get() = isWarm
@@ -37,13 +44,16 @@ class SherpaTts(private val context: Context) : VoxTts {
 
     private val dir get() = File(context.filesDir, "models/piper-lessac")
 
-    /** `tts_voice_usage` kill-switch (default true): route the playback AudioTracks
+    /** `tts_voice_usage` kill-switch (default false): route the playback AudioTracks
      *  through USAGE_VOICE_COMMUNICATION so the VOICE_COMMUNICATION capture's platform
      *  AEC has a proper echo reference for barge-in. false = the old USAGE_MEDIA
      *  attributes. This is a per-track USAGE attribute, NOT the MODE_IN_COMMUNICATION
-     *  global toggle that the handoff lesson warned broke playback. */
+     *  global toggle that the handoff lesson warned broke playback.
+     *  Default OFF — field A/B 2026-09-06: OFF = loud volume AND working barge (single
+     *  capture + double gate); ON = incall-quiet on Pixel. The toggle stays for leaky
+     *  devices. */
     private fun voiceUsage(): Boolean =
-        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("tts_voice_usage", true)
+        context.getSharedPreferences("hv", android.content.Context.MODE_PRIVATE).getBoolean("tts_voice_usage", false)
 
     private fun speechAttributes(): AudioAttributes = AudioAttributes.Builder()
         .setUsage(if (voiceUsage()) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA)
@@ -147,6 +157,7 @@ class SherpaTts(private val context: Context) : VoxTts {
     fun startStreaming() {
         try {
             synchronized(trackLock) {
+                streamFence.start()   // #D1: open the fence — chunks may play again
                 streamTrack = null
                 streamWritten = 0
                 streamSR = 0
@@ -172,6 +183,7 @@ class SherpaTts(private val context: Context) : VoxTts {
     /** Synthesize a chunk + append it to the persistent track (built at the first chunk's
      *  actual rate). Writing each chunk into ONE track keeps the speech continuous. */
     fun streamChunk(text: String): Boolean {
+        if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
         val eng = tts ?: return false
         return try {
             val audio = eng.generate(text, 0, voiceSpeed)
@@ -179,6 +191,10 @@ class SherpaTts(private val context: Context) : VoxTts {
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
             synchronized(trackLock) {
+                // #D1: re-check under the lock — a stop that landed while we were
+                // synthesizing closed the fence, so a null track here must NOT be
+                // treated as "first chunk" (that rebuild is the resurrection bug).
+                if (!streamFence.allowed) return false
                 if (streamTrack == null) {
                     val built = buildStreamTrack(sr)
                     streamTrack = built; streamWritten = 0
@@ -197,6 +213,7 @@ class SherpaTts(private val context: Context) : VoxTts {
 
     /** Wait for the whole reply to play out, then release the persistent track. */
     fun finishStreaming(timeoutMs: Int = 120000) {
+        if (!streamFence.allowed) return          // #D1: stopped — nothing left to play out or release
         val t = streamTrack ?: return
         try {
             var waited = 0
@@ -210,8 +227,9 @@ class SherpaTts(private val context: Context) : VoxTts {
     fun stopStreaming() {
         val t: AudioTrack?
         synchronized(trackLock) {
-            t = streamTrack
-            streamTrack = null                       // fence: no new write may start
+            streamFence.stop()                   // #D1: close the fence BEFORE nulling the track —
+            t = streamTrack                      // no chunk may start (or rebuild) after this point
+            streamTrack = null                   // fence: no new write may start
             while (writing) { try { trackLock.wait(50) } catch (_: Throwable) { break } }
         }
         try { t?.pause() } catch (_: Throwable) {}   // stop might block on a full buffer in some builds
