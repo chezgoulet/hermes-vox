@@ -48,7 +48,11 @@ class BargeGateTest {
     }
 
     @Test fun defaults_match_the_spec() {
-        assertEquals(0.15f, BargeGate.DEFAULT_RMS_MIN, 0.0f)
+        // 0.3.32.1 field log: real user speech lands rms 0.15-0.17, so the old 0.15
+        // floor ate the user's own barge-in (echo levels 0.153-0.172 overlapped it).
+        // Default lowered to 0.10 — still below real speech; the VAD agreement +
+        // 200ms sustain remain the echo defense. assert 0.10, not 0.15.
+        assertEquals(0.10f, BargeGate.DEFAULT_RMS_MIN, 0.0f)
         assertEquals(500, BargeGate.DEFAULT_GRACE_MS)
         assertEquals(200L, BargeGate.VAD_SUSTAIN_MS)
         assertEquals(350L, BargeGate.NO_VAD_SUSTAIN_MS)

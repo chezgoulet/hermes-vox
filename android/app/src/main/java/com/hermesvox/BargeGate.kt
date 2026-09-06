@@ -26,7 +26,7 @@ package com.hermesvox
 object BargeGate {
 
     /** `barge_rms_min` pref default: RMS floor for a barge candidate with VAD. */
-    const val DEFAULT_RMS_MIN = 0.15f
+    const val DEFAULT_RMS_MIN = 0.10f
 
     /** `barge_grace_ms` pref default: playback grace before checks resume. */
     const val DEFAULT_GRACE_MS = 500
