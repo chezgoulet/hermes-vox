@@ -144,6 +144,17 @@ offline). Point the app at your Hermes gateway; the entity is your agent.
   trade; use TLS if a host is ever public).
 - The entity connector uses Bearer auth; no secrets in the repo.
 
+## Privacy
+
+- **A user-managed private network is assumed.** Vox speaks HTTP + bearer auth to
+  your Hermes gateway address, so it is safe only over a private network you
+  control — a VPN/tunnel such as **Tailscale** or **Nebula** (Vox suggests, never
+  requires, a specific product). Without one, your API key and audio travel over
+  plain HTTP and can be read by anyone on the path.
+- Hermes Vox never transmits your audio anywhere except your own Hermes gateway.
+  Speech processing is on-device (Whisper STT, Silero VAD, Piper TTS); the only
+  network destinations are endpoints you configure in the app.
+
 ## Status
 
 The MVP is installable + the design language, pipeline, orchestration, and

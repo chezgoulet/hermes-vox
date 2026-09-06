@@ -4,6 +4,8 @@
     <string name="hv_tag">A Voice for Hermes Agent</string>
     <string name="hv_sub">enter the credentials for your hermes agent instance</string>
     <string name="hv_connect_verify">Connect &amp; verify</string>
+    <string name="hv_onboard_network">Network: Vox expects you to reach your Hermes gateway over a private network you control (Tailscale and Nebula are good options). Without one, your API key and audio travel over plain HTTP.</string>
+    <string name="hv_set_network_note">Private network (VPN/tunnel, e.g. Tailscale or Nebula) assumed — key + audio use plain HTTP otherwise.</string>
     <string name="hv_skip">I already have a session</string>
     <string name="hv_url_hint">Entity endpoint  ·  http://…</string>
     <string name="hv_key_hint">API key  ·  user-entered, never stored in the app</string>
