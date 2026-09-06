@@ -10,12 +10,14 @@
   (speaker echo at rms~0.16) should no longer end a reply. Playback AudioTracks are
   routed as `USAGE_VOICE_COMMUNICATION` speech so the platform AEC has a real echo
   reference (`tts_voice_usage` kill-switch, default true).
-- **VAD-extended endpointing** (B2): an utterance is no longer chopped at
-  `vad_max_ms` (15s) mid-speech. The silence-break rule (800ms) still ends turns as
-  before; only when the user is *still talking* past `vad_max_ms` does the segment
-  extend toward `vad_max_hard_ms` (60s), logging one
-  `event=endpoint-extended ms=$elapsedMs`. A 15-25s continuous ramble now transcribes
-  in full.
+- **Talk-until-you're-done endpointing** (B2, revised): an utterance is no longer
+  chopped at `vad_max_ms` (15s) mid-speech. Turn ends are driven by YOUR natural
+  pause (800ms silence break, unchanged). A still-talking speaker is never cut:
+  past `vad_max_ms` the segment simply continues, logging one
+  `event=endpoint-extended ms=$elapsedMs`. There is NO absolute time ceiling by
+  default — `vad_max_hard_ms` ships disabled (0); set it positive only as an
+  opt-in crash-guard for noisy environments where the VAD never releases.
+  A 15-25s ramble — or a 10-minute dictation — now transcribes in full.
 - **Chat connector model/provider parity** (B3): the send-text chat path now sends
   the `provider` alongside `model` (mirroring the voice responses connector), so a
   provider-qualified switch — e.g. `/models` → `deepseek-v4-flash` — is honored by
