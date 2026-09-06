@@ -185,7 +185,10 @@ class SherpaTts(private val context: Context) : VoxTts {
     }
 
     /** Synthesize a chunk + append it to the persistent track (built at the first chunk's
-     *  actual rate). Writing each chunk into ONE track keeps the speech continuous. */
+     *  actual rate). Writing each chunk into ONE track keeps the speech continuous. Each
+     *  chunk is sliced into ~2s sub-writes with a fence check before every slice, so a
+     *  stop that lands mid-chunk exits between sub-writes instead of draining the whole
+     *  sentence's WRITE_BLOCKING write (F2: bounds the drain-wait to ~2s). */
     fun streamChunk(text: String): Boolean {
         if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
         val eng = tts ?: return false
@@ -210,8 +213,18 @@ class SherpaTts(private val context: Context) : VoxTts {
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
             VoxLog.d("piper chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
-            try { t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING); streamWritten += samples.size; true }
-            finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
+            try {
+                val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
+                var at = 0
+                while (at < samples.size) {
+                    if (!streamFence.allowed) return false   // F2: stop between sub-writes exits fast
+                    val n = minOf(twoSec, samples.size - at)
+                    t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
+                    at += n
+                }
+                streamWritten += samples.size
+                true
+            } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
         } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
     }
 
