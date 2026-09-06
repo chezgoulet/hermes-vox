@@ -68,3 +68,22 @@
   history growth is visible in field logs. Measurement only — no truncation or
   summarization yet (no defensive limit without data).
 
+## Log honesty (C4 — firstAudio at real audio, bounded VoxLog)
+
+- **`firstAudio` now means what its name says.** It was pushed on the first *text*
+  delta, overstating-to-misstating when audio actually started. `event=turn` now
+  records `firstText=` (first text delta) and keeps `firstAudio=` pushed only when
+  the first real audible streamed-TTS write of a turn completes — a genuine audio
+  milestone, measured from the same launch origin as `firstByte`/`firstText`.
+  ⚠ **Field numbers are NOT comparable across versions:** any `firstAudio=` quoted
+  before this change (in earlier 0.4.0 betas or the 5118/19348/29962ms values in
+  the C4 spec) measured text, not audio, so treat pre- and post-C4 values as
+  different quantities. A text-only turn (voice channel closed / non-streaming
+  engine) now honestly reports `firstAudio=-` instead of a text latency in disguise.
+- **The runtime log is bounded.** `hermes-vox.log` is capped at 5MB and rotates
+  current → `hermes-vox.log.1` (single generation) on exceed — checked on open and
+  every ~50 writes, never per line. The Settings export/copy ships the **merged
+  pair** (old generation + current) so field logs stay complete across the seam;
+  "Clear logs" clears the whole rotated set. No new permissions; the debug-only
+  (`dd`) channel is unchanged.
+
