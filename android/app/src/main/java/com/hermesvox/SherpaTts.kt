@@ -24,11 +24,15 @@ class SherpaTts(private val context: Context) : VoxTts {
     val playbackSession: Int get() = streamTrack?.audioSessionId ?: 0
     private var streamWritten = 0
     private var streamSR = 0
-    // #7: serialize stream-track writes vs stopStreaming() so release() never races a
-    // WRITE_BLOCKING (the SIGSEGV). stopStreaming() nulls the track under the lock and
-    // waits for an in-flight write to clear before pause/stop/flush/release.
+    // #7: serialize stream-track writes vs teardown so release() never races a
+    // WRITE_BLOCKING write (the SIGSEGV). The writer sets writing under the lock;
+    // teardown never flushes/releases while writing==true.
     private val trackLock = Object()
     @Volatile private var writing = false
+    // F1 pause-first silence: teardown (stop/flush/release) runs ONCE on a single
+    // cleanup thread, never on the caller's thread — silence must not wait for the
+    // very write it is killing. @Volatile-guarded single-flight (one at a time).
+    @Volatile private var teardownActive = false
     // #D1 immediate-silence fence: a chunk may play ONLY while the stream is
     // started AND not stopped. stopStreaming() closes the fence BEFORE nulling
     // the track, so a synth worker that keeps iterating after a barge/hush/hangup
@@ -181,7 +185,10 @@ class SherpaTts(private val context: Context) : VoxTts {
     }
 
     /** Synthesize a chunk + append it to the persistent track (built at the first chunk's
-     *  actual rate). Writing each chunk into ONE track keeps the speech continuous. */
+     *  actual rate). Writing each chunk into ONE track keeps the speech continuous. Each
+     *  chunk is sliced into ~2s sub-writes with a fence check before every slice, so a
+     *  stop that lands mid-chunk exits between sub-writes instead of draining the whole
+     *  sentence's WRITE_BLOCKING write (F2: bounds the drain-wait to ~2s). */
     fun streamChunk(text: String): Boolean {
         if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
         val eng = tts ?: return false
@@ -203,11 +210,21 @@ class SherpaTts(private val context: Context) : VoxTts {
                     t = streamTrack ?: return false
                 }
                 streamSR = sr
-                writing = true                    // stopStreaming() waits for this to clear
+                writing = true                    // the async teardown waits for this to clear (#7)
             }
             VoxLog.d("piper chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
-            try { t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING); streamWritten += samples.size; true }
-            finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
+            try {
+                val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
+                var at = 0
+                while (at < samples.size) {
+                    if (!streamFence.allowed) return false   // F2: stop between sub-writes exits fast
+                    val n = minOf(twoSec, samples.size - at)
+                    t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
+                    at += n
+                }
+                streamWritten += samples.size
+                true
+            } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
         } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
     }
 
@@ -224,19 +241,57 @@ class SherpaTts(private val context: Context) : VoxTts {
         } catch (_: Throwable) {}
         stopStreaming()
     }
+    /** Pause-first stop (0.3.32.4): cut the AUDIBLE audio immediately, then hand the
+     *  teardown to a single cleanup thread. Closing the fence + pause() run on the
+     *  caller's thread and return in ms — the old stop waited SYNCHRONOUSLY on main
+     *  for the in-flight WRITE_BLOCKING write to drain (up to ~6s of the very audio
+     *  being silenced). pause() is safe concurrent with a write (it is stop/release
+     *  that must never race the writer — #7). */
     fun stopStreaming() {
         val t: AudioTrack?
         synchronized(trackLock) {
             streamFence.stop()                   // #D1: close the fence BEFORE nulling the track —
             t = streamTrack                      // no chunk may start (or rebuild) after this point
             streamTrack = null                   // fence: no new write may start
-            while (writing) { try { trackLock.wait(50) } catch (_: Throwable) { break } }
+            // F1: no wait for writing here — that belongs to the async teardown.
         }
-        try { t?.pause() } catch (_: Throwable) {}   // stop might block on a full buffer in some builds
-        try { t?.stop() } catch (_: Throwable) {}
-        try { t?.flush() } catch (_: Throwable) {}
-        try { t?.release() } catch (_: Throwable) {} // never concurrent with a WRITE -> no SIGSEGV #7
-        streamWritten = 0
+        try { t?.pause() } catch (_: Throwable) {}   // the user-audible silence, NOW
+        if (t != null) teardownTrackAsync(t)         // stop/flush/release off the caller's thread
+    }
+
+    /** F1: single-flight async teardown (@Volatile-guarded; a stop while one cleanup is
+     *  already running is a no-op). t.stop() first — it unblocks a pending WRITE_BLOCKING
+     *  write on-device — then a bounded poll for writing==false, then flush() + release().
+     *  NEVER release while writing==true (#7 SIGSEGV invariant preserved exactly). */
+    private fun teardownTrackAsync(t: AudioTrack) {
+        synchronized(trackLock) {
+            if (teardownActive) return
+            teardownActive = true
+        }
+        thread(name = "tts-teardown") {
+            try {
+                try { t.stop() } catch (_: Throwable) {}   // unblocks a blocked WRITE_BLOCKING write
+                var waited = 0
+                while (writing && waited < 2000) {         // bounded poll for the writer to clear
+                    Thread.sleep(20); waited += 20
+                }
+                if (writing) {
+                    // Pathological backstop only: t.stop() above has already unblocked the
+                    // writer, so this means a newer track is writing. Never flush/release
+                    // over a live write — leak the track rather than crash (#7).
+                    VoxLog.e("event=tts-teardown result=timeout writing=true ms=$waited")
+                    return@thread
+                }
+                try { t.flush() } catch (_: Throwable) {}
+                try { t.release() } catch (_: Throwable) {} // never concurrent with a WRITE -> no SIGSEGV #7
+                // streamWritten reset stays after release (safe). Guard on the current track
+                // so an already-started successor stream is not clobbered.
+                synchronized(trackLock) { if (streamTrack == null) streamWritten = 0 }
+                VoxLog.d("event=tts-teardown ms=$waited")
+            } finally {
+                synchronized(trackLock) { teardownActive = false }
+            }
+        }
     }
 
     override fun stop() { stopStreaming() }
