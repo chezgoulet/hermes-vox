@@ -40,3 +40,31 @@
   migration needed). Verified by grep: zero `walkie`/`ptt` matches across the app
   (the `stopTts` identifier is the only case-insensitive substring remainder).
 
+## Audio lifecycle hardening (C3 — focus, route changes, session hygiene)
+
+- **Audio focus is now owned, start to stop.** The call requests `AUDIOFOCUS_GAIN`
+  (VOICE_COMMUNICATION / CONTENT_TYPE_SPEECH) the moment it acquires its wake lock,
+  and abandons it on the exact paths that release the wake lock today — hang-up,
+  /new, conversation reset, and stop-with-no-call — so focus can never be leaked
+  out of step. MainActivity is the single focus owner (documented in-code) because
+  focus is a call-scoped resource whose release sites are the wake-lock paths and
+  whose >30s rule runs the existing hang-up path.
+- **A real interruption behaves.** `LOSS`/`LOSS_TRANSIENT` (and `CAN_DUCK`, treated
+  as a full transient loss — TTS ducking is unavailable on the one-track writer, so
+  silence beats garble) immediately silence the in-flight reply through the ONE
+  silence path (`silenceAll("focus-loss")`) and park the mic — the foreground
+  service and the call stay live, so re-accepting is one tap. `GAIN` resumes
+  *listening only* on a fresh-turn window (the interrupted reply is not auto-
+  resumed). If the outage lasted >30s the call hangs up cleanly instead of re-arming
+  a zombie mic.
+- **Route changes rebuild the line.** An `AudioDeviceCallback` is registered per call
+  and unregistered on stop. When a BT (SCO/A2DP), USB, or wired headset appears or
+  disappears mid-call, the app logs `event=audio-route devices=…` and rebuilds
+  capture + playback with a fresh-call composition (stop → 250ms → start) so both
+  halves re-attach to the new default route. No SCO routing code was added (out of
+  scope) — `VOICE_COMMUNICATION` capture follows whatever route the platform keeps.
+- **Context creep is measurable.** `event=turn` now carries `session_turns=N`, the
+  count of completed turns since the last `resetConversation`/new call, so gateway
+  history growth is visible in field logs. Measurement only — no truncation or
+  summarization yet (no defensive limit without data).
+
