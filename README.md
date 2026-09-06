@@ -132,6 +132,10 @@ offline). Point the app at your Hermes gateway; the entity is your agent.
 
 ## Security
 
+- **Hermes Vox never ships with a key. You enter your own.** The gateway API key
+  is user-entered during onboarding and re-entered in Settings → Entity; there is
+  no baked-in, env-injected, or default key anywhere in the app (a release-build
+  guard fails if one is ever re-added).
 - API key encrypted at rest (Android Keystore, AES/GCM); user-entered, never
   committed.
 - Model downloads: stream → sha256-verify → unpack (zip-slip guarded) into

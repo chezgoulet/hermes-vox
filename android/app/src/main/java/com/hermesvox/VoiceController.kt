@@ -1000,6 +1000,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun testConnectionHuman(): String {
         val u = prefString("url", ""); val k = prefString("key", "")
         if (u.isBlank()) return "Couldn't reach the gateway. Check that your network is on and the address is right.\n\n(no endpoint set)"
+        // C0: no user-entered key stored -> surface the clear Settings prompt
+        // (wording only) instead of a misleading "can't reach" after an empty-auth 401.
+        if (k.isBlank()) return GatewayKey.MISSING_KEY_PROMPT + " before testing the connection."
         var ping = true; var pingRe = ""
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection

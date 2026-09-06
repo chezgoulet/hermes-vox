@@ -91,10 +91,14 @@ class MainActivity : AppCompatActivity() {
             setStatus(getString(R.string.hv_connected), false)
         }
 
-        // First run → onboarding (no stored endpoint/key yet).
-        if (prefs.getString("url", "").orEmpty().isBlank() || storedKey().isBlank()) {
+        // First run → onboarding (no stored endpoint yet).
+        if (prefs.getString("url", "").orEmpty().isBlank()) {
             openOnboarding(); return
         }
+        // C0: endpoint set but no user-entered key -> main screen shows the clear
+        // Settings prompt instead of silently connecting with no key (there is no
+        // baked fallback). connectFromPrefs/send/talk/startCall re-surface it.
+        if (GatewayKey.isMissing(storedKey())) setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
 
         // Warming splash: created BEFORE the connection flow so autoOpenLine can
         // toggle it. (Originally created after connectFromPrefs, so on a device where
@@ -149,6 +153,7 @@ class MainActivity : AppCompatActivity() {
      *  live-call UI (red hang-up button + running timer). The call PERSISTS across
      *  app-close / screen-off (the mic-type foreground service + loop keep running). */
     private fun startCall() {
+        if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (callLive) return
         s.resetConversation()
@@ -303,8 +308,20 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) { VoxLog.e("event=wake-acquire-failed err=${e.message}") }
     }
 
-    // The entity API key is encrypted at rest (Keystore); legacy plaintext decrypts as-is.
-    private fun storedKey() = SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty()
+    // The entity API key is encrypted at rest (Keystore); legacy plaintext
+    // decrypts as-is. C0: user-entered ONLY — GatewayKey.resolve never falls back
+    // to a baked/default key; blank or undecryptable storage resolves to "".
+    private fun storedKey() = GatewayKey.resolve(prefs.getString("key", "").orEmpty(), SecureStore::decrypt)
+
+    // C0: no stored user key while an endpoint is set -> the connector must not
+    // start and the user must add their key in Settings. Surfaces the clear
+    // user-facing prompt (wording only — no new UI) instead of a silent no-op.
+    private fun missingKeyPrompt(): Boolean {
+        if (session != null) return false
+        if (!GatewayKey.isMissing(storedKey())) return false
+        setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
+        return true
+    }
 
     // App-scoped call start time so a live call's timer survives activity recreation.
     companion object {
@@ -351,7 +368,10 @@ class MainActivity : AppCompatActivity() {
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
         val p = prefs.getString("provider", "").orEmpty()
-        if (u.isBlank() || k.isBlank()) return
+        if (u.isBlank()) return
+        // C0: no user-entered key -> surface the Settings prompt (never connect
+        // with an empty auth / baked fallback).
+        if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p) {
             session = HermesSession(u, k, m)
             // The provider is a per-request override the Go /v1/responses client sends
@@ -389,6 +409,7 @@ class MainActivity : AppCompatActivity() {
     private fun modeIsRealtime() = (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) != ModelCatalog.MODE_WALKIE
 
     private fun send(text: String) {
+        if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
         input.text.clear()
@@ -402,6 +423,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun talk() {
+        if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         val needAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
