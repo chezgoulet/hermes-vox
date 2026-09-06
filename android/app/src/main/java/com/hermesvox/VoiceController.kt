@@ -336,7 +336,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val latch = turnDone
                     turnGen++
                     val myGen = turnGen
-                    val bargeRmsMin = micFloat("barge_rms_min", BargeGate.DEFAULT_RMS_MIN)
+                    val bargeRmsMin = micFloat("barge_rms_min", 0.10f)
                     val bargeGraceMs = micInt("barge_grace_ms", BargeGate.DEFAULT_GRACE_MS).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
                     VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
