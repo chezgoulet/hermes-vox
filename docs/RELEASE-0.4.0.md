@@ -1,6 +1,7 @@
 # Hermes Vox 0.4.0 — release notes
 
-> Ships as `0.4.0-beta1` (the whole 0.4.0 batch stays inside this single beta).
+> The polish series: everything in 0.3.x, plus the security, lifecycle, and
+> measurement work that makes it a real public app.
 
 ## Security (C0 — no baked gateway key)
 
