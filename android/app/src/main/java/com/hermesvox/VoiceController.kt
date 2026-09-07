@@ -99,11 +99,32 @@ class VoiceController(private val context: Context, private val session: HermesS
     // C4: wall-clock launch (t0) of the current streamed turn — the streaming worker
     // reads this so time-to-first-AUDIO is measured from the same origin as stt/Byte/Text.
     @Volatile private var turnStartedAt = 0L
+    // T2: wall-clock of the LAST genuine turn activity (an SSE delta/event, a TTS
+    // chunk handed to the engine, or a drain mic read). Reset at every gate close and
+    // touched from the stream worker + the streaming-TTS worker + the drain loop, so
+    // the gate-timeout warn can tell a LONG-but-alive turn (43s stall + 44s tail) from
+    // a genuinely stalled gate. Activity only — no behavior.
+    @Volatile private var lastActivityAt = 0L
+    // T3: the gate EPOCH whose event=turn summary was last emitted. Each real turn arms
+    // its own epoch (voiceState.arm()), so a second settle for the SAME epoch — the
+    // stop() -> voiceState.reset() race that let the stream abort's reply-error settle
+    // re-emit after an outcome=stop turn — is caught here and never double-counts
+    // session_turns. Keyed on epoch, NOT gen: gen is reused by text sends (sendText
+    // passes the live turnGen), so a gen guard would drop a legitimate second turn's
+    // summary. Log-honesty only — no gate behavior.
+    @Volatile private var lastTurnLoggedEpoch = -1L
     private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 450).toLong())
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
     private val TURN_GATE_TIMEOUT_MS = 60000L
+    // T2: the gate-timeout W fires only when the gate is past its ceiling AND nothing
+    // (delta/chunk/read) has happened for this long — the genuinely-stalled case.
+    private val GATE_STALL_IDLE_MS = 30000L
+    // T1 probe thresholds (dd-only near-miss / mic-gap / skip telemetry — zero behavior).
+    private val BARGE_READ_GAP_MS = 500L      // a drain r.read() return gap this big -> the mic loop is starved
+    private val BARGE_NEARMISS_WINDOW_MS = 2000L  // at most one event=barge-nearmiss per this window
+    private val BARGE_SKIP_STATE_MS = 3000L   // the !spk && !turnInFlight skip state held this long -> deaf window
 
     init {
         // Blessed default: auto-use the warm on-device Piper voice once it's
@@ -377,11 +398,24 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // out of next-turn segmentation. The bargeInEnabled=false path still
                     // drains r (a recording mic that is never read floods its buffer).
                     val gateClosedAt = android.os.SystemClock.uptimeMillis()
+                    lastActivityAt = gateClosedAt   // T2: this turn's activity clock starts at its gate close
                     var gateReleased = false
                     var bargeFired = false
                     var sustainedMs = 0L
                     var sawPlayback = false
                     var playbackSince = 0L
+                    // T1 probe state (dd-only, per turn, no allocation): lastReadAtMs is the
+                    // wall-clock of the last successful drain read (CAUSE A mic-gap); peakRms
+                    // is the peak level of the current near-floor run (>=0.7x floor) for the
+                    // near-miss calibration; nearMissLoggedAtMs rate-limits event=barge-nearmiss
+                    // to one per 2s; skipStateSinceMs + skipStateLogged catch the CAUSE B
+                    // `!spk && !turnInFlight` skip state held >3s (a reply tail playing with the
+                    // speaking flag already false = the deaf window) — once per turn.
+                    var lastReadAtMs = 0L
+                    var peakRms = 0f
+                    var nearMissLoggedAtMs = 0L
+                    var skipStateSinceMs = 0L
+                    var skipStateLogged = false
                     // Drain the stale buffer (captured while the capture loop closed + the
                     // transcribe ran) WITHOUT checks: the user's own just-sent utterance
                     // must never re-trigger the barge gate as the turn starts. Non-blocking
@@ -402,15 +436,40 @@ class VoiceController(private val context: Context, private val session: HermesS
                             if (opened) { gateReleased = true; break }
                             continue
                         }
+                        val readAt = android.os.SystemClock.uptimeMillis()
+                        lastActivityAt = readAt   // T2: a drain read is genuine turn activity
+                        if (lastReadAtMs != 0L && bargeInEnabled && !bargeFired) {
+                            val readGap = readAt - lastReadAtMs
+                            // T1 CAUSE A probe: a >500ms gap between read RETURNS means the mic
+                            // drain was starved (synth/write burst) so barge detection couldn't run.
+                            if (readGap > BARGE_READ_GAP_MS)
+                                VoxLog.dd("event=barge-gap gen=$myGen lastReadMs=$readGap speaking=$speaking")
+                        }
+                        lastReadAtMs = readAt
                         val spk = speaking
-                        if (spk) { if (!sawPlayback) { sawPlayback = true; playbackSince = android.os.SystemClock.uptimeMillis() } }
+                        if (spk) { if (!sawPlayback) { sawPlayback = true; playbackSince = readAt } }
                         else sawPlayback = false
                         if (!bargeInEnabled || bargeFired) continue            // drain-only (no buffer flood)
                         // Playback grace: skip checks for barge_grace_ms after `speaking`
                         // became true so the TTS onset is never mistaken for the user
                         // (generation mode is exempt — nothing plays yet).
-                        val inGrace = spk && (android.os.SystemClock.uptimeMillis() - playbackSince) < bargeGraceMs
-                        if (inGrace || (!spk && !turnInFlight)) { sustainedMs = 0L; continue }
+                        val inGrace = spk && (readAt - playbackSince) < bargeGraceMs
+                        val stateSkip = !spk && !turnInFlight
+                        // T1 CAUSE B probe: the `!spk && !turnInFlight` skip state. It is only
+                        // ever legitimately brief (the turn-arm race / a settle-to-next-chunk
+                        // seam); held >3s inside a locked gate means the reply is still playing
+                        // (or wedged) with the speaking flag false — the drain is deaf and the
+                        // user's barge is being swallowed. Log once per turn, dd-only. (the
+                        // speaking flag is false by definition here — the flag lying low during a
+                        // live tail is exactly the edge case this measures.)
+                        if (stateSkip) {
+                            if (skipStateSinceMs == 0L) skipStateSinceMs = readAt
+                            if (!skipStateLogged && readAt - skipStateSinceMs > BARGE_SKIP_STATE_MS) {
+                                skipStateLogged = true
+                                VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
+                            }
+                        } else skipStateSinceMs = 0L
+                        if (inGrace || stateSkip) { sustainedMs = 0L; continue }
                         var acc = 0.0
                         val frames = FloatArray(n)
                         for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; acc += frames[i] * frames[i] }
@@ -425,10 +484,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                             main.post { bargeIn() }
                             bargeFired = true
                             sustainedMs = 0L
+                        } else if (spk) {
+                            // T1 CAUSE C probe (decide false): the user is audibly there but the
+                            // double gate didn't fire — either level is ABOVE the floor and the
+                            // sustain is still accumulating / VAD disagrees (sustainedMs>0), or
+                            // level is approaching it (>=0.7x floor) with VAD agreeing. Reuses the
+                            // per-frame level/sustainedMs math; peakRms is a running max of the
+                            // current near-floor run, so the calibration shows how close we got.
+                            val nearFloor = floor * 0.7f
+                            if (level >= nearFloor) { if (level > peakRms) peakRms = level.toFloat() }
+                            else peakRms = 0f
+                            if ((sustainedMs > 0L || (vadSpeech && level >= nearFloor)) &&
+                                readAt - nearMissLoggedAtMs >= BARGE_NEARMISS_WINDOW_MS) {
+                                nearMissLoggedAtMs = readAt
+                                VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${"%.3f".format(peakRms)} vad=$vadSpeech sustainedMs=$sustainedMs floor=${"%.3f".format(floor)}")
+                            }
                         }
                     }
-                    if (!gateReleased && android.os.SystemClock.uptimeMillis() - gateClosedAt >= TURN_GATE_TIMEOUT_MS)
-                        VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
+                    val gateLockedNow = android.os.SystemClock.uptimeMillis()
+                    if (!gateReleased && gateLockedNow - gateClosedAt >= TURN_GATE_TIMEOUT_MS && gateLockedNow - lastActivityAt > GATE_STALL_IDLE_MS)
+                        VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms sinceActivity=${gateLockedNow - lastActivityAt}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
                     vad?.reset()   // clear barge-window VAD state before the next turn's segmentation
                     try { r.stop() } catch (_: Throwable) {}
                     // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
@@ -610,6 +685,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if ((evts?.length() ?: 0) > 0 || doneNow || pollErr.isNotBlank()) {
                             lastEventAt = tick
                             stall5 = false; stall15 = false
+                            lastActivityAt = tick   // T2: a real SSE delta/event batch is turn activity
                             VoxLog.dd("event=stream-poll gen=$gen ev=${evts?.length() ?: 0} done=$doneNow textLen=$textLen err=${pollErr.take(70)}")
                         } else {
                             val idle = tick - lastEventAt
@@ -756,6 +832,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // was synthesizing still wins BEFORE the next chunk starts.
                         if (genCancelled || sClosed) { VoxLog.d("event=tts-stop gen=$turnGen worker-break chunkIdx=$chunkIdx"); break }
                         chunkIdx++
+                        lastActivityAt = android.os.SystemClock.uptimeMillis()   // T2: a dequeued TTS chunk is turn activity
                         // Play EVERY chunk: gate on the engine, NOT on !speaking. (The earlier
                         // keep-speaking-true change made speaking stuck true so only the first
                         // chunk played and the rest was drained silently -> "small chunks".)
@@ -983,6 +1060,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (!voiceState.release()) { VoxLog.w("event=gate-release result=duplicate gen=$gen reason=$reason"); return }
         try { turnDone.countDown() } catch (_: Throwable) {}
         VoxLog.d("event=gate-release gen=$gen reason=$reason")          // (audit's epoch= dropped — private)
+        // T3 phantom-turn guard (log honesty): a mid-generation endCall/hangup releases
+        // with outcome=stop, and stop()'s voiceState.reset() clears the duplicate latch —
+        // so the stream abort's reply-error/stream-error settle for the SAME gate epoch
+        // could otherwise re-emit a second event=turn (session_turns double-count) for a
+        // turn the user never heard. Exactly one event=turn per settled epoch, so
+        // session_turns keeps counting real completed or interrupted turns only.
+        val settledEpoch = voiceState.epoch()
+        if (settledEpoch == lastTurnLoggedEpoch) { VoxLog.dd("event=turn-skip gen=$gen epoch=$settledEpoch reason=$reason (already settled)"); return }
+        lastTurnLoggedEpoch = settledEpoch
         LatencyStats.log("turn", reason, gen)
     }
 

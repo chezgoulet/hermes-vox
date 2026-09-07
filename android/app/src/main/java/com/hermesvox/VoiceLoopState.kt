@@ -22,6 +22,10 @@ class VoiceLoopState(private val earlySilenceMs: Long = 450L) {
 
     @Synchronized fun arm() { epoch++; releasedForEpoch = false }
 
+    /** Current gate epoch (read for the T3 turn-log guard in VoiceController: an epoch
+     *  that already emitted its event=turn summary must not settle a second time). */
+    fun epoch(): Long = epoch
+
     @Synchronized fun release(): Boolean {
         if (releasedForEpoch) return false
         releasedForEpoch = true
