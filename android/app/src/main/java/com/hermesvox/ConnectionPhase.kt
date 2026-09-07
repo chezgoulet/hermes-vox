@@ -61,6 +61,18 @@ object ConnectionPhase {
      *  it is what we have before anything has been asked of the network. */
     enum class Probe { NOT_TESTED, IN_FLIGHT, OK, COLD, AUTH, GATEWAY_ERROR, UNREACHABLE, BLOCKED }
 
+    /**
+     * What the LIVE voice channel — the real streamed turn through the gateway
+     * session — has actually observed about auth. 0.5.2: this is the ground truth
+     * the one-shot probe defers to.
+     *
+     *   UNKNOWN     no live turn has been attempted yet this session.
+     *   AUTHORIZED  a live stream opened / delivered events: the gateway accepted
+     *               our credentials, whatever a synthetic probe says.
+     *   REJECTED    a live turn came back with a genuine auth failure.
+     */
+    enum class Live { UNKNOWN, AUTHORIZED, REJECTED }
+
     /** No HTTP response at all (the leg threw). Distinct from any status code. */
     const val NO_RESPONSE = 0
     /** The leg was not run (a ping-only probe passes this for the stream leg). */
@@ -138,6 +150,45 @@ object ConnectionPhase {
         return Probe.OK
     }
 
+    /**
+     * 0.5.2 — THE FALSE-401 GATE. [classify] reports what the one-shot probe saw;
+     * this reports what is TRUE, by letting the live voice channel overrule it.
+     *
+     * The field log (2026-09-07) read `conn-test: verdict=auth ping=401 stream=-1`
+     * at pipe startup and then streamed real turns fine, seconds later, over the
+     * same gateway and the same key. Both facts cannot be true, and the live
+     * channel is the one that moved bytes — so an AUTH verdict is only allowed to
+     * survive when the live channel has NOT authorized.
+     *
+     * The rule, both ways:
+     *   - probe says AUTH but the live stream authorized -> the probe is wrong
+     *     (stale/rewrapped credential state, not a rejected user). Report OK.
+     *   - probe says OK but a live turn was genuinely rejected -> the probe is
+     *     wrong in the other direction. Report AUTH, because the user does need
+     *     to fix the key.
+     * Everything else passes through untouched: a cold gateway, an unreachable
+     * network and a broken gateway are the probe's own business.
+     */
+    fun reconcile(probe: Probe, live: Live): Probe = when {
+        probe == Probe.AUTH && live == Live.AUTHORIZED -> Probe.OK
+        probe == Probe.OK && live == Live.REJECTED -> Probe.AUTH
+        else -> probe
+    }
+
+    /**
+     * Whether a LIVE turn's error text is a genuine auth rejection (the gateway
+     * said no to the credential) rather than a transport/timeout/model failure.
+     * Pure string work so the classification is proven off-device: the live path
+     * only ever hands us the gateway's message.
+     */
+    fun authFailure(err: String): Boolean {
+        val e = err.lowercase()
+        return e.contains("401") || e.contains("403") ||
+            e.contains("unauthorized") || e.contains("unauthenticated") ||
+            e.contains("forbidden") || e.contains("invalid api key") ||
+            e.contains("invalid_api_key") || e.contains("invalid key")
+    }
+
     /** Reached, alive, NOT ready: the codes a loading/overloaded gateway returns. */
     private fun cold(code: Int): Boolean =
         code == 408 || code == 425 || code == 429 || code == 502 || code == 503 || code == 504
@@ -164,8 +215,8 @@ object ConnectionPhase {
             Probe.IN_FLIGHT -> "Testing the connection…"
             Probe.COLD -> "Reached your gateway — it answered, but it isn't ready to talk yet " +
                 "(still warming up). Give it a moment and test again."
-            Probe.AUTH -> "Reached your gateway, but it rejected the key. Check the key in " +
-                "Settings › Entity & Connection."
+            Probe.AUTH -> "Reached your gateway and it needs valid auth — it rejected this key. " +
+                "Re-enter the key in Settings › Entity & Connection."
             Probe.GATEWAY_ERROR -> "Reached your gateway, but it answered with something this app " +
                 "can't use. Check that the address points at the gateway itself."
             Probe.UNREACHABLE -> "Couldn't reach the gateway. Check that your network is on and " +
