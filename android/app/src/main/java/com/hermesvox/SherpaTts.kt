@@ -24,6 +24,18 @@ class SherpaTts(private val context: Context) : VoxTts {
     val playbackSession: Int get() = streamTrack?.audioSessionId ?: 0
     private var streamWritten = 0
     private var streamSR = 0
+    // 0.5.0-previewA speech-locked transcript (L2): the display needs to know what the
+    // engine has actually PLAYED, not what the SSE stream delivered. Two additive reads,
+    // no new thread — the head is sampled on demand by the reveal loop.
+    /** Samples the playback track has actually rendered; falls back to what has been
+     *  written when there is no track (not started / torn down). Never throws. */
+    fun playedSamples(): Int = try { streamTrack?.playbackHeadPosition ?: streamWritten } catch (_: Throwable) { streamWritten }
+    /** The voice model's ACTUAL sample rate for the current stream (0 until the first chunk). */
+    val streamSampleRate: Int get() = streamSR
+    /** Per-phrase audio accounting: (text, samples) reported in the ORDER the audio is
+     *  written to the track, just before its first write. VoiceController turns this into
+     *  a SpeechCursor; nothing in the audio path depends on it. */
+    @Volatile var onAudioSegment: ((text: String, samples: Int) -> Unit)? = null
     // #7: serialize stream-track writes vs teardown so release() never races a
     // WRITE_BLOCKING write (the SIGSEGV). The writer sets writing under the lock;
     // teardown never flushes/releases while writing==true.
@@ -107,7 +119,7 @@ class SherpaTts(private val context: Context) : VoxTts {
                 val samples = audio.samples ?: return@thread onDone()
                 val sr = audio.sampleRate
                 VoxLog.d("piper generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
-                play(samples, sr, token)
+                play(samples, sr, token, text)
                 onDone()
             } catch (e: Throwable) {
                 VoxLog.e("piper speak: ${e.message}")
@@ -134,8 +146,10 @@ class SherpaTts(private val context: Context) : VoxTts {
      *  budget the streaming path already meets.
      *
      *  [cancelToken] is StreamFence.stopEpoch captured before synthesis; -1 skips the
-     *  check (no caller does today). */
-    private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L) {
+     *  check (no caller does today). [text] is the utterance being played, reported to
+     *  onAudioSegment so the speech-locked transcript can pace one-shot replies with the
+     *  SAME cursor as streamed ones (a single segment — no special case). */
+    private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L, text: String = "") {
         var at = 0
         try {
             val t: AudioTrack
@@ -154,6 +168,9 @@ class SherpaTts(private val context: Context) : VoxTts {
                 writing = true               // the async teardown waits for this to clear (#7)
                 t = built
             }
+            // L2: one segment for the whole utterance, registered before the first write
+            // (the head starts advancing during it, so the cursor must already know it).
+            try { onAudioSegment?.invoke(text, samples.size) } catch (_: Throwable) {}
             try {
                 val twoSec = sr * 2                    // ~2s per sub-write, as streamChunk
                 while (at < samples.size) {
@@ -186,7 +203,7 @@ class SherpaTts(private val context: Context) : VoxTts {
             val audio = t.generate(text, 0, voiceSpeed)
             val samples = audio.samples ?: return false
             VoxLog.d("piper gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
-            play(samples, audio.sampleRate, token)
+            play(samples, audio.sampleRate, token, text)
             true
         } catch (e: Throwable) { VoxLog.e("piper speakBlocking: ${e.message}"); false }
     }
@@ -250,6 +267,9 @@ class SherpaTts(private val context: Context) : VoxTts {
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
             VoxLog.d("piper chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
+            // L2: this phrase is next on the track — register it BEFORE the first write so
+            // the reveal can interpolate through it while the head is inside it.
+            try { onAudioSegment?.invoke(text, samples.size) } catch (_: Throwable) {}
             try {
                 val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
                 var at = 0
