@@ -528,8 +528,11 @@ class SettingsActivity : AppCompatActivity() {
     // The category (VisualStyle) is the 0.5.1 answer to "expose categories of visuals":
     // it is not a seventh shape label — it re-colours, re-lights and re-paces the being
     // in every state, and the two sliders let the user push whichever family they chose
-    // calmer or wilder. The pre-existing shape/theme + cycle controls are preserved
-    // verbatim into this group (same prefs, same wording).
+    // calmer or wilder. 0.5.2 (A2) expands the table to 20 families and the picker lists
+    // EVERY one because it is driven straight off VisualStyle.TOKENS/LABELS — no second,
+    // truncated list to drift. A3 adds "cycle all categories" so the whole breadth can be
+    // seen animating. The pre-existing shape/theme + cycle controls are preserved verbatim
+    // into this group (same prefs, same wording).
     private fun bindVisuals() {
         val catVals = VisualStyle.TOKENS
         val catLabels = VisualStyle.LABELS
@@ -538,6 +541,18 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_visual_category).setOnClickListener {
             micChoiceString("Visual category", catLabels, catVals,
                 VisualStyle.KEY_CATEGORY, R.id.set_visual_category_val)
+        }
+        // A3 (0.5.2): cycle through EVERY category. Off = the fixed pick above renders; on =
+        // the being inhabits each family in turn, crossfaded over ~6s apiece, so the whole
+        // breadth animates. Written to the same "hv" prefs AvatarView reads inside
+        // setVisualCategory, so it takes effect on the next resume with no new wiring. The
+        // picker above still matters while cycling: it is the family the rotation starts from
+        // and returns to when this is switched off.
+        findViewById<SwitchCompat>(R.id.set_visual_cycle_all).apply {
+            isChecked = prefs.getBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)
+            setOnCheckedChangeListener { _, on ->
+                prefs.edit().putBoolean(VisualStyle.KEY_CYCLE_ALL, on).apply()
+            }
         }
         bindFloatSeekBar(R.id.set_seek_visual_energy, R.id.set_visual_energy_val, VisualStyle.KEY_ENERGY,
             VisualStyle.ENERGY_MIN, VisualStyle.ENERGY_MAX, VisualStyle.ENERGY_STEP,
@@ -636,6 +651,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("keep_screen_on", false)   // K2 (0.5.0.3): screen-alive default OFF
             GROUP_VISUALS -> e
                 .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
+                .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling
                 .putFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY)
                 .putFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW)
                 .putString("particles_theme", "aura")

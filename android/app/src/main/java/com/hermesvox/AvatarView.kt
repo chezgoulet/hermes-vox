@@ -149,10 +149,28 @@ class AvatarView @JvmOverloads constructor(
 
         private const val HALO_PX = 128f
         private const val GLOW_SPAN = 7.2f                  // sprite diameter / core size
-        private const val CACHE_CAP = 16
+        /** Sprite-cache capacity. Bumped from 16 for 0.5.2: a cycle-all crossfade walks
+         *  the eased colour through ~10 quantised steps while the light model (edge /
+         *  coreHeat) walks through a couple of buckets, so a fixed category and a moving
+         *  one both stay resident without thrashing. Bounded, cleared on overflow. */
+        private const val CACHE_CAP = 48
         /** How far back the Comet category's trail sprite sits, in seconds of the
          *  particle's own velocity. ~2 frames at 30fps. */
         private const val TRAIL_DT = 0.066f
+
+        // ---- 0.5.2: the category CROSSFADE. A visual category is no longer applied as a
+        // ---- snap; AvatarView eases a render-style toward the target Style every frame,
+        // ---- so cycle-all (and any manual pick) FLOWS from one family into the next.
+        /** Ease rate for the render-style scalars. ~1.2s to settle, well inside the 6s
+         *  cycle dwell, so each family is inhabited for a beat before it glides on. */
+        private const val STYLE_EASE = 2.4f
+        /** The light model (edge / coreHeat) is baked into the sprite, so it is quantised
+         *  into the cache key rather than re-baked every frame of a crossfade. 4 buckets
+         *  across each range is finer than a soft additive sprite can reveal, and keeps
+         *  the key space small enough that a transition bakes a handful of sprites, not one
+         *  per frame. */
+        private const val EDGE_LO = 0.40f; private const val EDGE_HI = 1.45f
+        private const val HEAT_LO = 0.60f; private const val HEAT_HI = 1.35f
 
         // --- body archetypes. One per thing the being can be seen doing.
         private const val A_ORB = 0        // at rest: a dispersed breathing cloud
@@ -231,6 +249,31 @@ class AvatarView @JvmOverloads constructor(
     private var vsty = VisualStyle.of(VisualStyle.DEFAULT)
     private var visEnergy = VisualStyle.DEFAULT_ENERGY
     private var visGlow = VisualStyle.DEFAULT_GLOW
+
+    // ---- 0.5.2 (A3): cycle-all. When on, [vsty] is advanced through EVERY family on a
+    // ---- timer; when off it holds the user's fixed pick. [userCat] is that fixed pick —
+    // ---- what the cycle starts from and what it returns to when switched off, so the
+    // ---- toggle never loses the user's choice.
+    private var userCat = VisualStyle.DEFAULT
+    private var cycleAll = false
+    private var cycleIdx = 0
+    private var cycleAccum = 0f
+
+    // ---- 0.5.2 (A3): the EASED RENDER-STYLE. [vsty] is the TARGET family; these are the
+    // ---- values actually rendered this frame, eased toward it (see STYLE_EASE). This is
+    // ---- what makes a category change FLOW instead of snap: the palette shades through
+    // ---- the eased axes, the sprite light model eases, the mass and motion ease. For the
+    // ---- default category they are initialised to its exact identity values and never
+    // ---- move, so an untouched install still renders bit-for-bit what 0.5.0.3 rendered.
+    // ---- All primitives — the per-frame ease allocates nothing.
+    private var rTintAmt = 0f;  private var rSat = 1f;     private var rAccentTurn = 0f
+    private var rCoreHeat = 1f; private var rEdge = 1f
+    private var rHalo = 1f;     private var rSize = 1f;    private var rFlicker = 1f
+    private var rEnergy = 1f;   private var rTint = 0
+    /** Trails cannot be eased (it is a blit-count switch, not a scalar), so it snaps. It
+     *  is the one heavy axis, it is opt-in, and a cycle through Comet is a deliberate
+     *  doubling for one dwell — never the default. */
+    private var rTrails = false
 
     private val cx get() = width / 2f; private val cy get() = height / 2f
     private val R get() = (minOf(width, height) * 0.32f).coerceAtLeast(60f)
@@ -347,10 +390,13 @@ class AvatarView @JvmOverloads constructor(
         // centre burns, edge is how tight the falloff is. Both are baked into the
         // cached sprite, so a hard 1-bit point and a wide atmospheric bloom cost the
         // same per frame as the default (one blit); only the bake differs, and the
-        // bake happens on a category/colour change, never in the loop.
-        val heat = ((if (soft) 0.25f else 0.88f) * vsty.coreHeat).coerceIn(0f, 1f)
+        // bake happens on a category/colour change, never in the loop. 0.5.2: these
+        // read the EASED render-style (rCoreHeat/rEdge), not the target vsty, so a
+        // crossfade glides the light model too — and the cache key below quantises
+        // them, so the glide bakes a handful of sprites rather than one per frame.
+        val heat = ((if (soft) 0.25f else 0.88f) * rCoreHeat).coerceIn(0f, 1f)
         val hot = lerpColor(color, Color.WHITE, heat)
-        val e = vsty.edge
+        val e = rEdge
         val cols: IntArray; val stops: FloatArray
         if (soft) {
             // The body's ambient bloom: very soft, so it reads as light in the air.
@@ -367,23 +413,41 @@ class AvatarView @JvmOverloads constructor(
         return bmp
     }
 
-    /** Quantize to 4 bits/channel: the eased colour converges to a handful of keys, so the
-     *  cache stays small and every steady-state lookup hits. A 1/16 hue step is invisible
-     *  through a soft additive sprite. */
-    private fun qKey(color: Int): Int = (color and 0xF0F0F0) or 0xFF000000.toInt()
+    /** The colour a sprite is BAKED from: quantised to 4 bits/channel so the eased colour
+     *  converges to a handful of values and a 1/16 hue step (invisible through a soft
+     *  additive sprite) reuses one bitmap. This is the old qKey — the bake is unchanged. */
+    private fun qColor(color: Int): Int = (color and 0xF0F0F0) or 0xFF000000.toInt()
+
+    /** The cache KEY: the quantised colour PLUS a coarse quantisation of the eased light
+     *  model (edge / coreHeat). 0.5.2 eases those two during a crossfade and they change the
+     *  baked sprite, so they must be part of the key or a stale sprite would be served
+     *  mid-glide. Bucketed (not continuous) so a transition walks a handful of keys, not one
+     *  per frame. Packs into 20 bits: 4/channel colour high-nibbles + 2 bits per bucket. */
+    private fun spriteKey(color: Int): Int {
+        val rn = (color ushr 20) and 0xF
+        val gn = (color ushr 12) and 0xF
+        val bn = (color ushr 4) and 0xF
+        val eb = lightBucket(rEdge, EDGE_LO, EDGE_HI)
+        val hb = lightBucket(rCoreHeat, HEAT_LO, HEAT_HI)
+        return (rn shl 16) or (gn shl 12) or (bn shl 8) or (eb shl 2) or hb
+    }
+    /** 0..3 across [lo,hi] — 4 buckets is finer than a soft sprite reveals and keeps the
+     *  key space small enough that a crossfade never thrashes the cache. */
+    private fun lightBucket(v: Float, lo: Float, hi: Float): Int =
+        (((v - lo) / (hi - lo) * 3.999f).toInt()).coerceIn(0, 3)
 
     private fun glowFor(color: Int): Bitmap {
-        val k = qKey(color)
+        val k = spriteKey(color)
         glowCache[k]?.let { return it }
         if (glowCache.size >= CACHE_CAP) glowCache.clear()
-        return glowBitmap(k, GLOW_PX, false).also { glowCache[k] = it }
+        return glowBitmap(qColor(color), GLOW_PX, false).also { glowCache[k] = it }
     }
 
     private fun haloFor(color: Int): Bitmap {
-        val k = qKey(color)
+        val k = spriteKey(color)
         haloCache[k]?.let { return it }
         if (haloCache.size >= CACHE_CAP) haloCache.clear()
-        return glowBitmap(k, HALO_PX, true).also { haloCache[k] = it }
+        return glowBitmap(qColor(color), HALO_PX, true).also { haloCache[k] = it }
     }
 
     // ---- Public API (work-aware) -----------------------------------------
@@ -490,23 +554,61 @@ class AvatarView @JvmOverloads constructor(
     fun setCycleSec(sec: Float) { cycleSec = sec; invalidate() }
 
     /** 0.5.1: the visual category — the painterly family the whole being is rendered
-     *  in (VisualStyle.TOKENS). Changing it re-bakes the sprites, so the caches are
-     *  dropped HERE, once, off the hot path; the frame loop never learns that a
-     *  category exists beyond two scalars. */
+     *  in (VisualStyle.TOKENS). 0.5.2: this is also where the cycle-all toggle is picked
+     *  up. MainActivity already calls this on create and every resume (applyParticlePrefs),
+     *  so reading KEY_CYCLE_ALL from the same "hv" prefs here carries the toggle with NO new
+     *  call site — honouring the 0.5.2 scope list (only AvatarView / VisualStyle / the
+     *  Settings surface change). The fixed pick is remembered either way: it is where the
+     *  cycle starts and where switching off returns. Changing the target re-bakes sprites, so
+     *  the caches drop HERE, once, off the hot path; the frame loop never learns a category
+     *  exists beyond the eased scalars. */
     fun setVisualCategory(token: String) {
+        userCat = token
+        val cyc = context.getSharedPreferences(VisualStyle.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)
+        setCycleAllCategories(cyc)
+        if (!cycleAll) applyFixedCategory(token)
+    }
+
+    /** 0.5.2 (A3): cycle through EVERY category on a timer. On = the being inhabits each
+     *  family in turn, starting from the user's pick so enabling it flows from the look
+     *  already on screen; off = ease back to that fixed pick. The advance is in prepareFrame;
+     *  the clean transition is the eased render-style. Public for parity with the other
+     *  setVisual* levers. */
+    fun setCycleAllCategories(on: Boolean) {
+        if (on == cycleAll) return
+        cycleAll = on
+        cycleAccum = 0f
+        if (on) {
+            // Start the rotation at the family the user chose, so the first dwell is the
+            // look already on screen and the first glide is into the next one.
+            cycleIdx = VisualStyle.indexOf(userCat)
+        } else {
+            applyFixedCategory(userCat)   // flow back to the fixed pick
+        }
+        invalidate()
+    }
+
+    /** Set the target family directly (the fixed-category path). The eased render-style
+     *  glides toward it, so even a manual pick crossfades rather than snapping. */
+    private fun applyFixedCategory(token: String) {
         val next = VisualStyle.of(token)
         if (next.token == vsty.token) return
         vsty = next
         glowCache.clear(); haloCache.clear()
         invalidate()
     }
+
     /** User motion-energy scale (Settings slider): multiplies the category's own
      *  flow/tremor character, so a family can be pushed calmer or wilder. */
     fun setVisualEnergy(v: Float) { visEnergy = VisualStyle.energy(v); invalidate() }
     /** User glow scale (Settings slider): multiplies the ambient bloom. */
     fun setVisualGlow(v: Float) { visGlow = VisualStyle.glow(v); invalidate() }
-    /** The category currently rendering (Settings/preview read-back). */
+    /** The category rendering right now (Settings/preview read-back). During cycle-all this
+     *  is the family on screen, not the fixed pick. */
     fun visualCategory(): String = vsty.token
+    /** True while the cycle-all rotation is running (read-back). */
+    fun cyclingAllCategories(): Boolean = cycleAll
 
     // ---- LUT oscillators ----------------------------------------------------
 
@@ -566,9 +668,12 @@ class AvatarView @JvmOverloads constructor(
         // The visual category re-colours the AUTHORED state palette rather than
         // replacing it: listening still reads as listening, it is just made of a
         // different substance. Two calls per frame, never per particle — and for the
-        // default category both are the identity.
-        tBase = VisualStyle.shade(tBase, vsty, false)
-        tAcc = VisualStyle.shade(tAcc, vsty, true)
+        // default category both are the identity. 0.5.2: shades through the EASED
+        // render-style (rTintAmt/rTint/rSat/rAccentTurn), so a cycle-all change rotates
+        // the palette through the wheel and glides the saturation instead of cutting to
+        // the next family — the clean transition A3 asks for.
+        tBase = VisualStyle.shade(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
+        tAcc = VisualStyle.shade(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
     }
 
     /** Which body the swarm is forming right now. Every MotionState.Motion lands on one,
@@ -645,11 +750,56 @@ class AvatarView @JvmOverloads constructor(
     }
     private fun wrapTau(v: Float): Float = if (v >= TAU) v - TAU else v
 
+    /** 0.5.2 (A3): while cycle-all is on, dwell CYCLE_ALL_SEC on each family then advance to
+     *  the next, wrapping through the WHOLE table so the user sees every category animate.
+     *  All this does is retarget [vsty] (and drop the sprite caches once, off the hot path);
+     *  easeStyle below turns that retarget into a crossfade, so the rotation flows. */
+    private fun advanceCycle(dt: Float) {
+        if (!cycleAll) return
+        cycleAccum += dt
+        if (cycleAccum < VisualStyle.CYCLE_ALL_SEC) return
+        cycleAccum -= VisualStyle.CYCLE_ALL_SEC
+        cycleIdx = (cycleIdx + 1).mod(VisualStyle.TOKENS.size)
+        val next = VisualStyle.of(VisualStyle.TOKENS[cycleIdx])
+        if (next.token != vsty.token) {
+            vsty = next
+            glowCache.clear(); haloCache.clear()
+        }
+    }
+
+    /** Ease the render-style toward the target family: ten scalar lerps + one colour lerp,
+     *  once per frame, all primitives — the entire cost of the crossfade, and it never
+     *  touches the particle loop. This is what makes a category change FLOW (palette rotates
+     *  through the wheel, light model / mass / motion glide) instead of snapping. For the
+     *  default category every target equals its eased value (both identity), so every delta is
+     *  0 and nothing moves — an untouched install renders bit-for-bit what 0.5.0.3 rendered. */
+    private fun easeStyle(dt: Float) {
+        val k = (dt * STYLE_EASE).coerceIn(0f, 1f)
+        rTintAmt += (vsty.tintAmt - rTintAmt) * k
+        rSat += (vsty.sat - rSat) * k
+        rAccentTurn += (vsty.accentTurn - rAccentTurn) * k
+        rCoreHeat += (vsty.coreHeat - rCoreHeat) * k
+        rEdge += (vsty.edge - rEdge) * k
+        rHalo += (vsty.halo - rHalo) * k
+        rSize += (vsty.size - rSize) * k
+        rFlicker += (vsty.flicker - rFlicker) * k
+        rEnergy += (vsty.energy - rEnergy) * k
+        rTint = lerpColor(rTint, vsty.tint, k)
+        rTrails = vsty.trails   // a blit-count switch, not a scalar — snapped, never eased
+    }
+
     /**
      * The per-frame setup: ease the drive, pick the body, tune the physics, resolve the
      * two sprite colours. ALL of it once per frame — the particle loop reads only scalars.
      */
     private fun prepareFrame(dt: Float) {
+        // 0.5.2 (A3): advance the cycle-all rotation, then ease the render-style toward
+        // whatever family is now the target. Both run BEFORE tunePhysics (rEnergy) and
+        // resolvePalette (rTintAmt/rSat/…) read the eased scalars, so a category change
+        // glides through the whole body within the frame it happens.
+        advanceCycle(dt)
+        easeStyle(dt)
+
         driven = params.shape == state
         resolveDrive()
 
@@ -741,7 +891,9 @@ class AvatarView @JvmOverloads constructor(
         // state including the still ones — and the spring itself is untouched, so the
         // silhouette a state is trying to make never dissolves. Two multiplies per
         // frame; the spin is pulled only part-way so a low-energy body still turns.
-        val eg = vsty.energy * visEnergy
+        // 0.5.2: reads the EASED rEnergy, so a cycle-all change ramps the flow/tremor up
+        // or down smoothly rather than lurching the body mid-glide.
+        val eg = rEnergy * visEnergy
         flowGain *= eg
         tremor *= eg
         spinMul *= (0.60f + 0.40f * eg)
@@ -945,9 +1097,11 @@ class AvatarView @JvmOverloads constructor(
         val sr = safeR; val sr2 = safeR2
         // The category's two per-particle scalars, hoisted like every other frame
         // constant: the loop gains exactly two multiplies against values it was
-        // already computing, and no branch.
-        val fk = 0.17f * vsty.flicker
-        val szk = vsty.size
+        // already computing, and no branch. 0.5.2: hoisted from the EASED render-style,
+        // so a crossfade glides size/flicker too — but the loop's cost is byte-for-byte
+        // identical (two multiplies against frame constants), still 0 alloc/frame.
+        val fk = 0.17f * rFlicker
+        val szk = rSize
 
         for (i in 0 until COUNT) {
             val p = parts[i]
@@ -1061,7 +1215,7 @@ class AvatarView @JvmOverloads constructor(
         //    bright core / dark falloff that makes it read as LIGHT in the air.
         val halo = haloFor(curBase)
         dst.set(haloX - haloW, haloY - haloH, haloX + haloW, haloY + haloH)
-        add.alpha = ((0.16f + sBright * 0.34f) * vsty.halo * visGlow * 255f)
+        add.alpha = ((0.16f + sBright * 0.34f) * rHalo * visGlow * 255f)
             .toInt().coerceIn(0, 255)
         canvas.drawBitmap(halo, null, dst, add)
 
@@ -1071,8 +1225,10 @@ class AvatarView @JvmOverloads constructor(
         // The ONE category axis that is not free: a trail sprite behind each particle
         // doubles the blit count, so it is read once into a local, it is opt-in, and
         // its Settings label says "heavier". Every other category draws exactly what
-        // the default draws.
-        val trails = vsty.trails
+        // the default draws. 0.5.2: read from the eased render-style, but trails is a
+        // blit-count SWITCH, not a scalar — it snaps (never eased), so a cycle through
+        // Comet is one deliberate doubled-blit dwell, bounded and off by default.
+        val trails = rTrails
         for (i in 0 until COUNT) {
             val p = parts[i]
             val g = if (p.accent) glowAcc else glowBas
