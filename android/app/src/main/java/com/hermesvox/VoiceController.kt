@@ -57,11 +57,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** 0.5.0.1: submit to the executor OR return false if the controller is stopping
      *  / the executor is shut down. Catches RejectedExecutionException (the race where
      *  a shutdown lands between the isShutdown() check and execute()) so a turn-start
-     *  or worker hand-off racing teardown bails cleanly instead of crashing. */
-    private fun execSubmit(block: () -> Unit): Boolean {
-        if (stopped || exec.isShutdown) return false
-        return try { exec.execute(block); true } catch (_: java.util.concurrent.RejectedExecutionException) { false }
-    }
+     *  or worker hand-off racing teardown bails cleanly instead of crashing.
+     *  H3 (0.5.3): the guard logic lives in the pure, unit-tested ExecGuard; this is the
+     *  thin per-controller binding of `exec` + the live `stopped` flag. EVERY submit site
+     *  (capture loop, partial-STT worker, streamed turn, streaming-TTS worker) routes
+     *  through here — two of them had no guard at all before H3. */
+    private fun execSubmit(block: () -> Unit): Boolean = ExecGuard.submit(exec, stopped, block)
     @Volatile private var speaking = false
     @Volatile private var currentStream: String? = null
     @Volatile private var turnInFlight = false
@@ -265,8 +266,11 @@ class VoiceController(private val context: Context, private val session: HermesS
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
             VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms hard=${hardMs}ms")
-            if (stopped || exec.isShutdown) return false   // 0.5.0.1: bail, don't start the capture loop
-            exec.execute {
+            // 0.5.0.1 / H3: route the capture-loop submit through the guard. It re-checks
+            // stopped/isShutdown AND catches the RejectedExecutionException from the check-
+            // then-act race, so a start() racing teardown bails to `false` (don't open the
+            // mic) instead of throwing into the platform-STT fallback below.
+            if (!execSubmit {
                 val seg = ArrayList<Float>(sr)
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
@@ -346,7 +350,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 val snap = seg.subList(maxOf(0, seg.size - sr * 6), seg.size).toFloatArray()
                                 val now = android.os.SystemClock.uptimeMillis()
                                 val sm = silentMs.toLong()   // immutable snapshot: don't read the mutable silentMs in the lambda
-                                exec.execute partial@{
+                                // H3: guard the partial-STT submit (from the capture thread — it
+                                // had NO guard before). On rejection, reset partialRunning so it
+                                // isn't stuck true (which would wedge stop()'s bounded drain and
+                                // block every future partial in the session).
+                                if (!execSubmit partial@{
                                     try {
                                         val t = runCatching { stt?.transcribe(snap, sr) }.getOrNull()
                                         if (t.isNullOrBlank()) return@partial
@@ -360,7 +368,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                             }
                                         }
                                     } finally { partialRunning = false }
-                                }
+                                }) { partialRunning = false }   // H3: submit rejected (teardown race) — undo the flag set above
                             }
                         }
                     }
@@ -566,7 +574,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 try { record?.stop(); record?.release() } catch (_: Throwable) {}
                 record = null
                 main.post { listener?.onState("idle") }
-            }
+            }) return false   // 0.5.0.1 / H3: executor stopped/shutdown (or the submit raced teardown) — don't open the mic
             true
         } catch (e: Throwable) {
             VoxLog.e("offline listen: ${e.message}")
@@ -698,13 +706,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
         if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin()
-        if (stopped || exec.isShutdown) {   // 0.5.0.1: turn-start racing teardown bails cleanly
-            VoxLog.d("event=turn-dropped reason=stopped gen=$gen")
-            turnInFlight = false
-            releaseTurnGate(gen, "stopped")
-            return
-        }
-        exec.execute {
+        // 0.5.0.1 / H3: route the turn submit through the guard. It re-checks
+        // stopped/isShutdown AND catches the RejectedExecutionException from the check-
+        // then-act race, so a turn-start racing teardown bails cleanly (the rejection
+        // branch below) instead of throwing out of the main.post runnable. The old
+        // separate pre-check is folded into that branch — one place, no gap between the
+        // check and the submit for a shutdown to slip through.
+        if (!execSubmit {
                 try {
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
@@ -807,6 +815,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // (the drain loop below retires itself when the gate opens; the speak-gate
                 // is released in the speak-complete callback, not here)
             }
+        }) {
+            // 0.5.0.1 / H3: the submit was rejected (executor stopped/shutdown, or a
+            // shutdown raced the submit) — bail cleanly: drop the in-flight flag and
+            // release this turn's gate so the listen loop is never wedged by a turn that
+            // never started. (This is the old pre-check body, now on the rejection path.)
+            VoxLog.d("event=turn-dropped reason=stopped gen=$gen")
+            turnInFlight = false
+            releaseTurnGate(gen, "stopped")
+            return
         }
     }
 
@@ -893,7 +910,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
         if (!sRunning) {
             sRunning = true
-            exec.execute {
+            // H3: guard the streaming-TTS worker submit. streamBegin runs on the MAIN
+            // thread (runStreamedTurn <- main.post), so an unguarded execute() racing
+            // stop()'s shutdown threw RejectedExecutionException straight out of the
+            // runnable — the 0.5.0.1 process crash. On rejection, undo sRunning (set just
+            // above) so a later turn can re-arm the worker; nothing awaits sDone, so
+            // bailing here is safe (the turn's own guard bails too).
+            if (!execSubmit {
                 // R1 single-owner retirement: after EVERY sentence is handed to the engine
                 // and played, THIS worker is the only party that closes the stream. The
                 // text/settle side only marks sFinal; the exit condition is
@@ -983,7 +1006,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                     }
                 }
-            }
+            }) { sRunning = false; return }   // H3: submit rejected (teardown race) — undo sRunning; nothing awaits sDone
         }
     }
     private fun streamFeed(delta: String) {
