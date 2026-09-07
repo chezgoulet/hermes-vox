@@ -161,6 +161,24 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_grp_visuals"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Visuals"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="open ›"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_grp_about"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -1014,6 +1032,119 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_keep_screen_on"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Keep screen on during calls"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_keep_screen_on"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_restore_appearance"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Appearance)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ══ sec_visuals: Visuals (the being's category, richness, shape) ══ -->
+            <LinearLayout
+                android:id="@+id/sec_visuals"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_visual_category"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Visual category"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_category_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Lumen — its own light"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_energy"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Motion energy"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_energy_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="1.0×"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_energy"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="11" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_glow"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Glow / bloom"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_glow_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="1.0×"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_glow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="12" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_particle_theme"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -1051,7 +1182,7 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/row_keep_screen_on"
+                    android:id="@+id/row_restore_visuals"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1060,25 +1191,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Keep screen on during calls"
-                        style="@style/HvRowTitle" />
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/set_keep_screen_on"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_restore_appearance"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Restore defaults (Appearance)"
+                        android:text="Restore defaults (Visuals)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"

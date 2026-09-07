@@ -150,6 +150,9 @@ class AvatarView @JvmOverloads constructor(
         private const val HALO_PX = 128f
         private const val GLOW_SPAN = 7.2f                  // sprite diameter / core size
         private const val CACHE_CAP = 16
+        /** How far back the Comet category's trail sprite sits, in seconds of the
+         *  particle's own velocity. ~2 frames at 30fps. */
+        private const val TRAIL_DT = 0.066f
 
         // --- body archetypes. One per thing the being can be seen doing.
         private const val A_ORB = 0        // at rest: a dispersed breathing cloud
@@ -218,6 +221,16 @@ class AvatarView @JvmOverloads constructor(
     private var idleTheme = "aura"
     private var cycleThemes = false
     private var cycleSec = 8f
+
+    // ---- 0.5.1: the VISUAL CATEGORY (Settings -> Visuals). Orthogonal to the idle
+    // ---- theme above: the theme picks the idle SHAPE, the category picks what the
+    // ---- being is made OF — palette family, light model, mass and motion character,
+    // ---- in every state. See VisualStyle for the axes and why this is not a seventh
+    // ---- theme label. The default is an exact identity, so an untouched install
+    // ---- renders bit-for-bit what 0.5.0.3 rendered.
+    private var vsty = VisualStyle.of(VisualStyle.DEFAULT)
+    private var visEnergy = VisualStyle.DEFAULT_ENERGY
+    private var visGlow = VisualStyle.DEFAULT_GLOW
 
     private val cx get() = width / 2f; private val cy get() = height / 2f
     private val R get() = (minOf(width, height) * 0.32f).coerceAtLeast(60f)
@@ -330,17 +343,24 @@ class AvatarView @JvmOverloads constructor(
         val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        val hot = lerpColor(color, Color.WHITE, if (soft) 0.25f else 0.88f)
+        // The category owns the LIGHT MODEL: coreHeat is how white-hot the specular
+        // centre burns, edge is how tight the falloff is. Both are baked into the
+        // cached sprite, so a hard 1-bit point and a wide atmospheric bloom cost the
+        // same per frame as the default (one blit); only the bake differs, and the
+        // bake happens on a category/colour change, never in the loop.
+        val heat = ((if (soft) 0.25f else 0.88f) * vsty.coreHeat).coerceIn(0f, 1f)
+        val hot = lerpColor(color, Color.WHITE, heat)
+        val e = vsty.edge
         val cols: IntArray; val stops: FloatArray
         if (soft) {
             // The body's ambient bloom: very soft, so it reads as light in the air.
             cols = intArrayOf(withAlpha(hot, 150), withAlpha(color, 74),
                 withAlpha(color, 26), Color.TRANSPARENT)
-            stops = floatArrayOf(0f, 0.26f, 0.58f, 1f)
+            stops = floatArrayOf(0f, stop(0.26f, e), stop(0.58f, e), 1f)
         } else {
             cols = intArrayOf(withAlpha(hot, 255), withAlpha(color, 214),
                 withAlpha(color, 92), withAlpha(color, 22), Color.TRANSPARENT)
-            stops = floatArrayOf(0f, 0.16f, 0.38f, 0.66f, 1f)
+            stops = floatArrayOf(0f, stop(0.16f, e), stop(0.38f, e), stop(0.66f, e), 1f)
         }
         p.shader = RadialGradient(h, h, h, cols, stops, Shader.TileMode.CLAMP)
         c.drawCircle(h, h, h, p)
@@ -469,6 +489,25 @@ class AvatarView @JvmOverloads constructor(
     fun setCycleThemes(cycle: Boolean) { cycleThemes = cycle; invalidate() }
     fun setCycleSec(sec: Float) { cycleSec = sec; invalidate() }
 
+    /** 0.5.1: the visual category — the painterly family the whole being is rendered
+     *  in (VisualStyle.TOKENS). Changing it re-bakes the sprites, so the caches are
+     *  dropped HERE, once, off the hot path; the frame loop never learns that a
+     *  category exists beyond two scalars. */
+    fun setVisualCategory(token: String) {
+        val next = VisualStyle.of(token)
+        if (next.token == vsty.token) return
+        vsty = next
+        glowCache.clear(); haloCache.clear()
+        invalidate()
+    }
+    /** User motion-energy scale (Settings slider): multiplies the category's own
+     *  flow/tremor character, so a family can be pushed calmer or wilder. */
+    fun setVisualEnergy(v: Float) { visEnergy = VisualStyle.energy(v); invalidate() }
+    /** User glow scale (Settings slider): multiplies the ambient bloom. */
+    fun setVisualGlow(v: Float) { visGlow = VisualStyle.glow(v); invalidate() }
+    /** The category currently rendering (Settings/preview read-back). */
+    fun visualCategory(): String = vsty.token
+
     // ---- LUT oscillators ----------------------------------------------------
 
     private fun lutIdx(v: Float): Int {
@@ -524,6 +563,12 @@ class AvatarView @JvmOverloads constructor(
             "stream" -> { tBase = cCyan;   tAcc = cCyanHi }
             else     -> { tBase = lerpColor(cIdle, cCyan, 0.26f + amp * 0.22f); tAcc = cIdleHi }
         }
+        // The visual category re-colours the AUTHORED state palette rather than
+        // replacing it: listening still reads as listening, it is just made of a
+        // different substance. Two calls per frame, never per particle — and for the
+        // default category both are the identity.
+        tBase = VisualStyle.shade(tBase, vsty, false)
+        tAcc = VisualStyle.shade(tAcc, vsty, true)
     }
 
     /** Which body the swarm is forming right now. Every MotionState.Motion lands on one,
@@ -691,6 +736,15 @@ class AvatarView @JvmOverloads constructor(
             A_INFALL -> { springK = 28f; flowGain = 10f; tremor = 5.0f; spinMul = 0.60f; biasY = bodyR * 1.25f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
+        // The category's motion character (x the user's energy slider). It scales the
+        // two forces that fight the spring, so a family is calmer or wilder in EVERY
+        // state including the still ones — and the spring itself is untouched, so the
+        // silhouette a state is trying to make never dissolves. Two multiplies per
+        // frame; the spin is pulled only part-way so a low-energy body still turns.
+        val eg = vsty.energy * visEnergy
+        flowGain *= eg
+        tremor *= eg
+        spinMul *= (0.60f + 0.40f * eg)
         // UNDER-damped on purpose (0.9 of critical): the swirl has to survive, or the flow
         // field's contribution is dissipated before it can look like anything. Still far
         // inside the stability limit (dt <= 0.05, sqrt(48) ~ 6.9, so dt*omega ~ 0.35).
@@ -889,6 +943,11 @@ class AvatarView @JvmOverloads constructor(
         val vm2 = vmax2
         val cxf = cx; val cyf = cy
         val sr = safeR; val sr2 = safeR2
+        // The category's two per-particle scalars, hoisted like every other frame
+        // constant: the loop gains exactly two multiplies against values it was
+        // already computing, and no branch.
+        val fk = 0.17f * vsty.flicker
+        val szk = vsty.size
 
         for (i in 0 until COUNT) {
             val p = parts[i]
@@ -949,7 +1008,7 @@ class AvatarView @JvmOverloads constructor(
 
             // 7. brightness + size. The flicker is per-particle and never stops, so a
             //    still state is never a frozen blob.
-            val flick = 1f + 0.17f * fsin(phFlick + p.fl * 3.1f) * (0.4f + p.bri)
+            val flick = 1f + fk * fsin(phFlick + p.fl * 3.1f) * (0.4f + p.bri)
             val boost = when (arch) {
                 A_BURST -> (1f - burstProg) * (1f - burstProg) * 0.8f + 0.55f
                 A_VOICE -> 0.74f + amp * 0.44f
@@ -961,7 +1020,7 @@ class AvatarView @JvmOverloads constructor(
             val ta = (sBright * p.bri * flick * boost * (if (p.spark) 1.55f else 1f))
                 .coerceIn(0.05f, 1f)
             p.alpha += (ta - p.alpha) * 0.14f
-            p.size = (if (p.spark) 1.5f else 3.1f) * p.sz *
+            p.size = (if (p.spark) 1.5f else 3.1f) * p.sz * szk *
                     (1f + workload * 0.22f + (sBright - 0.6f) * 0.45f)
         }
     }
@@ -1002,16 +1061,33 @@ class AvatarView @JvmOverloads constructor(
         //    bright core / dark falloff that makes it read as LIGHT in the air.
         val halo = haloFor(curBase)
         dst.set(haloX - haloW, haloY - haloH, haloX + haloW, haloY + haloH)
-        add.alpha = ((0.16f + sBright * 0.34f) * 255f).toInt().coerceIn(0, 255)
+        add.alpha = ((0.16f + sBright * 0.34f) * vsty.halo * visGlow * 255f)
+            .toInt().coerceIn(0, 255)
         canvas.drawBitmap(halo, null, dst, add)
 
         // 2. the swarm. ADDITIVE, so where particles overlap the light sums and the dense
         //    middle of the body glows hotter than its edges — density becomes brightness
         //    for free.
+        // The ONE category axis that is not free: a trail sprite behind each particle
+        // doubles the blit count, so it is read once into a local, it is opt-in, and
+        // its Settings label says "heavier". Every other category draws exactly what
+        // the default draws.
+        val trails = vsty.trails
         for (i in 0 until COUNT) {
             val p = parts[i]
             val g = if (p.accent) glowAcc else glowBas
             val h = p.size * (if (p.spark) GLOW_SPAN * 0.62f else GLOW_SPAN) * 0.5f
+            if (trails) {
+                // Where it WAS one trail-step ago, dimmer and smaller: the particle
+                // drags its own recent past. Uses the velocity the integrator already
+                // produced, so there is no per-particle history to store.
+                val th = h * 0.70f
+                val tx = p.x - p.vx * TRAIL_DT
+                val ty = p.y - p.vy * TRAIL_DT
+                dst.set(tx - th, ty - th, tx + th, ty + th)
+                add.alpha = (p.alpha * 0.42f * 255f).toInt().coerceIn(0, 255)
+                canvas.drawBitmap(g, null, dst, add)
+            }
             dst.set(p.x - h, p.y - h, p.x + h, p.y + h)
             add.alpha = (p.alpha * 255f).toInt().coerceIn(0, 255)
             canvas.drawBitmap(g, null, dst, add)
@@ -1058,4 +1134,7 @@ class AvatarView @JvmOverloads constructor(
     private fun withAlpha(c: Int, a: Int): Int =
         Color.argb(a.coerceIn(0, 255), Color.red(c), Color.green(c), Color.blue(c))
     private fun frac(x: Float): Float = x - floor(x)
+    /** A gradient stop scaled by the category's [VisualStyle.Style.edge], kept
+     *  strictly inside (0,1) so the stop array stays monotonic for any edge value. */
+    private fun stop(v: Float, e: Float): Float = (v * e).coerceIn(0.01f, 0.98f)
 }

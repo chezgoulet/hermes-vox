@@ -1321,36 +1321,97 @@ class VoiceController(private val context: Context, private val session: HermesS
         return out
     }
 
-    /** Plain-language connection test (WS3): success/failure copy + the raw reason
-     *  in small debug text. Same entity url + bearer key as testConnection(). */
-    fun testConnectionHuman(): String {
+    /**
+     * ONE probe of the gateway, as two legs: a GET /v1/models ping and (optionally) a
+     * POST /v1/responses stream open. Returns the classified outcome — reachable and
+     * ready, reachable and cold, reachable and rejecting the key, or genuinely
+     * unreachable — instead of a bare boolean pair.
+     *
+     * BLOCKING, and it must be: HTTP on the caller's thread. Every caller in the app
+     * goes through [testConnectionAsync], which is the actual 0.5.1 fix — the old
+     * Settings path called this work straight from the click handler, so Android threw
+     * NetworkOnMainThreadException before a byte moved, and because that exception
+     * carries no message the log said `ping=false(unknown) stream=false(unknown)`: a
+     * failure verdict for a test that never ran.
+     *
+     * [includeStream] = false is the light dial the main screen uses (ping only), so
+     * opening the app never fires a real model turn just to colour a pill.
+     */
+    fun probeConnection(includeStream: Boolean): ConnectionPhase.Probe {
         val u = prefString("url", ""); val k = prefString("key", "")
-        if (u.isBlank()) return "Couldn't reach the gateway. Check that your network is on and the address is right.\n\n(no endpoint set)"
-        // C0: no user-entered key stored -> surface the clear Settings prompt
-        // (wording only) instead of a misleading "can't reach" after an empty-auth 401.
-        if (k.isBlank()) return GatewayKey.MISSING_KEY_PROMPT + " before testing the connection."
-        var ping = true; var pingRe = ""
+        if (u.isBlank() || k.isBlank()) return ConnectionPhase.Probe.NOT_TESTED
+        var pingCode = ConnectionPhase.NO_RESPONSE; var pingRe = ""
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection
             c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Authorization", "Bearer " + k)
-            if (c.responseCode != 200) { ping = false; pingRe = "HTTP ${c.responseCode}" }
-        } catch (e: Throwable) { ping = false; pingRe = e.message ?: "unknown" }
-        var stream = true; var streamRe = ""
-        try {
-            val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
-            c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
-            c.setRequestProperty("Authorization", "Bearer " + k)
-            c.setRequestProperty("Content-Type", "application/json")
-            c.outputStream.use { it.write("{\"model\":\"\",\"input\":\"hello\",\"stream\":true}".toByteArray()) }
-            val code = c.responseCode
-            if (code < 200 || code >= 400) { stream = false; streamRe = "HTTP $code" }
-        } catch (e: Throwable) { stream = false; streamRe = e.message ?: "unknown" }
-        VoxLog.d("conn-test: ping=$ping($pingRe) stream=$stream($streamRe)")
-        val ok = ping && stream
-        if (ok) return "Connected to your agent. Everything's working."
-        val debug = listOfNotNull(if (!ping) "ping: $pingRe" else null, if (!stream) "stream: $streamRe" else null).joinToString(" · ")
-        return "Couldn't reach the gateway. Check that your network is on and the address is right.\n\n(debug: $debug)"
+            pingCode = c.responseCode
+        } catch (e: Throwable) {
+            // The CLASS NAME is the diagnosis when there is no message. Never "unknown".
+            pingRe = ConnectionPhase.reason(e.javaClass.simpleName, e.message)
+        }
+        var streamCode = ConnectionPhase.NOT_RUN; var streamRe = ""
+        if (includeStream) {
+            try {
+                val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
+                c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
+                c.setRequestProperty("Authorization", "Bearer " + k)
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write("{\"model\":\"\",\"input\":\"hello\",\"stream\":true}".toByteArray()) }
+                streamCode = c.responseCode
+            } catch (e: Throwable) {
+                streamRe = ConnectionPhase.reason(e.javaClass.simpleName, e.message)
+            }
+        }
+        val probe = ConnectionPhase.classify(pingCode, pingRe, streamCode, streamRe)
+        lastProbeDebug = listOfNotNull(
+            if (pingRe.isNotBlank()) "ping: $pingRe" else if (pingCode != 200) "ping: HTTP $pingCode" else null,
+            if (streamRe.isNotBlank()) "stream: $streamRe"
+            else if (streamCode != ConnectionPhase.NOT_RUN && (streamCode < 200 || streamCode >= 400)) "stream: HTTP $streamCode"
+            else null
+        ).joinToString(" · ")
+        // SECRETS: codes and exception classes only — the key never reaches the log.
+        VoxLog.d("conn-test: verdict=${ConnectionPhase.token(probe)} ping=$pingCode${if (pingRe.isBlank()) "" else "($pingRe)"} " +
+            "stream=$streamCode${if (streamRe.isBlank()) "" else "($streamRe)"}")
+        return probe
+    }
+
+    /** The debug tail of the last [probeConnection] — codes/exception classes, no key. */
+    @Volatile private var lastProbeDebug = ""
+    fun lastProbeDebug(): String = lastProbeDebug
+
+    /**
+     * The connection test as every caller should run it: OFF the UI thread, with the
+     * result delivered back ON it. [cb] gets the classified outcome and the ready-made
+     * human copy.
+     */
+    fun testConnectionAsync(includeStream: Boolean, cb: (ConnectionPhase.Probe, String) -> Unit) {
+        val u = prefString("url", ""); val k = prefString("key", "")
+        if (u.isBlank()) {
+            cb(ConnectionPhase.Probe.NOT_TESTED,
+                ConnectionPhase.copy(ConnectionPhase.Probe.UNREACHABLE, "no endpoint set")); return
+        }
+        // C0: no user-entered key stored -> the clear Settings prompt (wording only),
+        // never a misleading "can't reach" after an empty-auth 401.
+        if (k.isBlank()) {
+            cb(ConnectionPhase.Probe.AUTH, GatewayKey.MISSING_KEY_PROMPT + " before testing the connection."); return
+        }
+        Thread {
+            val probe = probeConnection(includeStream)
+            val msg = ConnectionPhase.copy(probe, lastProbeDebug)
+            main.post { cb(probe, msg) }
+        }.start()
+    }
+
+    /** Plain-language connection test (WS3): success/failure copy + the raw reason
+     *  in small debug text. Same entity url + bearer key as testConnection().
+     *  BLOCKING — [testConnectionAsync] is the entry the UI uses. */
+    fun testConnectionHuman(): String {
+        val u = prefString("url", "")
+        if (u.isBlank()) return ConnectionPhase.copy(ConnectionPhase.Probe.UNREACHABLE, "no endpoint set")
+        if (prefString("key", "").isBlank()) return GatewayKey.MISSING_KEY_PROMPT + " before testing the connection."
+        val probe = probeConnection(true)
+        return ConnectionPhase.copy(probe, lastProbeDebug)
     }
 
     /** Settings "Log spoken transcript" (default OFF): when false, the user's words are
