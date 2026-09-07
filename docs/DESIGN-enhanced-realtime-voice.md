@@ -19,11 +19,45 @@ carry a tightly-authored VOICE. So: **don't make the 2B be the whole agent — m
 correctly project it.** Intelligence = cloud; presence = phone. This is the correct
 split, and a smaller phone model makes the manifest's *quality* matter MORE, not less.
 
-## The bridge: VOX.md = Contract (sacrosanct) + Soul (agent-authored)
+### The bridge: VOX.md = Contract (sacrosanct) + Soul (agent-authored)
 The user's agent authors its own distilled soul into a VOX.md file, guided by a
 static prompt we host. The agent knows its own SOUL.md + memory + tics + relationship
 better than any generic template — so the distillation is done deliberately, at
 authoring time, by the one entity qualified to do it.
+
+**LOCATION: `$HERMES_HOME/VOX.md` — the sibling of `$HERMES_HOME/SOUL.md`.**
+SOUL.md is profile-level (`~/.hermes/<profile>/SOUL.md`), injected as system-prompt
+slot #1, scanned for injection. VOX.md lives beside it — same directory, sibling
+file — so the agent's identity (SOUL) and its voice-export (VOX) are co-located and
+versioned together by the same entity.
+
+### VOX.md lifecycle & onboarding (Christopher's refined flow, 2026-09-07)
+Direction of truth is UNAMBIGUOUS and one-way: **gateway is authoritative; device is
+a read-only mirror. Never the other way.** Codified as an invariant.
+
+BOOTSTRAP (first ER enable, app already authenticated to the gateway):
+1. The app asks the gateway agent to generate VOX.md from its own SOUL.md + the
+   authoring contract. The agent writes `$HERMES_HOME/VOX.md` on the gateway — the
+   only place it's ever authored/edited.
+2. The app REQUESTS it (pull) and syncs a copy locally (within the app's own storage,
+   NOT into the gateway). The device never writes back.
+
+KEEP-FRESH:
+- Settings presents a **"Resync VOX.md"** button → re-PULLs the file from the gateway
+  to the device, overwriting the local mirror. That's the only sync action and it's a
+  pull. (The web-prompt idea is absorbed: the host authoring template guides the
+  *gateway* agent's generation; the app drives it and mirrors it. Not a web page the
+  user visits.)
+- The agent has a mechanism to regenerate/update its OWN VOX.md on the gateway (via the
+  same authoring contract), and it's reflected in the app after a resync.
+
+INVARIANTS (the "sacrosanct" of identity sync):
+- Device NEVER pushes VOX.md (or any identity file) to the gateway — a phone can't
+  silently re-write your agent's soul. If the app ever tried to, it fails closed.
+- The gateway is the single source of truth; the device is a cache that is refetchable.
+- The authoring contract + validator sit ON THE GATEWAY side (checks Contract bytes
+  identical, Soul fields non-empty, no secrets/PII — the House hard limit), so a
+  bad VOX.md is caught at generation, before it's ever mirrored.
 
 ### Contract — fixed, sacrosanct, byte-identical every time (dictated by us)
 1. Never invent facts / never fake a result. If you don't know, say so or escalate.
