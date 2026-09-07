@@ -33,6 +33,15 @@ class TurnGateReleaseTest {
         state.arm(); assertTrue(state.release())                                // new epoch re-arms
     }
 
+    @Test fun released_reports_whether_this_turns_gate_is_already_gone() {
+        // 0.4.0.4: settleReply reads this to refuse to speak a reply whose turn the
+        // user already ended (hush/barge/hangup all release through silenceAll).
+        val state = VoiceLoopState()
+        state.arm(); assertFalse(state.released())   // live turn -> a settle may speak
+        assertTrue(state.release()); assertTrue(state.released())
+        state.arm(); assertFalse(state.released())   // a NEW turn starts clean
+    }
+
     @Test fun stable_partial_gates_early_turn_start() {
         val state = VoiceLoopState(earlySilenceMs = 450)
         assertFalse(state.mayStart("hello", silentMs = 200, nowMs = 1_000))     // pause too short -> no early start

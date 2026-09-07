@@ -38,6 +38,29 @@ class StreamFenceTest {
         assertTrue(f.allowed)
     }
 
+    @Test fun stop_epoch_is_the_one_shot_cancel_token() {
+        // 0.4.0.4: `allowed` is level-triggered, so a one-shot speak() that synthesizes
+        // for ~1.4s and then opens the fence itself cannot use it to ask "did a stop
+        // land while I was busy?" — it would re-open the fence the hush just closed and
+        // speak the whole cancelled reply (the ghost voice). stopEpoch answers that.
+        val f = StreamFence(); f.start()
+        val token = f.stopEpoch                  // captured before synthesis
+        assertTrue(f.stopEpoch == token)         // no stop yet -> the play may proceed
+        f.stop()                                 // the hush lands mid-synthesis
+        assertFalse(f.stopEpoch == token)        // -> the finished utterance is dropped
+        f.start()                                // a later, legitimate turn re-opens...
+        assertTrue(f.allowed)
+        assertFalse(f.stopEpoch == token)        // ...without validating the dead token
+    }
+
+    @Test fun stop_epoch_advances_on_every_stop() {
+        val f = StreamFence(); f.start()
+        val a = f.stopEpoch
+        f.stop(); val b = f.stopEpoch
+        f.stop(); val c = f.stopEpoch
+        assertTrue(b > a && c > b)               // monotonic: a repeat stop still invalidates
+    }
+
     @Test fun a_stopped_worker_cannot_resurrect_playback() {
         // The bug: streamChunk() treated the null track left by stopStreaming() as
         // "first chunk" and BUILT A NEW AudioTrack, so the still-running worker

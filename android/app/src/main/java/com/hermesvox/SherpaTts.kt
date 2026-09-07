@@ -97,12 +97,17 @@ class SherpaTts(private val context: Context) : VoxTts {
     override fun speak(text: String, onDone: () -> Unit) {
         val t = tts ?: return onDone()
         thread {
+            // 0.4.0.4: capture the cancel token BEFORE synthesis. generate() takes over
+            // a second for a full reply (field log: 1.4s for 199 chars), and play() has
+            // to OPEN the fence to write — so a stop that lands inside that window would
+            // be undone by this very call. A changed token drops the utterance unplayed.
+            val token = streamFence.stopEpoch
             try {
                 val audio = t.generate(text, 0, voiceSpeed)
                 val samples = audio.samples ?: return@thread onDone()
                 val sr = audio.sampleRate
                 VoxLog.d("piper generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
-                play(samples, sr)
+                play(samples, sr, token)
                 onDone()
             } catch (e: Throwable) {
                 VoxLog.e("piper speak: ${e.message}")
@@ -111,31 +116,62 @@ class SherpaTts(private val context: Context) : VoxTts {
         }
     }
 
-    private fun play(samples: FloatArray, sr: Int) {
+    /** One-shot utterance playback (speak / speakBlocking), 0.4.0.4 fence-aware.
+     *
+     *  It used to build a BARE, private AudioTrack: not the stream track, not under
+     *  trackLock, not behind the fence — so stop()/hush/call-end could not touch it
+     *  (they fence + tear down the STREAM track only), and one WRITE_BLOCKING call
+     *  wrote the entire reply. Field log: a whole 199-char reply kept speaking for
+     *  11s through two hushes, a call-end and the destroyed foreground service.
+     *
+     *  It now runs the SAME discipline as streamChunk(): the track is installed as
+     *  the current stream track under trackLock, the fence is opened for this
+     *  utterance, the write is sliced into ~2s sub-writes with a fence check before
+     *  each one (F2 — a stop lands within one slice, not one whole reply), and the
+     *  tail drains through finishStreaming() so nothing is truncated. stopStreaming()
+     *  therefore pauses it on the caller's thread in ms (pause-first, F1) and hands
+     *  stop/flush/release to the single teardown thread (#7) — the same msSinceBarge
+     *  budget the streaming path already meets.
+     *
+     *  [cancelToken] is StreamFence.stopEpoch captured before synthesis; -1 skips the
+     *  check (no caller does today). */
+    private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L) {
+        var at = 0
         try {
-            val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
-            // Use a normal playback buffer (~250 ms), NOT tied to the whole audio.
-            val bufBytes = maxOf(minBuf, (sr / 4) * 4)
-            val t = AudioTrack.Builder()
-                .setAudioAttributes(speechAttributes())
-                .setAudioFormat(AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(sr)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-                .setBufferSizeInBytes(bufBytes)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-            t.play()
-            t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            // WAIT for the full audio to PLAY (the old code stopped immediately,
-            // silencing the tail of every reply — the mid-synthesis truncation).
-            var waited = 0
-            while (t.playState == AudioTrack.PLAYSTATE_PLAYING && waited < 120000) {
-                if (t.getPlaybackHeadPosition().toLong() >= samples.size.toLong() - 1L) break
-                Thread.sleep(8); waited += 8
+            val t: AudioTrack
+            synchronized(trackLock) {
+                // A stop landed while we were synthesizing -> this utterance is dead.
+                // Nothing is built and the fence is NOT re-opened.
+                if (cancelToken >= 0L && streamFence.stopEpoch != cancelToken) {
+                    VoxLog.d("event=tts-speak-drop reason=stopped-during-synth samples=${samples.size}")
+                    return
+                }
+                val built = buildStreamTrack(sr) ?: return
+                streamFence.start()          // open the fence for THIS utterance
+                streamTrack = built          // stop()/hush/call-end can now reach it
+                streamWritten = 0
+                streamSR = sr
+                writing = true               // the async teardown waits for this to clear (#7)
+                t = built
             }
-            t.stop(); t.release()
-            VoxLog.d("piper played ${samples.size} samples (waited ${waited}ms)")
+            try {
+                val twoSec = sr * 2                    // ~2s per sub-write, as streamChunk
+                while (at < samples.size) {
+                    if (!streamFence.allowed) {        // stop between sub-writes -> exit fast
+                        VoxLog.d("event=tts-speak-cut at=$at of=${samples.size}")
+                        return
+                    }
+                    val n = minOf(twoSec, samples.size - at)
+                    t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
+                    at += n
+                    synchronized(trackLock) { streamWritten = at }
+                }
+            } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
+            // WAIT for the full audio to PLAY (stopping at the last write silences the
+            // tail of every reply — the mid-synthesis truncation), then release. The
+            // wait is the fence-aware one: a stop skips it and the track is already gone.
+            finishStreaming()
+            VoxLog.d("piper played $at samples")
         } catch (e: Throwable) {
             VoxLog.e("piper play: ${e.message}")
         }
@@ -145,11 +181,12 @@ class SherpaTts(private val context: Context) : VoxTts {
      *  which plays reply chunks sequentially so audio tracks the incoming text). */
     override fun speakBlocking(text: String): Boolean {
         val t = tts ?: return false
+        val token = streamFence.stopEpoch   // 0.4.0.4: cancel a stop that lands mid-synth
         return try {
             val audio = t.generate(text, 0, voiceSpeed)
             val samples = audio.samples ?: return false
             VoxLog.d("piper gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
-            play(samples, audio.sampleRate)
+            play(samples, audio.sampleRate, token)
             true
         } catch (e: Throwable) { VoxLog.e("piper speakBlocking: ${e.message}"); false }
     }
