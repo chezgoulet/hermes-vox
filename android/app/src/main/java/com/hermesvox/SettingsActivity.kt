@@ -37,7 +37,7 @@ class SettingsActivity : AppCompatActivity() {
         bindFlows()
         bindAppearance()
         bindMicSettings()
-        bindParticles()
+        bindVisuals()
         bindGroups()
         bindSectionRestoreRows()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
@@ -51,7 +51,7 @@ class SettingsActivity : AppCompatActivity() {
             SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
             SECTION_STT to R.id.sec_stt, SECTION_TTS to R.id.sec_tts,
             SECTION_MODELS to R.id.sec_models, SECTION_APPEARANCE to R.id.sec_appearance,
-            SECTION_ABOUT to R.id.sec_about)
+            SECTION_VISUALS to R.id.sec_visuals, SECTION_ABOUT to R.id.sec_about)
         ids.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<android.view.View>(ids[section]!!).visibility = android.view.View.VISIBLE
         findViewById<android.widget.ScrollView>(R.id.settings_scroll).scrollTo(0, 0)
@@ -59,6 +59,7 @@ class SettingsActivity : AppCompatActivity() {
             SECTION_ENTITY -> "Entity & Connection"; SECTION_SPEECH -> "Speech & Mic"
             SECTION_STT -> "STT & Transcription"; SECTION_TTS -> "TTS & Voice"
             SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Presence"
+            SECTION_VISUALS -> "Visuals"
             else -> "About & Diagnostics"
         }
     }
@@ -68,7 +69,7 @@ class SettingsActivity : AppCompatActivity() {
         currentSection = null
         findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.VISIBLE
         val ids = listOf(R.id.sec_entity, R.id.sec_speech, R.id.sec_stt, R.id.sec_tts,
-            R.id.sec_models, R.id.sec_appearance, R.id.sec_about)
+            R.id.sec_models, R.id.sec_appearance, R.id.sec_visuals, R.id.sec_about)
         ids.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<TextView>(R.id.set_title).text = "Settings"
     }
@@ -80,6 +81,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.row_grp_stt)?.setOnClickListener { showSection(SECTION_STT) }
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
         findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
+        findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
     }
 
@@ -87,6 +89,7 @@ class SettingsActivity : AppCompatActivity() {
         bindRestoreRow(R.id.row_restore_entity, GROUP_ENTITY, "Entity & Connection")
         bindRestoreRow(R.id.row_restore_models, GROUP_MODELS, "Models")
         bindRestoreRow(R.id.row_restore_appearance, GROUP_APPEARANCE, "Appearance")
+        bindRestoreRow(R.id.row_restore_visuals, GROUP_VISUALS, "Visuals")
         bindRestoreRow(R.id.row_restore_about, GROUP_ABOUT, "About")
     }
 
@@ -311,20 +314,42 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
         bindKeepScreenOn()
-                findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
+        findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
             val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(
                 prefs.getString("url", "").orEmpty(),
                 SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty(), ""))
-            val msg = c.testConnectionHuman()
+            // 0.5.1: the test runs OFF the UI thread. Run on it — as this handler used
+            // to — and Android refuses the socket outright (NetworkOnMainThreadException,
+            // no message), which is exactly the field log's `ping=false(unknown)
+            // stream=false(unknown)`: a verdict for a test that never reached the network.
             findViewById<TextView>(R.id.set_test_val)?.let {
-                val ok = msg.startsWith("Connected")
-                it.text = if (ok) "ok" else "FAILED"
-                it.setTextColor(if (ok) 0xFF35D07F.toInt() else 0xFFFF5B5B.toInt())
+                it.text = "testing…"
+                it.setTextColor(0xFFD6F4FF.toInt())
             }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(if (msg.startsWith("Connected")) "Connection OK" else "Connection issue")
-                .setMessage(msg)
-                .setPositiveButton("OK", null).show()
+            c.testConnectionAsync(true) { probe, msg ->
+                val ok = probe == ConnectionPhase.Probe.OK
+                findViewById<TextView>(R.id.set_test_val)?.let {
+                    it.text = when (probe) {
+                        ConnectionPhase.Probe.OK -> "ok"
+                        ConnectionPhase.Probe.COLD -> "warming"
+                        ConnectionPhase.Probe.AUTH -> "key"
+                        else -> "FAILED"
+                    }
+                    it.setTextColor(when (probe) {
+                        ConnectionPhase.Probe.OK -> 0xFF35D07F.toInt()
+                        ConnectionPhase.Probe.COLD -> 0xFFFFB43D.toInt()   // reachable, just not ready
+                        else -> 0xFFFF5B5B.toInt()
+                    })
+                }
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(when {
+                        ok -> "Connection OK"
+                        probe == ConnectionPhase.Probe.COLD -> "Gateway is warming up"
+                        else -> "Connection issue"
+                    })
+                    .setMessage(msg)
+                    .setPositiveButton("OK", null).show()
+            }
         }
         findViewById<LinearLayout>(R.id.row_debug).setOnClickListener {
             val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
@@ -499,8 +524,28 @@ class SettingsActivity : AppCompatActivity() {
     private fun snapFloat(v: Float, min: Float, step: Float): Int =
         ((v - min) / step).toInt().coerceAtLeast(0)
 
-    // ---- Particles / presence settings (moved off the raw avatar tap; tap = stop) ----
-    private fun bindParticles() {
+    // ---- Visuals: the being's CATEGORY, its richness, and its idle shape ---------
+    // The category (VisualStyle) is the 0.5.1 answer to "expose categories of visuals":
+    // it is not a seventh shape label — it re-colours, re-lights and re-paces the being
+    // in every state, and the two sliders let the user push whichever family they chose
+    // calmer or wilder. The pre-existing shape/theme + cycle controls are preserved
+    // verbatim into this group (same prefs, same wording).
+    private fun bindVisuals() {
+        val catVals = VisualStyle.TOKENS
+        val catLabels = VisualStyle.LABELS
+        val cat = prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT
+        setStringVal(R.id.set_visual_category_val, catLabels, catVals, cat)
+        findViewById<LinearLayout>(R.id.row_visual_category).setOnClickListener {
+            micChoiceString("Visual category", catLabels, catVals,
+                VisualStyle.KEY_CATEGORY, R.id.set_visual_category_val)
+        }
+        bindFloatSeekBar(R.id.set_seek_visual_energy, R.id.set_visual_energy_val, VisualStyle.KEY_ENERGY,
+            VisualStyle.ENERGY_MIN, VisualStyle.ENERGY_MAX, VisualStyle.ENERGY_STEP,
+            VisualStyle.DEFAULT_ENERGY) { "%.1f×".format(it) }
+        bindFloatSeekBar(R.id.set_seek_visual_glow, R.id.set_visual_glow_val, VisualStyle.KEY_GLOW,
+            VisualStyle.GLOW_MIN, VisualStyle.GLOW_MAX, VisualStyle.GLOW_STEP,
+            VisualStyle.DEFAULT_GLOW) { "%.1f×".format(it) }
+
         val themeLabels = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation")
         val themeVals = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation")
         val theme = prefs.getString("particles_theme", "aura") ?: "aura"
@@ -588,9 +633,13 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_APPEARANCE -> e
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
+                .putBoolean("keep_screen_on", false)   // K2 (0.5.0.3): screen-alive default OFF
+            GROUP_VISUALS -> e
+                .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
+                .putFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY)
+                .putFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW)
                 .putString("particles_theme", "aura")
                 .putBoolean("particles_cycle", true)
-                .putBoolean("keep_screen_on", false)   // K2 (0.5.0.3): screen-alive default OFF
             GROUP_ABOUT -> e
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)
@@ -601,7 +650,8 @@ class SettingsActivity : AppCompatActivity() {
         when (group) {
             GROUP_MIC -> bindMicSettings()
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
-            GROUP_APPEARANCE -> { bindParticles(); bindKeepScreenOn() }
+            GROUP_APPEARANCE -> bindKeepScreenOn()
+            GROUP_VISUALS -> bindVisuals()
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()
@@ -624,6 +674,7 @@ class SettingsActivity : AppCompatActivity() {
         const val GROUP_MODE = "mode"
         const val GROUP_ENTITY = "entity"
         const val GROUP_APPEARANCE = "appearance"
+        const val GROUP_VISUALS = "visuals"
         const val GROUP_ABOUT = "about"
         const val GROUP_MODELS = "models"
 
@@ -633,6 +684,7 @@ class SettingsActivity : AppCompatActivity() {
         const val SECTION_TTS = "tts"
         const val SECTION_MODELS = "models"
         const val SECTION_APPEARANCE = "appearance"
+        const val SECTION_VISUALS = "visuals"
         const val SECTION_ABOUT = "about"
     }
 }

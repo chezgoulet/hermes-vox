@@ -345,17 +345,27 @@ class MainActivity : AppCompatActivity() {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
-                setStatus("Warming up\u2026", true)
+                // LOCAL pipeline load — this and only this is "Warming up".
+                warmingNow = true
+                showPhase()
                 mainHandler.postDelayed({ if (!isFinishing) openVoiceLine(s) }, 500)
                 return
             }
             warmRetries = 0
+            warmingNow = false
             if (::warming.isInitialized) warming.visibility = android.view.View.GONE
             VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
             setStatus("Voice models failed to load", true)
             return
         }
+        // Warmth just completed. THIS is the moment the gateway may honestly be
+        // tested (B2c): re-dial now, so the pill moves Warming up -> Dialing ->
+        // Connected instead of sitting on a single sticky word. The line opens
+        // immediately underneath — the dial reports, it does not gate.
+        val wasWarming = warmingNow
+        warmingNow = false
         warmRetries = 0
+        if (wasWarming) dialGateway()
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // MIC-TYPE FOREGROUND SERVICE keeps the process + the loop alive after the app
         // is closed / the screen is off, so a live call persists. It does NOT own a
@@ -444,6 +454,56 @@ class MainActivity : AppCompatActivity() {
     private fun setStatus(text: String, show: Boolean) {
         status.text = text
         status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+    }
+
+    // ---- 0.5.1 Part B: the status pill reports the REAL phase ------------------
+    // "Warming up" used to be the only pre-connected word the pill knew, and it was
+    // sticky: it covered the local pipeline load AND every network wait, so a cold
+    // gateway and a loading STT model looked identical and neither ever resolved.
+    // Now the phase is derived (ConnectionPhase — pure, unit-proven) from three facts
+    // this Activity actually knows, and the pill follows Warming up -> Dialing ->
+    // Connected because those are three different things.
+    @Volatile private var probe = ConnectionPhase.Probe.NOT_TESTED
+    @Volatile private var probeInFlight = false
+    /** True only while [openVoiceLine] is waiting on the LOCAL pipeline. While it is
+     *  set, no gateway verdict may be shown — that is the field bug, structurally. */
+    private var warmingNow = false
+
+    private fun endpointSet() = prefs.getString("url", "").orEmpty().isNotBlank()
+
+    /** Render the pill for the current phase. */
+    private fun showPhase() {
+        val phase = ConnectionPhase.resolve(endpointSet(), !GatewayKey.isMissing(storedKey()),
+            !warmingNow, probe)
+        // A live call owns the pill ("On call"); only a real problem interrupts it.
+        if (callLive) when (phase) {
+            ConnectionPhase.Phase.CONNECTED, ConnectionPhase.Phase.DIALING,
+            ConnectionPhase.Phase.WARMING -> return
+            else -> {}
+        }
+        // C0 keeps its own, longer prompt — it tells the user where to go.
+        if (phase == ConnectionPhase.Phase.NEEDS_KEY) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
+        setStatus(ConnectionPhase.pill(phase), ConnectionPhase.shows(phase))
+    }
+
+    /** DIALING: reach out to the configured gateway and let the answer move the pill.
+     *  Ping-only by default — opening the app should not fire a real model turn just
+     *  to colour a pill. Runs off the UI thread (VoiceController.testConnectionAsync);
+     *  running it ON the UI thread is what made the field test report
+     *  `ping=false(unknown)` for a request that never left the device. */
+    private fun dialGateway(includeStream: Boolean = false) {
+        if (!endpointSet() || GatewayKey.isMissing(storedKey())) { showPhase(); return }
+        if (probeInFlight) return
+        val s = session ?: run { showPhase(); return }
+        probeInFlight = true
+        probe = ConnectionPhase.Probe.IN_FLIGHT
+        showPhase()
+        val c = liveController ?: VoiceController(applicationContext, s)
+        c.testConnectionAsync(includeStream) { p, _ ->
+            probeInFlight = false
+            probe = p
+            if (!isFinishing) showPhase()
+        }
     }
 
     private fun setCallTone(live: Boolean) {
@@ -763,7 +823,10 @@ class MainActivity : AppCompatActivity() {
             session?.setProvider(p)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p
         }
-        setStatus(getString(R.string.hv_connected), false)
+        // The pill used to assert "Connected" the instant a session OBJECT existed —
+        // before a single byte had been sent. Now it says Dialing and waits for the
+        // gateway to actually answer.
+        dialGateway()
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { m }.uppercase()
@@ -806,12 +869,17 @@ class MainActivity : AppCompatActivity() {
                 // upstream is slow." The fallback now shows only THIS turn's composed
                 // text (the arguably-correct "you see what it'll say" case, unchanged).
                 if (state == "thinking") replyBuf = ""
+                // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
+                // loading, and it now says so on the pill instead of falling through
+                // to a silent "Connected" it has not earned yet.
+                warmingNow = state == "warming"
                 setStatus(when (state) {
                     "listening" -> "Listening…"
                     "thinking" -> "The entity is working…"
                     "speaking" -> "Speaking…"
+                    "warming" -> ConnectionPhase.pill(ConnectionPhase.Phase.WARMING)
                     else -> getString(R.string.hv_connected)
-                }, false)
+                }, state == "warming")
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
                 // renderMotion reads the real playback RMS instead.
@@ -1128,11 +1196,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Presence appearance: idle shape/theme + auto-cycle (Settings -> Particles).
+    // Presence appearance: the visual CATEGORY (what the being is made of, in every
+    // state) + the idle shape/theme + auto-cycle. Settings -> Visuals. This stays the
+    // one controller: Settings only writes prefs, the feed applies them.
     private fun applyParticlePrefs() {
         val theme = prefs.getString("particles_theme", "aura") ?: "aura"
         avatar.setIdleTheme(theme)
         avatar.setCycleThemes(prefs.getBoolean("particles_cycle", true))
+        avatar.setVisualCategory(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)
+            ?: VisualStyle.DEFAULT)
+        avatar.setVisualEnergy(prefs.getFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY))
+        avatar.setVisualGlow(prefs.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
     }
 
     private fun startAvatarLoop() {
