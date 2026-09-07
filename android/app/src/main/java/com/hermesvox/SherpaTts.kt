@@ -19,6 +19,10 @@ import kotlin.concurrent.thread
  * (a seamless fallback — never a broken turn). Fully offline, no cloud.
  */
 class SherpaTts(private val context: Context) : VoxTts {
+    companion object {
+        /** Playback RMS that drives the presence motion to full amplitude (previewB). */
+        const val RMS_FULL = 0.22f
+    }
     private var tts: OfflineTts? = null
     private var streamTrack: AudioTrack? = null
     val playbackSession: Int get() = streamTrack?.audioSessionId ?: 0
@@ -30,12 +34,44 @@ class SherpaTts(private val context: Context) : VoxTts {
     /** Samples the playback track has actually rendered; falls back to what has been
      *  written when there is no track (not started / torn down). Never throws. */
     fun playedSamples(): Int = try { streamTrack?.playbackHeadPosition ?: streamWritten } catch (_: Throwable) { streamWritten }
+
+    /** RMS of the ~20ms of audio the track is rendering RIGHT NOW, scaled to 0..1.
+     *  0 when nothing is playing, when the head is outside the live buffer (the gap
+     *  between phrases), or on any failure — silence reads as silence. Sampled on
+     *  demand by the presence loop (~16Hz); no thread, no allocation per call. */
+    fun speechLevel(): Float {
+        val buf = liveBuf ?: return 0f
+        val head = try { streamTrack?.playbackHeadPosition ?: return 0f } catch (_: Throwable) { return 0f }
+        val i = head - liveBase
+        if (i < 0 || i >= buf.size) return 0f
+        val sr = if (streamSR > 0) streamSR else 22050
+        val win = (sr / 50).coerceAtLeast(64)          // ~20ms: one syllable's envelope
+        val end = minOf(buf.size, i + win)
+        var acc = 0.0
+        var n = 0
+        var k = i
+        while (k < end) { val v = buf[k].toDouble(); acc += v * v; n++; k++ }
+        if (n == 0) return 0f
+        val rms = Math.sqrt(acc / n).toFloat()
+        // Piper emits float PCM in [-1,1]; conversational speech sits around 0.05-0.20
+        // RMS, so RMS_FULL maps a normal speaking voice across the full 0..1 drive.
+        return (rms / RMS_FULL).coerceIn(0f, 1f)
+    }
+
     /** The voice model's ACTUAL sample rate for the current stream (0 until the first chunk). */
     val streamSampleRate: Int get() = streamSR
     /** Per-phrase audio accounting: (text, samples) reported in the ORDER the audio is
      *  written to the track, just before its first write. VoiceController turns this into
      *  a SpeechCursor; nothing in the audio path depends on it. */
     @Volatile var onAudioSegment: ((text: String, samples: Int) -> Unit)? = null
+    // 0.5.0-previewB presence motion: the REAL voice amplitude. The avatar's speaking
+    // motion used to pulse on a hardcoded 0.6 — a placeholder that looked identical
+    // whether the entity was mid-word or mid-pause. These two fields hold the buffer
+    // currently on the track and the sample offset it starts at, so speechLevel() can
+    // RMS a short window AT THE PLAYBACK HEAD: the being moves with the syllable.
+    // Read-only accounting — nothing in the audio path depends on them.
+    @Volatile private var liveBuf: FloatArray? = null
+    @Volatile private var liveBase = 0
     // #7: serialize stream-track writes vs teardown so release() never races a
     // WRITE_BLOCKING write (the SIGSEGV). The writer sets writing under the lock;
     // teardown never flushes/releases while writing==true.
@@ -165,6 +201,7 @@ class SherpaTts(private val context: Context) : VoxTts {
                 streamTrack = built          // stop()/hush/call-end can now reach it
                 streamWritten = 0
                 streamSR = sr
+                liveBuf = samples; liveBase = 0   // previewB: RMS source for this utterance
                 writing = true               // the async teardown waits for this to clear (#7)
                 t = built
             }
@@ -264,6 +301,10 @@ class SherpaTts(private val context: Context) : VoxTts {
                     t = streamTrack ?: return false
                 }
                 streamSR = sr
+                // previewB: this chunk starts where the track has been written to so far
+                // (streamWritten only advances AFTER the whole chunk lands), so the head
+                // maps straight into it.
+                liveBuf = samples; liveBase = streamWritten
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
             VoxLog.d("piper chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
@@ -310,6 +351,7 @@ class SherpaTts(private val context: Context) : VoxTts {
             streamFence.stop()                   // #D1: close the fence BEFORE nulling the track —
             t = streamTrack                      // no chunk may start (or rebuild) after this point
             streamTrack = null                   // fence: no new write may start
+            liveBuf = null                       // previewB: silence reports level 0, not the last RMS
             // F1: no wait for writing here — that belongs to the async teardown.
         }
         try { t?.pause() } catch (_: Throwable) {}   // the user-audible silence, NOW
