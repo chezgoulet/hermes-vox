@@ -125,6 +125,43 @@ ONE coherent persona despite cognition and expression living in different places
   to keep a 2B from over-talking or drifting. The vibe-vector state sync is the piece
   that keeps the two layers from feeling out of phase.
 
+## ER barge-in scope — the semantic gate (Christopher's "take your time" question)
+In ER there are TWO outputs (soul P3 fillers + mind generation) and one listener. Barge-in
+grows a SCOPE: the physical trigger (audio-level) always cuts the P3 filler (user can
+always interrupt the soul's presence layer), but whether it cancels the MIND is a
+SEMANTIC decision, not physical.
+
+MECHANISM — two-stage barge "fire-and-hold":
+1. Audio barge fires (3ms, unchanged) → P3 filler cuts instantly.
+2. Mind NOT cancelled yet. The utterance is STT'd on-device (already running) and read
+   before deciding.
+3. Classify into two classes (reuse Miles rule #1's intent classifier + a 4th class):
+   - GENUINE BARGE (new instruction, redirect, "stop," "never mind," "actually do X",
+     "what?") → cancel the mind, utterance becomes new context. Today's behavior.
+   - BACKCHANNEL ("take your time," "okay," "mmhmm," "go on," "right," "sure") → do NOT
+     cancel the mind. Soul acknowledges in-character ("okay, give me a sec") and keeps
+     holding the space while the mind continues.
+   Backchannel is the smallest, most well-bounded class — exactly the 2B's lane. It
+   must be local/low-latency, never round-trip to cloud.
+
+SAFETY ASYMMETRY (the sacrosanct rule that matters):
+Default to NOT cancelling the mind on ambiguity. If the classifier is <90% sure it's a
+genuine barge, treat as backchannel and let the mind work. Rationale:
+  - Missed cancel (user meant to barge): user repeats themselves. CHEAP.
+  - False cancel (user said "take your time", killed 15s of work): regenerate from
+    scratch. EXPENSIVE.
+Bias the error toward not-cancelling the mind, while the filler always cuts.
+
+THREADING:
+- Priority arbiter (rule #4): user speech = P0, cuts P3 filler unconditionally. Whether
+  it ALSO emits a P1-cancel to the mind is the separate semantic step ABOVE the arbiter.
+- Backchannel acknowledgment = P2 "critical soul" (must play even before mind returns),
+  cuttable by a real barge.
+- Fail-soft (rule #3): long wait + patient user "take your time" → in-character lag
+  acknowledgment is the right response, not a cut.
+- MEASURE: log every mind-cancel + whether it followed a backchannel-classified utterance
+  → field miss-rate → tune the classifier against real data, not guess.
+
 ## Relationship to the current release family
 - 0.5.0-A: speech-locked transcript (text reveals with the voice, dims the tail).
 - 0.5.0-B: state-driven presence motion (stall→waiting-constellation etc.).
