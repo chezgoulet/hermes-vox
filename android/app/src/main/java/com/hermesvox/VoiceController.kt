@@ -705,6 +705,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             return
         }
         exec.execute {
+                try {
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
                 VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
