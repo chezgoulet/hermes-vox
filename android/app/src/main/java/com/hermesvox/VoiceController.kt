@@ -715,11 +715,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val firstByteAt = android.os.SystemClock.uptimeMillis()
                 var firstByteDone = false
                 var done = false
+                // H1: `tries` is now a poll-iteration counter for the diagnostics log
+                // lines ONLY — it is no longer the loop exit. The old `tries < 600` cap
+                // was an EVENT counter under active streaming (WaitStream returns the
+                // instant a delta is buffered), so a long reply was thrown away as
+                // "timeout" at event #600 (~15-20s in). The exit is wall-clock now.
                 var tries = 0
+                val deadline = android.os.SystemClock.uptimeMillis() + StreamPollGate.STREAM_TURN_TIMEOUT_MS
                 var lastEventAt = android.os.SystemClock.uptimeMillis()
                 var stall5 = false
                 var stall15 = false
-                while (!done && tries < 600) {
+                while (StreamPollGate.keepPolling(done, android.os.SystemClock.uptimeMillis(), deadline)) {
                     val tick = android.os.SystemClock.uptimeMillis()
                     // D2: a barge-in during generation (before startStream returned) sets
                     // genCancelled; break so the turn's worker retires without settling a
