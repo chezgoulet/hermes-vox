@@ -114,6 +114,47 @@ class ConnectionPhaseTest {
         assertEquals(P.DIALING, ConnectionPhase.resolve(true, true, true, Pr.BLOCKED))
     }
 
+    // ---- 0.5.2: the false-401 gate ----
+
+    @Test fun a_probe_auth_verdict_is_overruled_by_a_working_live_stream() {
+        // THE 0.5.2 FIELD BUG: `conn-test: verdict=auth ping=401 stream=-1` fired at
+        // pipe startup and the very next turns streamed fine. The live channel moved
+        // real bytes with real credentials; the probe did not. Live wins.
+        assertEquals(Pr.OK, ConnectionPhase.reconcile(Pr.AUTH, ConnectionPhase.Live.AUTHORIZED))
+        // ...and the user is never sent to Settings for a key that demonstrably works.
+        assertEquals(P.CONNECTED, ConnectionPhase.resolve(true, true, true,
+            ConnectionPhase.reconcile(Pr.AUTH, ConnectionPhase.Live.AUTHORIZED)))
+    }
+
+    @Test fun a_real_auth_failure_still_says_auth() {
+        // Not a reword-everything fix: with no live evidence, or with live evidence
+        // that AGREES, the auth verdict stands — that user really must fix the key.
+        assertEquals(Pr.AUTH, ConnectionPhase.reconcile(Pr.AUTH, ConnectionPhase.Live.UNKNOWN))
+        assertEquals(Pr.AUTH, ConnectionPhase.reconcile(Pr.AUTH, ConnectionPhase.Live.REJECTED))
+        // ...and the live channel can convict, too: a probe that got a lucky 200 is
+        // not allowed to hide a live turn the gateway rejected.
+        assertEquals(Pr.AUTH, ConnectionPhase.reconcile(Pr.OK, ConnectionPhase.Live.REJECTED))
+    }
+
+    @Test fun reconcile_touches_nothing_but_the_auth_question() {
+        for (live in ConnectionPhase.Live.values())
+            for (p in listOf(Pr.COLD, Pr.UNREACHABLE, Pr.GATEWAY_ERROR, Pr.BLOCKED, Pr.NOT_TESTED, Pr.IN_FLIGHT))
+                assertEquals("$p must survive live=$live", p, ConnectionPhase.reconcile(p, live))
+        // OK passes through untouched unless the live channel was actually rejected.
+        assertEquals(Pr.OK, ConnectionPhase.reconcile(Pr.OK, ConnectionPhase.Live.UNKNOWN))
+        assertEquals(Pr.OK, ConnectionPhase.reconcile(Pr.OK, ConnectionPhase.Live.AUTHORIZED))
+    }
+
+    @Test fun only_a_genuine_auth_error_moves_the_live_verdict() {
+        for (e in listOf("401 Unauthorized", "HTTP 403", "unauthorized", "Forbidden",
+                         "invalid api key", "unauthenticated"))
+            assertTrue("'$e' is an auth failure", ConnectionPhase.authFailure(e))
+        // A timeout, a provider hiccup or a dropped socket says NOTHING about the key.
+        for (e in listOf("timeout", "connection reset by peer", "500 internal error",
+                         "model overloaded", "stream cancelled", ""))
+            assertFalse("'$e' must not be read as an auth failure", ConnectionPhase.authFailure(e))
+    }
+
     // ---- copy ----
 
     @Test fun failure_copy_distinguishes_cold_from_unreachable() {
@@ -124,6 +165,16 @@ class ConnectionPhaseTest {
         assertFalse("a cold gateway must not be blamed on the network", cold.contains("network is on"))
         assertTrue(gone.contains("network is on"))
         assertNotEquals(cold, gone)
+    }
+
+    @Test fun the_three_failure_stories_are_three_different_sentences() {
+        val auth = ConnectionPhase.copy(Pr.AUTH, "")
+        val cold = ConnectionPhase.copy(Pr.COLD, "")
+        val gone = ConnectionPhase.copy(Pr.UNREACHABLE, "")
+        assertTrue("auth copy must point at the key", auth.contains("auth") && auth.contains("key"))
+        assertTrue("cold copy must not mention the key", !cold.contains("key"))
+        assertTrue("unreachable copy must not mention the key", !gone.contains("key"))
+        assertEquals(3, setOf(auth, cold, gone).size)
     }
 
     @Test fun success_copy_is_unchanged_and_debug_rides_along() {

@@ -740,6 +740,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val doneNow = obj.optBoolean("done")
                         val pollErr = obj.optString("error", "")
                         val textLen = obj.optString("text", "").length
+                        // K1: real events off the wire = the LIVE channel is authorized.
+                        // The conn-test probe defers to this (liveAuthState).
+                        if ((evts?.length() ?: 0) > 0) noteLiveAuthorized()
                         if ((evts?.length() ?: 0) > 0 || doneNow || pollErr.isNotBlank()) {
                             // previewB: the stall is OVER — tell the display, which has been
                             // holding the waiting constellation, before anything else lands.
@@ -761,6 +764,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val err = obj.optString("error", "")
                             val finalText = obj.optString("text", "")
                             VoxLog.d("turn done: gen=" + gen + " resp=" + obj.optString("response_id", "") + " len=" + finalText.length + " err=" + err.take(40))
+                            if (err.isBlank()) noteLiveAuthorized() else noteLiveFailure(err)
                             if (err.isNotBlank()) {
                                 stopStreaming()   // abort: close the streaming worker + release the track
                                 main.post {
@@ -784,6 +788,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 else if (!done) throw Exception("timeout")
             } catch (e: Throwable) {
                 stopStreaming()
+                noteLiveFailure(e.message)   // K1: only a real auth rejection moves the live verdict
                 VoxLog.e("event=stream-turn-failed gen=$gen err=${e.message}")
                 main.post {
                     listener?.onError("hermes: ${e.message}")
@@ -1296,8 +1301,30 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun shouldSpeak(): Boolean = voiceChannelOpen && speakEnabled()
 
 
+    /**
+     * K1 (0.5.2) — THE ROOT CAUSE OF THE FALSE 401.
+     *
+     * The gateway key is stored ENCRYPTED at rest (SecureStore, AES/GCM: the pref
+     * value is "ivB64:ctB64"), and every LIVE path resolves it before use —
+     * MainActivity.storedKey(), the Settings test, onboarding, all of them go
+     * through GatewayKey.resolve(stored, SecureStore::decrypt) and hand the Go
+     * session the PLAINTEXT key.
+     *
+     * The conn-test probe did not. It read the raw pref and sent
+     * `Authorization: Bearer ivB64:ctB64` — ciphertext as a credential. The gateway
+     * answered 401, correctly, to a request no live turn ever makes. That is the
+     * field log's `conn-test: verdict=auth ping=401 stream=-1` followed by turns
+     * that stream perfectly: two different credentials, one of them never valid.
+     *
+     * So the probe now resolves the key exactly like the live path does. One
+     * source of truth for the credential; the probe and the stream can no longer
+     * disagree about WHAT they are sending.
+     */
+    private fun gatewayKey(): String =
+        GatewayKey.resolve(prefString("key", ""), SecureStore::decrypt)
+
     fun testConnection(): String {
-        val u = prefString("url", ""); val k = prefString("key", "")
+        val u = prefString("url", ""); val k = gatewayKey()
         if (u.isBlank()) return "no endpoint set"
         var out = "endpoint=" + u
         try {
@@ -1338,7 +1365,10 @@ class VoiceController(private val context: Context, private val session: HermesS
      * opening the app never fires a real model turn just to colour a pill.
      */
     fun probeConnection(includeStream: Boolean): ConnectionPhase.Probe {
-        val u = prefString("url", ""); val k = prefString("key", "")
+        // The DECRYPTED key — the same credential the live stream sends. See
+        // [gatewayKey]: sending the stored ciphertext here is what produced the
+        // field log's false 401.
+        val u = prefString("url", ""); val k = gatewayKey()
         if (u.isBlank() || k.isBlank()) return ConnectionPhase.Probe.NOT_TESTED
         var pingCode = ConnectionPhase.NO_RESPONSE; var pingRe = ""
         try {
@@ -1363,7 +1393,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                 streamRe = ConnectionPhase.reason(e.javaClass.simpleName, e.message)
             }
         }
-        val probe = ConnectionPhase.classify(pingCode, pingRe, streamCode, streamRe)
+        val raw = ConnectionPhase.classify(pingCode, pingRe, streamCode, streamRe)
+        // ...and the second half of the fix: the one-shot probe never gets the last
+        // word on auth. If the LIVE voice channel has authorized (a real stream
+        // delivered events over this same session), an `auth` verdict from a
+        // synthetic HTTP shot is overruled — and vice versa.
+        val live = liveAuthState()
+        val probe = ConnectionPhase.reconcile(raw, live)
         lastProbeDebug = listOfNotNull(
             if (pingRe.isNotBlank()) "ping: $pingRe" else if (pingCode != 200) "ping: HTTP $pingCode" else null,
             if (streamRe.isNotBlank()) "stream: $streamRe"
@@ -1371,9 +1407,44 @@ class VoiceController(private val context: Context, private val session: HermesS
             else null
         ).joinToString(" · ")
         // SECRETS: codes and exception classes only — the key never reaches the log.
-        VoxLog.d("conn-test: verdict=${ConnectionPhase.token(probe)} ping=$pingCode${if (pingRe.isBlank()) "" else "($pingRe)"} " +
+        VoxLog.d("conn-test: verdict=${ConnectionPhase.token(probe)}" +
+            (if (probe != raw) " raw=${ConnectionPhase.token(raw)}" else "") +
+            " live=${live.name.lowercase()}" +
+            " ping=$pingCode${if (pingRe.isBlank()) "" else "($pingRe)"} " +
             "stream=$streamCode${if (streamRe.isBlank()) "" else "($streamRe)"}")
         return probe
+    }
+
+    // ---- K1 (0.5.2): what the LIVE channel has actually observed about auth -----
+    // The stream is the only witness that moves real bytes with real credentials, so
+    // it — not a synthetic one-shot probe — is the source of truth for "is our key
+    // accepted". Timestamps (elapsedRealtime) so a stale observation ages out instead
+    // of vouching for a session that has since changed key/endpoint.
+    @Volatile private var liveAuthorizedAt = 0L
+    @Volatile private var liveRejectedAt = 0L
+
+    /** A live turn produced real gateway events (or completed cleanly): our
+     *  credential was accepted, whatever any probe says. */
+    private fun noteLiveAuthorized() {
+        liveAuthorizedAt = android.os.SystemClock.elapsedRealtime()
+        liveRejectedAt = 0L
+    }
+
+    /** A live turn failed. Only a GENUINE auth rejection counts (a timeout or a
+     *  provider error says nothing about the key) — see ConnectionPhase.authFailure. */
+    private fun noteLiveFailure(msg: String?) {
+        if (msg.isNullOrBlank() || !ConnectionPhase.authFailure(msg)) return
+        liveRejectedAt = android.os.SystemClock.elapsedRealtime()
+        liveAuthorizedAt = 0L
+    }
+
+    /** The live channel's observed auth state, or UNKNOWN once the observation has
+     *  aged past [LIVE_AUTH_TTL_MS]. */
+    fun liveAuthState(): ConnectionPhase.Live {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (liveRejectedAt > 0L && now - liveRejectedAt <= LIVE_AUTH_TTL_MS) return ConnectionPhase.Live.REJECTED
+        if (liveAuthorizedAt > 0L && now - liveAuthorizedAt <= LIVE_AUTH_TTL_MS) return ConnectionPhase.Live.AUTHORIZED
+        return ConnectionPhase.Live.UNKNOWN
     }
 
     /** The debug tail of the last [probeConnection] — codes/exception classes, no key. */
@@ -1386,7 +1457,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      * human copy.
      */
     fun testConnectionAsync(includeStream: Boolean, cb: (ConnectionPhase.Probe, String) -> Unit) {
-        val u = prefString("url", ""); val k = prefString("key", "")
+        val u = prefString("url", ""); val k = gatewayKey()
         if (u.isBlank()) {
             cb(ConnectionPhase.Probe.NOT_TESTED,
                 ConnectionPhase.copy(ConnectionPhase.Probe.UNREACHABLE, "no endpoint set")); return
@@ -1409,7 +1480,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun testConnectionHuman(): String {
         val u = prefString("url", "")
         if (u.isBlank()) return ConnectionPhase.copy(ConnectionPhase.Probe.UNREACHABLE, "no endpoint set")
-        if (prefString("key", "").isBlank()) return GatewayKey.MISSING_KEY_PROMPT + " before testing the connection."
+        if (gatewayKey().isBlank()) return GatewayKey.MISSING_KEY_PROMPT + " before testing the connection."
         val probe = probeConnection(true)
         return ConnectionPhase.copy(probe, lastProbeDebug)
     }
@@ -1431,6 +1502,10 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     companion object {
         const val RMS_THRESHOLD = 0.09f
+        /** How long a LIVE auth observation vouches for the connection (K1). Long
+         *  enough to cover a whole conversation, short enough that a key/endpoint
+         *  change is not underwritten by yesterday's success. */
+        const val LIVE_AUTH_TTL_MS = 10 * 60 * 1000L
         // previewB: the stream-console markers the presence layer reads. Prefixed with
         // "// " like every other console line, so they render as ordinary log text and
         // an older display that does not know them simply prints them.

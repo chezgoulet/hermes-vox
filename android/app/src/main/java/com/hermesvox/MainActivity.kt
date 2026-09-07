@@ -845,6 +845,10 @@ class MainActivity : AppCompatActivity() {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
+        // K2: typing /compress (or /compact) is the same native command as picking it
+        // from the commands sheet — status feedback + the gateway's answer in a card,
+        // instead of the word disappearing into the turn as ordinary conversation.
+        if (CompressCommand.matches(text)) { compressContext(); return }
         appendConvo("You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
@@ -977,7 +981,7 @@ class MainActivity : AppCompatActivity() {
      *  data — the agent only does conversation, never command-UI strings. */
     private fun showCommands() {
         val cmds = arrayOf(
-            "/models", "/health", "/new", "/reconnect", "/clear", "/reset", "/status", "/help")
+            "/models", "/health", "/compress", "/new", "/reconnect", "/clear", "/reset", "/status", "/help")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
             .setItems(cmds) { _, w ->
@@ -985,6 +989,8 @@ class MainActivity : AppCompatActivity() {
                     "/models"    -> showModelChooser()
                     "/health",
                     "/status"    -> showHealthCard()
+                    CompressCommand.NAME,
+                    CompressCommand.ALIAS -> compressContext()
                     "/new"       -> newSession()
                     "/reconnect" -> reconnect()
                     "/clear",
@@ -1089,6 +1095,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * /compress (K2, 0.5.2) — ask the GATEWAY to compact this conversation's context
+     * so a long session can keep going. Christopher's ask, verbatim: "We need to
+     * expose a compress command to the user through this app."
+     *
+     * This is gateway-side compaction, not an app-side trim: [CompressCommand.DIRECTIVE]
+     * goes out over `turnStored`, the NON-streaming /v1/responses call that rides the
+     * SAME server-side chain as the voice turns (previous_response_id, and the reply's
+     * id is chained back), so the entity compacts the session the user is actually in.
+     * /clear stays what it always was — the local transcript, nothing more.
+     *
+     * Same shape as the other native commands: status pill while it runs, native card
+     * with the gateway's answer, off the UI thread (turnStored blocks up to 120s).
+     */
+    private fun compressContext() {
+        if (missingKeyPrompt()) return   // C0: empty key -> the clear Settings prompt
+        val s = session ?: run { setStatus("Connect first", true); return }
+        setStatus(CompressCommand.RUNNING, true)
+        kotlin.concurrent.thread {
+            val reply = try { s.turnStored(CompressCommand.DIRECTIVE) } catch (e: Throwable) {
+                VoxLog.w("event=compress-failed err=${e.message?.take(120)}"); null
+            }
+            val ok = !reply.isNullOrBlank()
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                setStatus(if (ok) CompressCommand.DONE else CompressCommand.FAILED, true)
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(CompressCommand.TITLE)
+                    .setMessage(CompressCommand.card(reply))
+                    .setPositiveButton("OK", null).show()
+            }
+        }
+    }
+
     /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state.
      *  The server-side response id must be captured on the bg thread BEFORE the
      *  client chain is dropped (resetConversation clears lastID), so the delete and
@@ -1134,6 +1174,7 @@ class MainActivity : AppCompatActivity() {
                 "/health - agent health (status + version)\n" +
                 "/new - reset the conversation + server chain\n" +
                 "/reconnect - re-ping the gateway\n" +
+                CompressCommand.HELP_LINE + "\n" +
                 "/clear /reset - clear the local conversation\n" +
                 "/status - agent health")
             .setPositiveButton("OK", null).show()
