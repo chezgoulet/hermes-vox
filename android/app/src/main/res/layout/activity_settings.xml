@@ -1096,6 +1096,37 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- A3 (0.5.2): cycle through EVERY category. The being inhabits each family
+                     in turn (crossfaded, ~6s each) so the whole breadth animates; off returns
+                     to the fixed pick above. -->
+                <LinearLayout
+                    android:id="@+id/row_visual_cycle_all"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Cycle all categories"
+                            style="@style/HvRowTitle" />
+                        <androidx.appcompat.widget.SwitchCompat
+                            android:id="@+id/set_visual_cycle_all"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Animate the being through every style, one family at a time. Off returns to your fixed pick."
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/row_visual_energy"
                     style="@style/HvRow"
