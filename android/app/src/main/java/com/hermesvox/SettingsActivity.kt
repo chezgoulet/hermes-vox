@@ -310,6 +310,7 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
+        bindKeepScreenOn()
                 findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
             val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(
                 prefs.getString("url", "").orEmpty(),
@@ -363,6 +364,17 @@ class SettingsActivity : AppCompatActivity() {
                     findViewById<TextView>(R.id.set_debug_val).text = "view"
                 }
                 .show()
+        }
+    }
+
+    /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default OFF). The flag it
+     *  controls is a plain WINDOW flag (FLAG_KEEP_SCREEN_ON) MainActivity arms at
+     *  call start and clears at the call teardown — no permission, no WAKE_LOCK.
+     *  Bound here + re-bound by restore-defaults (GROUP_APPEARANCE). */
+    private fun bindKeepScreenOn() {
+        findViewById<SwitchCompat>(R.id.set_keep_screen_on).apply {
+            isChecked = prefs.getBoolean("keep_screen_on", false)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("keep_screen_on", on).apply() }
         }
     }
 
@@ -578,6 +590,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putString("layout_mode", "presence")
                 .putString("particles_theme", "aura")
                 .putBoolean("particles_cycle", true)
+                .putBoolean("keep_screen_on", false)   // K2 (0.5.0.3): screen-alive default OFF
             GROUP_ABOUT -> e
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)
@@ -588,7 +601,7 @@ class SettingsActivity : AppCompatActivity() {
         when (group) {
             GROUP_MIC -> bindMicSettings()
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
-            GROUP_APPEARANCE -> bindParticles()
+            GROUP_APPEARANCE -> { bindParticles(); bindKeepScreenOn() }
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()

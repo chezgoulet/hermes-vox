@@ -10,12 +10,13 @@ import android.util.AttributeSet
 import android.view.View
 
 /**
- * CrawlView — renders text as a drifting, top-fading crawl over the black
- * background (the "Star Wars intro" treatment Christopher asked for).
- *
- * As text is appended it is laid out; the block drifts upward over time and the
- * text FADES OUT near the top of the view, so it never reaches/obscures the
- * particle-being above. Two roles:
+ * CrawlView — renders the transcript as a STATIC, top-fading block over the
+ * black background. 0.5.0.3: the "Star Wars intro" upward drift is gone (field
+ * verdict, verbatim: "we should simply eliminate the Star Wars scroll and have
+ * the text render in") — the reply appears at rest, anchored above the bottom
+ * pad, and still FADES OUT near the top of the view, so it never reaches or
+ * obscures the particle-being above. The speech-locked reveal (spoken bright /
+ * unspoken dim) is untouched. Two roles:
  *   - "reply"  bright, larger (the agent's words, synced with the voice)
  *   - "sse"    dimmer + 1-2px smaller (the dev stream log; visually distinct)
  */
@@ -31,8 +32,6 @@ class CrawlView @JvmOverloads constructor(
     private var spoken = -1
     private var role = "reply"
     private var layout: StaticLayout? = null
-    private var drift = 0f                     // upward drift offset (px)
-    private var lastN = 0L
     private var padBottom = dp(28f)
 
     private val replyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -54,10 +53,7 @@ class CrawlView @JvmOverloads constructor(
     fun setRole(r: String) { role = r; layout = null; invalidate() }
 
     override fun onDraw(canvas: Canvas) {
-        val now = System.nanoTime()
-        val dt = if (lastN == 0L) 0.016f else ((now - lastN) / 1e9f).coerceIn(0.001f, 0.05f)
-        lastN = now
-        if (full.isBlank()) { drift = 0f; postInvalidateOnAnimation(); return }
+        if (full.isBlank()) { postInvalidateOnAnimation(); return }
 
         val paint = if (role == "sse") ssePaint else replyPaint
         val tl = layout ?: StaticLayout.Builder
@@ -66,11 +62,11 @@ class CrawlView @JvmOverloads constructor(
             .setLineSpacing(dp(3f), 1.18f)
             .build().also { layout = it }
 
-        // Slow, continuous upward crawl (Star-Wars drift), consuming the reply.
-        val rate = if (role == "sse") 26f else 30f   // px/sec
-        drift += rate * dt
+        // 0.5.0.3: the text renders IN PLACE — a static, top-faded transcript at
+        // rest above the bottom pad. The upward drift (Star-Wars crawl) is gone;
+        // the reveal boundary below still moves with the voice.
         val baseBottom = height - padBottom
-        val blockTop = baseBottom - tl.height - drift
+        val blockTop = baseBottom - tl.height
         val fadeBand = height * 0.62f   // bottom of the view is fully bright; fades going up
 
         for (i in 0 until tl.lineCount) {
@@ -98,7 +94,8 @@ class CrawlView @JvmOverloads constructor(
         }
         paint.alpha = 255
 
-        // Once the whole reply has crawled off + faded, hide it (clean idle).
+        // Hide-when-done (kept from the drift era): with the block at rest it can
+        // only fire if the view is shorter than the bottom pad — a safe no-op guard.
         if (blockTop + tl.height < 0) setText("")
         postInvalidateOnAnimation()
     }
