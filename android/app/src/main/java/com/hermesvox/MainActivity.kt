@@ -99,6 +99,105 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---- 0.5.0-previewB: the presence-motion scheduler -----------------------
+    // MotionState decides WHAT the being is doing; this is the only place the live
+    // signals (state, deltas, tools, cuts, the real voice level, provider silence)
+    // are turned into that decision. No new animation loop: the existing avatar tick
+    // calls motionTick(), which refreshes the drive params on the frame clock.
+    private var motion = MotionState.Motion.IDLE
+    private var recoilPrior = MotionState.Motion.IDLE   // what the flinch interrupted
+    private var recoilUntil = 0L                        // the RECOIL one-shot window
+    private var lastSignalAt = 0L                       // last real stream/voice activity
+    private var lastVoiceAt = 0L                        // last tick with audible audio
+    private var motionStalled = false
+    private var motionTool: String? = null
+    // A signal that arrived DURING the flinch. bargeIn() posts onState("listening")
+    // within a few ms of the cut — well inside the 350ms window — so dropping it
+    // would strand the being in the motion it was interrupted out of.
+    private var recoilPending: MotionState.Signal? = null
+
+    /** Run one signal through the pure table and render the result. The RECOIL window
+     *  is held HERE, not in the table: a pure rule has no clock, so the caller owns the
+     *  ~350ms one-shot and the return to whatever the user interrupted. */
+    private fun feed(sig: MotionState.Signal) {
+        val now = android.os.SystemClock.uptimeMillis()
+        // Nothing but another cut may speak over the flinch while it is running — but
+        // the signal is HELD, not lost, and lands the moment the window is spent.
+        if (motion == MotionState.Motion.RECOIL && now < recoilUntil &&
+            sig != MotionState.Signal.BARGE) { recoilPending = sig; return }
+        if (sig == MotionState.Signal.BARGE) {
+            if (motion != MotionState.Motion.RECOIL) recoilPrior = motion
+            recoilUntil = now + MotionState.RECOIL_MS
+            recoilPending = null
+        }
+        motion = MotionState.transition(motion, sig)
+        renderMotion()
+    }
+
+    /** Any evidence the turn is alive: an SSE delta, a console line, a state change,
+     *  audible audio. Resets the stall watch and lifts a stall that is showing. */
+    private fun markActivity() {
+        lastSignalAt = android.os.SystemClock.uptimeMillis()
+        if (motionStalled) setMotionStall(false, 0L)
+    }
+
+    /** The stall lever. The avatar holds the prior motion and renders the waiting
+     *  constellation; the table keeps MainActivity's own motion in step so the
+     *  repeating ambient "thinking" signals cannot quietly clear the wait. */
+    private fun setMotionStall(on: Boolean, idleMs: Long) {
+        if (on == motionStalled) { if (on) avatar.setStall(true, idleMs); return }
+        // Nothing in flight -> a stall is meaningless; the table is the judge.
+        if (on && MotionState.transition(motion, MotionState.Signal.STALL_ON) != MotionState.Motion.STALL) return
+        motionStalled = on
+        avatar.setStall(on, idleMs)   // captures/restores the prior motion first
+        feed(if (on) MotionState.Signal.STALL_ON else MotionState.Signal.RESUME)
+    }
+
+    private fun renderMotion() =
+        avatar.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
+
+    /** Effort intensity: how deep into tool work this turn has gone. */
+    private fun motionWorkload(): Float = minOf(1f, toolCount * 0.3f)
+
+    /** Called from the avatar's existing frame tick — the ONLY clock in the motion
+     *  layer. Expires the recoil, watches for provider silence, and re-reads the real
+     *  voice level so the speaking motion tracks the syllable rather than a constant. */
+    private fun motionTick() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val level = liveController?.speechLevel() ?: 0f
+        if (motion == MotionState.Motion.RECOIL) {
+            if (now < recoilUntil) { avatar.driveMotion(level, motionWorkload()); return }
+            motion = recoilPrior              // the one-shot is spent: back to the work
+            val held = recoilPending          // ...and whatever it interrupted lands now
+            recoilPending = null
+            if (held != null) feed(held) else renderMotion()
+        }
+        // The streamed path never emits state "speaking" (only the one-shot speak()
+        // does), so the voice is detected the way the 0.5.0-A reveal detects it: real
+        // audio on the track. A short hold bridges the synth gaps between phrases.
+        if (level > 0f) { lastVoiceAt = now; markActivity() }
+        val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
+        if (voicing && motion != MotionState.Motion.SPEAKING) feed(MotionState.Signal.SPEAK)
+        val idle = now - lastSignalAt
+        // Presence-level stall watch. Deliberately NOT armed while the voice is
+        // audible: a long reply streams in ~1s and is then SPOKEN for 10-15s with no
+        // further SSE traffic, which is not a stall — that is the being working.
+        val watching = !voicing && (motion == MotionState.Motion.THINKING ||
+                motion == MotionState.Motion.TOOL || motion == MotionState.Motion.TOOL_RESULT)
+        if (motionStalled) avatar.setStall(true, idle)          // deepen the wait as it runs
+        else if (watching && lastSignalAt > 0L && idle >= MotionState.STALL_MS) setMotionStall(true, idle)
+        else if (!voicing && idle >= QUIET_MS) {
+            // Nothing at all for this long: whatever the being was doing is over. A hush
+            // that never re-listened, or a dropped turn, would otherwise hold its last
+            // motion forever — come to rest first, then widen into the drift.
+            if (motion != MotionState.Motion.IDLE && motion != MotionState.Motion.DRIFT) feed(MotionState.Signal.REST)
+            else if (motion != MotionState.Motion.DRIFT) feed(MotionState.Signal.QUIET)
+        }
+        // The per-frame refresh: drive values only. The one-shot setters (onTool's
+        // re-seed, pulseTool's ramp) belong to the edges above, never to the frame.
+        avatar.driveMotion(level, motionWorkload())
+    }
+
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent); setIntent(intent); handleDebugHarness(intent)
     }
@@ -144,7 +243,7 @@ class MainActivity : AppCompatActivity() {
         // lives in Settings (Particles), not on the raw tap.
         avatar.setOnClickListener {
             liveController?.hush()
-            avatar.setState("idle")
+            feed(MotionState.Signal.BARGE)   // previewB: it heard you — recoil, then settle
             setStatus(getString(R.string.hv_connected), false)
         }
 
@@ -293,7 +392,7 @@ class MainActivity : AppCompatActivity() {
         VoiceService.stop(this)
         exitCallUi()
         setStatus(getString(R.string.hv_connected), false)
-        avatar.setState("idle")
+        feed(MotionState.Signal.REST)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -580,6 +679,10 @@ class MainActivity : AppCompatActivity() {
         const val REVEAL_TICK_MS = 80L    // ~12fps: fast enough to read as continuous, cheap
         const val MIN_REVEAL_MS = 220L    // floor on how briefly the reveal may be engaged
 
+        // 0.5.0-previewB presence motion.
+        const val VOICE_HOLD_MS = 400L    // audible-audio hold across inter-phrase synth gaps
+        const val QUIET_MS = 12000L       // rest this long -> widen from IDLE into DRIFT
+
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
         @Volatile var session: HermesSession? = null
@@ -617,7 +720,7 @@ class MainActivity : AppCompatActivity() {
         reply.setText("")
         convoBuf = ""
         convoText.setText("")
-        avatar.setState("idle")
+        feed(MotionState.Signal.REST)
         setStatus(getString(R.string.hv_connected), false)
     }
 
@@ -677,9 +780,16 @@ class MainActivity : AppCompatActivity() {
                     "speaking" -> "Speaking…"
                     else -> getString(R.string.hv_connected)
                 }, false)
-                avatar.setStateLevel(state,
-                    if (state == "listening") 0.4f else if (state == "speaking") 0.6f else 0f,
-                    state == "thinking")
+                // previewB: the state is a SIGNAL now, not a shape + a made-up level.
+                // The level it used to pass (0.6 for "speaking") was a placeholder;
+                // renderMotion reads the real playback RMS instead.
+                markActivity()
+                feed(when (state) {
+                    "listening" -> MotionState.Signal.LISTEN
+                    "thinking", "streaming" -> MotionState.Signal.THINK
+                    "speaking" -> MotionState.Signal.SPEAK
+                    else -> MotionState.Signal.REST
+                })
                 // The reveal owns the crawl for the whole turn. NOTE: the streamed path
                 // (the one that raced ahead) never emits "speaking" — only the one-shot
                 // speak() does — so the loop is armed from "thinking" and the controller's
@@ -693,15 +803,33 @@ class MainActivity : AppCompatActivity() {
             // Once the voice starts, the crawl is painted by the speech cursor instead —
             // appending here is what raced 3-4 sentences ahead of the audio.
             replyBuf += text
+            markActivity()   // previewB: a delta is proof the provider is alive
             if (!revealActive) reply.setText(replyBuf)
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
+            // previewB: the presence markers are read BEFORE markActivity() — a stall
+            // notice is the report of silence, not evidence against it.
+            when {
+                line.startsWith(VoiceController.STREAM_STALL) -> {
+                    setMotionStall(true, android.os.SystemClock.uptimeMillis() - lastSignalAt)
+                    return@runOnUiThread
+                }
+                line.startsWith(VoiceController.STREAM_RESUME) -> { markActivity(); return@runOnUiThread }
+                line == VoiceController.CUT_BARGE || line == VoiceController.CUT_HUSH -> {
+                    // Every cut path (mic barge / hush / stop) reaches the display here,
+                    // so the recoil is driven by the one signal all of them share.
+                    markActivity(); feed(MotionState.Signal.BARGE)
+                    return@runOnUiThread
+                }
+            }
+            markActivity()
             if (line.startsWith("◆ tool: ")) {
                 // a tool was CALLED — the being gathers into the tool's motif + ramps
                 toolCount++
                 val nm = line.removePrefix("◆ tool: ").substringBefore('{').substringBefore(' ').trim()
-                avatar.onTool(mapTool(nm), minOf(1f, toolCount * 0.3f))
+                motionTool = mapTool(nm)
+                feed(MotionState.Signal.TOOL_CALL)   // -> avatar.onTool (existing motif)
                 // phone-call presence: Gemma narrates the work (Hermes preempts on the real reply)
                 if (prefs.getBoolean("presence", true)) {
                     orch.onWorkNarration()?.let { glue ->
@@ -712,7 +840,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             } else if (line.startsWith("◆ tool · ")) {
-                avatar.pulseTool()   // a tool RESULT landed — brief work pulse
+                feed(MotionState.Signal.TOOL_DONE)   // -> avatar.pulseTool (satisfied shimmer)
             }
         } }
         override fun onReply(finalText: String) { runOnUiThread {
@@ -720,12 +848,14 @@ class MainActivity : AppCompatActivity() {
             // finished with the surface (the stream completes seconds before the audio
             // does — setting it here is the clobber that erased the reveal mid-sentence).
             replyBuf = finalText
+            markActivity()
+            feed(MotionState.Signal.RETIRE)   // previewB: a natural end settles, never recoils
             if (!revealActive) reply.setText(replyBuf)
             appendConvo("Agent: $finalText")
         } }
         override fun onError(msg: String) { runOnUiThread {
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
-            avatar.setState("idle"); appendStream("// $msg")
+            feed(MotionState.Signal.REST); appendStream("// $msg")
         } }
     }
 
@@ -764,7 +894,7 @@ class MainActivity : AppCompatActivity() {
                         LatencyStats.resetSessionTurns()   // C3: cleared conversation = fresh session
                         revealActive = false; mainHandler.removeCallbacks(revealTask)
                         replyBuf = ""; reply.setText("")
-                        avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
+                        feed(MotionState.Signal.REST); setStatus(getString(R.string.hv_connected), false)
                     }
                     else         -> showHelpCard()   // /help
                 }
@@ -974,8 +1104,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAvatarLoop() {
+        lastSignalAt = android.os.SystemClock.uptimeMillis()
         val tick = object : Runnable {
-            override fun run() { avatar.invalidate(); avatar.postDelayed(this, 30) }
+            // previewB rides THIS clock — no parallel animation loop. It is posted on
+            // the avatar, so it dies with the view exactly as it always has.
+            override fun run() { motionTick(); avatar.invalidate(); avatar.postDelayed(this, 30) }
         }
         avatar.post(tick)
     }

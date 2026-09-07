@@ -724,14 +724,19 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val pollErr = obj.optString("error", "")
                         val textLen = obj.optString("text", "").length
                         if ((evts?.length() ?: 0) > 0 || doneNow || pollErr.isNotBlank()) {
+                            // previewB: the stall is OVER — tell the display, which has been
+                            // holding the waiting constellation, before anything else lands.
+                            if (stall5 || stall15) main.post { listener?.onLog(STREAM_RESUME) }
                             lastEventAt = tick
                             stall5 = false; stall15 = false
                             lastActivityAt = tick   // T2: a real SSE delta/event batch is turn activity
                             VoxLog.dd("event=stream-poll gen=$gen ev=${evts?.length() ?: 0} done=$doneNow textLen=$textLen err=${pollErr.take(70)}")
                         } else {
                             val idle = tick - lastEventAt
-                            if (idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s") }
-                            else if (idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s") }
+                            // previewB: the SAME detection now also reaches the presence layer.
+                            // It was log-only, so a 15s provider hang looked exactly like rest.
+                            if (idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
+                            else if (idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                         }
                         emitEvents(evts, t0)
                         if (obj.optBoolean("done")) {
@@ -1087,6 +1092,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         return revealedChars
     }
 
+    /** 0.5.0-previewB: the REAL voice amplitude right now (playback-head RMS, 0..1).
+     *  0 for engines with no sample accounting (system TTS) and whenever nothing is
+     *  playing — the presence motion then simply has no amplitude to dance to, which
+     *  is the truth, rather than the hardcoded level it used to be given. */
+    fun speechLevel(): Float {
+        val engine = tts as? SherpaTts ?: return 0f
+        return try { engine.speechLevel() } catch (_: Throwable) { 0f }
+    }
+
     /** true once a cancel (hush/barge/stop) froze the reveal — the tail was never said,
      *  so the display must leave it dim instead of completing the sentence for the entity. */
     fun speechFrozen(): Boolean = frozenChars != null
@@ -1179,7 +1193,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         speaking = false
         genCancelled = true
-        listener?.onLog("// (interrupted)")
+        listener?.onLog(CUT_BARGE)
         listener?.onState("listening")
         // #D1: ONE synchronous silence path — the gate release lands here, on main,
         // immediately after the barge decision (not queued behind TTS callbacks).
@@ -1235,7 +1249,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // #D1: the same single silence path as barge/endCall (fence + worker break
         // + synchronous gate release).
         silenceAll("hush")
-        listener?.onLog("// (stopped)")
+        listener?.onLog(CUT_HUSH)
         if (listening) listener?.onState("listening")
     }
 
@@ -1337,7 +1351,19 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun prefString(k: String, d: String) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
 
-    companion object { const val RMS_THRESHOLD = 0.09f }
+    companion object {
+        const val RMS_THRESHOLD = 0.09f
+        // previewB: the stream-console markers the presence layer reads. Prefixed with
+        // "// " like every other console line, so they render as ordinary log text and
+        // an older display that does not know them simply prints them.
+        const val STREAM_STALL = "// stream-stall"
+        const val STREAM_RESUME = "// stream-resume"
+        // The two existing cut markers, named so the presence layer can read them
+        // instead of matching loose strings across files. Both reach the display
+        // through the SAME silenceAll path a barge/hush/stop already takes.
+        const val CUT_BARGE = "// (interrupted)"
+        const val CUT_HUSH = "// (stopped)"
+    }
 }
 
 /** Pure: the STT leg to build from the stored backend + remote-URL pref + model
