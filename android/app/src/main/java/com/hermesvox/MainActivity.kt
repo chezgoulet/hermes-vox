@@ -453,6 +453,10 @@ class MainActivity : AppCompatActivity() {
         if (voiceWake != null) VoxLog.d("event=wake released")
         try { voiceWake?.release() } catch (_: Exception) {}
         voiceWake = null
+        // K2 (0.5.0.3): the screen-alive window flag dies with the wake. EVERY call
+        // teardown runs this (endCall / newSession / resetActiveConversation /
+        // onStop-no-call), so the flag can never outlive the call — no leak.
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     private fun modeIsEnhanced() =
         (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
@@ -467,6 +471,24 @@ class MainActivity : AppCompatActivity() {
             voiceWake?.acquire()
             VoxLog.d("event=wake acquired")
         } catch (e: Exception) { VoxLog.e("event=wake-acquire-failed err=${e.message}") }
+        // K2 (0.5.0.3) screen-alive toggle (Settings → Appearance, keep_screen_on,
+        // default OFF): FLAG_KEEP_SCREEN_ON is a WINDOW flag — no permission, NOT a
+        // WAKE_LOCK. Armed here, at call start beside the wake acquisition; released
+        // unconditionally in stopVoiceWake (the same teardown as focus/wake).
+        if (prefs.getBoolean("keep_screen_on", false)) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            VoxLog.d("event=screen-alive armed")
+        }
+    }
+
+    /** K2: re-apply the screen-alive flag from the CURRENT pref + call state. Runs on
+     *  resume (after resumeLiveCallIfAny), so flipping the toggle in Settings mid-call
+     *  lands the moment the call surface is back — on OR off. The controller gate keeps
+     *  a stale callLive (e.g. after /new) from re-arming a flag with no live line. */
+    private fun applyKeepScreenOn() {
+        val on = callLive && liveController != null && prefs.getBoolean("keep_screen_on", false)
+        if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     // ---------------------------------------------------------------------------
@@ -774,6 +796,16 @@ class MainActivity : AppCompatActivity() {
         override fun onState(state: String) {
             runOnUiThread {
                 if (state != "thinking") toolCount = 0   // a new turn begins
+                // K3 (0.5.0.3): scope replyBuf to the turn. "thinking" fires exactly
+                // once per turn (runStreamedTurn, beside armTranscript which resets the
+                // cursor space), but replyBuf had NO matching reset — it carried the
+                // previous turn's final text into the next turn's pre-voice window,
+                // where the reveal loop's cursor==-1 fallback paints it plainly. A slow
+                // upstream stretches that window to the whole stall, which is the field
+                // flag: "the app pushes the last message text to the screen when the
+                // upstream is slow." The fallback now shows only THIS turn's composed
+                // text (the arguably-correct "you see what it'll say" case, unchanged).
+                if (state == "thinking") replyBuf = ""
                 setStatus(when (state) {
                     "listening" -> "Listening…"
                     "thinking" -> "The entity is working…"
@@ -1083,7 +1115,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn() } }
 
     // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
     // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
