@@ -810,18 +810,37 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun settleReply(finalText: String, gen: Long) {
         listener?.onLog("// agent → ${finalText.take(120)}")
         listener?.onReply(finalText)
-        if (streamed && (tts?.supportsStreaming == true)) {
+        // 0.4.0.4 ghost re-speak: `streamed` alone was the wrong branch key. A hush that
+        // lands in the millisecond before done=true has already run stopStreaming()
+        // (which CLEARS streamed) and released this gen's gate, so a half-spoken,
+        // cancelled reply fell through to `else if (shouldSpeak()) -> speak(finalText)`
+        // and re-synthesized the WHOLE reply. The witnesses are the gate and the turn's
+        // first-audio latch; the rule itself is pure + unit-proven (ReplySettleRule).
+        val cancelled = gen != turnGen || voiceState.released()
+        when (ReplySettleRule.decide(
+            streamed = streamed,
+            streamingEngine = tts?.supportsStreaming == true,
+            genSpokeAudio = firstAudioPushed,
+            gateReleased = cancelled,
+            speakAllowed = shouldSpeak(),
+            hasText = finalText.isNotBlank(),
+        )) {
             // STREAMED reply (R1 single-owner retirement): the text/settle side is NO
             // LONGER an owner of "done". It only marks the queue final (sFinal) + wakes
             // the worker; the streaming worker drains every queued sentence, then on its
             // NATURAL exit closes the stream and posts the single canonical gate release.
             // No finishStreaming/stopStreaming/releaseTurnGate runs from here (#60). The
             // realtime loop's TURN_GATE_TIMEOUT_MS stays as the backstop.
-            streamFinish()
-        } else if (shouldSpeak()) {
-            speak(finalText, gen)
-        } else {
-            stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen, "text-only")
+            ReplySettle.RETIRE_STREAM -> streamFinish()
+            ReplySettle.SPEAK -> speak(finalText, gen)
+            ReplySettle.SILENT_SETTLE -> {
+                stopStreaming(); listener?.onState("idle"); releaseTurnGate(gen, "text-only")
+            }
+            // Cancelled (hush/barge/hangup/stale gen) or already audible: the text is
+            // rendered above, but no speech starts and the gate is NOT re-released —
+            // the cancel path already owns this turn's release and its own state.
+            ReplySettle.DROP -> VoxLog.d(
+                "event=settle-drop gen=$gen reason=${if (cancelled) "cancelled" else "already-spoken"} chars=${finalText.length}")
         }
     }
 

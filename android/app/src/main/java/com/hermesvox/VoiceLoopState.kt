@@ -26,6 +26,12 @@ class VoiceLoopState(private val earlySilenceMs: Long = 450L) {
      *  that already emitted its event=turn summary must not settle a second time). */
     fun epoch(): Long = epoch
 
+    /** True once THIS epoch's gate has been released — i.e. the turn is already over
+     *  (0.4.0.4: the witness settleReply uses to refuse to speak a reply the user
+     *  cancelled a millisecond before done=true landed). Read-only; a fresh arm()
+     *  clears it for the next turn. */
+    @Synchronized fun released(): Boolean = releasedForEpoch
+
     @Synchronized fun release(): Boolean {
         if (releasedForEpoch) return false
         releasedForEpoch = true
