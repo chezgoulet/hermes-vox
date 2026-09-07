@@ -50,9 +50,18 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var ns: android.media.audiofx.NoiseSuppressor? = null
     private val exec: ExecutorService = Executors.newCachedThreadPool()
     @Volatile private var commitRequested = false
+    @Volatile private var stopped = false
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var turnDone = java.util.concurrent.CountDownLatch(1)
     @Volatile private var turnGen = 0L
+    /** 0.5.0.1: submit to the executor OR return false if the controller is stopping
+     *  / the executor is shut down. Catches RejectedExecutionException (the race where
+     *  a shutdown lands between the isShutdown() check and execute()) so a turn-start
+     *  or worker hand-off racing teardown bails cleanly instead of crashing. */
+    private fun execSubmit(block: () -> Unit): Boolean {
+        if (stopped || exec.isShutdown) return false
+        return try { exec.execute(block); true } catch (_: java.util.concurrent.RejectedExecutionException) { false }
+    }
     @Volatile private var speaking = false
     @Volatile private var currentStream: String? = null
     @Volatile private var turnInFlight = false
@@ -256,6 +265,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
             VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms hard=${hardMs}ms")
+            if (stopped || exec.isShutdown) return@listenOffline
             exec.execute {
                 val seg = ArrayList<Float>(sr)
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
@@ -590,6 +600,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         ttsReady = false
         sttReady = false
         voiceState.reset()
+        stopped = true   // 0.5.0.1: terminal — fence every submit BEFORE shutdown
         // #19: a stopped controller is terminal — shut the executor down
         // (bounded/graceful) so its threads aren't leaked. Reuse-after-stop is
         // forbidden: the activity nulls its reference so a dead executor is never
@@ -687,8 +698,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onState("thinking")
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
         if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin()
+        if (stopped || exec.isShutdown) {   // 0.5.0.1: turn-start racing teardown bails cleanly
+            VoxLog.d("event=turn-dropped reason=stopped gen=$gen")
+            turnInFlight = false
+            releaseTurnGate(gen, "stopped")
+            return
+        }
         exec.execute {
-            try {
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
                 VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
