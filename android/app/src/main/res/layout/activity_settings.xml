@@ -612,6 +612,37 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_mic_barge_level"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Level-only barge (ms, 0=off)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mic_barge_level_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="400 ms"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_barge_level"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="16" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Cut the entity with a sustained loud voice even when VAD misses it through speaker echo. Raise if TV/noise barges."
+                        android:textColor="@color/hv_text_dim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_mic_reset"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
