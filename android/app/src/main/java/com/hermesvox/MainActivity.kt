@@ -39,6 +39,66 @@ class MainActivity : AppCompatActivity() {
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
+    // ---- 0.5.0-previewA: the speech-locked transcript reveal (display only) ----
+    // The crawl used to be painted straight from onDelta, i.e. at the speed the SSE
+    // stream ARRIVES (a whole reply in ~1s) while Piper speaks it over 8-15s. While the
+    // state is "speaking" this short-lived loop repaints instead from the controller's
+    // speech cursor — the AudioTrack playback head — so the bright/dim boundary is the
+    // word the entity is actually saying, and the tail you can see is visibly unsaid.
+    private var revealActive = false
+    private var revealStartedAt = 0L
+    private var revealEpoch = 0
+    private val revealTask = object : Runnable {
+        override fun run() {
+            if (!revealActive) return
+            val c = liveController
+            if (c != null) {
+                val spoken = c.speechCursor()
+                if (spoken >= 0) {
+                    val txt = c.transcriptText()
+                    // Blank = nothing has reached the engine yet (one-shot synth in
+                    // flight): leave whatever is on screen rather than flashing empty.
+                    if (txt.isNotBlank()) reply.setText(txt, spoken)
+                } else {
+                    reply.setText(replyBuf)   // system TTS: no sample accounting, no lock
+                }
+            }
+            mainHandler.postDelayed(this, REVEAL_TICK_MS)
+        }
+    }
+
+    private fun startReveal() {
+        revealEpoch++                       // cancels any pending minRevealMs stop
+        if (revealActive) return
+        revealActive = true
+        revealStartedAt = android.os.SystemClock.uptimeMillis()
+        mainHandler.post(revealTask)
+    }
+
+    /** Stop revealing. minRevealMs: a very short reply would otherwise engage and tear
+     *  the loop down inside a frame or two (plain -> dim -> plain stutter), so the loop
+     *  is held for that floor before it hands the surface back. */
+    private fun stopReveal() {
+        if (!revealActive) return
+        val held = android.os.SystemClock.uptimeMillis() - revealStartedAt
+        if (held < MIN_REVEAL_MS) {
+            val e = revealEpoch
+            mainHandler.postDelayed({ if (e == revealEpoch) stopReveal() }, MIN_REVEAL_MS - held)
+            return
+        }
+        revealActive = false
+        mainHandler.removeCallbacks(revealTask)
+        val c = liveController
+        if (c != null && c.speechFrozen()) {
+            // Cut (hush/barge/stop): the boundary stays exactly where the voice stopped —
+            // the unspoken tail is left dim and is NEVER auto-completed.
+            val txt = c.transcriptText()
+            if (txt.isNotBlank()) reply.setText(txt, c.speechCursor())
+        } else {
+            reply.setText(replyBuf)   // spoken through to the end -> the full reply, plainly
+        }
+    }
+
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent); setIntent(intent); handleDebugHarness(intent)
     }
@@ -516,6 +576,10 @@ class MainActivity : AppCompatActivity() {
 
     // App-scoped call start time so a live call's timer survives activity recreation.
     companion object {
+        // 0.5.0-A reveal pacing (see revealTask).
+        const val REVEAL_TICK_MS = 80L    // ~12fps: fast enough to read as continuous, cheap
+        const val MIN_REVEAL_MS = 220L    // floor on how briefly the reveal may be engaged
+
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
         @Volatile var session: HermesSession? = null
@@ -548,6 +612,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearConversationUi() {
+        revealActive = false; mainHandler.removeCallbacks(revealTask)
         replyBuf = ""
         reply.setText("")
         convoBuf = ""
@@ -615,10 +680,20 @@ class MainActivity : AppCompatActivity() {
                 avatar.setStateLevel(state,
                     if (state == "listening") 0.4f else if (state == "speaking") 0.6f else 0f,
                     state == "thinking")
+                // The reveal owns the crawl for the whole turn. NOTE: the streamed path
+                // (the one that raced ahead) never emits "speaking" — only the one-shot
+                // speak() does — so the loop is armed from "thinking" and the controller's
+                // cursor decides when the lock engages: it reports -1 (paint plainly, as
+                // before) until the first phrase is actually handed to the voice.
+                if (state == "thinking" || state == "speaking") startReveal() else stopReveal()
             }
         }
         override fun onDelta(text: String) { runOnUiThread {
-            replyBuf += text; reply.setText(replyBuf)
+            // Keep the full composition; paint it only while the reveal is NOT running.
+            // Once the voice starts, the crawl is painted by the speech cursor instead —
+            // appending here is what raced 3-4 sentences ahead of the audio.
+            replyBuf += text
+            if (!revealActive) reply.setText(replyBuf)
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
@@ -640,7 +715,14 @@ class MainActivity : AppCompatActivity() {
                 avatar.pulseTool()   // a tool RESULT landed — brief work pulse
             }
         } }
-        override fun onReply(finalText: String) { runOnUiThread { replyBuf = finalText; reply.setText(replyBuf); appendConvo("Agent: $finalText") } }
+        override fun onReply(finalText: String) { runOnUiThread {
+            // The final full text still lands here; it is only PAINTED once the voice has
+            // finished with the surface (the stream completes seconds before the audio
+            // does — setting it here is the clobber that erased the reveal mid-sentence).
+            replyBuf = finalText
+            if (!revealActive) reply.setText(replyBuf)
+            appendConvo("Agent: $finalText")
+        } }
         override fun onError(msg: String) { runOnUiThread {
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             avatar.setState("idle"); appendStream("// $msg")
@@ -680,6 +762,7 @@ class MainActivity : AppCompatActivity() {
                         liveController?.stop(); liveController = null
                         session?.resetConversation()
                         LatencyStats.resetSessionTurns()   // C3: cleared conversation = fresh session
+                        revealActive = false; mainHandler.removeCallbacks(revealTask)
                         replyBuf = ""; reply.setText("")
                         avatar.setState("idle"); setStatus(getString(R.string.hv_connected), false)
                     }
@@ -934,6 +1017,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        revealActive = false
+        mainHandler.removeCallbacks(revealTask)   // the loop reposts itself — never outlive the view
         if (active === this) active = null
         super.onDestroy()
     }

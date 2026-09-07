@@ -133,6 +133,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         // default of "system" left the app speaking via a silent system TTS.)
         val voice = prefString("tts", if (ModelCatalog.isInstalled(context, "piper-lessac")) "piper" else "system")
         tts = buildTts(context, voice)
+        // 0.5.0-previewA speech-locked transcript: the warm engine reports each phrase
+        // (text, samples) as it hands it to the playback track, in playback order.
+        (tts as? SherpaTts)?.onAudioSegment = { text, samples -> recordAudioSegment(text, samples) }
         VoxLog.d("pipeline: tts=${tts?.name} (voice=$voice) ttsReady=$ttsReady")
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
         tts?.init { ttsReady = it }
@@ -678,6 +681,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         firstTextLatch = false
         firstAudioPushed = false
         genCancelled = false
+        armTranscript()         // 0.5.0-A: a fresh reveal cursor for this turn
         val t0 = android.os.SystemClock.uptimeMillis()
         turnStartedAt = t0
         listener?.onState("thinking")
@@ -1007,6 +1011,95 @@ class VoiceController(private val context: Context, private val session: HermesS
         synchronized(sLock) { sQueue.clear(); sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
     }
 
+    // ---- 0.5.0-previewA: speech-locked transcript (display only) ----
+    // The transcript used to be driven by DELTA ARRIVAL (MainActivity.onDelta appended
+    // every SSE delta the instant it landed) while Piper renders the same text to audio
+    // over 8-15s — so the crawl ran sentences ahead of the voice. These fields account
+    // for what the ENGINE has been given, in playback order, so the display can be paced
+    // by the playback head instead. Nothing in the audio/turn path reads them.
+    private val cursorLock = Object()
+    private val chunkStats = ArrayList<Pair<Int, Int>>()   // (textLen, samples), playback order
+    private val spokenSb = StringBuilder()                 // the cursor's index space
+    @Volatile private var frozenChars: Int? = null         // set at a cancel; the tail stays unspoken
+    @Volatile private var audioStartedAt = 0L              // uptime of the first phrase handed over
+    @Volatile private var headEverMoved = false            // has playbackHeadPosition ever advanced
+    @Volatile private var revealedChars = 0                // monotonic within a turn
+
+    /** New turn: a fresh cursor (and an un-frozen one). */
+    private fun armTranscript() {
+        synchronized(cursorLock) { chunkStats.clear(); spokenSb.setLength(0) }
+        frozenChars = null; audioStartedAt = 0L; headEverMoved = false; revealedChars = 0
+    }
+
+    /** A phrase is next on the playback track (called from the engine thread, before its
+     *  first write). Presence glue is NOT the reply and never enters the transcript. The
+     *  inter-phrase space is charged to the phrase that follows it, so the cursor's index
+     *  space is exactly [spokenSb] — no drift against the rendered string. */
+    private fun recordAudioSegment(text: String, samples: Int) {
+        if (glueSpeaking) return
+        synchronized(cursorLock) {
+            val sep = if (spokenSb.isNotEmpty()) 1 else 0
+            chunkStats.add(Pair(text.length + sep, samples))
+            if (sep == 1) spokenSb.append(' ')
+            spokenSb.append(text)
+        }
+        if (audioStartedAt == 0L) audioStartedAt = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** The transcript in the cursor's index space: every phrase already handed to the
+     *  voice, plus the tail that is still accumulating toward its sentence boundary
+     *  (the display dims everything at/after [speechCursor], so the tail reads as
+     *  "coming, not yet said"). */
+    fun transcriptText(): String {
+        val head = synchronized(cursorLock) { spokenSb.toString() }
+        val tail = synchronized(sLock) { sAccum.toString() }.trim()
+        return when {
+            tail.isEmpty() -> head
+            head.isEmpty() -> tail
+            else -> "$head $tail"
+        }
+    }
+
+    /** Chars of [transcriptText] the voice has ACTUALLY uttered.
+     *  -1 = no speech lock available (a non-sample-accounted engine, i.e. system TTS):
+     *  the display falls back to showing the text plainly, as it always has. */
+    fun speechCursor(): Int {
+        if (tts !is SherpaTts) return -1
+        frozenChars?.let { return it }
+        // Nothing has reached the voice yet (still thinking / tool-calling, or a
+        // text-only settle that never speaks): no lock, so the display keeps painting
+        // plainly exactly as it always has.
+        if (audioStartedAt == 0L) return -1
+        return liveCursor()
+    }
+
+    /** Sample the playback head and run it through the pure cursor. */
+    private fun liveCursor(): Int {
+        val engine = tts as? SherpaTts ?: return revealedChars
+        val head = try { engine.playedSamples() } catch (_: Throwable) { 0 }
+        if (head > 0) headEverMoved = true
+        val since = if (audioStartedAt == 0L) 0L else android.os.SystemClock.uptimeMillis() - audioStartedAt
+        // PlaybackClock: trust the head; only a head that has NEVER advanced falls back
+        // to the wall clock (some HALs report 0 for the life of a short track).
+        val samples = PlaybackClock.samples(head, headEverMoved, since, engine.streamSampleRate)
+        val chars = synchronized(cursorLock) { SpeechCursor.of(chunkStats).charsSpoken(samples) }
+        if (chars > revealedChars) revealedChars = chars   // monotonic: the reveal never rewinds
+        return revealedChars
+    }
+
+    /** true once a cancel (hush/barge/stop) froze the reveal — the tail was never said,
+     *  so the display must leave it dim instead of completing the sentence for the entity. */
+    fun speechFrozen(): Boolean = frozenChars != null
+
+    /** Cancel (hush/barge/stop): capture where the voice actually got to and hold it. */
+    private fun freezeCursor(reason: String) {
+        if (frozenChars != null) return
+        if (audioStartedAt == 0L) return   // cut before a single word was voiced: no lock to hold
+        val at = liveCursor()
+        frozenChars = at
+        VoxLog.dd("event=reveal-freeze reason=$reason chars=$at of=${synchronized(cursorLock) { spokenSb.length }}")
+    }
+
     private fun bumpSpeakLevel() {
         // The avatar's speaking level follows real deltas; armed briefly for the voice animation.
         speakerPulse = 1f
@@ -1103,6 +1196,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun silenceAll(reason: String) {
         val bargeAt = bargeDecisionAt
         bargeDecisionAt = 0L
+        // 0.5.0-A: hold the reveal at what the voice ACTUALLY said before the cut —
+        // read the playback head while the track is still alive (stopTts tears it
+        // down). The unspoken tail is never revealed: you don't show words the entity
+        // was interrupted before saying.
+        freezeCursor(reason)
         stopTts()
         stopStreaming()
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
