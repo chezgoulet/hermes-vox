@@ -418,6 +418,8 @@ class SettingsActivity : AppCompatActivity() {
             0.04f, 0.30f, 0.01f, 0.10f) { "%.2f".format(it) }
         bindIntSeekBar(R.id.set_seek_barge_grace, R.id.set_mic_barge_grace_val, "barge_grace_ms",
             0, 2000, 50, 500) { "${it} ms" }
+        bindIntSeekBar(R.id.set_seek_barge_level, R.id.set_mic_barge_level_val, "barge_level_only_ms",
+            0, 800, 50, BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()) { "${it} ms" }
 
         findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
             restoreDefaults(GROUP_MIC)
@@ -555,6 +557,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("tts_voice_usage", false)   // D2: echo-routing default OFF (field A/B 2026-09-06)
                 .putFloat("barge_rms_min", 0.10f)
                 .putInt("barge_grace_ms", 500)
+                .putInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt())
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)

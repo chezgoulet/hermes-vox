@@ -382,6 +382,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val myGen = turnGen
                     val bargeRmsMin = micFloat("barge_rms_min", 0.10f)
                     val bargeGraceMs = micInt("barge_grace_ms", BargeGate.DEFAULT_GRACE_MS).toLong()
+                    val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
                     VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
                     main.post { runStreamedTurn(t, myGen) }
@@ -402,6 +403,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var gateReleased = false
                     var bargeFired = false
                     var sustainedMs = 0L
+                    // Second accumulator (0.4.0.2 level-only escape): contiguous time the
+                    // RMS held above the RAISED bar (floor * LEVEL_ONLY_BOOST), its own
+                    // 1.6x reset bar, tracked with the same readAt clock discipline + the
+                    // same O(1) float math as sustainedMs. A sub-1.6x read (that could
+                    // still keep the VAD sustain alive) zeroes THIS accumulator alone.
+                    var sustainedLevelMs = 0L
                     var sawPlayback = false
                     var playbackSince = 0L
                     // T1 probe state (dd-only, per turn, no allocation): lastReadAtMs is the
@@ -469,7 +476,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
                             }
                         } else skipStateSinceMs = 0L
-                        if (inGrace || stateSkip) { sustainedMs = 0L; continue }
+                        if (inGrace || stateSkip) { sustainedMs = 0L; sustainedLevelMs = 0L; continue }
                         var acc = 0.0
                         val frames = FloatArray(n)
                         for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; acc += frames[i] * frames[i] }
@@ -478,7 +485,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // active RMS floor: rmsMin with VAD, rmsMin*1.4 without
                         val floor = if (vadAvailable) bargeRmsMin else bargeRmsMin * BargeGate.NO_VAD_RMS_BOOST
                         sustainedMs = if (level > floor) sustainedMs + n * 1000L / sr else 0L
-                        if (BargeGate.decide(level.toFloat(), if (vadAvailable) vadSpeech else null, sustainedMs, bargeRmsMin, vadAvailable)) {
+                        // level-only escape accumulator: its OWN raised bar (floor * 1.6),
+                        // reset to 0 the instant a read drops below it. Reuses the same
+                        // per-read clock discipline (n * 1000 / sr) as sustainedMs.
+                        val levelFloor = floor * BargeGate.LEVEL_ONLY_BOOST
+                        sustainedLevelMs = if (level > levelFloor) sustainedLevelMs + n * 1000L / sr else 0L
+                        if (BargeGate.decide(level.toFloat(), if (vadAvailable) vadSpeech else null, sustainedMs,
+                                bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs)) {
                             VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
                             main.post { bargeIn() }
