@@ -265,7 +265,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
             VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms hard=${hardMs}ms")
-            if (stopped || exec.isShutdown) return@listenOffline
+            if (stopped || exec.isShutdown) return false   // 0.5.0.1: bail, don't start the capture loop
             exec.execute {
                 val seg = ArrayList<Float>(sr)
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
