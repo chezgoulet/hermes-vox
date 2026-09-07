@@ -62,7 +62,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     // `speaking` (playback mode, platform AEC/NS on r is the echo reference) or when
     // `turnInFlight && !speaking` (generation mode: thinking / tool-calls / first-token
     // latency). No second recorders, no AcousticEchoCanceler-on-a-playback-session.
-    // The decision is a sustained-RMS (+ VAD when available) double gate (BargeGate).
+    // The decision is a sustained-RMS (+ VAD when available) double gate (BargeGate),
+    // with leaky (duty-cycle) sustain accumulators since 0.4.0.3.
     // Set when a barge-in lands before startStream returned (currentStream was
     // still null), so the stream loop breaks instead of settling a ghost reply.
     @Volatile private var genCancelled = false
@@ -403,12 +404,25 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var gateReleased = false
                     var bargeFired = false
                     var sustainedMs = 0L
-                    // Second accumulator (0.4.0.2 level-only escape): contiguous time the
-                    // RMS held above the RAISED bar (floor * LEVEL_ONLY_BOOST), its own
-                    // 1.6x reset bar, tracked with the same readAt clock discipline + the
-                    // same O(1) float math as sustainedMs. A sub-1.6x read (that could
-                    // still keep the VAD sustain alive) zeroes THIS accumulator alone.
+                    // Second accumulator (0.4.0.2 level-only escape): net time the RMS held
+                    // above the RAISED bar (floor * LEVEL_ONLY_BOOST), its own bar, tracked
+                    // with the same readAt clock discipline + the same O(1) float math as
+                    // sustainedMs. A sub-bar read (that could still keep the VAD sustain
+                    // alive) leaks THIS accumulator alone.
+                    // 0.4.0.3: BOTH accumulators are LEAKY (BargeGate.accumulate) instead of
+                    // reset-to-0. The 0.4.0.1/0.4.0.2 field log proved reset-to-0 unreachable
+                    // at this 64ms read granularity: all 15 near-miss lines report sustainedMs
+                    // as 0 or exactly 64, never 128, so the strict form never compounded past
+                    // one frame and the escape's 400ms/7-frame requirement was arithmetically
+                    // dead. Leaking makes the discriminator DUTY CYCLE at the bar (break-even
+                    // 0.6) instead of perfect contiguity.
                     var sustainedLevelMs = 0L
+                    // 0.4.0.3: wall-clock of the last read the VAD called speech. The VAD path
+                    // used to need vad==true on the CURRENT read; the log shows agreement
+                    // landing on neighbouring frames instead (turn 10: vad=true at peak 0.135
+                    // between vad=false peaks of 0.172/0.182), so BargeGate.VAD_RECENT_MS now
+                    // accepts agreement from the recent past. 0 = the VAD has not agreed yet.
+                    var lastVadSpeechAt = 0L
                     var sawPlayback = false
                     var playbackSince = 0L
                     // T1 probe state (dd-only, per turn, no allocation): lastReadAtMs is the
@@ -476,7 +490,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
                             }
                         } else skipStateSinceMs = 0L
-                        if (inGrace || stateSkip) { sustainedMs = 0L; sustainedLevelMs = 0L; continue }
+                        if (inGrace || stateSkip) { sustainedMs = 0L; sustainedLevelMs = 0L; lastVadSpeechAt = 0L; continue }
                         var acc = 0.0
                         val frames = FloatArray(n)
                         for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; acc += frames[i] * frames[i] }
@@ -484,19 +498,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
                         // active RMS floor: rmsMin with VAD, rmsMin*1.4 without
                         val floor = if (vadAvailable) bargeRmsMin else bargeRmsMin * BargeGate.NO_VAD_RMS_BOOST
-                        sustainedMs = if (level > floor) sustainedMs + n * 1000L / sr else 0L
-                        // level-only escape accumulator: its OWN raised bar (floor * 1.6),
-                        // reset to 0 the instant a read drops below it. Reuses the same
-                        // per-read clock discipline (n * 1000 / sr) as sustainedMs.
+                        // Same per-read clock discipline as before (n * 1000 / sr = 64ms for the
+                        // 1024-short buffer at 16kHz); only the accumulate rule changed.
+                        val frameMs = n * 1000L / sr
+                        sustainedMs = BargeGate.accumulate(sustainedMs, level > floor, frameMs)
+                        // level-only escape accumulator: its OWN raised bar (floor * 1.3), leaked
+                        // (not zeroed) by a read below it. Its cap admits a levelOnlyMs slider
+                        // set above the default ceiling.
                         val levelFloor = floor * BargeGate.LEVEL_ONLY_BOOST
-                        sustainedLevelMs = if (level > levelFloor) sustainedLevelMs + n * 1000L / sr else 0L
+                        sustainedLevelMs = BargeGate.accumulate(sustainedLevelMs, level > levelFloor, frameMs,
+                            maxOf(BargeGate.SUSTAIN_CAP_MS, levelOnlyMs))
+                        if (vadSpeech) lastVadSpeechAt = readAt
+                        val msSinceVadSpeech = if (lastVadSpeechAt == 0L) Long.MAX_VALUE else readAt - lastVadSpeechAt
                         if (BargeGate.decide(level.toFloat(), if (vadAvailable) vadSpeech else null, sustainedMs,
-                                bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs)) {
+                                bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs, msSinceVadSpeech)) {
                             VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
                             main.post { bargeIn() }
                             bargeFired = true
                             sustainedMs = 0L
+                            sustainedLevelMs = 0L
                         } else if (spk) {
                             // T1 CAUSE C probe (decide false): the user is audibly there but the
                             // double gate didn't fire — either level is ABOVE the floor and the
@@ -507,10 +528,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val nearFloor = floor * 0.7f
                             if (level >= nearFloor) { if (level > peakRms) peakRms = level.toFloat() }
                             else peakRms = 0f
-                            if ((sustainedMs > 0L || (vadSpeech && level >= nearFloor)) &&
+                            if ((sustainedMs > 0L || sustainedLevelMs > 0L || (vadSpeech && level >= nearFloor)) &&
                                 readAt - nearMissLoggedAtMs >= BARGE_NEARMISS_WINDOW_MS) {
                                 nearMissLoggedAtMs = readAt
-                                VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${"%.3f".format(peakRms)} vad=$vadSpeech sustainedMs=$sustainedMs floor=${"%.3f".format(floor)}")
+                                // 0.4.0.3 blind spot closed: levelSustain= is the ESCAPE's own
+                                // accumulator (levelBar= its bar), which 0.4.0.2 never printed —
+                                // sustainedMs= alone could not show why the escape stayed silent.
+                                VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${"%.3f".format(peakRms)} vad=$vadSpeech sustainedMs=$sustainedMs floor=${"%.3f".format(floor)} levelSustain=$sustainedLevelMs levelBar=${"%.3f".format(levelFloor)} need=$levelOnlyMs")
                             }
                         }
                     }

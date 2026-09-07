@@ -626,7 +626,7 @@
                         android:id="@+id/set_mic_barge_level_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="400 ms"
+                        android:text="200 ms"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_barge_level"
