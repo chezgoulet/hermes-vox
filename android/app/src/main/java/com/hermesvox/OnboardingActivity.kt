@@ -26,7 +26,7 @@ fun voiceModeCompare(mode: String?): String = when (mode) {
 
 /** #120-B: full "· name — what it means" line for a mode. */
 fun voiceModeLine(mode: String?): String = when (mode) {
-    ModelCatalog.MODE_ENHANCED -> "· Enhanced Realtime — " + voiceModeCompare(mode)
+    ModelCatalog.MODE_ENHANCED -> "· Enhanced Realtime (alpha) — " + voiceModeCompare(mode)
     else -> "· Realtime — " + voiceModeCompare(mode)
 }
 

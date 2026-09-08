@@ -68,7 +68,7 @@ class ModelsActivity : AppCompatActivity() {
             "The required set is your offline voice: hearing you (STT · Whisper), " +
             "knowing when you start and stop talking (VAD · Silero), and speaking " +
             "replies (TTS · Piper) — all on-device. Gemma below is optional: it " +
-            "powers Enhanced Realtime's phone-call presence."
+            "powers Enhanced Realtime (alpha) phone-call presence."
         buildCards()
     }
 
