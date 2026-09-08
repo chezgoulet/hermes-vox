@@ -966,7 +966,9 @@ class MainActivity : AppCompatActivity() {
     // SSE tool name -> being shape motif (null = default vortex/compile gyre).
     private fun mapTool(name: String): String? = when {
         name.contains("terminal") || name.contains("shell") || name.contains("exec") -> "shell"
-        name.contains("web") || name.contains("search") || name.contains("extract") -> "web"
+        name.contains("web") || name.contains("search") || name.contains("extract") || name.contains("fetch") -> "web"
+        name.contains("delegate") || name.contains("spawn") || name.contains("run_agent") || name.contains("agent") -> "agent"
+        name.contains("video_analyze") || name.contains("image") || name.contains("vision") || name.contains("eye") -> "vision"
         name.contains("file") || name.contains("write") || name.contains("read") || name.contains("search_files") -> "file"
         name.contains("memory") || name.contains("recall") || name.contains("ragamuffin") -> "memory"
         name.contains("download") || name.contains("model") -> "download"
