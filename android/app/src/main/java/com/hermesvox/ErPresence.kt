@@ -49,6 +49,7 @@ class ErPresence(private val speakGlue: (String) -> Unit) {
     fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
         val d = ErIntent.classify(text)
         lastRoute = d.route
+        ErTelemetry.classify(d.route)   // Phase 8: the miss-rate denominator
         when (d.route) {
             ErIntent.Route.HOLD_ONLY -> {
                 // The patient user. No escalation, no filler; a soft in-register
@@ -84,12 +85,18 @@ class ErPresence(private val speakGlue: (String) -> Unit) {
 
     private fun arm() {
         if (tick != null) return
+        var windowOpenedAt = 0L
         val t = object : Runnable {
             override fun run() {
                 val now = android.os.SystemClock.uptimeMillis()
                 val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
+                if (mindStartedAt > 0 && windowOpenedAt != mindStartedAt) windowOpenedAt = mindStartedAt
                 val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000))
                 if (o.speak != null) {
+                    // Phase 8: soul first-word = the first glue after the window opened.
+                    if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {
+                        ErTelemetry.soulFirstWord(now - windowOpenedAt)
+                    }
                     synchronized(fillerTimes) { fillerTimes.add(now) }
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
                     main.post { speakGlue(o.speak!!) }
