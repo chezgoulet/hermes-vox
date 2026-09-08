@@ -3,65 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hermes Vox — talk to your Hermes agent</title>
-<meta name="description" content="Hermes Vox is an open-source voice client for the Hermes agent. On-device speech, hands-free, the particle-being.">
+<title>Hermes Vox</title>
+<meta name="description" content="Hermes Vox — an open-source voice client for the Hermes agent. A particle-being you talk to.">
 <style>
   :root { --bg:#000; --cyan:#35d07f; --accent:#8fd8f5; --dim:#8a96a6; --text:#e6eef6; }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--bg); color:var(--text); font:17px/1.6 -apple-system,Segoe UI,Roboto,sans-serif; }
-  .wrap { max-width:760px; margin:0 auto; padding:64px 24px; }
-  h1 { font-size:2.2em; font-weight:700; letter-spacing:-0.01em; color:var(--text); }
-  .being { display:block; margin:2px 0 18px; font-size:1.1em; color:var(--accent); }
-  .tagline { color:var(--dim); font-size:1.15em; margin-bottom:36px; }
-  .pill { display:inline-block; padding:3px 12px; border:1px solid var(--cyan); color:var(--cyan); border-radius:999px; font-size:.8em; letter-spacing:.06em; margin-right:8px; }
-  h2 { font-size:1.4em; margin:36px 0 12px; color:var(--accent); }
-  p, li { color:var(--text); }
-  li { margin:6px 0; }
+  html,body { min-height:100%; }
+  body { background:var(--bg); color:var(--text); font:17px/1.65 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .being-bg { position:fixed; inset:0; z-index:0; pointer-events:none; display:flex; align-items:center; justify-content:center; }
+  .being-bg img { width:min(78vmin,560px); opacity:.55; mix-blend-mode:screen; }
+  .wrap { position:relative; z-index:1; max-width:640px; margin:0 auto; padding:72px 24px; }
+  .being-lg { width:120px; display:block; margin-bottom:16px; }
+  h1 { font-size:2em; font-weight:700; letter-spacing:-.01em; }
+  .being-word { color:var(--accent); font-size:1.05em; margin-bottom:22px; }
+  .pill { display:inline-block; padding:2px 12px; border:1px solid var(--cyan); color:var(--cyan); border-radius:999px; font-size:.78em; letter-spacing:.06em; margin-right:8px; }
+  .tagline { color:var(--dim); font-size:1.1em; margin-bottom:34px; max-width:520px; }
+  p { margin:14px 0; color:var(--text); }
+  li { margin:6px 0; color:var(--text); }
+  .note { background:rgba(10,18,32,.7); border-left:3px solid var(--cyan); padding:14px 18px; margin:26px 0; }
   a { color:var(--cyan); }
-  .note { background:#0a1220; border-left:3px solid var(--cyan); padding:14px 18px; border-radius:0 8px 8px 0; margin:24px 0; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin:24px 0; }
-  .card { background:#08101c; border:1px solid #1a2736; border-radius:12px; padding:18px; }
-  .card b { color:var(--accent); display:block; margin-bottom:6px; }
-  footer { color:var(--dim); font-size:.9em; margin-top:48px; border-top:1px solid #1a2736; padding-top:24px; }
-  .mode { featureSizing:on; }
+  .links { margin-top:30px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  .obtain { display:inline-flex; align-items:center; gap:10px; padding:9px 16px; border:1px solid var(--cyan); color:var(--cyan); border-radius:10px; text-decoration:none; font-weight:600; }
+  .obtain:hover { background:rgba(53,208,127,.08); }
+  .src { color:var(--dim); }
+  footer { color:var(--dim); font-size:.88em; margin-top:52px; border-top:1px solid #16202e; padding-top:22px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <span class="pill">BETA</span><span class="pill">open source</span>
-  <h1>Hermes Vox</h1>
-  <div class="being">a particle-being you talk to.</div>
-  <p class="tagline">An open-source voice client for the <a href="https://github.com/hermes-agent">Hermes agent</a> — on-device speech, hands-free, and the being that answers you.</p>
+  <div class="being-bg"><img src="being.png" alt=""></div>
+  <div class="wrap">
+    <img class="being-lg" src="being_round.png" alt="Hermes Vox">
+    <span class="pill">BETA</span><span class="pill">open source</span>
+    <h1>Hermes Vox</h1>
+    <div class="being-word">a particle-being you talk to.</div>
+    <p class="tagline">An open-source voice client for the Hermes agent. On-device speech, hands-free, and the being that answers you.</p>
 
-  <h2>What it is</h2>
-  <p>Hermes Vox turns your phone into a place where the Hermes agent is present and speaks. On-device speech processing (Whisper STT, Silero VAD, Piper TTS via sherpa-onnx) keeps your voice on the phone; the being — a luminous particle-swarm — is the agent made visible. Barge-in, hands-free, no button.</p>
+    <p>A voice client for the Hermes agent. Speak; the being — a luminous particle-swarm — listens, thinks, and answers. On-device (Whisper STT, Silero VAD, Piper TTS), no button, barge-in.</p>
 
-  <div class="grid">
-    <div class="card"><b>Two voice modes</b>Realtime (hands-free) + Enhanced Realtime (alpha) — adds an on-device Gemma expression layer, experimental.</div>
-    <div class="card"><b>Your gateway</b>You bring your own Hermes gateway. Vox is a client — your data stays with you, not a cloud service.</div>
-    <div class="card"><b>The being</b>A 20-archetype particle-swarm. Breathing, listening, thinking, speaking — the agent as light.</div>
+    <div class="note">
+      <b>Bring your own Hermes gateway.</b> Vox connects to <i>your</i> gateway
+      (local, self-hosted, or one you run) with an endpoint + API key you enter in-app.
+      Not a cloud service. Your audio and key stay with you.
+    </div>
+
+    <p style="color:var(--dim)">Two modes: Realtime and Enhanced Realtime (alpha). Early days — rapid development.</p>
+
+    <div class="links">
+      <a class="obtain" href="https://github.com/chezgoulet/hermes-vox/releases/latest">Get it on Obtainium</a>
+      <a class="src" href="https://github.com/chezgoulet/hermes-vox">Source · Apache-2.0</a>
+      <a class="src" href="https://github.com/chezgoulet/hermes-vox/blob/main/README.md">README</a>
+      <a class="src" href="https://github.com/chezgoulet/hermes-vox/blob/main/PRIVACY.md">Privacy</a>
+      <a class="src" href="https://github.com/chezgoulet/hermes-vox/blob/main/CONTRIBUTING.md">Contributing</a>
+    </div>
+
+    <footer>Hermes Vox · a ChezGoulet / The House project · Apache-2.0 · Google Play — planned, not yet</footer>
   </div>
-
-  <div class="note">
-    <b>Bring your own Hermes gateway.</b> Hermes Vox connects to <i>your</i> Hermes gateway
-    (local, self-hosted, or one you run) with an endpoint + API key you enter in-app. It is
-    <b>not</b> a cloud service from us. Your audio and key stay with you and your gateway.
-  </div>
-
-  <h2>Get involved</h2>
-  <p>Early days — rapid development. We'd love help, especially testing, polishing, and bug-finding.</p>
-  <ul>
-    <li><a href="https://github.com/chezgoulet/hermes-vox">Source (GitHub)</a> — Apache-2.0 licensed</li>
-    <li><a href="https://github.com/chezgoulet/hermes-vox/blob/main/README.md">README</a> — build &amp; install</li>
-    <li><a href="https://github.com/chezgoulet/hermes-vox/blob/main/CONTRIBUTING.md">Contributing</a> — how to help</li>
-    <li><a href="https://github.com/chezgoulet/hermes-vox/blob/main/PRIVACY.md">Privacy</a> — what data is processed</li>
-  </ul>
-
-  <p style="margin-top:28px;color:var(--dim)">Planned for Google Play in a future release. Enhanced Realtime is alpha.</p>
-
-  <footer>
-    Hermes Vox · a ChezGoulet / The House project · Apache-2.0
-  </footer>
-</div>
 </body>
 </html>
