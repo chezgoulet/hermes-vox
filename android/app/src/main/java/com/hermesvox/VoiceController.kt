@@ -1262,6 +1262,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val current = if (glueSpeaking) ErArbiter.Priority.P3_FILLER else null
             val request = if (critical) ErArbiter.Priority.P2_SOUL_CRITICAL else ErArbiter.Priority.P3_FILLER
             val d = ErArbiter.arbitrate(current, request)
+            ErTelemetry.arbiter(d)   // Phase 8: the double-talk watch
             VoxLog.d("event=er-arbiter current=${current ?: "silence"} request=$request outcome=${ErArbiter.outcomeOf(d)}")
             when (d) {
                 is ErArbiter.Decision.Reject -> return
@@ -1346,6 +1347,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 if (segSnapshot.size >= 16000 * 300 / 1000) stt?.transcribe(segSnapshot, 16000)?.trim() else null
             } catch (_: Throwable) { null }
             val verdict = ErBargeGate.decide(said)
+            ErTelemetry.barge(verdict)   // Phase 8: the false-cancel rate
             VoxLog.d("event=er-barge-verdict gen=$myGen text=${if (logTranscripts()) (said ?: "").take(80) else "<hidden>"} verdict=$verdict")
             main.post {
                 // Re-check the turn is still live and un-superceded before acting.
