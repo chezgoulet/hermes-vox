@@ -11,19 +11,20 @@ talk to the same entity you use everywhere else.
 
 The presence-first design language, live on the emulator:
 
-![Onboarding — the being greets you](docs/screenshots/onboarding.png)
+![Onboarding — connect the entity (endpoint + API key)](docs/screenshots/onboarding.png)
 
-![Realtime at rest — the particle-being (a luminous eye) + agent name + status](docs/screenshots/main_rest.png)
+![Realtime at rest — the particle-being + agent name + status](docs/screenshots/main_rest.png)
 
 ![Realtime working — the being gathers/warms on a tool call](docs/screenshots/main_working.png)
 
 ![Realtime reply — the answer as a Star-Wars crawl over the black](docs/screenshots/main_reply.png)
 
-![Walkie Talkie — PTT + SEND](docs/screenshots/walkie.png)
-
 ![Conversation mode — a readable transcript instead of the fading crawl](docs/screenshots/conversation.png)
 
-![Settings — the Voice-mode picker + full config matrix](docs/screenshots/settings.png)
+![Settings — the Voice-mode picker + config](docs/screenshots/settings.png)
+
+<!-- NOTE: screenshots need recapture against the current build (main_rest/onboarding are
+     the same image; settings.png is unrelated). Recapture is a device task. -->
 
 ---
 
@@ -38,21 +39,18 @@ Local-first and sovereign: **on-device** speech processing (Whisper STT, Silero
 VAD, Piper TTS) — no cloud, no third-party SDKs, no keys in the repo. The entity
 endpoint + API key are user-entered in-app.
 
-## The three voice modes
+## The two voice modes
 
 Mode-selectable in Settings → **Voice mode**:
 
-1. **Realtime** — emulated real-time: on-device STT/VAD/TTS + Hermes, an open
+1. **Realtime** — hands-free: on-device STT/VAD/TTS + Hermes, an open
    hands-free line (VAD-gated, barge-in). Feels like a live call.
-2. **Enhanced Realtime** — Realtime **+** the on-device **Gemma 4 E2B** expression
-   layer (the phone-call persona: acknowledgments + narration of the work). The
-   phone-call presence, for deeper personality fidelity.
-3. **Walkie Talkie** — true push-to-talk: a **PTT** (hold to talk) + **SEND** + the
-   keyboard. Deliberate, radio-style. (PTT + SEND render only in this mode;
-   the keyboard works in all modes.)
+2. **Enhanced Realtime (alpha)** — Realtime **+** the on-device **Gemma 4 E2B**
+   expression layer (the phone-call persona). Experimental — the presence layer
+   is not yet wired into the immersive view.
 
-**The entity stays Hermes in all three.** Only the foreground voice/persona
-changes.
+**The entity stays Hermes in both modes.** Only the foreground voice/persona
+changes. Every mode is hands-free — there is no push-to-talk button.
 
 ## The design language — "the House is a presence, not a machine"
 
@@ -157,10 +155,10 @@ offline). Point the app at your Hermes gateway; the entity is your agent.
 
 ## Status
 
-The MVP is installable + the design language, pipeline, orchestration, and
-three-mode system are in. **Enhanced Realtime is wired end-to-end**: the
-on-device **Gemma 4 E2B (presence)** model downloads in-app (Settings → Voice
-models, sha256-verified) and `GemmaExpress` loads it via LiteRT-LM's Engine to
-voice the phone-call glue (graceful stand-in fallback). The on-device
-load/generate verify is the device step (the LiteRT-LM runtime targets the
-device NPU). Cloud voice processing + full-duplex realtime are after-MVP.
+The MVP is installable and the design language, pipeline, and orchestration are
+in, with **two** voice modes (Realtime + Enhanced Realtime). **Enhanced Realtime
+is alpha** — the on-device **Gemma 4 E2B (presence)** model downloads in-app
+(Settings → Voice models, sha256-verified) and `GemmaExpress` loads it via
+LiteRT-LM's Engine, but it's experimental and the presence layer is not yet wired
+into the immersive view. Cloud voice processing + full-duplex realtime are
+after-MVP.
