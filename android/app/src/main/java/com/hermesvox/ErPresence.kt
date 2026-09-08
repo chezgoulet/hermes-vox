@@ -30,6 +30,14 @@ class ErPresence(private val speakGlue: (String) -> Unit) {
     @Volatile private var mindStartedAt = 0L
     private val fillerTimes = ArrayList<Long>()
     private var lastRoute: ErIntent.Route = ErIntent.Route.ACK_AND_YIELD
+    // ER Phase 7: what the soul already voiced this turn (the drift-sync log
+    // the mind sees so it doesn't re-state confirmations).
+    private val soulActions = ArrayList<ErDrift.SoulAction>()
+
+    /** The turn's soul-action log + vibe (consumed at submit, then cleared). */
+    fun drainSoulActions(): List<ErDrift.SoulAction> = synchronized(soulActions) {
+        val out = ArrayList(soulActions); soulActions.clear(); out
+    }
 
     /** True while the presence loop is running (diagnostics/ER label). */
     @Volatile var active = false
@@ -83,6 +91,7 @@ class ErPresence(private val speakGlue: (String) -> Unit) {
                 val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000))
                 if (o.speak != null) {
                     synchronized(fillerTimes) { fillerTimes.add(now) }
+                    synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
                     main.post { speakGlue(o.speak!!) }
                 }
                 if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
