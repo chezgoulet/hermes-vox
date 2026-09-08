@@ -134,7 +134,8 @@ class AvatarView @JvmOverloads constructor(
 
         /** Kept for API parity (Settings lists these as the presence themes). */
         val SHAPES = listOf("iris", "listening", "vortex", "scan", "bracket",
-            "constellation", "lumen", "waveform", "bloom")
+            "constellation", "lumen", "waveform", "bloom",
+            "soundwave", "arc", "nucleus", "eye", "water", "radar", "octopus")
 
         private const val TAU = (PI * 2).toFloat()
         private const val SPIRAL_TURNS = 2.0f
@@ -187,6 +188,15 @@ class AvatarView @JvmOverloads constructor(
         private const val A_RIBBON = 10    // tool file / streaming: a serpentine ribbon
         private const val A_INFALL = 11    // tool download: light falling into the core
         private const val A_BLOOM = 12     // SETTLE: an outward bloom relaxing home
+        // ---- Wave 1: seven new archetypes (video-wave1). Append AFTER A_BLOOM, never
+        // ---- shift the existing values.
+        private const val A_WAVEform = 13  // idle "soundwave": a literal audio trace
+        private const val A_ARC = 14       // idle "arc": a redrawn lightning crack
+        private const val A_NUCLEUS = 15   // idle "nucleus": a dense core + tilted orbits
+        private const val A_SEEKER = 16    // idle "eye": a darting, blinking pupil
+        private const val A_BORE = 17      // idle "water": an all-over liquid ripple field
+        private const val A_RADAR = 18     // idle "radar": range rings + sweep + storm cells
+        private const val A_TAKU = 19      // idle "octopus": a travelling, limb-propelled being
     }
 
     private val parts = ArrayList<P>(COUNT)
@@ -725,12 +735,22 @@ class AvatarView @JvmOverloads constructor(
         "ribbon" -> A_RIBBON     // NEW at idle
         "infall" -> A_INFALL     // NEW at idle
         "bloom" -> A_BLOOM
+        // ---- Wave 1 (video-wave1): the seven new archetypes are reached through their
+        // ---- idle themes. Existing route logic before this point is untouched.
+        "soundwave" -> A_WAVEform
+        "arc" -> A_ARC
+        "nucleus" -> A_NUCLEUS
+        "eye" -> A_SEEKER
+        "water" -> A_BORE
+        "radar" -> A_RADAR
+        "octopus" -> A_TAKU
         else -> null             // "hearth"/"drift"/unknown -> A_ORB
     }
 
     /** A const array, not listOf(): this is read every idle frame and must not allocate. */
     private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
-        "bracket", "flame", "ribbon", "infall", "bloom")
+        "bracket", "flame", "ribbon", "infall", "bloom", "soundwave", "arc", "nucleus",
+        "eye", "water", "radar", "octopus")
     private fun cyclingTheme(t: Float): String = cycleList[((t / cycleSec).toInt()).mod(cycleList.size)]
 
     /** Advance every oscillator. Wrapped, so precision never decays over a long session. */
@@ -859,6 +879,7 @@ class AvatarView @JvmOverloads constructor(
             A_INFALL -> { haloW = bodyR * 1.05f; haloH = bodyR * 1.85f }
             A_VOICE -> { haloW = bodyR * 1.45f; haloH = bodyR * 1.55f }
             A_BURST -> { val e = 1f + burstProg * 0.9f; haloW = g * e; haloH = g * e }
+            A_WAVEform -> { haloW = bodyR * 2.25f; haloH = bodyR * 0.85f }
             else -> {}
         }
     }
@@ -897,6 +918,7 @@ class AvatarView @JvmOverloads constructor(
             A_NODES -> { springK = 32f; flowGain = 8.0f; tremor = 4.0f; spinMul = 0.90f }
             A_RIBBON -> { springK = 30f; flowGain = 13f; tremor = 6.0f; spinMul = 0.50f }
             A_INFALL -> { springK = 28f; flowGain = 10f; tremor = 5.0f; spinMul = 0.60f; biasY = bodyR * 1.25f }
+            A_WAVEform -> { springK = 34f; flowGain = 6.5f; tremor = 2.6f; spinMul = 0.10f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1077,6 +1099,19 @@ class AvatarView @JvmOverloads constructor(
                 val w = br * 0.58f * (1f - ff * 0.62f)
                 ftx = cx + p.hcos * w
                 fty = cy - br * 1.05f + ff * br * 1.55f
+            }
+            A_WAVEform -> {
+                // idle "soundwave": the being IS voice — a literal horizontal audio trace
+                // riding the real RMS. The whole swarm is ONE travelling wave across the
+                // full frame; fred amplitude grows with amp, and phVoice is the audio
+                // clock so a loud moment scrolls the trace faster and higher. A slim
+                // beam with a fixed seeded twist, so it reads as a scope line, not a band.
+                val s = p.u
+                val X = s * 2f * TAU + phVoice                  // 2 cycles, travelling
+                val sig = fsin(X) + 0.22f * fsin(X * 2f + 0.9f) // fundamental + 1 overtone
+                val ampB = br * (0.16f + 0.60f * amp) * (0.92f + 0.08f * breath)
+                ftx = cx - br * 0.96f + s * br * 1.92f + p.jx * br * 0.10f
+                fty = cy + sig * ampB + p.jy * br * 0.20f + p.hr * br * 0.05f
             }
             else -> {
                 // A_BLOOM (SETTLE): breathes outward and back, relaxing toward the rest
