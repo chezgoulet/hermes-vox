@@ -30,6 +30,8 @@ class MainActivity : AppCompatActivity() {
     // warning pill shown when it is only partially installed.
     private var modelsGate: android.widget.LinearLayout? = null
     private var modelsWarnShown = false
+    // #120-C: the one-time first-run coach overlay (dismissed -> seen pref).
+    private var coachOverlay: android.view.View? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
     private lateinit var reply: CrawlView
@@ -288,6 +290,9 @@ class MainActivity : AppCompatActivity() {
         startAvatarLoop()
         applyParticlePrefs()
         stageEntrance()
+        // #120-C: first-run coach marks once the entrance has staged. Self-gated
+        // (seen pref / models gate / live call) inside maybeShowCoachMarks().
+        mainHandler.postDelayed({ maybeShowCoachMarks() }, 1000L)
     }
 
     private fun openOnboarding() {
@@ -603,6 +608,102 @@ class MainActivity : AppCompatActivity() {
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
             addView(body)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // #120-C: one-time coach marks. The main screen is chrome-less, so the
+    // first launch overlays what the being's body means, what barge-in is, and
+    // where the controls live. Dismissing sets the "seen" pref — it never
+    // shows again (a Settings replay could reuse PREF_COACH_SEEN later).
+    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT
+    // path was stripped in C2 (0.4.0) — so the overlay says there is no
+    // push-to-talk button instead of pointing at one.
+    // -----------------------------------------------------------------------
+    private fun maybeShowCoachMarks() {
+        if (coachOverlay != null) return
+        if (prefs.getBoolean(PREF_COACH_SEEN, false)) return
+        if (callLive) return
+        if (!endpointSet() || GatewayKey.isMissing(storedKey())) return
+        // The models empty state is the first-run CTA when nothing is
+        // installed (#6/#12) — coach marks wait until it isn't blocking.
+        if (modelsGate?.visibility == View.VISIBLE) return
+        val overlay = buildCoachOverlay()
+        coachOverlay = overlay
+        (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
+            .addView(overlay, 0)
+        overlay.bringToFront()
+    }
+
+    private fun dismissCoachMarks() {
+        coachOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        coachOverlay = null
+        prefs.edit().putBoolean(PREF_COACH_SEEN, true).apply()
+    }
+
+    private fun buildCoachOverlay(): android.view.View {
+        val d = resources.displayMetrics.density
+        val body = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding((30 * d).toInt(), (34 * d).toInt(), (30 * d).toInt(), (30 * d).toInt())
+        }
+        body.addView(android.widget.TextView(this).apply {
+            text = "Say hello to Hermes"
+            textSize = 23f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(0xFFD6F4FF.toInt())
+            gravity = android.view.Gravity.CENTER
+        })
+        body.addView(coachRow("THE BEING",
+            "Hermes is your agent, given a body. Watch its motion: it breathes while it listens, gathers (draws inward, brightens) while it thinks or works, and lights up as it speaks."))
+        body.addView(coachRow("BARGE-IN",
+            "Interrupt hands-free: just start talking over a reply and it stops to listen — no button needed. Tap the being to hush it any time."))
+        body.addView(coachRow("THE CONTROLS",
+            "✆ starts and ends your hands-free call. There is no push-to-talk button in Vox — every voice mode is hands-free, so you just talk. ⚙ is Settings, / is the command menu."))
+        body.addView(Button(this).apply {
+            text = "Got it"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_primary)
+            setOnClickListener { dismissCoachMarks() }
+            val pad = (26 * d).toInt()
+            setPadding(pad, (10 * d).toInt(), pad, (10 * d).toInt())
+            layoutParams = android.view.ViewGroup.MarginLayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (22 * d).toInt() }
+        })
+        return android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            // Near-opaque scrim: the being stays faintly visible underneath.
+            setBackgroundColor(0xF206070B.toInt())
+            // Swallow taps on the scrim so they never reach the avatar/call
+            // buttons underneath; dismissal is the explicit "Got it" button.
+            isClickable = true
+            setOnClickListener { }
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            addView(body)
+        }
+    }
+
+    /** One coach-mark row: bold colored lead, then the plain-language body. */
+    private fun coachRow(lead: String, body: String): android.widget.TextView {
+        val d = resources.displayMetrics.density
+        val s = android.text.SpannableString("$lead — $body")
+        s.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, lead.length,
+            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(android.text.style.ForegroundColorSpan(0xFF8FD8F5.toInt()), 0, lead.length,
+            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return android.widget.TextView(this).apply {
+            text = s
+            textSize = 15f
+            setTextColor(0xFFC7D6E6.toInt())
+            setLineSpacing(3f, 1f)
+            setPadding(0, (14 * d).toInt(), 0, 0)
         }
     }
 
@@ -928,6 +1029,8 @@ class MainActivity : AppCompatActivity() {
         // #61: dedicated call-start permission request code + pending flag so the
         // warm-retry path never re-requests while the dialog is up / after denial.
         const val REQ_MIC_CALL = 101
+        // #120-C: "seen" pref for the one-time first-run coach marks.
+        const val PREF_COACH_SEEN = "coach_marks_seen"
         @Volatile var callStartPending = false
 
         /** Reset the canonical session's conversation and clear the display/reply
@@ -1376,7 +1479,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
 
     // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
     // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.

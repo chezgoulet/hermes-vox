@@ -105,10 +105,11 @@
                         android:text="Entity &amp; Connection"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_entity_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -123,10 +124,11 @@
                         android:text="Speech &amp; Mic"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_speech_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -141,10 +143,11 @@
                         android:text="STT &amp; Transcription"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_stt_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -159,10 +162,11 @@
                         android:text="TTS &amp; Voice"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_tts_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -177,10 +181,11 @@
                         android:text="Appearance &amp; Presence"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_appearance_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -195,10 +200,11 @@
                         android:text="Visuals"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_visuals_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -213,10 +219,11 @@
                         android:text="About &amp; Diagnostics"
                         style="@style/HvRowTitle" />
                     <TextView
+                        android:id="@+id/set_about_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="open ›"
-                        style="@style/HvRowAction" />
+                        android:text="—"
+                        style="@style/HvRowValue" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -243,7 +250,7 @@
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="Test connection"
+                        android:text="Test entity connection"
                         style="@style/HvRowTitle"
                         android:textColor="@color/hv_cyan" />
                     <TextView
@@ -350,14 +357,13 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <TextView
+<TextView
                     style="@style/TextVox.Label"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
-                    android:text="Mic / Speech" />
-
-                <LinearLayout
+                    android:text="Basic" />
+<LinearLayout
                     android:id="@+id/row_bargein"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -374,8 +380,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
-
-                <LinearLayout
+<LinearLayout
                     android:id="@+id/row_mic_aec"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -392,8 +397,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
-
-                <LinearLayout
+<LinearLayout
                     android:id="@+id/row_mic_ns"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -410,8 +414,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
-
-                <LinearLayout
+<LinearLayout
                     android:id="@+id/row_mic_partial"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -428,8 +431,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
-
-                <LinearLayout
+<LinearLayout
                     android:id="@+id/row_mic_voicecall"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -446,207 +448,236 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
-
+                <!-- #118: Advanced = timing/barge tuning sliders, collapsed until tapped.
+                     Reuses the row-into-panel reveal pattern (like remote_stt_panel). -->
                 <LinearLayout
-                    android:id="@+id/row_mic_vad"
-                    style="@style/HvRow"
+                    android:id="@+id/row_mic_advanced"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@drawable/bg_chip"
+                    android:clickable="true"
+                    android:focusable="true">
                     <TextView
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="Mic sensitivity (VAD threshold)"
+                        android:layout_weight="1"
+                        android:text="Advanced — timing tuning"
                         style="@style/HvRowTitle" />
                     <TextView
-                        android:id="@+id/set_mic_vad_val"
+                        android:id="@+id/set_mic_adv_state"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="0.50"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_vad"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="16" />
+                        android:text="show ›"
+                        android:textColor="@color/hv_cyan"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:textSize="14sp" />
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/row_mic_silence"
-                    style="@style/HvRow"
+                    android:id="@+id/adv_mic_panel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Pause to end your turn"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_silence_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="800 ms"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_silence"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+    <LinearLayout
+                        android:id="@+id/row_mic_vad"
+                        style="@style/HvRow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:max="36" />
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Mic sensitivity (VAD threshold)"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_vad_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0.50"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_vad"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="16" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_silence"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Pause to end your turn"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_silence_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="800 ms"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_silence"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="36" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_early"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Early-start pause (streaming STT)"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_early_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="450 ms"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_early"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="13" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_min_speech"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Min speech before a turn"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_min_speech_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="300 ms"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_min"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="18" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_max"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Max speech per turn"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_max_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="15000 ms"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_max"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="44" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_barge_rms"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Barge sensitivity"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_barge_rms_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0.10"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_barge_rms"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="26" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_barge_grace"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Barge grace"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_barge_grace_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="500 ms"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_barge_grace"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="40" />
+                    </LinearLayout>
+    <LinearLayout
+                        android:id="@+id/row_mic_barge_level"
+                        style="@style/HvRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Level-only barge (ms, 0=off)"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_mic_barge_level_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="200 ms"
+                            style="@style/HvRowValue" />
+                        <SeekBar
+                            android:id="@+id/set_seek_barge_level"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:max="16" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="Cut the entity with a sustained loud voice even when VAD misses it through speaker echo. Raise if TV/noise barges."
+                            android:textColor="@color/hv_text_dim"
+                            android:textSize="12sp" />
+                    </LinearLayout>
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/row_mic_early"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Early-start pause (streaming STT)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_early_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="450 ms"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_early"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="13" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_mic_min_speech"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Min speech before a turn"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_min_speech_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="300 ms"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_min"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="18" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_mic_max"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Max speech per turn"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_max_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="15000 ms"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_max"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="44" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_mic_barge_rms"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Barge sensitivity"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_barge_rms_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0.10"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_barge_rms"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="26" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_mic_barge_grace"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Barge grace"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_barge_grace_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="500 ms"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_barge_grace"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="40" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_mic_barge_level"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Level-only barge (ms, 0=off)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mic_barge_level_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="200 ms"
-                        style="@style/HvRowValue" />
-                    <SeekBar
-                        android:id="@+id/set_seek_barge_level"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="16" />
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="Cut the entity with a sustained loud voice even when VAD misses it through speaker echo. Raise if TV/noise barges."
-                        android:textColor="@color/hv_text_dim"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <LinearLayout
+<LinearLayout
                     android:id="@+id/row_mic_reset"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -665,8 +696,7 @@
                         style="@style/HvRowAction" />
                 </LinearLayout>
             </LinearLayout>
-
-            <!-- ══ sec_stt: STT & Transcription ══ -->
+<!-- ══ sec_stt: STT & Transcription ══ -->
             <LinearLayout
                 android:id="@+id/sec_stt"
                 android:layout_width="match_parent"
@@ -784,7 +814,7 @@
                             android:layout_width="0dp"
                             android:layout_weight="1"
                             android:layout_height="wrap_content"
-                            android:text="Test connection"
+                            android:text="Test STT server connection"
                             style="@style/HvRowTitle"
                             android:textColor="@color/hv_cyan" />
                         <TextView
@@ -991,7 +1021,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Layout"
+                        android:text="Layout mode"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_layout_val"

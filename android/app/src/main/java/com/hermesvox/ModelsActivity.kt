@@ -61,6 +61,14 @@ class ModelsActivity : AppCompatActivity() {
             ". The rest below are optional extras."
 
         updateHeaderStatus()
+        // #120-D: define the jargon once, in plain language, right where the
+        // downloads happen (matches the onboarding step + main-screen coach
+        // marks copy, so a term always carries the same meaning).
+        findViewById<TextView>(R.id.m_how)?.text =
+            "The required set is your offline voice: hearing you (STT · Whisper), " +
+            "knowing when you start and stop talking (VAD · Silero), and speaking " +
+            "replies (TTS · Piper) — all on-device. Gemma below is optional: it " +
+            "powers Enhanced Realtime's phone-call presence."
         buildCards()
     }
 
