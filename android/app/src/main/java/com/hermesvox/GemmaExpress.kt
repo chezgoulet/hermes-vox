@@ -79,10 +79,15 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 engine.createConversation(ConversationConfig(systemInstruction = Contents.of(persona))).use { conv ->
                     buildString { conv.sendMessageAsync(prompt).collect { append(it) } }
                 }
-            }.trim().ifBlank { fallback.express(intent, content, tone) }
+            }.trim()
+                // 0.6.3: the render rails — cap runaway output, enforce spacing.
+                .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), lastRenderAt) ?: "" }
+                .ifBlank { fallback.express(intent, content, tone) }
+                .also { lastRenderAt = System.currentTimeMillis() }
         } catch (e: Throwable) {
             VoxLog.e("GemmaExpress gen failed: ${e.message}")
             fallback.express(intent, content, tone)
         }
     }
+    @Volatile private var lastRenderAt = 0L
 }
