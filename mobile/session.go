@@ -147,6 +147,23 @@ func (s *HermesSession) TurnStored(text string) (string, error) {
 
 // ---- Streaming turns (REAL SSE — the entity's events as they arrive) ----
 
+// VoiceTurn begins a streamed VOICE turn (StartStream + the phone-call voice
+// prefix) and returns a streamID. Same drain/cancel contract as StartStream.
+//
+// ER Phase 1 (the "the agent knows it's on a call" mechanism): the prefix is
+// applied CLIENT-SIDE as a per-turn user-message prefix — the same mechanism
+// the Hermes CLI's voice mode uses (a live-call-local instruction, never a
+// persisted transcript entry). It rides the user text, so the per-conversation
+// prompt cache stays intact and the prefix reaches the model on ANY gateway,
+// stock included (BYOG universality: we do not patch the gateway).
+func (s *HermesSession) VoiceTurn(text string) (string, error) {
+	if s == nil || s.streams == nil {
+		return "", fmt.Errorf("voice: no Hermes session")
+	}
+	prev := s.lastID
+	return s.streams.StartStream(voice.UserTurnPrefix+text, prev)
+}
+
 // StartStream begins a streamed entity turn (/v1/responses stream:true,
 // server-side context chained automatically across calls) and returns a
 // streamID. Drain with PollStreamJSON (events buffered since last poll);

@@ -407,7 +407,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
                     VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
-                    main.post { runStreamedTurn(t, myGen) }
+                    main.post { runStreamedTurn(t, myGen, fromVoice = true) }
                     // Single-capture barge drain. While the gate is locked we keep r
                     // recording and read frames here — compute RMS, feed the SHARED VAD,
                     // and route a barge check when `speaking` (playback mode) or
@@ -659,7 +659,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 override fun onEvent(t: Int, p: Bundle?) {}
                 override fun onResults(p: Bundle) {
                     val text = p.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: return
-                    if (text.isNotBlank()) runStreamedTurn(text, turnGen) else if (listening) listen()
+                    if (text.isNotBlank()) runStreamedTurn(text, turnGen, fromVoice = true) else if (listening) listen()
                 }
                 override fun onError(e: Int) {
                     if (e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || e == SpeechRecognizer.ERROR_NO_MATCH) {
@@ -689,8 +689,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     // --- The streamed entity turn (REAL SSE) ---
-    private fun runStreamedTurn(text: String, gen: Long) {
+    private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
+        val voiceTurn = fromVoice && prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
         // C4: per-turn latches + origin. firstTextLatch arms the first-delta push;
@@ -717,8 +718,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
                 VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
-                val sid = session.startStream(text)
-                VoxLog.d("startStream -> $sid")
+                // ER Phase 1: VOICE-originated turns carry the phone-call voice
+                // prefix ("the agent knows it's on a call" — anti-tool-spiral +
+                // spoken register). Typed sends stay prefix-free: a typed
+                // message may legitimately ask for code blocks / deep work.
+                // sendText() passes fromVoice=false; both STT loops pass true.
+                val sid = if (voiceTurn) session.voiceTurn(text) else session.startStream(text)
+                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn")
                 currentStream = sid
                 val firstByteAt = android.os.SystemClock.uptimeMillis()
                 var firstByteDone = false
