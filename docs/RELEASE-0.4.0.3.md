@@ -8,7 +8,7 @@
 
 ## Why — the 0.4.0.2 escape was arithmetically dead
 
-Field log: `docs/evidence-0403-failure.log` (0.4.0.1 build, escape active).
+Field log: the 0.4.0.1 field log (removed in the log sweep).
 Seven barges fired via the VAD path in 2-12ms; five attempts failed, including
 the two the user called out at ~21:18:28 ("spoke over most of what you just said
 and it didn't work") and ~21:21 ("tried to interrupt and it did not work").

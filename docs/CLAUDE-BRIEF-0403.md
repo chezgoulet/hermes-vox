@@ -7,7 +7,7 @@ treat them as hypotheses to test or destroy, not instructions). You own the diag
 Repo: Hermes Vox Android app at THIS directory, at main (0.4.0.2).
 
 ## Evidence (read these first)
-- docs/evidence-0403-failure.log — the 0.4.0.1 field session AFTER the escape shipped.
+- the 0.4.0.1 field session (log removed in the sweep) shipped.
   Read the barge-watch / barge-nearmiss / barge-in / realtime lines with timestamps.
   User complaints: turn ~21:18:28 "spoke over most of what you just said and it didn't
   work" (turn 3); ~21:21 "tried to interrupt and it did not work" (turn 10).

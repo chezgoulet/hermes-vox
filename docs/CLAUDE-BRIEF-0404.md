@@ -1,7 +1,7 @@
 # BRIEF — 0.4.0.4: the ghost re-speak after hush. YOU are the diagnostician.
 
 ## Symptom (user, 2026-09-07 00:16 local): "that doesn't work very well at all"
-Evidence log: docs/evidence-0404-failure.log (session on 0.4.0.3). Two calls.
+Evidence log: the 0.4.0.3 field log (removed in the log sweep). Two calls.
 
 Call 1 (turn gen=1): deepseek stalled ~19.6s, then 5 streamed piper chunks played
 (~13s of speech). User hushed at 22:17:31.460. ONE MILLISECOND later "turn done"

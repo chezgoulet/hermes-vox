@@ -1,0 +1,6 @@
+---
+# GitHub Pages: serve docs/ as a static site. Minimal, no framework, no plugins.
+theme: null
+title: Hermes Vox
+description: Talk to your Hermes agent — on-device, hands-free, the particle-being.
+---

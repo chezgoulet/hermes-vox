@@ -9,7 +9,7 @@
 
 ## Why — a cancelled turn re-spoke itself
 
-Field log: `docs/evidence-0404-failure.log` (0.4.0.3 build). Call 1, gen=1:
+Field log: the 0.4.0.3 build field log (removed in the log sweep). Call 1, gen=1:
 
 ```
 22:17:24.592 … 22:17:31.406   piper chunk ×5          (~13s of streamed speech)
