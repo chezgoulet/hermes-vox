@@ -119,15 +119,39 @@ object BargeGate {
         if (above) minOf(prev + frameMs, maxOf(capMs, frameMs))
         else maxOf(0L, prev - SUSTAIN_LEAK_MS)
 
+    /**
+     * @param rms the CURRENT read's level
+     * @param vadSpeech VAD verdict on this read (null = no VAD)
+     * @param sustainedMs net occupancy above the active floor (leaky)
+     * @param rmsMin the active floor
+     * @param vadAvailable true when the shared VAD is live
+     * @param levelOnlyMs the level-only escape requirement (0 disables)
+     * @param sustainedLevelMs net occupancy above the RAISED bar (leaky)
+     * @param msSinceVadSpeech wall-clock since the VAD last agreed
+     * @param peakLevelMs 0.6.8: the running MAX level of the current near-floor
+     *   run (the caller already tracks peakRms for the near-miss probe). The
+     *   field failure (0.6.7, gen=5 18:33:18.935): the user's interrupt peaked at
+     *   0.110 in ONE 64ms frame — over the floor (0.100), under the raised bar
+     *   (0.130) — and both accumulators drained because the PEAK lived in a
+     *   single read. Short, soft interrupts ("hey—") are exactly the natural
+     *   barge shape, and the ladder made the floor quieter while making the
+     *   interrupt MORE likely to be one short word. Fix: when the run's PEAK
+     *   clears the raised bar, treat the escape's bar requirement as met even
+     *   if the current read has dipped — the sustain still requires
+     *   [levelOnlyMs] of net occupancy, so residual echo (which peaks in the
+     *   0.081-0.095 band, under the bar) still cannot pass.
+     */
     fun decide(rms: Float, vadSpeech: Boolean?, sustainedMs: Long, rmsMin: Float, vadAvailable: Boolean,
                levelOnlyMs: Long = DEFAULT_LEVEL_ONLY_MS, sustainedLevelMs: Long = 0L,
-               msSinceVadSpeech: Long = Long.MAX_VALUE): Boolean {
+               msSinceVadSpeech: Long = Long.MAX_VALUE, peakLevel: Float = 0f): Boolean {
         if (rmsMin <= 0f) return false
         val floor = if (vadAvailable) rmsMin else rmsMin * NO_VAD_RMS_BOOST
+        val levelBar = floor * LEVEL_ONLY_BOOST
         // Level-only escape: ignore VAD (echo can hold the frame-level VAD false)
-        // once the raised bar (activeFloor * LEVEL_ONLY_BOOST) has held levelOnlyMs
-        // of NET occupancy.
-        if (levelOnlyMs > 0L && sustainedLevelMs >= levelOnlyMs && rms > floor * LEVEL_ONLY_BOOST) return true
+        // once the raised bar has held levelOnlyMs of NET occupancy. 0.6.8: the
+        // bar may be met by the RUN PEAK (a crest in a single frame) instead of
+        // only the current read — see the peakLevel doc above.
+        if (levelOnlyMs > 0L && sustainedLevelMs >= levelOnlyMs && (rms > levelBar || peakLevel > levelBar)) return true
         if (vadAvailable) {
             // double gate: sustained RMS above rmsMin for >=200ms AND VAD speech on
             // this read or within VAD_RECENT_MS of it
