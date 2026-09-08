@@ -906,6 +906,16 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
                 .putString("provider", "")      // clear the per-request provider override
+                // 0.6.4 field: Restore defaults was SILENTLY KILLING ER — these ER
+                // keys were not in the restore list... but they WERE in the About
+                // group's debug reset path and any future GROUP_ABOUT restore would
+                // flip er_presence back on. The REAL 0.6.4 field bug is below in
+                // refreshFlowVals: restoreDefaults(GROUP_ENTITY) ran refreshFlowVals
+                // which did not re-read the ER switches. Now it does (bindErControls).
+                .putBoolean("er_presence", true)
+                .putBoolean("er_semantic_barge", true)
+                .putInt("er_filler_cap", 2)
+                .putFloat("er_echo_skip_ms", 700f)
                 .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // #112: voice mode folds into Entity (GROUP_MODE branch removed); url/key untouched (identity)
             GROUP_APPEARANCE -> e
                 .putString("theme", "system")
@@ -935,7 +945,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
             GROUP_APPEARANCE -> bindKeepScreenOn()
             GROUP_VISUALS -> bindVisuals()
-            GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals() }
+            GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()
         }
