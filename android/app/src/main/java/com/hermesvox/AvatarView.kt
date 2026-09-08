@@ -138,6 +138,29 @@ class AvatarView @JvmOverloads constructor(
             "constellation", "lumen", "waveform", "bloom",
             "soundwave", "arc", "nucleus", "eye", "water", "radar", "octopus")
 
+        // ---- video-statewire (Edit 1/2): the SHAPE vocabulary + the per-state shape
+        // ---- prefs. The LABELS/TOKENS pair is the single source of truth for every
+        // ---- shape picker in Settings (the presence-shape picker AND the three
+        // ---- state pickers), and themeArch() maps the same tokens onto archetypes, so
+        // ---- the picker vocabulary and the rendered shapes can never drift apart.
+        val SHAPE_LABELS = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation",
+            "Bracket", "Flame", "Ribbon", "Infall", "Bloom", "Soundwave", "Arc", "Nucleus",
+            "Eye", "Water", "Radar", "Octopus")
+        val SHAPE_TOKENS = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
+            "bracket", "flame", "ribbon", "infall", "bloom", "soundwave", "arc", "nucleus",
+            "eye", "water", "radar", "octopus")
+        /** Per-state shape tokens (Settings -> Visuals). An ACTIVE state renders as the
+         *  archetype the user picked here, DEFAULTING to the Wave 1 semantic fits below
+         *  so the being fires soundwave/eye/radar in context out of the box. Stored in
+         *  the same "hv" prefs the other visual dials use; read once per resume and
+         *  cached (applyStateShapes), never per frame. */
+        const val KEY_SHAPE_SPEAKING = "visual_shape_speaking"
+        const val KEY_SHAPE_LISTENING = "visual_shape_listening"
+        const val KEY_SHAPE_THINKING = "visual_shape_thinking"
+        const val DEFAULT_SHAPE_SPEAKING = "soundwave"
+        const val DEFAULT_SHAPE_LISTENING = "eye"
+        const val DEFAULT_SHAPE_THINKING = "radar"
+
         private const val TAU = (PI * 2).toFloat()
         private const val SPIRAL_TURNS = 2.0f
 
@@ -296,6 +319,14 @@ class AvatarView @JvmOverloads constructor(
     private var idleTheme = "aura"
     private var cycleThemes = false
     private var cycleSec = 8f
+
+    // ---- video-statewire: the three ACTIVE-state shape picks, cached ONCE at the same
+    // ---- place idleTheme is cached (fed in MainActivity.applyParticlePrefs every
+    // ---- create/resume). resolveArch reads these vars — never the prefs — so the frame
+    // ---- loop costs nothing and a Settings change lands on the next resume.
+    private var stateShapeSpeaking = DEFAULT_SHAPE_SPEAKING
+    private var stateShapeListening = DEFAULT_SHAPE_LISTENING
+    private var stateShapeThinking = DEFAULT_SHAPE_THINKING
 
     // ---- 0.5.1: the VISUAL CATEGORY (Settings -> Visuals). Orthogonal to the idle
     // ---- theme above: the theme picks the idle SHAPE, the category picks what the
@@ -608,6 +639,17 @@ class AvatarView @JvmOverloads constructor(
     fun setCycleThemes(cycle: Boolean) { cycleThemes = cycle; invalidate() }
     fun setCycleSec(sec: Float) { cycleSec = sec; invalidate() }
 
+    /** video-statewire: feed the three ACTIVE-state shape tokens (Speaking /
+     *  Listening / Thinking). Settings writes visual_shape_* prefs; MainActivity
+     *  applies them here with the rest of the particles feed, so they are read once
+     *  per resume and cached — resolveArch never touches the prefs per frame. A null/
+     *  blank token keeps the previous (or default) pick, so a partial feed is safe. */
+    fun applyStateShapes(speaking: String?, listening: String?, thinking: String?) {
+        if (!speaking.isNullOrBlank()) stateShapeSpeaking = speaking.lowercase()
+        if (!listening.isNullOrBlank()) stateShapeListening = listening.lowercase()
+        if (!thinking.isNullOrBlank()) stateShapeThinking = thinking.lowercase()
+    }
+
     /** 0.5.1: the visual category — the painterly family the whole being is rendered
      *  in (VisualStyle.TOKENS). 0.5.2: this is also where the cycle-all toggle is picked
      *  up. MainActivity already calls this on create and every resume (applyParticlePrefs),
@@ -743,13 +785,13 @@ class AvatarView @JvmOverloads constructor(
         return when (st) {
             "recoil" -> A_BURST
             "waiting" -> A_HELD
-            "speaking" -> A_VOICE
+            "speaking" -> stateArch("speaking", tool) ?: A_VOICE
             "gather" -> A_FLAME
-            "listening" -> A_BREATH
+            "listening" -> stateArch("listening", tool) ?: A_BREATH
             "settle", "bloom" -> A_BLOOM
             "streaming" -> A_RIBBON
             "thinking" -> when (tool) {
-                "web", "search" -> A_SWEEP
+                "web", "search" -> stateArch("thinking", tool) ?: A_SWEEP
                 "shell" -> A_FORGE
                 "memory" -> A_NODES
                 "file" -> A_RIBBON
@@ -758,6 +800,30 @@ class AvatarView @JvmOverloads constructor(
             }
             else -> A_ORB     // "idle", "drift", "aura", anything unknown
         }
+    }
+
+    /** video-statewire: the STATE -> ARCHETYPE hook. An active state forms the archetype
+     *  the USER picked in Settings for it, DEFAULTING to the Wave 1 semantic fit —
+     *  soundwave while speaking, eye while listening, radar for a web/search scan — so
+     *  the new shapes fire in their named states out of the box. Reads the CACHED token
+     *  (set by applyStateShapes, never the prefs) and maps it through the SAME token
+     *  table as the idle themes, so jellyfish A_VOICE / breath A_BREATH / sweep A_SWEEP
+     *  remain fully selectable for any state. Returns null when nothing is user-set or
+     *  the token doesn't resolve, and the caller keeps its existing archetype. */
+    private fun stateArch(state: String, tool: String?): Int? {
+        val fallback = when (state) {
+            "speaking" -> A_WAVEform
+            "listening" -> A_SEEKER
+            "thinking" -> if (tool == "web" || tool == "search") A_RADAR else null
+            else -> null
+        } ?: return null
+        val tok = when (state) {
+            "speaking" -> stateShapeSpeaking
+            "listening" -> stateShapeListening
+            else -> stateShapeThinking
+        }
+        if (tok.isBlank()) return fallback
+        return themeArch(tok) ?: fallback
     }
 
     /** Idle theme -> archetype. null = fall through to the default dispersed cloud. */
