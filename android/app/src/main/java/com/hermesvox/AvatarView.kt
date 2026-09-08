@@ -253,6 +253,17 @@ class AvatarView @JvmOverloads constructor(
     private var centered = false
     private var vigShader: RadialGradient? = null
 
+    // ---- Wave 1 (video-wave1): per-frame scratch for the new archetypes. Allocated
+    // ---- ONCE; the particle loop only reads primitives/arrays, never allocates.
+    // ---- A_NUCLEUS: each orbit ring rotates at its own Kepler-ish rate. spin advances
+    // ---- once per frame, so the cos/sin of (spin * rate) for all three rings is baked
+    // ---- here once per frame and the 320-particle loop just does 4 mults.
+    private val nucRate = floatArrayOf(0.95f, 0.55f, 0.30f)
+    private val nucTilt = floatArrayOf(0.55f, 0.80f, 1.00f)
+    private val nucRad = floatArrayOf(0.46f, 0.70f, 0.96f)
+    private val ringCR = FloatArray(3)
+    private val ringSN = FloatArray(3)
+
     // Idle appearance: a user-picked shape/theme ("aura" = default dispersed breathing)
     // + optional auto-cycle so the being stays alive between turns.
     private var idleTheme = "aura"
@@ -783,6 +794,21 @@ class AvatarView @JvmOverloads constructor(
     }
     private fun wrapTau(v: Float): Float = if (v >= TAU) v - TAU else v
 
+    /** Wave 1: once-per-frame state for the new archetypes that need per-frame scalars
+     *  baked ahead of the 320-particle loop. Guarded: every existing archetype (<13)
+     *  falls through untouched. Allocates nothing. */
+    private fun refreshNewShapes(dt: Float) {
+        when (arch) {
+            A_NUCLEUS -> {
+                for (i in 0 until 3) {
+                    val w = spin * nucRate[i]
+                    ringCR[i] = fcos(w); ringSN[i] = fsin(w)
+                }
+            }
+            else -> {}
+        }
+    }
+
     /** 0.5.2 (A3): while cycle-all is on, dwell CYCLE_ALL_SEC on each family then advance to
      *  the next, wrapping through the WHOLE table so the user sees every category animate.
      *  All this does is retarget [vsty] (and drop the sprite caches once, off the hot path);
@@ -920,6 +946,7 @@ class AvatarView @JvmOverloads constructor(
             A_INFALL -> { springK = 28f; flowGain = 10f; tremor = 5.0f; spinMul = 0.60f; biasY = bodyR * 1.25f }
             A_WAVEform -> { springK = 34f; flowGain = 6.5f; tremor = 2.6f; spinMul = 0.10f }
             A_ARC -> { springK = 42f; flowGain = 4.0f; tremor = 3.4f; spinMul = 0.10f }
+            A_NUCLEUS -> { springK = 36f; flowGain = 8.0f; tremor = 2.8f; spinMul = 1.20f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1147,6 +1174,30 @@ class AvatarView @JvmOverloads constructor(
                 ftx = ax0 + dx * s + nx * (jag + live + s2)
                 fty = ay0 + dy * s + ny * (jag + live + s2) + p.jy * br * 0.06f
             }
+            A_NUCLEUS -> {
+                // idle "nucleus": ordered thought — the opposite of the dispersed cloud.
+                // A dense bright core (the pow-bias piles ~half the swarm there, so
+                // additive overlap makes it genuinely white-hot) plus the rest shelled
+                // onto three tilted orbit rings, each rotated at its own Kepler-ish rate
+                // (inner fastest) around the same axis. The rings' y is squashed, so they
+                // read as tilted ellipses, an atom seen in 3-D.
+                if (p.hr < 0.36f) {
+                    val rr = br * (0.06f + 0.17f * p.hr) * (1f + 0.09f * breath)
+                    val a = frac(p.u * 2.618f + p.hr * 7.1f) * TAU  // full-circle scramble
+                    ftx = cx + fcos(a) * rr + p.jx * br * 0.05f
+                    fty = cy + fsin(a) * rr * 0.92f + p.jy * br * 0.05f
+                } else {
+                    val band = (p.u * 3f).toInt().coerceAtMost(2)
+                    val rr = br * nucRad[band] * (1f + 0.05f * breath +
+                            0.035f * fsin(phHarm + p.fl))
+                    // rotate this particle's own home unit by ITS ring's current angle:
+                    // 4 mults, zero trig in the loop (ringCR/ringSN baked per frame).
+                    val rxn = p.hcos * ringCR[band] - p.hsin * ringSN[band]
+                    val ryn = p.hcos * ringSN[band] + p.hsin * ringCR[band]
+                    ftx = cx + rxn * rr + p.jx * br * 0.06f
+                    fty = cy + ryn * rr * nucTilt[band] + p.jy * br * 0.06f
+                }
+            }
             else -> {
                 // A_BLOOM (SETTLE): breathes outward and back, relaxing toward the rest
                 // state. Never a repeating burst — a single slow exhalation.
@@ -1164,6 +1215,7 @@ class AvatarView @JvmOverloads constructor(
         time += dt
         dtFrame = dt
         prepareFrame(dt)
+        refreshNewShapes(dt)
 
         val invR = 1f / bodyR
         // Frame scalars hoisted into locals: the loop below touches no property but the
