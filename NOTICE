@@ -1,0 +1,9 @@
+Hermes Vox
+Copyright 2026 ChezGoulet (Christopher Goulet, with Shannon and Beatrice) — The House
+
+This product includes software developed by:
+  - the Hermes agent project (Nous Research)
+  - the sherpa-onnx project (k2-fsa / Vox)
+  - Google's Gemma 4 E2B (Enhanced Realtime alpha, separate license)
+
+Licensed under the Apache License, Version 2.0.
