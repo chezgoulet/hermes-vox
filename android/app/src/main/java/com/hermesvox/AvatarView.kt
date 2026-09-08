@@ -926,6 +926,7 @@ class AvatarView @JvmOverloads constructor(
             A_BURST -> { val e = 1f + burstProg * 0.9f; haloW = g * e; haloH = g * e }
             A_WAVEform -> { haloW = bodyR * 2.25f; haloH = bodyR * 0.85f }
             A_SEEKER -> { haloW = bodyR * 1.75f; haloH = bodyR * 1.05f }
+            A_BORE -> { haloW = bodyR * 2.1f; haloH = bodyR * 1.0f }
             else -> {}
         }
     }
@@ -968,6 +969,7 @@ class AvatarView @JvmOverloads constructor(
             A_ARC -> { springK = 42f; flowGain = 4.0f; tremor = 3.4f; spinMul = 0.10f }
             A_NUCLEUS -> { springK = 36f; flowGain = 8.0f; tremor = 2.8f; spinMul = 1.20f }
             A_SEEKER -> { springK = 32f; flowGain = 7.0f; tremor = 3.3f; spinMul = 0.10f }
+            A_BORE -> { springK = 30f; flowGain = 8.0f; tremor = 3.6f; spinMul = 0.10f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1243,6 +1245,23 @@ class AvatarView @JvmOverloads constructor(
                     ftx = cx + xf * ehw * 0.96f + p.jx * br * 0.04f
                     fty = cy + yf * yh + p.jy * br * 0.08f
                 }
+            }
+            A_BORE -> {
+                // idle "water": the whole field becomes a liquid surface. Two
+                // counter-moving trains (phFlow eastbound, phFlow2 westbound) and a fine
+                // chop superpose into a slowly stepping interference field, and each
+                // particle rides the surface plus a depth band whose thickness itself
+                // ripples — so the FIGURE is the wavefield, not a shape drawn on top of
+                // it. The full width is covered, unlike the thin scope trace of WAVEform.
+                val p0 = p.u * 2f * TAU
+                val surf = br * (0.14f * fsin(p0 * 0.7f + phFlow)
+                        + 0.11f * fsin(p0 * 0.7f - phFlow2)
+                        + 0.06f * fcos(p0 * 1.4f + phHarm))
+                val depth = br * (0.34f + 0.07f * fsin(p0 * 1.1f - phFlow2)
+                        + 0.05f * breath)
+                val vy = (p.hr - 0.5f) * 2f * depth
+                ftx = cx - br * 0.95f + p.u * br * 1.9f + p.jx * br * 0.06f
+                fty = cy + surf + vy + p.jy * br * 0.10f
             }
             else -> {
                 // A_BLOOM (SETTLE): breathes outward and back, relaxing toward the rest
