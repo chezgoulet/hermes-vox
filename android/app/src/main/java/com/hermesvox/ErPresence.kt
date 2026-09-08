@@ -80,12 +80,12 @@ class ErPresence(
             }
             ErIntent.Route.ACK_AND_YIELD -> {
                 // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
-                // 0.6.4 cadence: the ack is ONE short beat (never stacked with the
-                // model's own words — the prefix now tells the model not to re-state
-                // thinking; here we keep ours minimal and human).
+                // 0.6.7 Tier 0: the SPOKEN ack is gone for short waits — silence +
+                // motion IS the ack (ErFillers.SILENCE_FIRST_MS gates the tick).
+                // Opening the window is all this route does now; the fail-soft
+                // line at 4s+ is the first voice.
                 startWindow(nowMs)
-                speakGlue("Mm?")
-                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=ack-yield")
+                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=ack-yield mode=silence-first")
             }
         }
         return d.route

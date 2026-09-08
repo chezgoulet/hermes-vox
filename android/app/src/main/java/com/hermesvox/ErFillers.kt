@@ -30,6 +30,11 @@ object ErFillers {
     const val FILLER_WINDOW_MS = 3000L     // the density-cap window
     const val MAX_FILLERS_PER_WINDOW = 2   // Miles: ≤1-2 per 3s
     const val LAG_AFTER_MS = 4000L         // fail-soft kicks in at 4s
+    /** 0.6.7 Tier 0 (silence-first): NOTHING spoken before this much mind-work.
+     *  The waiting-constellation motion carries the presence; silence is the
+     *  natural human ack. (LAG_AFTER_MS and SILENCE_FIRST_MS coincide at 4s:
+     *  under the ladder, the FIRST voice the soul uses is the fail-soft line.) */
+    const val SILENCE_FIRST_MS = LAG_AFTER_MS
 
     /** One tick. Call on a ~1s cadence while the mind is working.
      *  nowMs / mindStartedAt / userStoppedAt: the caller's clock (injectable
@@ -47,10 +52,20 @@ object ErFillers {
          *  ONCE per mind-work window — it repeated every ~3s before (the 3s
          *  window let recentCount fall back to 0, re-arming the fail-soft). */
         lagSaidCount: Int = 0,
+        /** 0.6.7 the presence ladder (Tier 0): silence-first for SHORT waits.
+         *  Nothing is spoken before [SILENCE_FIRST_MS] of mind-work — the
+         *  waiting-constellation motion IS the acknowledgment, and silence is
+         *  the most natural filler a human gives. Tier 1 (nonverbal clips)
+         *  takes over at the lag slot. */
+        silenceFirstMs: Long = SILENCE_FIRST_MS,
     ): Out {
         val since = nowMs - mindStartedAt
         if (since < 900L) return Out(null, State.SILENT)      // the preamble beat
         if (cap <= 0) return Out(null, State.SILENT)          // 0.6.2: user slider "silent"
+        // Tier 0: short waits are MOTION-ONLY. No spoken filler under the
+        // silence-first window — the single biggest naturalness fix, and it
+        // structurally removes the double-ack class.
+        if (since < silenceFirstMs) return Out(null, State.SILENT)
         if (since >= LAG_AFTER_MS) {
             // Fail-soft: ONE in-character lag acknowledgment, then hold silent
             // (the waiting-constellation motion carries the presence from here).
