@@ -903,6 +903,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_TTS -> e
                 .putString("tts", "system")
                 .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
+                .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
                 .putString("provider", "")      // clear the per-request provider override
@@ -945,6 +946,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
             GROUP_APPEARANCE -> bindKeepScreenOn()
             GROUP_VISUALS -> bindVisuals()
+            GROUP_TTS -> bindFlows()   // 0.6.5: re-read the speak toggle after restore
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()

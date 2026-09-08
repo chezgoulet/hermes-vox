@@ -1318,6 +1318,19 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (text.isBlank()) return
         if (!shouldSpeak()) return   // voice channel closed (or voice toggle off)
         if (speaking) return          // the authoritative reply has precedence — never talk over it
+        // 0.6.5 (the field silence bug): while the streaming worker is actively
+        // writing the reply's chunks, a glue one-shot is FORBIDDEN — SherpaTts
+        // one-shot play() REPLACES streamTrack and resets streamWritten mid-reply,
+        // which loses the playback head: the reply's remaining chunks write into
+        // a corrupted track and the answer is silent (text renders, no audio).
+        // The fillers must yield to a reply that has STARTED being voiced. The
+        // one-shot speak() of the reply (non-streaming leg) sets speaking=true
+        // first, which already blocks glue above; this covers the streaming leg.
+        val streamingReplyLive = streamed && !sClosed && (sRunning || sFinal)
+        if (streamingReplyLive && !critical) {
+            VoxLog.er("event=er-glue-reject reason=streaming-reply-live")
+            return
+        }
         // ER Phase 6: the arbiter owns the P3 admission (and P2's preempt of a
         // P3). Non-ER or plain glue keeps today's behavior: stopTts + play.
         val erOn = prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
@@ -1339,7 +1352,18 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         glueSpeaking = true
         main.post {
-            tts?.speak(text) { glueSpeaking = false }
+            tts?.speak(text) {
+                glueSpeaking = false
+                // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
+                // one-voice rule) closes the fence, which is the reply's
+                // streamChunk gate. When a glue ends and a streamed reply is
+                // still open, re-open the fence — the reply owns the track
+                // between fillers.
+                if (streamed && !sClosed) {
+                    try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
+                    VoxLog.er("event=er-fence-reopen after-glue")
+                }
+            }
         }
     }
 
@@ -1353,6 +1377,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         glueSpeaking = false      // Hermes preempts Gemma
         stopTts()                 // cut any in-flight glue so the reply isn't truncated
+        // 0.6.5: the one-shot speak() REPLACES streamTrack + resets streamWritten.
+        // If a streamed turn is open (its worker will keep writing chunks into
+        // the OLD track object), that's the silent-reply corruption. Close the
+        // stream first so the worker exits cleanly; the one-shot owns the floor.
+        if (streamed) stopStreaming()
         speaking = true
         listener?.onState("speaking")
         t.speak(text) {

@@ -42,6 +42,17 @@ class ErFillersTest {
         assertEquals(null, out(10_000L + 5_000L, recent = 1).speak)
     }
 
+    // 0.6.5: the lag line is ONCE per window — keyed to the MONOTONIC lag count,
+    // not the 3s trailing count (which fell back to 0 and re-armed the fail-soft
+    // every ~3s — the "same phrase over and over" the field heard).
+    @Test fun lag_never_repeats_after_the_trailing_count_falls_back() {
+        // said one lag line 5s ago; by +9s the 3s trailing count is 0 again —
+        // with lagSaidCount=1 the fail-soft stays silent regardless.
+        val o = ErFillers.tick(10_000L + 9_000L, 10_000L, recentCount = 0, warm = false, userGoneMs = 19_000L, lagSaidCount = 1)
+        assertEquals(null, o.speak)
+        assertEquals(ErFillers.State.SILENT, o.state)
+    }
+
     @Test fun count_recent_drops_stale_entries() {
         val now = 100_000L
         val times = listOf(now - 1000, now - 2000, now - 4000)   // third is stale
