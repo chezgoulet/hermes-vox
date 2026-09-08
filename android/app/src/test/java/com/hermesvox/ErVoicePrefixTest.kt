@@ -44,7 +44,7 @@ class ErVoicePrefixTest {
         // Cache-safety framing: nothing here may look like a system-prompt edit
         // or a rewrite of prior turns. One prefix, once, in front of user text.
         assertTrue(!expectedCore.contains("system"))
-        assertEquals(1, Regex("\n").findAll(expectedCore).count()) // single line
+        assertEquals(0, Regex("\n").findAll(expectedCore).count()) // single line
     }
 
     @Test
