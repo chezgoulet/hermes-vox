@@ -82,7 +82,11 @@ class SettingsActivity : AppCompatActivity() {
             pick("Voice mode",
                 arrayOf("Realtime", "Enhanced Realtime (alpha)"),
                 arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
-                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val)
+                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val) {
+                if (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED) {
+                    maybeBootstrapVox()
+                }
+            }
         }
         findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { showSection(SECTION_MODELS) }
         findViewById<android.view.View>(R.id.row_grp_entity)?.setOnClickListener { showSection(SECTION_ENTITY) }
@@ -139,6 +143,92 @@ class SettingsActivity : AppCompatActivity() {
                 .setNegativeButton("Cancel", null).show()
         }
         refreshEntityVal()
+        bindVoxRow()
+    }
+
+    /** ER Phase 3: the VOX.md bridge row. Resync = PULL the gateway agent's
+     *  voice-export over the same directive turn /compress uses, validate,
+     *  mirror locally. Pull-only invariant: the device never pushes identity. */
+    private fun bindVoxRow() {
+        findViewById<LinearLayout>(R.id.row_vox).setOnClickListener { resyncVox() }
+        refreshVoxVal()
+    }
+
+    private fun refreshVoxVal() {
+        val v = findViewById<TextView>(R.id.set_vox_val) ?: return
+        v.text = when (val m = VoxSoul.mirrorStatus(VoxMirror.read(this))) {
+            is VoxSoul.Mirror.Present -> if (m.name.isBlank()) "mirrored" else "mirrored · ${m.name}"
+            is VoxSoul.Mirror.Absent -> "not mirrored"
+        }
+    }
+
+    /** ER Phase 3 bootstrap: first enable of Enhanced Realtime. When the mode is
+     *  switched to enhanced and no valid mirror exists, pull VOX.md right away
+     *  (the resync flow) and surface the honest state if it fails — the soul
+     *  "can't find its voice" is a visible condition, never a silent proceed. */
+    private fun maybeBootstrapVox() {
+        if (VoxSoul.mirrorStatus(VoxMirror.read(this)) is VoxSoul.Mirror.Present) return
+        AlertDialog.Builder(this)
+            .setTitle("Enhanced Realtime — meet your entity's voice")
+            .setMessage(
+                "Enhanced Realtime adds the on-device presence layer: the being on the " +
+                "phone speaks in your agent's own voice. It needs VOX.md — your agent's " +
+                "voice-export, authored by the agent itself.\n\nPull it from the gateway now?")
+            .setPositiveButton("Pull VOX.md") { _, _ -> resyncVox() }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun resyncVox() {
+        val u = prefs.getString("url", "").orEmpty()
+        val k = prefs.getString("key", "").orEmpty()
+        if (u.isBlank() || GatewayKey.isMissing(k)) {
+            AlertDialog.Builder(this)
+                .setTitle("Resync VOX.md")
+                .setMessage("Connect the entity first (Entity endpoint + API key), then resync.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        val label = findViewById<TextView>(R.id.set_vox_val)
+        label.text = "asking the entity…"
+        // Off the UI thread: the directive turn is a real /v1/responses call
+        // (turnStored blocks up to 120s) — same shape as /compress.
+        kotlin.concurrent.thread {
+            val s = com.hermesvox.mobile.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
+            val reply = try { s.turnStored(VoxSoul.AUTHOR_DIRECTIVE) } catch (e: Throwable) {
+                VoxLog.w("event=vox-resync-failed err=${e.message?.take(120)}"); null
+            }
+            val doc = VoxSoul.extract(reply)
+            val validated = VoxSoul.validate(doc)
+            val result = when (validated) {
+                is VoxSoul.Valid.Ok -> {
+                    val wrote = VoxMirror.write(this, validated.document)
+                    if (wrote) "ok" else "mirror-write failed"
+                }
+                is VoxSoul.Valid.Bad -> "invalid: ${validated.reason}"
+            }
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                when (result) {
+                    "ok" -> {
+                        refreshVoxVal()
+                        Toast.makeText(this, "VOX.md synced from the entity", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        refreshVoxVal()
+                        AlertDialog.Builder(this)
+                            .setTitle("VOX.md sync failed")
+                            .setMessage(
+                                when {
+                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). It keeps the Contract sacrosanct — ask the entity to regenerate (its own memory of the format), then resync again."
+                                    reply.isNullOrBlank() -> "The entity didn't answer (connection?). Check /health and try again."
+                                    else -> result
+                                })
+                            .setPositiveButton("OK", null).show()
+                    }
+                }
+            }
+        }
     }
 
     private fun refreshEntityVal() {

@@ -301,6 +301,25 @@
                     android:textSize="12sp" />
 
                 <LinearLayout
+                    android:id="@+id/row_vox"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Resync VOX.md (the voice-export)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_vox_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="not mirrored"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_reset"
                     style="@style/HvRow"
                     android:layout_width="match_parent"

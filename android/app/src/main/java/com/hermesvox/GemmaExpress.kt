@@ -28,12 +28,15 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     private val modelFile get() = File(context.filesDir, "models/gemma-e2b/gemma-4-E2B-it.litertlm")
 
-    private val persona =
-        "You are the voice of the assistant, on a phone call with the user. " +
-        "Warm, direct, present, concise. You are the expression layer — the agent " +
-        "does the real work off to the side. Render the pushed content naturally " +
-        "for the moment. You NEVER call tools, NEVER claim to have done the work " +
-        "yourself, NEVER reason beyond expressing it. One or two sentences."
+    /**
+     * The soul prompt (ER Phases 2-4): the mirrored VOX.md, when a valid one
+     * exists, IS the persona — the agent's own distilled identity (Contract +
+     * Soul) wrapped by the voice-not-mind prelude. Without a mirror, the
+     * built-in generic persona holds the line (ER degrades, never breaks).
+     * Read per generation: a Resync takes effect without a reload.
+     */
+    private val persona: String
+        get() = VoxSoul.soulPrompt(VoxMirror.read(context) ?: "")
 
     /** Load the on-device LiteRT-LM model (async, device/GPU). onReady(true) when loaded. */
     fun load(onReady: (Boolean) -> Unit) {
