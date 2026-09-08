@@ -52,7 +52,7 @@ class RoutedExpress : VoxExpress {
 enum class VoiceOwner { GEMMA, HERMES }
 
 class VoiceOrchestrator(private val express: VoxExpress) {
-    var owner: VoiceOwner = GEMMA; private set
+    var owner: VoiceOwner = VoiceOwner.GEMMA; private set
     var gemmaAvailable: Boolean = true
 
     /** 0.6.2: async express — the on-device Gemma generation can take hundreds

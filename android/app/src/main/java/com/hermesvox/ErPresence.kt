@@ -47,7 +47,7 @@ class ErPresence(
     /** 0.6.2: presence OFF — the classifier/telemetry/log still run (the mind's
      *  drift-sync stays honest) but every speakGlue is swallowed. A live mute,
      *  not a teardown: the window lifecycle is unchanged. */
-    val silentProxy: ErPresence by lazy { ErPresence { /* presence muted */ } }
+    val silentProxy: ErPresence by lazy { ErPresence({ /* presence muted */ }) }
 
     /** True while the presence loop is running (diagnostics/ER label). */
     @Volatile var active = false
