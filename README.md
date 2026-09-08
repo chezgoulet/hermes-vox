@@ -22,20 +22,13 @@ talk to the same entity you use everywhere else.
 
 The presence-first design language, live on the emulator:
 
-![Onboarding — connect the entity (endpoint + API key)](docs/screenshots/onboarding.png)
+![The being at rest — a luminous particle-swarm, hands-free](docs/screenshots/being_rest.jpg)
 
-![Realtime at rest — the particle-being + agent name + status](docs/screenshots/main_rest.png)
+![Realtime — the being idle while listening (dispersed, dim)](docs/screenshots/being_idle.jpg)
 
-![Realtime working — the being gathers/warms on a tool call](docs/screenshots/main_working.png)
+![Speaking — the being as a soundwave (the audio trace archetype)](docs/screenshots/being_speaking.jpg)
 
-![Realtime reply — the answer as a Star-Wars crawl over the black](docs/screenshots/main_reply.png)
-
-![Conversation mode — a readable transcript instead of the fading crawl](docs/screenshots/conversation.png)
-
-![Settings — the Voice-mode picker + config](docs/screenshots/settings.png)
-
-<!-- NOTE: screenshots need recapture against the current build (main_rest/onboarding are
-     the same image; settings.png is unrelated). Recapture is a device task. -->
+![Settings — Voice mode, models, entity, STT/TTS, Visuals (Ember — forge-warm)](docs/screenshots/settings.jpg)
 
 ---
 
