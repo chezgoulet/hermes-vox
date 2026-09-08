@@ -729,7 +729,8 @@ class AvatarView @JvmOverloads constructor(
     }
 
     /** A const array, not listOf(): this is read every idle frame and must not allocate. */
-    private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation")
+    private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
+        "bracket", "flame", "ribbon", "infall", "bloom")
     private fun cyclingTheme(t: Float): String = cycleList[((t / cycleSec).toInt()).mod(cycleList.size)]
 
     /** Advance every oscillator. Wrapped, so precision never decays over a long session. */
