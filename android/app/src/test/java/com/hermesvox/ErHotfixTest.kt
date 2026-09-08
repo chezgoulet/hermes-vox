@@ -56,18 +56,21 @@ class ErHotfixTest {
         assertEquals(ErFillers.State.SILENT, o.state)
     }
 
+    // 0.6.7: these tests assumed spoken fillers at 1.5-2.5s — under the ladder,
+    // SILENCE_FIRST_MS (4s) gates ALL voice under four seconds. The cap tests
+    // now exercise the FAIL-SOFT slot (the only place the cap binds anymore).
     @Test fun cap_one_allows_one_filler_then_silence() {
-        val first = ErFillers.tick(10_000L + 1_500L, 10_000L, 0, warm = false, userGoneMs = 0L, cap = 1)
+        val first = ErFillers.tick(10_000L + 5_000L, 10_000L, 0, warm = false, userGoneMs = 0L, cap = 1)
         assertTrue(first.speak != null)
-        val second = ErFillers.tick(10_000L + 2_500L, 10_000L, 1, warm = false, userGoneMs = 0L, cap = 1)
+        val second = ErFillers.tick(10_000L + 6_000L, 10_000L, 1, warm = false, userGoneMs = 0L, cap = 1)
         assertEquals(null, second.speak)
     }
 
     @Test fun default_cap_unchanged_at_two() {
-        val second = ErFillers.tick(10_000L + 2_500L, 10_000L, 2, warm = false, userGoneMs = 0L)
-        assertEquals(null, second.speak)
-        val first = ErFillers.tick(10_000L + 1_500L, 10_000L, 1, warm = false, userGoneMs = 0L)
+        val first = ErFillers.tick(10_000L + 5_000L, 10_000L, 1, warm = false, userGoneMs = 0L)
         assertTrue(first.speak != null)
+        val second = ErFillers.tick(10_000L + 6_000L, 10_000L, 2, warm = false, userGoneMs = 0L)
+        assertEquals(null, second.speak)
     }
 
     // ---- async express contract ----
