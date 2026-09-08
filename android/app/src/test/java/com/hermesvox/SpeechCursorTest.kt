@@ -21,6 +21,15 @@ class SpeechCursorTest {
         assertEquals(0, twoPhrases().charsSpoken(-5))   // a bogus/negative head is not a reveal
     }
 
+    // 0.6.4 crash guard: a zero-sample segment must not divide by zero.
+    @Test fun a_zero_sample_segment_contributes_its_chars_without_dividing() {
+        val c = SpeechCursor(listOf(10, 20, 5), listOf(1000, 0, 500))
+        // past the zero-sample segment: chars 10 + 20 are already said, the 5-char
+        // tail interpolates over its 500 samples.
+        assertEquals(35, c.charsSpoken(1500))
+        assertEquals(30, c.charsSpoken(1000))
+    }
+
     @Test fun a_fully_covered_segment_reveals_all_of_its_chars() {
         assertEquals(10, twoPhrases().charsSpoken(1000))   // exactly the first phrase
     }
