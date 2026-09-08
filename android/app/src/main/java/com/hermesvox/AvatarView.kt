@@ -714,17 +714,23 @@ class AvatarView @JvmOverloads constructor(
 
     /** Idle theme -> archetype. null = fall through to the default dispersed cloud. */
     private fun themeArch(th: String): Int? = when (th) {
+        "aura" -> A_ORB          // default cloud (was null -> A_ORB; now explicit)
         "iris" -> A_BREATH
         "vortex" -> A_GYRE
         "waveform" -> A_VOICE
         "scan" -> A_SWEEP
         "constellation" -> A_NODES
         "bracket" -> A_FORGE
-        else -> null          // "aura" / unknown -> A_ORB
+        "flame" -> A_FLAME       // NEW at idle
+        "ribbon" -> A_RIBBON     // NEW at idle
+        "infall" -> A_INFALL     // NEW at idle
+        "bloom" -> A_BLOOM
+        else -> null             // "hearth"/"drift"/unknown -> A_ORB
     }
 
     /** A const array, not listOf(): this is read every idle frame and must not allocate. */
-    private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation")
+    private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
+        "bracket", "flame", "ribbon", "infall", "bloom")
     private fun cyclingTheme(t: Float): String = cycleList[((t / cycleSec).toInt()).mod(cycleList.size)]
 
     /** Advance every oscillator. Wrapped, so precision never decays over a long session. */
