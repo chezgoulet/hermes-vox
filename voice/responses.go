@@ -51,6 +51,28 @@ func (c *HermesResponsesClient) SetProvider(provider string) {
 	c.mu.Unlock()
 }
 
+// UserTurnPrefix is the ER Phase 1 voice-mode signal: a live-call-local
+// instruction prepended to each VOICE turn's user text (client-side, in
+// VoiceTurn). Two halves, per docs/BUILD-ER-enhanced-realtime.md Phase 1's
+// locked wording: (a) call-register (concise, spoken, no markdown), (b) the
+// anti-tool-spiral clause that fixes the field multi-turn bug (the agent loaded
+// 100KB of skills + re-audited its own state mid-call because nothing told it
+// to just answer).
+//
+// Cache-safety: the prefix rides the CURRENT turn's user text only. It never
+// mutates the system prompt and never rewrites prior turns, so each new turn's
+// request shares the whole prior prefix (system + history) byte-for-byte and
+// the per-conversation prompt cache is REUSED, not invalidated — the same
+// property the CLI's voice mode has. Honest limit: on a STOCK gateway the
+// prefixed text is also what the turn persists into the session transcript
+// (cosmetic in dashboards; the clean persist needs a future gateway-side
+// voice-mode field). BYOG universality: this reaches the model on any
+// standard gateway with zero gateway changes.
+const UserTurnPrefix = "[Voice input — respond conversationally, 2-3 sentences. " +
+	"Speak plainly, no code or markdown. Answer from what you know; do NOT do " +
+	"exhaustive tool work or re-audit your own docs/state unless the caller " +
+	"explicitly asks.] "
+
 // buildBody assembles the request body, including the provider override when set.
 func (c *HermesResponsesClient) buildBody(input string, previousResponseID string, stream bool) (map[string]any, error) {
 	c.mu.RLock()
