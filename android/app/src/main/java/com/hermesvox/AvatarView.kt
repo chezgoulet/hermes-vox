@@ -919,6 +919,7 @@ class AvatarView @JvmOverloads constructor(
             A_RIBBON -> { springK = 30f; flowGain = 13f; tremor = 6.0f; spinMul = 0.50f }
             A_INFALL -> { springK = 28f; flowGain = 10f; tremor = 5.0f; spinMul = 0.60f; biasY = bodyR * 1.25f }
             A_WAVEform -> { springK = 34f; flowGain = 6.5f; tremor = 2.6f; spinMul = 0.10f }
+            A_ARC -> { springK = 42f; flowGain = 4.0f; tremor = 3.4f; spinMul = 0.10f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1112,6 +1113,39 @@ class AvatarView @JvmOverloads constructor(
                 val ampB = br * (0.16f + 0.60f * amp) * (0.92f + 0.08f * breath)
                 ftx = cx - br * 0.96f + s * br * 1.92f + p.jx * br * 0.10f
                 fty = cy + sig * ampB + p.jy * br * 0.20f + p.hr * br * 0.05f
+            }
+            A_ARC -> {
+                // idle "arc": electricity — a jagged crack of light snapped between two
+                // drifting anchors, RESTRUCTURED a few times a second instead of eased.
+                // The jag is a seeded, band-limited sum of harmonics weighted 1/n, so
+                // every point stays ON one continuous bolt (never a fuzzy band) yet each
+                // strike is a different one; the particle springs overshoot the restrike
+                // and glint, which is the flash. Pin at s=0/1 (every sin(n*pi*s) is 0
+                // there) so the crack stays anchored; around a tenth of the swarm rides
+                // off the channel as charge that crackles.
+                val g = floor(time * 3.3f).toInt()          // crack generation, ~3.3/s
+                val sway = phHarm
+                val ax0 = cx - br * 0.58f + fsin(sway * 0.7f) * br * 0.07f
+                val ay0 = cy + fsin(sway * 1.3f + 1.0f) * br * 0.10f
+                val bx0 = cx + br * 0.58f + fsin(sway * 0.5f + 2.0f) * br * 0.07f
+                val by0 = cy - fsin(sway * 1.1f + 3.0f) * br * 0.10f
+                val dx = bx0 - ax0; val dy = by0 - ay0
+                val il = 1f / sqrt((dx * dx + dy * dy).coerceAtLeast(1e-6f))
+                val nx = -dy * il; val ny = dx * il         // perp unit, on the channel
+                val s = p.u
+                var jag = 0f
+                var hn = 1
+                while (hn <= 8) {
+                    val a = 0.32f / hn * (0.35f + 0.65f * hash(hn.toFloat(), 0, g))
+                    val ph = hash(hn.toFloat(), 1, g) * TAU
+                    jag += a * fsin(s * hn * 3.14159f + ph)
+                    hn++
+                }
+                jag *= br
+                val live = fsin(p.fl + phFlick * 2f) * br * 0.03f
+                val s2 = if (p.spark) (hash(s * 3.0f, 7, g) - 0.5f) * br * 0.36f else 0f
+                ftx = ax0 + dx * s + nx * (jag + live + s2)
+                fty = ay0 + dy * s + ny * (jag + live + s2) + p.jy * br * 0.06f
             }
             else -> {
                 // A_BLOOM (SETTLE): breathes outward and back, relaxing toward the rest
