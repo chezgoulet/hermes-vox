@@ -8,7 +8,7 @@
     <string name="hv_set_network_note">Private network (VPN/tunnel, e.g. Tailscale or Nebula) assumed — key + audio use plain HTTP otherwise.</string>
     <string name="hv_skip">I already have a session</string>
     <string name="hv_url_hint">Entity endpoint  ·  http://…</string>
-    <string name="hv_key_hint">API key  ·  user-entered, never stored in the app</string>
+    <string name="hv_key_hint">API key  ·  encrypted on-device, never sent anywhere but your gateway</string>
     <string name="hv_model_hint">Model  ·  hermes-agent</string>
     <string name="hv_input_hint">Speak or type to the entity…</string>
     <string name="hv_send">↗</string>
