@@ -77,11 +77,13 @@ object ErIntent {
     )
 
     /** Greeting-smalltalk: content-free by construction. Checked BEFORE the
-     *  information sweep so "how are you" is never read as a "how" question. */
+     *  information sweep so "how are you" / "who are you" are never read as
+     *  bare "how"/"who" questions. Identity questions belong here too — the
+     *  soul answers "who are you" about ITSELF, no mind needed. */
     private val GREETING_PATTERNS = listOf(
         "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
         "goodnight", "how are you", "how're you", "how you doing", "how is it going",
-        "how's it going", "what's up", "whats up",
+        "how's it going", "what's up", "whats up", "who are you", "what are you",
     )
 
     /** Normalize for matching: lowercase, collapse spaces, keep punctuation
@@ -93,22 +95,22 @@ object ErIntent {
 
     /** Backchannel match: the utterance must be (approximately) JUST the
      *  backchannel — whole-string, or a trailing remnant of <3 chars / pure
-     *  punctuation. "okay" alone holds; "okay what's the weather" is a
-     *  backchannel OPENER + a real question, and the question must escalate. */
+     *  punctuation. Compound backchannels ("okay, go on") strip the opener
+     *  and re-check the rest. "okay what's the weather" is a backchannel
+     *  OPENER + a real question, and the question must escalate. */
     private fun isBackchannel(t: String): Boolean {
         for (raw in BACKCHANNEL_PATTERNS) {
             val it = raw.trim()
             if (t == it) return true
-            if (t.startsWith("$it ")) {
-                val rest = t.removePrefix("$it ").trim()
-                val remainder = rest.replace(Regex("[^a-z0-9 ]"), "").trim()
-                if (remainder.length < 3) return true
-            }
-            if (t.startsWith("$it,") || t.startsWith("$it.")) {
-                val rest = t.removePrefix("$it,").removePrefix("$it.").trim()
-                val remainder = rest.replace(Regex("[^a-z0-9 ]"), "").trim()
-                if (remainder.length < 3) return true
-            }
+            val rest = when {
+                t.startsWith("$it ") -> t.removePrefix("$it ")
+                t.startsWith("$it,") -> t.removePrefix("$it,")
+                t.startsWith("$it.") -> t.removePrefix("$it.")
+                else -> null
+            }?.trim() ?: continue
+            val remainder = rest.replace(Regex("[^a-z0-9 ]"), "").trim()
+            if (remainder.length < 3) return true
+            if (remainder != rest && isBackchannel(rest)) return true   // "okay, go on"
         }
         return false
     }
