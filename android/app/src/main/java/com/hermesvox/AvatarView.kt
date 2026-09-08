@@ -900,10 +900,13 @@ class AvatarView @JvmOverloads constructor(
             }
             A_SEEKER -> {
                 // saccades: a new look target every ~1.15s bucket, eased fast enough to
-                // read as a real darting glance rather than a slow drift.
+                // read as a real darting glance rather than a slow drift. The target is
+                // bounded to ~±0.72 of the field (not the full ±1) so the pupil keeps its
+                // scanning character but always stays INSIDE the visible almond lens —
+                // a full-range target rolled the iris to the rim and read as wall-eyed.
                 val bucket = (time * 0.87f).toInt()
-                val tx = (hash(bucket.toFloat(), 7, 71) - 0.5f) * 2f
-                val ty = (hash(bucket.toFloat(), 9, 73) - 0.5f) * 2f
+                val tx = (hash(bucket.toFloat(), 7, 71) - 0.5f) * 1.44f
+                val ty = (hash(bucket.toFloat(), 9, 73) - 0.5f) * 1.44f
                 val k = (dt * 6f).coerceIn(0f, 1f)
                 pupX += (tx - pupX) * k
                 pupY += (ty - pupY) * k
