@@ -22,7 +22,7 @@ class ErVoicePrefixTest {
 
     /** What the app sends (mobile.HermesSession.VoiceTurn builds from this). */
     private val expectedCore =
-        "[Voice input — respond conversationally, 2-3 sentences. " +
+        "[Voice input — the app adds its own spoken acknowledgments like \"let me think\" while you work, so do NOT re-state that you are thinking or working. Greet the caller naturally first if they greet you. Then respond conversationally, 2-4 sentences. " +
             "Speak plainly, no code or markdown. Answer from what you know; do NOT do " +
             "exhaustive tool work or re-audit your own docs/state unless the caller " +
             "explicitly asks.] "
@@ -33,7 +33,8 @@ class ErVoicePrefixTest {
         // Brackets make the instruction self-evidently an envelope, not user speech.
         assertTrue(expectedCore.startsWith("[Voice input"))
         assertTrue(expectedCore.endsWith("] "))
-        assertTrue(expectedCore.contains("2-3 sentences"))
+        assertTrue(expectedCore.contains("2-4 sentences"))
+        assertTrue(expectedCore.contains("do NOT re-state that you are thinking or working"))
         assertTrue(expectedCore.contains("no code or markdown"))
         assertTrue(expectedCore.contains("do NOT do exhaustive tool work"))
         assertTrue(expectedCore.contains("unless the caller explicitly asks"))
