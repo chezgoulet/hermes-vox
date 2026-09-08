@@ -133,6 +133,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     // (delta/chunk/read) has happened for this long — the genuinely-stalled case.
     private val GATE_STALL_IDLE_MS = 30000L
     // T1 probe thresholds (dd-only near-miss / mic-gap / skip telemetry — zero behavior).
+    // ER Phase 4: the presence loop — lives only when the voice mode is enhanced.
+    // It feeds speakGlue (the P3 path) only; never speaks over the mind's reply.
+    val erPresence = ErPresence { glue -> speakGlue(glue) }
+    @Volatile private var erActive = false
     private val BARGE_READ_GAP_MS = 500L      // a drain r.read() return gap this big -> the mic loop is starved
     private val BARGE_NEARMISS_WINDOW_MS = 2000L  // at most one event=barge-nearmiss per this window
     private val BARGE_SKIP_STATE_MS = 3000L   // the !spk && !turnInFlight skip state held this long -> deaf window
@@ -585,6 +589,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun stop() {
         listening = false
         recognizer?.destroy(); recognizer = null
+        // ER Phase 4: controller teardown kills the presence loop first — its
+        // handler callbacks must never outlive the executor they feed.
+        erActive = false; erPresence.stop()
         // #D1: endCall uses the SAME single silence path as barge/hush — stopTts
         // (closes the SherpaTts fence -> streamChunk returns false -> no track
         // resurrection), close the streaming worker, cancel the SSE stream, then
@@ -692,6 +699,13 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
         val voiceTurn = fromVoice && prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
+        // ER Phase 4: classify the voice utterance and open the presence window.
+        // The classifier runs BEFORE the stream submit; the ack filler may land
+        // first (P3), the mind's reply still preempts via speak() precedence.
+        if (voiceTurn) {
+            erActive = true
+            erPresence.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
+        }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
         // C4: per-turn latches + origin. firstTextLatch arms the first-delta push;
@@ -818,6 +832,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                // ER Phase 4: the mind has answered (or failed) — the presence
+                // window closes; the reply's speech owns the floor now.
+                if (erActive) { erActive = false; erPresence.onMindReply() }
                 // (the drain loop below retires itself when the gate opens; the speak-gate
                 // is released in the speak-complete callback, not here)
             }
@@ -1252,6 +1269,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         genCancelled = true
         listener?.onLog(CUT_BARGE)
         listener?.onState("listening")
+        // ER Phase 4: a barge cuts the presence loop with everything else —
+        // the user's voice outranks the soul's fillers too.
+        if (erActive) { erActive = false; erPresence.stop() }
         // #D1: ONE synchronous silence path — the gate release lands here, on main,
         // immediately after the barge decision (not queued behind TTS callbacks).
         silenceAll("barge-in")
@@ -1303,6 +1323,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  loop is released back to listening. Bound to the presence tap (tap = STOP). */
     fun hush() {
         speaking = false
+        // ER Phase 4: hush cuts the presence loop with everything else (tap = STOP
+        // outranks the soul's fillers, exactly like a barge does).
+        if (erActive) { erActive = false; erPresence.stop() }
         // #D1: the same single silence path as barge/endCall (fence + worker break
         // + synchronous gate release).
         silenceAll("hush")

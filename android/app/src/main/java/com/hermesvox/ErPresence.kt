@@ -1,0 +1,112 @@
+package com.hermesvox
+
+import android.os.Handler
+import android.os.Looper
+
+/**
+ * ErPresence — the Enhanced Realtime presence loop (ER Phase 4), owned by the
+ * VoiceController. Composes the two pure pieces — [ErIntent] (the classifier)
+ * and [ErFillers] (the filler state machine) — into the live presence:
+ *
+ *  - user speech → classify → BACKCHANNEL holds (no escalation, maybe a soft
+ *    ack), EMOTION/SMALLTALK the soul converses directly (Gemma), INFORMATION/
+ *    ACTION the soul acknowledges ("let me think…") and the MIND is engaged;
+ *  - while the mind works → bounded fillers on the ~1s tick, density-capped,
+ *    fail-soft after 4s, silent after the one lag line;
+ *  - the mind's reply preempts everything (the existing speakGlue/speak
+ *    precedence in VoiceController is untouched — this feeds it, never races it).
+ *
+ * KEEP-LIST NOTE: this loop ADDS glue speech only through speakGlue (the
+ * existing P3 path) — it never touches speak(), the gate, or the streaming
+ * worker. When ER is off, presenceAt/erActive stay false and the loop is a
+ * no-op (Realtime behavior byte-identical).
+ */
+class ErPresence(private val speakGlue: (String) -> Unit) {
+
+    private val main = Handler(Looper.getMainLooper())
+    private var tick: Runnable? = null
+
+    /** Latches for the current mind-work window. */
+    @Volatile private var mindStartedAt = 0L
+    private val fillerTimes = ArrayList<Long>()
+    private var lastRoute: ErIntent.Route = ErIntent.Route.ACK_AND_YIELD
+
+    /** True while the presence loop is running (diagnostics/ER label). */
+    @Volatile var active = false
+        private set
+
+    /** The user finished an utterance — classify it and open the window.
+     *  fromVoice=true only (typed sends never trigger presence). Returns the
+     *  route for the caller's log line. */
+    fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
+        val d = ErIntent.classify(text)
+        lastRoute = d.route
+        when (d.route) {
+            ErIntent.Route.HOLD_ONLY -> {
+                // The patient user. No escalation, no filler; a soft in-register
+                // ack (P3, cuttable by a real barge) at most.
+                speakGlue("okay — take the time you need")
+                VoxLog.d("er:intent=backchannel route=hold")
+            }
+            ErIntent.Route.SOUL_DIRECT -> {
+                // The soul's own lane (emotion/smalltalk): Gemma converses directly.
+                // The expression itself is rendered by the GemmaExpress path in the
+                // host; presence only opens a quiet window (no fillers needed —
+                // the soul is speaking).
+                mindStartedAt = nowMs
+                VoxLog.d("er:intent=${d.cls.name.lowercase()} route=soul-direct")
+            }
+            ErIntent.Route.ACK_AND_YIELD -> {
+                // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
+                startWindow(nowMs)
+                speakGlue(if (d.cls == ErIntent.Class.ACTION) "Let me see about that —" else "Let me think —")
+                VoxLog.d("er:intent=${d.cls.name.lowercase()} route=ack-yield")
+            }
+        }
+        return d.route
+    }
+
+    /** The mind (gateway) has started working — arm the filler tick. */
+    fun startWindow(nowMs: Long) {
+        mindStartedAt = nowMs
+        synchronized(fillerTimes) { fillerTimes.clear() }
+        active = true
+        arm()
+    }
+
+    private fun arm() {
+        if (tick != null) return
+        val t = object : Runnable {
+            override fun run() {
+                val now = android.os.SystemClock.uptimeMillis()
+                val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
+                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000))
+                if (o.speak != null) {
+                    synchronized(fillerTimes) { fillerTimes.add(now) }
+                    main.post { speakGlue(o.speak!!) }
+                }
+                if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
+                    stop()   // long stall: the waiting-constellation motion carries it from here
+                    return
+                }
+                main.postDelayed(this, 1_000L)
+            }
+        }
+        tick = t
+        main.postDelayed(t, 1_000L)
+    }
+
+    /** The mind's reply arrived (or the turn was cut) — everything stops; the
+     *  reply's own speech has precedence via the existing speak() path. */
+    fun onMindReply() {
+        stop()
+    }
+
+    /** Stop the loop (call end / controller stop). Idempotent. */
+    fun stop() {
+        tick?.let { main.removeCallbacks(it) }
+        tick = null
+        active = false
+        mindStartedAt = 0L
+    }
+}
