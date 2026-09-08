@@ -289,6 +289,7 @@ class AvatarView @JvmOverloads constructor(
     private var armPh = 0f; private var armBoost = 0.15f
     private var fx = 0f; private var fy = 0f
     private var lastWand = -1
+    private var lastFixateB = -100   // cooldown: after MOVES-ON it must wander for a few buckets
 
     // Idle appearance: a user-picked shape/theme ("aura" = default dispersed breathing)
     // + optional auto-cycle so the being stays alive between turns.
@@ -904,7 +905,10 @@ class AvatarView @JvmOverloads constructor(
                     tox = (hash(b.toFloat(), 0, 23) - 0.5f) * 2f * bodyR * 0.55f
                     toy = (hash(b.toFloat(), 2, 31) - 0.5f) * 2f * bodyR * 0.38f
                     thAng = atan2(toy - oy, tox - ox)
-                    if (hash(b.toFloat(), 5, 37) > 0.62f) beginFixate(b)
+                    // FIXATE is occasional, not serial: only after the cooldown has
+                    // elapsed and this bucket decides something "interesting" arrived.
+                    if (b - lastFixateB >= 2 && hash(b.toFloat(), 5, 37) > 0.62f)
+                        beginFixate(b)
                 }
             }
             T_PH_FIXATE -> {
@@ -927,6 +931,7 @@ class AvatarView @JvmOverloads constructor(
     private fun beginFixate(b: Int) {
         takuPhase = T_PH_FIXATE
         takuT = 0f
+        lastFixateB = b
         // an "interesting" point appears somewhere near the field; the body freezes its
         // drift target (hover) and orients the nose toward it.
         fx = (hash(b.toFloat(), 1, 41) - 0.5f) * 2f
