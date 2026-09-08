@@ -1437,9 +1437,15 @@ class AvatarView @JvmOverloads constructor(
                 // the eye visibly closes and reopens.
                 val ehw = br * 0.92f
                 val ehh = br * 0.44f * blinkEnv
+                // The WHOLE eye pivots with the look-target (they're one object). The
+                // sclera and the iris shift together by the same offset so the iris rides
+                // centered — not sliding over a static eyeball. That's the real-eyeball
+                // behavior: the eye rotates in the socket, iris and sclera move as one.
+                val lookX = pupX * ehw * 0.55f
+                val lookY = pupY * ehh * 0.55f
                 if (p.accent) {
-                    val ppx = cx + pupX * ehw * 0.55f
-                    val ppy = cy + pupY * ehh * 0.55f
+                    val ppx = cx + lookX
+                    val ppy = cy + lookY
                     val pr = br * (0.05f + 0.09f * p.hr) * blinkEnv
                     val a = frac(p.u * 2.618f + p.hr * 1.9f) * TAU
                     ftx = ppx + fcos(a) * pr
@@ -1450,8 +1456,8 @@ class AvatarView @JvmOverloads constructor(
                     val xf = frac(p.u * 2.618f + 0.13f) * 2f - 1f
                     val yf = frac(p.hr * 1.618f + 0.57f) * 2f - 1f
                     val yh = ehh * sqrt((1f - xf * xf).coerceAtLeast(0f))
-                    ftx = cx + xf * ehw * 0.96f + p.jx * br * 0.04f
-                    fty = cy + yf * yh + p.jy * br * 0.08f
+                    ftx = cx + lookX + xf * ehw * 0.96f + p.jx * br * 0.04f
+                    fty = cy + lookY + yf * yh + p.jy * br * 0.08f
                 }
             }
             A_BORE -> {
