@@ -263,6 +263,10 @@ class AvatarView @JvmOverloads constructor(
     private val nucRad = floatArrayOf(0.46f, 0.70f, 0.96f)
     private val ringCR = FloatArray(3)
     private val ringSN = FloatArray(3)
+    // A_SEEKER: eased pupil look-target (-1..1 of the eye field) + the blink envelope
+    // (1 = open, dips to 0 at the close). Set once per frame in refreshNewShapes.
+    private var pupX = 0f; private var pupY = 0f
+    private var blinkEnv = 1f
 
     // Idle appearance: a user-picked shape/theme ("aura" = default dispersed breathing)
     // + optional auto-cycle so the being stays alive between turns.
@@ -805,6 +809,21 @@ class AvatarView @JvmOverloads constructor(
                     ringCR[i] = fcos(w); ringSN[i] = fsin(w)
                 }
             }
+            A_SEEKER -> {
+                // saccades: a new look target every ~1.15s bucket, eased fast enough to
+                // read as a real darting glance rather than a slow drift.
+                val bucket = (time * 0.87f).toInt()
+                val tx = (hash(bucket.toFloat(), 7, 71) - 0.5f) * 2f
+                val ty = (hash(bucket.toFloat(), 9, 73) - 0.5f) * 2f
+                val k = (dt * 6f).coerceIn(0f, 1f)
+                pupX += (tx - pupX) * k
+                pupY += (ty - pupY) * k
+                // blink: a periodic fast close-and-open; the period restitches every few
+                // seconds so it is never metronomic.
+                val per = 3.1f + 1.7f * hash((time * 0.18f).toInt().toFloat(), 5, 19)
+                val bg = frac(time / per)
+                blinkEnv = if (bg < 0.045f) fsin(bg / 0.045f * 3.14159f) else 1f
+            }
             else -> {}
         }
     }
@@ -906,6 +925,7 @@ class AvatarView @JvmOverloads constructor(
             A_VOICE -> { haloW = bodyR * 1.45f; haloH = bodyR * 1.55f }
             A_BURST -> { val e = 1f + burstProg * 0.9f; haloW = g * e; haloH = g * e }
             A_WAVEform -> { haloW = bodyR * 2.25f; haloH = bodyR * 0.85f }
+            A_SEEKER -> { haloW = bodyR * 1.75f; haloH = bodyR * 1.05f }
             else -> {}
         }
     }
@@ -947,6 +967,7 @@ class AvatarView @JvmOverloads constructor(
             A_WAVEform -> { springK = 34f; flowGain = 6.5f; tremor = 2.6f; spinMul = 0.10f }
             A_ARC -> { springK = 42f; flowGain = 4.0f; tremor = 3.4f; spinMul = 0.10f }
             A_NUCLEUS -> { springK = 36f; flowGain = 8.0f; tremor = 2.8f; spinMul = 1.20f }
+            A_SEEKER -> { springK = 32f; flowGain = 7.0f; tremor = 3.3f; spinMul = 0.10f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1196,6 +1217,31 @@ class AvatarView @JvmOverloads constructor(
                     val ryn = p.hcos * ringSN[band] + p.hsin * ringCR[band]
                     ftx = cx + rxn * rr + p.jx * br * 0.06f
                     fty = cy + ryn * rr * nucTilt[band] + p.jy * br * 0.06f
+                }
+            }
+            A_SEEKER -> {
+                // idle "eye": the being is AWARE — it looks. The dispersed swarm is the
+                // sclera (a dim almond lens) and the ~30% accent particles are the bright
+                // pupil, eased toward a darting look target. Blink collapses the whole
+                // lens (and the pupil) vertically through blinkEnv, so every few seconds
+                // the eye visibly closes and reopens.
+                val ehw = br * 0.92f
+                val ehh = br * 0.44f * blinkEnv
+                if (p.accent) {
+                    val ppx = cx + pupX * ehw * 0.55f
+                    val ppy = cy + pupY * ehh * 0.55f
+                    val pr = br * (0.05f + 0.09f * p.hr) * blinkEnv
+                    val a = frac(p.u * 2.618f + p.hr * 1.9f) * TAU
+                    ftx = ppx + fcos(a) * pr
+                    fty = ppy + fsin(a) * pr * 0.9f
+                } else {
+                    // sclera: fill the lens; vertical half-height at each x is a sqrt
+                    // ellipse so the rim thins into a natural eye-shape almond.
+                    val xf = frac(p.u * 2.618f + 0.13f) * 2f - 1f
+                    val yf = frac(p.hr * 1.618f + 0.57f) * 2f - 1f
+                    val yh = ehh * sqrt((1f - xf * xf).coerceAtLeast(0f))
+                    ftx = cx + xf * ehw * 0.96f + p.jx * br * 0.04f
+                    fty = cy + yf * yh + p.jy * br * 0.08f
                 }
             }
             else -> {
