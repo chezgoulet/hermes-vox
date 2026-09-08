@@ -561,8 +561,10 @@ class SettingsActivity : AppCompatActivity() {
             VisualStyle.GLOW_MIN, VisualStyle.GLOW_MAX, VisualStyle.GLOW_STEP,
             VisualStyle.DEFAULT_GLOW) { "%.1f×".format(it) }
 
-        val themeLabels = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation")
-        val themeVals = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation")
+        val themeLabels = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation",
+            "Bracket", "Flame", "Ribbon", "Infall", "Bloom")
+        val themeVals = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
+            "bracket", "flame", "ribbon", "infall", "bloom")
         val theme = prefs.getString("particles_theme", "aura") ?: "aura"
         setStringVal(R.id.set_particle_theme_val, themeLabels, themeVals, theme)
         findViewById<LinearLayout>(R.id.row_particle_theme).setOnClickListener {
