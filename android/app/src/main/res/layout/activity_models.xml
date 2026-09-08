@@ -54,6 +54,18 @@
         android:textSize="15sp"
         android:textStyle="bold" />
 
+    <!-- #120-D: one-line plain-language glossary, so the jargon (STT/VAD/TTS)
+         on this screen and in Settings reads the same way everywhere. -->
+    <TextView
+        android:id="@+id/m_how"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="2dp"
+        android:textColor="@color/hv_text_dim"
+        android:textSize="13sp"
+        android:lineSpacingExtra="2dp" />
+
     <Button
         android:id="@+id/m_download_all"
         android:layout_width="match_parent"

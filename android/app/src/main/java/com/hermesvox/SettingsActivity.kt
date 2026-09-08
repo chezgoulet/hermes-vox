@@ -202,6 +202,8 @@ class SettingsActivity : AppCompatActivity() {
         bindSttRemote()
 
         refreshFlowVals()
+        refreshGrpVals()   // #115: populate the Settings-home row subtitles
+        bindMicAdvanced()  // #118: collapse/expand the Speech & Mic timing-tuner panel
     }
 
     private fun refreshFlowVals() {
@@ -226,7 +228,47 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_models_grpval)?.text = text
     }
 
-    // ---- Remote STT (server) backend: URL/model/key + connection test. This
+    // #115: the Settings-home rows each carry a live-value subtitle so a user can see
+    // state without drilling in. Populate all of them from prefs (mirrors
+    // refreshFlowVals / refreshModelsVal). The ids were added by the wave-2 Settings
+    // agent in activity_settings.xml; this is the Kotlin wiring half.
+    private fun refreshGrpVals() {
+        try {
+            findViewById<TextView>(R.id.set_entity_grpval)?.text =
+                connectionLine(prefs.getString("url", "").orEmpty())
+            findViewById<TextView>(R.id.set_speech_grpval)?.text =
+                modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
+            findViewById<TextView>(R.id.set_stt_grpval)?.text =
+                sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
+            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", "system")
+            findViewById<TextView>(R.id.set_appearance_grpval)?.text = label("theme", "system")
+            findViewById<TextView>(R.id.set_visuals_grpval)?.text =
+                VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
+            findViewById<TextView>(R.id.set_about_grpval)?.text = getString(R.string.app_name) + " " + BuildConfig.VERSION_NAME
+        } catch (_: Throwable) {
+            // never let a subtitle populate crash the settings screen
+        }
+    }
+
+    private fun connectionLine(url: String): String =
+        if (url.isBlank()) "not configured" else "connected"
+
+    // #118: the Speech & Mic "Advanced — timing tuning" chip collapses/expands the
+    // panel of VAD/barge-timing sliders (collapsed by default, progressive disclosure).
+    private fun bindMicAdvanced() {
+        try {
+            val chip = findViewById<android.view.View>(R.id.row_mic_advanced) ?: return
+            val panel = findViewById<android.view.View>(R.id.adv_mic_panel) ?: return
+            val state = findViewById<TextView>(R.id.set_mic_adv_state) ?: return
+            chip.setOnClickListener {
+                val show = panel.visibility != android.view.View.VISIBLE
+                panel.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+                state.text = if (show) "hide" else "show ›"
+            }
+        } catch (_: Throwable) { /* never crash settings from a toggle */ }
+    }
+
+    // --- Remote STT (server) backend: URL/model/key + connection test. This
     // panel is revealed ONLY when the STT backend picker says "remote"; its
     // fields write to the SAME prefs RemoteStt reads (stt_remote_*), and the key
     // goes through SecureStore — never plaintext in the prefs XML. ------
