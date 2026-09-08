@@ -76,6 +76,14 @@ object ErIntent {
         "who are you", "what are you", "tell me about yourself", "i like",
     )
 
+    /** Greeting-smalltalk: content-free by construction. Checked BEFORE the
+     *  information sweep so "how are you" is never read as a "how" question. */
+    private val GREETING_PATTERNS = listOf(
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+        "goodnight", "how are you", "how're you", "how you doing", "how is it going",
+        "how's it going", "what's up", "whats up",
+    )
+
     /** Normalize for matching: lowercase, collapse spaces, keep punctuation
      *  only when it carries meaning ("what?"). */
     private fun norm(text: String): String {
@@ -83,22 +91,50 @@ object ErIntent {
         return if (t.length <= 3) t else t.replace(Regex("\\s+"), " ")
     }
 
+    /** Backchannel match: the utterance must be (approximately) JUST the
+     *  backchannel — whole-string, or a trailing remnant of <3 chars / pure
+     *  punctuation. "okay" alone holds; "okay what's the weather" is a
+     *  backchannel OPENER + a real question, and the question must escalate. */
+    private fun isBackchannel(t: String): Boolean {
+        for (raw in BACKCHANNEL_PATTERNS) {
+            val it = raw.trim()
+            if (t == it) return true
+            if (t.startsWith("$it ")) {
+                val rest = t.removePrefix("$it ").trim()
+                val remainder = rest.replace(Regex("[^a-z0-9 ]"), "").trim()
+                if (remainder.length < 3) return true
+            }
+            if (t.startsWith("$it,") || t.startsWith("$it.")) {
+                val rest = t.removePrefix("$it,").removePrefix("$it.").trim()
+                val remainder = rest.replace(Regex("[^a-z0-9 ]"), "").trim()
+                if (remainder.length < 3) return true
+            }
+        }
+        return false
+    }
+
     /** The classification. Order IS the safety design:
      *  1. backchannel first (it must never escalate),
      *  2. genuine barge second (user redirect beats a stale question match),
-     *  3. action/information (escalate — cheap to over-escalate),
-     *  4. emotion/smalltalk (the soul's lane),
-     *  5. else: ambiguous → ACK_AND_YIELD (the mind decides; missed smalltalk
+     *  3. action (escalate — cheap to over-escalate),
+     *  4. greeting-smalltalk before the information sweep (so "how are you"
+     *     is not swallowed by the bare "how" question marker),
+     *  5. information (escalate),
+     *  6. emotion/smalltalk remainder (the soul's lane),
+     *  7. else: ambiguous → ACK_AND_YIELD (the mind decides; missed smalltalk
      *     costs one flat reply — the cheap miss; the expensive miss is the
      *     soul ANSWERING a real question). */
     fun classify(text: String): Decision {
         val t = norm(text)
         if (t.isEmpty()) return Decision(Route.HOLD_ONLY, Class.BACKCHANNEL)
-        if (BACKCHANNEL_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it,") || t.startsWith("$it.") || (it == "ok " && t.startsWith("ok ")) })
-            return Decision(Route.HOLD_ONLY, Class.BACKCHANNEL)
+        if (isBackchannel(t)) return Decision(Route.HOLD_ONLY, Class.BACKCHANNEL)
         if (BARGE_PATTERNS.any { t.contains(it) }) return Decision(Route.ACK_AND_YIELD, Class.ACTION)
         if (ACTION_PATTERNS.any { t.startsWith(it) || t.contains(it) })
             return Decision(Route.ACK_AND_YIELD, Class.ACTION)
+        // Greeting-smalltalk is content-free by construction — check it BEFORE
+        // the information sweep so "how are you" never reads as a "how" question.
+        if (GREETING_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it?") || t.startsWith("$it!") || t.startsWith("$it,") })
+            return Decision(Route.SOUL_DIRECT, Class.SMALLTALK)
         if (INFORMATION_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it'") || t.startsWith("$it?") || t.startsWith("$it,") || t.contains(" how ") })
             return Decision(Route.ACK_AND_YIELD, Class.INFORMATION)
         if (EMOTION_PATTERNS.any { t.contains(it) }) return Decision(Route.SOUL_DIRECT, Class.EMOTION)
