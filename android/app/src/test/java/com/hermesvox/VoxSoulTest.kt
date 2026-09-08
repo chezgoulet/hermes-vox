@@ -47,7 +47,10 @@ class VoxSoulTest {
     }
 
     @Test fun empty_soul_field_is_rejected() {
-        val v = VoxSoul.validate(canonical(soul = mapOf("Register" to "")))
+        // Blank ONLY Register; the other keys keep their defaults. (mapOf("Register" to "")
+        // would null out every other key — the validator would correctly fail on Name first.)
+        val doc = canonical().replace("Register: plain, direct, warm; no fluff", "Register: ")
+        val v = VoxSoul.validate(doc)
         assertTrue(v is VoxSoul.Valid.Bad)
         assertTrue((v as VoxSoul.Valid.Bad).reason.contains("Register"))
     }
