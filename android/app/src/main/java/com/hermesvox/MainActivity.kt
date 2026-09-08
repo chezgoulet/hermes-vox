@@ -1189,11 +1189,16 @@ class MainActivity : AppCompatActivity() {
                 feed(MotionState.Signal.TOOL_CALL)   // -> avatar.onTool (existing motif)
                 // phone-call presence: Gemma narrates the work (Hermes preempts on the real reply)
                 if (prefs.getBoolean("presence", true)) {
-                    orch.onWorkNarration()?.let { glue ->
-                        setStatus(glue, false)
-                        // Narration split: real-time signals (quiet/visual); only enhanced
-                        // voices the mid-work chatter (Gemma presence).
-                        if (modeIsEnhanced()) liveController?.speakGlue(glue)
+                    // 0.6.2: async render — the Gemma generation must never run on
+                    // main (the ANR risk). The glue lands back on main via runOnUiThread.
+                    orch.expressAsync("working", "", "calm") { glue ->
+                        if (glue.isNullOrBlank()) return@expressAsync
+                        runOnUiThread {
+                            setStatus(glue, false)
+                            // Narration split: real-time signals (quiet/visual); only enhanced
+                            // voices the mid-work chatter (Gemma presence).
+                            if (modeIsEnhanced()) liveController?.speakGlue(glue)
+                        }
                     }
                 }
             } else if (line.startsWith("◆ tool · ")) {

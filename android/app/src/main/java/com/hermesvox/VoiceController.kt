@@ -135,7 +135,13 @@ class VoiceController(private val context: Context, private val session: HermesS
     // T1 probe thresholds (dd-only near-miss / mic-gap / skip telemetry — zero behavior).
     // ER Phase 4: the presence loop — lives only when the voice mode is enhanced.
     // It feeds speakGlue (the P3 path) only; never speaks over the mind's reply.
-    val erPresence = ErPresence { glue -> speakGlue(glue) }
+    // 0.6.2: the filler cap is the user's Settings slider (read live per tick).
+    val erPresence = ErPresence(
+        { glue -> if (erPresenceOn) speakGlue(glue) },
+        { prefsGetInt("er_filler_cap", 2) },
+    )
+    private fun prefsGetInt(k: String, d: Int) =
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(k, d)
     @Volatile private var erActive = false
     // ER Phase 5: a live mind turn in Enhanced mode (the semantic barge scope
     // applies only then). Set true per voice turn, cleared with the window.
@@ -143,10 +149,29 @@ class VoiceController(private val context: Context, private val session: HermesS
     // ER Phase 5: the utterance that STARTED the current mind turn — bookkeeping
     // only (the classify input is the INTERRUPTING speech, captured in erBargeSeg).
     @Volatile private var turnUtterance: String? = null
+    // 0.6.2 HOLD-drop fix: the gen whose gate was released by an er-barge-hold.
+    // A HOLD keeps the mind streaming but reopens the mic (the gate must release),
+    // so when the mind's reply lands, `voiceState.released()` would read as a
+    // CANCELLED turn and ReplySettleRule would DROP the reply (silent text on the
+    // non-streaming TTS leg — the streaming leg was never affected; `streamed`
+    // stays open through a hold and retires normally). This witness says: the
+    // release was a HOLD, the turn is ALIVE — settle it like an ordinary turn.
+    @Volatile private var erHoldReleasedGen = -1L
+    // 0.6.2 user-facing gates (Settings ER section): semantic barge scope +
+    // soul presence. Read per turn (the Settings write is immediate).
+    @Volatile private var erSemanticBarge = true
+    @Volatile private var erPresenceOn = true
+    private fun prefsGetBoolean(k: String, d: Boolean) =
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean(k, d)
     // ER Phase 5: interrupting-speech capture — frames gathered by the barge
     // drain while the mind is generating (no playback running). Transcribed
     // post-barge to classify cancel-vs-hold (the fire-and-hold read).
     private val erBargeSeg = ArrayList<Float>(16000 * 4)
+    // 0.6.2 echo guard (user-facing slider, "er_echo_skip_ms", default 700): after
+    // a soul filler ENDS, skip erBargeSeg capture for this long — the speaker-leak
+    // tail outlives glueSpeaking by a beat. 0 = off (capture everything).
+    @Volatile private var erEchoSkipMs = 700L
+    @Volatile private var erEchoSkipSinceMs = 0L
     private val BARGE_READ_GAP_MS = 500L      // a drain r.read() return gap this big -> the mic loop is starved
     private val BARGE_NEARMISS_WINDOW_MS = 2000L  // at most one event=barge-nearmiss per this window
     private val BARGE_SKIP_STATE_MS = 3000L   // the !spk && !turnInFlight skip state held this long -> deaf window
@@ -421,6 +446,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     turnUtterance = t
                     val myGen = turnGen
                     val bargeRmsMin = micFloat("barge_rms_min", 0.10f)
+                    // 0.6.2 echo guard: read the user-facing slider once per turn.
+                    erEchoSkipMs = micFloat("er_echo_skip_ms", 700f).toLong()
                     val bargeGraceMs = micInt("barge_grace_ms", BargeGate.DEFAULT_GRACE_MS).toLong()
                     val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
@@ -541,9 +568,20 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // !speaking) the interrupted speech accumulates into erBargeSeg;
                         // a post-barge transcribe classifies it (the barge decision
                         // itself already fired on the level/VAD gate below).
-                        if (!spk && turnInFlight) { for (f in frames) erBargeSeg.add(f) }
+                        // 0.6.2 echo fix: NOT while the soul's own filler is playing —
+                        // speaker leak into the mic is the one input we know is not the
+                        // user (AEC reduces but does not prove it). Skipping these frames
+                        // keeps erBargeSeg honest: only user speech (or true silence)
+                        // accumulates. erEchoSkipMs is a user-facing guard slider (0=off).
+                        if (!spk && turnInFlight && !glueSpeaking &&
+                            (erEchoSkipMs <= 0L || readAt - erEchoSkipSinceMs > erEchoSkipMs)) {
+                            for (f in frames) erBargeSeg.add(f)
+                        }
                         // active RMS floor: rmsMin with VAD, rmsMin*1.4 without
                         val floor = if (vadAvailable) bargeRmsMin else bargeRmsMin * BargeGate.NO_VAD_RMS_BOOST
+                        // 0.6.2 echo guard: track glue playback end so the capture skip
+                        // window (erEchoSkipMs) starts when the filler's tail is dying.
+                        if (glueSpeaking) erEchoSkipSinceMs = readAt
                         // Same per-read clock discipline as before (n * 1000 / sr = 64ms for the
                         // 1024-short buffer at 16kHz); only the accumulate rule changed.
                         val frameMs = n * 1000L / sr
@@ -720,13 +758,24 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
         val voiceTurn = fromVoice && prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
-        // ER Phase 4: classify the voice utterance and open the presence window.
+        // 0.6.2 user-facing gates: the semantic-barge scope and the presence
+        // runtime are user-togglable in Settings (er_semantic_barge / er_presence).
+        // erSemanticBarge=false → ER voice turns behave like Realtime on barge
+        // (always cancel); erPresenceOn=false → the classifier/window still run
+        // (the drift-sync log stays honest) but NOTHING is spoken as glue.
+        erSemanticBarge = voiceTurn && prefsGetBoolean("er_semantic_barge", true)
+        erPresenceOn = prefsGetBoolean("er_presence", true)
+    // ER Phase 4: classify the voice utterance and open the presence window.
         // The classifier runs BEFORE the stream submit; the ack filler may land
         // first (P3), the mind's reply still preempts via speak() precedence.
+        // 0.6.2: erPresenceOn=false (Settings "Soul presence" off) → the
+        // classifier + drift log still run (the mind's sync stays honest) but
+        // ErPresence speaks nothing (the speakGlue lambda becomes a no-op).
         if (voiceTurn) {
             erActive = true
             erMindLive = true
-            erPresence.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
+            val presenceTarget = if (erPresenceOn) erPresence else erPresence.silentProxy
+            presenceTarget.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
         }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
@@ -926,7 +975,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         // cancelled reply fell through to `else if (shouldSpeak()) -> speak(finalText)`
         // and re-synthesized the WHOLE reply. The witnesses are the gate and the turn's
         // first-audio latch; the rule itself is pure + unit-proven (ReplySettleRule).
-        val cancelled = gen != turnGen || voiceState.released()
+        // 0.6.2 HOLD-drop fix: an er-barge-hold ALSO releases the gate (the mic must
+        // reopen while the mind keeps streaming). A released-by-hold gate is not a
+        // cancelled turn — the reply that lands afterward is the answer the user is
+        // waiting for and must SPEAK normally (the streaming leg was never affected:
+        // `streamed` stays open through a hold and retires via RETIRE_STREAM). The
+        // witness is keyed to the gen so a genuinely-cancelled later turn is unaffected.
+        val holdAlive = gen == erHoldReleasedGen && gen == turnGen
+        if (holdAlive) { erHoldReleasedGen = -1L }   // consume the witness exactly once
+        val cancelled = (gen != turnGen || voiceState.released()) && !holdAlive
         when (ReplySettleRule.decide(
             streamed = streamed,
             streamingEngine = tts?.supportsStreaming == true,
@@ -1335,6 +1392,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         // classify, THEN decide. The physical cut was instant; the semantic
         // decision follows on the executor (the mind keeps streaming meanwhile —
         // its deltas just have nowhere to play, which is exactly the design).
+        // 0.6.2: erSemanticBarge=false (Settings) restores the pre-ER always-cancel.
+        if (!erSemanticBarge) {
+            VoxLog.d("event=er-barge verdict=cancel_mind reason=semantic-toggle-off")
+            genCancelled = true
+            silenceAll("er-barge-toggle-off")
+            return
+        }
         val segSnapshot = synchronized(erBargeSeg) {
             val snap = erBargeSeg.toFloatArray()
             erBargeSeg.clear()
@@ -1360,7 +1424,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                     ErBargeGate.Verdict.HOLD_MIND -> {
                         // The mind keeps working. The soul acknowledges in-register
                         // (P3, cuttable by a real barge); the gate returns to listening.
-                        erPresence.onUserUtterance(said ?: "okay", android.os.SystemClock.uptimeMillis())
+                        // 0.6.2: witness the release as a HOLD so the reply's settle
+                        // doesn't mistake it for a cancel (the HOLD-drop fix).
+                        erHoldReleasedGen = myGen
+                        if (erPresenceOn) {
+                            erPresence.onUserUtterance(said ?: "okay", android.os.SystemClock.uptimeMillis())
+                        }
                         releaseTurnGate(myGen, "er-barge-hold")
                     }
                 }

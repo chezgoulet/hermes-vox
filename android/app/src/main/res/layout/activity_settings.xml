@@ -319,6 +319,113 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- 0.6.2: the ER runtime controls (Enhanced Realtime mode only). -->
+                <LinearLayout
+                    android:id="@+id/row_er_presence"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Soul presence (narration + fillers)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_presence"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_er_semantic_barge"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Semantic barge-in — “take your time” keeps the mind working"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_semantic_barge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_er_filler_cap"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Filler density (max per 3s while the entity works)"
+                        style="@style/HvRowTitle" />
+                    <SeekBar
+                        android:id="@+id/sb_er_filler_cap"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="4"
+                        android:progress="2" />
+                    <TextView
+                        android:id="@+id/set_er_filler_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="2"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_er_echo"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Echo guard (silence barge capture after the soul speaks, ms)"
+                        style="@style/HvRowTitle" />
+                    <SeekBar
+                        android:id="@+id/sb_er_echo"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="6"
+                        android:progress="3" />
+                    <TextView
+                        android:id="@+id/set_er_echo_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="700ms"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_vox_view"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="View the mirrored VOX.md"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="what the on-device soul reads"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/row_reset"
                     style="@style/HvRow"
