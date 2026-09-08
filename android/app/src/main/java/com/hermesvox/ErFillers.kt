@@ -41,19 +41,21 @@ object ErFillers {
         recentCount: Int,
         warm: Boolean,
         userGoneMs: Long,
+        cap: Int = MAX_FILLERS_PER_WINDOW,
     ): Out {
         val since = nowMs - mindStartedAt
         if (since < 900L) return Out(null, State.SILENT)      // the preamble beat
+        if (cap <= 0) return Out(null, State.SILENT)          // 0.6.2: user slider "silent"
         if (since >= LAG_AFTER_MS) {
             // Fail-soft: ONE in-character lag acknowledgment, then hold silent
             // (the waiting-constellation motion carries the presence from here).
             val said = recentCount > 0
-            return if (!said && recentCount < MAX_FILLERS_PER_WINDOW) {
+            return if (!said && recentCount < cap) {
                 Out(LAG[(userGoneMs % LAG.size).toInt().coerceAtLeast(0)], State.LAG_ACK)
             } else Out(null, State.SILENT)
         }
         // Pre-lag: the neutral/warm fillers under the density cap.
-        if (recentCount >= MAX_FILLERS_PER_WINDOW) return Out(null, State.SILENT)
+        if (recentCount >= cap) return Out(null, State.SILENT)
         val windowFull = (nowMs / FILLER_WINDOW_MS) - (mindStartedAt / FILLER_WINDOW_MS) < 0
         // Density is enforced by the caller's recentCount (the loop tallies the
         // trailing 3s); the window arithmetic above is the state marker only.

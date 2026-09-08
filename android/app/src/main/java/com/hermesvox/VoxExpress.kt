@@ -52,8 +52,28 @@ class RoutedExpress : VoxExpress {
 enum class VoiceOwner { GEMMA, HERMES }
 
 class VoiceOrchestrator(private val express: VoxExpress) {
-    var owner: VoiceOwner = VoiceOwner.GEMMA; private set
+    var owner: VoiceOwner = GEMMA; private set
     var gemmaAvailable: Boolean = true
+
+    /** 0.6.2: async express — the on-device Gemma generation can take hundreds
+     *  of ms (runBlocking inside GemmaExpress.express); it must NEVER run on the
+     *  main thread (the UI callback that drives narration lives there — the ANR
+     *  risk). The render runs on a daemon thread; the caller's callback receives
+     *  the glue (or null on failure/no model) on ITS thread of choice. The
+     *  fallback (RoutedExpress) is instant, so the async hop costs ~nothing. */
+    fun expressAsync(
+        intent: String,
+        content: String = "",
+        tone: String = "warm",
+        onGlue: (String?) -> Unit,
+    ) {
+        Thread {
+            val glue = try {
+                if (gemmaAvailable) express.express(intent, content, tone) else null
+            } catch (_: Throwable) { null }
+            onGlue(glue)
+        }.apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }.start()
+    }
 
     /** The user spoke — Gemma acknowledges/narrates (holds the floor). */
     fun onUserSpeech(): String? {

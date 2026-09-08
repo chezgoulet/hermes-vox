@@ -21,7 +21,12 @@ import android.os.Looper
  * worker. When ER is off, presenceAt/erActive stay false and the loop is a
  * no-op (Realtime behavior byte-identical).
  */
-class ErPresence(private val speakGlue: (String) -> Unit) {
+class ErPresence(
+    private val speakGlue: (String) -> Unit,
+    /** 0.6.2: the user's filler-density slider (Settings ER section).
+     *  Read live per tick so a slider change lands on the next turn. */
+    private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
+) {
 
     private val main = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
@@ -38,6 +43,11 @@ class ErPresence(private val speakGlue: (String) -> Unit) {
     fun drainSoulActions(): List<ErDrift.SoulAction> = synchronized(soulActions) {
         val out = ArrayList(soulActions); soulActions.clear(); out
     }
+
+    /** 0.6.2: presence OFF — the classifier/telemetry/log still run (the mind's
+     *  drift-sync stays honest) but every speakGlue is swallowed. A live mute,
+     *  not a teardown: the window lifecycle is unchanged. */
+    val silentProxy: ErPresence by lazy { ErPresence { /* presence muted */ } }
 
     /** True while the presence loop is running (diagnostics/ER label). */
     @Volatile var active = false
@@ -91,7 +101,7 @@ class ErPresence(private val speakGlue: (String) -> Unit) {
                 val now = android.os.SystemClock.uptimeMillis()
                 val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
                 if (mindStartedAt > 0 && windowOpenedAt != mindStartedAt) windowOpenedAt = mindStartedAt
-                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000))
+                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap())
                 if (o.speak != null) {
                     // Phase 8: soul first-word = the first glue after the window opened.
                     if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {

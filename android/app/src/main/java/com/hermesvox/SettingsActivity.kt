@@ -151,8 +151,83 @@ class SettingsActivity : AppCompatActivity() {
      *  mirror locally. Pull-only invariant: the device never pushes identity. */
     private fun bindVoxRow() {
         findViewById<LinearLayout>(R.id.row_vox).setOnClickListener { resyncVox() }
+        // 0.6.2: view the mirror — what the on-device soul actually reads.
+        findViewById<LinearLayout>(R.id.row_vox_view).setOnClickListener {
+            val doc = VoxMirror.read(this)
+            AlertDialog.Builder(this)
+                .setTitle("Mirrored VOX.md")
+                .setMessage(doc?.take(2000) ?: "Not mirrored yet — Resync VOX.md pulls it from the entity.")
+                .setPositiveButton("OK", null).show()
+        }
+        bindErControls()
         refreshVoxVal()
     }
+
+    /** 0.6.2: the ER runtime controls — every tunable the presence runtime reads,
+     *  exposed. All are Enhanced-Realtime-only (Realtime ignores them entirely). */
+    private fun bindErControls() {
+        val swPresence = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_presence)
+        val swBarge = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_semantic_barge)
+        val sbFiller = findViewById<SeekBar>(R.id.sb_er_filler_cap)
+        val tvFiller = findViewById<TextView>(R.id.set_er_filler_val)
+        val sbEcho = findViewById<SeekBar>(R.id.sb_er_echo)
+        val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
+
+        swPresence.isChecked = prefs.getBoolean("er_presence", true)
+        swPresence.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("er_presence", checked).apply()
+            Toast.makeText(this, if (checked) "Soul presence on" else "Soul presence off (ER stays wired, quieter)",
+                Toast.LENGTH_SHORT).show()
+        }
+        swBarge.isChecked = prefs.getBoolean("er_semantic_barge", true)
+        swBarge.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("er_semantic_barge", checked).apply()
+            // The onboarding-explanation surface: what this toggle actually trades.
+            Toast.makeText(this,
+                if (checked) "Semantic barge on — \"take your time\" won't cancel the entity's work"
+                else "Every interruption cancels the entity's work (pre-ER behavior)",
+                Toast.LENGTH_LONG).show()
+        }
+        val fillerCap = prefs.getInt("er_filler_cap", 2)
+        sbFiller.progress = fillerCap.coerceIn(0, 4)
+        tvFiller.text = fillerCapLabel(fillerCap)
+        sbFiller.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                tvFiller.text = fillerCapLabel(p)
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {
+                prefs.edit().putInt("er_filler_cap", sbFiller.progress).apply()
+            }
+        })
+        // Echo guard slider: 0-6 steps -> 0,300,500,700,1000,1500,2500ms (0 = off).
+        val echoSteps = intArrayOf(0, 300, 500, 700, 1000, 1500, 2500)
+        val curEcho = prefs.getFloat("er_echo_skip_ms", 700f).toInt()
+        sbEcho.progress = echoSteps.indexOfFirst { it == curEcho }.coerceAtLeast(0)
+        tvEcho.text = echoLabel(echoSteps[sbEcho.progress])
+        sbEcho.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                tvEcho.text = echoLabel(echoSteps[p])
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {
+                prefs.edit().putFloat("er_echo_skip_ms", echoSteps[sbEcho.progress].toFloat()).apply()
+            }
+        })
+    }
+
+    private fun fillerCapLabel(n: Int): String = when (n) {
+        0 -> "silent (no fillers)"
+        1 -> "1 — sparse"
+        2 -> "2 — the Miles default"
+        else -> "$n — chatty"
+    }
+
+    private fun echoLabel(ms: Int): String = if (ms == 0) "off" else "${ms}ms"
+
+    /** 0.6.2: the semantic-barge toggle + presence toggle are read at the
+     *  decision sites (VoiceController bargeIn / runStreamedTurn); see the
+     *  prefs keys er_semantic_barge / er_presence there. */
 
     private fun refreshVoxVal() {
         val v = findViewById<TextView>(R.id.set_vox_val) ?: return
@@ -179,7 +254,7 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun resyncVox() {
+    private fun resyncVox(retryNote: String? = null) {
         val u = prefs.getString("url", "").orEmpty()
         val k = prefs.getString("key", "").orEmpty()
         if (u.isBlank() || GatewayKey.isMissing(k)) {
@@ -195,7 +270,12 @@ class SettingsActivity : AppCompatActivity() {
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
             val s = com.hermesvox.mobile.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
-            val reply = try { s.turnStored(VoxSoul.AUTHOR_DIRECTIVE) } catch (e: Throwable) {
+            // 0.6.2: a retry rides the SAME server-side chain (previous_response_id
+            // inside turnStored), so the entity still has its prior attempt in
+            // context — the corrective note lands with the entity already knowing
+            // the format it just got wrong.
+            val directive = if (retryNote != null) "$retryNote\n\n${VoxSoul.AUTHOR_DIRECTIVE}" else VoxSoul.AUTHOR_DIRECTIVE
+            val reply = try { s.turnStored(directive) } catch (e: Throwable) {
                 VoxLog.w("event=vox-resync-failed err=${e.message?.take(120)}"); null
             }
             val doc = VoxSoul.extract(reply)
@@ -220,11 +300,12 @@ class SettingsActivity : AppCompatActivity() {
                             .setTitle("VOX.md sync failed")
                             .setMessage(
                                 when {
-                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). It keeps the Contract sacrosanct — ask the entity to regenerate (its own memory of the format), then resync again."
+                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
                                     reply.isNullOrBlank() -> "The entity didn't answer (connection?). Check /health and try again."
                                     else -> result
                                 })
-                            .setPositiveButton("OK", null).show()
+                            .setPositiveButton("Try again") { _, _ -> resyncVox(retryNote = "Your last reply wasn't a valid VOX.md (reason: $result). Follow the format EXACTLY — byte-identical Contract lines, every Soul field filled.") }
+                            .setNegativeButton("Later", null).show()
                     }
                 }
             }
