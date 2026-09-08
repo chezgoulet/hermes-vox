@@ -33,6 +33,19 @@
 -keep class com.google.ai.edge.litertlm.LiteRtLmJni$JniInferenceCallback { *; }
 -keep class com.google.ai.edge.litertlm.LiteRtLmJni$JniMessageCallback { *; }
 
+# 0.6.6 (field crash, Enhanced Realtime → tool call → Gemma flow close):
+# NoSuchMethodError SendChannel.close$default INSIDE litertlm's own
+# sendMessageAsync callback (Conversation$sendMessageAsync$1$1.onDone →
+# SendChannel.close$default). The AAR's precompiled bytecode calls the
+# DefaultImpls-style static; R8's output kept the litertlm classes whole (the
+# keep rule above) but the kotlinx.coroutines SendChannel machinery was
+# rewritten/optimized such that the exact method reference no longer
+# resolved at runtime. Keep the channels API surface litertlm's callback
+# path links against, whole.
+-keep class kotlinx.coroutines.channels.SendChannel { *; }
+-keep class kotlinx.coroutines.channels.SendChannel$DefaultImpls { *; }
+-keep class kotlinx.coroutines.channels.ProducerScope { *; }
+
 # litertlm's reflective tool helper references kotlin-reflect, which is excluded
 # from the runtime deps; suppress the R8 missing-class warning (generated rule).
 -dontwarn kotlin.reflect.full.KClasses

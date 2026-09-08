@@ -6,7 +6,7 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.runBlocking  // still used to park the express() thread
 import java.io.File
 
 /**
@@ -77,7 +77,32 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         return try {
             runBlocking {
                 engine.createConversation(ConversationConfig(systemInstruction = Contents.of(persona))).use { conv ->
-                    buildString { conv.sendMessageAsync(prompt).collect { append(it) } }
+                    // 0.6.6: the CALLBACK API, not the Flow API. The Flow overload's
+                    // onDone closes the ProducerScope channel
+                    // (SendChannel.close$default) — a method reference that does
+                    // not resolve in the R8-processed APK (the field crash:
+                    // NoSuchMethodError inside litertlm's own callback on the
+                    // FIRST tool-call turn of a call). The callback overload
+                    // builds no Flow/channel at all: onMessage appends, onDone
+                    // latches, onError records. Same data path, no version
+                    // coupling to the coroutines binary.
+                    val sb = StringBuilder()
+                    val done = java.util.concurrent.CountDownLatch(1)
+                    var error: Throwable? = null
+                    conv.sendMessageAsync(prompt, object : com.google.ai.edge.litertlm.MessageCallback {
+                        override fun onMessage(m: com.google.ai.edge.litertlm.Message) {
+                            // The message's Contents may carry text and/or tool
+                            // calls; the presence layer only renders TEXT parts.
+                            for (c in m.contents.contents) {
+                                if (c is com.google.ai.edge.litertlm.Content.Text) sb.append(c.text)
+                            }
+                        }
+                        override fun onDone() { done.countDown() }
+                        override fun onError(t: Throwable) { error = t; done.countDown() }
+                    })
+                    done.await(20, java.util.concurrent.TimeUnit.SECONDS)
+                    error?.let { throw it }
+                    sb.toString()
                 }
             }.trim()
                 // 0.6.3: the render rails — cap runaway output, enforce spacing.
