@@ -1443,8 +1443,9 @@ class AvatarView @JvmOverloads constructor(
                 // base position on the unit sphere: front pole (+z) faces the viewer.
                 // iris = a small cap near the pole; sclera = the rest of the visible ball.
                 val az = p.u * TAU
-                val ph = if (p.accent) p.hr * 0.36f * PI
-                         else 0.16f * PI + p.hr * 0.84f * PI
+                val pf = PI.toFloat()                  // PI is a Double; keep this in Float
+                val ph = if (p.accent) p.hr * 0.36f * pf
+                         else 0.16f * pf + p.hr * 0.84f * pf
                 val sp = fsin(ph)
                 val bx = sp * fcos(az)
                 val by = sp * fsin(az)
