@@ -58,6 +58,13 @@ object VoxLog {
     /** Debug-detail: logcat always, file only when the debug-file pref is on. */
     fun dd(msg: String) { Log.d(TAG, msg); if (debugFile) append("D", msg) }
 
+    /** 0.6.4 field bug: "there was nothing in the logs at all" — the ER decision
+     *  lines (er:intent, er-barge-verdict, er-arbiter) used dd(), so they were
+     *  invisible in the exported log unless the debug-file toggle was on. The ER
+     *  arc is DIAGNOSTIC, not transcript: it always reaches the file (the
+     *  debug-file pref only adds the high-frequency probes). */
+    fun er(msg: String) { Log.d(TAG, msg); append("E", msg) }
+
     /** Pure K2 decision: an active log ROTATES when its size EXCEEDS the cap
      *  (> cap), KEEPs otherwise (== cap is still inside the budget). Unit-tested. */
     internal fun rotationDecision(sizeBytes: Long, capBytes: Long): LogRotation =

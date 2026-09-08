@@ -1326,7 +1326,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val request = if (critical) ErArbiter.Priority.P2_SOUL_CRITICAL else ErArbiter.Priority.P3_FILLER
             val d = ErArbiter.arbitrate(current, request)
             ErTelemetry.arbiter(d)   // Phase 8: the double-talk watch
-            VoxLog.d("event=er-arbiter current=${current ?: "silence"} request=$request outcome=${ErArbiter.outcomeOf(d)}")
+            VoxLog.er("event=er-arbiter current=${current ?: "silence"} request=$request outcome=${ErArbiter.outcomeOf(d)}")
             when (d) {
                 is ErArbiter.Decision.Reject -> return
                 is ErArbiter.Decision.Preempt -> stopTts()   // cut the P3, play below
@@ -1400,7 +1400,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // its deltas just have nowhere to play, which is exactly the design).
         // 0.6.2: erSemanticBarge=false (Settings) restores the pre-ER always-cancel.
         if (!erSemanticBarge) {
-            VoxLog.d("event=er-barge verdict=cancel_mind reason=semantic-toggle-off")
+            VoxLog.er("event=er-barge verdict=cancel_mind reason=semantic-toggle-off")
             genCancelled = true
             silenceAll("er-barge-toggle-off")
             return
@@ -1411,14 +1411,14 @@ class VoiceController(private val context: Context, private val session: HermesS
             snap
         }
         val myGen = turnGen
-        VoxLog.d("event=er-barge-fire hold=staged frames=${segSnapshot.size} gen=$myGen")
+        VoxLog.er("event=er-barge-fire hold=staged frames=${segSnapshot.size} gen=$myGen")
         execSubmit barge@{
             val said = try {
                 if (segSnapshot.size >= 16000 * 300 / 1000) stt?.transcribe(segSnapshot, 16000)?.trim() else null
             } catch (_: Throwable) { null }
             val verdict = ErBargeGate.decide(said)
             ErTelemetry.barge(verdict)   // Phase 8: the false-cancel rate
-            VoxLog.d("event=er-barge-verdict gen=$myGen text=${if (logTranscripts()) (said ?: "").take(80) else "<hidden>"} verdict=$verdict")
+            VoxLog.er("event=er-barge-verdict gen=$myGen text=${if (logTranscripts()) (said ?: "").take(80) else "<hidden>"} verdict=$verdict")
             main.post {
                 // Re-check the turn is still live and un-superceded before acting.
                 if (myGen != turnGen || !turnInFlight) return@post

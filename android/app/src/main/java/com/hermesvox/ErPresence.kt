@@ -65,7 +65,7 @@ class ErPresence(
                 // The patient user. No escalation, no filler; a soft in-register
                 // ack (P3, cuttable by a real barge) at most.
                 speakGlue("okay — take the time you need")
-                VoxLog.d("er:intent=backchannel route=hold")
+                VoxLog.er("er:intent=backchannel route=hold")
             }
             ErIntent.Route.SOUL_DIRECT -> {
                 // The soul's own lane (emotion/smalltalk): Gemma converses directly.
@@ -73,7 +73,7 @@ class ErPresence(
                 // host; presence only opens a quiet window (no fillers needed —
                 // the soul is speaking).
                 mindStartedAt = nowMs
-                VoxLog.d("er:intent=${d.cls.name.lowercase()} route=soul-direct")
+                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=soul-direct")
             }
             ErIntent.Route.ACK_AND_YIELD -> {
                 // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
@@ -82,7 +82,7 @@ class ErPresence(
                 // thinking; here we keep ours minimal and human).
                 startWindow(nowMs)
                 speakGlue("Mm?")
-                VoxLog.d("er:intent=${d.cls.name.lowercase()} route=ack-yield")
+                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=ack-yield")
             }
         }
         return d.route
