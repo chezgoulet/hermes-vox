@@ -1,100 +1,76 @@
-# Roadmap
+# Hermes Vox — Roadmap
 
-A phased plan for turning this repo into a genuinely useful forkable boilerplate for cross-platform Ebitengine apps and games.
+Hermes Vox is an open-source **voice client for the Hermes agent**: a particle-being
+you talk to on your phone, with on-device speech processing and a hands-free,
+barge-in conversation line.
 
-**Status keys:** `[x]` done · `[ ]` planned/in progress · `[?]` open question · `[-]` deferred (with reason)
-
-The guiding rule: **every phase should leave the repo in a state a forker can clone and build.** A half-finished feature that breaks the one-command build is worse than no feature.
-
----
-
-## Phase 0 — Bootstrap *(foundation)*
-
-The agentic pipeline framework is mounted and the repo has a clear split between agent-facing and human-facing docs.
-
-- [x] Mount the `agentic-pipelines` framework submodule at `./agentic-pipelines`
-- [x] Keep `AGENTS.md` (agent-facing) separate from `README.md` (human-facing)
-- [x] Keep `third_party/apparat/` ignored and untracked (reference-only)
-- [x] Write human-facing `README.md` with goals, approach, and quick start
-- [x] Write this `ROADMAP.md`
+**Status keys:** `[x]` shipped · `[ ]` in progress / planned · `[?]` open question · `[-]` deferred.
 
 ---
 
-## Phase 1 — Build pipeline + placeholder app *(the core promise)*
+## Shipped (`[x]`) — the MVP + hardening line (0.3 → 0.5.6.x)
 
-Deliver the one-command, no-flag cross-platform build. This is the whole point of the boilerplate.
+**M1 — Core completeness (0.3.x).** A working end-to-end voice loop: STT/VAD/TTS on-device,
+streaming to the Hermes gateway, barge-in, and the particle-being rendered on OLED black.
 
-Current scope: the no-flag driver builds only targets it can establish as locally supported. Non-host CGO desktop targets remain deferred until their cross-toolchains can be detected without per-target configuration.
+**M2 — Modern sci-fi UI overhaul.** A designed (not skeleton) interface on true OLED black,
+the particle-being as the central "presence."
 
-- [x] Add Ebitengine as a public Go module dependency (pinned to v2.9.9 in `go.mod`)
-- [x] Create `cmd/app/main.go` — a minimal Ebitengine window showing "Hello, Boilerplate"
-- [x] `scripts/build.py` — canonical no-flag entry point: detect host, report feasible/impossible targets, build all feasible ones
-- [x] `scripts/build_orchestrator.py` — `BuildPlan`-based engine, one plan per `(goos, goarch, target)`
-- [x] `Makefile` — pin Go 1.26.4; invoke the Python build script with `.tools/cache/` for Go caches
-- [x] `scripts/run_artifact.py` — run a freshly built artifact with forwarded args
-- [x] Output to `releases/{goos}/{goarch}/{target}/latest[.exe]` (`.apk` for Android)
-- [ ] Verify: `make build` on a Linux host produces windows + darwin + linux artifacts (Section 9 of the implementation plan)
+**M3 — SSE + streaming.** The entity's stream consumed as a live SSE push (not a poll), and
+the reply rendered in real time.
 
-**Definition of done:** `make build` works with zero flags on at least one host OS, and the feasibility report is accurate and readable.
+**M4 — Voice pipeline (sherpa-onnx).** The sherpa-onnx runtime bundled (pinned k2-fsa AAR);
+real warm on-device Silero VAD (silero-vad), Whisper STT, and Piper TTS.
 
-### Open questions
-- [ ] Should we pin Ebitengine by tag or by commit hash? *(Tentative: tag, with a note on how to bump.)*
-- [ ] Is `Ebitenui` worth including as a second module dependency for a placeholder UI, or does it add noise? *(Tentative: skip for now; the placeholder is a single window.)*
+**M5 — In-app model downloader.** The user downloads the blessed models from inside the app
+(no sideload). Models are **stayed in-app downloadable** (not bundled) to keep the APK small
+and Play-store-friendly; only the Gemma expression model is a separate, license-required
+download.
 
----
+**M6 — Realtime + Enhanced Realtime.** Two hands-free modes. Realtime = the open line;
+**Enhanced Realtime (alpha)** adds the on-device Gemma expression layer (see below).
 
-## Phase 2 — Playbooks + editor integration *(making it forkable)*
-
-Turn the working pipeline into something a human (or an agent) can *extend* without reverse-engineering the repo.
-
-- [ ] Write 5–8 playbooks using the canonical playbook template:
-  - How to fork and rename the boilerplate
-  - How to add a new platform target
-  - How to add a new build flag / Go tag
-  - How to run and debug a built artifact
-  - How to wire the build into CI
-  - How to pin or bump Ebitengine
-- [ ] Add VS Code tasks and launch config for the build (in addition to the existing pipeline tasks)
-- [ ] Add a `scripts/README.md` inventory (entry points, output layout, verification commands)
-
-**Definition of done:** a forker can complete each playbook task without asking the maintainer.
+**Reliability + hardening (0.5.x point releases).** Crash-guard, wall-clock streaming deadline,
+barge-in leak fixes, /compress chain unify, Kotlin 2.2.21 toolchain, 7 new visual archetypes
+(soundwave, arc, nucleus, eye, water, radar, octopus) + the full ball (sphere), and the
+**settings-UX** pass (voice-mode promotion, reset scopes, clear-vs-reset, model-count truth,
+bootstrapping, Basic/Advanced split, onboarding + learnability).
 
 ---
 
-## Phase 3 — Advanced targets *(breadth)*
+## In progress / planned (`[ ]`)
 
-Extend the target matrix once the core pipeline is solid.
+**Enhanced Realtime (alpha) — finish.** The Gemma 4 E2B presence layer downloads in-app
+(sha256-verified) and `GemmaExpress` loads it via LiteRT-LM. **Not yet wired into the
+immersive view** — the presence layer is still Main-only (see issue #52). This is the
+biggest open item on the path to a "full ER" line.
 
-- [ ] Android target via gomobile (`android/arm64`, `android/armeabi.v7a`)
-- [ ] iOS target via gomobile (`ios/arm64`) — host: macOS only
-- [ ] Headless / smoke-test target (no window) for CI sanity checks
-- [ ] Optional: WebAssembly target if the toolchain story is clean
+**Barge-in interrupt reliability.** The at-rest/glance behavior is in (eye archetype now
+reads as an eyeball that pivots); the immersive-view barge/glance integration under a
+sustained conversation needs a field pass.
 
-### Deferred
-- [ ] Patched-gomobile helper (apparat uses a local patch) — revisit only if the stock gomobile path proves flaky.
-
----
-
-## Phase 4 — CI/CD *(shipping)*
-
-Take the local pipeline to a host.
-
-- [ ] GitHub Actions workflow: matrix build across `linux/amd64`, `windows/amd64`, `darwin/arm64`
-- [ ] Upload `releases/` artifacts to the workflow run
-- [ ] Tag-triggered release with versioned artifact names (drop `latest` for tagged builds)
-- [ ] golangci-lint + govulncheck as required CI gates
-
-### Deferred
-- [ ] Automated semver tagging and changelog generation. *(Nice to have; not needed for the core promise.)*
+**Desktop / cross-platform (open question).** The portable `voice/` Go core + `mobile/session.go`
+are the reusable surface. A future desktop frontend would be a NEW renderer (Compose Desktop,
+web/Electron, or a native window) — the current Ebitengine `game/` shell is boilerplate
+coupled to the OLD VoiceBackend architecture and is NOT the desktop path.
 
 ---
 
-## For your own fork
+## Deferred (`[-]`)
 
-When you fork this, the roadmap is yours to edit. A useful pattern:
+- **Bundling the voice models** — kept in-app downloadable (Play-friendly; Gemma stays a
+  separate license download). A future "offline out of the box" could bundle the ~240MB
+  required set, but it's a deliberate APK-size tradeoff.
+- **Walkie Talkie / PTT** — removed in C2 (0.4.0). Every mode is hands-free; there is no
+  push-to-talk button. (Stripped deliberately — see docs/PLAN-c2-walkie-strip.md.)
+- **Cloud voice processing + full-duplex realtime** — after-MVP. The app is local / self-hosted
+  (you vs. your own Hermes gateway); cloud is not a mode today.
 
-1. Copy Phase 1–2 into a `ROADMAP.md` in your fork and mark what you actually need.
-2. Treat Phase 3–4 as an *optional menu* — take the targets and CI that fit your project.
-3. If you add a target, add one row to the build matrix and one playbook. That's the whole contract.
+---
 
-The invariant to never break: **one command builds everything the host can build, and the report tells you the rest.**
+## The being
+
+The identity the whole thing is built around: the particle-being — a luminous swarm that
+*is* the agent, present and alive. The shapes it can be are one of its defining features
+(the 20-archetype vocabulary from the visual passes). Design north star: "the AI agent exists
+within the forms and likes to play with them."

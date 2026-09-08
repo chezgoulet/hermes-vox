@@ -112,7 +112,10 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 On first launch: enter the entity endpoint (`http://<host>:8642`) + your API key
 (or your Hermes profile name), then download the blessed models in
 **Settings → Voice models** (Silero VAD, Piper TTS, Whisper STT — on-device,
-offline). Point the app at your Hermes gateway; the entity is your agent.
+offline). The TTS engine defaults to the Android **system** voice; to use the
+fully-offline Piper voice, download the Piper model in-app and select it under
+**Settings → TTS & Voice**. Point the app at your Hermes gateway; the entity is
+your agent.
 
 ## The stack
 
