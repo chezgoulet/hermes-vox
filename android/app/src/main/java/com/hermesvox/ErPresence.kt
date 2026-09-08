@@ -23,13 +23,18 @@ import android.os.Looper
  */
 class ErPresence(
     private val speakGlue: (String) -> Unit,
-    /** 0.6.2: the user's filler-density slider (Settings ER section).
+    /** 0.6.7: the user's filler-density slider (Settings ER section).
      *  Read live per tick so a slider change lands on the next turn. */
     private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
 ) {
 
     private val main = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
+    /** 0.6.7 Tier 1: the presence-voice mode (Settings: silent / sounds / spoken).
+     *  Read live per tick. silent = motion only; sounds = ErClips (the natural
+     *  nonverbals, private track); spoken = Piper sentence fillers (the old path). */
+    var clipContext: Context? = null
+    @Volatile var voiceMode: String = "sounds"   // silent | sounds | spoken
 
     /** Latches for the current mind-work window. */
     @Volatile private var mindStartedAt = 0L
@@ -117,7 +122,21 @@ class ErPresence(
                     synchronized(fillerTimes) { fillerTimes.add(now) }
                     if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
-                    main.post { speakGlue(o.speak!!) }
+                    // 0.6.7 Tier 1: deliver per the presence-voice mode.
+                    // sounds = ErClips (private track — never Piper, never the
+                    // reply's track/fence); spoken = the old speakGlue path;
+                    // silent = never happens here (Tier 0 already gated it).
+                    val mode = voiceMode
+                    val kind = if (o.state == ErFillers.State.LAG_ACK) "lag" else "neutral"
+                    when {
+                        mode == "sounds" && clipContext != null -> {
+                            val clip = ErClips.clipFor(kind, synchronized(fillerTimes) { fillerTimes.size })
+                            val played = ErClips.play(clipContext!!, clip)
+                            if (!played) main.post { speakGlue(o.speak!!) }   // clip missing → spoken fallback
+                            else VoxLog.er("er:clip=$clip kind=$kind")
+                        }
+                        else -> main.post { speakGlue(o.speak!!) }
+                    }
                 }
                 if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
                     stop()   // long stall: the waiting-constellation motion carries it from here
