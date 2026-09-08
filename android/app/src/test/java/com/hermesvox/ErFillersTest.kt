@@ -20,15 +20,15 @@ class ErFillersTest {
         assertEquals(null, out(10_000L + 400L).speak)
     }
 
-    @Test fun filler_emits_after_the_preamble() {
-        val o = out(10_000L + 1_200L)
-        assertTrue(o.speak != null)
-        assertEquals(ErFillers.State.HOLDING, o.state)
-    }
-
-    @Test fun density_cap_silences_after_two() {
-        assertEquals(null, out(10_000L + 1_500L, recent = 2).speak)
-        assertEquals(ErFillers.State.SILENT, out(10_000L + 1_500L, recent = 2).state)
+    // 0.6.7 Tier 0 (silence-first): NOTHING is spoken under 4s of mind-work —
+    // the waiting-constellation motion IS the acknowledgment. This replaces the
+    // old "filler at 1.2s" behavior (the unnatural "Mm?" the field rejected).
+    @Test fun silence_first_no_voice_under_four_seconds() {
+        for (t in listOf(1_000L, 1_500L, 2_000L, 3_000L, 3_900L)) {
+            val o = out(10_000L + t)
+            assertEquals("no voice under SILENCE_FIRST_MS at +$t", null, o.speak)
+            assertEquals(ErFillers.State.SILENT, o.state)
+        }
     }
 
     @Test fun fail_soft_arrives_after_lag_threshold() {

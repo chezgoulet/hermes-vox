@@ -1047,6 +1047,13 @@ class MainActivity : AppCompatActivity() {
             active?.unregisterRouteCallback()
             active?.clearConversationUi()
         }
+
+        /** 0.6.7 Tier 1: push a presence-voice mode change from Settings to the
+         *  live controller's presence loop (a live read on the next tick).
+         *  `liveController` is the COMPANION's var — reach it unqualified here. */
+        fun pushPresenceVoiceMode(mode: String) {
+            liveController?.erPresence?.voiceMode = mode
+        }
     }
 
     private fun clearConversationUi() {
@@ -1495,6 +1502,10 @@ class MainActivity : AppCompatActivity() {
             val g = express as? GemmaExpress
             if (g != null && !g.available) g.load {}   // load the on-device model once
         }
+        // 0.6.7: the presence-voice mode is a live read — a Settings change
+        // lands on the next tick without rebuilding the controller.
+        liveController?.erPresence?.voiceMode =
+            prefs.getString("er_presence_voice", "sounds") ?: "sounds"
     }
 
     // Presence appearance: the visual CATEGORY (what the being is made of, in every

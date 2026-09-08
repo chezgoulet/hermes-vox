@@ -136,10 +136,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     // ER Phase 4: the presence loop — lives only when the voice mode is enhanced.
     // It feeds speakGlue (the P3 path) only; never speaks over the mind's reply.
     // 0.6.2: the filler cap is the user's Settings slider (read live per tick).
+    // 0.6.7: the presence-voice mode (silent/sounds/spoken) + the clip Context.
     val erPresence = ErPresence(
         { glue -> if (erPresenceOn) speakGlue(glue) },
         { prefsGetInt("er_filler_cap", 2) },
-    )
+    ).also { p ->
+        p.clipContext = context
+        p.voiceMode = prefString("er_presence_voice", "sounds")
+    }
     private fun prefsGetInt(k: String, d: Int) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(k, d)
     @Volatile private var erActive = false
