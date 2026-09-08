@@ -1,5 +1,6 @@
 package com.hermesvox
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 
@@ -130,8 +131,9 @@ class ErPresence(
                     val kind = if (o.state == ErFillers.State.LAG_ACK) "lag" else "neutral"
                     when {
                         mode == "sounds" && clipContext != null -> {
+                            val ctx = clipContext!!   // single-threaded tick loop; no concurrent mutation
                             val clip = ErClips.clipFor(kind, synchronized(fillerTimes) { fillerTimes.size })
-                            val played = ErClips.play(clipContext!!, clip)
+                            val played = ErClips.play(ctx, clip)
                             if (!played) main.post { speakGlue(o.speak!!) }   // clip missing → spoken fallback
                             else VoxLog.er("er:clip=$clip kind=$kind")
                         }

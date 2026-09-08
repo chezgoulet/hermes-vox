@@ -1049,9 +1049,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         /** 0.6.7 Tier 1: push a presence-voice mode change from Settings to the
-         *  live controller's presence loop (a live read on the next tick). */
+         *  live controller's presence loop (a live read on the next tick).
+         *  `liveController` is the COMPANION's var — reach it unqualified here. */
         fun pushPresenceVoiceMode(mode: String) {
-            active?.liveController?.erPresence?.voiceMode = mode
+            liveController?.erPresence?.voiceMode = mode
         }
     }
 

@@ -99,7 +99,11 @@ object ErClips {
                 try { track?.stop() } catch (_: Throwable) {}
                 try { track?.release() } catch (_: Throwable) {}
             }
-        }.apply { isDaemon = true; name = "er-clip" }.start()
+        }.apply {
+            isDaemon = true
+            // 0.6.7 gate-fix: `name` is Thread.name — a val-overload clash inside
+            // apply{}; set it explicitly on the thread, not via apply's receiver.
+        }.let { t -> t.name = "er-clip"; t }.start()
         return true
     }
 }
