@@ -1430,35 +1430,34 @@ class AvatarView @JvmOverloads constructor(
                 }
             }
             A_SEEKER -> {
-                // idle "eye": the being is AWARE — it looks. The dispersed swarm is the
-                // sclera (a dim almond lens) and the ~30% accent particles are the bright
-                // pupil, eased toward a darting look target. Blink collapses the whole
-                // lens (and the pupil) vertically through blinkEnv, so every few seconds
-                // the eye visibly closes and reopens.
-                val ehw = br * 0.92f
-                val ehh = br * 0.44f * blinkEnv
-                // The WHOLE eye pivots with the look-target (they're one object). The
-                // sclera and the iris shift together by the same offset so the iris rides
-                // centered — not sliding over a static eyeball. That's the real-eyeball
-                // behavior: the eye rotates in the socket, iris and sclera move as one.
-                val lookX = pupX * ehw * 0.55f
-                val lookY = pupY * ehh * 0.55f
-                if (p.accent) {
-                    val ppx = cx + lookX
-                    val ppy = cy + lookY
-                    val pr = br * (0.05f + 0.09f * p.hr) * blinkEnv
-                    val a = frac(p.u * 2.618f + p.hr * 1.9f) * TAU
-                    ftx = ppx + fcos(a) * pr
-                    fty = ppy + fsin(a) * pr * 0.9f
-                } else {
-                    // sclera: fill the lens; vertical half-height at each x is a sqrt
-                    // ellipse so the rim thins into a natural eye-shape almond.
-                    val xf = frac(p.u * 2.618f + 0.13f) * 2f - 1f
-                    val yf = frac(p.hr * 1.618f + 0.57f) * 2f - 1f
-                    val yh = ehh * sqrt((1f - xf * xf).coerceAtLeast(0f))
-                    ftx = cx + lookX + xf * ehw * 0.96f + p.jx * br * 0.04f
-                    fty = cy + lookY + yf * yh + p.jy * br * 0.08f
-                }
+                // idle "eye": the being is a SPHERE — a ball. When it looks, the whole
+                // ball ROTATES in 3D so the iris (a cap on its front pole) swings to face
+                // the target and the sclera foreshortens around it. The silhouette stays a
+                // ball; the texture turns INSIDE it. Not a flat sticker sliding over a
+                // plane (that's the "egg cracked on a table" look — wrong for a sphere).
+                val maxAng = 0.55f                    // just a few deg; iris moves a little
+                val a = pupX * maxAng                 // horizontal look (rotate about Y)
+                val b = pupY * maxAng                 // vertical look (rotate about X)
+                val ca = fcos(a); val sa = fsin(a)
+                val cb = fcos(b); val sb = fsin(b)
+                // base position on the unit sphere: front pole (+z) faces the viewer.
+                // iris = a small cap near the pole; sclera = the rest of the visible ball.
+                val az = p.u * TAU
+                val ph = if (p.accent) p.hr * 0.36f * PI
+                         else 0.16f * PI + p.hr * 0.84f * PI
+                val sp = fsin(ph)
+                val bx = sp * fcos(az)
+                val by = sp * fsin(az)
+                val bz = fcos(ph)
+                // rotate about Y (horizontal look), then about X (vertical look)
+                val rx = bx * ca + bz * sa
+                val rz1 = -bx * sa + bz * ca
+                val ry = by * cb + rz1 * sb
+                val rz = -by * sb + rz1 * cb
+                // orthographic projection; blink squashes vertically (eyelid close)
+                val rr = br
+                ftx = cx + rx * rr
+                fty = cy + ry * rr * blinkEnv
             }
             A_BORE -> {
                 // idle "water": the whole field becomes a liquid surface. Two
