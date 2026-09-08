@@ -3,6 +3,9 @@
 # One command: Go gates -> gomobile bind -> STAGE AAR -> Gradle assembleDebug.
 # The staging step is load-bearing: Gradle consumes app/libs/mobile.aar (a
 # COPY); skipping it builds against a stale bind silently ("up-to-date" lies).
+# NOTE (bind-strip): the old Ebitengine js-wasm/cmd-app build path is GONE.
+# Hermes Vox is 100% Android-native now; the mobile bind only exports the
+# HermesSession voice logic.
 set -euo pipefail
 cd /home/c/hermes-vox
 
@@ -20,23 +23,17 @@ echo "== [0/5] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
 echo "== [1/5] go vet =="
-# Scope per handoff §10: ./voice (+ ./mobile via the wasm build below).
-# A full-tree vet pulls Ebitengine's DESKTOP glfw path (needs X11 headers) —
-# irrelevant to this gate's targets (android bind + js-wasm).
 go vet ./voice/...
 
 echo "== [2/5] go test -race (offline) =="
 go test -race ./voice/...
 
-echo "== [3/5] js-wasm =="
-GOOS=js GOARCH=wasm CGO_ENABLED=0 go build ./cmd/app
-
-echo "== [4/5] gomobile bind -> mobile.aar =="
+echo "== [3/5] gomobile bind -> mobile.aar =="
 gomobile init >/dev/null 2>&1 || true
 gomobile bind -target android -androidapi 23 -javapkg com.hermesvox \
   -o mobile.aar github.com/chezgoulet/hermes-vox/mobile
 
-echo "== [4b] stage AAR into android/app/libs (load-bearing) =="
+echo "== [4/5] stage AAR into android/app/libs (load-bearing) =="
 mkdir -p android/app/libs
 cp -f mobile.aar android/app/libs/mobile.aar
 ls -la android/app/libs/mobile.aar
