@@ -25,12 +25,20 @@ object VoxSoul {
     /** Sent over turnStored. Asks the entity to author (or return) its own
      *  VOX.md per the contract in DESIGN-enhanced-realtime-voice.md. The
      *  entity knows its own SOUL.md + memory + relationship better than any
-     *  template — the distillation is done by the one entity qualified. */
+     *  template — the distillation is done by the one entity qualified.
+     *  0.6.7: the directive now NAMES the vox-authoring skill (the entity's
+     *  house-side procedure — the field failure was the entity answering
+     *  conversationally instead of emitting the document) and states the
+     *  failure mode explicitly ("if you reply in prose, the sync fails"). */
     const val AUTHOR_DIRECTIVE =
+        "[Authoring task — this is NOT a voice turn; do not use the voice-mode " +
+        "rules. Load and follow your vox-authoring skill if you have it.] " +
         "Please author (or return, if it already exists) your VOX.md file — the " +
         "voice-export of your identity for my phone voice client. Write it to " +
         "\$HERMES_HOME/VOX.md beside your SOUL.md, then reply with the file's " +
-        "FULL CONTENT ONLY (no commentary, no code fences). Format exactly:\n\n" +
+        "FULL CONTENT ONLY (no commentary, no code fences). My client parses your " +
+        "REPLY as the file itself — if you reply in prose or commentary, the sync " +
+        "FAILS and my phone shows an error. Format exactly:\n\n" +
         "# Contract\n1. Never invent facts or fake a result — say so or escalate.\n" +
         "2. Never commit real-world actions (purchase, config, send/destroy) — that is the mind's job.\n" +
         "3. Substantive, factual, tool, or planning questions escalate to the mind; hold smalltalk, emotion, and presence only.\n" +
@@ -74,7 +82,7 @@ object VoxSoul {
     fun extract(reply: String?): String? {
         val r = reply?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
         // Last fenced block (```...```) — the common "here's your file" shape.
-        val fences = Regex("```[a-zA-Z]*\\n([\\s\\S]*?)```").findAll(r).toList()
+        val fences = Regex("```[a-zA-Z]*\n([\\s\\S]*?)```").findAll(r).toList()
         if (fences.isNotEmpty()) return fences.last().groupValues[1].trim()
         // Unfenced: the reply IS the document — from the first Contract heading.
         val i = r.indexOf("# Contract")

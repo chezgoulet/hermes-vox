@@ -280,6 +280,15 @@ class SettingsActivity : AppCompatActivity() {
             }
             val doc = VoxSoul.extract(reply)
             val validated = VoxSoul.validate(doc)
+            // 0.6.7: capture WHAT the entity actually said (first ~240 chars,
+            // sanitized for a dialog) so a failed sync is diagnosable from the
+            // screenshot — "empty document" alone told us nothing.
+            val replyEvidence = reply?.trim()
+                ?.replace(Regex("\\s+"), " ")
+                ?.take(240)
+                ?.ifBlank { "(reply was blank)" }
+                ?: "(no reply)"
+            VoxLog.er("event=vox-resync doc=${doc?.length ?: 0} result=${validated.let { if (it is VoxSoul.Valid.Bad) it.reason else "ok" }} reply=$replyEvidence")
             val result = when (validated) {
                 is VoxSoul.Valid.Ok -> {
                     val wrote = VoxMirror.write(this, validated.document)
@@ -300,7 +309,7 @@ class SettingsActivity : AppCompatActivity() {
                             .setTitle("VOX.md sync failed")
                             .setMessage(
                                 when {
-                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
+                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). It said: \"$replyEvidence\". Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
                                     reply.isNullOrBlank() -> "The entity didn't answer (connection?). Check /health and try again."
                                     else -> result
                                 })
