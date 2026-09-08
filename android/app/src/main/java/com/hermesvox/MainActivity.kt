@@ -702,7 +702,7 @@ class MainActivity : AppCompatActivity() {
             text = s
             textSize = 15f
             setTextColor(0xFFC7D6E6.toInt())
-            setLineSpacingExtra(3f)
+            setLineSpacing(3f, 1f)
             setPadding(0, (14 * d).toInt(), 0, 0)
         }
     }
