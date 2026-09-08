@@ -1246,6 +1246,17 @@ class MainActivity : AppCompatActivity() {
         val theme = prefs.getString("particles_theme", "aura") ?: "aura"
         avatar.setIdleTheme(theme)
         avatar.setCycleThemes(prefs.getBoolean("particles_cycle", true))
+        // video-statewire: the active-state shape picks, fed the SAME way as the idle
+        // theme (cached in AvatarView.applyStateShapes, never read per frame). Defaults
+        // are the Wave 1 semantic fits and agree with the Settings pickers.
+        avatar.applyStateShapes(
+            prefs.getString(AvatarView.KEY_SHAPE_SPEAKING, AvatarView.DEFAULT_SHAPE_SPEAKING)
+                ?: AvatarView.DEFAULT_SHAPE_SPEAKING,
+            prefs.getString(AvatarView.KEY_SHAPE_LISTENING, AvatarView.DEFAULT_SHAPE_LISTENING)
+                ?: AvatarView.DEFAULT_SHAPE_LISTENING,
+            prefs.getString(AvatarView.KEY_SHAPE_THINKING, AvatarView.DEFAULT_SHAPE_THINKING)
+                ?: AvatarView.DEFAULT_SHAPE_THINKING,
+        )
         avatar.setVisualCategory(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)
             ?: VisualStyle.DEFAULT)
         avatar.setVisualEnergy(prefs.getFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY))

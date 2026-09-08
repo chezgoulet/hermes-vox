@@ -561,10 +561,20 @@ class SettingsActivity : AppCompatActivity() {
             VisualStyle.GLOW_MIN, VisualStyle.GLOW_MAX, VisualStyle.GLOW_STEP,
             VisualStyle.DEFAULT_GLOW) { "%.1f×".format(it) }
 
-        val themeLabels = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation",
-            "Bracket", "Flame", "Ribbon", "Infall", "Bloom")
-        val themeVals = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
-            "bracket", "flame", "ribbon", "infall", "bloom")
+        // video-statewire: WHICH SHAPE FIRES IN EACH ACTIVE STATE. Three pickers over the
+        // SAME SHAPE vocabulary as the presence-shape picker below — so the user can put
+        // jellyfish (A_VOICE), breath, sweep, octopus, etc. on any state — defaulting to
+        // the Wave 1 semantic fits (soundwave / eye / radar) that match resolveArch's
+        // stateArch table. Stored as tokens; defaults agree even when the pref is unset.
+        bindStateShape(R.id.row_speak_shape, R.id.set_speak_shape_val, "Speaking shape",
+            AvatarView.KEY_SHAPE_SPEAKING, AvatarView.DEFAULT_SHAPE_SPEAKING)
+        bindStateShape(R.id.row_listen_shape, R.id.set_listen_shape_val, "Listening shape",
+            AvatarView.KEY_SHAPE_LISTENING, AvatarView.DEFAULT_SHAPE_LISTENING)
+        bindStateShape(R.id.row_think_shape, R.id.set_think_shape_val, "Thinking shape",
+            AvatarView.KEY_SHAPE_THINKING, AvatarView.DEFAULT_SHAPE_THINKING)
+
+        val themeLabels = AvatarView.SHAPE_LABELS
+        val themeVals = AvatarView.SHAPE_TOKENS
         val theme = prefs.getString("particles_theme", "aura") ?: "aura"
         setStringVal(R.id.set_particle_theme_val, themeLabels, themeVals, theme)
         findViewById<LinearLayout>(R.id.row_particle_theme).setOnClickListener {
@@ -579,8 +589,20 @@ class SettingsActivity : AppCompatActivity() {
         val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
         findViewById<TextView>(valId).text = labels[idx]
     }
-    private fun micChoiceString(title: String, labels: Array<String>, vals: Array<String>, key: String, valId: Int) {
-        val cur = prefs.getString(key, vals.getOrElse(0) { "aura" }) ?: "aura"
+    /** video-statewire: one per-state shape row (Speaking / Listening / Thinking shape).
+     *  Renders the human label of the stored token, defaulting to [def] so an UNSET pref
+     *  shows (and the picker highlights) the same default AvatarView's stateArch falls
+     *  back to — the Settings display and the renderer can never disagree. */
+    private fun bindStateShape(rowId: Int, valId: Int, title: String, key: String, def: String) {
+        setStringVal(valId, AvatarView.SHAPE_LABELS, AvatarView.SHAPE_TOKENS,
+            prefs.getString(key, def) ?: def)
+        findViewById<LinearLayout>(rowId).setOnClickListener {
+            micChoiceString(title, AvatarView.SHAPE_LABELS, AvatarView.SHAPE_TOKENS, key, valId, def)
+        }
+    }
+    private fun micChoiceString(title: String, labels: Array<String>, vals: Array<String>, key: String, valId: Int,
+                                def: String = vals.getOrElse(0) { "aura" }) {
+        val cur = prefs.getString(key, def) ?: def
         val idx = vals.indexOfFirst { it == cur }.coerceAtLeast(0).coerceAtMost(vals.size - 1)
         AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, idx) { d, which ->
             prefs.edit().putString(key, vals[which]).apply()
@@ -658,6 +680,11 @@ class SettingsActivity : AppCompatActivity() {
                 .putFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW)
                 .putString("particles_theme", "aura")
                 .putBoolean("particles_cycle", true)
+                // video-statewire: remove the state-shape picks so they fall back to the
+                // shipped defaults (soundwave/eye/radar) — unset == default, both agree.
+                .remove(AvatarView.KEY_SHAPE_SPEAKING)
+                .remove(AvatarView.KEY_SHAPE_LISTENING)
+                .remove(AvatarView.KEY_SHAPE_THINKING)
             GROUP_ABOUT -> e
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)

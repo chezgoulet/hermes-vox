@@ -13,6 +13,7 @@ import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.pow
@@ -134,7 +135,31 @@ class AvatarView @JvmOverloads constructor(
 
         /** Kept for API parity (Settings lists these as the presence themes). */
         val SHAPES = listOf("iris", "listening", "vortex", "scan", "bracket",
-            "constellation", "lumen", "waveform", "bloom")
+            "constellation", "lumen", "waveform", "bloom",
+            "soundwave", "arc", "nucleus", "eye", "water", "radar", "octopus")
+
+        // ---- video-statewire (Edit 1/2): the SHAPE vocabulary + the per-state shape
+        // ---- prefs. The LABELS/TOKENS pair is the single source of truth for every
+        // ---- shape picker in Settings (the presence-shape picker AND the three
+        // ---- state pickers), and themeArch() maps the same tokens onto archetypes, so
+        // ---- the picker vocabulary and the rendered shapes can never drift apart.
+        val SHAPE_LABELS = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation",
+            "Bracket", "Flame", "Ribbon", "Infall", "Bloom", "Soundwave", "Arc", "Nucleus",
+            "Eye", "Water", "Radar", "Octopus")
+        val SHAPE_TOKENS = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
+            "bracket", "flame", "ribbon", "infall", "bloom", "soundwave", "arc", "nucleus",
+            "eye", "water", "radar", "octopus")
+        /** Per-state shape tokens (Settings -> Visuals). An ACTIVE state renders as the
+         *  archetype the user picked here, DEFAULTING to the Wave 1 semantic fits below
+         *  so the being fires soundwave/eye/radar in context out of the box. Stored in
+         *  the same "hv" prefs the other visual dials use; read once per resume and
+         *  cached (applyStateShapes), never per frame. */
+        const val KEY_SHAPE_SPEAKING = "visual_shape_speaking"
+        const val KEY_SHAPE_LISTENING = "visual_shape_listening"
+        const val KEY_SHAPE_THINKING = "visual_shape_thinking"
+        const val DEFAULT_SHAPE_SPEAKING = "soundwave"
+        const val DEFAULT_SHAPE_LISTENING = "eye"
+        const val DEFAULT_SHAPE_THINKING = "radar"
 
         private const val TAU = (PI * 2).toFloat()
         private const val SPIRAL_TURNS = 2.0f
@@ -187,6 +212,15 @@ class AvatarView @JvmOverloads constructor(
         private const val A_RIBBON = 10    // tool file / streaming: a serpentine ribbon
         private const val A_INFALL = 11    // tool download: light falling into the core
         private const val A_BLOOM = 12     // SETTLE: an outward bloom relaxing home
+        // ---- Wave 1: seven new archetypes (video-wave1). Append AFTER A_BLOOM, never
+        // ---- shift the existing values.
+        private const val A_WAVEform = 13  // idle "soundwave": a literal audio trace
+        private const val A_ARC = 14       // idle "arc": a redrawn lightning crack
+        private const val A_NUCLEUS = 15   // idle "nucleus": a dense core + tilted orbits
+        private const val A_SEEKER = 16    // idle "eye": a darting, blinking pupil
+        private const val A_BORE = 17      // idle "water": an all-over liquid ripple field
+        private const val A_RADAR = 18     // idle "radar": range rings + sweep + storm cells
+        private const val A_TAKU = 19      // idle "octopus": a travelling, limb-propelled being
     }
 
     private val parts = ArrayList<P>(COUNT)
@@ -243,11 +277,56 @@ class AvatarView @JvmOverloads constructor(
     private var centered = false
     private var vigShader: RadialGradient? = null
 
+    // ---- Wave 1 (video-wave1): per-frame scratch for the new archetypes. Allocated
+    // ---- ONCE; the particle loop only reads primitives/arrays, never allocates.
+    // ---- A_NUCLEUS: each orbit ring rotates at its own Kepler-ish rate. spin advances
+    // ---- once per frame, so the cos/sin of (spin * rate) for all three rings is baked
+    // ---- here once per frame and the 320-particle loop just does 4 mults.
+    private val nucRate = floatArrayOf(0.95f, 0.55f, 0.30f)
+    private val nucTilt = floatArrayOf(0.55f, 0.80f, 1.00f)
+    private val nucRad = floatArrayOf(0.46f, 0.70f, 0.96f)
+    private val ringCR = FloatArray(3)
+    private val ringSN = FloatArray(3)
+    // A_SEEKER: eased pupil look-target (-1..1 of the eye field) + the blink envelope
+    // (1 = open, dips to 0 at the close). Set once per frame in refreshNewShapes.
+    private var pupX = 0f; private var pupY = 0f
+    private var blinkEnv = 1f
+    // A_RADAR: the 3 storm cells' drift centres + pulsing radii, baked once per frame.
+    private val cellX = FloatArray(3)
+    private val cellY = FloatArray(3)
+    private val cellR = FloatArray(3)
+    // A_TAKU: the octopus transport state machine. A small phase machine (0 = WANDER,
+    // 1 = FIXATE, 2 = MOVE-ON) driving a persistent BODY OFFSET (ox,oy) that eases
+    // toward [tox,toy], plus an eased heading [hAng]->[thAng] and the travelled arm
+    // wave. All primitives, allocated once; phase changes set a target and let the
+    // ease fly. hCS/hSN bake heading-cos/sin per frame for the particle loop.
+    private val T_PH_WANDER = 0
+    private val T_PH_FIXATE = 1
+    private val T_PH_MOVEO = 2
+    private var takuPhase = T_PH_WANDER
+    private var takuT = 0f
+    private var ox = 0f; private var oy = 0f
+    private var tox = 0f; private var toy = 0f
+    private var hAng = 0f; private var thAng = 0f
+    private var hCS = 1f; private var hSN = 0f
+    private var armPh = 0f; private var armBoost = 0.15f
+    private var fx = 0f; private var fy = 0f
+    private var lastWand = -1
+    private var lastFixateB = -100   // cooldown: after MOVES-ON it must wander for a few buckets
+
     // Idle appearance: a user-picked shape/theme ("aura" = default dispersed breathing)
     // + optional auto-cycle so the being stays alive between turns.
     private var idleTheme = "aura"
     private var cycleThemes = false
     private var cycleSec = 8f
+
+    // ---- video-statewire: the three ACTIVE-state shape picks, cached ONCE at the same
+    // ---- place idleTheme is cached (fed in MainActivity.applyParticlePrefs every
+    // ---- create/resume). resolveArch reads these vars — never the prefs — so the frame
+    // ---- loop costs nothing and a Settings change lands on the next resume.
+    private var stateShapeSpeaking = DEFAULT_SHAPE_SPEAKING
+    private var stateShapeListening = DEFAULT_SHAPE_LISTENING
+    private var stateShapeThinking = DEFAULT_SHAPE_THINKING
 
     // ---- 0.5.1: the VISUAL CATEGORY (Settings -> Visuals). Orthogonal to the idle
     // ---- theme above: the theme picks the idle SHAPE, the category picks what the
@@ -560,6 +639,17 @@ class AvatarView @JvmOverloads constructor(
     fun setCycleThemes(cycle: Boolean) { cycleThemes = cycle; invalidate() }
     fun setCycleSec(sec: Float) { cycleSec = sec; invalidate() }
 
+    /** video-statewire: feed the three ACTIVE-state shape tokens (Speaking /
+     *  Listening / Thinking). Settings writes visual_shape_* prefs; MainActivity
+     *  applies them here with the rest of the particles feed, so they are read once
+     *  per resume and cached — resolveArch never touches the prefs per frame. A null/
+     *  blank token keeps the previous (or default) pick, so a partial feed is safe. */
+    fun applyStateShapes(speaking: String?, listening: String?, thinking: String?) {
+        if (!speaking.isNullOrBlank()) stateShapeSpeaking = speaking.lowercase()
+        if (!listening.isNullOrBlank()) stateShapeListening = listening.lowercase()
+        if (!thinking.isNullOrBlank()) stateShapeThinking = thinking.lowercase()
+    }
+
     /** 0.5.1: the visual category — the painterly family the whole being is rendered
      *  in (VisualStyle.TOKENS). 0.5.2: this is also where the cycle-all toggle is picked
      *  up. MainActivity already calls this on create and every resume (applyParticlePrefs),
@@ -695,13 +785,13 @@ class AvatarView @JvmOverloads constructor(
         return when (st) {
             "recoil" -> A_BURST
             "waiting" -> A_HELD
-            "speaking" -> A_VOICE
+            "speaking" -> stateArch("speaking", tool) ?: A_VOICE
             "gather" -> A_FLAME
-            "listening" -> A_BREATH
+            "listening" -> stateArch("listening", tool) ?: A_BREATH
             "settle", "bloom" -> A_BLOOM
             "streaming" -> A_RIBBON
             "thinking" -> when (tool) {
-                "web", "search" -> A_SWEEP
+                "web", "search" -> stateArch("thinking", tool) ?: A_SWEEP
                 "shell" -> A_FORGE
                 "memory" -> A_NODES
                 "file" -> A_RIBBON
@@ -710,6 +800,30 @@ class AvatarView @JvmOverloads constructor(
             }
             else -> A_ORB     // "idle", "drift", "aura", anything unknown
         }
+    }
+
+    /** video-statewire: the STATE -> ARCHETYPE hook. An active state forms the archetype
+     *  the USER picked in Settings for it, DEFAULTING to the Wave 1 semantic fit —
+     *  soundwave while speaking, eye while listening, radar for a web/search scan — so
+     *  the new shapes fire in their named states out of the box. Reads the CACHED token
+     *  (set by applyStateShapes, never the prefs) and maps it through the SAME token
+     *  table as the idle themes, so jellyfish A_VOICE / breath A_BREATH / sweep A_SWEEP
+     *  remain fully selectable for any state. Returns null when nothing is user-set or
+     *  the token doesn't resolve, and the caller keeps its existing archetype. */
+    private fun stateArch(state: String, tool: String?): Int? {
+        val fallback = when (state) {
+            "speaking" -> A_WAVEform
+            "listening" -> A_SEEKER
+            "thinking" -> if (tool == "web" || tool == "search") A_RADAR else null
+            else -> null
+        } ?: return null
+        val tok = when (state) {
+            "speaking" -> stateShapeSpeaking
+            "listening" -> stateShapeListening
+            else -> stateShapeThinking
+        }
+        if (tok.isBlank()) return fallback
+        return themeArch(tok) ?: fallback
     }
 
     /** Idle theme -> archetype. null = fall through to the default dispersed cloud. */
@@ -725,12 +839,22 @@ class AvatarView @JvmOverloads constructor(
         "ribbon" -> A_RIBBON     // NEW at idle
         "infall" -> A_INFALL     // NEW at idle
         "bloom" -> A_BLOOM
+        // ---- Wave 1 (video-wave1): the seven new archetypes are reached through their
+        // ---- idle themes. Existing route logic before this point is untouched.
+        "soundwave" -> A_WAVEform
+        "arc" -> A_ARC
+        "nucleus" -> A_NUCLEUS
+        "eye" -> A_SEEKER
+        "water" -> A_BORE
+        "radar" -> A_RADAR
+        "octopus" -> A_TAKU
         else -> null             // "hearth"/"drift"/unknown -> A_ORB
     }
 
     /** A const array, not listOf(): this is read every idle frame and must not allocate. */
     private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
-        "bracket", "flame", "ribbon", "infall", "bloom")
+        "bracket", "flame", "ribbon", "infall", "bloom", "soundwave", "arc", "nucleus",
+        "eye", "water", "radar", "octopus")
     private fun cyclingTheme(t: Float): String = cycleList[((t / cycleSec).toInt()).mod(cycleList.size)]
 
     /** Advance every oscillator. Wrapped, so precision never decays over a long session. */
@@ -762,6 +886,137 @@ class AvatarView @JvmOverloads constructor(
         if (phRise >= 1f) phRise -= 1f
     }
     private fun wrapTau(v: Float): Float = if (v >= TAU) v - TAU else v
+
+    /** Wave 1: once-per-frame state for the new archetypes that need per-frame scalars
+     *  baked ahead of the 320-particle loop. Guarded: every existing archetype (<13)
+     *  falls through untouched. Allocates nothing. */
+    private fun refreshNewShapes(dt: Float) {
+        when (arch) {
+            A_NUCLEUS -> {
+                for (i in 0 until 3) {
+                    val w = spin * nucRate[i]
+                    ringCR[i] = fcos(w); ringSN[i] = fsin(w)
+                }
+            }
+            A_SEEKER -> {
+                // saccades: a new look target every ~1.15s bucket, eased fast enough to
+                // read as a real darting glance rather than a slow drift.
+                val bucket = (time * 0.87f).toInt()
+                val tx = (hash(bucket.toFloat(), 7, 71) - 0.5f) * 2f
+                val ty = (hash(bucket.toFloat(), 9, 73) - 0.5f) * 2f
+                val k = (dt * 6f).coerceIn(0f, 1f)
+                pupX += (tx - pupX) * k
+                pupY += (ty - pupY) * k
+                // blink: a periodic fast close-and-open; the period restitches every few
+                // seconds so it is never metronomic.
+                val per = 3.1f + 1.7f * hash((time * 0.18f).toInt().toFloat(), 5, 19)
+                val bg = frac(time / per)
+                blinkEnv = if (bg < 0.045f) fsin(bg / 0.045f * 3.14159f) else 1f
+            }
+            A_RADAR -> {
+                // the 3 storm cells: slow translating lissajous-ish centres + pulsing
+                // blob radii, all derived from clock time (deterministic, no storage).
+                for (c in 0 until 3) {
+                    val cf = c.toFloat()
+                    val ang = cf * 2.1f + time * 0.13f + cf * 0.45f
+                    val base = bodyR * (0.46f + 0.10f * hash(cf, 11, seed % 7))
+                    cellX[c] = cx + fcos(ang) * base *
+                            (1f + 0.18f * fsin(time * 0.21f + cf * 1.7f))
+                    cellY[c] = cy + fsin(ang) * base * 0.9f
+                    cellR[c] = bodyR * (0.13f + 0.035f * cf) *
+                            (1f + 0.22f * fsin(time * 0.9f + cf * 1.9f))
+                }
+            }
+            A_TAKU -> {
+                takuTick(dt)
+                hCS = fcos(hAng); hSN = fsin(hAng)
+            }
+            else -> {}
+        }
+    }
+
+    /** Wave 1 (A_TAKU): the octopus transport machine — Christopher's WANDER / FIXATE /
+     *  MOVE-ON. Runs once per frame, allocates nothing. Phase changes set a target; the
+     *  body offset (ox,oy) and heading (hAng) ease toward it, so the octopus glides
+     *  along a curved drift, then pauses and orients toward an "interesting" point, then
+     *  releases and resumes wandering. The lead tentacles' flex couples to the heading
+     *  delta (reads as propulsion: arms push, body glides). */
+    private fun takuTick(dt: Float) {
+        // heading ease (shortest-way wrap)
+        val g = thAng - hAng
+        val dg = if (g > 3.14159f) g - TAU else if (g < -3.14159f) g + TAU else g
+        hAng += (dg * (dt * 2.2f).coerceIn(0f, 1f)).toFloat()
+        // body offset ease — the GLIDE. Slow, so the drift is a curved path, not a slide.
+        ox += (tox - ox) * (dt * 0.55f).coerceIn(0f, 1f)
+        oy += (toy - oy) * (dt * 0.55f).coerceIn(0f, 1f)
+        // keep the figure inside its field (a right-lean must never leave the screen)
+        val lim = bodyR * 0.62f
+        ox = ox.coerceIn(-lim, lim)
+        oy = oy.coerceIn(-lim * 0.7f, lim * 0.7f)
+        // lead-tentacle flex: big while FIXATING (arms "working"), otherwise lifts with
+        // how hard the octopus is turning. This is the propulsion read.
+        val turn = minOf(1f, kotlin.math.abs(dg) * 0.45f)
+        val wantB = if (takuPhase == T_PH_FIXATE) 1.6f else 0.15f + 1.2f * turn
+        armBoost += (wantB - armBoost) * (dt * 2.6f).coerceIn(0f, 1f)
+        // the arm wave travels base->tip; quicker the harder the tentacles work
+        armPh = wrapTau(armPh + dt * (2.2f + 1.3f * armBoost))
+
+        when (takuPhase) {
+            T_PH_WANDER -> {
+                // meander: retarget the drift on a ~4.3s bucket; some buckets decide the
+                // being has spotted something interesting and it flips into FIXATE.
+                val b = (time * 0.23f).toInt()
+                if (b != lastWand) {
+                    lastWand = b
+                    tox = (hash(b.toFloat(), 0, 23) - 0.5f) * 2f * bodyR * 0.55f
+                    toy = (hash(b.toFloat(), 2, 31) - 0.5f) * 2f * bodyR * 0.38f
+                    thAng = atan2(toy - oy, tox - ox)
+                    // FIXATE is occasional, not serial: only after the cooldown has
+                    // elapsed and this bucket decides something "interesting" arrived.
+                    if (b - lastFixateB >= 2 && hash(b.toFloat(), 5, 37) > 0.62f)
+                        beginFixate(b)
+                }
+            }
+            T_PH_FIXATE -> {
+                // hover a beat, oriented on the interesting point; tentacles keep working.
+                takuT += dt
+                if (takuT > 2.1f) beginMoveOn()
+            }
+            else -> {
+                // MOVES ON: release — a committed turn away, then back to wandering.
+                takuT += dt
+                if (takuT > 0.8f) {
+                    takuPhase = T_PH_WANDER
+                    takuT = 0f
+                    lastWand = -1               // next frame picks a fresh drift
+                }
+            }
+        }
+    }
+
+    private fun beginFixate(b: Int) {
+        takuPhase = T_PH_FIXATE
+        takuT = 0f
+        lastFixateB = b
+        // an "interesting" point appears somewhere near the field; the body freezes its
+        // drift target (hover) and orients the nose toward it.
+        fx = (hash(b.toFloat(), 1, 41) - 0.5f) * 2f
+        fy = (hash(b.toFloat(), 3, 43) - 0.5f) * 1.6f
+        tox = ox; toy = oy
+        val pxp = cx + fx * bodyR * 1.1f
+        val pyp = cy + fy * bodyR * 0.9f
+        thAng = atan2(pyp - (cy + oy), pxp - (cx + ox))
+    }
+
+    private fun beginMoveOn() {
+        takuPhase = T_PH_MOVEO
+        takuT = 0f
+        // release: break the gaze (a committed 180 turn) and coast toward a fresh spot.
+        thAng = hAng + PI.toFloat()
+        val b = (time * 0.23f).toInt()
+        tox = (hash(b.toFloat(), 0, 23) - 0.5f) * 2f * bodyR * 0.55f
+        toy = (hash(b.toFloat(), 2, 31) - 0.5f) * 2f * bodyR * 0.38f
+    }
 
     /** 0.5.2 (A3): while cycle-all is on, dwell CYCLE_ALL_SEC on each family then advance to
      *  the next, wrapping through the WHOLE table so the user sees every category animate.
@@ -859,6 +1114,10 @@ class AvatarView @JvmOverloads constructor(
             A_INFALL -> { haloW = bodyR * 1.05f; haloH = bodyR * 1.85f }
             A_VOICE -> { haloW = bodyR * 1.45f; haloH = bodyR * 1.55f }
             A_BURST -> { val e = 1f + burstProg * 0.9f; haloW = g * e; haloH = g * e }
+            A_WAVEform -> { haloW = bodyR * 2.25f; haloH = bodyR * 0.85f }
+            A_SEEKER -> { haloW = bodyR * 1.75f; haloH = bodyR * 1.05f }
+            A_BORE -> { haloW = bodyR * 2.1f; haloH = bodyR * 1.0f }
+            A_TAKU -> { haloW = bodyR * 2.0f; haloH = bodyR * 1.55f }
             else -> {}
         }
     }
@@ -897,6 +1156,13 @@ class AvatarView @JvmOverloads constructor(
             A_NODES -> { springK = 32f; flowGain = 8.0f; tremor = 4.0f; spinMul = 0.90f }
             A_RIBBON -> { springK = 30f; flowGain = 13f; tremor = 6.0f; spinMul = 0.50f }
             A_INFALL -> { springK = 28f; flowGain = 10f; tremor = 5.0f; spinMul = 0.60f; biasY = bodyR * 1.25f }
+            A_WAVEform -> { springK = 34f; flowGain = 6.5f; tremor = 2.6f; spinMul = 0.10f }
+            A_ARC -> { springK = 42f; flowGain = 4.0f; tremor = 3.4f; spinMul = 0.10f }
+            A_NUCLEUS -> { springK = 36f; flowGain = 8.0f; tremor = 2.8f; spinMul = 1.20f }
+            A_SEEKER -> { springK = 32f; flowGain = 7.0f; tremor = 3.3f; spinMul = 0.10f }
+            A_BORE -> { springK = 30f; flowGain = 8.0f; tremor = 3.6f; spinMul = 0.10f }
+            A_RADAR -> { springK = 38f; flowGain = 4.5f; tremor = 2.2f; spinMul = 0.50f }
+            A_TAKU -> { springK = 36f; flowGain = 6.0f; tremor = 2.6f; spinMul = 0.10f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1078,6 +1344,193 @@ class AvatarView @JvmOverloads constructor(
                 ftx = cx + p.hcos * w
                 fty = cy - br * 1.05f + ff * br * 1.55f
             }
+            A_WAVEform -> {
+                // idle "soundwave": the being IS voice — a literal horizontal audio trace
+                // riding the real RMS. The whole swarm is ONE travelling wave across the
+                // full frame; fred amplitude grows with amp, and phVoice is the audio
+                // clock so a loud moment scrolls the trace faster and higher. A slim
+                // beam with a fixed seeded twist, so it reads as a scope line, not a band.
+                val s = p.u
+                val X = s * 2f * TAU + phVoice                  // 2 cycles, travelling
+                val sig = fsin(X) + 0.22f * fsin(X * 2f + 0.9f) // fundamental + 1 overtone
+                val ampB = br * (0.16f + 0.60f * amp) * (0.92f + 0.08f * breath)
+                ftx = cx - br * 0.96f + s * br * 1.92f + p.jx * br * 0.10f
+                fty = cy + sig * ampB + p.jy * br * 0.20f + p.hr * br * 0.05f
+            }
+            A_ARC -> {
+                // idle "arc": electricity — a jagged crack of light snapped between two
+                // drifting anchors, RESTRUCTURED a few times a second instead of eased.
+                // The jag is a seeded, band-limited sum of harmonics weighted 1/n, so
+                // every point stays ON one continuous bolt (never a fuzzy band) yet each
+                // strike is a different one; the particle springs overshoot the restrike
+                // and glint, which is the flash. Pin at s=0/1 (every sin(n*pi*s) is 0
+                // there) so the crack stays anchored; around a tenth of the swarm rides
+                // off the channel as charge that crackles.
+                val g = floor(time * 3.3f).toInt()          // crack generation, ~3.3/s
+                val sway = phHarm
+                val ax0 = cx - br * 0.58f + fsin(sway * 0.7f) * br * 0.07f
+                val ay0 = cy + fsin(sway * 1.3f + 1.0f) * br * 0.10f
+                val bx0 = cx + br * 0.58f + fsin(sway * 0.5f + 2.0f) * br * 0.07f
+                val by0 = cy - fsin(sway * 1.1f + 3.0f) * br * 0.10f
+                val dx = bx0 - ax0; val dy = by0 - ay0
+                val il = 1f / sqrt((dx * dx + dy * dy).coerceAtLeast(1e-6f))
+                val nx = -dy * il; val ny = dx * il         // perp unit, on the channel
+                val s = p.u
+                var jag = 0f
+                var hn = 1
+                while (hn <= 8) {
+                    val a = 0.32f / hn * (0.35f + 0.65f * hash(hn.toFloat(), 0, g))
+                    val ph = hash(hn.toFloat(), 1, g) * TAU
+                    jag += a * fsin(s * hn * 3.14159f + ph)
+                    hn++
+                }
+                jag *= br
+                val live = fsin(p.fl + phFlick * 2f) * br * 0.03f
+                val s2 = if (p.spark) (hash(s * 3.0f, 7, g) - 0.5f) * br * 0.36f else 0f
+                ftx = ax0 + dx * s + nx * (jag + live + s2)
+                fty = ay0 + dy * s + ny * (jag + live + s2) + p.jy * br * 0.06f
+            }
+            A_NUCLEUS -> {
+                // idle "nucleus": ordered thought — the opposite of the dispersed cloud.
+                // A dense bright core (the pow-bias piles ~half the swarm there, so
+                // additive overlap makes it genuinely white-hot) plus the rest shelled
+                // onto three tilted orbit rings, each rotated at its own Kepler-ish rate
+                // (inner fastest) around the same axis. The rings' y is squashed, so they
+                // read as tilted ellipses, an atom seen in 3-D.
+                if (p.hr < 0.36f) {
+                    val rr = br * (0.06f + 0.17f * p.hr) * (1f + 0.09f * breath)
+                    val a = frac(p.u * 2.618f + p.hr * 7.1f) * TAU  // full-circle scramble
+                    ftx = cx + fcos(a) * rr + p.jx * br * 0.05f
+                    fty = cy + fsin(a) * rr * 0.92f + p.jy * br * 0.05f
+                } else {
+                    val band = (p.u * 3f).toInt().coerceAtMost(2)
+                    val rr = br * nucRad[band] * (1f + 0.05f * breath +
+                            0.035f * fsin(phHarm + p.fl))
+                    // rotate this particle's own home unit by ITS ring's current angle:
+                    // 4 mults, zero trig in the loop (ringCR/ringSN baked per frame).
+                    val rxn = p.hcos * ringCR[band] - p.hsin * ringSN[band]
+                    val ryn = p.hcos * ringSN[band] + p.hsin * ringCR[band]
+                    ftx = cx + rxn * rr + p.jx * br * 0.06f
+                    fty = cy + ryn * rr * nucTilt[band] + p.jy * br * 0.06f
+                }
+            }
+            A_SEEKER -> {
+                // idle "eye": the being is AWARE — it looks. The dispersed swarm is the
+                // sclera (a dim almond lens) and the ~30% accent particles are the bright
+                // pupil, eased toward a darting look target. Blink collapses the whole
+                // lens (and the pupil) vertically through blinkEnv, so every few seconds
+                // the eye visibly closes and reopens.
+                val ehw = br * 0.92f
+                val ehh = br * 0.44f * blinkEnv
+                if (p.accent) {
+                    val ppx = cx + pupX * ehw * 0.55f
+                    val ppy = cy + pupY * ehh * 0.55f
+                    val pr = br * (0.05f + 0.09f * p.hr) * blinkEnv
+                    val a = frac(p.u * 2.618f + p.hr * 1.9f) * TAU
+                    ftx = ppx + fcos(a) * pr
+                    fty = ppy + fsin(a) * pr * 0.9f
+                } else {
+                    // sclera: fill the lens; vertical half-height at each x is a sqrt
+                    // ellipse so the rim thins into a natural eye-shape almond.
+                    val xf = frac(p.u * 2.618f + 0.13f) * 2f - 1f
+                    val yf = frac(p.hr * 1.618f + 0.57f) * 2f - 1f
+                    val yh = ehh * sqrt((1f - xf * xf).coerceAtLeast(0f))
+                    ftx = cx + xf * ehw * 0.96f + p.jx * br * 0.04f
+                    fty = cy + yf * yh + p.jy * br * 0.08f
+                }
+            }
+            A_BORE -> {
+                // idle "water": the whole field becomes a liquid surface. Two
+                // counter-moving trains (phFlow eastbound, phFlow2 westbound) and a fine
+                // chop superpose into a slowly stepping interference field, and each
+                // particle rides the surface plus a depth band whose thickness itself
+                // ripples — so the FIGURE is the wavefield, not a shape drawn on top of
+                // it. The full width is covered, unlike the thin scope trace of WAVEform.
+                val p0 = p.u * 2f * TAU
+                val surf = br * (0.14f * fsin(p0 * 0.7f + phFlow)
+                        + 0.11f * fsin(p0 * 0.7f - phFlow2)
+                        + 0.06f * fcos(p0 * 1.4f + phHarm))
+                val depth = br * (0.34f + 0.07f * fsin(p0 * 1.1f - phFlow2)
+                        + 0.05f * breath)
+                val vy = (p.hr - 0.5f) * 2f * depth
+                ftx = cx - br * 0.95f + p.u * br * 1.9f + p.jx * br * 0.06f
+                fty = cy + surf + vy + p.jy * br * 0.10f
+            }
+            A_RADAR -> {
+                // idle "radar": the being scans a situation. A weather-radar PANEL —
+                // three calm, slow-breathing range rings, ONE rotating sweep beam (a thin
+                // wedge riding phSweep; the springs lag it so it trails light), and three
+                // storm cells that pulse + drift. Same gaussian/sweep vocabulary as
+                // A_SWEEP, but this is the full map, not a bare arm.
+                if (p.u < 0.24f) {
+                    val bi = (p.u / 0.24f * 3f).toInt().coerceAtMost(2)
+                    val rr = br * (0.30f + 0.28f * bi) *
+                            (1f + 0.02f * breath + 0.015f * fsin(phHarm + p.fl))
+                    val a2 = frac(p.u * 2.618f + bi * 1.7f) * TAU
+                    ftx = cx + fcos(a2) * rr
+                    fty = cy + fsin(a2) * rr * 0.94f
+                } else if (p.u < 0.32f) {
+                    // ONE sweep beam: radius outward along a narrow wedge at phSweep.
+                    val f = (p.u - 0.24f) / 0.08f
+                    val rr2 = br * (0.16f + 0.82f * f)
+                    val w = (hash(p.u * 3.7f, 3, 1) - 0.5f) * 0.14f
+                    val ang = phSweep + w
+                    ftx = cx + fcos(ang) * rr2
+                    fty = cy + fsin(ang) * rr2 * 0.94f
+                } else {
+                    // storm cells: gaussian-ish blobs, centre-biased, bright sparks pinned
+                    // near each core.
+                    val c = (((p.u - 0.32f) / 0.68f) * 3f).toInt().coerceAtMost(2)
+                    val rr3 = cellR[c] * p.hr.pow(0.55f) * (if (p.spark) 0.45f else 1f)
+                    val a3 = frac(p.u * 1.813f + c * 2.3f) * TAU
+                    ftx = cellX[c] + fcos(a3) * rr3 + p.jx * br * 0.05f
+                    fty = cellY[c] + fsin(a3) * rr3 * 0.92f + p.jy * br * 0.05f
+                }
+            }
+            A_TAKU -> {
+                // idle "octopus": a limb-propelled being that ROAMS. Every coordinate here
+                // orbits a persistent BODY OFFSET (ox,oy) eased by the transport machine
+                // (WANDER -> FIXATE -> MOVE-ON), so it travels — no other archetype moves
+                // its centre. Local +x is the heading (hCS,hSN): a dense bell-head forward,
+                // 5-8 tentacles trailing behind, each a chain carrying a travelling sine
+                // whose flex rides armBoost — the "working" beat while fixating, and the
+                // push that reads as propulsion while it meanders.
+                val obx = cx + ox; val oby = cy + oy
+                val hc = hCS; val hs = hSN
+                if (p.u < 0.36f) {
+                    // bell head: a dense cap; brighter and livelier while it works.
+                    val pulse = 1f + 0.06f * breath + 0.10f * armBoost
+                    val hrad = br * (0.08f + 0.30f * p.hr) * pulse
+                    val a = frac(p.u * 2.618f + p.hr * 0.37f) * TAU
+                    val lx = fcos(a) * hrad
+                    val ly = fsin(a) * hrad * 0.86f
+                    ftx = obx + lx * hc - ly * hs
+                    fty = oby + lx * hs + ly * hc
+                } else {
+                    // 5-8 tentacles fanned out behind the bell, each a chain running
+                    // base->tip carrying the travelling arm wave.
+                    val nt = 5 + (seed % 4)
+                    val uu = (p.u - 0.36f) / 0.64f
+                    var t = (uu * nt).toInt()
+                    if (t >= nt) t = nt - 1
+                    val q = frac(uu * nt)                    // 0 base -> 1 tip
+                    val th = 3.14159f + (t / (nt - 1f) - 0.5f) * 1.7f   // rear fan
+                    val rh = br * 0.30f
+                    val rx = fcos(th) * rh; val ry = fsin(th) * rh
+                    val len = br * (0.55f + 0.28f * hash(t.toFloat(), 4, seed))
+                    val dx = fcos(th); val dy = fsin(th)
+                    // travelling sine down the arm; flex grows toward the tip & with work
+                    val flex = br * (0.06f + 0.17f * q) * (0.4f + 0.6f * armBoost) *
+                            (1f + 0.6f * fsin(phHarm * 0.8f + t * 1.3f))
+                    val wv = fsin(q * 7.0f - armPh * 1.7f + t * 1.3f)
+                    val wdt = (p.hr - 0.5f) * br * 0.05f * (1f - q)
+                    val lat = wv * flex + wdt
+                    val lx = rx + dx * len * q - dy * lat
+                    val ly = ry + dy * len * q + dx * lat
+                    ftx = obx + lx * hc - ly * hs
+                    fty = oby + lx * hs + ly * hc
+                }
+            }
             else -> {
                 // A_BLOOM (SETTLE): breathes outward and back, relaxing toward the rest
                 // state. Never a repeating burst — a single slow exhalation.
@@ -1095,6 +1548,7 @@ class AvatarView @JvmOverloads constructor(
         time += dt
         dtFrame = dt
         prepareFrame(dt)
+        refreshNewShapes(dt)
 
         val invR = 1f / bodyR
         // Frame scalars hoisted into locals: the loop below touches no property but the
