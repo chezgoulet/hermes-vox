@@ -29,11 +29,12 @@ class ErTelemetryTest {
         assertTrue(line.contains("p95="))
     }
 
-    @Test fun emit_preserves_zeroes_and_does_not_reset() {
+    @Test fun emit_is_read_only() {
+        // Emit never mutates: two consecutive lines are identical, and the
+        // counters between them are stable. (No [-] assumption: tests share
+        // the static object — earlier tests may have filled the rings.)
         val a = ErTelemetry.line()
         val b = ErTelemetry.line()
-        // Two emits: identical counters (emit is read-only).
         assertEquals(a, b)
-        assertTrue(a.contains("soul-first-word[-]"))
     }
 }
