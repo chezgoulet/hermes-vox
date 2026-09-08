@@ -267,6 +267,10 @@ class AvatarView @JvmOverloads constructor(
     // (1 = open, dips to 0 at the close). Set once per frame in refreshNewShapes.
     private var pupX = 0f; private var pupY = 0f
     private var blinkEnv = 1f
+    // A_RADAR: the 3 storm cells' drift centres + pulsing radii, baked once per frame.
+    private val cellX = FloatArray(3)
+    private val cellY = FloatArray(3)
+    private val cellR = FloatArray(3)
 
     // Idle appearance: a user-picked shape/theme ("aura" = default dispersed breathing)
     // + optional auto-cycle so the being stays alive between turns.
@@ -824,6 +828,20 @@ class AvatarView @JvmOverloads constructor(
                 val bg = frac(time / per)
                 blinkEnv = if (bg < 0.045f) fsin(bg / 0.045f * 3.14159f) else 1f
             }
+            A_RADAR -> {
+                // the 3 storm cells: slow translating lissajous-ish centres + pulsing
+                // blob radii, all derived from clock time (deterministic, no storage).
+                for (c in 0 until 3) {
+                    val cf = c.toFloat()
+                    val ang = cf * 2.1f + time * 0.13f + cf * 0.45f
+                    val base = bodyR * (0.46f + 0.10f * hash(cf, 11, seed % 7))
+                    cellX[c] = cx + fcos(ang) * base *
+                            (1f + 0.18f * fsin(time * 0.21f + cf * 1.7f))
+                    cellY[c] = cy + fsin(ang) * base * 0.9f
+                    cellR[c] = bodyR * (0.13f + 0.035f * cf) *
+                            (1f + 0.22f * fsin(time * 0.9f + cf * 1.9f))
+                }
+            }
             else -> {}
         }
     }
@@ -970,6 +988,7 @@ class AvatarView @JvmOverloads constructor(
             A_NUCLEUS -> { springK = 36f; flowGain = 8.0f; tremor = 2.8f; spinMul = 1.20f }
             A_SEEKER -> { springK = 32f; flowGain = 7.0f; tremor = 3.3f; spinMul = 0.10f }
             A_BORE -> { springK = 30f; flowGain = 8.0f; tremor = 3.6f; spinMul = 0.10f }
+            A_RADAR -> { springK = 38f; flowGain = 4.5f; tremor = 2.2f; spinMul = 0.50f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1262,6 +1281,37 @@ class AvatarView @JvmOverloads constructor(
                 val vy = (p.hr - 0.5f) * 2f * depth
                 ftx = cx - br * 0.95f + p.u * br * 1.9f + p.jx * br * 0.06f
                 fty = cy + surf + vy + p.jy * br * 0.10f
+            }
+            A_RADAR -> {
+                // idle "radar": the being scans a situation. A weather-radar PANEL —
+                // three calm, slow-breathing range rings, ONE rotating sweep beam (a thin
+                // wedge riding phSweep; the springs lag it so it trails light), and three
+                // storm cells that pulse + drift. Same gaussian/sweep vocabulary as
+                // A_SWEEP, but this is the full map, not a bare arm.
+                if (p.u < 0.24f) {
+                    val bi = (p.u / 0.24f * 3f).toInt().coerceAtMost(2)
+                    val rr = br * (0.30f + 0.28f * bi) *
+                            (1f + 0.02f * breath + 0.015f * fsin(phHarm + p.fl))
+                    val a2 = frac(p.u * 2.618f + bi * 1.7f) * TAU
+                    ftx = cx + fcos(a2) * rr
+                    fty = cy + fsin(a2) * rr * 0.94f
+                } else if (p.u < 0.32f) {
+                    // ONE sweep beam: radius outward along a narrow wedge at phSweep.
+                    val f = (p.u - 0.24f) / 0.08f
+                    val rr2 = br * (0.16f + 0.82f * f)
+                    val w = (hash(p.u * 3.7f, 3, 1) - 0.5f) * 0.14f
+                    val ang = phSweep + w
+                    ftx = cx + fcos(ang) * rr2
+                    fty = cy + fsin(ang) * rr2 * 0.94f
+                } else {
+                    // storm cells: gaussian-ish blobs, centre-biased, bright sparks pinned
+                    // near each core.
+                    val c = (((p.u - 0.32f) / 0.68f) * 3f).toInt().coerceAtMost(2)
+                    val rr3 = cellR[c] * p.hr.pow(0.55f) * (if (p.spark) 0.45f else 1f)
+                    val a3 = frac(p.u * 1.813f + c * 2.3f) * TAU
+                    ftx = cellX[c] + fcos(a3) * rr3 + p.jx * br * 0.05f
+                    fty = cellY[c] + fsin(a3) * rr3 * 0.92f + p.jy * br * 0.05f
+                }
             }
             else -> {
                 // A_BLOOM (SETTLE): breathes outward and back, relaxing toward the rest
