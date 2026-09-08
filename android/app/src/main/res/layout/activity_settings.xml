@@ -349,7 +349,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Semantic barge-in — \"take your time\" keeps the mind working"
+                        android:text="Semantic barge-in — “take your time” keeps the mind working"
                         style="@style/HvRowTitle" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/sw_er_semantic_barge"
