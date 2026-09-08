@@ -899,17 +899,29 @@ class AvatarView @JvmOverloads constructor(
                 }
             }
             A_SEEKER -> {
-                // saccades: a new look target every ~1.15s bucket, eased fast enough to
-                // read as a real darting glance rather than a slow drift. The target is
-                // bounded to ~±0.72 of the field (not the full ±1) so the pupil keeps its
-                // scanning character but always stays INSIDE the visible almond lens —
-                // a full-range target rolled the iris to the rim and read as wall-eyed.
-                val bucket = (time * 0.87f).toInt()
-                val tx = (hash(bucket.toFloat(), 7, 71) - 0.5f) * 1.44f
-                val ty = (hash(bucket.toFloat(), 9, 73) - 0.5f) * 1.44f
-                val k = (dt * 6f).coerceIn(0f, 1f)
-                pupX += (tx - pupX) * k
-                pupY += (ty - pupY) * k
+                // A real iris RESTS at the center and only makes small, brief saccades
+                // (a few percent of the lens) then returns. It never continuously chases a
+                // target — that reads as a rolling / wall-eyed eye. The pupil sits at
+                // (0,0) (dead center) by default; every ~3s it darts toward a small offset
+                // (bounded to ~±0.30 of the field ≈ a few % of the lens) and eases back.
+                val saccPer = 3.2f + 0.9f * hash((time * 0.23f).toInt().toFloat(), 5, 41)
+                val t = frac(time / saccPer)                  // 0..1 within this saccade cycle
+                val cidx = (time / saccPer).toInt().toFloat()
+                if (t < 0.28f) {                              // dart only ~28% of the cycle
+                    val d = t / 0.28f                          // 0..1 through the dart
+                    val env = fsin(d * 3.14159f)               // ease up then back to 0
+                    val bx = (hash(cidx, 7, 71) - 0.5f) * 2f
+                    val by = (hash(cidx, 9, 73) - 0.5f) * 2f
+                    val tx = bx * 0.30f * env                  // small margin, returns to 0
+                    val ty = by * 0.30f * env
+                    val k = (dt * 10f).coerceIn(0f, 1f)
+                    pupX += (tx - pupX) * k
+                    pupY += (ty - pupY) * k
+                } else {                                      // rest at dead center
+                    val k = (dt * 10f).coerceIn(0f, 1f)
+                    pupX += (0f - pupX) * k
+                    pupY += (0f - pupY) * k
+                }
                 // blink: a periodic fast close-and-open; the period restitches every few
                 // seconds so it is never metronomic.
                 val per = 3.1f + 1.7f * hash((time * 0.18f).toInt().toFloat(), 5, 19)
