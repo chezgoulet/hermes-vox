@@ -1,79 +1,125 @@
-# Shape-Expansion Design Menu — Part 2 (proposal for your pick)
+# Shape-Expansion — Christopher's Shapes (addendum to design menu)
 
-**Framing:** each new archetype is one `when(arch)` case (a ~5-12 line closed-form
-particle-position formula) in AvatarView.kt, plus a constant + routing. The cheap
-model can write the geometry; YOU + I decide the *concept* so it's not a generic blob.
-A good shape has a *reason* — it says something about the state it serves. A bad one
-is "another cloud with a twist."
+Nine new concepts, each with the one-line "reason" (what the being is DOING that's
+worth showing), the state it serves, the geometry approach, and an honest difficulty
+grade. I've wired them into the same vocabulary as the existing 13 so they slot in as
+new `A_*` constants + `when(arch)` branches. Overlaps with existing shapes are called
+out.
 
-Below are candidate new archetypes, each with the **one-line concept** (what it means)
-and **what state it serves**. I've graded them by how *non-trivial* the geometry is —
-not by difficulty, but by how much of a "reason" each has. Pick the ones that feel
-like the being; the rest we leave.
+---
 
-## The design principle
-The being is a luminous swarm that *does* things. The best shapes make the work
-visible: fire climbs, the jellyfish pulses with the voice, the constellation holds
-during a wait. New shapes should add a NEW *kind* of statement, not a reshade of an
-existing one.
+## 1. A_WAVEform · theme "waveform"
+**Reason:** the being IS voice — a literal audio waveform, the whole swarm drawn as a
+sound wave that dances with the real amplitude. On-theme, instantly readable.
+**Serves:** SPEAKING. (A_VOICE is the jellyfish; this is the flat waveform — a second,
+more literal "I am speaking" reading.)
+**Geometry:** a horizontal wave — `fy = cy + amp * sin(kx + ph)` across the particle
+field, amplitude driven by the live RMS. Easy, clean.
+**Difficulty:** LOW. **Overlap:** none — A_VOICE is organic, this is geometric.
 
-## Candidates (each = new A_* constant + one `when(arch)` branch + one theme name)
+## 2. A_ARC · theme "arc"
+**Reason:** electricity leaps — jagged cracks of light connecting two points, a
+*connection being made*. The spark of an idea or a tool firing.
+**Serves:** THINKING / TOOL-call (the "hook-up" between request and answer).
+**Geometry:** random-walk jagged paths between two anchor points, redrawn a few times a
+second with slight variation. Moderate — needs a zigzag interpolation helper.
+**Difficulty:** MEDIUM. **Overlap:** none — distinct from A_FLAME (upward), A_GYRE (spiral).
 
-### Tier 1 — strong "reason", low risk (recommended first)
-1. **A_WAVE (theme "wave")** — a traveling ripple: a band that rolls across the body
-   like water. *Serves:* STREAMING / a long narrative. Distinct from A_RIBBON (one
-   serpentine line) — this is a whole-field traveling pulse. Reason: "the being is
-   moving through a thought, one wave at a time."
-2. **A_CORE (theme "core")** — a dense, tight bright center with a faint, pulsing
-   halo — everything drawn inward to a point. *Serves:* FOCUS / deep concentration /
-   a quiet secret. Opposite of the dispersed cloud; the being "gathered to a yes."
-3. **A_PRISM (theme "prism")** — a few out-and-back spokes that fan and fold, like
-   light refracting. *Serves:* TOOL "web"/search — "looking for the answer in many
-   directions at once." Distinct from A_SWEEP (one rotating line) — this is multiple
-   static rays that pulse.
+## 3. A_NUCLEUS · theme "nucleus"
+**Reason:** a dense bright core with electrons buzzing in tilted orbits — the being as
+a *nucleus of thought*, ordered and alive. The opposite of the dispersed cloud — a
+tightly-held center with motion around it.
+**Serves:** FOCUS / deep concentration / a quiet "yes."
+**Geometry:** a bright core + particles on a few co-planar orbit rings (tilted, so it
+reads 3-D), each ring rotating. Moderate — orbit math with per-ring inclination.
+**Difficulty:** MEDIUM. **Overlap:** none — A_ORB is dispersed, this is a structured atom.
 
-### Tier 2 — characterful, slightly more geometry
-4. **A_PENDULUM (theme "pendulum")** — a held figure that swings as one mass: a slow,
-   deliberate rock. *Serves:* LISTENING (the being leaning in, considering). Contrast
-   A_BREATH (still breath) with a *moving* contemplation.
-5. **A_STORM (theme "storm")** — a turbulent, high-tremor churn that dissipates the
-   cloud into ragged filaments. *Serves:* THINKING under pressure / a hard problem.
-   The opposite of A_FLAME's upward intent — this is *chaos that works*.
-6. **A_HALO (theme "halo")** — a clean, slow ring — not a full disc, a thin orbit of
-   light. *Serves:* the being's *presence* between turns (idle). Motion is a long,
-   quiet circulation. Minimal, serene, "I'm here."
+## 4. A_INVADER · theme "invader"
+**Reason:** playful, retro, unmistakable — a grid of blocky sprites descending, one
+little ship dodging. The being is *playing* / being whimsical. Rare in a "voice agent"
+context; delightfully unexpected.
+**Serves:** IDLE-playful, or a light/fun tool state. (Not a work state.)
+**Geometry:** a loaded pixel-grid pattern (a few Invader rows) rendered from particle
+slots, with a slow descent + a single ship that strafes. High — literal sprite
+recurrence, but no physics coupling needed (it IS the grid).
+**Difficulty:** MEDIUM-HIGH. **Overlap:** none. Caveat: it's `A_*` geometry that doesn't
+flow like the swarm; it's a deliberate retro break. Only right if it fits the being's
+mood — the being is serious, so an Invader is a *surprise* move. Flag for your call.
 
-### Tier 3 — concept-first, geometry follows (want these? design the concept with me)
-7. **A_KNOT** — the being ties itself into a knot (interlaced). *Serves:* a *puzzle* /
-   an unresolved thread. Distinct and memorable — but interlacing geometry is fiddly,
-   so I'd want to design the particle coupling first.
-8. **A_ASCEND** — particles rise and *escape* off the top, then loop back — a fount.
-   *Serves:* RECOIL/a burst of inspiration (softer than A_BURST's flinch). The
-   "idea has left the ground" moment.
-9. **A_LATTICE** — particles snap to a grid, hold for a beat, then release.
-   *Serves:* a *structured* tool (a table, a file being written). Reads as "the being
-   is organising." Geometry is regular → easy, but risks feeling static; needs a
-   breathe-in so it doesn't read as frozen.
+## 5. A_SEEKER · theme "eye" (the eye looking around)
+**Reason:** the being is AWARE — it looks. A bright iris/pupil that darts, tracks, and
+blinks. "I see you." Alive.
+**Serves:** LISTENING / idle presence. (A_BREATH is receptive; this is attentive.)
+**Geometry:** a sclera formed by the dispersed field + a brighter pupil that lerps to
+a target point (occasionally darting), with periodic blinks (a horizontal collapse).
+Medium — needs a track/dart/blink state machine, but the shape is simple.
+**Difficulty:** MEDIUM. **Overlap:** none.
 
-## The one line that matters
-**Every shape answers: "what is the being DOING that's worth showing?"** If a
-candidate can't answer that, it's a reshade — skip it. If it can, we build it.
+## 6. A_TAKU · theme "octopus"
+**Reason:** a creature that *undulates* — a bell-head with tentacles that wave
+organically. Richer/more literal than the jellyfish A_VOICE: visible individual arms.
+**Serves:** SPEAKING / a complex state that should feel alive and many-armed.
+**Geometry:** a head (dense bell) + 5-8 tentacles each a chain of points driven by a
+traveling sine down its length. Higher — more point-coupling than other shapes.
+**Difficulty:** MEDIUM-HIGH. **Overlap:** overlaps A_VOICE thematically (both "sea
+creature speaking"); this is the *arm-y* version. Pick ONE of jellyfish/octopus unless
+you want both as siblings.
 
-## My honest recommendation for the batch
-Start with **Tier 1 (A_WAVE, A_CORE, A_PRISM)** — three new shapes, each with a clear
-statement, each a clean additive branch. That alone doubles the "at-rest + tool"
-vocabulary once the routing fix lands. Then, if they feel right, add Tier 2. Tier 3
-only if one of those concepts genuinely grabs you — they're the higher-risk ones.
+## 7. A_STORM · theme "storm"
+**Reason:** weather — falling rain streaks with periodic lightning. The being *works
+under pressure*; lightning is the flash of insight. Dramatic and rare.
+**Serves:** THINKING hard / a heavy, consequential moment.
+**Geometry:** vertical falling streaks (high `biasY` + speed) + sparse lightning (a
+jagged arc-draw, reused from A_ARC) flashing on a timer. MEDIUM-HIGH (two sub-systems).
+**Difficulty:** MEDIUM-HIGH. **Overlap:** none.
 
-## How we'd build them (the two-model split, confirmed):
-1. You pick the concepts (this doc).
-2. I write the design intent + the exact `when(arch)` spec per chosen shape.
-3. deepseek-v4-flash writes the geometry branches (mechanical, follows existing pattern).
-4. I gate each against the "does it have a reason?" bar + verify it renders as intended
-   (not a generic blob) before it ships.
+## 8. A_CYCLONE · theme "cyclone"
+**Reason:** a tight, fast, violent spiral — the vortex *intensified*.
+**Geometry:** it IS A_GYRE, turned up (higher spin, wider arm, more contraction).
+**Difficulty:** LOW. **Overlap:** **this is the existing A_GYRE/VORTEX.** Before we make
+it a new shape, decide: do you want a *distinct* tighter cyclone, or just an energy knob
+on the existing vortex? Recommend: make it a **visual-energy/scale variant of A_GYRE**,
+not a 14th archetype — cleaner, and the energy dial already exists.
+
+## 9. A_BORE (tide) · theme "water"
+**Reason:** a liquid surface — soft rolling ripples across the whole field, like water.
+Calm, continuous, fluid. The being *flows*.
+**Serves:** STREAMING / a long narrative / a peaceful interlude. (A_WAVE in my Tier 1 was
+a traveling band; this is the *whole surface* rippling.)
+**Geometry:** `fy = cy + wave-field(sin, cos)` superposition, two counter-moving trains.
+Easy, very smooth.
+**Difficulty:** LOW-MEDIUM. **Overlap:** overlaps A_WAVE (Tier 1) — A_WAVE = a single
+traveling band, this = an all-over liquid field. Keep both as siblings (different feel).
+
+---
+
+## Consolidated vocabulary the being could grow to
+**Existing (13):** orb, breath, flame, gyre, voice, held, burst, sweep, forge, nodes,
+ribbon, infall, bloom.
+**My added (design menu):** wave* (→ water sibling), core, prism, pendulum, storm*,
+halo, knot, ascend, lattice.
+**Your added (this doc):** waveform, arc, nucleus, invader, eye, octopus, storm*,
+cyclone*(→gyre variant), water*.
+*(overlap noted — resolve as siblings or variants before build)*
+
+That's a **~19-22 shape vocabulary** if we take most of them — genuinely "doubled,
+heading to tripled." Each is a single `when(arch)` branch; the cost is design review per
+shape (does it have a reason? does it render as intended, not generic?), not code
+complexity.
+
+## My honest recommendation
+- **Certain keeps (strong, clean, on-theme):** waveform (speaking — could even replace/
+  complement the jellyfish), arc (tool connection), nucleus (focus), eye (awareness),
+  water (streaming), storm (hard thinking).
+- **Consider splitting:** octopus vs jellyfish (pick one as "the sea creature"), cyclone
+  vs gyre (make it an energy variant, not a new shape).
+- **Your one risky-but-delightful call:** Invader. It breaks the swarm aesthetic
+  entirely — I'd only do it if you *want* a delightful surprise in the roster, and I'd
+  make it an opt-in idle shape, not something that fires mid-work.
 
 ## What I need from you
-- Which concepts feel like the being? (pick any — 1, 2, all 3 of Tier 1, etc.)
-- Any shape from your own head that's missing? (name the feeling it should evoke and
-  the state it serves — I'll write the concept up.)
-- Then I finalise the idle/cycle set (Part 1, Edits 1/2/4) to match.
+1. Confirm which of YOUR nine to build (all? drop any? make cyclone a gyre-variant?).
+2. For octopus vs jellyfish and water vs wave — siblings or one only?
+3. Invader — want it, or too much of a break?
+4. Then I lock the idle/cycle set (Part 1 Edits 1/2/4) and write the per-shape
+   `when(arch)` specs for the chosen set.
