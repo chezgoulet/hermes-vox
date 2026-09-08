@@ -1,0 +1,133 @@
+name: nightly-build
+
+# Hermes Vox NIGHTLY — a build per merge into `testing`.
+#
+# The git flow (2026-09-08, Christopher):
+#   main     — deployable/buildable always; releases are cut FROM main ONLY.
+#   testing  — integration branch; features branch off testing and merge INTO
+#              testing. Every push/merge to testing produces a NIGHTLY artifact:
+#              a prerelease tagged nightly-YYYYMMDD-HHMMSS with the APK attached,
+#              publicly installable via Obtainium (prerelease, not a tracked
+#              release — it never becomes "Latest").
+# Releases (testing → main) are still cut by hand per docs/RELEASE-PROCESS.md —
+# this workflow does NOT cut release tags.
+
+on:
+  push:
+    branches: [testing]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-testing
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Go (gomobile bind)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install gomobile + build the mobile.aar
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          go install golang.org/x/mobile/cmd/gomobile@latest || true
+          export GOMOBILE=$(go env GOPATH)/bin/gomobile
+          $GOMOBILE init > /dev/null 2>&1 || true
+          mkdir -p android/app/libs
+          $GOMOBILE bind -target android -androidapi 23 -javapkg com.hermesvox \
+            -o android/app/libs/mobile.aar github.com/chezgoulet/hermes-vox/mobile
+
+      # The release keystore is repository-encrypted (age, key = repo secret).
+      # Nightlies are signed with the SAME release key so an Obtainium nightly
+      # can be installed over / alongside a release without an uninstall.
+      - name: Install age
+        run: |
+          curl -fsSL -o /tmp/age.tar.gz https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz
+          tar -xzf /tmp/age.tar.gz -C /tmp
+          sudo mv /tmp/age/age /usr/local/bin/age
+
+      - name: Restore keystore (age-decrypt from repo, key = secret)
+        env:
+          KEYSTORE_AGE_KEY: ${{ secrets.KEYSTORE_AGE_KEY }}
+        run: |
+          mkdir -p keystore
+          printf '%s' "$KEYSTORE_AGE_KEY" > /tmp/nightly.key
+          age -d -i /tmp/nightly.key keystore/release.keystore.age > keystore/release.keystore
+          age -d -i /tmp/nightly.key keystore/keystore.properties.age > keystore/keystore.properties
+          rm -f /tmp/nightly.key
+          echo "keystore restored: $(wc -c < keystore/release.keystore) bytes"
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/app/build.gradle') }}
+          restore-keys: gradle-
+
+      - name: Build release APK (system gradle — the repo has no wrapper jar)
+        working-directory: android
+        run: |
+          # The repo ships gradle-wrapper.properties but NO gradle-wrapper.jar
+          # (the 0.4.0-era gap; ./gradlew cannot run). Install Gradle 8.12.1
+          # (the version the project is proven on) via the action cache.
+          GRADLE_DIR=/opt/gradle-8.12.1
+          if [ ! -x $GRADLE_DIR/bin/gradle ]; then
+            curl -fsSL -o /tmp/gradle.zip \
+              https://services.gradle.org/distributions/gradle-8.12.1-bin.zip
+            unzip -q /tmp/gradle.zip -d /opt
+          fi
+          $GRADLE_DIR/bin/gradle --no-daemon -q assembleRelease testReleaseUnitTest
+
+      - name: Test roll-up (fail the build on any failure)
+        working-directory: android
+        run: |
+          python3 - << 'EOF'
+          import glob, xml.etree.ElementTree as ET, sys
+          t=f=e=0
+          for p in glob.glob("app/build/test-results/testReleaseUnitTest/*.xml"):
+              r = ET.parse(p).getroot()
+              t += int(r.get("tests",0)); f += int(r.get("failures",0)); e += int(r.get("errors",0))
+          print(f"tests={t} failures={f} errors={e}")
+          sys.exit(1) if (f or e) else print("GATE GREEN")
+          EOF
+
+      - name: Name the nightly APK
+        working-directory: android
+        run: |
+          VERSION=$(grep -m1 'versionName' app/build.gradle | sed 's/.*"\(.*\)".*/\1/')
+          VC=$(grep -m1 'versionCode' app/build.gradle | awk '{print $2}')
+          SHORT=$(git rev-parse --short HEAD)
+          mkdir -p ../dist
+          cp app/build/outputs/apk/release/*.apk ../dist/hermes-vox-${VERSION}-nightly-${SHORT}.apk
+          echo "APK=hermes-vox-${VERSION}-nightly-${SHORT}.apk" >> $GITHUB_ENV
+          echo "TAG=nightly-$(date -u +%Y%m%d-%H%M%S)-${SHORT}" >> $GITHUB_ENV
+
+      - name: Create the nightly prerelease + upload the APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "Nightly ${{ env.TAG }}"
+          prerelease: true
+          make_latest: false          # NEVER becomes "Latest" — releases from main do
+          body: |
+            Automated nightly from `testing` @ ${{ github.sha }}.
+            Install via Obtainium (prereleases) — NOT for the release track.
+          files: dist/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
