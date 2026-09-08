@@ -39,7 +39,8 @@ class ErFillersTest {
 
     @Test fun fail_soft_says_once_then_goes_silent() {
         // recent=1 (already said something): the lag slot stays quiet.
-        assertEquals(null, out(10_000L + 5_000L, recent = 1).speak)
+        val o = ErFillers.tick(nowMs = 10_000L + 5_000L, mindStartedAt = 10_000L, recentCount = 1, warm = false, userGoneMs = 0L, lagSaidCount = 1)
+        assertEquals(null, o.speak)
     }
 
     // 0.6.5: the lag line is ONCE per window — keyed to the MONOTONIC lag count,
