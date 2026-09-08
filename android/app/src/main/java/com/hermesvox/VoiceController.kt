@@ -741,6 +741,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         val t0 = android.os.SystemClock.uptimeMillis()
         turnStartedAt = t0
         listener?.onState("thinking")
+        // ER Phase 7: the mind sees what the soul already said this turn (the
+        // drift-sync epilogue rides the user text — cache-safe per-turn channel).
+        // NOTE: applied BEFORE the onLog line, so the console shows what the
+        // gateway actually received.
+        val drift = if (voiceTurn) {
+            ErDrift.epilogue(erPresence.drainSoulActions(), ErDrift.Vibe())
+        } else ""
+        val turnText = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
         listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
         if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin()
         // 0.5.0.1 / H3: route the turn submit through the guard. It re-checks
@@ -759,7 +767,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // spoken register). Typed sends stay prefix-free: a typed
                 // message may legitimately ask for code blocks / deep work.
                 // sendText() passes fromVoice=false; both STT loops pass true.
-                val sid = if (voiceTurn) session.voiceTurn(text) else session.startStream(text)
+                val sid = if (voiceTurn) session.voiceTurn(turnText) else session.startStream(text)
                 VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn")
                 currentStream = sid
                 val firstByteAt = android.os.SystemClock.uptimeMillis()
