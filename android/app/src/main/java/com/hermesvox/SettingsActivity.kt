@@ -75,6 +75,15 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun bindGroups() {
+        // #111: Voice mode now lives as a TOP-LEVEL home row (first in grp_list) —
+        // its picker is wired here with the other home rows, and its value label is
+        // refreshed from modeLabel() by refreshFlowVals() (see refreshFlowVals).
+        findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
+            pick("Voice mode",
+                arrayOf("Realtime", "Enhanced Realtime"),
+                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
+                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val)
+        }
         findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { showSection(SECTION_MODELS) }
         findViewById<android.view.View>(R.id.row_grp_entity)?.setOnClickListener { showSection(SECTION_ENTITY) }
         findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
@@ -94,11 +103,21 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun bindEntity() {
+        // #113: "New conversation" wipes the live conversation (and ends any active
+        // call) — destructive, so confirm first. It reads "clear", not "reset": only
+        // the "Restore defaults (…)" rows use the word reset.
         findViewById<LinearLayout>(R.id.row_reset).setOnClickListener {
-            try {
-                MainActivity.resetActiveConversation()
-                Toast.makeText(this, "New conversation (context cleared)", Toast.LENGTH_SHORT).show()
-            } catch (_: Throwable) {}
+            AlertDialog.Builder(this)
+                .setTitle("New conversation")
+                .setMessage("Start fresh? This clears the current conversation's context and ends any active call — it can't be undone.")
+                .setPositiveButton("Clear") { _, _ ->
+                    try {
+                        MainActivity.resetActiveConversation()
+                        Toast.makeText(this, "New conversation (context cleared)", Toast.LENGTH_SHORT).show()
+                    } catch (_: Throwable) {}
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
         findViewById<LinearLayout>(R.id.row_entity).setOnClickListener {
             val view = layoutInflater.inflate(R.layout.dialog_entity, null)
@@ -129,12 +148,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun bindFlows() {
-        findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
-            pick("Voice mode",
-                arrayOf("Realtime", "Enhanced Realtime"),
-                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
-                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val)
-        }
         findViewById<LinearLayout>(R.id.row_stt).setOnClickListener {
             pick("Speech-to-text (backend)",
                 arrayOf("On-device (offline)", "Platform (Google)", "Remote (server)"),
@@ -161,10 +174,12 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // Per sub-menu RESTORE DEFAULTS (via the central restoreDefaults helper).
-        bindRestoreRow(R.id.row_mode_reset, GROUP_MODE, "Mode")
+        // #112 reset scopes: every setting belongs to exactly ONE group. Voice mode
+        // resets with GROUP_ENTITY (row_restore_entity) and the voice register resets
+        // with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice") — the standalone
+        // Mode/Voice branches and their row_mode_reset/row_voice_reset rows are gone.
         bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "STT")
-        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "TTS")
-        bindRestoreRow(R.id.row_voice_reset, GROUP_VOICE, "Voice")
+        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "TTS & Voice")
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
@@ -199,10 +214,14 @@ class SettingsActivity : AppCompatActivity() {
         refreshSttRemotePanel()
     }
 
-    /** The install-progress caption for the Models section (group row + sub-view row). */
+    /** #114-badge: the install-progress caption for the Models row (Settings-home
+     *  group row + the sub-view row above "Voice models"). Counts ONLY the RECOMMENDED
+     *  subset of the blessed set so the home badge agrees with the Models screen's
+     *  required set (the optional extras don't inflate the denominator). */
     private fun refreshModelsVal() {
-        val installed = ModelCatalog.blessed.count { ModelCatalog.isInstalled(this, it.id) }
-        val text = "$installed/${ModelCatalog.blessed.size} installed · needed for your voice"
+        val denom = ModelCatalog.blessed.count { it.recommended }
+        val installed = ModelCatalog.blessed.count { it.recommended && ModelCatalog.isInstalled(this, it.id) }
+        val text = "$installed/$denom installed · needed for your voice"
         findViewById<TextView>(R.id.set_models_val)?.text = text
         findViewById<TextView>(R.id.set_models_grpval)?.text = text
     }
@@ -662,13 +681,11 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(KEY_STT_REMOTE_KEY, "")
             GROUP_TTS -> e
                 .putString("tts", "system")
-                .putString("voice", "system")   // the TTS register now resets with the engine
-            GROUP_VOICE -> e.putString("voice", "system")
-            GROUP_MODE -> e.putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)
+                .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
                 .putString("provider", "")      // clear the per-request provider override
-                .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // url/key untouched (identity)
+                .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // #112: voice mode folds into Entity (GROUP_MODE branch removed); url/key untouched (identity)
             GROUP_APPEARANCE -> e
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
@@ -715,8 +732,8 @@ class SettingsActivity : AppCompatActivity() {
         const val GROUP_MIC = "mic"
         const val GROUP_STT = "stt"
         const val GROUP_TTS = "tts"
-        const val GROUP_VOICE = "voice"
-        const val GROUP_MODE = "mode"
+        // #112: no GROUP_VOICE / GROUP_MODE — the voice register folds into GROUP_TTS
+        // and voice mode folds into GROUP_ENTITY, so each setting has ONE reset scope.
         const val GROUP_ENTITY = "entity"
         const val GROUP_APPEARANCE = "appearance"
         const val GROUP_VISUALS = "visuals"

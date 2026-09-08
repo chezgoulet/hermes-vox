@@ -51,6 +51,29 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <!-- #111: Voice mode is the headline interaction model, so it gets
+                     its own TOP-LEVEL home row (above Models) instead of being buried
+                     under Entity &amp; Connection. Tapping it opens the same picker
+                     (bound in bindGroups). -->
+                <LinearLayout
+                    android:id="@+id/row_mode"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice mode"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_mode_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Realtime"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/row_grp_models"
                     style="@style/HvRow"
@@ -66,7 +89,7 @@
                         android:id="@+id/set_models_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="0/6 installed"
+                        android:text="0/3 installed · needed for your voice"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
@@ -282,58 +305,21 @@
                         android:layout_weight="1"
                         android:text="New conversation (clear context)"
                         style="@style/HvRowTitle" />
+                    <!-- #113: "clear" ≠ "reset". This wipes the conversation (with a
+                         confirm dialog in Kotlin); the cyan "reset" chips only ever
+                         mean "Restore defaults (…)". Contained danger pill. -->
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="reset"
-                        style="@style/HvRowAction" />
-                </LinearLayout>
-
-                <TextView
-                    style="@style/TextVox.Label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:layout_marginBottom="8dp"
-                    android:text="@string/hv_label_flows" />
-
-                <LinearLayout
-                    android:id="@+id/row_mode"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Voice mode"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mode_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Realtime"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_mode_reset"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Restore defaults (Mode)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="reset"
-                        style="@style/HvRowAction" />
+                        android:background="@drawable/bg_chip"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="4dp"
+                        android:text="clear"
+                        android:textColor="@color/hv_danger"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -861,25 +847,6 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/row_tts_reset"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Restore defaults (TTS)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="reset"
-                        style="@style/HvRowAction" />
-                </LinearLayout>
-
-                <LinearLayout
                     android:id="@+id/row_voice"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -899,25 +866,6 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/row_voice_reset"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Restore defaults (Voice)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="reset"
-                        style="@style/HvRowAction" />
-                </LinearLayout>
-
-                <LinearLayout
                     android:id="@+id/row_speak"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -933,6 +881,28 @@
                         android:id="@+id/set_speak"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- #112: ONE reset scope for this section — TTS engine AND voice
+                     register fold into GROUP_TTS (the old separate row_voice_reset
+                     "Restore defaults (Voice)" duplicated it). -->
+                <LinearLayout
+                    android:id="@+id/row_tts_reset"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (TTS &amp; Voice)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="reset"
+                        style="@style/HvRowAction" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -959,7 +929,7 @@
                         android:id="@+id/set_models_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="0/3 installed"
+                        android:text="0/3 installed · needed for your voice"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 

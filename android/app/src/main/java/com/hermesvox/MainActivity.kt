@@ -24,6 +24,12 @@ import go.Seq
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var warming: android.widget.TextView
+    // #6/#12: voice models are a first-run REQUIREMENT (nothing works without
+    // them). modelsGate = the blocking empty-state overlay shown when NONE of
+    // the required set is installed; modelsWarnShown tracks the tappable
+    // warning pill shown when it is only partially installed.
+    private var modelsGate: android.widget.LinearLayout? = null
+    private var modelsWarnShown = false
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
     private lateinit var reply: CrawlView
@@ -277,6 +283,7 @@ class MainActivity : AppCompatActivity() {
 
         connectFromPrefs()
         resumeLiveCallIfAny()
+        refreshModelsGate()   // #6/#12: first-run empty state / warning pill
         wireButtons()
         startAvatarLoop()
         applyParticlePrefs()
@@ -339,7 +346,11 @@ class MainActivity : AppCompatActivity() {
         val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
         c.attachListeners(listener)
         if (!ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)) {
-            setStatus("Voice model not installed — Settings > Voice models", true); return
+            // #12: this used to be a dead label ("...Settings > Voice models").
+            // It is now a tappable warning pill that opens the Voice-models
+            // download screen (ModelsActivity) — the actual fix, not a name.
+            modelsMissingPill("Voice model not installed — tap to download")
+            return
         }
         if (!c.isWarm()) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
@@ -454,6 +465,145 @@ class MainActivity : AppCompatActivity() {
     private fun setStatus(text: String, show: Boolean) {
         status.text = text
         status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        // A real phase/status replaces the models-warning pill: drop its tap
+        // handler and restore the tag color so phase pills never read as
+        // warnings or navigate to the model store by accident (#12/#6).
+        if (modelsWarnShown) {
+            modelsWarnShown = false
+            status.setOnClickListener(null)
+            status.setTextColor(ContextCompat.getColor(this, R.color.hv_cyan))
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // #6 / #12 — the voice-model gate. Voice models are a first-run REQUIREMENT
+    // (nothing works without them), so an incomplete set is never shown as
+    // neutral info. Zero required installed -> a blocking EMPTY STATE with a
+    // "Download voice models" CTA; partially installed -> a tappable warning
+    // pill. Both open ModelsActivity — the Voice-models download screen
+    // ("Settings > Voice models" used to be a dead label; ModelsActivity IS
+    // that destination, and SettingsActivity cannot be deep-linked into).
+    // -----------------------------------------------------------------------
+    private fun refreshModelsGate() {
+        // Onboarding / missing-key problems own their own surfaces; a live call
+        // must never be covered by the gate.
+        if (callLive || !endpointSet() || GatewayKey.isMissing(storedKey())) {
+            modelsGate?.visibility = android.view.View.GONE
+            return
+        }
+        val missing = ModelCatalog.missingRequired(this)
+        val total = ModelCatalog.required.size
+        if (missing.isEmpty()) {
+            modelsGate?.visibility = android.view.View.GONE
+            modelsWarnReset()
+            return
+        }
+        if (missing.size == total) showModelsEmptyState()   // zero installed -> blocking CTA
+        else modelsMissingPill("⚠ ${missing.size} of $total voice models not installed — tap to download")
+    }
+
+    /** Tappable WARNING pill — the replacement for the dead
+     *  "Voice model not installed — Settings > Voice models" label (#12). */
+    private fun modelsMissingPill(msg: String) {
+        if (!::status.isInitialized) return
+        modelsWarnShown = true
+        status.text = msg
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_warn))
+        status.visibility = View.VISIBLE
+        status.setOnClickListener { openModelsStore() }
+    }
+
+    private fun modelsWarnReset() {
+        // setStatus handles clearing the tap handler + restoring the tag color.
+        if (modelsWarnShown && ::status.isInitialized) setStatus(getString(R.string.hv_connected), false)
+    }
+
+    private fun openModelsStore() {
+        startActivity(Intent(this, ModelsActivity::class.java))
+    }
+
+    private fun showModelsEmptyState() {
+        var gate = modelsGate
+        if (gate == null) {
+            gate = buildModelsEmptyState()
+            modelsGate = gate
+            // Index 0 puts it above the warming splash, so the download CTA is
+            // the topmost first-run surface.
+            (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
+                .addView(gate, 0)
+        }
+        gate.visibility = View.VISIBLE
+    }
+
+    private fun buildModelsEmptyState(): android.widget.LinearLayout {
+        val d = resources.displayMetrics.density
+        val need = ModelCatalog.required.size
+        val body = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding((28 * d).toInt(), 0, (28 * d).toInt(), 0)
+        }
+        body.addView(android.widget.TextView(this).apply {
+            text = "▼"
+            textSize = 34f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_cyan))
+            gravity = android.view.Gravity.CENTER
+        })
+        body.addView(android.widget.TextView(this).apply {
+            text = "Download the voice models"
+            textSize = 22f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(0xFFD6F4FF.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, (14 * d).toInt(), 0, 0)
+        })
+        body.addView(android.widget.TextView(this).apply {
+            text = "Nothing works until Hermes can hear and speak. " +
+                "Your offline voice needs $need small models downloaded once — " +
+                "after that every conversation runs on-device, no cloud."
+            textSize = 15f
+            setTextColor(0xFF9FB3C9.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, (10 * d).toInt(), 0, 0)
+        })
+        body.addView(Button(this).apply {
+            text = "Download voice models"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_primary)
+            setOnClickListener { openModelsStore() }
+            val pad = (18 * d).toInt()
+            setPadding(pad, (10 * d).toInt(), pad, (10 * d).toInt())
+            layoutParams = android.view.ViewGroup.MarginLayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (22 * d).toInt() }
+        })
+        body.addView(Button(this).apply {
+            text = "Not now"
+            isAllCaps = false
+            setTextColor(0xFF9FB3C9.toInt())
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_ghost)
+            setOnClickListener {
+                modelsGate?.visibility = View.GONE
+                // Deferred, not a dead end: keep a tappable path to the store.
+                modelsMissingPill("⚠ $need voice models needed — tap to download")
+            }
+            val pad = (16 * d).toInt()
+            setPadding(pad, (6 * d).toInt(), pad, (6 * d).toInt())
+            layoutParams = android.view.ViewGroup.MarginLayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (10 * d).toInt() }
+        })
+        return android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(0xFF06070B.toInt())
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            addView(body)
+        }
     }
 
     // ---- 0.5.1 Part B: the status pill reports the REAL phase ------------------
@@ -1226,7 +1376,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate() } }
 
     // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
     // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
