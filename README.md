@@ -5,6 +5,17 @@ like talking to a living AI presence (the Sesame Miles/Maya experience) but **is
 the Hermes agent: the same identity, the same mind, the same abilities — you
 talk to the same entity you use everywhere else.
 
+> **Beta — early days, rapid development.** Hermes Vox is a working, installable
+> MVP and it's moving fast — expect rough edges and things that shift between
+> releases. We'd love help, especially **testing, polishing, and bug-finding**.
+> Found something? Open an issue.
+
+> **Bring your own gateway.** Hermes Vox is a **client**, not a service. There is
+> no Hermes-hosted cloud and nothing to sign up for: you point the app at **your
+> own Hermes gateway** — the endpoint and API key of a Hermes instance *you* run,
+> whether local, self-hosted on your own network, or on a remote box you own. The
+> app never ships with a gateway, and the maintainers don't host one for you.
+
 ---
 
 ## See it
@@ -37,7 +48,7 @@ voice, renders Hermes's work as a living presence, and speaks Hermes's answer.
 
 Local-first and sovereign: **on-device** speech processing (Whisper STT, Silero
 VAD, Piper TTS) — no cloud, no third-party SDKs, no keys in the repo. The entity
-endpoint + API key are user-entered in-app.
+endpoint + API key are user-entered in-app; the gateway behind them is yours.
 
 ## The two voice modes
 
@@ -61,11 +72,14 @@ voice as its words, over true OLED black.
   is Hermes's presence. It breathes at rest (a teal eye/wisp), gathers + warms
   when working, sparkles when speaking, and reacts to the agent's **real** tool
   calls (terminal → bracket, web → scan, file → fold, memory → constellation)
-  with a workload ramp. Shapes are generative (parametric, re-seeded each call) —
-  no two states look identical.
+  with a workload ramp. Its shape language is a **20-archetype** vocabulary —
+  from a quiet orb to a bloom — and shapes are generative (parametric, re-seeded
+  each call), so no two states look identical.
 - **The voice** — the reply as a **Star-Wars crawl** over the black, synced with
   speech, fading before it touches the particles. The SSE/dev log renders the
   same but smaller + darker (a distinct tier, hidden by default).
+- **The icon** — the same identity distilled to launcher size: a lone glowing eye
+  on pure OLED black.
 - **No chrome** — no pills/boxes; just the being + the words.
 - **Type** — Rajdhani (sci-fi geometric, OFL) for the display chrome; monospace
   for the voice. Two voices, clearly different.
@@ -117,6 +131,11 @@ fully-offline Piper voice, download the Piper model in-app and select it under
 **Settings → TTS & Voice**. Point the app at your Hermes gateway; the entity is
 your agent.
 
+> **Google Play is planned — not shipped.** A Play Store release is on the
+> roadmap for a future point release (we're on 0.5.x today), so there is no store
+> listing yet — install the APK above, or follow the repo for the first release.
+> Whenever it lands, Vox will stay a bring-your-own-gateway client.
+
 ## The stack
 
 - **Android** (native Kotlin, AppCompat, no Material) — the client UI + the
@@ -158,10 +177,16 @@ your agent.
 
 ## Status
 
-The MVP is installable and the design language, pipeline, and orchestration are
-in, with **two** voice modes (Realtime + Enhanced Realtime). **Enhanced Realtime
-is alpha** — the on-device **Gemma 4 E2B (presence)** model downloads in-app
-(Settings → Voice models, sha256-verified) and `GemmaExpress` loads it via
-LiteRT-LM's Engine, but it's experimental and the presence layer is not yet wired
-into the immersive view. Cloud voice processing + full-duplex realtime are
-after-MVP.
+- **Beta, installable today.** Build the debug APK (above) and it works: two
+  voice modes, the particle-being, the on-device pipeline, and the orchestrator
+  are all in.
+- **On-device speech** — Whisper STT, Silero VAD, and Piper TTS run locally;
+  models download in-app (Settings → Voice models, sha256-verified).
+- **Two voice modes** — Realtime, plus **Enhanced Realtime (alpha)**. The alpha
+  mode's on-device **Gemma 4 E2B (presence)** model downloads in-app and
+  `GemmaExpress` loads it via LiteRT-LM's Engine, but it's experimental and the
+  presence layer is not yet wired into the immersive view.
+- **Bring your own gateway** — the Hermes instance (local, self-hosted, or
+  remote) is yours; Vox is the client.
+- **Planned** — Google Play listing in a future point release (not yet shipped);
+  cloud voice processing + full-duplex realtime are after-MVP.
