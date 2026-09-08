@@ -51,7 +51,24 @@ func (c *Conversation) TurnText(ctx context.Context, text string) (string, error
 		return "", err
 	}
 	c.History = append(c.History, ChatMessage{Role: "assistant", Content: reply})
+	c.capHistory()
 	return reply, nil
+}
+
+// historyCap bounds the legacy client-side chat History (last N messages).
+// TurnText re-POSTs the whole History array on every turn, so an unbounded
+// append is an O(n^2) upload over a session the moment a caller wires it up.
+// The committed /v1/responses path (TurnTextStored + server-side state) is the
+// long-context path; this legacy /v1/chat/completions history only needs a
+// short rolling window for turn-local continuity.
+const historyCap = 20
+
+// capHistory keeps only the newest historyCap messages, dropping the oldest.
+// A fresh slice is allocated so the oversized backing array is released too.
+func (c *Conversation) capHistory() {
+	if n := len(c.History); n > historyCap {
+		c.History = append([]ChatMessage(nil), c.History[n-historyCap:]...)
+	}
 }
 
 // TurnTextStored sends a text turn via the /v1/responses path (server-side

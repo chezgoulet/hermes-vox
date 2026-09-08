@@ -2,7 +2,10 @@ package com.hermesvox
 
 import android.content.Context
 import android.util.Log
+import java.io.BufferedWriter
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,6 +27,10 @@ import java.util.Locale
 object VoxLog {
     const val TAG = "HermesVox"
     private var file: File? = null
+    // Single persistent writer held across appends (opened lazily in append mode,
+    // closed only by rotation). Guards the reopen-per-line syscall churn the old
+    // file?.appendText(...) did on every log line.
+    private var writer: BufferedWriter? = null
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     @Volatile private var debugFile = false
 
@@ -58,11 +65,22 @@ object VoxLog {
 
     private fun append(level: String, msg: String) {
         try {
-            file?.appendText("${fmt.format(Date())} [$level] $msg\n")
-            // K2: the size check runs every ~50 writes, not per line (cheap file length).
-            if (++writesSinceCheck >= SIZE_CHECK_WRITES) {
-                writesSinceCheck = 0
-                rotateIfNeeded()
+            val f = file
+            if (f == null) return
+            // All appends (main, capture, stream worker, TTS engine) serialize on the
+            // rotationLock — same lock rotation uses — so lines never interleave and
+            // rotation can never race a write.
+            synchronized(rotationLock) {
+                val w = writer
+                    ?: BufferedWriter(OutputStreamWriter(FileOutputStream(f, true), Charsets.UTF_8))
+                        .also { writer = it }
+                w.write("${fmt.format(Date())} [$level] $msg\n")
+                w.flush()   // per-line flush: keeps crash capture durable and the size check honest
+                // K2: the size check runs every ~50 writes, not per line (cheap file length).
+                if (++writesSinceCheck >= SIZE_CHECK_WRITES) {
+                    writesSinceCheck = 0
+                    rotateIfNeeded()
+                }
             }
         } catch (_: Throwable) {}
     }
@@ -75,6 +93,12 @@ object VoxLog {
         synchronized(rotationLock) {
             if (rotationDecision(cur.length(), LOG_CAP_BYTES) != LogRotation.ROTATE) return
             try {
+                // Close the persistent writer BEFORE renaming: an open handle would
+                // keep writing into the renamed .1 inode. The writer reopens lazily
+                // (append mode) on the next append, recreating a fresh current file.
+                val w = writer
+                writer = null
+                w?.close()
                 val parent = cur.parentFile ?: return
                 val gen = File(parent, cur.name + ".1")
                 if (gen.exists()) gen.delete()

@@ -1,0 +1,10 @@
+# OMH ephemeral runtime — see .omh/README.md for the convention.
+# These subdirs hold per-session state and logs; not for sharing.
+state/
+logs/
+progress/
+
+# Durable decision artifacts below are TRACKED (do NOT ignore):
+#   specs/      confirmed interview specs
+#   plans/      consensus plans (ADR-shaped)
+#   research/   research reports (if/when omh-deep-research lands)
