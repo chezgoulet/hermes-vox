@@ -397,13 +397,24 @@ func (c *HermesResponsesClient) WaitStream(streamID string, deadlineMs int) (boo
 
 // CancelStream aborts an in-flight streamed turn (the barge-in for the
 // streaming path): cancels the request context — closing the HTTP connection,
-// which aborts the gateway generation.
+// which aborts the gateway generation — AND retires the map entry.
+//
+// M1 (0.5.3): CancelStream owns the removal. The entry used to survive until a
+// done=true poll drained it (PollStreamJSON), but on a barge-in the Kotlin worker
+// breaks out of its loop (genCancelled) BEFORE that final poll, so the streamState —
+// the accumulated reply text, the buffered events, the notify channel — leaked into
+// the map for the life of the process. An interrupt-heavy session grew the native
+// heap without bound. CancelStream is the terminal operation for the stream from the
+// caller's side, so it deletes under the lock, then cancels. A later poll/wait on the
+// retired id returns the clean "no such stream" error the app already swallows, and a
+// delete racing PollStreamJSON's own done-removal is a harmless no-op.
 func (c *HermesResponsesClient) CancelStream(streamID string) error {
 	streamsMu.Lock()
 	st := streams[streamID]
+	delete(streams, streamID)
 	streamsMu.Unlock()
 	if st == nil {
-		return nil // already finished — nothing to cancel
+		return nil // already finished/retired — nothing to cancel
 	}
 	st.cancel()
 	return nil

@@ -18,19 +18,23 @@ type Conversation struct {
 	// conversation state incl. tool calls). Optional; nil-safe. When set, prefer
 	// TurnTextStored for a turn so the entity keeps full context across turns.
 	Responses *HermesResponsesClient
-	// lastResponseID is the most recent server response id, chained into the next
-	// turn (previous_response_id) so the entity keeps full context incl. tool calls.
-	lastResponseID string
+	// H2 (0.5.3): Conversation holds NO response-chain id. The chain head
+	// (previous_response_id) is owned by the CALLER — HermesSession.lastID — and
+	// passed into TurnTextStored, so the streaming voice turns and the non-streaming
+	// /compress turn ride the SAME server-side chain. A second id here was never
+	// synced with the session's: /compress compacted an empty chain, then clobbered
+	// the live one, orphaning the conversation it was meant to preserve.
 }
 
 func NewConversation(b Backend, h *HermesClient) *Conversation {
 	return &Conversation{Backend: b, Hermes: h}
 }
 
-// Reset drops the server-side response id chain and the client-side chat history,
-// starting a fresh conversation.
+// Reset drops the client-side chat history, starting a fresh conversation. The
+// server-side response chain head is owned by the caller (HermesSession.lastID —
+// see TurnTextStored / H2), so there is no chain id here to clear; the legacy
+// /v1/chat/completions History is the only client-side state.
 func (c *Conversation) Reset() {
-	c.lastResponseID = ""
 	c.History = nil
 }
 
@@ -51,19 +55,18 @@ func (c *Conversation) TurnText(ctx context.Context, text string) (string, error
 }
 
 // TurnTextStored sends a text turn via the /v1/responses path (server-side
-// conversation state). The response id is chained (previous_response_id) so the
-// entity keeps full context — including tool calls — across turns, without the
-// app managing history. This is the recommended path for Hermes Vox.
-func (c *Conversation) TurnTextStored(ctx context.Context, text string) (*ResponseResult, error) {
+// conversation state). prevID is the CALLER's current chain head, sent as
+// previous_response_id so the entity keeps full context — including tool calls —
+// across turns; the returned ResponseResult carries the NEW id to chain next.
+// H2 (0.5.3): this is STATELESS — the caller (HermesSession) owns the one chain id
+// shared with the streaming voice turns, so a non-streaming turn (e.g. /compress)
+// can no longer ride a separate, empty chain. This is the recommended path for
+// Hermes Vox.
+func (c *Conversation) TurnTextStored(ctx context.Context, text string, prevID string) (*ResponseResult, error) {
 	if c.Responses == nil {
 		return nil, fmt.Errorf("voice: no Hermes responses client configured (set Responses)")
 	}
-	res, err := c.Responses.Response(ctx, text, c.lastResponseID)
-	if err != nil {
-		return nil, err
-	}
-	c.lastResponseID = res.ResponseID
-	return res, nil
+	return c.Responses.Response(ctx, text, prevID)
 }
 
 // TurnAudio is the full voice turn: Transcribe -> Hermes -> Synthesize. Returns

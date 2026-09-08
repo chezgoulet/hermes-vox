@@ -226,3 +226,62 @@ func TestStreamStateRaceCallback(t *testing.T) {
 		t.Fatalf("response id = %q, want resp_r", res.ResponseID)
 	}
 }
+
+// TestCancelStreamRetiresMapEntry is the M1 regression: CancelStream (the barge-in)
+// must REMOVE the streamState from the map, not just cancel its context. Before the
+// fix the entry survived until a done=true poll drained it — but on a barge-in the
+// Kotlin worker breaks out (genCancelled) BEFORE that final poll, so the entry (the
+// accumulated reply text, buffered events and notify channel) leaked for the life of
+// the process. An interrupt-heavy session grew the native heap without bound.
+func TestCancelStreamRetiresMapEntry(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_c\",\"status\":\"in_progress\"}}\n\n")
+		if fl != nil {
+			fl.Flush()
+		}
+		// Hold the turn open (mid-generation) until the client cancels — the barge-in —
+		// or the test releases us. This is the state a real interrupt leaves behind.
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() { close(release); srv.Close() }()
+
+	c := NewHermesResponsesClient(srv.URL, "testkey", "hermes-agent")
+	id, err := c.StartStream("hi", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Registered on start.
+	streamsMu.Lock()
+	_, present := streams[id]
+	streamsMu.Unlock()
+	if !present {
+		t.Fatalf("stream %q not registered after StartStream", id)
+	}
+
+	// Barge-in. The entry must be gone synchronously when CancelStream returns.
+	if err := c.CancelStream(id); err != nil {
+		t.Fatal(err)
+	}
+	streamsMu.Lock()
+	_, stillPresent := streams[id]
+	streamsMu.Unlock()
+	if stillPresent {
+		t.Fatalf("stream %q still in the map after CancelStream — the M1 leak", id)
+	}
+
+	// A poll on the retired id returns the clean "no such stream" error the app swallows.
+	if _, err := c.PollStreamJSON(id); err == nil {
+		t.Fatal("PollStreamJSON after CancelStream should report no such stream")
+	}
+	// Cancelling twice is a harmless no-op (never a panic, never an error).
+	if err := c.CancelStream(id); err != nil {
+		t.Fatalf("second CancelStream = %v, want nil", err)
+	}
+}

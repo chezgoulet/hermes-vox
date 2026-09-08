@@ -131,7 +131,13 @@ func (s *HermesSession) TurnStored(text string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	res, err := s.conv.TurnTextStored(ctx, text)
+	// H2 (0.5.3): chain off the SESSION-level id (s.lastID) — the SAME chain the
+	// streaming voice turns read (StartStream) and write (PollStreamJSON). Before
+	// this, the turn rode a separate Conversation.lastResponseID that streaming never
+	// touched (always ""), so /compress — the only caller — compacted an EMPTY chain
+	// and then clobbered s.lastID with the fresh id, silently orphaning the live
+	// conversation. One source of truth: the session id.
+	res, err := s.conv.TurnTextStored(ctx, text, s.lastID)
 	if err != nil {
 		return "", err
 	}
