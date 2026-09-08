@@ -60,16 +60,17 @@ jobs:
           tar -xzf /tmp/age.tar.gz -C /tmp
           sudo mv /tmp/age/age /usr/local/bin/age
 
-      - name: Restore keystore (age-decrypt from repo, key = secret)
+      - name: Restore keystore + the sherpa AAR (age-decrypt from repo, key = secret)
         env:
           KEYSTORE_AGE_KEY: ${{ secrets.KEYSTORE_AGE_KEY }}
         run: |
-          mkdir -p keystore
+          mkdir -p keystore android/app/libs
           printf '%s' "$KEYSTORE_AGE_KEY" > /tmp/nightly.key
           age -d -i /tmp/nightly.key keystore/release.keystore.age > keystore/release.keystore
           age -d -i /tmp/nightly.key keystore/keystore.properties.age > keystore/keystore.properties
+          age -d -i /tmp/nightly.key libs/sherpa-onnx-1.13.6.aar.age > android/app/libs/sherpa-onnx-1.13.6.aar
           rm -f /tmp/nightly.key
-          echo "keystore restored: $(wc -c < keystore/release.keystore) bytes"
+          echo "keystore: $(wc -c < keystore/release.keystore) bytes; sherpa AAR: $(wc -c < android/app/libs/sherpa-onnx-1.13.6.aar) bytes"
 
       - name: Gradle cache
         uses: actions/cache@v4
