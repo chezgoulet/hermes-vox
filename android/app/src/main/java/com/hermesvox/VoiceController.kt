@@ -611,24 +611,29 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (vadSpeech) lastVadSpeechAt = readAt
                         val msSinceVadSpeech = if (lastVadSpeechAt == 0L) Long.MAX_VALUE else readAt - lastVadSpeechAt
                         if (BargeGate.decide(level.toFloat(), if (vadAvailable) vadSpeech else null, sustainedMs,
-                                bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs, msSinceVadSpeech)) {
+                                bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs, msSinceVadSpeech, peakLevel = peakRms)) {
                             VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
                             main.post { bargeIn() }
                             bargeFired = true
                             sustainedMs = 0L
                             sustainedLevelMs = 0L
-                        } else if (spk) {
+                        } else {
                             // T1 CAUSE C probe (decide false): the user is audibly there but the
                             // double gate didn't fire — either level is ABOVE the floor and the
                             // sustain is still accumulating / VAD disagrees (sustainedMs>0), or
                             // level is approaching it (>=0.7x floor) with VAD agreeing. Reuses the
                             // per-frame level/sustainedMs math; peakRms is a running max of the
                             // current near-floor run, so the calibration shows how close we got.
+                            // 0.6.9: peak tracking moved OUT of the spk-only probe — the
+                            // level-only escape needs the run PEAK in PLAYBACK too (the
+                            // 0.6.7 field failure: a soft "hey" peaked 0.110 in one frame
+                            // during playback; the probe only ran when speaking was false,
+                            // so decide() never saw the peak).
                             val nearFloor = floor * 0.7f
                             if (level >= nearFloor) { if (level > peakRms) peakRms = level.toFloat() }
                             else peakRms = 0f
-                            if ((sustainedMs > 0L || sustainedLevelMs > 0L || (vadSpeech && level >= nearFloor)) &&
+                            if (spk && (sustainedMs > 0L || sustainedLevelMs > 0L || (vadSpeech && level >= nearFloor)) &&
                                 readAt - nearMissLoggedAtMs >= BARGE_NEARMISS_WINDOW_MS) {
                                 nearMissLoggedAtMs = readAt
                                 // 0.4.0.3 blind spot closed: levelSustain= is the ESCAPE's own
