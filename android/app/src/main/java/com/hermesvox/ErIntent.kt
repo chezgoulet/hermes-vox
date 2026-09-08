@@ -110,7 +110,7 @@ object ErIntent {
             }?.trim() ?: continue
             val remainder = rest.replace(Regex("[^a-z0-9 ]"), "").trim()
             if (remainder.length < 3) return true
-            if (remainder != rest && isBackchannel(rest)) return true   // "okay, go on"
+            if (isBackchannel(rest)) return true   // "okay, go on" — opener + backchannel
         }
         return false
     }
