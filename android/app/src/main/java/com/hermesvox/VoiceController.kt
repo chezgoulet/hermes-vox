@@ -1243,13 +1243,28 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
-    fun speakGlue(text: String) {
+    fun speakGlue(text: String, critical: Boolean = false) {
         if (text.isBlank()) return
         if (!shouldSpeak()) return   // voice channel closed (or voice toggle off)
         if (speaking) return          // the authoritative reply has precedence — never talk over it
-        // One voice at a time: stop any in-flight glue before the new one so we never
-        // get two concurrent TTS (the double-voice bug). Latest narration wins.
-        stopTts()
+        // ER Phase 6: the arbiter owns the P3 admission (and P2's preempt of a
+        // P3). Non-ER or plain glue keeps today's behavior: stopTts + play.
+        val erOn = prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
+        if (erOn) {
+            val current = if (glueSpeaking) ErArbiter.Priority.P3_FILLER else null
+            val request = if (critical) ErArbiter.Priority.P2_SOUL_CRITICAL else ErArbiter.Priority.P3_FILLER
+            val d = ErArbiter.arbitrate(current, request)
+            VoxLog.d("event=er-arbiter current=${current ?: "silence"} request=$request outcome=${ErArbiter.outcomeOf(d)}")
+            when (d) {
+                is ErArbiter.Decision.Reject -> return
+                is ErArbiter.Decision.Preempt -> stopTts()   // cut the P3, play below
+                is ErArbiter.Decision.Play -> {}
+            }
+        } else {
+            // One voice at a time (pre-ER behavior): stop any in-flight glue
+            // before the new one so we never get two concurrent TTS.
+            stopTts()
+        }
         glueSpeaking = true
         main.post {
             tts?.speak(text) { glueSpeaking = false }
