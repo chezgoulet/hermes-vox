@@ -42,6 +42,10 @@ class SpeechCursor(
         for (i in charSegments.indices) {
             val segSamples = sampleSegments.getOrElse(i) { 0 }
             val segChars = charSegments[i]
+            // 0.6.4 crash guard: a zero-sample segment (a corrupt registration)
+            // would divide by zero below. Contribute its chars immediately —
+            // zero audio means "already said" for pacing purposes.
+            if (segSamples <= 0) { chars += segChars; continue }
             if (samplesPlayed >= samplesBefore + segSamples) {
                 // fully covered — the phrase has been said
                 chars += segChars

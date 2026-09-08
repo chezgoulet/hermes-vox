@@ -86,7 +86,8 @@ func TestVoiceTurnPrefixContract(t *testing.T) {
 		t.Fatalf("prefix must close with '] ' (single trailing space before user text): %q", UserTurnPrefix)
 	}
 	for _, want := range []string{
-		"2-3 sentences",
+		"2-4 sentences",
+		"do NOT re-state that you are thinking or working",
 		"no code or markdown",
 		"do NOT do exhaustive tool work",
 		"unless the caller explicitly asks",

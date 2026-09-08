@@ -77,8 +77,11 @@ class ErPresence(
             }
             ErIntent.Route.ACK_AND_YIELD -> {
                 // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
+                // 0.6.4 cadence: the ack is ONE short beat (never stacked with the
+                // model's own words — the prefix now tells the model not to re-state
+                // thinking; here we keep ours minimal and human).
                 startWindow(nowMs)
-                speakGlue(if (d.cls == ErIntent.Class.ACTION) "Let me see about that —" else "Let me think —")
+                speakGlue("Mm?")
                 VoxLog.d("er:intent=${d.cls.name.lowercase()} route=ack-yield")
             }
         }

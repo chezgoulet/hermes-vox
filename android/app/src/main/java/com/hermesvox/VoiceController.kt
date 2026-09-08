@@ -1206,6 +1206,12 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  space is exactly [spokenSb] — no drift against the rendered string. */
     private fun recordAudioSegment(text: String, samples: Int) {
         if (glueSpeaking) return
+        // 0.6.4 crash guard: the segment walk assumes sane inputs. A corrupt or
+        // zero/negative sample count (an engine race under teardown) would send
+        // SpeechCursor.of into a division by segSamples==0 → ArithmeticException
+        // → the crash Christopher saw when the reply rendered. Guard: refuse the
+        // segment, keep the cursor honest with what has already been registered.
+        if (samples <= 0 || text.isEmpty()) return
         synchronized(cursorLock) {
             val sep = if (spokenSb.isNotEmpty()) 1 else 0
             chunkStats.add(Pair(text.length + sep, samples))
