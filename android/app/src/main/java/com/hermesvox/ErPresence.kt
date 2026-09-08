@@ -164,4 +164,29 @@ class ErPresence(
         active = false
         mindStartedAt = 0L
     }
+
+    // ---- 0.6.8: the gateway-stall voice (the car-run silence fix) ----
+
+    /** The mind's stream has gone quiet for [idleMs] — SAY it's still working
+     *  (once per stall) instead of leaving the user to barge a dead turn into
+     *  silence. Tier-respecting: a natural clip in sounds mode, the in-character
+     *  lag line in spoken mode, nothing in silent mode. */
+    fun onGatewayStall(idleMs: Long) {
+        if (!active || voiceMode == "silent") return
+        // Per-stall once: a second stall notice for the SAME window is noise.
+        if (stallVoicedFor == mindStartedAt) return
+        stallVoicedFor = mindStartedAt
+        val ctx = clipContext
+        when {
+            voiceMode == "sounds" && ctx != null -> {
+                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue("still working on it — the connection's a little slow")
+                VoxLog.er("er:stall-voiced idleMs=$idleMs mode=sounds")
+            }
+            else -> {
+                speakGlue("still working on it — the connection's a little slow")
+                VoxLog.er("er:stall-voiced idleMs=$idleMs mode=spoken")
+            }
+        }
+    }
+    @Volatile private var stallVoicedFor = 0L
 }

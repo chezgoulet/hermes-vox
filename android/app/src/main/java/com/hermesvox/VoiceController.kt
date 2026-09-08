@@ -129,6 +129,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
     private val TURN_GATE_TIMEOUT_MS = 60000L
+    // 0.6.8: consecutive stream-poll errors before the turn aborts (the field
+    // poll-storm fix — 46,712 spins on a dead stream is a CPU burner). 200
+    // errors × 100ms waitStream ≈ 20s of hard failure = clearly dead.
+    private val POLL_ERROR_MAX = 200
     // T2: the gate-timeout W fires only when the gate is past its ceiling AND nothing
     // (delta/chunk/read) has happened for this long — the genuinely-stalled case.
     private val GATE_STALL_IDLE_MS = 30000L
@@ -436,7 +440,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // Noise / no-speech / non-speech (static/buzzing/[SOUND]) + too-short
                     // fragments: stop r (it must be stopped before the next startRecording)
                     // and keep listening.
-                    if (focusPause || t.isBlank() || t.length < 3 || t.startsWith("[") || t.startsWith("(")) {
+                    // 0.6.8 (the car-run field bug): the bracket filter only catches
+                    // LEADING brackets — Whisper's noise hallucinations like
+                    // "(buzzing)" or "[inaudible]" APPENDED to real speech slip
+                    // through and enter the server chain (the "replies with a
+                    // previous message" report). Strip bracketed non-speech tokens
+                    // anywhere; refuse the turn if nothing substantive remains.
+                    val cleaned = t.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
+                    if (focusPause || cleaned.isBlank() || cleaned.length < 3) {
+                        VoxLog.dd("realtime: noise-refuse raw=${if (logTranscripts()) t.take(60) else "<hidden>"}")
                         try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
@@ -447,7 +459,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // ER Phase 5: a fresh mind turn starts with an empty barge
                     // capture — only the INTERRUPTING speech may fill it.
                     synchronized(erBargeSeg) { erBargeSeg.clear() }
-                    turnUtterance = t
+                    turnUtterance = cleaned
                     val myGen = turnGen
                     val bargeRmsMin = micFloat("barge_rms_min", 0.10f)
                     // 0.6.2 echo guard: read the user-facing slider once per turn.
@@ -456,7 +468,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
                     VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
-                    main.post { runStreamedTurn(t, myGen, fromVoice = true) }
+                    main.post { runStreamedTurn(cleaned, myGen, fromVoice = true) }
                     // Single-capture barge drain. While the gate is locked we keep r
                     // recording and read frames here — compute RMS, feed the SHARED VAD,
                     // and route a barge check when `speaking` (playback mode) or
@@ -729,7 +741,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 override fun onEvent(t: Int, p: Bundle?) {}
                 override fun onResults(p: Bundle) {
                     val text = p.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: return
-                    if (text.isNotBlank()) runStreamedTurn(text, turnGen, fromVoice = true) else if (listening) listen()
+                    // 0.6.8: the same bracketed-noise strip as the on-device loop —
+                    // platform transcripts hallucinate [sound]/(buzzing) too.
+                    val cleaned = text.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
+                    if (cleaned.isNotBlank() && cleaned.length >= 3) runStreamedTurn(cleaned, turnGen, fromVoice = true) else if (listening) listen()
                 }
                 override fun onError(e: Int) {
                     if (e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || e == SpeechRecognizer.ERROR_NO_MATCH) {
@@ -832,6 +847,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // instant a delta is buffered), so a long reply was thrown away as
                 // "timeout" at event #600 (~15-20s in). The exit is wall-clock now.
                 var tries = 0
+                // 0.6.8: consecutive poll-error cap (the field poll-storm fix).
+                var pollErrors = 0
                 val deadline = android.os.SystemClock.uptimeMillis() + StreamPollGate.STREAM_TURN_TIMEOUT_MS
                 var lastEventAt = android.os.SystemClock.uptimeMillis()
                 var stall5 = false
@@ -849,8 +866,28 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // `done` is observed promptly and never padded by a poll-tick.
                     try { session.waitStream(sid, 100) } catch (e: Exception) { if (!genCancelled) VoxLog.w("event=stream-wait err=${e.message?.take(120)} gen=$gen tries=$tries") } // gomobile raises on a retired stream
                     var payload: String? = null
-                    try { payload = session.pollStreamJSON(sid) } catch (e: Exception) { if (!genCancelled && !done) VoxLog.w("event=stream-poll-error err=${e.message?.take(120)} gen=$gen tries=$tries") } // gomobile raises on error
+                    try { payload = session.pollStreamJSON(sid) } catch (e: Exception) {
+                        // 0.6.8 (the field poll-storm): a stream orphaned by process death
+                        // returns "no such stream" FOREVER, and this loop spun 46,712 times
+                        // in ~3s on it (full CPU + 38K log lines). Cap consecutive poll
+                        // errors: N in a row = the stream is dead — abort the turn with a
+                        // surfaced error instead of spinning. Any successful poll resets.
+                        if (!genCancelled && !done) {
+                            VoxLog.w("event=stream-poll-error err=${e.message?.take(120)} gen=$gen tries=$tries")
+                            pollErrors++
+                            if (pollErrors >= POLL_ERROR_MAX) {
+                                VoxLog.e("event=stream-poll-abort gen=$gen pollErrors=$pollErrors — the stream is unrecoverable; aborting the turn")
+                                main.post {
+                                    listener?.onError("hermes: the voice stream was lost (connection or gateway restart). Try again.")
+                                    listener?.onState("idle")
+                                    releaseTurnGate(gen, "stream-lost")
+                                }
+                                break
+                            }
+                        }
+                    }
                     if (payload != null) {
+                        pollErrors = 0   // a successful poll resets the consecutive-error cap
                         if (!firstByteDone) { firstByteDone = true; LatencyStats.pushFirstByte(firstByteAt - t0) }   // #40
                         val obj = JSONObject(payload)
                         val evts = obj.optJSONArray("events")
@@ -880,7 +917,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                             done = true
                             val err = obj.optString("error", "")
                             val finalText = obj.optString("text", "")
-                            VoxLog.d("turn done: gen=" + gen + " resp=" + obj.optString("response_id", "") + " len=" + finalText.length + " err=" + err.take(40))
+                            // 0.6.8: reply text in the log (when transcript logging is on)
+                            // — the "replies with a previous message" field report needs
+                            // the actual reply text to prove replay vs topical drift.
+                            val replyEvidence = if (logTranscripts()) finalText.take(100) else ""
+                            VoxLog.d("turn done: gen=" + gen + " resp=" + obj.optString("response_id", "") + " len=" + finalText.length + " err=" + err.take(40) + (if (replyEvidence.isNotBlank()) " text=$replyEvidence" else ""))
                             if (err.isBlank()) noteLiveAuthorized() else noteLiveFailure(err)
                             if (err.isNotBlank()) {
                                 stopStreaming()   // abort: close the streaming worker + release the track
