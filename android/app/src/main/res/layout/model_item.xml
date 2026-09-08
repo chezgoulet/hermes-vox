@@ -42,11 +42,22 @@
         android:text="—"
         style="@style/TextVox.Label" />
 
+    <!-- #16: the model's plain-language purpose, next to the state/size lines. -->
+    <TextView
+        android:id="@+id/mi_purpose"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="—"
+        android:textAllCaps="false"
+        android:textColor="@color/hv_text_dim"
+        android:textSize="12sp" />
+
     <TextView
         android:id="@+id/mi_size"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="4dp"
         android:text="—"
         style="@style/TextVox.Label" />
 
