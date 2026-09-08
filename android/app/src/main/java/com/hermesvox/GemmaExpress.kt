@@ -21,7 +21,7 @@ import java.io.File
 class GemmaExpress(private val context: Context) : VoxExpress {
 
     private var llm: Engine? = null
-    private var loaded = false
+    @Volatile private var loaded = false
     private val fallback = RoutedExpress()
 
     override val available: Boolean get() = loaded
@@ -40,6 +40,17 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /** Load the on-device LiteRT-LM model (async, device/GPU). onReady(true) when loaded. */
     fun load(onReady: (Boolean) -> Unit) {
+        // 0.6.2 field log (hermes-vox-merged: two "GemmaExpress loaded" lines 105ms
+        // apart): onResume calls handleModeUi, and handleModeUi ran BEFORE the first
+        // load's thread set loaded=true — so the availability check raced and the
+        // model initialized TWICE (double memory on a phone, and a window where two
+        // Engines could serve generations). Guard: one in-flight load; every caller
+        // during it is chained onto the same completion.
+        if (loaded) { onReady(true); return }
+        synchronized(loadLock) {
+            if (loading) { onReady(false); return }   // a chained caller gets the next onResume
+            loading = true
+        }
         kotlin.concurrent.thread {
             try {
                 if (!modelFile.exists()) { loaded = false; onReady(false); return@thread }
@@ -51,9 +62,13 @@ class GemmaExpress(private val context: Context) : VoxExpress {
             } catch (e: Throwable) {
                 VoxLog.e("GemmaExpress load failed: ${e.message}")
                 loaded = false; llm = null; onReady(false)
+            } finally {
+                synchronized(loadLock) { loading = false }
             }
         }
     }
+    private val loadLock = Object()
+    @Volatile private var loading = false
 
     override fun express(intent: String, content: String, tone: String): String {
         val engine = llm
