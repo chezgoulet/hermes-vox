@@ -80,7 +80,7 @@ class SettingsActivity : AppCompatActivity() {
         // refreshed from modeLabel() by refreshFlowVals() (see refreshFlowVals).
         findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
             pick("Voice mode",
-                arrayOf("Realtime", "Enhanced Realtime"),
+                arrayOf("Realtime", "Enhanced Realtime (alpha)"),
                 arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
                 ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val)
         }
@@ -364,7 +364,7 @@ class SettingsActivity : AppCompatActivity() {
         else -> "On-device (offline)"
     }
     private fun modeLabel(tok: String): String = when (tok) {
-        ModelCatalog.MODE_ENHANCED -> "Enhanced Realtime"
+        ModelCatalog.MODE_ENHANCED -> "Enhanced Realtime (alpha)"
         else -> "Realtime"   // a stale stored token reads as Realtime (never crashes)
     }
 
