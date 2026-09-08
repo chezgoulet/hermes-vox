@@ -13,6 +13,7 @@ import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.pow
@@ -271,6 +272,23 @@ class AvatarView @JvmOverloads constructor(
     private val cellX = FloatArray(3)
     private val cellY = FloatArray(3)
     private val cellR = FloatArray(3)
+    // A_TAKU: the octopus transport state machine. A small phase machine (0 = WANDER,
+    // 1 = FIXATE, 2 = MOVE-ON) driving a persistent BODY OFFSET (ox,oy) that eases
+    // toward [tox,toy], plus an eased heading [hAng]->[thAng] and the travelled arm
+    // wave. All primitives, allocated once; phase changes set a target and let the
+    // ease fly. hCS/hSN bake heading-cos/sin per frame for the particle loop.
+    private val T_PH_WANDER = 0
+    private val T_PH_FIXATE = 1
+    private val T_PH_MOVEO = 2
+    private var takuPhase = T_PH_WANDER
+    private var takuT = 0f
+    private var ox = 0f; private var oy = 0f
+    private var tox = 0f; private var toy = 0f
+    private var hAng = 0f; private var thAng = 0f
+    private var hCS = 1f; private var hSN = 0f
+    private var armPh = 0f; private var armBoost = 0.15f
+    private var fx = 0f; private var fy = 0f
+    private var lastWand = -1
 
     // Idle appearance: a user-picked shape/theme ("aura" = default dispersed breathing)
     // + optional auto-cycle so the being stays alive between turns.
@@ -842,8 +860,91 @@ class AvatarView @JvmOverloads constructor(
                             (1f + 0.22f * fsin(time * 0.9f + cf * 1.9f))
                 }
             }
+            A_TAKU -> {
+                takuTick(dt)
+                hCS = fcos(hAng); hSN = fsin(hAng)
+            }
             else -> {}
         }
+    }
+
+    /** Wave 1 (A_TAKU): the octopus transport machine — Christopher's WANDER / FIXATE /
+     *  MOVE-ON. Runs once per frame, allocates nothing. Phase changes set a target; the
+     *  body offset (ox,oy) and heading (hAng) ease toward it, so the octopus glides
+     *  along a curved drift, then pauses and orients toward an "interesting" point, then
+     *  releases and resumes wandering. The lead tentacles' flex couples to the heading
+     *  delta (reads as propulsion: arms push, body glides). */
+    private fun takuTick(dt: Float) {
+        // heading ease (shortest-way wrap)
+        val g = thAng - hAng
+        val dg = if (g > 3.14159f) g - TAU else if (g < -3.14159f) g + TAU else g
+        hAng += (dg * (dt * 2.2f).coerceIn(0f, 1f)).toFloat()
+        // body offset ease — the GLIDE. Slow, so the drift is a curved path, not a slide.
+        ox += (tox - ox) * (dt * 0.55f).coerceIn(0f, 1f)
+        oy += (toy - oy) * (dt * 0.55f).coerceIn(0f, 1f)
+        // keep the figure inside its field (a right-lean must never leave the screen)
+        val lim = bodyR * 0.62f
+        ox = ox.coerceIn(-lim, lim)
+        oy = oy.coerceIn(-lim * 0.7f, lim * 0.7f)
+        // lead-tentacle flex: big while FIXATING (arms "working"), otherwise lifts with
+        // how hard the octopus is turning. This is the propulsion read.
+        val turn = minOf(1f, kotlin.math.abs(dg) * 0.45f)
+        val wantB = if (takuPhase == T_PH_FIXATE) 1.6f else 0.15f + 1.2f * turn
+        armBoost += (wantB - armBoost) * (dt * 2.6f).coerceIn(0f, 1f)
+        // the arm wave travels base->tip; quicker the harder the tentacles work
+        armPh = wrapTau(armPh + dt * (2.2f + 1.3f * armBoost))
+
+        when (takuPhase) {
+            T_PH_WANDER -> {
+                // meander: retarget the drift on a ~4.3s bucket; some buckets decide the
+                // being has spotted something interesting and it flips into FIXATE.
+                val b = (time * 0.23f).toInt()
+                if (b != lastWand) {
+                    lastWand = b
+                    tox = (hash(b.toFloat(), 0, 23) - 0.5f) * 2f * bodyR * 0.55f
+                    toy = (hash(b.toFloat(), 2, 31) - 0.5f) * 2f * bodyR * 0.38f
+                    thAng = atan2(toy - oy, tox - ox)
+                    if (hash(b.toFloat(), 5, 37) > 0.62f) beginFixate(b)
+                }
+            }
+            T_PH_FIXATE -> {
+                // hover a beat, oriented on the interesting point; tentacles keep working.
+                takuT += dt
+                if (takuT > 2.1f) beginMoveOn()
+            }
+            else -> {
+                // MOVES ON: release — a committed turn away, then back to wandering.
+                takuT += dt
+                if (takuT > 0.8f) {
+                    takuPhase = T_PH_WANDER
+                    takuT = 0f
+                    lastWand = -1               // next frame picks a fresh drift
+                }
+            }
+        }
+    }
+
+    private fun beginFixate(b: Int) {
+        takuPhase = T_PH_FIXATE
+        takuT = 0f
+        // an "interesting" point appears somewhere near the field; the body freezes its
+        // drift target (hover) and orients the nose toward it.
+        fx = (hash(b.toFloat(), 1, 41) - 0.5f) * 2f
+        fy = (hash(b.toFloat(), 3, 43) - 0.5f) * 1.6f
+        tox = ox; toy = oy
+        val pxp = cx + fx * bodyR * 1.1f
+        val pyp = cy + fy * bodyR * 0.9f
+        thAng = atan2(pyp - (cy + oy), pxp - (cx + ox))
+    }
+
+    private fun beginMoveOn() {
+        takuPhase = T_PH_MOVEO
+        takuT = 0f
+        // release: break the gaze (a committed 180 turn) and coast toward a fresh spot.
+        thAng = hAng + PI.toFloat()
+        val b = (time * 0.23f).toInt()
+        tox = (hash(b.toFloat(), 0, 23) - 0.5f) * 2f * bodyR * 0.55f
+        toy = (hash(b.toFloat(), 2, 31) - 0.5f) * 2f * bodyR * 0.38f
     }
 
     /** 0.5.2 (A3): while cycle-all is on, dwell CYCLE_ALL_SEC on each family then advance to
@@ -945,6 +1046,7 @@ class AvatarView @JvmOverloads constructor(
             A_WAVEform -> { haloW = bodyR * 2.25f; haloH = bodyR * 0.85f }
             A_SEEKER -> { haloW = bodyR * 1.75f; haloH = bodyR * 1.05f }
             A_BORE -> { haloW = bodyR * 2.1f; haloH = bodyR * 1.0f }
+            A_TAKU -> { haloW = bodyR * 2.0f; haloH = bodyR * 1.55f }
             else -> {}
         }
     }
@@ -989,6 +1091,7 @@ class AvatarView @JvmOverloads constructor(
             A_SEEKER -> { springK = 32f; flowGain = 7.0f; tremor = 3.3f; spinMul = 0.10f }
             A_BORE -> { springK = 30f; flowGain = 8.0f; tremor = 3.6f; spinMul = 0.10f }
             A_RADAR -> { springK = 38f; flowGain = 4.5f; tremor = 2.2f; spinMul = 0.50f }
+            A_TAKU -> { springK = 36f; flowGain = 6.0f; tremor = 2.6f; spinMul = 0.10f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1311,6 +1414,50 @@ class AvatarView @JvmOverloads constructor(
                     val a3 = frac(p.u * 1.813f + c * 2.3f) * TAU
                     ftx = cellX[c] + fcos(a3) * rr3 + p.jx * br * 0.05f
                     fty = cellY[c] + fsin(a3) * rr3 * 0.92f + p.jy * br * 0.05f
+                }
+            }
+            A_TAKU -> {
+                // idle "octopus": a limb-propelled being that ROAMS. Every coordinate here
+                // orbits a persistent BODY OFFSET (ox,oy) eased by the transport machine
+                // (WANDER -> FIXATE -> MOVE-ON), so it travels — no other archetype moves
+                // its centre. Local +x is the heading (hCS,hSN): a dense bell-head forward,
+                // 5-8 tentacles trailing behind, each a chain carrying a travelling sine
+                // whose flex rides armBoost — the "working" beat while fixating, and the
+                // push that reads as propulsion while it meanders.
+                val obx = cx + ox; val oby = cy + oy
+                val hc = hCS; val hs = hSN
+                if (p.u < 0.36f) {
+                    // bell head: a dense cap; brighter and livelier while it works.
+                    val pulse = 1f + 0.06f * breath + 0.10f * armBoost
+                    val hrad = br * (0.08f + 0.30f * p.hr) * pulse
+                    val a = frac(p.u * 2.618f + p.hr * 0.37f) * TAU
+                    val lx = fcos(a) * hrad
+                    val ly = fsin(a) * hrad * 0.86f
+                    ftx = obx + lx * hc - ly * hs
+                    fty = oby + lx * hs + ly * hc
+                } else {
+                    // 5-8 tentacles fanned out behind the bell, each a chain running
+                    // base->tip carrying the travelling arm wave.
+                    val nt = 5 + (seed % 4)
+                    val uu = (p.u - 0.36f) / 0.64f
+                    var t = (uu * nt).toInt()
+                    if (t >= nt) t = nt - 1
+                    val q = frac(uu * nt)                    // 0 base -> 1 tip
+                    val th = 3.14159f + (t / (nt - 1f) - 0.5f) * 1.7f   // rear fan
+                    val rh = br * 0.30f
+                    val rx = fcos(th) * rh; val ry = fsin(th) * rh
+                    val len = br * (0.55f + 0.28f * hash(t.toFloat(), 4, seed))
+                    val dx = fcos(th); val dy = fsin(th)
+                    // travelling sine down the arm; flex grows toward the tip & with work
+                    val flex = br * (0.06f + 0.17f * q) * (0.4f + 0.6f * armBoost) *
+                            (1f + 0.6f * fsin(phHarm * 0.8f + t * 1.3f))
+                    val wv = fsin(q * 7.0f - armPh * 1.7f + t * 1.3f)
+                    val wdt = (p.hr - 0.5f) * br * 0.05f * (1f - q)
+                    val lat = wv * flex + wdt
+                    val lx = rx + dx * len * q - dy * lat
+                    val ly = ry + dy * len * q + dx * lat
+                    ftx = obx + lx * hc - ly * hs
+                    fty = oby + lx * hs + ly * hc
                 }
             }
             else -> {
