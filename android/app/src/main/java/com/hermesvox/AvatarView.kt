@@ -136,7 +136,7 @@ class AvatarView @JvmOverloads constructor(
         /** Kept for API parity (Settings lists these as the presence themes). */
         val SHAPES = listOf("iris", "listening", "vortex", "scan", "bracket",
             "constellation", "lumen", "waveform", "bloom",
-            "soundwave", "arc", "nucleus", "eye", "water", "radar", "octopus")
+            "soundwave", "arc", "nucleus", "eye", "water", "radar", "octopus", "sphere")
 
         // ---- video-statewire (Edit 1/2): the SHAPE vocabulary + the per-state shape
         // ---- prefs. The LABELS/TOKENS pair is the single source of truth for every
@@ -145,10 +145,10 @@ class AvatarView @JvmOverloads constructor(
         // ---- the picker vocabulary and the rendered shapes can never drift apart.
         val SHAPE_LABELS = arrayOf("Aura", "Iris", "Vortex", "Waveform", "Scan", "Constellation",
             "Bracket", "Flame", "Ribbon", "Infall", "Bloom", "Soundwave", "Arc", "Nucleus",
-            "Eye", "Water", "Radar", "Octopus")
+            "Eye", "Water", "Radar", "Octopus", "Sphere")
         val SHAPE_TOKENS = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
             "bracket", "flame", "ribbon", "infall", "bloom", "soundwave", "arc", "nucleus",
-            "eye", "water", "radar", "octopus")
+            "eye", "water", "radar", "octopus", "sphere")
         /** Per-state shape tokens (Settings -> Visuals). An ACTIVE state renders as the
          *  archetype the user picked here, DEFAULTING to the Wave 1 semantic fits below
          *  so the being fires soundwave/eye/radar in context out of the box. Stored in
@@ -221,6 +221,7 @@ class AvatarView @JvmOverloads constructor(
         private const val A_BORE = 17      // idle "water": an all-over liquid ripple field
         private const val A_RADAR = 18     // idle "radar": range rings + sweep + storm cells
         private const val A_TAKU = 19      // idle "octopus": a travelling, limb-propelled being
+        private const val A_SPHERE = 20    // idle "sphere": a full ball that bounces + spins
     }
 
     private val parts = ArrayList<P>(COUNT)
@@ -291,6 +292,11 @@ class AvatarView @JvmOverloads constructor(
     // (1 = open, dips to 0 at the close). Set once per frame in refreshNewShapes.
     private var pupX = 0f; private var pupY = 0f
     private var blinkEnv = 1f
+    // A_SPHERE: the full ball's continuous bounce (a lazy orbit offset) + spin angle.
+    // The ball drifts on a slow ellipse and spins about its own axis (spinCS/SN via the
+    // shared oscillator), so it reads as a rolling/tumbling ball rather than a fixed one.
+    private var sphOx = 0f; private var sphOy = 0f
+    private var sphSpin = 0f; private var sphCS = 1f; private var sphSN = 0f
     // A_RADAR: the 3 storm cells' drift centres + pulsing radii, baked once per frame.
     private val cellX = FloatArray(3)
     private val cellY = FloatArray(3)
@@ -848,13 +854,14 @@ class AvatarView @JvmOverloads constructor(
         "water" -> A_BORE
         "radar" -> A_RADAR
         "octopus" -> A_TAKU
+        "sphere" -> A_SPHERE
         else -> null             // "hearth"/"drift"/unknown -> A_ORB
     }
 
     /** A const array, not listOf(): this is read every idle frame and must not allocate. */
     private val cycleList = arrayOf("aura", "iris", "vortex", "waveform", "scan", "constellation",
         "bracket", "flame", "ribbon", "infall", "bloom", "soundwave", "arc", "nucleus",
-        "eye", "water", "radar", "octopus")
+        "eye", "water", "radar", "octopus", "sphere")
     private fun cyclingTheme(t: Float): String = cycleList[((t / cycleSec).toInt()).mod(cycleList.size)]
 
     /** Advance every oscillator. Wrapped, so precision never decays over a long session. */
@@ -927,6 +934,15 @@ class AvatarView @JvmOverloads constructor(
                 val per = 3.1f + 1.7f * hash((time * 0.18f).toInt().toFloat(), 5, 19)
                 val bg = frac(time / per)
                 blinkEnv = if (bg < 0.045f) fsin(bg / 0.045f * 3.14159f) else 1f
+            }
+            A_SPHERE -> {
+                // lazy orbit bounce: the ball drifts on a slow ellipse, not a fixed centre.
+                sphOx = fsin(time * 0.41f) * bodyR * 0.16f
+                sphOy = fcos(time * 0.31f) * bodyR * 0.10f
+                // continuous spin about its own axis (a slow roll), so no two frames hold
+                // the same surface — it reads as a turning ball, not a frozen picture.
+                sphSpin += dt * 0.55f
+                sphCS = fcos(sphSpin); sphSN = fsin(sphSpin)
             }
             A_RADAR -> {
                 // the 3 storm cells: slow translating lissajous-ish centres + pulsing
@@ -1133,6 +1149,7 @@ class AvatarView @JvmOverloads constructor(
             A_SEEKER -> { haloW = bodyR * 1.75f; haloH = bodyR * 1.05f }
             A_BORE -> { haloW = bodyR * 2.1f; haloH = bodyR * 1.0f }
             A_TAKU -> { haloW = bodyR * 2.0f; haloH = bodyR * 1.55f }
+            A_SPHERE -> { haloW = bodyR * 1.95f; haloH = bodyR * 1.95f }
             else -> {}
         }
     }
@@ -1178,6 +1195,7 @@ class AvatarView @JvmOverloads constructor(
             A_BORE -> { springK = 30f; flowGain = 8.0f; tremor = 3.6f; spinMul = 0.10f }
             A_RADAR -> { springK = 38f; flowGain = 4.5f; tremor = 2.2f; spinMul = 0.50f }
             A_TAKU -> { springK = 36f; flowGain = 6.0f; tremor = 2.6f; spinMul = 0.10f }
+            A_SPHERE -> { springK = 34f; flowGain = 7.0f; tremor = 2.8f; spinMul = 0.20f }
             else -> { springK = 26f; flowGain = 6.5f; tremor = 3.2f; spinMul = 0.60f }
         }
         // The category's motion character (x the user's energy slider). It scales the
@@ -1429,36 +1447,57 @@ class AvatarView @JvmOverloads constructor(
                     fty = cy + ryn * rr * nucTilt[band] + p.jy * br * 0.06f
                 }
             }
-            A_SEEKER -> {
-                // idle "eye": the being is a SPHERE — a ball. When it looks, the whole
-                // ball ROTATES in 3D so the iris (a cap on its front pole) swings to face
-                // the target and the sclera foreshortens around it. The silhouette stays a
-                // ball; the texture turns INSIDE it. Not a flat sticker sliding over a
-                // plane (that's the "egg cracked on a table" look — wrong for a sphere).
-                val maxAng = 0.55f                    // just a few deg; iris moves a little
-                val a = pupX * maxAng                 // horizontal look (rotate about Y)
-                val b = pupY * maxAng                 // vertical look (rotate about X)
-                val ca = fcos(a); val sa = fsin(a)
-                val cb = fcos(b); val sb = fsin(b)
-                // base position on the unit sphere: front pole (+z) faces the viewer.
-                // iris = a small cap near the pole; sclera = the rest of the visible ball.
-                val az = p.u * TAU
-                val pf = PI.toFloat()                  // PI is a Double; keep this in Float
+            A_SPHERE -> {
+                // idle "sphere": a FULL ball that bounces + spins. Every particle sits on
+                // the surface of a unit sphere (front pole +z faces the viewer); the whole
+                // ball bounces on a lazy orbit (sphOx/sphOy) and spins about its own axis
+                // (sphCS/sphSN), so it reads as a rolling, tumbling ball — a genuinely
+                // distinct shape from the eye, which is only the exposed stripe.
+                val a2 = sphOx; val b2 = sphOy
+                val sc = sphCS; val ss = sphSN
+                val pf = PI.toFloat()
+                val az = p.u * TAU + sphSpin                 // azimuth spins with the ball
                 val ph = if (p.accent) p.hr * 0.36f * pf
                          else 0.16f * pf + p.hr * 0.84f * pf
                 val sp = fsin(ph)
                 val bx = sp * fcos(az)
                 val by = sp * fsin(az)
                 val bz = fcos(ph)
-                // rotate about Y (horizontal look), then about X (vertical look)
-                val rx = bx * ca + bz * sa
-                val rz1 = -bx * sa + bz * ca
-                val ry = by * cb + rz1 * sb
-                val rz = -by * sb + rz1 * cb
-                // orthographic projection; blink squashes vertically (eyelid close)
-                val rr = br
-                ftx = cx + rx * rr
-                fty = cy + ry * rr * blinkEnv
+                // spin the ball about the viewing axis (a roll), then project.
+                val rx0 = bx * sc - by * ss
+                val ry0 = bx * ss + by * sc
+                val rr0 = br
+                ftx = cx + a2 + rx0 * rr0
+                fty = cy + b2 + ry0 * rr0
+            }
+            A_SEEKER -> {
+                // idle "eye": the being is AWARE — but the eye is only the exposed SLICE of
+                // the sphere, the almond "stripe" the eyelid reveals — NOT the whole ball.
+                // The iris is a cluster of accent particles dead-center of that stripe;
+                // the sclera fills the almond around it. When it glances, the WHOLE stripe
+                // shifts (they're one surface) so the iris stays centered and the sclera
+                // foreshortens — like a stripe on a beach ball, not a full globe.
+                val ew = br * 0.92f; val eh = br * 0.42f * blinkEnv
+                // a slight sphere-bend on sclera: y scales toward the rim so the stripe
+                // curves like it sits on a ball, not a flat band.
+                val lookP = 1f + 0.14f * (pupX * pupX + pupY * pupY)
+                if (p.accent) {
+                    // iris: a tight cluster at the CENTER of the stripe, riding the glance.
+                    val ir = br * (0.05f + 0.085f * p.hr) * blinkEnv
+                    val aa = frac(p.u * 2.618f + p.hr * 1.9f) * TAU
+                    val cxk = cx + pupX * ew * 0.30f
+                    val cyk = cy + pupY * eh * 0.30f
+                    ftx = cxk + fcos(aa) * ir
+                    fty = cyk + fsin(aa) * ir * 0.9f
+                } else {
+                    // sclera: the almond stripe around the iris, curving like beach-ball.
+                    val xf = frac(p.u * 2.618f + 0.13f) * 2f - 1f
+                    val yf = frac(p.hr * 1.618f + 0.57f) * 2f - 1f
+                    val yh = eh * sqrt((1f - xf * xf).coerceAtLeast(0f))
+                    val bend = 1f - 0.10f * xf * xf   // strip curves down at the rim
+                    ftx = cx + pupX * ew * 0.30f + xf * ew * 0.96f * lookP
+                    fty = cy + pupY * eh * 0.30f + yf * yh * bend
+                }
             }
             A_BORE -> {
                 // idle "water": the whole field becomes a liquid surface. Two
