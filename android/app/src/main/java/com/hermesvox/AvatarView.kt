@@ -152,7 +152,8 @@ class AvatarView @JvmOverloads constructor(
         /** Sprite-cache capacity. Bumped from 16 for 0.5.2: a cycle-all crossfade walks
          *  the eased colour through ~10 quantised steps while the light model (edge /
          *  coreHeat) walks through a couple of buckets, so a fixed category and a moving
-         *  one both stay resident without thrashing. Bounded, cleared on overflow. */
+         *  one both stay resident without thrashing. Bounded, LRU — an overflow evicts
+         *  one sprite at a time instead of clearing the whole cache. */
         private const val CACHE_CAP = 48
         /** How far back the Comet category's trail sprite sits, in seconds of the
          *  particle's own velocity. ~2 frames at 30fps. */
@@ -217,9 +218,17 @@ class AvatarView @JvmOverloads constructor(
     // ---- sprite caches, keyed by the QUANTIZED colour. Colours are eased continuously,
     // ---- so a transition bakes a handful of sprites and then every lookup hits. Bounded,
     // ---- and never consulted inside the particle loop (base/accent are resolved to two
-    // ---- Bitmap references once per frame).
-    private val glowCache = HashMap<Int, Bitmap>(CACHE_CAP * 2)
-    private val haloCache = HashMap<Int, Bitmap>(CACHE_CAP * 2)
+    // ---- Bitmap references once per frame). Access-ordered LRU: an overflow evicts the
+    // ---- single least-recently-used entry (removeEldestEntry) instead of clear()ing, so a
+    // ---- crossfade crossing the cap re-bakes one sprite a frame, never the whole cache.
+    private val glowCache = object : LinkedHashMap<Int, Bitmap>(CACHE_CAP, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>?): Boolean =
+            size > CACHE_CAP
+    }
+    private val haloCache = object : LinkedHashMap<Int, Bitmap>(CACHE_CAP, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>?): Boolean =
+            size > CACHE_CAP
+    }
 
     // ---- reused scratch. One RectF for every sprite blit, so the draw loop allocates
     // ---- nothing at all.
@@ -439,14 +448,12 @@ class AvatarView @JvmOverloads constructor(
     private fun glowFor(color: Int): Bitmap {
         val k = spriteKey(color)
         glowCache[k]?.let { return it }
-        if (glowCache.size >= CACHE_CAP) glowCache.clear()
         return glowBitmap(qColor(color), GLOW_PX, false).also { glowCache[k] = it }
     }
 
     private fun haloFor(color: Int): Bitmap {
         val k = spriteKey(color)
         haloCache[k]?.let { return it }
-        if (haloCache.size >= CACHE_CAP) haloCache.clear()
         return glowBitmap(qColor(color), HALO_PX, true).also { haloCache[k] = it }
     }
 

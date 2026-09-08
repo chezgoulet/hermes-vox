@@ -58,14 +58,14 @@ class ModelDownloader(private val context: Context) {
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
         }
-        conn.connect()
-        if (conn.responseCode != 200) return "HTTP ${conn.responseCode} for $urlStr"
-        val totalL: Long = conn.contentLengthLong
-        if (totalL < 0) return "unknown-length"
-
         val tmp = File(context.filesDir, "${spec.id}.part")
         var tmpDir: File? = null
         try {
+            conn.connect()
+            if (conn.responseCode != 200) return "HTTP ${conn.responseCode} for $urlStr"
+            val totalL: Long = conn.contentLengthLong
+            if (totalL < 0) return "unknown-length"
+
             var dl = 0L
             FileOutputStream(tmp).use { out ->
                 BufferedInputStream(conn.inputStream).use { inp ->
@@ -82,7 +82,6 @@ class ModelDownloader(private val context: Context) {
                     listener.onProgress(spec.id, dl, totalL)
                 }
             }
-            conn.disconnect()
             if (cancelled) { tmp.delete(); return "cancelled" }
 
             if (dl != totalL) { tmp.delete(); return "truncated download" }
@@ -91,7 +90,13 @@ class ModelDownloader(private val context: Context) {
             val digest = sha256(tmp)
             if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch" }
 
-            val tmpDir = File(context.filesDir, spec.id + ".tmp"); tmpDir.deleteRecursively(); tmpDir.mkdirs(); unpkg(tmp, tmpDir, spec.file, spec.id); val dir = ModelCatalog.modelDir(context, spec.id); dir.deleteRecursively(); dir.parentFile?.mkdirs(); if (!tmpDir.renameTo(dir)) { tmpDir.deleteRecursively(); return "unpack swap failed" }; return null
+            tmpDir = File(context.filesDir, spec.id + ".tmp")
+            tmpDir.deleteRecursively(); tmpDir.mkdirs()
+            unpkg(tmp, tmpDir, spec.file, spec.id)
+            val dir = ModelCatalog.modelDir(context, spec.id)
+            dir.deleteRecursively(); dir.parentFile?.mkdirs()
+            if (!tmpDir.renameTo(dir)) { tmpDir.deleteRecursively(); return "unpack swap failed" }
+            return null
         } catch (e: Throwable) {
             tmpDir?.deleteRecursively()
             tmp.delete()
@@ -99,6 +104,7 @@ class ModelDownloader(private val context: Context) {
         } finally {
             tmpDir?.deleteRecursively()
             tmp.delete()
+            conn.disconnect()
         }
     }
 

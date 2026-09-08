@@ -1364,14 +1364,23 @@ class VoiceController(private val context: Context, private val session: HermesS
         } catch (e: Throwable) { out += "\nping error: " + e.message }
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
-            c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
-            c.setRequestProperty("Authorization", "Bearer " + k)
-            c.setRequestProperty("Content-Type", "application/json")
-            val payload = "{\"model\":\"\",\"input\":\"hello\",\"stream\":true}"
-            c.outputStream.use { it.write(payload.toByteArray()) }
-            val code = c.responseCode
-            val body = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            out += "\nstream -> " + code + " " + body.take(200)
+            try {
+                c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
+                c.setRequestProperty("Authorization", "Bearer " + k)
+                c.setRequestProperty("Content-Type", "application/json")
+                // M2: the conn-test probe must NOT make the entity think. The old payload
+                // {"model":"","input":"hello","stream":true} POSTed a REAL generation (an
+                // empty-model route -> the default entity answers "hello") and then walked
+                // away. Now: stream OFF and NO input — reachability + auth only, nothing
+                // for the model to respond to.
+                val payload = "{\"model\":\"\",\"stream\":false}"
+                c.outputStream.use { it.write(payload.toByteArray()) }
+                val code = c.responseCode
+                val body = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                out += "\nstream -> " + code + " " + body.take(200)
+            } finally {
+                c.disconnect()
+            }
         } catch (e: Throwable) { out += "\nstream error: " + e.message }
         VoxLog.d("conn-test: " + out)
         return out
@@ -1379,7 +1388,8 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /**
      * ONE probe of the gateway, as two legs: a GET /v1/models ping and (optionally) a
-     * POST /v1/responses stream open. Returns the classified outcome — reachable and
+     * POST /v1/responses stream-off probe (no input — M2: the probe never makes the
+     * entity generate). Returns the classified outcome — reachable and
      * ready, reachable and cold, reachable and rejecting the key, or genuinely
      * unreachable — instead of a bare boolean pair.
      *
@@ -1390,8 +1400,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      * carries no message the log said `ping=false(unknown) stream=false(unknown)`: a
      * failure verdict for a test that never ran.
      *
-     * [includeStream] = false is the light dial the main screen uses (ping only), so
-     * opening the app never fires a real model turn just to colour a pill.
+     * [includeStream] = false is the light dial the main screen uses (ping only).
+     * The heavy dial adds the POST leg — but neither dial ever fires a real model
+     * turn (M2): the POST is a stream-off, no-input probe, reachability + auth only.
      */
     fun probeConnection(includeStream: Boolean): ConnectionPhase.Probe {
         // The DECRYPTED key — the same credential the live stream sends. See
@@ -1413,11 +1424,24 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (includeStream) {
             try {
                 val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
-                c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
-                c.setRequestProperty("Authorization", "Bearer " + k)
-                c.setRequestProperty("Content-Type", "application/json")
-                c.outputStream.use { it.write("{\"model\":\"\",\"input\":\"hello\",\"stream\":true}".toByteArray()) }
-                streamCode = c.responseCode
+                try {
+                    c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
+                    c.setRequestProperty("Authorization", "Bearer " + k)
+                    c.setRequestProperty("Content-Type", "application/json")
+                    // M2: the probe must NOT make the entity think. The old payload
+                    // {"model":"","input":"hello","stream":true} POSTed a REAL generation
+                    // (empty-model route -> the default entity answers "hello") and then
+                    // abandoned it. Now: stream OFF and no input — reachability + auth
+                    // only, nothing for the model to respond to.
+                    val payload = "{\"model\":\"\",\"stream\":false}"
+                    c.outputStream.use { it.write(payload.toByteArray()) }
+                    streamCode = c.responseCode
+                    // Close the response body as well, so no server-side run is left
+                    // streaming on for nobody once the status line has been read.
+                    try { (if (streamCode >= 400) c.errorStream else c.inputStream)?.close() } catch (_: Throwable) {}
+                } finally {
+                    c.disconnect()
+                }
             } catch (e: Throwable) {
                 streamRe = ConnectionPhase.reason(e.javaClass.simpleName, e.message)
             }
