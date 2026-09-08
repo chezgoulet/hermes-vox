@@ -244,7 +244,8 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.set_appearance_grpval)?.text = label("theme", "system")
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
                 VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
-            findViewById<TextView>(R.id.set_about_grpval)?.text = getString(R.string.app_name) + " " + BuildConfig.VERSION_NAME
+            findViewById<TextView>(R.id.set_about_grpval)?.text =
+                getString(R.string.app_name) + " " + versionName()
         } catch (_: Throwable) {
             // never let a subtitle populate crash the settings screen
         }
@@ -252,6 +253,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun connectionLine(url: String): String =
         if (url.isBlank()) "not configured" else "connected"
+
+    // The About row's version subtitle. Uses PackageManager (no BuildConfig dependency —
+    // the C0 release guard rejects buildConfigField key injection, and BuildConfig is
+    // not reliably generated). Falls back to the label on any failure.
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+    } catch (_: Throwable) { "" }
 
     // #118: the Speech & Mic "Advanced — timing tuning" chip collapses/expands the
     // panel of VAD/barge-timing sliders (collapsed by default, progressive disclosure).
