@@ -34,6 +34,9 @@ class ErPresence(
     /** Latches for the current mind-work window. */
     @Volatile private var mindStartedAt = 0L
     private val fillerTimes = ArrayList<Long>()
+    // 0.6.5: monotonic count of LAG lines said THIS window — the fail-soft line
+    // must be once per window (the 3s trailing count let it repeat forever).
+    private val lagSaidCount = object { var value = 0 }
     private var lastRoute: ErIntent.Route = ErIntent.Route.ACK_AND_YIELD
     // ER Phase 7: what the soul already voiced this turn (the drift-sync log
     // the mind sees so it doesn't re-state confirmations).
@@ -65,7 +68,7 @@ class ErPresence(
                 // The patient user. No escalation, no filler; a soft in-register
                 // ack (P3, cuttable by a real barge) at most.
                 speakGlue("okay — take the time you need")
-                VoxLog.d("er:intent=backchannel route=hold")
+                VoxLog.er("er:intent=backchannel route=hold")
             }
             ErIntent.Route.SOUL_DIRECT -> {
                 // The soul's own lane (emotion/smalltalk): Gemma converses directly.
@@ -73,7 +76,7 @@ class ErPresence(
                 // host; presence only opens a quiet window (no fillers needed —
                 // the soul is speaking).
                 mindStartedAt = nowMs
-                VoxLog.d("er:intent=${d.cls.name.lowercase()} route=soul-direct")
+                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=soul-direct")
             }
             ErIntent.Route.ACK_AND_YIELD -> {
                 // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
@@ -82,7 +85,7 @@ class ErPresence(
                 // thinking; here we keep ours minimal and human).
                 startWindow(nowMs)
                 speakGlue("Mm?")
-                VoxLog.d("er:intent=${d.cls.name.lowercase()} route=ack-yield")
+                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=ack-yield")
             }
         }
         return d.route
@@ -92,6 +95,7 @@ class ErPresence(
     fun startWindow(nowMs: Long) {
         mindStartedAt = nowMs
         synchronized(fillerTimes) { fillerTimes.clear() }
+        synchronized(lagSaidCount) { lagSaidCount.value = 0 }
         active = true
         arm()
     }
@@ -104,13 +108,14 @@ class ErPresence(
                 val now = android.os.SystemClock.uptimeMillis()
                 val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
                 if (mindStartedAt > 0 && windowOpenedAt != mindStartedAt) windowOpenedAt = mindStartedAt
-                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap())
+                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value })
                 if (o.speak != null) {
                     // Phase 8: soul first-word = the first glue after the window opened.
                     if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {
                         ErTelemetry.soulFirstWord(now - windowOpenedAt)
                     }
                     synchronized(fillerTimes) { fillerTimes.add(now) }
+                    if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
                     main.post { speakGlue(o.speak!!) }
                 }

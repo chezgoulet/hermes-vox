@@ -42,6 +42,11 @@ object ErFillers {
         warm: Boolean,
         userGoneMs: Long,
         cap: Int = MAX_FILLERS_PER_WINDOW,
+        /** 0.6.5: how many LAG lines have EVER been said this window (the loop's
+         *  monotonic count, not the 3s trailing count). The lag line must be
+         *  ONCE per mind-work window — it repeated every ~3s before (the 3s
+         *  window let recentCount fall back to 0, re-arming the fail-soft). */
+        lagSaidCount: Int = 0,
     ): Out {
         val since = nowMs - mindStartedAt
         if (since < 900L) return Out(null, State.SILENT)      // the preamble beat
@@ -49,14 +54,13 @@ object ErFillers {
         if (since >= LAG_AFTER_MS) {
             // Fail-soft: ONE in-character lag acknowledgment, then hold silent
             // (the waiting-constellation motion carries the presence from here).
-            val said = recentCount > 0
-            return if (!said && recentCount < cap) {
+            // 0.6.5: keyed on the MONOTONIC count — never re-arms inside a window.
+            return if (lagSaidCount == 0 && recentCount < cap) {
                 Out(LAG[(userGoneMs % LAG.size).toInt().coerceAtLeast(0)], State.LAG_ACK)
             } else Out(null, State.SILENT)
         }
         // Pre-lag: the neutral/warm fillers under the density cap.
         if (recentCount >= cap) return Out(null, State.SILENT)
-        val windowFull = (nowMs / FILLER_WINDOW_MS) - (mindStartedAt / FILLER_WINDOW_MS) < 0
         // Density is enforced by the caller's recentCount (the loop tallies the
         // trailing 3s); the window arithmetic above is the state marker only.
         val inv = if (warm) WARM else NEUTRAL
