@@ -183,3 +183,17 @@ your agent.
   remote) is yours; Vox is the client.
 - **Planned** — Google Play listing in a future point release (not yet shipped);
   cloud voice processing + full-duplex realtime are after-MVP.
+
+
+### I get "Cleartext HTTP traffic not permitted" (Android) when connecting.
+Android blocks plain HTTP unless the host is in the app's
+`network_security_config.xml`, which only ships a few example hosts. Don't
+rebuild the APK — put the gateway behind HTTPS on your tailnet:
+
+1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
+2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`
+3. If your tailnet CA isn't publicly trusted, install it on the phone
+   (Settings → Security → Trust device certificates) — the app trusts user CAs.
+
+As a fallback, any `*.ts.net` MagicDNS name may now be reached over cleartext
+(tailnet-private by construction).
