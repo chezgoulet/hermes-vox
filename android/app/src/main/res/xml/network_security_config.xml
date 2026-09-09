@@ -3,12 +3,23 @@
      plain http (no cloud, house network). Cleartext is permitted ONLY for the
      local hosts listed below; every other host (public/cloud) requires TLS.
      Note: model downloads already go over HTTPS (huggingface.co) and are covered
-     by the base-config. If a host is ever publicly reachable, serve it over TLS. -->
+     by the base-config. If a host is ever publicly reachable, serve it over TLS.
+
+     Self-hosters: rather than rebuilding the APK for a cleartext IP, prefer
+     `tailscale serve` on the gateway host and enter the HTTPS endpoint
+     (https://<machine>.<tailnet>.ts.net). The user trust anchor below lets you
+     trust the tailnet CA (Settings → Security → Trust device certificates) so
+     TLS verification passes on your own tailnet — no app rebuild, no cleartext.
+     A few fixed example IPs remain as documented placeholders for a House LAN. -->
 <network-security-config>
     <!-- Default: everything not explicitly listed must be HTTPS. -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system"/>
+            <!-- NEW: user-installed CAs (e.g. the tailnet root cert) are trusted
+                 for entity endpoints. Lets tailscale-serve HTTPS work without
+                 weakening cleartext policy. -->
+            <certificates src="user"/>
         </trust-anchors>
     </base-config>
 
@@ -18,6 +29,13 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">100.84.47.125</domain>
         <domain includeSubdomains="false">192.168.1.1</domain>
-        <!-- add your LAN gateway / tailnet host(s) here -->
+    </domain-config>
+
+    <!-- NEW: any tailnet MagicDNS name may be reached in cleartext ONLY as a
+         fallback; with tailscale serve the https:// form is preferred.
+         (MagicDNS names are tailnet-private by construction — this cannot leak
+         to the public internet.) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ts.net</domain>
     </domain-config>
 </network-security-config>

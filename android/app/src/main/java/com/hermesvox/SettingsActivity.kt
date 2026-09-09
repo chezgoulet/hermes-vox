@@ -188,6 +188,30 @@ class SettingsActivity : AppCompatActivity() {
                 else "Every interruption cancels the entity's work (pre-ER behavior)",
                 Toast.LENGTH_LONG).show()
         }
+        // 0.6.7 Tier 1: the presence-voice mode (silent / sounds / spoken).
+        findViewById<LinearLayout>(R.id.row_er_voice).setOnClickListener {
+            val modes = arrayOf("Silent (motion only)", "Sounds (natural mm/breath)", "Spoken (sentence fillers)")
+            val tokens = arrayOf("silent", "sounds", "spoken")
+            val cur = prefs.getString("er_presence_voice", "sounds") ?: "sounds"
+            AlertDialog.Builder(this)
+                .setTitle("Presence voice (Enhanced Realtime)")
+                .setSingleChoiceItems(modes, tokens.indexOf(cur).coerceAtLeast(0)) { d, which ->
+                    prefs.edit().putString("er_presence_voice", tokens[which]).apply()
+                    findViewById<TextView>(R.id.set_er_voice_val).text = modes[which].substringBefore(" (")
+                    MainActivity.pushPresenceVoiceMode(tokens[which])
+                    d.dismiss()
+                    Toast.makeText(this, when (tokens[which]) {
+                        "silent" -> "Silence + the being's motion — the most natural"
+                        "sounds" -> "Natural sounds (mm, breath) on a separate voice path"
+                        else -> "Spoken fillers — full sentences only"
+                    }, Toast.LENGTH_LONG).show()
+                }
+                .setNegativeButton("Cancel", null).show()
+        }
+        findViewById<TextView>(R.id.set_er_voice_val).text =
+            when (val m = prefs.getString("er_presence_voice", "sounds") ?: "sounds") {
+                "silent" -> "Silent"; "spoken" -> "Spoken"; else -> "Sounds"
+            }
         val fillerCap = prefs.getInt("er_filler_cap", 2)
         sbFiller.progress = fillerCap.coerceIn(0, 4)
         tvFiller.text = fillerCapLabel(fillerCap)
@@ -280,6 +304,15 @@ class SettingsActivity : AppCompatActivity() {
             }
             val doc = VoxSoul.extract(reply)
             val validated = VoxSoul.validate(doc)
+            // 0.6.7: capture WHAT the entity actually said (first ~240 chars,
+            // sanitized for a dialog) so a failed sync is diagnosable from the
+            // screenshot — "empty document" alone told us nothing.
+            val replyEvidence = reply?.trim()
+                ?.replace(Regex("\\s+"), " ")
+                ?.take(240)
+                ?.ifBlank { "(reply was blank)" }
+                ?: "(no reply)"
+            VoxLog.er("event=vox-resync doc=${doc?.length ?: 0} result=${validated.let { if (it is VoxSoul.Valid.Bad) it.reason else "ok" }} reply=$replyEvidence")
             val result = when (validated) {
                 is VoxSoul.Valid.Ok -> {
                     val wrote = VoxMirror.write(this, validated.document)
@@ -300,7 +333,7 @@ class SettingsActivity : AppCompatActivity() {
                             .setTitle("VOX.md sync failed")
                             .setMessage(
                                 when {
-                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
+                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). It said: \"$replyEvidence\". Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
                                     reply.isNullOrBlank() -> "The entity didn't answer (connection?). Check /health and try again."
                                     else -> result
                                 })
@@ -917,6 +950,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("er_semantic_barge", true)
                 .putInt("er_filler_cap", 2)
                 .putFloat("er_echo_skip_ms", 700f)
+                .putString("er_presence_voice", "sounds")
                 .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // #112: voice mode folds into Entity (GROUP_MODE branch removed); url/key untouched (identity)
             GROUP_APPEARANCE -> e
                 .putString("theme", "system")

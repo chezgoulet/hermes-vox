@@ -159,6 +159,14 @@ class MainActivity : AppCompatActivity() {
         motionStalled = on
         avatar.setStall(on, idleMs)   // captures/restores the prior motion first
         feed(if (on) MotionState.Signal.STALL_ON else MotionState.Signal.RESUME)
+        // 0.6.8 (the car-run silence): a 5s gateway stall during a live call must
+        // SAY it's still working — the alternative was the user barging a stalled
+        // turn into nothing (four silent turns in the field log). Voice the stall
+        // through the ER presence (respects er_presence/presence-voice), only on
+        // the 5s notice (once per stall), never on the resume.
+        if (on && idleMs >= 5000) {
+            liveController?.erPresence?.onGatewayStall(idleMs)
+        }
     }
 
     private fun renderMotion() =
@@ -1047,6 +1055,13 @@ class MainActivity : AppCompatActivity() {
             active?.unregisterRouteCallback()
             active?.clearConversationUi()
         }
+
+        /** 0.6.7 Tier 1: push a presence-voice mode change from Settings to the
+         *  live controller's presence loop (a live read on the next tick).
+         *  `liveController` is the COMPANION's var — reach it unqualified here. */
+        fun pushPresenceVoiceMode(mode: String) {
+            liveController?.erPresence?.voiceMode = mode
+        }
     }
 
     private fun clearConversationUi() {
@@ -1495,6 +1510,10 @@ class MainActivity : AppCompatActivity() {
             val g = express as? GemmaExpress
             if (g != null && !g.available) g.load {}   // load the on-device model once
         }
+        // 0.6.7: the presence-voice mode is a live read — a Settings change
+        // lands on the next tick without rebuilding the controller.
+        liveController?.erPresence?.voiceMode =
+            prefs.getString("er_presence_voice", "sounds") ?: "sounds"
     }
 
     // Presence appearance: the visual CATEGORY (what the being is made of, in every
