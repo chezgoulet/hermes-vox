@@ -25,11 +25,11 @@ class VerboseLogPolicyTest {
 
     @Test fun rotation_decision_still_rotates_oversized_when_verbose_off() {
         // The default mode's window is unchanged: 5MB+1 byte -> rotate.
-        assertEquals(VoxLog.LogRotation.ROTATE, VoxLog.rotationDecision(cap + 1, cap))
+        assertEquals(LogRotation.ROTATE, VoxLog.rotationDecision(cap + 1, cap))
     }
 
     @Test fun rotation_decision_still_keeps_undersized_when_verbose_off() {
-        assertEquals(VoxLog.LogRotation.KEEP, VoxLog.rotationDecision(cap - 1, cap))
+        assertEquals(LogRotation.KEEP, VoxLog.rotationDecision(cap - 1, cap))
     }
 
     /** The precedence contract: `verboseNeverPrune` returns BEFORE the size
@@ -45,7 +45,7 @@ class VerboseLogPolicyTest {
         // decision function's contract that the gate relies on: given ROTATE for
         // oversized, the gate's early return is what suppresses it.
         val oversized = VoxLog.rotationDecision(Long.MAX_VALUE, cap)
-        assertEquals(VoxLog.LogRotation.ROTATE, oversized)  // the gate suppresses THIS
+        assertEquals(LogRotation.ROTATE, oversized)  // the gate suppresses THIS
     }
 }
 
