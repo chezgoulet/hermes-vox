@@ -33,6 +33,12 @@ object VoxLog {
     private var writer: BufferedWriter? = null
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     @Volatile private var debugFile = false
+    /** 0.6.10 (Christopher's rule): "verbose file log" ON = the file NEVER
+     *  truncates or auto-prunes — a dev session captures EVERYTHING, unambiguously.
+     *  Rotation/retention are only for the default (verbose OFF) mode, where the
+     *  5MB×2 window protects storage on a device that never asked for deep logs.
+     *  The user is the one who pays the storage when they opt into verbose. */
+    @Volatile private var verboseNeverPrune = false
 
     // K2: size cap + check cadence for the active log's single-generation rotation.
     internal const val LOG_CAP_BYTES = 5L * 1024 * 1024
@@ -44,11 +50,17 @@ object VoxLog {
         file = File(context.filesDir, "logs/hermes-vox.log")
         file?.parentFile?.mkdirs()
         debugFile = context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean("debug_log", false)
+        verboseNeverPrune = debugFile   // 0.6.10: verbose ON = never prune (see the field doc)
         rotateIfNeeded()   // K2: check on open — a previous run may have left an oversized file
         setUncaughtHandler()
     }
 
-    fun setDebugFile(on: Boolean) { debugFile = on }
+    fun setDebugFile(on: Boolean) {
+        debugFile = on
+        // 0.6.10: toggling verbose mid-session flips the prune policy live —
+        // ON freezes rotation (the current file just grows), OFF resumes it.
+        verboseNeverPrune = on
+    }
 
     fun d(msg: String) { Log.d(TAG, msg); append("D", msg) }
     fun w(msg: String) { Log.w(TAG, msg); append("W", msg) }
@@ -98,6 +110,12 @@ object VoxLog {
     private fun rotateIfNeeded() {
         val cur = file ?: return
         synchronized(rotationLock) {
+            // 0.6.10 (Christopher's rule): verbose file log ON = NEVER rotate or
+            // prune — the developer opted into capturing everything; truncation
+            // here is exactly the "the early turns are gone" failure the rule
+            // exists to kill. Rotation only runs in the default (verbose OFF)
+            // mode. Storage is the user's accepted cost.
+            if (verboseNeverPrune) return
             if (rotationDecision(cur.length(), LOG_CAP_BYTES) != LogRotation.ROTATE) return
             try {
                 // Close the persistent writer BEFORE renaming: an open handle would
