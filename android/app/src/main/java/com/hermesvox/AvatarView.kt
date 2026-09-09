@@ -1733,6 +1733,20 @@ class AvatarView @JvmOverloads constructor(
         lastNanos = now
         tick(dt)
 
+        // 0.7.1 (the "visible canvas" fix): every draw in this view is ADDITIVE
+        // (PorterDuff.Mode.ADD — halo, trails, particles), so each frame deposits
+        // light on top of whatever the surface already holds. Android's dirty-region
+        // invalidation is NOT guaranteed to reset the surface between frames, and on
+        // some devices (Pixel 9 / Tensor G4, newer Skia HWUI) it doesn't: additive
+        // residue accumulates wherever particles travel — a soft lifted plateau
+        // tracking particle history (field-verified by panel photos; invisible to
+        // screenshots, which capture the intended clean frame). The fix: make every
+        // frame self-contained. One opaque black base (SRC, not ADD) clears the
+        // surface; the additive glow then works exactly as designed ON BLACK —
+        // same intended appearance, no cross-frame accumulation, on any device.
+        // Cost: one full-screen fill per frame, trivial against 100+ sprite blits.
+        canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)
+
         // Two sprite references resolved ONCE per frame — the particle loop below does no
         // cache lookup, no colour math and no allocation at all.
         val glowBas = glowFor(curBase)
