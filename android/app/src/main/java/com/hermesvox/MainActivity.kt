@@ -1203,7 +1203,14 @@ class MainActivity : AppCompatActivity() {
                 motionTool = mapTool(nm)
                 feed(MotionState.Signal.TOOL_CALL)   // -> avatar.onTool (existing motif)
                 // phone-call presence: Gemma narrates the work (Hermes preempts on the real reply)
-                if (prefs.getBoolean("presence", true)) {
+                // 0.8/M2.2: only ASK for narration the guard would actually accept.
+                // Generating it and then having speakGlue reject it is the worst case:
+                // a full prefill + generation of GPU time, thrown away, competing with
+                // the being's render loop. (09-10 log: five such wasted renders in one
+                // tool-heavy turn.)
+                val narrationWanted = prefs.getBoolean("presence", true) &&
+                    liveController?.glueBlocked() != true
+                if (narrationWanted) {
                     // 0.6.2: async render — the Gemma generation must never run on
                     // main (the ANR risk). The glue lands back on main via runOnUiThread.
                     orch.expressAsync("working", "", "calm") { glue ->

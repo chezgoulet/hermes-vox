@@ -1382,6 +1382,25 @@ class VoiceController(private val context: Context, private val session: HermesS
     // break and emitted so audio tracks the text rather than the terminator.
     private var lastStreamFlush = 0L
 
+    /** The streaming-reply guard condition, in ONE place: while the streaming worker
+     *  is actively writing the reply's chunks a glue one-shot is forbidden (see the
+     *  0.6.5 note in [speakGlue]). */
+    private fun streamingReplyLive() = streamed && !sClosed && (sRunning || sFinal)
+
+    /**
+     * 0.8/M2.2: would [speakGlue] reject a non-critical glue right now?
+     *
+     * Exposed so a caller can avoid GENERATING narration that the guard will only
+     * throw away. From the 09-10 field log: an email turn fired five tool events,
+     * each spawning a full Gemma render (uncontended cost ~2.2-3.2s, serialized on
+     * one engine, measured at 18221ms and 24401ms wall time) — and every one of them
+     * was rejected here because the reply was already live. The generations were pure
+     * waste: GPU time, battery, and contention with the being's own render loop.
+     *
+     * Mirrors [speakGlue]'s guards exactly — one condition, not a second copy.
+     */
+    fun glueBlocked(): Boolean = !shouldSpeak() || speaking || streamingReplyLive()
+
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
@@ -1397,7 +1416,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // The fillers must yield to a reply that has STARTED being voiced. The
         // one-shot speak() of the reply (non-streaming leg) sets speaking=true
         // first, which already blocks glue above; this covers the streaming leg.
-        val streamingReplyLive = streamed && !sClosed && (sRunning || sFinal)
+        val streamingReplyLive = streamingReplyLive()
         if (streamingReplyLive && !critical) {
             VoxLog.er("event=er-glue-reject reason=streaming-reply-live")
             return

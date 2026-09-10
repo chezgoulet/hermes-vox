@@ -144,12 +144,21 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     @Volatile private var loading = false
 
     override fun express(intent: String, content: String, tone: String): String {
+        // 0.8/M2.2: rail 3 BEFORE the generation, not after. The spacing check used to
+        // run on the produced text, so a too-soon request paid for a full generation
+        // and then discarded it. Same outcome (the guard returned null -> the caller
+        // fell back to the routed line), no wasted render.
+        if (System.currentTimeMillis() - lastRenderAt < ErGemmaGuard.MIN_RENDER_SPACING_MS) {
+            VoxLog.d("event=er-render-skip reason=spacing")
+            return fallback.express(intent, content, tone)
+        }
         val t0 = System.currentTimeMillis()
         try {
             return render(intent, content, tone)
         } finally {
             // 0.8/M1: the soul's OWN latency is the number that decides whether the
             // instant lane is viable (gate G2). Measured on-device, never estimated.
+            // A skipped request returns above, so it cannot pollute this ring.
             ErTelemetry.gemmaRender(System.currentTimeMillis() - t0)
         }
     }
