@@ -32,6 +32,13 @@ object ErTelemetry {
     private var turns = 0L
     private var turnsSoulSpoke = 0L
     private var emitTurns = 0L
+    // 0.8/M3c: the ROUTER's own numbers. This is the one question a field session has to answer:
+    // is the soul answering the turns that are its own, handing over the ones that are not, or
+    // coming back with nothing usable? A failure here is otherwise invisible — the soul simply
+    // says nothing, which from the user's seat looks identical to the feature not existing.
+    private var soulAnswer = 0L
+    private var soulEscalate = 0L
+    private var soulNothing = 0L
     // The soul's OWN render latency (the GemmaExpress.express round-trip).
     private val gemmaRender = ArrayList<Long>()
     private val gemmaRenderCap = 64
@@ -71,6 +78,15 @@ object ErTelemetry {
         if (soulSpoke) turnsSoulSpoke++
     }
 
+    /** One soul decision, by outcome ("answer" | "escalate" | anything else = nothing). */
+    fun soulDecision(decision: String) = synchronized(lock) {
+        when (decision) {
+            "answer" -> soulAnswer++
+            "escalate" -> soulEscalate++
+            else -> soulNothing++
+        }
+    }
+
     /** The soul's own render latency (ms) for one express() call. */
     fun gemmaRender(ms: Long) = synchronized(lock) {
         if (ms > 0) {
@@ -98,6 +114,7 @@ object ErTelemetry {
             "p50=${pct(gemmaRender, 50)} p95=${pct(gemmaRender, 95)}ms"
         val soulPct = if (turns == 0L) 0L else turnsSoulSpoke * 100 / turns
         "er: cls(hold=$clsHold yield=$clsYield) " +
+            "soul(answer=$soulAnswer escalate=$soulEscalate nothing=$soulNothing) " +
             "barge(cancel=$bargeCancel hold=$bargeHold) " +
             "arb(play=$arbPlay preempt=$arbPreempt reject=$arbReject) soul-first-word[$sw] " +
             "turns=$turns soul-spoke=$turnsSoulSpoke (${soulPct}%) gemma-render[$gr]"
