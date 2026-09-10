@@ -464,18 +464,6 @@ class AvatarView @JvmOverloads constructor(
         add.xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD)   // alpha is modulated
         ring.style = Paint.Style.STROKE
         ring.xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD)
-        // px9-trueblack: the being is ~300-640 additive, partial-alpha blits a frame.
-        // Blending those straight into the on-screen window surface makes the window's
-        // per-frame update keyed to the sprite COVERAGE, and on Pixel 9 (Tensor G4 /
-        // LTPO partial-refresh panel) the display path emits that coverage rectangle
-        // lifted above true black — the field "aura": style-invariant, invisible to
-        // compositor screenshots (the buffer is clean), swelling to the recoil's
-        // square on tap. Own hardware layer instead: the 0.7.1 SRC clear makes the
-        // layer honest opaque true black, the additive light sums inside it exactly as
-        // designed, and HWUI then composites the view as ONE opaque view-bounds blit —
-        // the same update every ordinary view produces, on every device. Logical
-        // pixels are unchanged (same draws, same order, same paints, alpha 1).
-        setLayerType(LAYER_TYPE_HARDWARE, null)
     }
 
     // ---- sprite baking ------------------------------------------------------
@@ -1768,11 +1756,6 @@ class AvatarView @JvmOverloads constructor(
          // surface; the additive glow then works exactly as designed ON BLACK —
          // same intended appearance, no cross-frame accumulation, on any device.
          // Cost: one full-screen fill per frame, trivial against 100+ sprite blits.
-         // px9-trueblack: with the view on its own hardware layer (see init) this
-         // clear is what makes the layer honest OPAQUE true black every frame, so the
-         // layer composites onto the window as one opaque blit and the additive blits
-         // never touch the on-screen surface. It also clears the layer's persistent
-         // backing store, which is exactly the surface that would otherwise accumulate.
          canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)
 
         // Two sprite references resolved ONCE per frame — the particle loop below does no
