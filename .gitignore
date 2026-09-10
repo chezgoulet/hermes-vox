@@ -31,3 +31,4 @@ keystore/*
 /releases/
 /runs/
 *.iml
+.evidence/

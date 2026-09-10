@@ -494,9 +494,20 @@ class AvatarView @JvmOverloads constructor(
         val cols: IntArray; val stops: FloatArray
         if (soft) {
             // The body's ambient bloom: very soft, so it reads as light in the air.
+            // 0.7.2 (halo-trueblack): the old bake ran its low tail all the way to
+            // the sprite rim (TRANSPARENT at stop 1f), so the blit's rectangular
+            // outer edge carried faint-but-nonzero near-black values — the Pixel 9
+            // "aura" (a visible rectangle around the being on Natural colour, which
+            // renders near-black accurately; Adaptive + JPG both crush it). The
+            // light now tapers through a low stop and reaches TRUE TRANSPARENT by
+            // ~0.66 of the radius, with a guaranteed-zero skirt (0.66→1) at the
+            // rim: the visible bloom's character is unchanged inside the body, and
+            // the rectangle boundary no longer exists on any display.
             cols = intArrayOf(withAlpha(hot, 150), withAlpha(color, 74),
-                withAlpha(color, 26), Color.TRANSPARENT)
-            stops = floatArrayOf(0f, stop(0.26f, e), stop(0.58f, e), 1f)
+                withAlpha(color, 26), withAlpha(color, 8),
+                Color.TRANSPARENT, Color.TRANSPARENT)
+            stops = floatArrayOf(0f, stop(0.20f, e), stop(0.38f, e),
+                stop(0.52f, e), stop(0.66f, e), 1f)
         } else {
             cols = intArrayOf(withAlpha(hot, 255), withAlpha(color, 214),
                 withAlpha(color, 92), withAlpha(color, 22), Color.TRANSPARENT)
@@ -1732,6 +1743,20 @@ class AvatarView @JvmOverloads constructor(
         val dt = if (lastNanos == 0L) 0.016f else ((now - lastNanos) / 1e9f).coerceIn(0.001f, 0.05f)
         lastNanos = now
         tick(dt)
+
+        // 0.7.1 (the "visible canvas" fix): every draw in this view is ADDITIVE
+        // (PorterDuff.Mode.ADD — halo, trails, particles), so each frame deposits
+        // light on top of whatever the surface already holds. Android's dirty-region
+        // invalidation is NOT guaranteed to reset the surface between frames, and on
+        // some devices (Pixel 9 / Tensor G4, newer Skia HWUI) it doesn't: additive
+        // residue accumulates wherever particles travel — a soft lifted plateau
+        // tracking particle history (field-verified by panel photos; invisible to
+        // screenshots, which capture the intended clean frame). The fix: make every
+        // frame self-contained. One opaque black base (SRC, not ADD) clears the
+         // surface; the additive glow then works exactly as designed ON BLACK —
+         // same intended appearance, no cross-frame accumulation, on any device.
+         // Cost: one full-screen fill per frame, trivial against 100+ sprite blits.
+         canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)
 
         // Two sprite references resolved ONCE per frame — the particle loop below does no
         // cache lookup, no colour math and no allocation at all.
