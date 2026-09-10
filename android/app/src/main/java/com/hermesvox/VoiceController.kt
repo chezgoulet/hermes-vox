@@ -1382,10 +1382,26 @@ class VoiceController(private val context: Context, private val session: HermesS
     // break and emitted so audio tracks the text rather than the terminator.
     private var lastStreamFlush = 0L
 
-    /** The streaming-reply guard condition, in ONE place: while the streaming worker
-     *  is actively writing the reply's chunks a glue one-shot is forbidden (see the
-     *  0.6.5 note in [speakGlue]). */
-    private fun streamingReplyLive() = streamed && !sClosed && (sRunning || sFinal)
+    /** The streaming-reply guard condition, in ONE place: a glue one-shot is forbidden
+     *  only once the reply has actually BEGUN producing output, because that is when a
+     *  glue's play() would replace streamTrack and reset streamWritten mid-reply (the
+     *  0.6.5 note in [speakGlue]).
+     *
+     *  0.8/M3 narrowing: this used to be `streamed && !sClosed && (sRunning || sFinal)`
+     *  alone — but streamBegin() runs at turn SUBMIT, before a single token exists, so
+     *  the guard read "the reply is live" for the ENTIRE mind-work window. The 09-10
+     *  field log shows that window at 10.5s in a normal turn and 79s in the stalled one,
+     *  and the soul was silent for all of it: `er-glue-reject reason=streaming-reply-live`
+     *  fired five times in one tool-heavy turn. firstTextLatch is the honest edge — it is
+     *  set on the first text delta, immediately before the text reaches the stream.
+     *
+     *  Residual risk, stated rather than hidden: a glue that starts within a tick of the
+     *  first delta can still be playing when chunk 1 is handed to the track, which drops
+     *  that chunk. The blast radius is the first chunk — the 0.6.5 fence-reopen recovers
+     *  the rest — and clips (the default presence mode) were never affected at all
+     *  because ErClips owns a private track and touches neither the fence nor streamWritten. */
+    private fun streamingReplyLive() =
+        streamed && !sClosed && (sRunning || sFinal) && firstTextLatch
 
     /**
      * 0.8/M2.2: would [speakGlue] reject a non-critical glue right now?
