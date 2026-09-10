@@ -75,6 +75,7 @@ class ErPresence(
      *  route for the caller's log line. */
     fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
         spokeThisWindow = false   // 0.8/M1: a new window starts here
+        firstWordSeen = false     // 0.8/M2.1: and so does the first-word metric
         val d = ErIntent.classify(text)
         lastRoute = d.route
         ErTelemetry.classify(d.route)   // Phase 8: the miss-rate denominator
@@ -138,17 +139,13 @@ class ErPresence(
                     if (voiceMode == "sounds" && ctx != null &&
                         ErClips.play(ctx, ErClips.clipFor("neutral", 0))) {
                         spokeThisWindow = true
-                        if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {
-                            ErTelemetry.soulFirstWord(now - windowOpenedAt)
-                        }
+                        markFirstWord(now, windowOpenedAt)
                         VoxLog.er("er:preamble clip=neutral")
                     }
                 }
                 if (o.speak != null) {
-                    // Phase 8: soul first-word = the first glue after the window opened.
-                    if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {
-                        ErTelemetry.soulFirstWord(now - windowOpenedAt)
-                    }
+                    // Phase 8: soul first-word = the first cue after the window opened.
+                    markFirstWord(now, windowOpenedAt)
                     synchronized(fillerTimes) { fillerTimes.add(now) }
                     if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
                     spokeThisWindow = true
@@ -180,6 +177,19 @@ class ErPresence(
         tick = t
         main.postDelayed(t, 1_000L)
     }
+
+    /** 0.8/M2.1: the FIRST soul output of a window owns the first-word metric — once.
+     *  The old marker was `soulActions.isEmpty()`, and the preamble deliberately does
+     *  NOT add a drift-sync entry (a nonverbal is not information worth syncing to the
+     *  mind) — so the later lag cue re-recorded and inflated p95 ~4x in the 09-10 field
+     *  log: p50=1007ms, p95=4050ms, from three cues that all measured ~1.0s. */
+    private fun markFirstWord(now: Long, windowOpenedAt: Long) {
+        if (firstWordSeen) return
+        firstWordSeen = true
+        if (windowOpenedAt > 0) ErTelemetry.soulFirstWord(now - windowOpenedAt)
+    }
+
+    @Volatile private var firstWordSeen = false
 
     /** The mind's reply arrived (or the turn was cut) — everything stops; the
      *  reply's own speech has precedence via the existing speak() path. */

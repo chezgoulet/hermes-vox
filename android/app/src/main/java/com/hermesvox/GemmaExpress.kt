@@ -65,6 +65,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 val (e, backend) = initEngine()
                 llm = e; loaded = true; activeBackend = backend
                 VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend")
+                warmUp()
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("GemmaExpress load failed: ${e.message}")
@@ -80,6 +81,32 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     @Volatile var activeBackend: String = "none"
         private set
 
+    /**
+     * 0.8/M2.1: render twice immediately after load, and LOG each duration.
+     *
+     * Two reasons, both from the 09-10 field log:
+     *  1. The first render measured 4342ms — 8x the beat the instant lane needs. It
+     *     was also the FIRST render after load, i.e. cold. Warming up moves that cost
+     *     off the user's first turn and onto the load (where it is invisible), so a
+     *     real render is never the cold one.
+     *  2. G2 ("is the soul's render inside a conversational beat?") had exactly ONE
+     *     sample, because in a quiet conversation the only render call site is the
+     *     tool-call narration. A warm-up pair produces warm numbers with no tool call.
+     *
+     * These are logged EXPLICITLY, not fed into ErTelemetry.gemmaRender — warming the
+     * engine is not the soul speaking, and it must not pollute the p50/p95 that
+     * describes real presence. The 1.3s spacing clears ErGemmaGuard's 1.2s
+     * repeat-spacing rail so the second render is a real second measurement.
+     */
+    private fun warmUp() {
+        for (i in 1..2) {
+            val t0 = System.currentTimeMillis()
+            try { render("working", "", "calm") } catch (_: Throwable) {}
+            VoxLog.d("GemmaExpress warm-up $i/2 ms=${System.currentTimeMillis() - t0}")
+            if (i == 1) try { Thread.sleep(1300) } catch (_: InterruptedException) {}
+        }
+    }
+
     /** Build the engine, preferring the GPU. Returns the first backend that
      *  initializes; throws the CPU attempt's error if neither works (the caller
      *  then reports the layer unavailable, exactly as before). */
@@ -89,7 +116,17 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         var lastError: Throwable? = null
         for ((name, backend) in attempts) {
             try {
-                val e = Engine(EngineConfig(modelPath = modelFile.absolutePath, backend = backend()))
+                val e = Engine(EngineConfig(
+                    modelPath = modelFile.absolutePath,
+                    backend = backend(),
+                    // 0.8/M2.1: LiteRT-LM's docs call this out ("Pick a writable dir.
+                    // This can improve 2nd load time.") and its published benchmarks are
+                    // cache-enabled — we were paying the uncached first-load path on
+                    // every single load. The 09-10 field log showed ~38s from pipeline
+                    // start to `GemmaExpress loaded … backend=gpu` (CPU builds in the
+                    // same log: ~3s), which is a candidate explanation.
+                    cacheDir = context.cacheDir.path,
+                ))
                 e.initialize()
                 if (name == "cpu" && lastError != null) {
                     VoxLog.e("GemmaExpress: GPU unavailable (${lastError?.message}) — running on CPU")
