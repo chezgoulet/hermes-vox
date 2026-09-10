@@ -104,4 +104,52 @@ class ErIntentTest {
             assertTrue("'$t' must NOT barge", !ErIntent.isGenuineBarge(t))
         }
     }
+
+    // ---- 0.8/M3: a discourse marker must not hide a greeting ----
+
+    @Test fun a_discourse_marker_does_not_hide_a_greeting() {
+        // The field miss: "So how's it going?" matched INFORMATION, because no greeting
+        // pattern can match a string that begins with "so".
+        for (t in listOf(
+            "so how's it going?", "So how's it going?", "well hello there",
+            "okay so hey", "hey there", "and good morning", "hmm, hello there",
+        )) {
+            assertEquals("'$t' must be soul-direct", ErIntent.Route.SOUL_DIRECT, route(t))
+            assertEquals("'$t'", ErIntent.Class.SMALLTALK, cls(t))
+        }
+    }
+
+    @Test fun a_backchannel_plus_a_short_remnant_stays_a_backchannel() {
+        // The backchannel check runs FIRST and is sacrosanct — it must never escalate.
+        // "hmm, hi" therefore HOLDS (a marker + a <2-char remnant) rather than greeting.
+        // stripDiscourse() does not touch that priority; this pins it so a future edit to
+        // the greeting check cannot silently reorder the two rules. (Caught by the gate:
+        // this test began life asserting the opposite, and was wrong.)
+        //
+        // Known edge, deliberately not "fixed" here: this path's ack line is written for
+        // patience ("take the time you need"), which reads oddly after a greeting. That is
+        // the backchannel ACK's wording, a different concern from routing, and it fires
+        // before the stream opens so it is unaffected by the glue-guard narrowing.
+        assertEquals(ErIntent.Route.HOLD_ONLY, route("hmm, hi"))
+        assertEquals(ErIntent.Class.BACKCHANNEL, cls("hmm, hi"))
+    }
+
+    @Test fun stripping_discourse_does_not_swallow_a_real_question() {
+        // The strip is scoped to the greeting check, so a question standing behind a
+        // marker still escalates. The soul must never answer a real question.
+        for (t in listOf(
+            "so what's the weather", "well, where is the file", "okay, what time is it",
+            "and how much does it cost", "so can you send the email",
+        )) {
+            assertEquals("'$t' must escalate", ErIntent.Route.ACK_AND_YIELD, route(t))
+        }
+    }
+
+    @Test fun stripping_never_hides_a_barge() {
+        // "stop" and "wait" are NOT discourse markers. They must keep cancelling —
+        // a marker list that swallowed an imperative would be a serious regression.
+        for (t in listOf("stop", "wait", "actually stop", "no wait — instead do X")) {
+            assertTrue("'$t' must still barge", ErIntent.isGenuineBarge(t))
+        }
+    }
 }

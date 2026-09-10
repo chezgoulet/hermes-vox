@@ -86,6 +86,34 @@ object ErIntent {
         "how's it going", "what's up", "whats up", "who are you", "what are you",
     )
 
+    /**
+     * Leading discourse markers: they carry no intent on their own, but they sit in
+     * front of one. A field miss — "So how's it going?" routed to INFORMATION — came
+     * from matching the greeting patterns against the RAW start of the utterance:
+     * nothing matches a string that begins with "so".
+     *
+     * Real-imperative words ("stop", "wait") are deliberately absent — they belong to
+     * BARGE_PATTERNS and must never be stripped into invisibility.
+     */
+    private val DISCOURSE_MARKERS = listOf(
+        "so", "well", "ok", "okay", "right", "um", "uh", "hmm", "oh", "ah",
+        "and", "but", "anyway", "alright",
+    )
+
+    /** Strip leading discourse markers (with their trailing punctuation) so a greeting
+     *  standing behind them is still recognised: "so how's it going" -> "how's it going".
+     *  Applied ONLY to the greeting check below, so no other route's matching changes. */
+    private fun stripDiscourse(t: String): String {
+        var s = t
+        while (true) {
+            val m = DISCOURSE_MARKERS.firstOrNull {
+                s == it || s.startsWith("$it ") || s.startsWith("$it,")
+            } ?: break
+            s = s.removePrefix(m).trim().trimStart(',', '.', '!', '-').trim()
+        }
+        return s
+    }
+
     /** Normalize for matching: lowercase, collapse spaces, keep punctuation
      *  only when it carries meaning ("what?"). */
     private fun norm(text: String): String {
@@ -135,7 +163,11 @@ object ErIntent {
             return Decision(Route.ACK_AND_YIELD, Class.ACTION)
         // Greeting-smalltalk is content-free by construction — check it BEFORE
         // the information sweep so "how are you" never reads as a "how" question.
-        if (GREETING_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it?") || t.startsWith("$it!") || t.startsWith("$it,") })
+        // 0.8/M3: matched against the stripped form, so a discourse marker in front
+        // ("so how's it going?") no longer hides the greeting. The strip is scoped to
+        // THIS check only — every other route still matches the raw text.
+        val greet = stripDiscourse(t)
+        if (GREETING_PATTERNS.any { greet == it.trim() || greet.startsWith("$it ") || greet.startsWith("$it?") || greet.startsWith("$it!") || greet.startsWith("$it,") })
             return Decision(Route.SOUL_DIRECT, Class.SMALLTALK)
         if (INFORMATION_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it'") || t.startsWith("$it?") || t.startsWith("$it,") || t.contains(" how ") })
             return Decision(Route.ACK_AND_YIELD, Class.INFORMATION)
