@@ -27,7 +27,10 @@ import java.util.concurrent.ExecutorService
  * It drives the UI through a [Listener] so the app renders the entity's work
  * live: state changes, incremental text, tool-progress lines, final reply.
  */
-class VoiceController(private val context: Context, private val session: HermesSession) {
+class VoiceController(private val context: Context, private val session: HermesSession,
+                      /** 0.8/M2.1: construct ONLY for a gateway probe (dialGateway) — no
+                       *  speech pipeline is built. See the init guard. */
+                      private val probeOnly: Boolean = false) {
 
     /** UI render callbacks — all dispatched on the main thread. */
     interface Listener {
@@ -185,6 +188,20 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val BARGE_SKIP_STATE_MS = 3000L   // the !spk && !turnInFlight skip state held this long -> deaf window
 
     init {
+        // 0.8/M2.1: a PROBE-ONLY controller exists to ping the gateway and nothing
+        // else. It must NOT build the speech pipeline. The dial path used to
+        // construct a full VoiceController (TTS + Whisper + Silero load as
+        // constructor side effects) and then drop the reference — so every app open
+        // loaded the whole pipeline TWICE, ~10s apart, with the first copy discarded
+        // (the 09-10 field log shows both load rounds plus `warm-wait retry=1`). The
+        // dial path's own documented intent is "opening the app should not fire a
+        // real model turn just to colour a pill"; that applies to LOADING too.
+        if (!probeOnly) initPipeline()
+    }
+
+    /** The speech pipeline: TTS + STT + VAD, each loading its own on-device model.
+     *  Built by [init] unless this controller exists only to probe the gateway. */
+    private fun initPipeline() {
         // Blessed default: auto-use the warm on-device Piper voice once it's
         // installed; fall back to System only if Piper isn't present. (The old
         // default of "system" left the app speaking via a silent system TTS.)

@@ -757,7 +757,7 @@ class MainActivity : AppCompatActivity() {
         probeInFlight = true
         probe = ConnectionPhase.Probe.IN_FLIGHT
         showPhase()
-        val c = liveController ?: VoiceController(applicationContext, s)
+        val c = liveController ?: VoiceController(applicationContext, s, probeOnly = true)
         c.testConnectionAsync(includeStream) { p, _ ->
             probeInFlight = false
             probe = p
