@@ -672,6 +672,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         // ER Phase 4: controller teardown kills the presence loop first — its
         // handler callbacks must never outlive the executor they feed.
         erActive = false; erPresence.stop()
+        // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
+        // case; this one guarantees a hangup always closes the measurement out).
+        if (prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED)
+            VoxLog.er(ErTelemetry.line())
         // #D1: endCall uses the SAME single silence path as barge/hush — stopTts
         // (closes the SherpaTts fence -> streamChunk returns false -> no track
         // resurrection), close the streaming worker, cancel the SSE stream, then
@@ -1560,6 +1564,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (settledEpoch == lastTurnLoggedEpoch) { VoxLog.dd("event=turn-skip gen=$gen epoch=$settledEpoch reason=$reason (already settled)"); return }
         lastTurnLoggedEpoch = settledEpoch
         LatencyStats.log("turn", reason, gen)
+        // 0.8/M1: the ER counters, every N turns in Enhanced mode. Before this the
+        // Phase-8 instrumentation had ZERO emit sites — every claim about ER was an
+        // impression. This is the line that makes the ER delta falsifiable.
+        if (prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED &&
+            ErTelemetry.shouldEmit()) VoxLog.er(ErTelemetry.line())
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
