@@ -61,17 +61,38 @@ class VoiceOrchestrator(private val express: VoxExpress) {
      *  risk). The render runs on a daemon thread; the caller's callback receives
      *  the glue (or null on failure/no model) on ITS thread of choice. The
      *  fallback (RoutedExpress) is instant, so the async hop costs ~nothing. */
+    /**
+     * 0.8/M2.2: at most ONE render in flight — latest-wins, matching speakGlue's own
+     * "latest narration wins" contract.
+     *
+     * Each render is a full prefill of the persona (LiteRT-LM's Conversation exposes
+     * no reset, so every express() builds a fresh conversation), and renders SERIALIZE
+     * inside one Engine. Overlapping requests therefore cost N generations of wall
+     * time and yield at most one usable line: the 09-10 field log measured 18221ms and
+     * 24401ms for renders whose uncontended cost is ~2200-3200ms. A request arriving
+     * while one is running is dropped outright.
+     */
+    private val renderInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun expressAsync(
         intent: String,
         content: String = "",
         tone: String = "warm",
         onGlue: (String?) -> Unit,
     ) {
+        if (!renderInFlight.compareAndSet(false, true)) {
+            VoxLog.d("event=er-render-drop reason=in-flight")
+            return
+        }
         Thread {
-            val glue = try {
-                if (gemmaAvailable) express.express(intent, content, tone) else null
-            } catch (_: Throwable) { null }
-            onGlue(glue)
+            try {
+                val glue = try {
+                    if (gemmaAvailable) express.express(intent, content, tone) else null
+                } catch (_: Throwable) { null }
+                onGlue(glue)
+            } finally {
+                renderInFlight.set(false)
+            }
         }.apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }.start()
     }
 

@@ -85,6 +85,39 @@ The instrument every later claim depends on. Safe to ship in a nightly immediate
 - Gate: field verdict on "alive, not chatty" (the filler-cap slider and presence-voice
   picker are the dials).
 
+### M2.1 / M2.2 — field-fix increments (from the 09-10 logs) — ✅ LANDED
+Two rounds, every fix traced to a line in a field log rather than to theory.
+
+**M2.1** (vc118)
+- `dialGateway()` now builds a **probe-only** `VoiceController`. It used to construct a full
+  controller just to ping the gateway (TTS + Whisper + Silero all load in the constructor) and
+  then drop the reference — so every app open loaded the whole pipeline **twice**, ~10 s apart,
+  discarding the first copy. Field-verified fixed: one load round, and no pipeline work before
+  `conn-test`.
+- `EngineConfig.cacheDir` is set (LiteRT-LM documents it for second-load time). **Still
+  inconclusive** — the first run after installing has a cold cache by definition; it needs a
+  second session on the same build.
+- `GemmaExpress` renders twice after load and logs `GemmaExpress warm-up N/2 ms=…`: G2 evidence
+  from a quiet conversation, and the cold render moves off the user's first turn. Deliberately
+  NOT fed into `ErTelemetry.gemmaRender` — warming an engine is not the soul speaking.
+- `soulFirstWord` double-count fixed (`firstWordSeen` latch). Field-verified: p95 4050 ms → 1016 ms
+  against a p50 of 1010 ms.
+
+**M2.2** (vc119) — the express layer was burning the GPU for nothing
+- One tool-heavy turn fired five narration requests; each spawned a thread and a full render
+  (uncontended ~2.2–3.2 s, serialized on one Engine, measured at 18221 ms / 24401 ms), and
+  **every one was then rejected** by the glue guard because the reply was already live.
+- `VoiceOrchestrator.expressAsync` now permits **one render in flight** (latest-wins), and
+  `VoiceController.glueBlocked()` lets the caller decline to generate what the guard would
+  discard. `streamingReplyLive()` is one shared condition, not a second copy.
+- `ErGemmaGuard`'s spacing rail moved **before** the generation, so a too-soon request no longer
+  pays for a render it will throw away.
+
+**Known and NOT fixed, with the evidence:** the persona is re-prefilled on every render.
+LiteRT-LM's `Conversation` exposes `close` / `sendMessage` / `cancelProcess` but **no reset**, so
+one conversation cannot be reused across renders and a fresh one is built each time. The remaining
+levers are a shorter fast-lane prompt, or the engine's own cache. Do not plan on conversation reuse.
+
 ### M3 — The soul lane, for real (SOUL_DIRECT wired; depends on G1 + G2)
 - Gemma renders greeting/identity/emotion/smalltalk against the mirrored VOX.md, and the soul
   speaks it — with the mind NOT engaged for content-free classes.
