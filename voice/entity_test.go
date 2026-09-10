@@ -298,3 +298,44 @@ func TestConfigLoadsSessionKeyFromEnv(t *testing.T) {
 		t.Fatalf("HermesSessionKey = %q with the env unset, want empty", got)
 	}
 }
+
+// TestConfigScopesEveryConnector is the contract a Go consumer depends on: a
+// Config is the whole world it gets, so EVERY connector the Config hands out
+// must carry the declared scope. Config.Client() used to be the only one that
+// did — /v1/responses and /v1/runs were built by callers, so a caller that
+// forgot a line silently ran a single-tenant path (the very failure this header
+// exists to fix, one layer up).
+func TestConfigScopesEveryConnector(t *testing.T) {
+	rec := newProbeRecorder()
+	srv := recordingEntityServer(t, rec)
+	defer srv.Close()
+
+	cfg := Config{
+		HermesBaseURL:    srv.URL,
+		HermesAPIKey:     "testkey",
+		HermesModel:      "hermes-agent",
+		HermesSessionKey: "agent:vox:cli:member-9",
+	}
+	ctx := context.Background()
+
+	if _, err := cfg.Client().Chat(ctx, []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if _, err := cfg.ResponsesClient().Response(ctx, "hi", ""); err != nil {
+		t.Fatalf("responses: %v", err)
+	}
+	if _, err := cfg.RunClient().StartRun(ctx, "hi", "", ""); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for _, p := range []string{"POST /v1/chat/completions", "POST /v1/responses", "POST /v1/runs"} {
+		got, ok := rec.get(p)
+		if !ok {
+			t.Errorf("%s never reached the server", p)
+			continue
+		}
+		if got.scope != cfg.HermesSessionKey {
+			t.Errorf("%s: %s = %q, want the Config's declared scope %q", p, SessionKeyHeader, got.scope, cfg.HermesSessionKey)
+		}
+	}
+}
