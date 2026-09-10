@@ -151,6 +151,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         p.clipContext = context
         p.voiceMode = prefString("er_presence_voice", "sounds")
     }
+    /** 0.8/M3c: the soul's decision path, wired by the host (it owns the express layer).
+     *  Given the caller's utterance and what the mind is doing, it returns the line the soul
+     *  should say — or null, meaning escalate or nothing, in which case the mind's answer is
+     *  the voice. Runs off-main; the callback lands on the caller's thread. */
+    @Volatile var soulDecide: ((text: String, toolContext: String?, cb: (String?) -> Unit) -> Unit)? = null
+    @Volatile private var soulSpokeThisTurn = false
+    /** 0.8/M3c: the same-text guard's ring — (line, spokenAtMs), pruned on use. */
+    private val recentGlue = ArrayList<Pair<String, Long>>()
+
     private fun prefsGetInt(k: String, d: Int) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(k, d)
     @Volatile private var erActive = false
@@ -816,11 +825,32 @@ class VoiceController(private val context: Context, private val session: HermesS
         // 0.6.2: erPresenceOn=false (Settings "Soul presence" off) → the
         // classifier + drift log still run (the mind's sync stays honest) but
         // ErPresence speaks nothing (the speakGlue lambda becomes a no-op).
+        var openerRoute: ErIntent.Route? = null
         if (voiceTurn) {
             erActive = true
             erMindLive = true
             val presenceTarget = if (erPresenceOn) erPresence else erPresence.silentProxy
-            presenceTarget.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
+            openerRoute = presenceTarget.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
+        }
+        // 0.8/M3c: THE SOUL DECIDES. One render at turn start carrying the caller's line; its
+        // OUTPUT is the routing decision — a line to speak, or the escalate token meaning the
+        // mind's answer is the voice. No keyword lists in this path. Delivered only if the mind
+        // has not already begun replying, because a soul line in front of a reply that is
+        // already flowing is the double answer.
+        soulSpokeThisTurn = false
+        if (voiceTurn && openerRoute == ErIntent.Route.ACK_AND_YIELD) {
+            soulDecide?.invoke(text, null) { line ->
+                if (line.isNullOrBlank()) return@invoke
+                main.post {
+                    if (!turnInFlight || gen != turnGen) return@post
+                    if (soulSpokeThisTurn || firstTextLatch || speaking) {
+                        VoxLog.er("event=er-soul-drop reason=${if (soulSpokeThisTurn) "already-answered" else "mind-already-replying"} gen=$gen")
+                        return@post
+                    }
+                    soulSpokeThisTurn = true
+                    speakGlue(line, source = "soul-answer")
+                }
+            }
         }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
@@ -1429,6 +1459,19 @@ class VoiceController(private val context: Context, private val session: HermesS
         // "this spoke, from here". App-generated text only (never the user's words), so it
         // is safe beside the log_transcripts privacy backstop.
         VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} text=${text.take(120)}")
+        // 0.8/M3c: the SAME-TEXT guard. The 09-10 field session spoke ONE sentence seven times
+        // in thirty-nine seconds through the per-tool-event narration path. The defect was never
+        // the count of utterances — a person says three different things while working — it was
+        // that they were identical and blind to time. Critical (safety/clarify) lines bypass it.
+        val nowGlue = android.os.SystemClock.uptimeMillis()
+        synchronized(recentGlue) {
+            recentGlue.removeAll { nowGlue - it.second > ErSoulTurn.REPEAT_WINDOW_MS }
+            if (!critical && ErSoulTurn.isRepeat(text, recentGlue, nowGlue)) {
+                VoxLog.er("event=er-glue-reject reason=repeat source=$source")
+                return
+            }
+            recentGlue.add(text to nowGlue)
+        }
         if (!shouldSpeak()) return   // voice channel closed (or voice toggle off)
         if (speaking) return          // the authoritative reply has precedence — never talk over it
         // 0.6.5 (the field silence bug): while the streaming worker is actively

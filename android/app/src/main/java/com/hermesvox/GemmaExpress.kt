@@ -164,8 +164,13 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // and then discarded it. Same outcome (the guard returned null -> the caller
         // fell back to the routed line), no wasted render.
         if (System.currentTimeMillis() - lastRenderAt < ErGemmaGuard.MIN_RENDER_SPACING_MS) {
+            // 0.8/M3c: return SILENCE, not the stand-in. The field caught this: the rail
+            // correctly skipped a regeneration and then SPEAKED the RoutedExpress fallback
+            // ("Just a sec — let me look that up."), because the old return was the fallback —
+            // a guard meant to reduce noise produced a canned sentence. Callers treat a blank
+            // return as "nothing to say", which is what a spacing skip actually means.
             VoxLog.d("event=er-render-skip reason=spacing")
-            return fallback.express(intent, content, tone)
+            return ""
         }
         val t0 = System.currentTimeMillis()
         try {
