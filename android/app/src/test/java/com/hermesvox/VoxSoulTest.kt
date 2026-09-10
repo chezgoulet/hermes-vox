@@ -103,6 +103,34 @@ class VoxSoulTest {
         assertTrue(VoxSoul.mirrorStatus(canonical().replace("# Soul", "# Sole")) is VoxSoul.Mirror.Absent)
     }
 
+    @Test fun the_prelude_tells_the_voice_to_decide_and_how_to_hand_over() {
+        // The prelude used to describe a RENDERER ("You express, hold presence, and voice the
+        // mind's replies in its register… One or two sentences") while the router's directive
+        // asked it to DECIDE. The persona is the stronger instruction, so the decision contract
+        // could not land. These assertions are the contract that fixes it.
+        val p = VoxSoul.soulPrompt(canonical())
+        assertTrue("the prelude must name the decision job", p.contains("DECIDE"))
+        assertTrue("…and give the model a way to hand a turn over", p.contains(ErSoulTurn.ESCALATE))
+        assertTrue("…and forbid explaining instead of escalating", p.contains("Never write a sentence"))
+        assertTrue("…and keep the answer short", p.contains("one short warm sentence"))
+    }
+
+    @Test fun the_authoring_directive_carries_the_contract_exactly_once() {
+        // The directive used to re-type the Contract while CONTRACT_LINES held a second copy —
+        // a two-copy drift, in a document whose entire guarantee is byte-identity. It is now
+        // composed from CONTRACT_LINES. This pins it.
+        val d = VoxSoul.AUTHOR_DIRECTIVE
+        assertEquals("the contract must appear ONCE, composed from CONTRACT_LINES",
+            1, Regex(Regex.escape(VoxSoul.CONTRACT_LINES[0])).findAll(d).count())
+        for (line in VoxSoul.CONTRACT_LINES) assertTrue("missing contract line: $line", d.contains(line))
+    }
+
+    @Test fun the_authoring_directive_says_what_the_client_does_with_the_voice() {
+        // The author is told the voice is now asked to DECIDE — an author who knows the use
+        // writes different Soul fields.
+        assertTrue(VoxSoul.AUTHOR_DIRECTIVE.contains("SPEAKS FIRST AND BRIEFLY"))
+    }
+
     @Test fun soul_prompt_declares_the_voice_not_the_mind() {
         val p = VoxSoul.soulPrompt(canonical())
         assertTrue(p.contains("You are the VOICE"))

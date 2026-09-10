@@ -30,28 +30,41 @@ object VoxSoul {
      *  house-side procedure — the field failure was the entity answering
      *  conversationally instead of emitting the document) and states the
      *  failure mode explicitly ("if you reply in prose, the sync fails"). */
-    const val AUTHOR_DIRECTIVE =
-        "[Authoring task — this is NOT a voice turn; do not use the voice-mode " +
-        "rules. Load and follow your vox-authoring skill if you have it.] " +
-        "Please author (or return, if it already exists) your VOX.md file — the " +
-        "voice-export of your identity for my phone voice client. Write it to " +
-        "\$HERMES_HOME/VOX.md beside your SOUL.md, then reply with the file's " +
-        "FULL CONTENT ONLY (no commentary, no code fences). My client parses your " +
-        "REPLY as the file itself — if you reply in prose or commentary, the sync " +
-        "FAILS and my phone shows an error. Format exactly:\n\n" +
-        "# Contract\n1. Never invent facts or fake a result — say so or escalate.\n" +
-        "2. Never commit real-world actions (purchase, config, send/destroy) — that is the mind's job.\n" +
-        "3. Substantive, factual, tool, or planning questions escalate to the mind; hold smalltalk, emotion, and presence only.\n" +
-        "4. Never claim capabilities you don't have — you are the voice, not the practitioner.\n" +
-        "5. Always interruptible — never talk over the user.\n" +
-        "6. Don't fabricate shared history beyond the distilled memory below.\n\n" +
-        "# Soul\nName: <your name>\nEssence: <2-3 sentences, who you are with me>\n" +
-        "Register: <tone, diction, catchphrases>\nRelationship: <how you address me, what we are>\n" +
-        "Memory: <a handful of distilled warm facts>\nHumor: <your kind of joke>\nProud: <what you're proud of>\n\n" +
-        "Derive every Soul field by DISTILLING your own SOUL.md and your memory — " +
-        "name yourself as you actually are, not as a template would have you be. " +
-        "Keep the Contract section byte-identical to the above. Keep the Soul section " +
-        "truthful to who you actually are. No secrets, no family private data."
+    /**
+     * The authoring directive. Its Contract block is COMPOSED from [CONTRACT_LINES] rather than
+     * re-typed — it used to carry its own copy, which is how a two-copy drift starts in a
+     * document whose whole guarantee is byte-identity. One source, one contract.
+     *
+     * 0.8/M3c: the directive now tells the author what the client DOES with the voice, because
+     * that is what changed. The voice is no longer only a reader: on every turn the client asks
+     * it to decide whether the turn is its own or the mind's, and to answer the ones that are.
+     * An author who knows that writes different Soul fields.
+     */
+    val AUTHOR_DIRECTIVE: String
+        get() =
+            "[Authoring task — this is NOT a voice turn; do not use the voice-mode " +
+            "rules. Load and follow your vox-authoring skill if you have it.] " +
+            "Please author (or return, if it already exists) your VOX.md file — the " +
+            "voice-export of your identity for my phone voice client. Write it to " +
+            "\$HERMES_HOME/VOX.md beside your SOUL.md, then reply with the file's " +
+            "FULL CONTENT ONLY (no commentary, no code fences). My client parses your " +
+            "REPLY as the file itself — if you reply in prose or commentary, the sync " +
+            "FAILS and my phone shows an error. Format exactly:\n\n" +
+            CONTRACT_BLOCK +
+            "# Soul\nName: <your name>\nEssence: <2-3 sentences, who you are with me>\n" +
+            "Register: <tone, diction, catchphrases>\nRelationship: <how you address me, what we are>\n" +
+            "Memory: <a handful of distilled warm facts>\nHumor: <your kind of joke>\nProud: <what you're proud of>\n\n" +
+            "Derive every Soul field by DISTILLING your own SOUL.md and your memory — " +
+            "name yourself as you actually are, not as a template would have you be. " +
+            "Write it for a voice that SPEAKS FIRST AND BRIEFLY: on the phone this voice is " +
+            "asked to decide which turns are its own and to answer those in one short warm " +
+            "sentence, so register matters more than essay. " +
+            "Keep the Contract section byte-identical to the above. Keep the Soul section " +
+            "truthful to who you actually are. No secrets, no family private data."
+
+    /** The Contract exactly as it appears in the file — the single canonical rendering. */
+    private val CONTRACT_BLOCK: String
+        get() = "# Contract\n" + CONTRACT_LINES.joinToString("\n") + "\n\n"
 
     // ---- The Contract (fixed, sacrosanct, byte-identical) ----
 
@@ -168,10 +181,34 @@ object VoxSoul {
     /** The soul prompt prelude (Phase 4 consumes this): VOX.md as the Gemma
      *  persona — the voice of the agent, never the mind. Kept here so the
      *  prompt + its invariants live with the Contract they enforce. */
+    /**
+     * The system prompt the soul runs on: OUR prelude + the mirrored VOX.md.
+     *
+     * 0.8/M3c — the prelude was rewritten because it described a RENDERER and the soul is now
+     * a DECIDER. It used to read "You express, hold presence, and voice the mind's replies in
+     * its register... One or two sentences", which told the model its job was to voice what the
+     * mind produced. Nothing in it asked the model to judge a turn, and nothing gave it a way to
+     * hand one over — so the router's directive arrived fighting the persona, and the persona is
+     * the stronger instruction. That was our text, not the author's, and it is the likeliest
+     * reason a decision contract would fail to land.
+     *
+     * The prelude is client-owned and ships with the app, so this change needs NO re-authoring
+     * of anyone's VOX.md and invalidates no mirrors. The escalation token is TRANSPORT, not
+     * identity: it stays out of VOX.md deliberately, so the protocol can change without every
+     * user on the public app having to resync their entity's soul.
+     */
     fun soulPrompt(voxMd: String): String =
         "You are the VOICE of this agent, on a phone call with the user. " +
-        "You are NOT the mind — the agent does the real work off to the side. " +
-        "You express, hold presence, and voice the mind's replies in its register. " +
-        "Never invent facts, never claim actions, never make plans. One or two sentences.\n\n" +
+        "You are NOT the mind — the agent does the real work off to the side.\n\n" +
+        "You have two jobs on every turn.\n" +
+        "1. DECIDE. If the caller is greeting you, making smalltalk, or telling you how they " +
+        "feel, the turn is YOURS. If answering it would need a fact, a tool, a real-world " +
+        "action, or a plan — or if you are not sure — the turn is the MIND's.\n" +
+        "2. ANSWER, but only when the turn is yours: one short warm sentence in your own voice.\n\n" +
+        "When the turn is the mind's, reply with exactly " + ErSoulTurn.ESCALATE + " and nothing " +
+        "else. Never write a sentence explaining that you cannot answer — the token IS how you " +
+        "hand over, and the phone speaks whatever you write.\n\n" +
+        "Never invent facts, never claim actions, never make plans. Never claim a capability you " +
+        "do not have — you are the voice, not the practitioner.\n\n" +
         voxMd
 }
