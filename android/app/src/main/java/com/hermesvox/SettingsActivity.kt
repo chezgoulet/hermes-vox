@@ -128,19 +128,37 @@ class SettingsActivity : AppCompatActivity() {
             val eurl = view.findViewById<EditText>(R.id.d_url)
             val emodel = view.findViewById<EditText>(R.id.d_model)
             val ekey = view.findViewById<EditText>(R.id.d_key)
+            val escope = view.findViewById<EditText>(R.id.d_scope)
             eurl.setText(prefs.getString("url", ""))
             emodel.setText(prefs.getString("model", "hermes-agent"))
             ekey.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
-            AlertDialog.Builder(this)
+            escope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
+            val dlg = AlertDialog.Builder(this)
                 .setTitle("Entity")
                 .setView(view)
-                .setPositiveButton("Save") { _, _ ->
+                .setPositiveButton("Save", null)
+                .setNegativeButton("Cancel", null)
+                .create()
+            // Validate on the button, not after dismissal: a scope the gateway
+            // would reject must never be silently normalized into a DIFFERENT
+            // identity (that is somebody else's memory), so the dialog stays open
+            // and says why. Blank is always fine — it means "don't declare one".
+            dlg.setOnShowListener {
+                dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                    val reason = SessionScope.validationError(escope.text.toString())
+                    if (reason != null) {
+                        Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
                     prefs.edit().putString("url", eurl.text.toString().trim())
                         .putString("model", emodel.text.toString().trim().ifEmpty { "hermes-agent" })
-                        .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim())).apply()
+                        .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
+                        .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
                     refreshEntityVal()
+                    dlg.dismiss()
                 }
-                .setNegativeButton("Cancel", null).show()
+            }
+            dlg.show()
         }
         refreshEntityVal()
         bindVoxRow()

@@ -18,22 +18,30 @@ type Config struct {
 	// the REAL profile agent (memory/identity/tools) — this is what makes the
 	// phone experience the same entity.
 	HermesModel string
+	// HermesSessionKey is the optional X-Hermes-Session-Key scope: the
+	// per-channel identity the gateway derives its long-term-memory scope from
+	// (see entity.go). Unset = the gateway's per-transcript default. It names a
+	// channel rather than carrying a credential, but it is operator-declared, so
+	// it is read from the environment like the base URL.
+	HermesSessionKey string
 }
 
 // Env names for zero-config + secret-safe loading.
 const (
-	envBaseURL = "HERMES_VOX_HERMES_URL"
-	envAPIKey  = "HERMES_VOX_HERMES_API_KEY"
-	envModel   = "HERMES_VOX_HERMES_MODEL"
+	envBaseURL    = "HERMES_VOX_HERMES_URL"
+	envAPIKey     = "HERMES_VOX_HERMES_API_KEY"
+	envModel      = "HERMES_VOX_HERMES_MODEL"
+	envSessionKey = "HERMES_VOX_HERMES_SESSION_KEY"
 )
 
 // LoadFromEnv reads the Config from the environment. Returns a Config with the
 // fields populated from HERMES_VOX_*; on a miss the field is left empty.
 func LoadFromEnv() Config {
 	return Config{
-		HermesBaseURL: os.Getenv(envBaseURL),
-		HermesAPIKey:  os.Getenv(envAPIKey),
-		HermesModel:   os.Getenv(envModel),
+		HermesBaseURL:    os.Getenv(envBaseURL),
+		HermesAPIKey:     os.Getenv(envAPIKey),
+		HermesModel:      os.Getenv(envModel),
+		HermesSessionKey: os.Getenv(envSessionKey),
 	}
 }
 
@@ -51,5 +59,7 @@ func Default() Config {
 // Client builds a HermesClient from the Config. A nil Config yields a client
 // that errors on Chat (the entity IS Hermes — never fake it).
 func (c Config) Client() *HermesClient {
-	return NewHermesClient(c.HermesBaseURL, c.HermesAPIKey, c.HermesModel)
+	client := NewHermesClient(c.HermesBaseURL, c.HermesAPIKey, c.HermesModel)
+	client.SetSessionKey(c.HermesSessionKey)
+	return client
 }

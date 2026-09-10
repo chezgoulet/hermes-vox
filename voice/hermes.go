@@ -35,7 +35,10 @@ type HermesClient struct {
 	// direct provider path), so model+provider together switch the entity's backend
 	// — a model-only request would be silently ignored without direct_model_requests.
 	provider string
-	http     *http.Client
+	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
+	// per-transcript default). See entity.go.
+	sessionKey string
+	http       *http.Client
 }
 
 func NewHermesClient(baseURL, apiKey, model string) *HermesClient {
@@ -71,9 +74,7 @@ func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionKey)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err

@@ -24,7 +24,10 @@ type HermesResponsesClient struct {
 	mu       sync.RWMutex
 	model    string
 	provider string // optional per-request inference-backend override ("" = gateway default)
-	http     *http.Client
+	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
+	// per-transcript default). Guarded by mu. See entity.go.
+	sessionKey string
+	http       *http.Client
 }
 
 func NewHermesResponsesClient(baseURL, apiKey, model string) *HermesResponsesClient {
@@ -119,9 +122,7 @@ func (c *HermesResponsesClient) Response(ctx context.Context, input string, prev
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err

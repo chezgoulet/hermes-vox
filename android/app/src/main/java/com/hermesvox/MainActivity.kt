@@ -1031,6 +1031,9 @@ class MainActivity : AppCompatActivity() {
         @Volatile private var sesKey: String? = null
         @Volatile private var sesModel: String? = null
         @Volatile private var sesProvider: String? = null
+        // The declared entity scope (X-Hermes-Session-Key): part of the session
+        // identity, so changing it re-dials exactly like url/key/model do.
+        @Volatile private var sesScope: String? = null
         @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
@@ -1079,17 +1082,27 @@ class MainActivity : AppCompatActivity() {
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
         val p = prefs.getString("provider", "").orEmpty()
+        // The entity scope (X-Hermes-Session-Key) — WHO this device is to the
+        // gateway. One gateway can serve the whole team behind ONE shared bearer
+        // key, so with no scope every install writes into the same long-term
+        // memory. Blank = undeclared (the gateway's per-transcript default),
+        // which is what every install did before this setting existed.
+        val sc = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         if (u.isBlank()) return
         // C0: no user-entered key -> surface the Settings prompt (never connect
         // with an empty auth / baked fallback).
         if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
-        if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p) {
+        if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
             session = HermesSession(u, k, m)
             // The provider is a per-request override the Go /v1/responses client sends
             // (the blessed LIGHT PATH) — set it after construction so every connector
             // (stream/chat/runs) forwards the chosen gateway backend.
             session?.setProvider(p)
-            sesUrl = u; sesKey = k; sesModel = m; sesProvider = p
+            // Same shape for the declared scope: the gomobile constructor keeps its
+            // signature and the Go session forwards the value to every connector
+            // (/v1/responses, /v1/chat/completions, /v1/runs).
+            session?.setSessionKey(sc)
+            sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
