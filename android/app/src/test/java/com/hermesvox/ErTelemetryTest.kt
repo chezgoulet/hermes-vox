@@ -55,6 +55,21 @@ class ErTelemetryTest {
         assertEquals(2L, s1 - s0)
     }
 
+    @Test fun soul_decisions_are_counted_and_emitted() {
+        // 0.8/M3c: a field session's central question — is the soul answering, handing over, or
+        // coming back with nothing? Relative assertions only (the object is shared).
+        fun n(l: String, k: String) = Regex("$k=(\\d+)").find(l)!!.groupValues[1].toLong()
+        val a0 = n(ErTelemetry.line(), "answer"); val e0 = n(ErTelemetry.line(), "escalate")
+        val z0 = n(ErTelemetry.line(), "nothing")
+        ErTelemetry.soulDecision("answer")
+        ErTelemetry.soulDecision("escalate")
+        ErTelemetry.soulDecision("garbage")   // anything unrecognised counts as nothing
+        val line = ErTelemetry.line()
+        assertEquals(1L, n(line, "answer") - a0)
+        assertEquals(1L, n(line, "escalate") - e0)
+        assertEquals(1L, n(line, "nothing") - z0)
+    }
+
     @Test fun should_emit_fires_exactly_once_per_ten_calls() {
         // Phase-independent: whatever the accumulated count, ten consecutive calls
         // contain exactly one emit.

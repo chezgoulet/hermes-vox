@@ -801,14 +801,17 @@ class MainActivity : AppCompatActivity() {
             orch.expressAsync("soul-answer", directive, "warm") { glue ->
                 when (val o = ErSoulTurn.parse(glue)) {
                     is ErSoulTurn.Outcome.Spoken -> {
+                        ErTelemetry.soulDecision("answer")
                         VoxLog.er("event=er-soul kind=$kind decision=answer chars=${o.text.length}")
                         cb(o.text)
                     }
                     ErSoulTurn.Outcome.Escalate -> {
+                        ErTelemetry.soulDecision("escalate")
                         VoxLog.er("event=er-soul kind=$kind decision=escalate")
                         cb(null)
                     }
                     ErSoulTurn.Outcome.Nothing -> {
+                        ErTelemetry.soulDecision("nothing")
                         VoxLog.er("event=er-soul kind=$kind decision=nothing")
                         cb(null)
                     }
