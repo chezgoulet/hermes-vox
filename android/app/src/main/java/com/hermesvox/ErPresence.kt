@@ -62,10 +62,16 @@ class ErPresence(
     @Volatile var active = false
         private set
 
+    /** 0.8/M1: did the SOUL say anything during the current mind-work window? The
+     *  window closes when the mind's reply arrives, so this is exactly "did the soul
+     *  speak before the reply" — the ER-delta numerator. Reset per window. */
+    @Volatile private var spokeThisWindow = false
+
     /** The user finished an utterance — classify it and open the window.
      *  fromVoice=true only (typed sends never trigger presence). Returns the
      *  route for the caller's log line. */
     fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
+        spokeThisWindow = false   // 0.8/M1: a new window starts here
         val d = ErIntent.classify(text)
         lastRoute = d.route
         ErTelemetry.classify(d.route)   // Phase 8: the miss-rate denominator
@@ -74,6 +80,7 @@ class ErPresence(
                 // The patient user. No escalation, no filler; a soft in-register
                 // ack (P3, cuttable by a real barge) at most.
                 speakGlue("okay — take the time you need")
+                spokeThisWindow = true
                 VoxLog.er("er:intent=backchannel route=hold")
             }
             ErIntent.Route.SOUL_DIRECT -> {
@@ -122,6 +129,7 @@ class ErPresence(
                     }
                     synchronized(fillerTimes) { fillerTimes.add(now) }
                     if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
+                    spokeThisWindow = true
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
                     // 0.6.7 Tier 1: deliver per the presence-voice mode.
                     // sounds = ErClips (private track — never Piper, never the
@@ -154,6 +162,8 @@ class ErPresence(
     /** The mind's reply arrived (or the turn was cut) — everything stops; the
      *  reply's own speech has precedence via the existing speak() path. */
     fun onMindReply() {
+        ErTelemetry.window(spokeThisWindow)   // 0.8/M1: close the ER-delta window
+        spokeThisWindow = false
         stop()
     }
 

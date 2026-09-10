@@ -107,6 +107,18 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     @Volatile private var loading = false
 
     override fun express(intent: String, content: String, tone: String): String {
+        val t0 = System.currentTimeMillis()
+        try {
+            return render(intent, content, tone)
+        } finally {
+            // 0.8/M1: the soul's OWN latency is the number that decides whether the
+            // instant lane is viable (gate G2). Measured on-device, never estimated.
+            ErTelemetry.gemmaRender(System.currentTimeMillis() - t0)
+        }
+    }
+
+    /** The render itself, timed by [express]. */
+    private fun render(intent: String, content: String, tone: String): String {
         val engine = llm
         if (!loaded || engine == null) return fallback.express(intent, content, tone)
         val prompt = "Operator directive: intent=$intent. Content to render: $content"
