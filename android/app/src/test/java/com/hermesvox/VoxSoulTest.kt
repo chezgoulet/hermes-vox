@@ -113,6 +113,7 @@ class VoxSoulTest {
         assertTrue("…and give the model a way to hand a turn over", p.contains(ErSoulTurn.ESCALATE))
         assertTrue("…and forbid explaining instead of escalating", p.contains("Never write a sentence"))
         assertTrue("…and keep the answer short", p.contains("one short warm sentence"))
+        assertTrue("…and bound its length", p.contains("twenty words"))
     }
 
     @Test fun the_authoring_directive_carries_the_contract_exactly_once() {

@@ -155,7 +155,30 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  Given the caller's utterance and what the mind is doing, it returns the line the soul
      *  should say — or null, meaning escalate or nothing, in which case the mind's answer is
      *  the voice. Runs off-main; the callback lands on the caller's thread. */
-    @Volatile var soulDecide: ((text: String, toolContext: String?, cb: (String?) -> Unit) -> Unit)? = null
+    @Volatile var soulDecide: ((kind: String, text: String, toolContext: String?, cb: (String?) -> Unit) -> Unit)? = null
+
+    /**
+     * 0.8/M3c: open the call with the soul's own greeting — ER only, and only once the pipeline
+     * (including the express layer, which the init gate waits for) is up. One render, before any
+     * turn exists: the soul speaks first, so there is no race to lose and turn one is the soul's
+     * by construction. Logged like every other soul decision.
+     */
+    fun soulGreet() {
+        val decide = soulDecide ?: return
+        decide(ErSoulTurn.KIND_GREETING, "", null) { line ->
+            if (line.isNullOrBlank()) return@decide
+            main.post {
+                if (soulGreeted || speaking) {
+                    VoxLog.er("event=er-soul-drop reason=greeting-${if (soulGreeted) "already-said" else "reply-live"}")
+                    return@post
+                }
+                soulGreeted = true
+                speakGlue(line, source = "soul-greeting")
+            }
+        }
+    }
+    /** One greeting per call. Reset in [stop] so the next call opens the same way. */
+    @Volatile private var soulGreeted = false
     @Volatile private var soulSpokeThisTurn = false
     /** 0.8/M3c: the same-text guard's ring — (line, spokenAtMs), pruned on use. */
     private val recentGlue = ArrayList<Pair<String, Long>>()
@@ -698,6 +721,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // ER Phase 4: controller teardown kills the presence loop first — its
         // handler callbacks must never outlive the executor they feed.
         erActive = false; erPresence.stop()
+        soulGreeted = false   // 0.8/M3c: the next call opens with a greeting too
         // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
         // case; this one guarantees a hangup always closes the measurement out).
         if (prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED)
@@ -839,7 +863,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // already flowing is the double answer.
         soulSpokeThisTurn = false
         if (voiceTurn && openerRoute == ErIntent.Route.ACK_AND_YIELD) {
-            soulDecide?.invoke(text, null) { line ->
+            soulDecide?.invoke(ErSoulTurn.KIND_TURN, text, null) { line ->
                 if (line.isNullOrBlank()) return@invoke
                 main.post {
                     if (!turnInFlight || gen != turnGen) return@post

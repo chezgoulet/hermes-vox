@@ -40,6 +40,31 @@ object ErSoulTurn {
         object Nothing : Outcome()
     }
 
+    /** What the client is asking the soul for. */
+    const val KIND_TURN = "turn"
+    const val KIND_GREETING = "greeting"
+
+    /**
+     * The call has just connected and the caller has not spoken. Ask the soul to OPEN it.
+     *
+     * This is the structural fix for the race the field exposed: the soul's mid-turn render
+     * (~2.5 s) loses to a healthy gateway's first token (~1.8 s), so on a good connection the
+     * soul was being dropped before it could speak. Opening the call has no competitor — the
+     * mind has nothing to answer yet — so ER is perceptible from the first second, and turn one
+     * is the soul's by construction.
+     *
+     * "Varied by personality" is the point: the SOUL renders the greeting against its own VOX.md,
+     * so it is the entity's hello and not a fixed line. The prohibition is grounded in the field:
+     * asked to render with nothing to go on, this model produced "Hello, Christopher. How can I
+     * help you today?" — service-desk register. A person greeting someone they know does not ask
+     * what they need.
+     */
+    fun greetingDirective(): String =
+        "The phone call has just connected and the caller has not spoken yet. " +
+            "Greet them the way you actually would, in your own voice — one short warm sentence, " +
+            "under about twenty words. Do not ask what they need and do not offer help; " +
+            "just say hello as yourself."
+
     /**
      * The directive rendered as the user turn.
      *
@@ -51,7 +76,7 @@ object ErSoulTurn {
         val ctx = if (toolContext.isNullOrBlank()) "" else " The mind is currently working on: $toolContext."
         return "The caller just said: \"$callerText\".$ctx " +
             "If this is a greeting, some smalltalk, or something about how they are feeling, reply with " +
-            "ONE short warm sentence in your own voice. " +
+            "ONE short warm sentence in your own voice, under about twenty words. " +
             "If answering it needs a fact, a tool, a real-world action, or a plan — or if you are not " +
             "sure — reply with exactly $ESCALATE and nothing else."
     }
