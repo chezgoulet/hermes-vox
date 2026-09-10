@@ -60,7 +60,7 @@ Found across the 2026-09-10 review. **Shipped in 0.7.3** are marked ✔.
 
 ## Milestones
 
-### M1 — Make ER measurable (no behavior change)
+### M1 — Make ER measurable — ✅ LANDED (nightly `nightly-20260910-113058-82ac6dd`)
 The instrument every later claim depends on. Safe to ship in a nightly immediately.
 - Emit `ErTelemetry.line()` — periodically on the turn-settle path, and always at call end.
 - Add the **ER-delta counters**: turns where the soul produced ≥1 utterance during the mind's
@@ -69,18 +69,21 @@ The instrument every later claim depends on. Safe to ship in a nightly immediate
 - Extend the line: `er: cls(...) barge(...) arb(...) soul-first-word[...] turns=N soul-spoke=N (x%) gemma-render[p50/p95]`.
 - **Gate: G3.** Then one field session, both modes, one script.
 
-### M2 — Un-collapse the presence ladder (the first perceptible change; GPU-independent)
-- Give the ladder back its middle rung: ONE nonverbal clip at ~700–900 ms (the preamble-slot
-  constant already exists and currently returns SILENT), density-capped, then silence to the
-  4 s lag line. `ErClips` already exists, plays on a private track, and the echo-skip window
-  is in place.
-- Restore `SILENCE_FIRST_MS` and `LAG_AFTER_MS` as distinct constants, and **prove reachability
-  with a timeline unit test** (assert the neutral rung fires at ~800 ms and nothing fires in
-  900–4000 ms) — a dead branch shipped once; a test is how it doesn't ship twice.
-- Risk: the double-ack class. Mitigated — a nonverbal clip doesn't restate thinking, and the
-  0–700 ms silence-first window is untouched.
-- Gate: field verdict on "alive, not chatty" (the filler-cap slider and presence-voice picker
-  are the dials).
+### M2 — Un-collapse the presence ladder — ✅ LANDED (the first perceptible change; GPU-independent)
+- The ladder now has its middle rung back, as a **NONVERBAL cue at 900 ms**
+  (`ErFillers.PREAMBLE_MS`), once per window, superseding the old assumption that
+  `SILENCE_FIRST_MS` should gate *all* sound. `SILENCE_FIRST_MS` now gates **words**
+  only — which is the rule that was always the real one (Piper's worst case is a
+  two-character interjection).
+- `State.PREAMBLE` deliberately carries `speak = null`: the presence plays a recorded
+  clip on its private track, and `spoken` mode stays **silent** here rather than falling
+  back to a sentence. A missing clip degrades to silence, never to words.
+- The unreachable `NEUTRAL`/`WARM` sentence inventory is **deleted**, and with it the
+  vestigial `warm` parameter (all ten call sites passed a literal `false`).
+- `ErFillersTest` now carries a **reachability** test for the rung, so the collapse
+  cannot silently recur.
+- Gate: field verdict on "alive, not chatty" (the filler-cap slider and presence-voice
+  picker are the dials).
 
 ### M3 — The soul lane, for real (SOUL_DIRECT wired; depends on G1 + G2)
 - Gemma renders greeting/identity/emotion/smalltalk against the mirrored VOX.md, and the soul
@@ -123,10 +126,30 @@ all of it. M5 follows M3. M6 closes the series.
 before the next lands), then release from `main` when the series is coherent. Decisions 1–3 below
 shape this.
 
-## Decisions needed from Christopher
+## Decisions LOCKED (Christopher, 2026-09-10)
 
-1. **Does ER own smalltalk turns** — may the soul answer greetings/identity/emotion WITHOUT the
-   mind (M3's core)? This is the one that changes the contract, and it is what makes ER
-   perceptibly different rather than merely faster.
-2. **Is the express model a requirement of ER**, or optional with a loud degrade?
-3. **Series shape:** one 0.8.0 at the end, or 0.8.x point releases per milestone?
+**1. ER owns smalltalk — the mind may override.** The soul answers greetings, identity,
+emotion and smalltalk directly; the Hermes agent keeps the right to override. M3 therefore has
+to build the override path, not just the soul path:
+- the soul's answer is voiced immediately (sub-second — the entire point of the feature);
+- the mind is still engaged in parallel; that engagement IS what gives it the chance to override;
+- if the mind's reply lands while the soul is still speaking, the existing `speak()` precedence
+  (Hermes preempts Gemma) cuts the soul — keep that as THE override mechanism, do not invent a
+  second one;
+- the failure this creates is the **double answer** (the soul greets, then the mind greets again).
+  Client-side guard: the SOUL_DIRECT voice prefix tells the agent the app has already answered and
+  to reply with a bare no-op token when it has nothing to add; the client suppresses that token and
+  never voices it. If a stock gateway echoes the token rather than honouring it, the client fails
+  safe — suppress, keep the soul's answer, never speak the token.
+
+**2. The express model is a REQUIREMENT of Enhanced Realtime.** ER is *defined* by using a local
+model to fill the gaps Sesame-style; Realtime already exists as the standard experience. So the
+silent `RoutedExpress` stand-in must stop masquerading as the soul:
+- enabling ER without the installed model is a loud, blocking state — not a quiet degrade
+  (download prompt / "ER unavailable: the express model is not installed");
+- the stand-in survives only as a crash-guard for the orchestration, never as a user-visible voice;
+- `ModelCatalog` keeps `recommended = false` (Realtime does not need it) while ER's own gate treats
+  it as required.
+
+**3. Series shape: every milestone lands on `testing` as a nightly; ONE 0.8.0 is cut from `main`
+at the end.** Intermediate nightlies carry `versionName 0.8.0` with a rising `versionCode`.
