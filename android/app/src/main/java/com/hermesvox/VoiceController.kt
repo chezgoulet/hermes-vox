@@ -145,7 +145,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     // 0.6.2: the filler cap is the user's Settings slider (read live per tick).
     // 0.6.7: the presence-voice mode (silent/sounds/spoken) + the clip Context.
     val erPresence = ErPresence(
-        { glue -> if (erPresenceOn) speakGlue(glue) },
+        { glue, source -> if (erPresenceOn) speakGlue(glue, source = source) },
         { prefsGetInt("er_filler_cap", 2) },
     ).also { p ->
         p.clipContext = context
@@ -1420,8 +1420,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
-    fun speakGlue(text: String, critical: Boolean = false) {
+    fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified") {
         if (text.isBlank()) return
+        // 0.8/M3: RECORD the glue text and its source. The 09-10 field session produced a
+        // 60-character spoken line during the mind-work window that matched no ErFillers
+        // entry, and the log could not say who had spoken it — the text was never written.
+        // That turned a bug into a mystery. One line here turns "something spoke" into
+        // "this spoke, from here". App-generated text only (never the user's words), so it
+        // is safe beside the log_transcripts privacy backstop.
+        VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} text=${text.take(120)}")
         if (!shouldSpeak()) return   // voice channel closed (or voice toggle off)
         if (speaking) return          // the authoritative reply has precedence — never talk over it
         // 0.6.5 (the field silence bug): while the streaming worker is actively
