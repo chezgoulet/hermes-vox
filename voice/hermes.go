@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -35,8 +36,13 @@ type HermesClient struct {
 	// direct provider path), so model+provider together switch the entity's backend
 	// — a model-only request would be silently ignored without direct_model_requests.
 	provider string
+	// mu guards sessionKey: the app re-declares the scope mid-session after the
+	// user edits Settings, while Chat reads it on the request path. A Go string
+	// header is two words, so an unsynchronized write is a torn read waiting to
+	// happen (the same reason HermesResponsesClient locks).
+	mu sync.RWMutex
 	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
-	// per-transcript default). See entity.go.
+	// per-transcript default). Guarded by mu. See entity.go.
 	sessionKey string
 	http       *http.Client
 }
@@ -74,7 +80,7 @@ func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setEntityHeaders(req, c.apiKey, c.sessionKey)
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
