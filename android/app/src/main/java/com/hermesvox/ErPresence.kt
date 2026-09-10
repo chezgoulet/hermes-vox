@@ -43,6 +43,9 @@ class ErPresence(
     // 0.6.5: monotonic count of LAG lines said THIS window — the fail-soft line
     // must be once per window (the 3s trailing count let it repeat forever).
     private val lagSaidCount = object { var value = 0 }
+    // 0.8/M2: monotonic count of preamble cues OFFERED this window (at most one —
+    // a repeated "mm" is the chatty failure the field already rejected).
+    private val preambleSaidCount = object { var value = 0 }
     private var lastRoute: ErIntent.Route = ErIntent.Route.ACK_AND_YIELD
     // ER Phase 7: what the soul already voiced this turn (the drift-sync log
     // the mind sees so it doesn't re-state confirmations).
@@ -109,6 +112,7 @@ class ErPresence(
         mindStartedAt = nowMs
         synchronized(fillerTimes) { fillerTimes.clear() }
         synchronized(lagSaidCount) { lagSaidCount.value = 0 }
+        synchronized(preambleSaidCount) { preambleSaidCount.value = 0 }
         active = true
         arm()
     }
@@ -121,7 +125,25 @@ class ErPresence(
                 val now = android.os.SystemClock.uptimeMillis()
                 val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
                 if (mindStartedAt > 0 && windowOpenedAt != mindStartedAt) windowOpenedAt = mindStartedAt
-                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value })
+                val o = ErFillers.tick(now, mindStartedAt, recent, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value }, preambleSaid = synchronized(preambleSaidCount) { preambleSaidCount.value })
+                // 0.8/M2: the nonverbal preamble cue — the middle rung. Delivered as a
+                // CLIP only, never as text (Piper must not read an interjection), so
+                // 'spoken' mode stays silent here by design and a missing clip degrades
+                // to silence rather than to words. This is the rung that makes ER
+                // actually audible on a healthy gateway, where the 4s fail-soft line
+                // never fires.
+                if (o.state == ErFillers.State.PREAMBLE) {
+                    synchronized(preambleSaidCount) { preambleSaidCount.value++ }
+                    val ctx = clipContext
+                    if (voiceMode == "sounds" && ctx != null &&
+                        ErClips.play(ctx, ErClips.clipFor("neutral", 0))) {
+                        spokeThisWindow = true
+                        if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {
+                            ErTelemetry.soulFirstWord(now - windowOpenedAt)
+                        }
+                        VoxLog.er("er:preamble clip=neutral")
+                    }
+                }
                 if (o.speak != null) {
                     // Phase 8: soul first-word = the first glue after the window opened.
                     if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {

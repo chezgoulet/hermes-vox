@@ -37,4 +37,37 @@ class ErTelemetryTest {
         val b = ErTelemetry.line()
         assertEquals(a, b)
     }
+
+    // ---- 0.8/M1: the ER-delta counters ----
+
+    private fun turnsOf(l: String) = Regex("turns=(\\d+)").find(l)!!.groupValues[1].toLong()
+    private fun spokeOf(l: String) = Regex("soul-spoke=(\\d+)").find(l)!!.groupValues[1].toLong()
+
+    @Test fun window_counts_the_er_delta() {
+        // RELATIVE assertions only — the object is shared across tests, so absolute
+        // counts are meaningless (see emit_is_read_only).
+        val t0 = turnsOf(ErTelemetry.line()); val s0 = spokeOf(ErTelemetry.line())
+        ErTelemetry.window(soulSpoke = false)
+        ErTelemetry.window(soulSpoke = true)
+        ErTelemetry.window(soulSpoke = true)
+        val t1 = turnsOf(ErTelemetry.line()); val s1 = spokeOf(ErTelemetry.line())
+        assertEquals(3L, t1 - t0)
+        assertEquals(2L, s1 - s0)
+    }
+
+    @Test fun should_emit_fires_exactly_once_per_ten_calls() {
+        // Phase-independent: whatever the accumulated count, ten consecutive calls
+        // contain exactly one emit.
+        var emits = 0
+        repeat(ErTelemetry.EVERY_N_TURNS.toInt()) { if (ErTelemetry.shouldEmit()) emits++ }
+        assertEquals(1, emits)
+    }
+
+    @Test fun the_line_carries_the_delta_and_the_render_family() {
+        ErTelemetry.gemmaRender(120L)
+        val line = ErTelemetry.line()
+        assertTrue(line.contains("turns="))
+        assertTrue(line.contains("soul-spoke="))
+        assertTrue(line.contains("gemma-render[p50="))
+    }
 }
