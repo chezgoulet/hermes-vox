@@ -45,7 +45,7 @@ class ConnectionPhaseTest {
         val warming = ConnectionPhase.pill(P.WARMING)
         val dialing = ConnectionPhase.pill(P.DIALING)
         val connected = ConnectionPhase.pill(P.CONNECTED)
-        assertTrue(warming.startsWith("Warming up"))
+        assertTrue(warming.startsWith("Initializing"))
         assertTrue(dialing.startsWith("Dialing"))
         assertEquals("Connected", connected)
         assertEquals(3, setOf(warming, dialing, connected).size)

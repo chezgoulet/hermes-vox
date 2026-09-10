@@ -2,6 +2,8 @@ package com.hermesvox
 
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
@@ -39,6 +41,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         get() = VoxSoul.soulPrompt(VoxMirror.read(context) ?: "")
 
     /** Load the on-device LiteRT-LM model (async, device/GPU). onReady(true) when loaded. */
+    @OptIn(ExperimentalApi::class)
     fun load(onReady: (Boolean) -> Unit) {
         // 0.6.2 field log (hermes-vox-merged: two "GemmaExpress loaded" lines 105ms
         // apart): onResume calls handleModeUi, and handleModeUi ran BEFORE the first
@@ -54,6 +57,16 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         kotlin.concurrent.thread {
             try {
                 if (!modelFile.exists()) { loaded = false; onReady(false); return@thread }
+                // 0.8/M3: speculative decoding lives on the ExperimentalFlags SINGLETON in
+                // the litertlm version we actually compile against (0.16.1) — upstream's
+                // tip moved it onto ConversationConfig, and the difference is real: the
+                // gate caught the compile error that taught us. Set BEFORE engine init
+                // because the engine reads the singleton when it builds. Gemma 4's built-in
+                // MTP drafter, no extra download, documented 1.3-1.8x decode on phone GPUs.
+                // It is an @ExperimentalApi surface, so it is LOGGED — and the warm-up pair
+                // is the real proof: if renders do not drop, it did not engage.
+                ExperimentalFlags.enableSpeculativeDecoding = true
+                VoxLog.d("GemmaExpress: speculativeDecoding=${ExperimentalFlags.enableSpeculativeDecoding}")
                 // 0.7.3 GPU-first. The express layer is the latency-critical one: the
                 // soul's beat has to land inside a conversational pause, and the
                 // documented phone-class difference is ~1.8s time-to-first-token on
@@ -119,6 +132,13 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 val e = Engine(EngineConfig(
                     modelPath = modelFile.absolutePath,
                     backend = backend(),
+                    // 0.8/M3: maxNumTokens IS the kv-cache size (LiteRT-LM KDoc: "equivalent
+                    // to the size of the kv-cache"). Left null it inherits the model's
+                    // full 32k context, which is 4x more than this layer can ever use:
+                    // the persona is ~600 tokens and a render is capped at 256 output.
+                    // 8k keeps real headroom for a growing VOX.md and for bounded
+                    // conversation reuse later, while cutting the cache 4x.
+                    maxNumTokens = 8192,
                     // 0.8/M2.1: LiteRT-LM's docs call this out ("Pick a writable dir.
                     // This can improve 2nd load time.") and its published benchmarks are
                     // cache-enabled — we were paying the uncached first-load path on
@@ -170,7 +190,15 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         val prompt = "Operator directive: intent=$intent. Content to render: $content"
         return try {
             runBlocking {
-                engine.createConversation(ConversationConfig(systemInstruction = Contents.of(persona))).use { conv ->
+                engine.createConversation(ConversationConfig(
+                    systemInstruction = Contents.of(persona),
+                    // 0.8/M3: bounds a presence line, and sits ABOVE ErGemmaGuard's char
+                    // cap so the guard stays the binding UX control and this is only the
+                    // hard backstop against a runaway render. 256 tokens (~1.7x the char
+                    // guard) leaves room for the soul to hold a short conversation rather
+                    // than being cut off mid-thought.
+                    maxOutputToken = 256,
+                )).use { conv ->
                     // 0.6.6: the CALLBACK API, not the Flow API. The Flow overload's
                     // onDone closes the ProducerScope channel
                     // (SendChannel.close$default) — a method reference that does

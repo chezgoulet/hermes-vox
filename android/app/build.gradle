@@ -20,7 +20,7 @@ android {
         applicationId "com.hermesvox"
         minSdkVersion 24
         targetSdkVersion 34
-        versionCode 120
+        versionCode 121
         versionName "0.8.0"
         // C0 (0.4.0): no gateway key is injected or baked here. The Hermes gateway
         // API key is USER-ENTERED in the app (onboarding + Settings → Entity,
