@@ -220,15 +220,22 @@ class MainActivity : AppCompatActivity() {
 
     /** DEBUG-ONLY harness entry (inert when !isDebuggable). Lets the emulator
      *  stress script configure the session + drive a text turn without fighting
-     *  onboarding/IME. NOT reachable in release (debuggable=false), so it does
-     *  NOT reopen the #1 intent-injection surface. */
+     *  onboarding/IME. Extras: url, model, key, scope, text. `scope` is applied
+     *  when PRESENT — an explicit empty string clears the declared scope, which
+     *  is how a script exercises the undeclared path; url/model/key stay
+     *  blank-means-ignore. NOT reachable in release (debuggable=false), so it
+     *  does NOT reopen the #1 intent-injection surface. */
     private fun handleDebugHarness(intent: android.content.Intent?) {
         if (intent == null) return
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
         val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
         val m = intent.getStringExtra("model"); val text = intent.getStringExtra("text")
+        val sc = intent.getStringExtra("scope")
         if (!u.isNullOrBlank()) prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").apply()
         if (!k.isNullOrBlank()) prefs.edit().putString("key", (SecureStore.encrypt(k) ?: k)).apply()
+        // The SAME rule the UI uses, so a script cannot store a scope the gateway
+        // would reject, nor one silently rewritten into a different identity.
+        if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
     }
 
