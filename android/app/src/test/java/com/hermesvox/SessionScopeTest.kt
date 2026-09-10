@@ -76,7 +76,19 @@ class SessionScopeTest {
         for (bad in listOf("a\rb", "a\nb", "a\u0000b")) {
             assertEquals("", SessionScope.normalize(bad))
             assertFalse(SessionScope.isDeclared(bad))
-            assertTrue(SessionScope.validationError(bad)!!.contains("Line breaks"))
+            assertTrue(SessionScope.validationError(bad)!!.contains("Control characters"))
+        }
+    }
+
+    @Test fun the_validator_is_a_superset_of_the_gateway_rule() {
+        // TAB and DEL are not in the gateway's reject list (CR/LF/NUL), but they
+        // cannot travel safely through a header either. The app refuses them
+        // too, and the message must describe what is actually wrong — it used to
+        // claim "line breaks", which was untrue for a tab.
+        for (tabish in listOf("a\tb", "a\u007Fb")) {
+            assertEquals("", SessionScope.normalize(tabish))
+            assertNotNull(SessionScope.validationError(tabish))
+            assertTrue(SessionScope.validationError(tabish)!!.contains("Control characters"))
         }
     }
 

@@ -15,9 +15,13 @@ package com.hermesvox
  * documented example shape is `agent:main:webui:dm:user-42`; anything stable and
  * unique per person works (`agent:vox:tablet:cody`).
  *
- * The rules here MIRROR the gateway's own validation (max 256 chars; CR, LF and
- * NUL rejected) so a bad value is caught in the field instead of failing a turn
- * mid-call. Blank means NOT DECLARED — the gateway then scopes memory per
+ * The rules here are a SUPERSET of the gateway's own validation (max 256 chars;
+ * CR, LF and NUL rejected): they also refuse the remaining ISO control
+ * characters (TAB, DEL), so a value the gateway would have accepted but that
+ * cannot travel safely through a header is caught in the field instead of
+ * failing a turn mid-call. Over-strict is the safe direction — the app never
+ * sends what the gateway rejects. Blank means NOT DECLARED — the gateway then
+ * scopes memory per
  * transcript, which is exactly what every install did before this setting
  * existed. It names a channel rather than carrying a credential, so it is stored
  * in plain prefs (the API key stays behind SecureStore).
@@ -59,7 +63,7 @@ object SessionScope {
         val v = raw.trim()
         if (v.isEmpty()) return null
         if (v.length > MAX_LEN) return "Too long — the gateway accepts up to $MAX_LEN characters"
-        if (v.any { it.isISOControl() }) return "Line breaks are not allowed in the entity scope"
+        if (v.any { it.isISOControl() }) return "Control characters are not allowed in the entity scope"
         return null
     }
 }
