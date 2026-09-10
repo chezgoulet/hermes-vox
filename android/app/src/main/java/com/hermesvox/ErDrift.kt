@@ -51,7 +51,6 @@ object ErDrift {
     /** Update the vibe from a classified utterance (the classifier's route
      *  is the signal; ErDrift stays pure). */
     fun updateVibe(v: Vibe, route: ErIntent.Route): Vibe = when (route) {
-        ErIntent.Route.SOUL_DIRECT -> v.copy(mood = "warm", energy = "high", lastAck = "")
         ErIntent.Route.HOLD_ONLY -> v.copy(mood = v.mood, energy = v.energy)   // patient: no change
         ErIntent.Route.ACK_AND_YIELD -> v.copy(mood = v.mood, energy = v.energy, lastAck = "let me think")
     }

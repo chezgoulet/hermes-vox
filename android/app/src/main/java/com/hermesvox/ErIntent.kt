@@ -1,34 +1,50 @@
 package com.hermesvox
 
 /**
- * ErIntent — the soul-side intent classifier (ER Phase 4), pure JVM.
+ * ErIntent — the SAFETY classifier (0.8/M3c).
  *
- * Miles rule #1 (adopted): the controller does early intent classification —
- * emotion | smalltalk | information | action (+ backchannel as the 5th class).
- * Smalltalk/emotion → the soul converses directly. Information/action → the
- * soul acknowledges ("let me think…") and yields content authority to the mind.
- * INVARIANT (sacrosanct): if a response would change the user's external state
- * or teach a concrete fact, it originates from the mind, never the soul.
- * ON AMBIGUITY: default to NON-escalation-blocking — classify toward the mind
- * (the "don't lose a real question" asymmetry), but a backchannel NEVER
- * escalates (the "don't cut the mind on 'take your time'" asymmetry).
+ * What this object is now, and what it deliberately is NOT.
  *
- * A keyword classifier, honestly labeled: deterministic, instant, testable —
- * the alpha's presence layer. The Gemma-native classifier is the next step.
+ * It answers exactly two questions, and both are safety rules rather than language
+ * judgements:
+ *   1. Is this the patient caller — a backchannel that must NEVER escalate or cancel?
+ *   2. Is this a genuine interrupt — a redirect that should cancel the mind's turn?
+ *
+ * Those stay deterministic, enumerable and auditable on purpose. You do not want a 2B model
+ * in the abort path, and a rule set that is *supposed* to be finite is correct when it stops
+ * growing. Enumerability is a feature here, not a limitation.
+ *
+ * It NO LONGER decides which lane a turn belongs in. Until this change ErIntent also
+ * classified greeting / smalltalk / emotion / information / action against 174 literal
+ * substrings and routed smalltalk to the soul lane. That could not converge, and the field
+ * proved it inside one afternoon — three misses, each fix breeding the next edge case:
+ *   "So how's it going?"       -> information   (a discourse marker hid the greeting)
+ *   "hey, what's the weather"  -> smalltalk     (a question rode in behind a greeting)
+ *   "how are ya?"              -> information   (a greeting variant the lists lacked)
+ * A fourth would have been a fourth patch. Every one of those utterances is now simply the
+ * mind's lane until the soul model says otherwise.
+ *
+ * The judgement moved to the soul: Gemma reads the caller's line with the Contract in front
+ * of it and either answers as the soul or emits [ErSoulTurn.ESCALATE]. The lists that
+ * decided smalltalk are deleted with the routing.
+ *
+ * The consequence is honest and visible: every non-backchannel turn is the mind's lane, so
+ * the presence ladder always runs and a turn can never be silently skipped by a misroute.
  */
 object ErIntent {
 
-    enum class Class { BACKCHANNEL, EMOTION, SMALLTALK, INFORMATION, ACTION }
+    /** HOLD_ONLY = the patient caller, never escalate. ACK_AND_YIELD = the mind's lane. */
+    enum class Route { HOLD_ONLY, ACK_AND_YIELD }
 
-    /** What the classifier tells the presence loop to do. */
-    enum class Route { SOUL_DIRECT, ACK_AND_YIELD, HOLD_ONLY }
+    /** BACKCHANNEL = the patient caller. MIND = everything the soul must judge. */
+    enum class Class { BACKCHANNEL, MIND }
 
-    /** The decision, with the class that drove it (logged for the miss-rate
-     *  telemetry Phase 8 measures). */
+    /** The decision, with the class that drove it (logged for the telemetry counters). */
     data class Decision(val route: Route, val cls: Class)
 
-    // Backchannel: the smallest, best-bounded class — patient acknowledgments
-    // while the mind works. NEVER escalate; the soul just holds.
+    // Backchannel: the smallest, best-bounded class — patient acknowledgments while the mind
+    // works. NEVER escalate; the soul just holds. This list is a SAFETY list: it is finite by
+    // design, and adding to it is a correctness change, not a language improvement.
     private val BACKCHANNEL_PATTERNS = listOf(
         "take your time", "take ur time", "no rush", "it's okay", "its okay",
         "that's okay", "thats okay", "it's fine", "its fine", "go on", "go ahead",
@@ -37,134 +53,13 @@ object ErIntent {
         "i'm listening", "im listening", "still there", "you there",
     )
 
-    // Genuine barge markers: a redirect/stop/new instruction — the mind's
-    // current turn is stale. (Phase 5 consumes these; the classifier owns them.)
+    // Genuine barge markers: a redirect/stop/new instruction — the mind's current turn is
+    // stale. Also a SAFETY list. ErBargeGate owns the cancel/hold verdict.
     private val BARGE_PATTERNS = listOf(
         "stop", "never mind", "nevermind", "actually", "wait", "no wait",
         "forget it", "scratch that", "instead", "what?", "excuse me",
         "let me ask", "i want to ask", "hold on", "cancel",
     )
-
-    // Escalation markers: facts, tools, plans — the mind's lane.
-    private val INFORMATION_PATTERNS = listOf(
-        "what", "when", "where", "who", "which", "why", "how", "how much",
-        "how many", "how long", "how far", "is there", "are there", "does",
-        "do you know", "can you find", "tell me", "explain", "list", "compare",
-        "look up", "search", "find out", "how do i", "what is", "whats",
-        "what's", "define", "calculate", "convert", "translate",
-    )
-    private val ACTION_PATTERNS = listOf(
-        "remind me", "set a", "send ", "email ", "text ", "message ", "call ",
-        "buy ", "order ", "schedule ", "book ", "create ", "delete ", "remove ",
-        "add ", "update ", "change ", "turn on", "turn off", "open ", "close ",
-        "run ", "start ", "stop the", "write ", "make me", "install", "deploy",
-        "commit", "push ", "restart", "shut down", "shut it down", "reboot",
-    )
-
-    // Emotion/smalltalk: the soul's own lane — it converses directly.
-    private val EMOTION_PATTERNS = listOf(
-        "i feel", "i'm sad", "im sad", "i'm happy", "im happy", "i'm worried",
-        "im worried", "i'm scared", "im scared", "i'm tired", "im tired",
-        "i'm excited", "im excited", "i'm frustrated", "im frustrated",
-        "i love", "i miss", "i'm proud", "im proud", "thank you", "thanks",
-        "i'm sorry", "im sorry", "that makes me", "i'm nervous", "im nervous",
-    )
-    private val SMALLTALK_PATTERNS = listOf(
-        "hello", "hi ", "hi!", "hey", "good morning", "good afternoon",
-        "good evening", "goodnight", "how are you", "how're you", "how you doing",
-        "what's up", "whats up", "nice to meet", "talk to you", "see you",
-        "who are you", "what are you", "tell me about yourself", "i like",
-    )
-
-    /** Greeting-smalltalk: content-free by construction. Checked BEFORE the
-     *  information sweep so "how are you" / "who are you" are never read as
-     *  bare "how"/"who" questions. Identity questions belong here too — the
-     *  soul answers "who are you" about ITSELF, no mind needed. */
-    private val GREETING_PATTERNS = listOf(
-        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
-        "goodnight", "how are you", "how're you", "how you doing", "how is it going",
-        "how's it going", "what's up", "whats up", "who are you", "what are you",
-    )
-
-    /**
-     * Leading discourse markers: they carry no intent on their own, but they sit in
-     * front of one. A field miss — "So how's it going?" routed to INFORMATION — came
-     * from matching the greeting patterns against the RAW start of the utterance:
-     * nothing matches a string that begins with "so".
-     *
-     * Real-imperative words ("stop", "wait") are deliberately absent — they belong to
-     * BARGE_PATTERNS and must never be stripped into invisibility.
-     */
-    private val DISCOURSE_MARKERS = listOf(
-        "so", "well", "ok", "okay", "right", "um", "uh", "hmm", "oh", "ah",
-        "and", "but", "anyway", "alright",
-    )
-
-    /** Strip leading discourse markers (with their trailing punctuation) so a greeting
-     *  standing behind them is still recognised: "so how's it going" -> "how's it going".
-     *  Applied ONLY to the greeting check below, so no other route's matching changes. */
-    private fun stripDiscourse(t: String): String {
-        var s = t
-        while (true) {
-            val m = DISCOURSE_MARKERS.firstOrNull {
-                s == it || s.startsWith("$it ") || s.startsWith("$it,")
-            } ?: break
-            s = s.removePrefix(m).trim().trimStart(',', '.', '!', '-').trim()
-        }
-        return s
-    }
-
-    /**
-     * Words that, once greetings/markers/filler are removed, mean the caller asked
-     * something. The soul must never answer a question.
-     */
-    private val QUESTION_LEFTOVER = setOf(
-        "what", "whats", "what's", "when", "where", "who", "which", "why", "how",
-        "much", "many", "long", "far", "can", "could", "would", "will", "should",
-        "is", "are", "does", "do", "did", "send", "email", "text", "call", "check",
-        "look", "find", "tell", "remind", "schedule", "book", "order", "buy", "open",
-        // "with" is what turns the greeting "what's up" into the request
-        // "what's up WITH the server" — the one leftover a greeting phrase can hide behind.
-        "with",
-    )
-
-    /** Chatter that can sit around a greeting without turning it into a question. */
-    private val GREETING_FILLER = setOf(
-        "there", "friend", "buddy", "mate", "pal", "again", "today", "everyone", "all",
-    )
-
-    /**
-     * True when an utterance that tripped a soul-lane trigger carries NO real request.
-     *
-     * The soul-lane triggers — greeting, smalltalk opener, emotion — are matched BEFORE or
-     * independently of the information/action sweep, so a real request can ride in behind
-     * one: "hey, what's the weather", "what's up with the server", "i'm tired, can you send
-     * the email". Smalltalk routes skip the presence ladder entirely, so each of those used
-     * to leave the soul silent for the whole mind-work window.
-     *
-     * Answers by removing every greeting phrase, discourse marker, punctuation and piece of
-     * pure chatter, then asking whether anything meaning a question is left. Word-wise on
-     * purpose: substring matching is exactly what made "how's" read as "how".
-     *
-     * NOTE (caught by the gate): guarding only the GREETING branch is not enough. "hey,
-     * what's the weather" falls through to the SMALLTALK_PATTERNS branch, which is a second
-     * path to the same decision. Every soul-lane trigger calls this.
-     */
-    private fun isContentFreeChatter(t: String): Boolean {
-        var s = " " + t.replace(Regex("[^a-z0-9' ]"), " ").replace(Regex("\\s+"), " ").trim() + " "
-        var progress = true
-        while (progress) {
-            progress = false
-            for (phrase in GREETING_PATTERNS + DISCOURSE_MARKERS) {
-                val needle = " $phrase "
-                if (s.contains(needle)) { s = s.replace(needle, " "); progress = true }
-            }
-        }
-        return s.split(" ")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && it !in GREETING_FILLER }
-            .none { it in QUESTION_LEFTOVER }
-    }
 
     /** Normalize for matching: lowercase, collapse spaces, keep punctuation
      *  only when it carries meaning ("what?"). */
@@ -173,11 +68,10 @@ object ErIntent {
         return if (t.length <= 3) t else t.replace(Regex("\\s+"), " ")
     }
 
-    /** Backchannel match: the utterance must be (approximately) JUST the
-     *  backchannel — whole-string, or a trailing remnant of <3 chars / pure
-     *  punctuation. Compound backchannels ("okay, go on") strip the opener
-     *  and re-check the rest. "okay what's the weather" is a backchannel
-     *  OPENER + a real question, and the question must escalate. */
+    /** Backchannel match: the utterance must be (approximately) JUST the backchannel —
+     *  whole-string, or a trailing remnant of <3 chars / pure punctuation. Compound
+     *  backchannels ("okay, go on") strip the opener and re-check the rest. "okay what's the
+     *  weather" is a backchannel OPENER + a real question, and the question must escalate. */
     private fun isBackchannel(t: String): Boolean {
         for (raw in BACKCHANNEL_PATTERNS) {
             val it = raw.trim()
@@ -195,54 +89,28 @@ object ErIntent {
         return false
     }
 
-    /** The classification. Order IS the safety design:
-     *  1. backchannel first (it must never escalate),
-     *  2. genuine barge second (user redirect beats a stale question match),
-     *  3. action (escalate — cheap to over-escalate),
-     *  4. greeting-smalltalk before the information sweep (so "how are you"
-     *     is not swallowed by the bare "how" question marker),
-     *  5. information (escalate),
-     *  6. emotion/smalltalk remainder (the soul's lane),
-     *  7. else: ambiguous → ACK_AND_YIELD (the mind decides; missed smalltalk
-     *     costs one flat reply — the cheap miss; the expensive miss is the
-     *     soul ANSWERING a real question). */
+    /**
+     * The classification. Two outcomes only:
+     *  - the patient caller HOLDS (never escalates, never cancels), or
+     *  - the turn is the MIND's lane, and whether the soul speaks is the soul's decision.
+     *
+     * Order still matters for one reason: the backchannel test runs first, because the
+     * asymmetry is sacrosanct — a patient "take your time" must never be read as a redirect.
+     */
     fun classify(text: String): Decision {
         val t = norm(text)
         if (t.isEmpty()) return Decision(Route.HOLD_ONLY, Class.BACKCHANNEL)
         if (isBackchannel(t)) return Decision(Route.HOLD_ONLY, Class.BACKCHANNEL)
-        if (BARGE_PATTERNS.any { t.contains(it) }) return Decision(Route.ACK_AND_YIELD, Class.ACTION)
-        if (ACTION_PATTERNS.any { t.startsWith(it) || t.contains(it) })
-            return Decision(Route.ACK_AND_YIELD, Class.ACTION)
-        // Greeting-smalltalk is content-free by construction — check it BEFORE
-        // the information sweep so "how are you" never reads as a "how" question.
-        // 0.8/M3: matched against the stripped form, so a discourse marker in front
-        // ("so how's it going?") no longer hides the greeting. The strip is scoped to
-        // THIS check only — every other route still matches the raw text.
-        // ---- Soul-lane triggers. Each is checked before / independently of the
-        // information and action sweeps, so EACH must confirm the utterance is
-        // content-free chatter before it may hand the turn to the soul. Guarding one
-        // of them is how you ship half a fix: "hey, what's the weather" is caught by
-        // the greeting list, but "hey there, what's the weather" reaches the smalltalk
-        // list instead, and both would have answered a question.
-        val opener = stripDiscourse(t)
-        val looksLikeOpener =
-            GREETING_PATTERNS.any { opener == it.trim() || opener.startsWith("$it ") || opener.startsWith("$it?") || opener.startsWith("$it!") || opener.startsWith("$it,") } ||
-                SMALLTALK_PATTERNS.any { opener == it.trim() || opener.startsWith(it) }
-        if (looksLikeOpener && isContentFreeChatter(opener))
-            return Decision(Route.SOUL_DIRECT, Class.SMALLTALK)
-        if (INFORMATION_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it'") || t.startsWith("$it?") || t.startsWith("$it,") || t.contains(" how ") })
-            return Decision(Route.ACK_AND_YIELD, Class.INFORMATION)
-        if (EMOTION_PATTERNS.any { t.contains(it) } && isContentFreeChatter(t))
-            return Decision(Route.SOUL_DIRECT, Class.EMOTION)
-        // Ambiguity default: yield to the mind (see the class doc). This is where a
-        // smalltalk-opener utterance lands once its content-free check fails, which is
-        // the safe direction — the soul never gets a question.
-        return Decision(Route.ACK_AND_YIELD, Class.INFORMATION)
+        if (BARGE_PATTERNS.any { t.contains(it) }) return Decision(Route.ACK_AND_YIELD, Class.MIND)
+        return Decision(Route.ACK_AND_YIELD, Class.MIND)
     }
 
-    /** Is this utterance a GENUINE BARGE — the mind's current turn should be
-     *  cancelled? Phase 5's semantic gate; default NO on ambiguity (a missed
-     *  cancel is cheap — the user repeats; a false cancel regenerates 15s). */
-    fun isGenuineBarge(text: String): Boolean =
-        classify(text).cls == Class.ACTION && BARGE_PATTERNS.any { norm(text).contains(it) }
+    /** Is this utterance a GENUINE BARGE — the mind's current turn should be cancelled?
+     *  Default NO on ambiguity (a missed cancel is cheap — the user repeats; a false cancel
+     *  regenerates fifteen seconds), and NEVER yes for a backchannel. */
+    fun isGenuineBarge(text: String): Boolean {
+        val t = norm(text)
+        if (isBackchannel(t)) return false
+        return BARGE_PATTERNS.any { t.contains(it) }
+    }
 }

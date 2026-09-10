@@ -88,14 +88,6 @@ class ErPresence(
                 spokeThisWindow = true
                 VoxLog.er("er:intent=backchannel route=hold")
             }
-            ErIntent.Route.SOUL_DIRECT -> {
-                // The soul's own lane (emotion/smalltalk): Gemma converses directly.
-                // The expression itself is rendered by the GemmaExpress path in the
-                // host; presence only opens a quiet window (no fillers needed —
-                // the soul is speaking).
-                mindStartedAt = nowMs
-                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=soul-direct")
-            }
             ErIntent.Route.ACK_AND_YIELD -> {
                 // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
                 // 0.6.7 Tier 0: the SPOKEN ack is gone for short waits — silence +
