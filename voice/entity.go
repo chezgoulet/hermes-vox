@@ -40,10 +40,13 @@ func EntityURL(baseURL, path string) string {
 // so single-user installs are byte-for-byte unchanged.
 const SessionKeyHeader = "X-Hermes-Session-Key"
 
-// MaxSessionKeyLen mirrors the API server's header cap. The gateway rejects
-// values over 256 chars (and any containing CR, LF or NUL), so the app
-// validates before sending rather than eating a 400 mid-turn.
-const MaxSessionKeyLen = 256
+// The gateway is the authority on what a valid scope is: it caps the value at
+// 256 characters and rejects CR, LF or NUL. There is deliberately no Go-side
+// copy of that rule — a duplicated constant drifts, and silently normalizing a
+// bad value here would be worse than not declaring one at all (it would mix a
+// person's turns into the shared scope without saying so). Android validates it
+// visibly in the field (SessionScope.kt, the one client-side validator); any
+// other caller sends what it has and the gateway answers with a loud 400.
 
 // setEntityHeaders stamps the shared entity credentials on a request: the
 // bearer API key, and the session scope when the caller declared one. Both are
