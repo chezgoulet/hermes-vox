@@ -54,10 +54,17 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         kotlin.concurrent.thread {
             try {
                 if (!modelFile.exists()) { loaded = false; onReady(false); return@thread }
-                val e = Engine(EngineConfig(modelPath = modelFile.absolutePath, backend = Backend.CPU()))
-                e.initialize()
-                llm = e; loaded = true
-                VoxLog.d("GemmaExpress loaded: $modelFile")
+                // 0.7.3 GPU-first. The express layer is the latency-critical one: the
+                // soul's beat has to land inside a conversational pause, and the
+                // documented phone-class difference is ~1.8s time-to-first-token on
+                // CPU vs ~0.3s on GPU. Backend.GPU() needs the two
+                // <uses-native-library> grants in the manifest (libOpenCL.so +
+                // libvndksupport.so) — without them the vendor OpenCL cannot be
+                // opened and initEngine() falls back to CPU. Never fail the layer for
+                // a missing accelerator: a CPU presence beats no presence.
+                val (e, backend) = initEngine()
+                llm = e; loaded = true; activeBackend = backend
+                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("GemmaExpress load failed: ${e.message}")
@@ -67,6 +74,35 @@ class GemmaExpress(private val context: Context) : VoxExpress {
             }
         }
     }
+    /** Which accelerator actually served the model ("gpu" / "cpu"). Diagnostic —
+     *  this is what lets a field log PROVE whether the GPU path is live on a given
+     *  device, instead of leaving it to inference from frame drops. */
+    @Volatile var activeBackend: String = "none"
+        private set
+
+    /** Build the engine, preferring the GPU. Returns the first backend that
+     *  initializes; throws the CPU attempt's error if neither works (the caller
+     *  then reports the layer unavailable, exactly as before). */
+    private fun initEngine(): Pair<Engine, String> {
+        val attempts: List<Pair<String, () -> Backend>> =
+            listOf("gpu" to { Backend.GPU() }, "cpu" to { Backend.CPU() })
+        var lastError: Throwable? = null
+        for ((name, backend) in attempts) {
+            try {
+                val e = Engine(EngineConfig(modelPath = modelFile.absolutePath, backend = backend()))
+                e.initialize()
+                if (name == "cpu" && lastError != null) {
+                    VoxLog.e("GemmaExpress: GPU unavailable (${lastError?.message}) — running on CPU")
+                }
+                return e to name
+            } catch (t: Throwable) {
+                lastError = t
+                VoxLog.e("GemmaExpress: $name backend init failed: ${t.message}")
+            }
+        }
+        throw lastError ?: IllegalStateException("GemmaExpress: no backend available")
+    }
+
     private val loadLock = Object()
     @Volatile private var loading = false
 

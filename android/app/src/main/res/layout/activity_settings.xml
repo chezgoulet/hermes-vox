@@ -888,6 +888,29 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- 0.7.3: the CPU-thread budget for BOTH on-device speech legs.
+                     The LLM moved to the GPU, so the CPU is now the speech
+                     pipeline's; this is where you spend it. Auto = derived
+                     (Whisper: half the cores capped at 4; Piper: 2). -->
+                <LinearLayout
+                    android:id="@+id/row_stt_threads"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice CPU threads (STT + TTS)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_threads_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Auto"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <!-- Remote STT (server) config — revealed ONLY when the backend
                      picker above says "remote". The key field stores via
                      SecureStore (never in prefs XML in clear). -->

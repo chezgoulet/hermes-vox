@@ -38,6 +38,14 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
 
     private val dir get() = File(context.filesDir, "models/$modelId")
 
+    /** The Whisper thread count (VoxThreads): the Settings override, else half the
+     *  cores capped at 4. numThreads is baked into the recognizer at construction,
+     *  so a Settings change lands on the next model load, not mid-turn. */
+    private val sttThreads: Int = VoxThreads.stt(
+        Runtime.getRuntime().availableProcessors(),
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(VoxThreads.PREF, VoxThreads.AUTO),
+    )
+
     override fun init(onReady: (Boolean) -> Unit) {
         thread {
             try {
@@ -51,14 +59,14 @@ class OfflineWhisperStt(private val context: Context, private val modelId: Strin
                     this.whisper = whisper
                     this.tokens = t.absolutePath
                     this.modelType = "whisper"
-                    this.numThreads = 1
+                    this.numThreads = sttThreads
                     this.provider = "cpu"
                 }
                 val feat = FeatureConfig(16000, 80, 0f)
                 val cfg = OfflineRecognizerConfig(feat, modelCfg, HomophoneReplacerConfig("", "", ""), "greedy_search", 4, "", 0f, "", "", 0f)
                 rec = OfflineRecognizer(null, cfg)   // assetManager=null: absolute-path model
                 ready = true
-                VoxLog.d("OfflineWhisperStt loaded: $modelId")
+                VoxLog.d("OfflineWhisperStt loaded: $modelId threads=$sttThreads cores=${Runtime.getRuntime().availableProcessors()}")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("OfflineWhisperStt($modelId) init failed: ${e.message}")

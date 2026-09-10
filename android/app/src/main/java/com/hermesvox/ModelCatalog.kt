@@ -35,32 +35,36 @@ object ModelCatalog {
     const val DEFAULT_SOURCE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 
     val blessed: List<ModelSpec> = listOf(
-        ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.5,
+        // sizeMB = the REAL download size in decimal MB, from each artifact's
+        // Content-Length. The whole table was systematically understated before
+        // (Gemma by ~540 MB, whisper-small by ~96 MB) and ModelsActivity renders
+        // this number directly, so it has to be the true cost of the download.
+        ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.6,
             "Barge-in / wake trigger (replaces the RMS hack)", true, 1,
             "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", true, "",
             "Hears when you start or stop speaking, so you can interrupt hands-free"),
-        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 78.0,
+        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,
             "Piper en-US canonical LibriTTS-R medium", true, 2,
             "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", true,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
             "Speaks Hermes' replies aloud in a natural voice — fully offline"),
-        ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 86.0,
+        ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 118.1,
             "Offline STT · fastest, lightest", true, 3,
             "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd", false, "",
             "Turns your speech into text on-device — the fast, light option"),
-        ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 162.0,
+        ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 208.6,
             "Offline STT · blessed default (balanced)", true, 4,
             "475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542", true, "",
             "Turns your speech into text on-device — the balanced default"),
-        ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 540.0,
+        ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 635.7,
             "Offline STT · best accuracy, heaviest", true, 5,
             "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false, "",
             "Turns your speech into text on-device — most accurate, heavier"),
-        ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2050.0,
+        ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,
             "On-device expression layer (Enhanced Realtime, alpha)", true, 6,
             "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", false,
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-            "Optional on-device presence layer for Enhanced Realtime (alpha) mode")
+            "Optional on-device presence layer for Enhanced Realtime (alpha) mode — runs on the GPU")
     )
 
     // #114-denominator: REQUIRED and RECOMMENDED are THE SAME SET, everywhere.
