@@ -66,7 +66,7 @@ func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat/completions", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/chat/completions"), bytes.NewReader(buf))
 	if err != nil {
 		return "", err
 	}
