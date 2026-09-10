@@ -51,7 +51,7 @@ func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousRe
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/runs", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/runs"), bytes.NewReader(buf))
 	if err != nil {
 		return "", err
 	}
@@ -87,7 +87,7 @@ type runStatusResp struct {
 // is still working (poll until non-empty, or a timeout). An error indicates a run
 // failure (failed/error/cancelled). gomobile bind supports at most (T, error).
 func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/runs/"+runID, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, EntityURL(c.baseURL, "/v1/runs/"+runID), nil)
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +116,7 @@ func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, 
 // CancelRun aborts a running agent generation — the barge-in (run_stop). The
 // server flushes/aborts the run; pending work is cancelled.
 func (c *HermesRunClient) CancelRun(ctx context.Context, runID string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/runs/"+runID+"/stop", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/runs/"+runID+"/stop"), nil)
 	if err != nil {
 		return err
 	}

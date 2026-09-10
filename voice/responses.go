@@ -114,7 +114,7 @@ func (c *HermesResponsesClient) Response(ctx context.Context, input string, prev
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/responses", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/responses"), bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}

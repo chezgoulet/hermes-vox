@@ -30,7 +30,7 @@ func NewHermesGatewayClient(baseURL, apiKey string) *HermesGatewayClient {
 }
 
 func (g *HermesGatewayClient) get(path string) (string, int, error) {
-	req, err := http.NewRequest(http.MethodGet, g.baseURL+path, nil)
+	req, err := http.NewRequest(http.MethodGet, EntityURL(g.baseURL, path), nil)
 	if err != nil {
 		return "", 0, err
 	}
@@ -73,7 +73,7 @@ func (g *HermesGatewayClient) Health() (string, error) {
 
 // DeleteResponse drops a stored server-side response (the /new session reset).
 func (g *HermesGatewayClient) DeleteResponse(id string) error {
-	req, err := http.NewRequest(http.MethodDelete, g.baseURL+"/v1/responses/"+id, nil)
+	req, err := http.NewRequest(http.MethodDelete, EntityURL(g.baseURL, "/v1/responses/"+id), nil)
 	if err != nil {
 		return err
 	}
