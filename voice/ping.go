@@ -12,9 +12,7 @@ func (c *HermesResponsesClient) Ping() error {
 	if err != nil {
 		return err
 	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

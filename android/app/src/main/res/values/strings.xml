@@ -10,6 +10,7 @@
     <string name="hv_url_hint">Entity endpoint  ·  http://…</string>
     <string name="hv_key_hint">API key  ·  encrypted on-device, never sent anywhere but your gateway</string>
     <string name="hv_model_hint">Model  ·  hermes-agent</string>
+    <string name="hv_scope_hint">Entity scope  ·  who is talking (optional)  ·  agent:vox:tablet:name</string>
     <string name="hv_input_hint">Speak or type to the entity…</string>
     <string name="hv_send">↗</string>
     <string name="hv_label_flows">VOICE PIPELINE</string>

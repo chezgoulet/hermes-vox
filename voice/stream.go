@@ -110,9 +110,7 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	// No client Timeout: SSE bodies are long-lived; ctx owns cancellation.
 	client := &http.Client{}
 	resp, err := client.Do(req)

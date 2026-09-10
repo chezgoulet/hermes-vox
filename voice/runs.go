@@ -18,7 +18,10 @@ type HermesRunClient struct {
 	baseURL string
 	apiKey  string
 	model   string
-	http    *http.Client
+	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
+	// per-transcript default). See entity.go.
+	sessionKey string
+	http       *http.Client
 }
 
 func NewHermesRunClient(baseURL, apiKey, model string) *HermesRunClient {
@@ -56,9 +59,7 @@ func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousRe
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionKey)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
@@ -91,9 +92,7 @@ func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, 
 	if err != nil {
 		return "", err
 	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionKey)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
@@ -120,9 +119,7 @@ func (c *HermesRunClient) CancelRun(ctx context.Context, runID string) error {
 	if err != nil {
 		return err
 	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionKey)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
