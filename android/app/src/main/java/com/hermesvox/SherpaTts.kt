@@ -116,6 +116,14 @@ class SherpaTts(private val context: Context) : VoxTts {
      *  system=1.0 (shipped default) -> output identical when untouched. */
     private val voiceSpeed: Float by lazy { voiceRegister(currentVoiceRegister(context)).first }
 
+    /** The Piper thread count (VoxThreads): the Settings override, else a modest 2.
+     *  Piper already outruns real time — this only shortens the synthesis gap
+     *  between streamed sentences. Baked in at construction; applies on reload. */
+    private val ttsThreads: Int = VoxThreads.tts(
+        Runtime.getRuntime().availableProcessors(),
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(VoxThreads.PREF, VoxThreads.AUTO),
+    )
+
     override fun init(onReady: (Boolean) -> Unit) {
         thread {
             try {
@@ -127,13 +135,13 @@ class SherpaTts(private val context: Context) : VoxTts {
                 val dataDir = File(dir, "espeak-ng-data")
                 val vits = OfflineTtsVitsModelConfig(
                     model.absolutePath, "", tokens.absolutePath, dataDir.absolutePath, "", 0.667f, 0.8f, 1.0f)
-                val modelCfg = OfflineTtsModelConfig(vits = vits, numThreads = 1, provider = "cpu")
+                val modelCfg = OfflineTtsModelConfig(vits = vits, numThreads = ttsThreads, provider = "cpu")
                 val cfg = OfflineTtsConfig(modelCfg, "", "", 256, 1.0f)
                 // IMPORTANT: sherpa requires assetManager=null when loading from
                 // an absolute filesystem path (filesDir) — else it tries to read
                 // the file as an asset and aborts (issue #2562).
                 tts = OfflineTts(null, cfg)
-                VoxLog.d("SherpaTts loaded: piper model")
+                VoxLog.d("SherpaTts loaded: piper model threads=$ttsThreads cores=${Runtime.getRuntime().availableProcessors()}")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("SherpaTts init failed: ${e.message}")
