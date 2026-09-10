@@ -363,7 +363,10 @@ class MainActivity : AppCompatActivity() {
      *  and the C3 route-change rebuild (both are start()/stop() compositions; no
      *  new engine code). The caller has already done the reset/permission checks. */
     private fun openVoiceLine(s: HermesSession) {
-        val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
+        val c = liveController ?: VoiceController(applicationContext, s).also {
+            liveController = it
+            wireSoul(it)
+        }
         c.attachListeners(listener)
         if (!ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)) {
             // #12: this used to be a dead label ("...Settings > Voice models").
@@ -779,6 +782,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 0.8/M3c: the soul's decision path. The host owns the express layer, so it renders — and
+     *  the render's OUTPUT is the routing decision (a line to say, or the escalate token),
+     *  which is why there are no keyword lists in the path any more.
+     *
+     *  Every outcome is logged, because the router is new and its behaviour must be measurable
+     *  from the field rather than assumed: how often the soul answers, how often it hands over,
+     *  and how often nothing usable came back. */
+    private fun wireSoul(c: VoiceController) {
+        c.soulDecide = { text, toolContext, cb ->
+            orch.expressAsync("soul-answer", ErSoulTurn.directive(text, toolContext), "warm") { glue ->
+                when (val o = ErSoulTurn.parse(glue)) {
+                    is ErSoulTurn.Outcome.Spoken -> {
+                        VoxLog.er("event=er-soul decision=answer chars=${o.text.length}")
+                        cb(o.text)
+                    }
+                    ErSoulTurn.Outcome.Escalate -> {
+                        VoxLog.er("event=er-soul decision=escalate")
+                        cb(null)
+                    }
+                    ErSoulTurn.Outcome.Nothing -> {
+                        VoxLog.er("event=er-soul decision=nothing")
+                        cb(null)
+                    }
+                }
+            }
+        }
+    }
+
     private fun setCallTone(live: Boolean) {
         try { status.setTextColor(if (live) 0xFF35D07F.toInt() else 0xFFD6F4FF.toInt()) } catch (_: Throwable) {}
     }
@@ -1147,6 +1178,7 @@ class MainActivity : AppCompatActivity() {
         appendConvo("You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
+            wireSoul(it)
             s.resetConversation()
             LatencyStats.resetSessionTurns()   // C3: first-use controller = fresh session
         }
