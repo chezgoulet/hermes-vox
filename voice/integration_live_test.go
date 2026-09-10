@@ -17,7 +17,10 @@ import (
 //   HERMES_VOX_LIVE=1
 //   HERMES_VOX_HERMES_API_KEY=<API_SERVER_KEY>   (secret; House env store)
 // Optional: HERMES_VOX_HERMES_URL (default http://100.84.47.125:8642),
-//           HERMES_VOX_HERMES_MODEL (default hermes-agent).
+//           HERMES_VOX_HERMES_MODEL (default hermes-agent),
+//           HERMES_VOX_HERMES_SESSION_KEY (the X-Hermes-Session-Key scope; when
+//           set, every live turn below carries it — the way a real multi-user
+//           install does, so the live suite exercises the identity path too).
 
 func liveConfig(t *testing.T) Config {
 	t.Helper()
@@ -41,6 +44,10 @@ func liveResponses(t *testing.T) *HermesResponsesClient {
 	t.Helper()
 	cfg := liveConfig(t)
 	c := NewHermesResponsesClient(cfg.HermesBaseURL, cfg.HermesAPIKey, cfg.HermesModel)
+	// Same wiring the app does after construction: a declared scope must ride the
+	// live turn too, or the suite would verify a single-tenant path that no
+	// multi-user install uses.
+	c.SetSessionKey(cfg.HermesSessionKey)
 	c.http.Timeout = 120 * time.Second
 	return c
 }
@@ -48,7 +55,9 @@ func liveResponses(t *testing.T) *HermesResponsesClient {
 func liveRuns(t *testing.T) *HermesRunClient {
 	t.Helper()
 	cfg := liveConfig(t)
-	return NewHermesRunClient(cfg.HermesBaseURL, cfg.HermesAPIKey, cfg.HermesModel)
+	c := NewHermesRunClient(cfg.HermesBaseURL, cfg.HermesAPIKey, cfg.HermesModel)
+	c.SetSessionKey(cfg.HermesSessionKey)
+	return c
 }
 
 // 1. A real turn against the live agent returns a real reply + a response id.
