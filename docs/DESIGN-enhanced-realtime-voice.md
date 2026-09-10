@@ -201,3 +201,75 @@ THREADING:
 - 0.5.0-B: state-driven presence motion (stall→waiting-constellation etc.).
 - This design: the VOICE + IDENTITY architecture that Enhanced Realtime uses them for.
 These ship together as the "presence" release that ER opens into.
+
+---
+
+# DECISION (2026-09-10, 0.8/M3c) — the soul decides; the lists stop routing
+
+## The problem, stated with numbers
+
+The intent classifier held **174 literal substrings** across seven lists — 32 backchannel,
+34 action, 31 information, 26 emotion, 20 smalltalk, 16 greeting, 15 barge — and decided
+from them whether a turn belonged to the soul or the mind. It could not converge, and the
+field proved it inside one afternoon with three misses, each fix breeding the next:
+
+- *"So how's it going?"* → **information** (a leading discourse marker hid the greeting)
+- *"hey, what's the weather"* → **smalltalk** (a real question rode in behind a greeting)
+- *"how are ya?"* → **information** (a greeting variant the lists did not contain)
+
+A fourth patch would have produced a fourth edge case. The tell is that each fix was a
+*language* judgement expressed as a string list, and language does not enumerate. Worse, the
+consequence was not cosmetic: a turn routed to the soul lane **skipped the presence ladder
+entirely**, so a misroute bought silence for the whole mind-work window — 10.5 s in a normal
+turn, 79 s in a stalled one.
+
+## The decision
+
+**Ask the soul model the question, once per turn, and let its output be the decision.**
+Gemma reads the caller's line with the Contract in front of it and either answers as the soul
+or emits a single escalate token. Nothing else routes.
+
+**1. The keyword lists keep one job, and it is a safety job.** Backchannel-never-escalates and
+barge-cancels stay deterministic, enumerable and auditable. You do not want a 2B model in the
+abort path, and those lists are *supposed* to be finite — a safety rule that stops growing is
+correct, not limited. `ErIntent` is now that object and nothing more: `HOLD_ONLY` or
+`ACK_AND_YIELD`, and every non-backchannel turn is the mind's lane until the soul says
+otherwise.
+
+**2. The mind runs in parallel, and that is the safety net.** Every turn still goes to the
+mind, whose reply preempts the soul by the existing `speak()` precedence. A wrong soul answer
+therefore cannot do damage — it can only be wrong about *who speaks first* — which is what
+makes a model-based router acceptable where a model-based abort decision would not be.
+
+**3. One render per turn, not two.** The soul's decision and its knowledge of what the mind is
+doing ride the *same* call. The tool context (which tool is running, what it is for) is fed
+into that render so the soul's line can be topical — *"checking your inbox now"* rather than a
+generic greeting. Two calls per turn would double the GPU cost for no gain.
+
+**4. Narration comes INSIDE the presence loop.** The tool-call narration path currently fires
+per tool event, outside the loop, with no density discipline at all. That is the defect the
+field exposed: seven *identical* greetings across thirty-nine seconds of one turn —
+seventeen seconds of GPU to say the same wrong thing seven times.
+
+**5. A spacing guard must yield silence, never the stand-in.** The rail correctly skipped a
+regeneration and then spoke the `RoutedExpress` fallback line, because `express()` returns the
+fallback when the guard fires. Two-line fix.
+
+**6. A same-text guard.** Nothing currently stops the same sentence twice in a window. The
+field defect was not the *number* of utterances; it was that seven came out identical, blind to
+time and blind to what was happening. A stuck-record guard is the actual fix.
+
+**7. The count is not a constant.** What governs how much the soul says is **change** (a new
+tool starting is a natural beat, and where a topical acknowledgement belongs), **density**
+(the existing per-3s cap and the user's slider), **duration** (silence-first, then fail-soft),
+and the soul's own judgement of whether saying anything adds anything. A fixed per-turn number
+is exactly the kind of constant that breaks in context.
+
+## Status of this document
+
+The routing is removed in this change. The **decision render** — the soul reading the turn and
+answering or escalating — is the next increment on the same branch, together with items 4-6.
+Until it lands, every non-backchannel turn is the mind's lane with the presence ladder running,
+which is strictly better than a misroute that silenced the ladder. Nothing here claims the soul
+lane is wired until that render exists.
+

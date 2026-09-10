@@ -14,9 +14,9 @@ object ErTelemetry {
 
     private val lock = Object()
 
-    // Classifier decisions by route.
+    // Classifier decisions by route (0.8/M3c: two outcomes only — the routing counters are
+    // gone with the routing).
     private var clsHold = 0L
-    private var clsSoul = 0L
     private var clsYield = 0L
     // Semantic barge verdicts.
     private var bargeCancel = 0L
@@ -39,7 +39,6 @@ object ErTelemetry {
     fun classify(route: ErIntent.Route) = synchronized(lock) {
         when (route) {
             ErIntent.Route.HOLD_ONLY -> clsHold++
-            ErIntent.Route.SOUL_DIRECT -> clsSoul++
             ErIntent.Route.ACK_AND_YIELD -> clsYield++
         }
     }
@@ -98,7 +97,7 @@ object ErTelemetry {
         val gr = if (gemmaRender.isEmpty()) "-" else
             "p50=${pct(gemmaRender, 50)} p95=${pct(gemmaRender, 95)}ms"
         val soulPct = if (turns == 0L) 0L else turnsSoulSpoke * 100 / turns
-        "er: cls(hold=$clsHold soul=$clsSoul yield=$clsYield) " +
+        "er: cls(hold=$clsHold yield=$clsYield) " +
             "barge(cancel=$bargeCancel hold=$bargeHold) " +
             "arb(play=$arbPlay preempt=$arbPreempt reject=$arbReject) soul-first-word[$sw] " +
             "turns=$turns soul-spoke=$turnsSoulSpoke (${soulPct}%) gemma-render[$gr]"
