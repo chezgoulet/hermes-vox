@@ -365,8 +365,17 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refreshEntityVal() {
         val u = prefs.getString("url", "").orEmpty()
+        if (u.isBlank()) {
+            findViewById<TextView>(R.id.set_entity_val).text = "—"
+            return
+        }
+        // A declared scope is an identity, and an identity you cannot see is one
+        // you cannot check — the VOX.md row surfaces its state, so this row
+        // states whether a scope is in play (and which one).
+        val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
+        val who = if (scope.isEmpty()) "no scope" else "scope · $scope"
         findViewById<TextView>(R.id.set_entity_val).text =
-            if (u.isBlank()) "—" else "$u · ${prefs.getString("model", "hermes-agent")}"
+            "$u · ${prefs.getString("model", "hermes-agent")} · $who"
     }
 
     private fun bindFlows() {
