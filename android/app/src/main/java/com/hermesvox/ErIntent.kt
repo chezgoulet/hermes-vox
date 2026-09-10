@@ -114,6 +114,58 @@ object ErIntent {
         return s
     }
 
+    /**
+     * Words that, once greetings/markers/filler are removed, mean the caller asked
+     * something. The soul must never answer a question.
+     */
+    private val QUESTION_LEFTOVER = setOf(
+        "what", "whats", "what's", "when", "where", "who", "which", "why", "how",
+        "much", "many", "long", "far", "can", "could", "would", "will", "should",
+        "is", "are", "does", "do", "did", "send", "email", "text", "call", "check",
+        "look", "find", "tell", "remind", "schedule", "book", "order", "buy", "open",
+        // "with" is what turns the greeting "what's up" into the request
+        // "what's up WITH the server" — the one leftover a greeting phrase can hide behind.
+        "with",
+    )
+
+    /** Chatter that can sit around a greeting without turning it into a question. */
+    private val GREETING_FILLER = setOf(
+        "there", "friend", "buddy", "mate", "pal", "again", "today", "everyone", "all",
+    )
+
+    /**
+     * True when an utterance that tripped a soul-lane trigger carries NO real request.
+     *
+     * The soul-lane triggers — greeting, smalltalk opener, emotion — are matched BEFORE or
+     * independently of the information/action sweep, so a real request can ride in behind
+     * one: "hey, what's the weather", "what's up with the server", "i'm tired, can you send
+     * the email". Smalltalk routes skip the presence ladder entirely, so each of those used
+     * to leave the soul silent for the whole mind-work window.
+     *
+     * Answers by removing every greeting phrase, discourse marker, punctuation and piece of
+     * pure chatter, then asking whether anything meaning a question is left. Word-wise on
+     * purpose: substring matching is exactly what made "how's" read as "how".
+     *
+     * NOTE (caught by the gate): guarding only the GREETING branch is not enough. "hey,
+     * what's the weather" falls through to the SMALLTALK_PATTERNS branch, which is a second
+     * path to the same decision. Every soul-lane trigger calls this.
+     */
+    private fun isContentFreeChatter(t: String): Boolean {
+        var s = " " + t.replace(Regex("[^a-z0-9' ]"), " ").replace(Regex("\\s+"), " ").trim() + " "
+        var progress = true
+        while (progress) {
+            progress = false
+            for (phrase in GREETING_PATTERNS + DISCOURSE_MARKERS) {
+                val needle = " $phrase "
+                if (s.contains(needle)) { s = s.replace(needle, " "); progress = true }
+            }
+        }
+        return s.split(" ")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it !in GREETING_FILLER }
+            .none { it in QUESTION_LEFTOVER }
+    }
+
     /** Normalize for matching: lowercase, collapse spaces, keep punctuation
      *  only when it carries meaning ("what?"). */
     private fun norm(text: String): String {
@@ -166,15 +218,25 @@ object ErIntent {
         // 0.8/M3: matched against the stripped form, so a discourse marker in front
         // ("so how's it going?") no longer hides the greeting. The strip is scoped to
         // THIS check only — every other route still matches the raw text.
-        val greet = stripDiscourse(t)
-        if (GREETING_PATTERNS.any { greet == it.trim() || greet.startsWith("$it ") || greet.startsWith("$it?") || greet.startsWith("$it!") || greet.startsWith("$it,") })
+        // ---- Soul-lane triggers. Each is checked before / independently of the
+        // information and action sweeps, so EACH must confirm the utterance is
+        // content-free chatter before it may hand the turn to the soul. Guarding one
+        // of them is how you ship half a fix: "hey, what's the weather" is caught by
+        // the greeting list, but "hey there, what's the weather" reaches the smalltalk
+        // list instead, and both would have answered a question.
+        val opener = stripDiscourse(t)
+        val looksLikeOpener =
+            GREETING_PATTERNS.any { opener == it.trim() || opener.startsWith("$it ") || opener.startsWith("$it?") || opener.startsWith("$it!") || opener.startsWith("$it,") } ||
+                SMALLTALK_PATTERNS.any { opener == it.trim() || opener.startsWith(it) }
+        if (looksLikeOpener && isContentFreeChatter(opener))
             return Decision(Route.SOUL_DIRECT, Class.SMALLTALK)
         if (INFORMATION_PATTERNS.any { t == it.trim() || t.startsWith("$it ") || t.startsWith("$it'") || t.startsWith("$it?") || t.startsWith("$it,") || t.contains(" how ") })
             return Decision(Route.ACK_AND_YIELD, Class.INFORMATION)
-        if (EMOTION_PATTERNS.any { t.contains(it) }) return Decision(Route.SOUL_DIRECT, Class.EMOTION)
-        if (SMALLTALK_PATTERNS.any { t == it.trim() || t.startsWith(it) })
-            return Decision(Route.SOUL_DIRECT, Class.SMALLTALK)
-        // Ambiguity default: yield to the mind (see the class doc).
+        if (EMOTION_PATTERNS.any { t.contains(it) } && isContentFreeChatter(t))
+            return Decision(Route.SOUL_DIRECT, Class.EMOTION)
+        // Ambiguity default: yield to the mind (see the class doc). This is where a
+        // smalltalk-opener utterance lands once its content-free check fails, which is
+        // the safe direction — the soul never gets a question.
         return Decision(Route.ACK_AND_YIELD, Class.INFORMATION)
     }
 

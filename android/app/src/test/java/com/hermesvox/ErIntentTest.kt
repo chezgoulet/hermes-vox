@@ -119,6 +119,37 @@ class ErIntentTest {
         }
     }
 
+    @Test fun a_greeting_with_a_real_question_behind_it_escalates() {
+        // The ordering guard. The greeting check runs BEFORE the information sweep (so
+        // "how are you" is never read as a bare "how"), which used to make a real request
+        // behind a greeting classify as smalltalk — and smalltalk skips the presence ladder
+        // entirely, so the soul went silent for the whole mind-work window. It must
+        // escalate instead: the soul cannot answer these.
+        for (t in listOf(
+            "hey, what's the weather", "hi, can you send the email",
+            "hello, where is the file", "hey there, are you busy",
+            "good morning — what time is it", "hi, do you remember me",
+            // The second path: this one reaches SMALLTALK_PATTERNS, not the greeting list.
+            "hey there, what's the weather", "what's up with the server",
+            // And the third: emotion is a soul-lane trigger too.
+            "i'm tired, can you send the email",
+        )) {
+            assertEquals("'$t' must escalate", ErIntent.Route.ACK_AND_YIELD, route(t))
+        }
+    }
+
+    @Test fun a_pure_greeting_is_still_smalltalk() {
+        // The traps the guard must NOT over-escalate: every one of these carries no
+        // question, and "hey there, how are you" in particular contains a second greeting
+        // that a naive leftover scan would read as a question word.
+        for (t in listOf(
+            "hey there", "how are you", "how are you doing today", "hey there, how are you",
+            "so how's it going?", "good morning", "well hello there", "hi", "who are you",
+        )) {
+            assertEquals("'$t' must stay smalltalk", ErIntent.Route.SOUL_DIRECT, route(t))
+        }
+    }
+
     @Test fun a_backchannel_plus_a_short_remnant_stays_a_backchannel() {
         // The backchannel check runs FIRST and is sacrosanct — it must never escalate.
         // "hmm, hi" therefore HOLDS (a marker + a <2-char remnant) rather than greeting.
