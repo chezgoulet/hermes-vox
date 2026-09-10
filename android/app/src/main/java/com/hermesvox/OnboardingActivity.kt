@@ -36,6 +36,12 @@ fun voiceModeLine(mode: String?): String = when (mode) {
  * "Connect & verify": we make a REAL probe (Ping -> GET /v1/models) so a bad
  * URL/key is caught up front, never faked.
  *
+ * The entity scope (optional, X-Hermes-Session-Key) is asked here too, because
+ * first run is where a person is already deciding what this install is: on a
+ * gateway shared by several people, that value is the only thing that keeps
+ * their memories apart (see SessionScope). Blank is a valid answer and stays the
+ * gateway's per-transcript default.
+ *
  * #120-A: a true first run opens on a short "how this works" step (what the
  * being is, the two voice modes, mic vs PTT) before the connection form, and
  * "Skip" now explains what it skips instead of proceeding silently.
@@ -45,6 +51,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var url: EditText
     private lateinit var key: EditText
     private lateinit var model: EditText
+    private lateinit var scope: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val pre = getSharedPreferences("hv", Context.MODE_PRIVATE)
@@ -55,9 +62,13 @@ class OnboardingActivity : AppCompatActivity() {
         url = findViewById(R.id.url)
         key = findViewById(R.id.key)
         model = findViewById(R.id.model)
+        scope = findViewById(R.id.scope)
         model.setText(prefs.getString("model", "hermes-agent"))
         url.setText(prefs.getString("url", ""))
         key.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
+        // Re-entering onboarding on an existing install shows what is declared
+        // (blank when nothing is), so the field is never a surprising blank.
+        scope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
 
         // #120-A: returning users (endpoint already stored) go straight to the
         // connection form; a true first run sees the explainer step first.
@@ -101,7 +112,13 @@ class OnboardingActivity : AppCompatActivity() {
         val u = url.text.toString().trim()
         val k = key.text.toString().trim()
         val m = model.text.toString().trim().ifEmpty { "hermes-agent" }
+        val sc = scope.text.toString()
         if (u.isBlank() || k.isBlank()) { Toast.makeText(this, "Enter the endpoint and API key", Toast.LENGTH_SHORT).show(); return }
+        // Checked BEFORE the probe: a scope the gateway would reject (or one that
+        // would have to be silently rewritten) must not be discovered mid-call —
+        // and it must never be stored as a different identity than typed.
+        val scopeIssue = SessionScope.validationError(sc)
+        if (scopeIssue != null) { Toast.makeText(this, scopeIssue, Toast.LENGTH_LONG).show(); return }
         val btn = findViewById<Button>(R.id.connect); btn.isEnabled = false; btn.text = "Verifying…"
         thread {
             val ok = try {
@@ -111,7 +128,8 @@ class OnboardingActivity : AppCompatActivity() {
             runOnUiThread {
                 btn.isEnabled = true; btn.text = getString(R.string.hv_connect_verify)
                 if (ok) {
-                    prefs.edit().putString("url", u).putString("model", m).putString("key", (SecureStore.encrypt(k) ?: k)).apply()
+                    prefs.edit().putString("url", u).putString("model", m).putString("key", (SecureStore.encrypt(k) ?: k))
+                        .putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
                     Toast.makeText(this, "Connected → the entity", Toast.LENGTH_SHORT).show()
                     goMain()
                 } else {
