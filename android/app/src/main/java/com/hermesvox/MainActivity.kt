@@ -372,11 +372,18 @@ class MainActivity : AppCompatActivity() {
             modelsMissingPill("Voice model not installed — tap to download")
             return
         }
-        if (!c.isWarm()) {
-            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
+        // 0.8/M3: in Enhanced mode the express layer is part of "initialized". A call
+        // must not open with the soul's voice still loading — the field log shows Gemma
+        // finishing 22s INTO a call, with its warm-up renders running over turn 1's
+        // audio (GPU work contending with a live turn). Realtime never waits on it: it
+        // does not use the express model, so gating it there would add a full cold load
+        // for nothing. Diagnostics keep the per-leg detail; the UI shows one word.
+        val soulReady = !modeIsEnhanced() || express.available
+        if (!c.isWarm() || !soulReady) {
+            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
-                // LOCAL pipeline load — this and only this is "Warming up".
+                // LOCAL pipeline load — this and only this is "Initializing".
                 warmingNow = true
                 showPhase()
                 mainHandler.postDelayed({ if (!isFinishing) openVoiceLine(s) }, 500)
@@ -390,7 +397,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         // Warmth just completed. THIS is the moment the gateway may honestly be
-        // tested (B2c): re-dial now, so the pill moves Warming up -> Dialing ->
+        // tested (B2c): re-dial now, so the pill moves Initializing -> Dialing ->
         // Connected instead of sitting on a single sticky word. The line opens
         // immediately underneath — the dial reports, it does not gate.
         val wasWarming = warmingNow
@@ -723,11 +730,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---- 0.5.1 Part B: the status pill reports the REAL phase ------------------
-    // "Warming up" used to be the only pre-connected word the pill knew, and it was
+    // "Initializing" is the only pre-connected word the pill knows, and it used to be
     // sticky: it covered the local pipeline load AND every network wait, so a cold
     // gateway and a loading STT model looked identical and neither ever resolved.
     // Now the phase is derived (ConnectionPhase — pure, unit-proven) from three facts
-    // this Activity actually knows, and the pill follows Warming up -> Dialing ->
+    // this Activity actually knows, and the pill follows Initializing -> Dialing ->
     // Connected because those are three different things.
     @Volatile private var probe = ConnectionPhase.Probe.NOT_TESTED
     @Volatile private var probeInFlight = false

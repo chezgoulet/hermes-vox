@@ -6,7 +6,8 @@ package com.hermesvox
  *
  * THE FIELD BUG THIS EXISTS TO KILL
  * ---------------------------------
- * The pill had exactly one pre-connected state, "Warming up…", and it was sticky:
+ * The pill had exactly one pre-connected state, "Initializing…" (it read "Warming up…" before
+ * the 0.8 rename), and it was sticky:
  * it went up while the local voice pipeline (STT/TTS/VAD) loaded and it never
  * described anything else. Meanwhile the connection test reported
  * `conn-test: ping=false(unknown) stream=false(unknown)` at pipe startup — a verdict
@@ -16,7 +17,7 @@ package com.hermesvox
  *
  * TWO WAITS, TWO WORDS
  * --------------------
- *   WARMING UP  the LOCAL pipeline is still loading — models, TTS, STT, VAD. Nothing
+ *   INITIALIZING  the LOCAL pipeline is still loading — models, TTS, STT, VAD. Nothing
  *               has been asked of the network yet, so no gateway verdict is possible
  *               and [resolve] refuses to give one: while warmth is false the probe
  *               result is ignored entirely, whatever it says.
@@ -107,7 +108,7 @@ object ConnectionPhase {
     fun pill(phase: Phase): String = when (phase) {
         Phase.NO_ENDPOINT -> "No gateway set — open Settings"
         Phase.NEEDS_KEY -> "Key needed — open Settings"
-        Phase.WARMING -> "Warming up…"
+        Phase.WARMING -> "Initializing…"
         Phase.DIALING -> "Dialing…"
         Phase.CONNECTED -> "Connected"
         Phase.GATEWAY_COLD -> "Gateway is warming up…"

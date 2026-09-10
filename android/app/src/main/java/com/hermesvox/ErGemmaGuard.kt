@@ -16,9 +16,13 @@ package com.hermesvox
  */
 object ErGemmaGuard {
 
-    /** Max output characters a single Gemma render may return. 2B "one or two
-     *  sentences" is ~200 chars; 600 is generous headroom. */
-    const val MAX_RENDER_CHARS = 600
+    /** Max output characters a single Gemma render may return. Sized for what the soul
+     *  actually says: it no longer just fills a silence — it holds smalltalk and can
+     *  carry a short conversation, so ~1000 chars (≈250 tokens) replaces the old 600,
+     *  which was written when this layer only emitted one or two sentences of filler.
+     *  Kept just under the engine's own output cap so this remains the binding UX
+     *  control and the engine cap is the backstop. */
+    const val MAX_RENDER_CHARS = 1000
 
     /** Min ms between two soul renders (the stuck-record spacing). */
     const val MIN_RENDER_SPACING_MS = 1200L
