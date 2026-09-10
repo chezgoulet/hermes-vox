@@ -42,22 +42,17 @@ func liveConfig(t *testing.T) Config {
 
 func liveResponses(t *testing.T) *HermesResponsesClient {
 	t.Helper()
-	cfg := liveConfig(t)
-	c := NewHermesResponsesClient(cfg.HermesBaseURL, cfg.HermesAPIKey, cfg.HermesModel)
-	// Same wiring the app does after construction: a declared scope must ride the
-	// live turn too, or the suite would verify a single-tenant path that no
-	// multi-user install uses.
-	c.SetSessionKey(cfg.HermesSessionKey)
+	// Built from the Config, so the declared scope rides the live turn the same
+	// way the app's connector does — the suite exercises the multi-user path
+	// rather than a hand-wired single-tenant one.
+	c := liveConfig(t).ResponsesClient()
 	c.http.Timeout = 120 * time.Second
 	return c
 }
 
 func liveRuns(t *testing.T) *HermesRunClient {
 	t.Helper()
-	cfg := liveConfig(t)
-	c := NewHermesRunClient(cfg.HermesBaseURL, cfg.HermesAPIKey, cfg.HermesModel)
-	c.SetSessionKey(cfg.HermesSessionKey)
-	return c
+	return liveConfig(t).RunClient()
 }
 
 // 1. A real turn against the live agent returns a real reply + a response id.

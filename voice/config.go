@@ -56,10 +56,41 @@ func Default() Config {
 	}
 }
 
-// Client builds a HermesClient from the Config. A nil Config yields a client
-// that errors on Chat (the entity IS Hermes — never fake it).
+// scopeSetter is the one thing every entity connector has in common: a way to
+// declare which channel is talking (see SessionKeyHeader).
+type scopeSetter interface{ SetSessionKey(scope string) }
+
+// scoped hands a freshly built connector the Config's declared scope. Every
+// constructor below routes through it, so a connector cannot be handed out with
+// the scope silently dropped — Config.Client() used to apply the scope while
+// the /v1/responses and /v1/runs connectors, built by callers, received none.
+// That is the same silent-scope-loss this header exists to fix, one layer up.
+func (c Config) scoped(client scopeSetter) { client.SetSessionKey(c.HermesSessionKey) }
+
+// Client builds the /v1/chat/completions connector from the Config. A zero
+// Config yields a client that errors on Chat (the entity IS Hermes — never
+// fake it). The declared scope rides every connector this Config hands out.
 func (c Config) Client() *HermesClient {
 	client := NewHermesClient(c.HermesBaseURL, c.HermesAPIKey, c.HermesModel)
-	client.SetSessionKey(c.HermesSessionKey)
+	c.scoped(client)
+	return client
+}
+
+// ResponsesClient builds the /v1/responses connector from the Config, carrying
+// the declared scope exactly as Client does. Non-Android callers drive
+// /v1/responses from a Config, so without this they had to remember
+// SetSessionKey by hand — and a caller (or test) that forgot it silently ran a
+// single-tenant path no multi-user install uses.
+func (c Config) ResponsesClient() *HermesResponsesClient {
+	client := NewHermesResponsesClient(c.HermesBaseURL, c.HermesAPIKey, c.HermesModel)
+	c.scoped(client)
+	return client
+}
+
+// RunClient builds the cancellable /v1/runs connector from the Config, carrying
+// the declared scope exactly as Client does.
+func (c Config) RunClient() *HermesRunClient {
+	client := NewHermesRunClient(c.HermesBaseURL, c.HermesAPIKey, c.HermesModel)
+	c.scoped(client)
 	return client
 }
