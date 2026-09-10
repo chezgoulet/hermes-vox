@@ -2,8 +2,6 @@ package com.hermesvox
 
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.ExperimentalApi
-import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
@@ -41,7 +39,6 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         get() = VoxSoul.soulPrompt(VoxMirror.read(context) ?: "")
 
     /** Load the on-device LiteRT-LM model (async, device/GPU). onReady(true) when loaded. */
-    @OptIn(ExperimentalApi::class)
     fun load(onReady: (Boolean) -> Unit) {
         // 0.6.2 field log (hermes-vox-merged: two "GemmaExpress loaded" lines 105ms
         // apart): onResume calls handleModeUi, and handleModeUi ran BEFORE the first
@@ -57,16 +54,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         kotlin.concurrent.thread {
             try {
                 if (!modelFile.exists()) { loaded = false; onReady(false); return@thread }
-                // 0.8/M3: speculative decoding lives on the ExperimentalFlags SINGLETON in
-                // the litertlm version we actually compile against (0.16.1) — upstream's
-                // tip moved it onto ConversationConfig, and the difference is real: the
-                // gate caught the compile error that taught us. Set BEFORE engine init
-                // because the engine reads the singleton when it builds. Gemma 4's built-in
-                // MTP drafter, no extra download, documented 1.3-1.8x decode on phone GPUs.
-                // It is an @ExperimentalApi surface, so it is LOGGED — and the warm-up pair
-                // is the real proof: if renders do not drop, it did not engage.
-                ExperimentalFlags.enableSpeculativeDecoding = true
-                VoxLog.d("GemmaExpress: speculativeDecoding=${ExperimentalFlags.enableSpeculativeDecoding}")
+                // 0.8/M3: speculative decoding (ExperimentalFlags.enableSpeculativeDecoding)
+                // was enabled here and REMOVED after measurement. The model card documents
+                // 1.3-1.8x decode on phone GPUs, but it is explicitly task-dependent, and
+                // our workload is a ~10-token output against a ~600-token preface. Field
+                // warm-up renders: 3874/2686 and 3486/2538 ms WITH it, versus 3285/2208,
+                // 3332/2330 and 2800/2224 ms without — slower on both renders in both
+                // sessions. For outputs this short the drafter costs more than it saves.
+                // If a longer-form soul lane ever lands, re-measure before re-enabling.
                 // 0.7.3 GPU-first. The express layer is the latency-critical one: the
                 // soul's beat has to land inside a conversational pause, and the
                 // documented phone-class difference is ~1.8s time-to-first-token on

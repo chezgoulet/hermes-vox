@@ -1246,7 +1246,7 @@ class MainActivity : AppCompatActivity() {
                             setStatus(glue, false)
                             // Narration split: real-time signals (quiet/visual); only enhanced
                             // voices the mid-work chatter (Gemma presence).
-                            if (modeIsEnhanced()) liveController?.speakGlue(glue)
+                            if (modeIsEnhanced()) liveController?.speakGlue(glue, source = "tool-narration")
                         }
                     }
                 }

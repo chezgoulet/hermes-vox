@@ -23,7 +23,8 @@ import android.os.Looper
  * no-op (Realtime behavior byte-identical).
  */
 class ErPresence(
-    private val speakGlue: (String) -> Unit,
+    /** utterance + a SOURCE tag, so the field log can name who spoke (0.8/M3). */
+    private val speakGlue: (String, String) -> Unit,
     /** 0.6.7: the user's filler-density slider (Settings ER section).
      *  Read live per tick so a slider change lands on the next turn. */
     private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
@@ -59,7 +60,7 @@ class ErPresence(
     /** 0.6.2: presence OFF — the classifier/telemetry/log still run (the mind's
      *  drift-sync stays honest) but every speakGlue is swallowed. A live mute,
      *  not a teardown: the window lifecycle is unchanged. */
-    val silentProxy: ErPresence by lazy { ErPresence({ /* presence muted */ }) }
+    val silentProxy: ErPresence by lazy { ErPresence({ _, _ -> /* presence muted */ }) }
 
     /** True while the presence loop is running (diagnostics/ER label). */
     @Volatile var active = false
@@ -83,7 +84,7 @@ class ErPresence(
             ErIntent.Route.HOLD_ONLY -> {
                 // The patient user. No escalation, no filler; a soft in-register
                 // ack (P3, cuttable by a real barge) at most.
-                speakGlue("okay — take the time you need")
+                speakGlue("okay — take the time you need", "presence-hold")
                 spokeThisWindow = true
                 VoxLog.er("er:intent=backchannel route=hold")
             }
@@ -161,10 +162,10 @@ class ErPresence(
                             val ctx = clipContext!!   // single-threaded tick loop; no concurrent mutation
                             val clip = ErClips.clipFor(kind, synchronized(fillerTimes) { fillerTimes.size })
                             val played = ErClips.play(ctx, clip)
-                            if (!played) main.post { speakGlue(o.speak!!) }   // clip missing → spoken fallback
+                            if (!played) main.post { speakGlue(o.speak!!, "presence-filler-clip-fallback") }   // clip missing → spoken fallback
                             else VoxLog.er("er:clip=$clip kind=$kind")
                         }
-                        else -> main.post { speakGlue(o.speak!!) }
+                        else -> main.post { speakGlue(o.speak!!, "presence-filler") }
                     }
                 }
                 if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
@@ -221,11 +222,11 @@ class ErPresence(
         val ctx = clipContext
         when {
             voiceMode == "sounds" && ctx != null -> {
-                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue("still working on it — the connection's a little slow")
+                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue("still working on it — the connection's a little slow", "presence-stall-clip-fallback")
                 VoxLog.er("er:stall-voiced idleMs=$idleMs mode=sounds")
             }
             else -> {
-                speakGlue("still working on it — the connection's a little slow")
+                speakGlue("still working on it — the connection's a little slow", "presence-stall")
                 VoxLog.er("er:stall-voiced idleMs=$idleMs mode=spoken")
             }
         }
