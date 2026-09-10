@@ -427,6 +427,11 @@ class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
         setStatus("On call", false)
+        // 0.8/M3c: THE SOUL OPENS THE CALL. In ER the entity greets you first, in its own voice,
+        // before the mind has anything to answer — so there is no race to lose and the mode is
+        // perceptible from the first second rather than only on slow turns. The greeting is
+        // RENDERED by the soul against its own VOX.md, so it varies by personality.
+        if (modeIsEnhanced()) c.soulGreet()
     }
 
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
@@ -790,19 +795,21 @@ class MainActivity : AppCompatActivity() {
      *  from the field rather than assumed: how often the soul answers, how often it hands over,
      *  and how often nothing usable came back. */
     private fun wireSoul(c: VoiceController) {
-        c.soulDecide = { text, toolContext, cb ->
-            orch.expressAsync("soul-answer", ErSoulTurn.directive(text, toolContext), "warm") { glue ->
+        c.soulDecide = { kind, text, toolContext, cb ->
+            val directive = if (kind == ErSoulTurn.KIND_GREETING) ErSoulTurn.greetingDirective()
+            else ErSoulTurn.directive(text, toolContext)
+            orch.expressAsync("soul-answer", directive, "warm") { glue ->
                 when (val o = ErSoulTurn.parse(glue)) {
                     is ErSoulTurn.Outcome.Spoken -> {
-                        VoxLog.er("event=er-soul decision=answer chars=${o.text.length}")
+                        VoxLog.er("event=er-soul kind=$kind decision=answer chars=${o.text.length}")
                         cb(o.text)
                     }
                     ErSoulTurn.Outcome.Escalate -> {
-                        VoxLog.er("event=er-soul decision=escalate")
+                        VoxLog.er("event=er-soul kind=$kind decision=escalate")
                         cb(null)
                     }
                     ErSoulTurn.Outcome.Nothing -> {
-                        VoxLog.er("event=er-soul decision=nothing")
+                        VoxLog.er("event=er-soul kind=$kind decision=nothing")
                         cb(null)
                     }
                 }

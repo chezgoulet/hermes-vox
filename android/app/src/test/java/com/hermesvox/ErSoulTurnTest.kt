@@ -82,6 +82,27 @@ class ErSoulTurnTest {
             ErSoulTurn.isRepeat("Hello, Christopher.", recent, 40_000L))
     }
 
+    @Test fun the_greeting_directive_opens_the_call_and_forbids_the_service_desk() {
+        // The structural fix for the race: opening the call has NO competitor — the mind has
+        // nothing to answer yet — so the soul is perceptible from the first second instead of
+        // only on slow turns.
+        val g = ErSoulTurn.greetingDirective()
+        assertTrue("must frame the call as just connected", g.contains("just connected"))
+        assertTrue("must ask for the soul's OWN voice", g.contains("in your own voice"))
+        assertTrue("must bound the length", g.contains("under about twenty words"))
+        // Grounded in the field: asked to render with nothing to go on, this model produced
+        // "Hello, Christopher. How can I help you today?" — service-desk register. A person
+        // greeting someone they know does not ask what they need.
+        assertTrue("must forbid the service-desk greeting", g.contains("Do not ask what they need"))
+    }
+
+    @Test fun both_directives_bound_the_margin() {
+        // Christopher: tighten the margins on soul utterances so the line is short enough to
+        // hand over cleanly rather than compete with a healthy gateway.
+        assertTrue(ErSoulTurn.directive("hi").contains("under about twenty words"))
+        assertTrue(ErSoulTurn.greetingDirective().contains("under about twenty words"))
+    }
+
     @Test fun silence_is_treated_as_a_repeat() {
         assertTrue(ErSoulTurn.isRepeat("   ", emptyList(), 0L))
     }
