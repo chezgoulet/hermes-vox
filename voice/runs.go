@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -18,8 +19,12 @@ type HermesRunClient struct {
 	baseURL string
 	apiKey  string
 	model   string
+	// mu guards sessionKey: the app re-declares the scope mid-session (the user
+	// edits Settings) while StartRun/RunStatus/CancelRun read it — cancel is the
+	// barge-in path, so the read can happen while a run is in flight.
+	mu sync.RWMutex
 	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
-	// per-transcript default). See entity.go.
+	// per-transcript default). Guarded by mu. See entity.go.
 	sessionKey string
 	http       *http.Client
 }
@@ -59,7 +64,7 @@ func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousRe
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setEntityHeaders(req, c.apiKey, c.sessionKey)
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
@@ -92,7 +97,7 @@ func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, 
 	if err != nil {
 		return "", err
 	}
-	setEntityHeaders(req, c.apiKey, c.sessionKey)
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
@@ -119,7 +124,7 @@ func (c *HermesRunClient) CancelRun(ctx context.Context, runID string) error {
 	if err != nil {
 		return err
 	}
-	setEntityHeaders(req, c.apiKey, c.sessionKey)
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err

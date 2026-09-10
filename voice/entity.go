@@ -66,8 +66,21 @@ func setEntityHeaders(req *http.Request, apiKey, sessionKey string) {
 
 // SetSessionKey declares this client's long-term-memory scope (see
 // SessionKeyHeader). "" clears it, returning the client to the gateway's
-// per-transcript default.
-func (c *HermesClient) SetSessionKey(scope string) { c.sessionKey = scope }
+// per-transcript default. Locked like every sibling setter: Chat reads the
+// scope on the request path, and the app may re-declare it mid-session.
+func (c *HermesClient) SetSessionKey(scope string) {
+	c.mu.Lock()
+	c.sessionKey = scope
+	c.mu.Unlock()
+}
+
+// sessionScope reads the declared scope under the client lock. Kept separate
+// from the request build so header stamping never nests locks.
+func (c *HermesClient) sessionScope() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sessionKey
+}
 
 // SetSessionKey declares this client's long-term-memory scope (see
 // SessionKeyHeader). It lives under the same lock as model/provider because the
@@ -87,5 +100,17 @@ func (c *HermesResponsesClient) sessionScope() string {
 }
 
 // SetSessionKey declares this client's long-term-memory scope (see
-// SessionKeyHeader) for the cancellable /v1/runs path.
-func (c *HermesRunClient) SetSessionKey(scope string) { c.sessionKey = scope }
+// SessionKeyHeader) for the cancellable /v1/runs path. Locked like the other
+// two: StartRun/RunStatus/CancelRun read it, and cancel can fire mid-run.
+func (c *HermesRunClient) SetSessionKey(scope string) {
+	c.mu.Lock()
+	c.sessionKey = scope
+	c.mu.Unlock()
+}
+
+// sessionScope reads the declared scope under the client lock.
+func (c *HermesRunClient) sessionScope() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sessionKey
+}
