@@ -107,12 +107,48 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      * repeat-spacing rail so the second render is a real second measurement.
      */
     private fun warmUp() {
-        for (i in 1..2) {
-            val t0 = System.currentTimeMillis()
-            try { render("working", "", "calm") } catch (_: Throwable) {}
-            VoxLog.d("GemmaExpress warm-up $i/2 ms=${System.currentTimeMillis() - t0}")
-            if (i == 1) try { Thread.sleep(1300) } catch (_: InterruptedException) {}
-        }
+        val t0 = System.currentTimeMillis()
+        try { render("working", "", "calm") } catch (_: Throwable) {}
+        VoxLog.d("GemmaExpress warm-up ms=${System.currentTimeMillis() - t0}")
+        // The second measurement IS the probe's full-persona leg — same render count as before,
+        // one more number, and it answers the question the beat's design depends on.
+        try { Thread.sleep(1300) } catch (_: InterruptedException) {}
+        probePrefill()
+    }
+
+    /**
+     * 0.8/M3d — the prefill probe.
+     *
+     * The beat needs a SHORT line, fast. Our warm renders are ~2.2s, and the workaround that
+     * suggests itself — pre-generate a set of lines and play them from cache — is an array of canned
+     * responses. Christopher named it correctly: that is the pattern this series spent its whole
+     * length deleting, wearing better clothes. So before designing around it, measure what the
+     * workaround assumes.
+     *
+     * The code says where the time should go: every render builds a FRESH Conversation, and the
+     * persona is ~600 tokens against a ~10-token output — so the whole preface is re-prefilled on
+     * every single render. If that dominates, a minimal persona renders the same directive far
+     * faster, and the beat can be GENERATED — contextually right, never repeating — rather than
+     * selected from a list.
+     *
+     * Two renders of a fixed trivial directive: full persona, then minimal. Output discarded, and
+     * deliberately NOT fed to ErTelemetry.gemmaRender — this is a measurement, not the soul
+     * speaking, and it must not pollute the p50/p95 that describes real presence. Runs at load,
+     * inside the init gate, where the user already expects to wait.
+     */
+    private fun probePrefill() {
+        val directive = "Operator directive: intent=greeting. Content to render: hello"
+        val full = timed { generate(persona, directive) }
+        // Separation, not the spacing rail: each measurement gets a settled GPU.
+        try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
+        val minimal = timed { generate(MINIMAL_PERSONA, directive) }
+        VoxLog.d("express-probe full=${full}ms minimal=${minimal}ms personaChars=${persona.length}")
+    }
+
+    private inline fun timed(f: () -> String): Long {
+        val t0 = System.currentTimeMillis()
+        try { f() } catch (_: Throwable) {}
+        return System.currentTimeMillis() - t0
     }
 
     /** Build the engine, preferring the GPU. Returns the first backend that
@@ -185,13 +221,29 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /** The render itself, timed by [express]. */
     private fun render(intent: String, content: String, tone: String): String {
-        val engine = llm
-        if (!loaded || engine == null) return fallback.express(intent, content, tone)
+        if (!loaded || llm == null) return fallback.express(intent, content, tone)
         val prompt = "Operator directive: intent=$intent. Content to render: $content"
         return try {
-            runBlocking {
-                engine.createConversation(ConversationConfig(
-                    systemInstruction = Contents.of(persona),
+            generate(persona, prompt)
+                // 0.6.3: the render rails — cap runaway output, enforce spacing.
+                .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), lastRenderAt) ?: "" }
+                .ifBlank { fallback.express(intent, content, tone) }
+                .also { lastRenderAt = System.currentTimeMillis() }
+        } catch (e: Throwable) {
+            VoxLog.e("GemmaExpress gen failed: ${e.message}")
+            fallback.express(intent, content, tone)
+        }
+    }
+
+    /**
+     * The raw generation on a given persona: build a conversation, send, collect. No rails and no
+     * state — [render] owns those, and the prefill probe needs to measure the generation alone.
+     */
+    private fun generate(personaOverride: String, prompt: String): String {
+        val engine = llm ?: return ""
+        return runBlocking {
+            engine.createConversation(ConversationConfig(
+                systemInstruction = Contents.of(personaOverride),
                     // 0.8/M3: bounds a presence line, and sits ABOVE ErGemmaGuard's char
                     // cap so the guard stays the binding UX control and this is only the
                     // hard backstop against a runaway render. 256 tokens (~1.7x the char
@@ -227,14 +279,23 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     sb.toString()
                 }
             }.trim()
-                // 0.6.3: the render rails — cap runaway output, enforce spacing.
-                .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), lastRenderAt) ?: "" }
-                .ifBlank { fallback.express(intent, content, tone) }
-                .also { lastRenderAt = System.currentTimeMillis() }
-        } catch (e: Throwable) {
-            VoxLog.e("GemmaExpress gen failed: ${e.message}")
-            fallback.express(intent, content, tone)
-        }
     }
     @Volatile private var lastRenderAt = 0L
+
+    companion object {
+        /**
+         * The fast-lane persona: used by the prefill probe and nothing else. A few dozen characters
+         * instead of a full VOX.md — the same voice-not-mind instruction, stripped to its bones. If
+         * the probe confirms the prefill split, this is the seed of the real fast lane, and the
+         * reason the beat can be generated rather than pre-authored.
+         *
+         * Kept short ON PURPOSE. Fattening it would silently void the comparison it exists to make,
+         * so a test pins its length.
+         */
+        val MINIMAL_PERSONA =
+            "You are the voice of an agent on a phone call. Reply in one short spoken sentence."
+
+        /** Above this, the probe's full-vs-minimal comparison stops measuring anything. */
+        const val MAX_MINIMAL_PERSONA_CHARS = 150
+    }
 }

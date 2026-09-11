@@ -54,12 +54,6 @@ object VoxSoul {
             "# Soul\nName: <your name>\nEssence: <2-3 sentences, who you are with me>\n" +
             "Register: <tone, diction, catchphrases>\nRelationship: <how you address me, what we are>\n" +
             "Memory: <a handful of distilled warm facts>\nHumor: <your kind of joke>\nProud: <what you're proud of>\n\n" +
-            "Also give two optional fields in the Soul section, as comma-separated lists. " +
-            "Stems: the small acknowledgements you actually make — three to six words each, the " +
-            "sounds a person makes while listening. Patience: the same register for when the mind " +
-            "is slow. Both will be spoken in your voice the instant a call needs a small sound from " +
-            "you, so keep them short, sayable, and true to you rather than generic — they are your " +
-            "noises, not a script. Neither may contain numbers or questions. " +
             "Derive every Soul field by DISTILLING your own SOUL.md and your memory — " +
             "name yourself as you actually are, not as a template would have you be. " +
             "Write it for a voice that SPEAKS FIRST AND BRIEFLY: on the phone this voice is " +
@@ -93,59 +87,6 @@ object VoxSoul {
     /** Per-field length ceilings (a 2B soul prompt stays small; drift guard). */
     const val MAX_ESSENCE_CHARS = 800
     const val MAX_LINE_CHARS = 400
-
-    // ---- Beat stems (0.8/M3d, the beat) ----
-
-    /**
-     * The optional stem fields.
-     *
-     * The beat (docs/DESIGN-enhanced-realtime-voice.md §DECISION) is the soul taking the opening
-     * moment of **every** turn, instantly — which means from cached audio, not from a render. Those
-     * lines have to be authored by the entity rather than shipped by us, and they have to be
-     * contract-safe *by construction*: a stem is spoken with no mind in the loop and no chance to
-     * check it, so a stem that asserted a fact or implied an action would break rule 1 or rule 2
-     * with nothing standing between it and the caller.
-     *
-     * **Optional, deliberately.** [SOUL_KEYS] is the required set, and adding a *required* field
-     * would fail validation on every VOX.md already mirrored in the field — the soul would read as
-     * absent and ER would break for exactly the users who have customised an entity. Absent stems
-     * fall back to the client's own presence lines.
-     *
-     * And a bad stem is filtered, never fatal: the Contract is sacred and enforced at mirror time,
-     * but stems are advisory data. A sloppy stem line should cost you a stem, not your soul.
-     */
-    val STEM_KEYS = listOf("Stems", "Patience")
-    const val MAX_STEMS = 8
-    const val MAX_STEM_CHARS = 48
-    const val MAX_STEM_WORDS = 6
-
-    /** The beat stems — the small sounds the entity makes when the turn has just opened. */
-    fun beatStems(doc: String?): List<String> = stems(doc, "Stems")
-
-    /** The long-wait register, for when the mind is slow. */
-    fun patienceStems(doc: String?): List<String> = stems(doc, "Patience")
-
-    /** Parse one stem field. Returns [] when absent, which is the back-compat path. */
-    fun stems(doc: String?, key: String): List<String> {
-        val d = doc ?: return emptyList()
-        val line = d.lines().firstOrNull { it.trim().startsWith("$key:") } ?: return emptyList()
-        return line.substringAfter(":").split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && acceptableStem(it) }
-            .take(MAX_STEMS)
-    }
-
-    /**
-     * Speakable with no mind in the loop: short, no bracketed stage direction (Piper would read
-     * "[laughs]" aloud), no digits — numbers are the classic invented-fact vector — and no question,
-     * because a question is not a beat; it invites an answer the soul may not be able to give.
-     */
-    fun acceptableStem(s: String): Boolean =
-        s.length <= MAX_STEM_CHARS &&
-            s.split(Regex("\\s+")).size <= MAX_STEM_WORDS &&
-            s.none { it.isDigit() } &&
-            !s.contains('[') && !s.contains(']') &&
-            !s.contains('?')
 
     // ---- Reply extraction ----
 
