@@ -1677,7 +1677,10 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun releaseTurnGate(gen: Long, reason: String) {
         if (gen != turnGen) { VoxLog.w("event=gate-release result=stale gen=$gen current=$turnGen reason=$reason"); return }
-        if (!voiceState.release()) { VoxLog.w("event=gate-release result=duplicate gen=$gen reason=$reason"); return }
+        // Not a warning. On hangup the turn has usually released the gate already, so a duplicate
+        // is the expected path, not an anomaly. This was logging at W on every hangup — noise in
+        // exactly the logs we read for field evidence.
+        if (!voiceState.release()) { VoxLog.d("event=gate-release result=duplicate gen=$gen reason=$reason"); return }
         try { turnDone.countDown() } catch (_: Throwable) {}
         VoxLog.d("event=gate-release gen=$gen reason=$reason")          // (audit's epoch= dropped — private)
         // T3 phantom-turn guard (log honesty): a mid-generation endCall/hangup releases

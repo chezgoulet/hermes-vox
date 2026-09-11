@@ -118,7 +118,7 @@ LiteRT-LM's `Conversation` exposes `close` / `sendMessage` / `cancelProcess` but
 one conversation cannot be reused across renders and a fresh one is built each time. The remaining
 levers are a shorter fast-lane prompt, or the engine's own cache. Do not plan on conversation reuse.
 
-### M3 — The soul lane, for real (SOUL_DIRECT wired; depends on G1 + G2)
+### M3 — The soul lane, for real — ✅ LANDED (vc126–vc129)
 - Gemma renders greeting/identity/emotion/smalltalk against the mirrored VOX.md, and the soul
   speaks it — with the mind NOT engaged for content-free classes.
 - Interlock with the streaming worker: one track, one fence (the 0.6.5 lesson is structural —
@@ -129,7 +129,12 @@ levers are a shorter fast-lane prompt, or the engine's own cache. Do not plan on
   loudly without it?
 - Gate: G2 (TTFT) + the Contract invariant held under a misclassification test.
 
-### M4 — Turn-taking (the every-turn delta, independent of gateway speed)
+### M4 — Turn-taking — SPLIT: the vanish bug is still open; the semantic endpointer is BLOCKED
+
+**Blocked, and the block is structural:** semantic end-of-turn "from STT partials" cannot be built
+on our current recogniser — Whisper here is offline/batch, so the endpointer never sees words, only
+silence. This moves to 0.9 with the streaming-STT swap. See
+`.hermes/reviews/vox-er-on-device-stack-review-2026-09-10.md`.
 - Semantic end-of-turn from the existing classifier + STT partials: commit on a completed
   question, stay conservative mid-thought.
 - Genuine interrupts land via the level-only escape the field log already proved necessary
@@ -138,22 +143,35 @@ levers are a shorter fast-lane prompt, or the engine's own cache. Do not plan on
   does the failed-interrupt speech arrive later as a normal turn (captured, flag unset) or
   vanish entirely (frames never evaluated)?
 
-### M5 — VOX.md quality (only meaningful once the soul is audible)
+### M5 — VOX.md quality — ✅ PROMPT REMADE (vc127); the stems are the next piece
 - A/B: mirrored VOX.md vs the generic persona, same prompts.
 - Validate the authoring/resync loop end-to-end in the field (its provider-layer 400 is
   resolved; confirm the fix holds).
 
-### M6 — The honesty pass
+### M6 — The honesty pass — PARTIAL (ROADMAP refreshed 2026-09-10; contention measurement open)
 - ROADMAP refresh (#11) + the 0.8 series added.
 - #13 runtime fallback, #14 render-loop contention measurement.
 - Per-milestone: `docs/RELEASE-0.8.x` + `DEVICE_VERIFY.md` refresh.
 
 ---
 
-## Order and parallelism
+## Series close-out (2026-09-10)
 
-M1 and M2 are GPU-independent and start immediately. M3 waits on G1/G2. M4 is independent of
-all of it. M5 follows M3. M6 closes the series.
+The planned order held; what changed is M4, and the reason is worth recording. The plan assumed the
+semantic endpointer was a matter of wiring the classifier to STT partials. It is not: **there are no
+partials to wire**, because the recogniser is offline. A model choice foreclosed a logic upgrade, and
+the fix is a model swap (0.9), not a milestone.
+
+**Landed on `testing`** (each a verified nightly, gate green): 0.7.3 GPU · M1 instrumentation ·
+M2 ladder · M2.1/M2.2 double-load · M3a knobs · M3 lists-out · M3 router · M3c prompt + greeting +
+router numbers · the two community PRs.
+
+**Carried forward** with a home in the roadmap: the field session on the router, G2's reframing, the
+vanish bug, the in-cabin A/B, the adaptive barge floor, engine release + soak, narration into the
+loop, GPU contention, truncation-after-barge, and the verdict mechanism.
+
+**The direction that replaced the turn-ownership framing:** the beat (A′) — see
+`docs/DESIGN-enhanced-realtime-voice.md` §DECISION. It is the next increment.
 
 **Ship shape:** 0.8 as a milestone series on `testing` (each milestone = a nightly, field-verified
 before the next lands), then release from `main` when the series is coherent. Decisions 1–3 below

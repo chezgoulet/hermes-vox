@@ -81,7 +81,16 @@ A validator checks the produced VOX.md: (a) Contract bytes identical to canonica
 (public-facing app — the House hard limit). "Sacrosanct" enforced at creation AND
 at runtime, since relying on a 2B to *remember* a rule is how it drifts.
 
-## Soft escalation, controller-gated (the safety invariant)
+## Soft escalation, controller-gated (the safety invariant) — SUPERSEDED IN PART
+
+> **Superseded in part (2026-09-10, 0.8/M3c).** What survives is the *controller-gating*: escalation
+> is honored and bounded in code, and the delivery guards (no second answer in a turn, no soul line
+> after a reply has begun) are still the invariant. What is gone is the **class-based routing** —
+> "tool/fact/plan classes route regardless" — because that is the pattern machinery, and it was
+> removed from the decision path entirely. The 2B now decides by *output*, not by category: it speaks,
+> or it emits `<<ESCALATE>>` (see "DECISION — the soul decides; the lists stop routing" below).
+> Kept for provenance; do not implement from this section.
+
 Soft path chosen (Christopher agreed) — the 2B may converse on smalltalk/emotional
 content directly and escalate on real work. The safety rule: escalation is
 **initiated by the 2B** (recognizes "beyond me") but **honored/gated by the controller
@@ -267,9 +276,54 @@ is exactly the kind of constant that breaks in context.
 
 ## Status of this document
 
-The routing is removed in this change. The **decision render** — the soul reading the turn and
-answering or escalating — is the next increment on the same branch, together with items 4-6.
-Until it lands, every non-backchannel turn is the mind's lane with the presence ladder running,
-which is strictly better than a misroute that silenced the ladder. Nothing here claims the soul
-lane is wired until that render exists.
+**The decision render landed.** As of 0.8/M3c (`testing`, vc126–vc129): the lists are out of the
+decision path, one render per turn carries the caller's line and its output *is* the decision
+(a line to speak, or `<<ESCALATE>>`), the prelude describes a **decider** rather than a renderer,
+the soul opens the call with a greeting rendered against its own VOX.md, and
+`soul(answer=N escalate=N nothing=N)` carries the router's numbers in the per-call line.
+
+**What is next, and it changes the shape: the beat.** On a healthy gateway the soul still loses
+the mid-turn race — the mind's first token lands in ~1.8 s, the soul's render takes ~2.5 s, and the
+delivery guard correctly drops the soul line. The direction agreed on 2026-09-10 is **A′**: the soul
+takes the *opening beat of every turn*, instantly, from pre-rendered personality stems; the mind
+preempts as it does today; escalation decides only whether the soul *continues*. Escalation stops
+being turn ownership and becomes a continuation decision. See
+`docs/DESIGN-enhanced-realtime-voice.md` §DECISION (beat) and `.hermes/reviews/` for the field
+research behind it.
+
+---
+
+# DECISION (2026-09-10) — the beat: the floor is taken in beats, not owned by a model
+
+Christopher approved A′ after the field research (`vox-er-turn-taking-field-research-2026-09-10.md`).
+
+**The finding.** Nobody in this field settles who owns a turn by routing it to one of two generators.
+Sesame's CSM models content and prosody but explicitly *not* conversation structure — "turn taking,
+pauses, pacing" — and their own blog calls full-duplex models that learn it the future. OpenAI's turn
+detection is a semantic classifier with a probability and a timeout, plus an `eagerness` preset.
+ElevenLabs, the most deployed conversational stack, is cascaded with a dedicated turn-taking model.
+The floor is taken in beats, and the live question is *when to take it and when to yield*.
+
+**The decision.** The soul takes the opening beat of **every** turn. The mind runs exactly as it does
+now and preempts when its answer is ready — ordinary barge-in, the beat is simply cut short.
+Escalation governs only whether the soul *continues* past the beat.
+
+**Why this is the right shape for us.** It removes the race rather than managing it, because a beat
+of three to six words is not a 2.5-second render. It makes ER audible on every turn instead of only
+the turns the router hands over — which is the structural answer to "no perceptible difference". And
+it discards nobody's work: the cancellation consequence that attended the earlier "the soul owns the
+turn" proposal dissolves entirely.
+
+**The build consequence.** The beat must be **pre-rendered**, not generated. The VOX.md pipeline
+emits the entity's own stem vocabulary — its actual backchannel register, authored by the soul rather
+than a generic clip library — synthesised once at init in the same voice as everything else. This is a
+change to that pipeline's contract.
+
+**Sequencing.** The beat first, because it is what changes how a call sounds. The semantic endpointer
+(probability + `eagerness`) and intent-dependent re-entry delay come after the .9 arrangement work,
+because they need streaming partials to exist before they can be built at all.
+
+**The invariant that survives unchanged.** No second answer in a turn; no soul line after the mind's
+reply has begun; the soul never originates a fact. Presence is the soul's job; intelligence is the
+mind's — the beat changes *when* the soul speaks, not what it is allowed to know.
 
