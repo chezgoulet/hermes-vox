@@ -12,6 +12,54 @@ import org.junit.Test
  */
 class VoxSoulTest {
 
+    // ---- The beat stems (0.8/M3d) ----
+
+    private val nl = System.lineSeparator()
+
+    @Test fun the_authoring_directive_asks_for_the_stems() {
+        val d = VoxSoul.AUTHOR_DIRECTIVE
+        assertTrue("names the beat field", d.contains("Stems:"))
+        assertTrue("names the patience field", d.contains("Patience:"))
+        assertTrue("and marks them optional", d.contains("optional"))
+    }
+
+    @Test fun a_legacy_mirror_without_stems_still_validates_and_has_none() {
+        // The back-compat guarantee, and the reason the fields are optional: every VOX.md already
+        // mirrored in the field must keep working. The caller falls back to its own presence lines.
+        val doc = canonical()
+        assertTrue(VoxSoul.validate(doc) is VoxSoul.Valid.Ok)
+        assertEquals(emptyList<String>(), VoxSoul.beatStems(doc))
+        assertEquals(emptyList<String>(), VoxSoul.patienceStems(doc))
+    }
+
+    @Test fun stems_are_parsed_in_the_entitys_own_voice() {
+        val doc = canonical() + nl + "Stems: mm, right, yeah okay" + nl +
+            "Patience: take your time, still digging into that"
+        assertEquals(listOf("mm", "right", "yeah okay"), VoxSoul.beatStems(doc))
+        assertEquals(listOf("take your time", "still digging into that"), VoxSoul.patienceStems(doc))
+        assertTrue("and the mirror still validates", VoxSoul.validate(doc) is VoxSoul.Valid.Ok)
+    }
+
+    @Test fun a_bad_stem_costs_a_stem_not_a_soul() {
+        // The Contract is sacred and enforced at mirror time. Stems are advisory data: a stem is
+        // spoken with no mind in the loop, so it must be safe by construction — but a sloppy stem
+        // line should cost you a stem, never your soul.
+        val doc = canonical() + nl +
+            "Stems: mm, I will check your inbox and read it back to you, what time is it?, " +
+            "the email arrived at 14:32, [laughs], right"
+        assertTrue("a sloppy stem line must not invalidate the mirror",
+            VoxSoul.validate(doc) is VoxSoul.Valid.Ok)
+        val stems = VoxSoul.beatStems(doc)
+        assertTrue("the good ones survive", stems.contains("mm") && stems.contains("right"))
+        assertTrue("an over-long stem is dropped",
+            stems.none { it.length > VoxSoul.MAX_STEM_CHARS })
+        assertTrue("a question is dropped", stems.none { it.contains('?') })
+        assertTrue("a number is dropped", stems.none { s -> s.any { it.isDigit() } })
+        assertTrue("a stage direction is dropped",
+            stems.none { it.contains('[') || it.contains(']') })
+        assertTrue("the cap holds", stems.size <= VoxSoul.MAX_STEMS)
+    }
+
     /** A canonical document, exactly as the authoring directive prescribes. */
     private fun canonical(soul: Map<String, String> = mapOf(
         "Name" to "Torc",
