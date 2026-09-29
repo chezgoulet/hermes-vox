@@ -257,6 +257,7 @@ class MainActivity : AppCompatActivity() {
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
+        avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
         convoText = findViewById(R.id.convo_text)
         handleModeUi()
@@ -270,8 +271,9 @@ class MainActivity : AppCompatActivity() {
             setStatus(getString(R.string.hv_connected), false)
         }
 
-        // First run → onboarding (no stored endpoint yet).
-        if (prefs.getString("url", "").orEmpty().isBlank()) {
+        // First run → onboarding (no stored endpoint yet), unless the user chose
+        // "Skip for now" there (FirstRunRoute).
+        if (FirstRunRoute.shouldOnboard(prefs.getString("url", ""), prefs.getBoolean(FirstRunRoute.PREF_SKIPPED, false))) {
             openOnboarding(); return
         }
         // C0: endpoint set but no user-entered key -> main screen shows the clear
@@ -530,6 +532,13 @@ class MainActivity : AppCompatActivity() {
         val total = ModelCatalog.required.size
         if (missing.isEmpty()) {
             modelsGate?.visibility = android.view.View.GONE
+            // Locked decision #2: the presence model is a REQUIREMENT of Enhanced Realtime. ER
+            // without it is not a quiet downgrade to a canned stand-in — the user is told, and one
+            // tap takes them to the download.
+            if (modeIsEnhanced() && !ModelCatalog.isInstalled(this, "gemma-e2b")) {
+                modelsMissingPill("⚠ Enhanced Realtime needs the presence model — tap to download")
+                return
+            }
             modelsWarnReset()
             return
         }
@@ -798,24 +807,22 @@ class MainActivity : AppCompatActivity() {
         c.soulDecide = { kind, text, toolContext, cb ->
             val directive = if (kind == ErSoulTurn.KIND_GREETING) ErSoulTurn.greetingDirective()
             else ErSoulTurn.directive(text, toolContext)
-            orch.expressAsync("soul-answer", directive, "warm") { glue ->
-                when (val o = ErSoulTurn.parse(glue)) {
-                    is ErSoulTurn.Outcome.Spoken -> {
-                        ErTelemetry.soulDecision("answer")
-                        VoxLog.er("event=er-soul kind=$kind decision=answer chars=${o.text.length}")
-                        cb(o.text)
-                    }
-                    ErSoulTurn.Outcome.Escalate -> {
-                        ErTelemetry.soulDecision("escalate")
-                        VoxLog.er("event=er-soul kind=$kind decision=escalate")
-                        cb(null)
-                    }
-                    ErSoulTurn.Outcome.Nothing -> {
-                        ErTelemetry.soulDecision("nothing")
-                        VoxLog.er("event=er-soul kind=$kind decision=nothing")
-                        cb(null)
-                    }
+            orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_TURN, directive, "warm") { glue ->
+                val o = ErSoulTurn.parse(glue)
+                val decision = when (o) {
+                    is ErSoulTurn.Outcome.Spoken -> "answer"
+                    is ErSoulTurn.Outcome.Beat -> "beat"
+                    ErSoulTurn.Outcome.Escalate -> "escalate"
+                    ErSoulTurn.Outcome.Nothing -> "nothing"
                 }
+                ErTelemetry.soulDecision(decision)
+                val chars = when (o) {
+                    is ErSoulTurn.Outcome.Spoken -> o.text.length
+                    is ErSoulTurn.Outcome.Beat -> o.opener.length
+                    else -> 0
+                }
+                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars")
+                cb(o)
             }
         }
     }
@@ -1277,19 +1284,20 @@ class MainActivity : AppCompatActivity() {
                 // a full prefill + generation of GPU time, thrown away, competing with
                 // the being's render loop. (09-10 log: five such wasted renders in one
                 // tool-heavy turn.)
-                val narrationWanted = prefs.getBoolean("presence", true) &&
+                // Narration is the soul's, so it exists only in Enhanced Realtime: in Realtime the
+                // line was rendered for a status pill that is hidden, which was pure GPU waste. The
+                // tool is NAMED so the line can be topical, and the soul may decline — the token
+                // means silence, and it is parsed, never spoken.
+                val narrationWanted = modeIsEnhanced() && prefs.getBoolean("presence", true) &&
                     liveController?.glueBlocked() != true
                 if (narrationWanted) {
+                    val args = line.removePrefix("◆ tool: ").substringAfter(' ', "").take(60)
                     // 0.6.2: async render — the Gemma generation must never run on
                     // main (the ANR risk). The glue lands back on main via runOnUiThread.
-                    orch.expressAsync("working", "", "calm") { glue ->
-                        if (glue.isNullOrBlank()) return@expressAsync
-                        runOnUiThread {
-                            setStatus(glue, false)
-                            // Narration split: real-time signals (quiet/visual); only enhanced
-                            // voices the mid-work chatter (Gemma presence).
-                            if (modeIsEnhanced()) liveController?.speakGlue(glue, source = "tool-narration")
-                        }
+                    orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_NARRATE, ErSoulTurn.narrationDirective(nm, args), "calm") { glue ->
+                        val said = (ErSoulTurn.parse(glue) as? ErSoulTurn.Outcome.Spoken)?.text
+                        if (said.isNullOrBlank()) return@expressAsync
+                        runOnUiThread { liveController?.speakGlue(said, source = "tool-narration") }
                     }
                 }
             } else if (line.startsWith("◆ tool · ")) {
@@ -1448,7 +1456,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * /compress (K2, 0.5.2) — ask the GATEWAY to compact this conversation's context
-     * so a long session can keep going. Christopher's ask, verbatim: "We need to
+     * so a long session can keep going. The maintainer's ask, verbatim: "We need to
      * expose a compress command to the user through this app."
      *
      * This is gateway-side compaction, not an app-side trim: [CompressCommand.DIRECTIVE]
@@ -1581,10 +1589,17 @@ class MainActivity : AppCompatActivity() {
     // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
     private fun handleModeUi() {
         applyLayoutMode()
+        refreshModelsGate()   // the ER requirement pill follows the mode
         val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
         if (mode == ModelCatalog.MODE_ENHANCED) {
             val g = express as? GemmaExpress
-            if (g != null && !g.available) g.load {}   // load the on-device model once
+            // Load the on-device model once. A model that is installed but cannot start (no
+            // supported accelerator/CPU path on this device) is said out loud, not hidden.
+            if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) g.load { ok ->
+                if (!ok) runOnUiThread {
+                    modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
+                }
+            }
         }
         // 0.6.7: the presence-voice mode is a live read — a Settings change
         // lands on the next tick without rebuilding the controller.

@@ -1,6 +1,6 @@
 # BUILD-DIRECTIVE: video-routing (Part 1) — widen the shape vocabulary
 
-REPO (sandbox): `/home/c/vox-video`  — branch `video-routing-spec`, HEAD `fc23d7f`.
+REPO (sandbox): `~/vox-video`  — branch `video-routing-spec`, HEAD `fc23d7f`.
 Read the design docs FIRST: `docs/CLAUDE-BRIEF-routing.md` (the 4 edits) + cross-check
 `docs/design-menu-shapes.md` (the vocab + locked decisions).
 
@@ -42,7 +42,7 @@ Grow `themeVals` + `themeLabels` to the same curated set (so the user can choose
 flame/ribbon/infall/bracket at idle). Human labels for each.
 
 ## Verify after EACH edit (anchor rule — no green gate without it)
-- Edit 1+2: `cd /home/c/vox-video/android && /home/c/gradle-8.12.1/bin/gradle
+- Edit 1+2: `cd ~/vox-video/android && ~/gradle-8.12.1/bin/gradle
   compileReleaseKotlin --no-daemon` (quick) — must be BUILD SUCCESSFUL before proceeding.
 - Edit 3: same, `compileReleaseKotlin`.
 - Edit 4: `testReleaseUnitTest` (the picker is UI; the Kotlin compile is the gate).

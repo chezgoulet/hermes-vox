@@ -18,7 +18,15 @@ object CrashLog {
     private const val FILE = "vox_crash.log"
     private fun file(c: Context) = File(c.filesDir, FILE)
 
+    @Volatile private var installed = false
+
+    /** Installs once per process (MainActivity calls this on every creation), and
+     *  chains to the previous handler so the crash keeps flowing to VoxLog and
+     *  then the platform. */
+    @Synchronized
     fun init(context: Context) {
+        if (installed) return
+        installed = true
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, e ->
             try { append(context, thread, e) } catch (_: Throwable) {}

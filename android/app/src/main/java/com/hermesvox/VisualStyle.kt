@@ -34,7 +34,7 @@ import kotlin.math.sin
  *            one and Static a nervous electric one — in EVERY state, including the
  *            still ones.
  *
- * 0.5.2 (A1) expands the table from 7 families to 20. The bar is Christopher's: toggling
+ * 0.5.2 (A1) expands the table from 7 families to 20. The bar is the maintainer's: toggling
  * between two categories mid-call must feel like a DIFFERENT BEING, not a recolour. So no
  * two entries differ on hue alone — each owns a distinct combination of all four axes
  * (fire vs radiance, deep water vs surface tide vs set ice, bioluminescent growth vs dull

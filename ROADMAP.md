@@ -65,6 +65,15 @@ Ships as **one 0.8.0** at the end. Every increment lands on `testing` as a night
   rendered against its own VOX.md — so turn one is the soul's by construction.
 - `[x]` **M3c — the router's numbers.** `soul(answer=N escalate=N nothing=N)` in the per-call
   line, so the router's invisible failure mode is visible.
+- `[x]` **The beat, built (vc133).** The soul keeps ONE warm LiteRT-LM conversation (persona
+  prefilled once, rotated by `SoulBudget`), so a render only prefills its directive. On the
+  mind's turns the same render returns a generated two-to-six-word opener (`Outcome.Beat`), the
+  soul decides *before* the mind's submit (`SoulGate`, bounded + adaptive), and the mind is told
+  what the voice did — including that it already answered, when it may reply `<<SKIP>>`
+  (`MindSkip`) and stay silent. The beat→reply audio handoff is explicit. See
+  `docs/DESIGN-enhanced-realtime-voice.md` §DECISION (the warm soul).
+- `[ ]` **Field session on the beat** — the `express-probe … warm=` line and
+  `soul(beat= … mind-skip=)` are the numbers that prove it on a real device.
 - `[ ]` **Community PRs #128 / #129** — merged, gated, field-tested alongside our own changes.
 - `[ ]` **Field session on the router** — the open question the numbers exist to answer.
 - `[ ]` **G2 — render latency** — warm render ~2.2 s against a ≲500 ms target. Reframed rather

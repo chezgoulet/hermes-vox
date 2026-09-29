@@ -17,8 +17,8 @@ class VoxSoulTest {
         "Name" to "Torc",
         "Essence" to "Steward of the House — I see what is missing and what should not be there.",
         "Register" to "plain, direct, warm; no fluff",
-        "Relationship" to "Christopher; we build the House together",
-        "Memory" to "maple shortbread; the move to Quebec",
+        "Relationship" to "Sam; we build things together",
+        "Memory" to "loves hiking; learning the cello",
         "Humor" to "dry, structural",
         "Proud" to "the library",
     )): String {

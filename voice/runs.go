@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -71,8 +70,7 @@ func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousRe
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 202 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("hermes run %s: %s", resp.Status, string(b))
+		return "", fmt.Errorf("hermes run %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	var out runStartResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -85,13 +83,46 @@ func (c *HermesRunClient) StartRun(ctx context.Context, input string, previousRe
 }
 
 type runStatusResp struct {
-	Status string      `json:"status"`
-	Output interface{} `json:"output"`
+	Status string          `json:"status"`
+	Output interface{}     `json:"output"`
+	Error  json.RawMessage `json:"error"`
+}
+
+// runTerminalFailure reports whether a run status is a terminal non-success.
+// The gateway's terminal set is completed | failed | cancelled | interrupted
+// ("interrupted" = the gateway shut down mid-run); "error" is accepted for
+// older builds. Anything else (queued, running, stopping,
+// waiting_for_approval) is still in flight.
+func runTerminalFailure(status string) bool {
+	switch status {
+	case "failed", "error", "cancelled", "interrupted":
+		return true
+	}
+	return false
+}
+
+// runErrorText renders the run's error field (a string, or an object with a
+// message) for the failure message.
+func runErrorText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var o struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(raw, &o) == nil {
+		return o.Message
+	}
+	return ""
 }
 
 // RunStatus returns the agent's reply when the run is complete; "" while the run
 // is still working (poll until non-empty, or a timeout). An error indicates a run
-// failure (failed/error/cancelled). gomobile bind supports at most (T, error).
+// failure (failed/cancelled/interrupted). gomobile bind supports at most (T, error).
 func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, EntityURL(c.baseURL, "/v1/runs/"+runID), nil)
 	if err != nil {
@@ -104,14 +135,16 @@ func (c *HermesRunClient) RunStatus(ctx context.Context, runID string) (string, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("hermes run status %s: %s", resp.Status, string(b))
+		return "", fmt.Errorf("hermes run status %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	var out runStatusResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", err
 	}
-	if out.Status == "failed" || out.Status == "error" || out.Status == "cancelled" {
+	if runTerminalFailure(out.Status) {
+		if msg := runErrorText(out.Error); msg != "" {
+			return "", fmt.Errorf("hermes run %s: %s", out.Status, msg)
+		}
 		return "", fmt.Errorf("hermes run %s", out.Status)
 	}
 	return extractRunText(out.Output), nil
@@ -131,8 +164,7 @@ func (c *HermesRunClient) CancelRun(ctx context.Context, runID string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("hermes run stop %s: %s", resp.Status, string(b))
+		return fmt.Errorf("hermes run stop %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	return nil
 }

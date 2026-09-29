@@ -32,38 +32,40 @@ The repo root is the Go module (`module github.com/chezgoulet/hermes-vox`,
 
 ## Development prerequisites
 
-The canonical gate (`scripts/gate.sh`) encodes the full toolchain. It is written
-for the House build host (the Thelio) and hardcodes that host's environment at
-`scripts/gate.sh:10-20`; on any other machine, set the same variables yourself:
+The canonical gate (`scripts/gate.sh`) encodes the full toolchain and runs
+from any checkout. It reads `JAVA_HOME`, `ANDROID_HOME` and `ANDROID_NDK_HOME`
+from the environment (falling back to the maintainer's build-host paths only
+when unset), so export those for your machine:
 
 - **Go 1.26.4** pinned via `GOTOOLCHAIN=go1.26.4` (env, not `go.mod` — a
   `toolchain` directive is stripped by `go mod tidy`).
-- **gomobile** — the `github.com/ebitengine/gomobile` fork (`go get -tool
-  github.com/ebitengine/gomobile/cmd/gobind`).
+- **gomobile** — the `github.com/ebitengine/gomobile` fork, pinned; the gate
+  installs it if it is not on `PATH`.
 - **JDK 17**, **Android SDK** (compileSdk 34), **NDK 25.2** (not 30 — the
-  gomobile link breaks on NDK 30), **Gradle 8.12.1**.
-- **Do NOT use the checked-in wrapper.** `android/gradle/wrapper/gradle-wrapper.properties`
-  still pins Gradle 8.2 and `gradle-wrapper.jar` is absent; AGP 8.7.3 + Gradle 8.2
-  is a known-failed pair. Use a real Gradle 8.12.1 binary. Fixing the wrapper
-  itself is a separate chore — do not slip it into an unrelated PR.
+  gomobile link breaks on NDK 30).
+- **Gradle** — use the checked-in wrapper (`android/gradlew`). It pins Gradle
+  8.12.1 with a verified distribution checksum; no system Gradle is needed.
+
+CI (`.github/workflows/ci.yml`) runs the same checks on every pull request —
+no secrets required, so fork PRs are gated too.
 
 ---
 
 ## The build/test contract (the gate)
 
 **One command, from a clean checkout:** `bash scripts/gate.sh` → prints
-`GATE-GREEN` on success. It runs five stages in order (`scripts/gate.sh:22-44`):
+`GATE-GREEN` on success. It runs five stages in order:
 
-1. `scripts/fetch-runtime.sh` — pinned runtime deps.
-2. `go vet ./voice/...`
-3. `go test -race ./voice/...` (offline)
+1. `scripts/fetch-runtime.sh` — the sherpa-onnx runtime AAR, SHA-256 verified.
+2. `go vet ./voice/... ./mobile/...`
+3. `go test -race ./voice/... ./mobile/...` (offline)
 4. `gomobile bind -target android -androidapi 23 -javapkg com.hermesvox -o mobile.aar github.com/chezgoulet/hermes-vox/mobile`
-5. `gradle --no-daemon clean assembleDebug` (from `android/`)
+5. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`)
 
 ### The AAR staging step is load-bearing
 
 Step 4 produces `mobile.aar`; step 5 **copies** it into `android/app/libs/`
-(`scripts/gate.sh:36-40`). Gradle consumes that copy, and Gradle's
+(stage 4 in `scripts/gate.sh`). Gradle consumes that copy, and Gradle's
 "up-to-date" check lies if you bind into the same path without re-staging —
 the last build can silently consume a *stale* AAR. Never skip the staging
 step, and never hand-commit `mobile.aar` (it is gitignored by design).
@@ -80,13 +82,13 @@ go test ./mobile/...             # the bind/session suite
 HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> go test ./voice/ -run Live -v
 
 # Android — pure-JVM unit tests, no emulator or device needed
-# (from android/, using a Gradle 8.12.1 binary)
-gradle :app:testDebugUnitTest --no-daemon
-gradle :app:testReleaseUnitTest --no-daemon   # the documented whole-tree gate pair
+# (from android/)
+./gradlew :app:testDebugUnitTest --no-daemon
+./gradlew :app:testReleaseUnitTest --no-daemon   # the documented whole-tree gate pair
 
 # Android — full app build
-gradle --no-daemon clean assembleDebug        # debug: no keystore needed
-gradle --no-daemon assembleRelease            # needs keystore/keystore.properties (below)
+./gradlew --no-daemon clean assembleDebug        # debug: no keystore needed
+./gradlew --no-daemon assembleRelease            # needs keystore/keystore.properties (below)
 ```
 
 The documented verification pair used across release notes is

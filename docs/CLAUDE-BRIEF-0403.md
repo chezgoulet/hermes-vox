@@ -40,7 +40,7 @@ Repo: Hermes Vox Android app at THIS directory, at main (0.4.0.2).
 3. Tests: BargeGateTest gains rows simulating the REAL failure shape (frame series
    with brief dips around the bar at 0.17-level, vad=false — must fire within ~400ms;
    pure echo-shape series at 0.15-0.17 amplitude-modulated — must NOT fire).
-4. Gate: cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+4. Gate: cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
    :app:testDebugUnitTest -q --no-daemon MUST exit 0. NEVER weaken/delete an existing
    assertion (except genuine spec reversals you list and justify).
 5. One commit: 'barge: 0.4.0.3 — <your fix in a phrase>'. VersionCode 82 /

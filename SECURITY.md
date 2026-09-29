@@ -144,7 +144,7 @@ The security boundary therefore has three sides:
 
 - Release builds are signed with the House release keystore (alias
   `hermes-vox`, RSA 4096). The keystore and `keystore.properties` are
-  gitignored; the password lives in the House env store. A missing properties
+  gitignored; the password lives in your environment. A missing properties
   file fails the build loudly — there is no silent fallback to the public
   Android debug key (`android/app/build.gradle:4-15,30-38`). Verify with
   `apksigner verify --print-certs` before shipping.

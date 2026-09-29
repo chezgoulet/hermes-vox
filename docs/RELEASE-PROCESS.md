@@ -54,7 +54,7 @@ release is also destined for Play:
 - **AAR staging:** `mobile.aar` is produced by gomobile bind; Gradle links a *copy* in
   `android/app/libs/`. Never skip the copy — it silently builds against a stale bind.
 - **Gradle wrapper:** the checked-in wrapper can be stale; the Thelio uses
-  `/home/c/gradle-8.12.1/bin/gradle`.
+  `~/gradle-8.12.1/bin/gradle`.
 - **Go toolchain:** `GOTOOLCHAIN=go1.26.4` + the cached GOMODCACHE/GOCACHE must be set (the
   auto-toolchain download can fail offline). See `scripts/gate.sh`.
 - **Build logs are never committed** — `.gitignore` covers `*.log`/`*.out`/`artifacts/`.

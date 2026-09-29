@@ -80,7 +80,7 @@ per-particle allocations in the hot loop, reuse buffers. Prove the frame cost.
 ## Deliverable — one commit
 Commit: 'anim: emergent swarm — the being shapes its own light (0.5.0.2)'
 It must ACTUALLY EDIT AvatarView.kt (a real diff, not a no-op). Then:
-  cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+  cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
   :app:testDebugUnitTest -q --no-daemon  → exit 0 (and assembleRelease must compile)
 Print:
   DESIGN_NOTES — the swarm/light/body design, how it's not-curve-dots

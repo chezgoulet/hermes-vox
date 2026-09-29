@@ -28,6 +28,7 @@
             android:background="@drawable/bg_chip"
             android:paddingHorizontal="12dp"
             android:paddingVertical="6dp"
+            android:accessibilityLiveRegion="polite"
             android:text="@string/hv_not_connected" />
     </LinearLayout>
 
@@ -37,7 +38,8 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1.4"
-        android:layout_marginTop="4dp" />
+        android:layout_marginTop="4dp"
+        android:importantForAccessibility="no" />
 
     <!-- Crawl area: reply (bright) + SSE (smaller, darker) over the black.
          Text drifts up + fades near the top, before touching the particle field. -->
@@ -103,7 +105,7 @@
             android:id="@+id/settings"
             style="@style/HvGhostButton"
             android:layout_width="48dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:background="@drawable/bg_button_ghost"
             android:text="⚙"
             android:textColor="@color/hv_text"
@@ -117,7 +119,7 @@
             android:id="@+id/call"
             style="@style/HvGhostButton"
             android:layout_width="wrap_content"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:background="@drawable/bg_button_ghost"
             android:paddingHorizontal="20dp"
             android:text="✆"
@@ -132,7 +134,7 @@
             android:id="@+id/commands"
             style="@style/HvGhostButton"
             android:layout_width="56dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:background="@drawable/bg_button_ghost"
             android:text="/"
             android:textColor="@color/hv_text"

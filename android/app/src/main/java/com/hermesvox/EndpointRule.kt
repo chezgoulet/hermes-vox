@@ -2,7 +2,7 @@ package com.hermesvox
 
 /**
  * EndpointRule — the pure, emulator-free endpointing decision for the offline
- * capture loop's utterance-length ceiling (B2, REVISED per Christopher 2026-09-06:
+ * capture loop's utterance-length ceiling (B2, REVISED per the maintainer 2026-09-06:
  * no hard ceiling by default — you talk until you're done; natural pauses end a turn).
  *
  * The old rule cut the mic unconditionally once the segment passed `vad_max_ms`

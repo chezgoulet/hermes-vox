@@ -1,6 +1,6 @@
 # Hermes Vox — Sprint 1 Plan Brief
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** /home/c/hermes-vox (Thelio) · **Branch:** feature/sprint1-model-downloader
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/sprint1-model-downloader
 **Model (plan + build):** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API, vision) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial code review + compile + emulator test (`emulator-5554`). **Merge target:** `main` (Vox releases by tag-on-main).
 

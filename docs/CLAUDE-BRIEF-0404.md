@@ -38,9 +38,9 @@ uncancellable, unbargeable, and outlives teardown. Call 2 shows the model side
    re-speak; clean text-only turn MUST speak; done-while-streaming MUST retire
    (no regression of #71). Existing 19 BargeGate rows untouched.
 5. KEEP-LIST: silenceAll/fence/retirement/focus/route/probes/endpointing internals.
-6. Gate: cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+6. Gate: cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
    :app:testDebugUnitTest -q --no-daemon exit 0. Create android/local.properties
-   (sdk.dir=/home/c/Android/Sdk) and copy libs from /home/c/hermes-vox if missing.
+   (sdk.dir=~/Android/Sdk) and copy libs from <repo> if missing.
 7. versionCode 83 versionName 0.4.0.4 + docs/RELEASE-0.4.0.4.md (honest risk section).
 8. One commit 'barge/settle: 0.4.0.4 — no ghost re-speak after cancel; cancellable
    speak path'. Print CLAUDE_DONE <hash> + DIAGNOSIS + FIX + REJECTED + RISK.

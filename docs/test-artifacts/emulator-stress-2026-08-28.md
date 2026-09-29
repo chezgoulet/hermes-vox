@@ -1,6 +1,6 @@
 # Emulator Agent->App Stress — 2026-08-28 (0.3.26.0, debug harness)
 
-Bridge: emulator-5554 -> adb reverse tcp:8642 -> host gwproxy.py -> Odroid gateway 100.84.47.125:8642 (real Hermes instance).
+Bridge: emulator-5554 -> adb reverse tcp:8642 -> host gwproxy.py -> Odroid gateway <your-gateway-host>:8642 (real Hermes instance).
 Drive: debug-gated harness intent (isDebuggable-only `--es text`); text turns; `adb logcat` evidence.
 
 Result (8-turn multi-turn, real gateway):

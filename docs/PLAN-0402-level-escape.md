@@ -44,6 +44,6 @@ decide(level, vad, sustainedMs, rmsMin, vadAvailable, levelOnlyMs):
 ## Rules
 - Touch nothing else: silence, retirement, fence, focus, endpointing, probes stay.
 - The two accumulators in the caller are O(1) floats; reuse readAt clock discipline.
-- Gate: /home/c/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
+- Gate: ~/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
 - Commit 'barge: level-sustained escape for echo-masked speech — 0.4.0.2'
 - Print L_DONE <hash> + ACCUMULATOR_SITES <file:line> + ESCAPE_ROWS <tests added>.

@@ -1,6 +1,6 @@
 # Hermes Vox — Sprint 5 Plan Brief: Polished Foundation (before Enhanced Realtime)
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** /home/c/hermes-vox (Thelio) · **Branch:** feature/foundation
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/foundation
 **Plan + build model:** `deepseek/deepseek-v4-flash-vision-exp` · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + unit tests + emulator smoke; on-device for audio paths.
 

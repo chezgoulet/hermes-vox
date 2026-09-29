@@ -9,6 +9,26 @@
 
 Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series closes.
 
+## Enhanced Realtime, complete (vc133)
+
+- **The warm soul.** The on-device voice keeps one rolling conversation, so its persona is
+  prefilled once instead of on every render.
+- **The beat.** On every turn the soul speaks first: a short answer when the turn is small talk,
+  or a few generated words as it starts to think while Hermes works on the real answer.
+- **No more double answers.** The soul decides before Hermes is asked, and Hermes is told what the
+  voice said; when the voice already answered, Hermes can stay silent (`<<SKIP>>`, never heard).
+- **A clean handoff.** Hermes' answer no longer loses its first words when it arrives during the
+  soul's beat.
+- **Honest ER state.** Enhanced Realtime without the presence model — or with one that cannot
+  start — says so, with one tap to the download.
+- Fixes: turn decisions are never dropped behind tool narration; tool narration names the tool
+  and never speaks a control token; without the model, a soul directive can no longer be spoken.
+
+## Public-release hygiene
+
+- No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.
+- No personal defaults, hosts, paths or family details anywhere in the code.
+
 ## What this is
 
 Three changes, all from one finding: the on-device **Gemma 4 E2B** express layer had

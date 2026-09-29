@@ -946,7 +946,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun label(prefKey: String, default: String): String {
         val tok = prefs.getString(prefKey, default) ?: default
         return when (tok) {
-            "on-device" -> "On-device"; "rx590" -> "RX 590"; "odroid" -> "Odroid"
+            "on-device" -> "On-device"
             "system" -> "System"; "kokoro" -> "Kokoro"; "piper" -> "Piper"
             "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
             "dark" -> "Dark"; "light" -> "Light"

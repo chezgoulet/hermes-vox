@@ -102,18 +102,25 @@ brain. Ironclad rules:
 This keeps **"the entity IS Hermes"** airtight: one soul, two layers (Hermes =
 owner + mind; Gemma = the voice).
 
+For the whole system on one page — the layers, the Hermes API contract, how each
+piece maps to Sesame's components of voice presence, and the honest gaps — see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Build & install
 
 ```bash
-# Android SDK + JDK 17 on PATH; the emulator or a device attached.
-cd android && ./gradlew assembleDebug
-# -> android/app/build/outputs/apk/debug/app-debug.apk
+# Go 1.26, JDK 17, Android SDK + NDK 25.2 (JAVA_HOME / ANDROID_HOME /
+# ANDROID_NDK_HOME exported). One command fetches the verified sherpa-onnx
+# runtime, binds the Go connector (mobile.aar), builds the APK and runs every
+# test — see CONTRIBUTING.md:
+bash scripts/gate.sh
+# -> android/app/build/outputs/apk/debug/hermes-vox-<version>.apk
 ```
 
 Install on a device (or `adb install` on the emulator):
 
 ```bash
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
 ```
 
 On first launch: enter the entity endpoint (`http://<host>:8642`) **and** your
@@ -139,7 +146,7 @@ the fields:
   feature from the model alias.
 
 > **Google Play is planned — not shipped.** A Play Store release is on the
-> roadmap for a future point release (we're on 0.5.x today), so there is no store
+> roadmap for a future point release, so there is no store
 > listing yet — install the APK above, or follow the repo for the first release.
 > Whenever it lands, Vox will stay a bring-your-own-gateway client.
 
@@ -226,9 +233,10 @@ Give two devices the same scope only when you *want* them to share one memory.
 
 
 ### I get "Cleartext HTTP traffic not permitted" (Android) when connecting.
-Android blocks plain HTTP unless the host is in the app's
-`network_security_config.xml`, which only ships a few example hosts. Don't
-rebuild the APK — put the gateway behind HTTPS on your tailnet:
+Vox only speaks HTTPS to your gateway (plain HTTP would expose your API key and
+audio on the network). The one exception is a tailnet MagicDNS name, whose
+traffic the tailnet already encrypts. Put the gateway behind HTTPS on your
+tailnet:
 
 1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
 2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`

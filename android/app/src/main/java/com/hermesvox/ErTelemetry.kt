@@ -39,6 +39,10 @@ object ErTelemetry {
     private var soulAnswer = 0L
     private var soulEscalate = 0L
     private var soulNothing = 0L
+    // The beat: turns the soul opened with a generated opener before the mind's answer, and
+    // turns where the mind chose silence because the voice had already answered.
+    private var soulBeat = 0L
+    private var mindSkip = 0L
     // The soul's OWN render latency (the GemmaExpress.express round-trip).
     private val gemmaRender = ArrayList<Long>()
     private val gemmaRenderCap = 64
@@ -82,10 +86,17 @@ object ErTelemetry {
     fun soulDecision(decision: String) = synchronized(lock) {
         when (decision) {
             "answer" -> soulAnswer++
+            "beat" -> soulBeat++
             "escalate" -> soulEscalate++
             else -> soulNothing++
         }
     }
+
+    /** The mind replied with the skip token (the voice's answer stood). */
+    fun mindSkipped() = synchronized(lock) { mindSkip++ }
+
+    /** Median soul render latency so far, or null before the first render (SoulGate's input). */
+    fun renderP50(): Long? = synchronized(lock) { if (gemmaRender.isEmpty()) null else pct(gemmaRender, 50) }
 
     /** The soul's own render latency (ms) for one express() call. */
     fun gemmaRender(ms: Long) = synchronized(lock) {
@@ -114,7 +125,7 @@ object ErTelemetry {
             "p50=${pct(gemmaRender, 50)} p95=${pct(gemmaRender, 95)}ms"
         val soulPct = if (turns == 0L) 0L else turnsSoulSpoke * 100 / turns
         "er: cls(hold=$clsHold yield=$clsYield) " +
-            "soul(answer=$soulAnswer escalate=$soulEscalate nothing=$soulNothing) " +
+            "soul(answer=$soulAnswer beat=$soulBeat escalate=$soulEscalate nothing=$soulNothing mind-skip=$mindSkip) " +
             "barge(cancel=$bargeCancel hold=$bargeHold) " +
             "arb(play=$arbPlay preempt=$arbPreempt reject=$arbReject) soul-first-word[$sw] " +
             "turns=$turns soul-spoke=$turnsSoulSpoke (${soulPct}%) gemma-render[$gr]"

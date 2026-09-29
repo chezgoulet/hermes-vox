@@ -7,7 +7,7 @@ Target artifact: `docs/SPRINT-PLAN-release-security-impl.md`
 ### A0. Verified grounding facts
 - `signingConfigs.release` hardcodes `~/.android/debug.keystore` / `"android"` / `"androiddebugkey"` (`android/app/build.gradle:18-25`).
 - `minifyEnabled false` + **no `shrinkResources`** (`build.gradle:28`); **no `proguardFiles` line exists**, and `proguard-rules.pro` does **not exist** (must be created).
-- Release key already generated: `keystore/release.keystore` (PKCS12, `/home/c/hermes-vox/keystore/`, gitignored) + `keystore/keystore.properties` (gitignored — confirmed via `git check-ignore`). Keys: `storeFile`, `keyAlias`, `storePassword`, `keyPassword`, alias `hermes-vox`. Keystore dir is in `.gitignore`. **Never echo the password (kept in env store `HERMES_VOX_KEYSTORE_PASSWORD`).**
+- Release key already generated: `keystore/release.keystore` (PKCS12, `<repo>/keystore/`, gitignored) + `keystore/keystore.properties` (gitignored — confirmed via `git check-ignore`). Keys: `storeFile`, `keyAlias`, `storePassword`, `keyPassword`, alias `hermes-vox`. Keystore dir is in `.gitignore`. **Never echo the password (kept in env store `HERMES_VOX_KEYSTORE_PASSWORD`).**
 - `mobile.aar` contains `com/hermesvox/mobile/Mobile.class` + `com/hermesvox/mobile/HermesSession.class` and `jni/*/libgojni.so`; JNI exports `Java_com_hermesvox_mobile_Mobile*` and `Java_com_hermesvox_mobile_HermesSession*`.
 - `sherpa-onnx-1.13.6.aar` → `com.k2fsa.sherpa.onnx.*`, native `jni/*/libsherpa-onnx-jni.so`.
 - `litertlm-android:0.16.1` → `com.google.ai.edge.litertlm.**` incl. `NativeLibraryLoader`, `LiteRtLmJni` (JNI), `ReflectionTool` (reflection).
@@ -291,7 +291,7 @@ After `./gradlew assembleRelease`:
          actual entity host(s)/subnet(s) the user connects to (IP range of the
          Hermes relay/gateway you run). -->
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">100.84.47.125</domain>
+        <domain includeSubdomains="false"><your-gateway-host></domain>
         <domain includeSubdomains="false">192.168.1.1</domain>
         <!-- add your LAN gateway / tailnet host(s) here -->
     </domain-config>

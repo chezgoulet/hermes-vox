@@ -927,7 +927,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="6dp"
                         android:background="@drawable/bg_input"
-                        android:hint="Server URL · http://192.168.1.9:13305/v1 or https://…"
+                        android:hint="Server URL · https://your-stt-host/v1"
                         android:inputType="textUri"
                         android:padding="14dp"
                         android:textColor="@color/hv_text"

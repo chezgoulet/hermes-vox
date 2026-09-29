@@ -119,6 +119,7 @@ class OnboardingActivity : AppCompatActivity() {
      * declaration itself is pinned to AVATAR_FULL_DP by OnboardingLayoutTest).
      */
     private fun applyAvatarSize() {
+        findViewById<AvatarView>(R.id.ob_avatar).setPortalShape(-1f)   // the being greets you through a portal
         val cfg = resources.configuration
         val dp = OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp)
         if (dp == OnboardingLayout.AVATAR_FULL_DP) return
@@ -135,7 +136,10 @@ class OnboardingActivity : AppCompatActivity() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Skip for now?")
             .setMessage("You can explore first, but nothing works until you connect to your Hermes gateway AND download the voice models — you need both before you can talk. You can do either later from Settings (⚙).")
-            .setPositiveButton("Skip anyway") { _, _ -> goMain() }
+            .setPositiveButton("Skip anyway") { _, _ ->
+                prefs.edit().putBoolean(FirstRunRoute.PREF_SKIPPED, true).apply()
+                goMain()
+            }
             .setNegativeButton("Keep setting up", null)
             .show()
     }
