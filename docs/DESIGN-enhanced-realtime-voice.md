@@ -327,3 +327,43 @@ because they need streaming partials to exist before they can be built at all.
 reply has begun; the soul never originates a fact. Presence is the soul's job; intelligence is the
 mind's — the beat changes *when* the soul speaks, not what it is allowed to know.
 
+
+---
+
+# DECISION (2026-09-29) — the warm soul, the generated beat, and the mind that is told
+
+**What changed the premise.** The beat was designed around a ~2.2 s render and a conclusion from
+M2.2: "LiteRT-LM's Conversation has no reset, so one conversation cannot be reused across renders."
+Reuse never needed a reset. The render was slow because every call built a fresh Conversation and
+re-prefilled a ~600-token persona to produce ~10 tokens. The soul now keeps **one rolling
+conversation**: primed at load, each render prefilling only its own directive. Its history is a
+feature — the soul sees what it already said (the stuck-record defect cannot recur in-session) and
+the caller's recent turns. `SoulBudget` rotates it before the 8k KV cache fills, and a VOX.md
+resync rotates it immediately. The probe logs `warm=` beside `full=` and `minimal=`.
+
+**The beat is generated, not listed.** On the mind's turns, the same single render returns
+`<<ESCALATE>>` plus two to six words the soul would say as it starts to think (`Outcome.Beat`).
+The canned-stems anti-pattern stays reverted: the opener is contextual, and the conversation
+history keeps it from repeating. The Contract is enforced in code, not trusted to a 2B — an opener
+with a digit, markup, or more than seven words escalates silently.
+
+**The soul decides first, and the mind is told.** Deciding in parallel meant the mind could never
+know what the voice had done, which is the double answer (soul greets, mind greets again). Now the
+mind's submit waits for the decision for a bounded, adaptive moment (`SoulGate`: the measured render
+p50 + 200 ms, capped at 900 ms, and **zero** when the soul is measured slow — a CPU fallback never
+taxes the mind). That wait is not dead air: the beat plays through it. The mind's turn then carries
+the truth in the soul-sync epilogue — the opener used, or that the voice already answered, in which
+case the mind may reply `<<SKIP>>`. `MindSkip.Filter` holds back the stream's first characters so
+the token is never heard. The mind keeps its override (decision #1): anything but the token plays.
+The submitted/answered pair is decided under one lock, so an answer is either in the mind's
+epilogue or never spoken; a decision that arrives late may only speak a beat.
+
+**The handoff is explicit.** A glue one-shot replaces the stream track, so a reply chunk written
+while a beat played was lost — with a beat on every turn, the first words of most answers. The
+streaming worker now lets a beat land (≤1.2 s), cuts it if it runs long, and re-opens the track;
+a late glue callback can no longer reset a track the reply owns. This is Miles rule #2 (the mind
+snaps in) and #4 (P1 over P3) made mechanical.
+
+**Invariants unchanged.** The soul never originates a fact; no second answer in a turn; no soul line
+after the mind's reply has begun; the lists stay out of routing; ER requires the presence model
+(and now says so, with a tappable pill, instead of degrading silently).

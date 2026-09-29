@@ -96,10 +96,18 @@ brain ([design][er-design]):
   voice file from its `SOUL.md`; the device mirrors it **read-only** and validates it
   (the six Contract rules are byte-identical every time). The device never writes
   identity back.
-- **The decision is the soul's output (`GemmaExpress`).** Each turn, Gemma either
-  answers in character (greetings, emotion, small talk) or emits `<<ESCALATE>>`. The
-  mind is engaged in parallel on every turn and its reply preempts the soul. So a wrong
-  soul decision can only change *who speaks first*, never what is true.
+- **A warm soul (`GemmaExpress`, `SoulBudget`).** One rolling LiteRT-LM conversation:
+  the persona is prefilled once, so each render only prefills its own directive, and
+  the soul remembers what it already said this session.
+- **The decision is the soul's output (`ErSoulTurn`).** Each turn, one render either
+  answers in character (greetings, emotion, small talk) or hands over with
+  `<<ESCALATE>>` plus a generated **beat** — the few words a person says as they start
+  to think. The mind's reply then cuts in (an explicit audio handoff).
+- **The soul decides first; the mind is told (`SoulGate`, `MindSkip`).** The mind's
+  submit waits a bounded, adaptive moment for the decision (the beat plays through
+  it), then carries what the voice did. If the voice already answered, the mind may
+  reply `<<SKIP>>` — filtered so it is never heard. No double answers, and the voice's
+  line lands in the mind's own session history.
 - **Safety lists stay deterministic (`ErIntent`).** Only backchannel-never-cancels and
   barge-cancels use enumerable rules. A 2B model is never in the abort path.
 - **Presence ladder (`ErFillers`, `ErPresence`, `ErClips`).** Under 900 ms, silence
@@ -129,7 +137,7 @@ Both are drawn on true OLED black.
 | Sesame component | Vox mechanism | Status |
 |---|---|---|
 | Emotional intelligence | Soul answers emotion/small talk in the agent's voice; the vibe travels via VOX.md | Shipped (ER, alpha) |
-| Conversational dynamics | Barge-in, backchannel hold, presence ladder, arbiter, speech-locked text | Shipped; semantic end-of-turn **blocked** on streaming STT |
+| Conversational dynamics | The beat on every turn, barge-in, backchannel hold, presence ladder, arbiter, speech-locked text | Shipped; semantic end-of-turn **blocked** on streaming STT |
 | Contextual awareness | Tool-aware narration; Hermes' own memory and context | Shipped |
 | Consistent personality | One identity: `SOUL.md` → agent-authored VOX.md → soul prompt | Shipped (ER) |
 | *(beyond Sesame)* Agency | Real tools, memory, skills; tool calls visible in the being | Shipped |
@@ -140,9 +148,8 @@ Both are drawn on true OLED black.
 - **Streaming STT.** Offline Whisper gives no partial transcripts, so there is no
   semantic endpointing and turn-end waits on silence. A streaming recogniser is the 0.9
   prerequisite ([plan][plan08], M4).
-- **The beat.** The soul should take the opening beat of *every* turn. Generating it
-  depends on a prefill measurement from a real device; pre-canned stems were rejected
-  as the same anti-pattern as the old keyword router.
+- **The beat, in the field.** Built and unit-tested; its latency on a real phone GPU
+  is what the `express-probe … warm=` log line and the `soul(beat=…)` counters prove.
 - **Voice expressiveness.** Piper is fast but not CSM-grade prosody. The TTS seam
   (`SherpaTts`) is where a more expressive on-device voice would plug in.
 - **Half-duplex.** Vox listens *or* speaks (with barge-in), not both. Full-duplex
