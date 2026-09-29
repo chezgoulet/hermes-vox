@@ -132,14 +132,25 @@ object VoxLog {
         }
     }
 
-    /** Never let a crash vanish silently — log it, then die. */
+    @Volatile private var handlerInstalled = false
+
+    /** Never let a crash vanish silently — log it, then hand it to the handler
+     *  that was installed before us (the platform's), so the crash still reaches
+     *  Android's own reporting (DropBox / Play vitals). Installed once per process:
+     *  init runs on every MainActivity creation. */
     private fun setUncaughtHandler() {
+        synchronized(rotationLock) {
+            if (handlerInstalled) return
+            handlerInstalled = true
+        }
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
                 append("CRASH", "thread=${t?.name} ${e.toString()}\n${e.stackTraceToString()}")
                 Log.e(TAG, "CRASH thread=${t?.name} ${e.stackTraceToString()}")
             } catch (_: Throwable) {}
-            android.os.Process.killProcess(android.os.Process.myPid())
+            if (prev != null) prev.uncaughtException(t, e)
+            else android.os.Process.killProcess(android.os.Process.myPid())
         }
     }
 }
