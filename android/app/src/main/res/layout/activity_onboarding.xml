@@ -1,204 +1,234 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  First-run onboarding: the "how this works" step, then the connection form.
+
+  #130: this screen is a SCROLL CONTAINER, not a fixed column. It used to be a
+  single `match_parent` LinearLayout, so on any window shorter than the column —
+  large font scale, large display size, short screen — everything past the
+  bottom edge was never drawn, and because nothing scrolled, the only forward
+  control ("Got it — connect") could not be reached at all. A reporter on a
+  Pixel 8 with Font size ~150% and Display size one step up had roughly 1080dp
+  of content in a ~760dp window and was hard-blocked on first run
+  (chezgoulet/hermes-vox#130).
+
+  Two invariants hold this screen together, both asserted by OnboardingLayoutTest
+  so a refactor cannot quietly undo them:
+    1. every actionable control (ob_got_it, connect, the form fields, ob_skip_how,
+       skip) lives INSIDE the scroll container — never below it;
+    2. the container uses fillViewport, so when the content does fit, the column is
+       stretched to the window height and `gravity="center"` centres it exactly as
+       before: the default-settings layout is unchanged.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ob_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/hv_bg"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:padding="28dp">
+    android:fillViewport="true"
+    android:scrollbars="vertical">
 
-    <!-- The presence greets you -->
-    <com.hermesvox.AvatarView
-        android:id="@+id/ob_avatar"
-        android:layout_width="250dp"
-        android:layout_height="250dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        style="@style/TextVox.Title"
-        android:text="HERMES VOX" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        style="@style/TextVox.Tag"
-        android:text="@string/hv_tag" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        style="@style/TextVox.Body"
-        android:text="@string/hv_sub"
-        android:gravity="center" />
-
-    <!-- ====================================================================
-         #120-A: the "how this works" step. Shown on a TRUE first run (no
-         stored endpoint); replaced by the connection form once the user taps
-         "Got it". OnboardingActivity flips the two containers' visibility.
-         ==================================================================== -->
+    <!-- The greetings column. `gravity="center"` with fillViewport above keeps the
+         centred composition on every device whose window is tall enough. -->
     <LinearLayout
-        android:id="@+id/ob_step_how"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:gravity="center_horizontal"
-        android:orientation="vertical">
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="28dp">
+
+        <!-- The presence greets you -->
+        <com.hermesvox.AvatarView
+            android:id="@+id/ob_avatar"
+            android:layout_width="250dp"
+            android:layout_height="250dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            style="@style/TextVox.Title"
+            android:text="HERMES VOX" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             style="@style/TextVox.Tag"
-            android:text="HOW THIS WORKS" />
+            android:text="@string/hv_tag" />
 
-        <!-- What the being is -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:gravity="center"
-            android:lineSpacingExtra="3dp"
-            android:text="Hermes is your AI agent — an entity that lives on your own gateway. Vox gives it a body: a presence that listens, thinks and speaks back. You talk to it like a person, not a chatbot page."
-            android:textColor="@color/hv_text"
-            android:textSize="15sp" />
-
-        <!-- Voice modes (B: one-line behavioral difference per mode).
-             The two lines below are filled by OnboardingActivity from the
-             shared voiceModeLine() copy so Settings/coach marks agree. -->
         <TextView
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            style="@style/TextVox.Label"
-            android:text="VOICE MODE — HOW YOU TALK" />
-
-        <TextView
-            android:id="@+id/ob_mode_realtime"
-            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:textColor="@color/hv_text"
-            android:textSize="14sp" />
+            style="@style/TextVox.Body"
+            android:text="@string/hv_sub"
+            android:gravity="center" />
 
-        <TextView
-            android:id="@+id/ob_mode_enhanced"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@color/hv_text"
-            android:textSize="14sp" />
-
-        <!-- Mic vs PTT: this build is hands-free in every mode (the old
-             walkie-talkie/push-to-talk path was stripped) — say so plainly. -->
-        <TextView
-            android:id="@+id/ob_mic_note"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:text="Mic vs push-to-talk: Vox is hands-free in every mode — you just talk. There is no PTT button to hold."
-            android:textColor="@color/hv_text_dim"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/ob_got_it"
-            android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/bg_button_primary"
-            android:elevation="4dp"
-            android:text="Got it — connect"
-            android:textColor="@color/hv_bg"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/ob_skip_how"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            style="@style/TextVox.Label"
-            android:text="Skip for now" />
-    </LinearLayout>
-
-    <!-- ====================================================================
-         #120-A: the connection form (endpoint + key + model + verify +
-         Skip). Hidden on first run until "Got it" reveals it.
-         ==================================================================== -->
-    <LinearLayout
-        android:id="@+id/ob_step_connect"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:visibility="gone">
-
-        <EditText
-            android:id="@+id/url"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:background="@drawable/bg_input"
-            android:hint="@string/hv_url_hint"
-            android:inputType="textUri"
-            android:padding="14dp"
-            android:textColor="@color/hv_text"
-            android:textColorHint="@color/hv_text_dim"
-            android:textSize="16sp" />
-
-        <EditText
-            android:id="@+id/key"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_input"
-            android:hint="@string/hv_key_hint"
-            android:inputType="textPassword"
-            android:padding="14dp"
-            android:textColor="@color/hv_text"
-            android:textColorHint="@color/hv_text_dim"
-            android:textSize="16sp" />
-
-        <EditText
-            android:id="@+id/model"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_input"
-            android:hint="@string/hv_model_hint"
-            android:inputType="text"
-            android:padding="14dp"
-            android:textColor="@color/hv_text"
-            android:textColorHint="@color/hv_text_dim"
-            android:textSize="16sp" />
-
-        <TextView
+        <!-- ====================================================================
+             #120-A: the "how this works" step. Shown on a TRUE first run (no
+             stored endpoint); replaced by the connection form once the user taps
+             "Got it". OnboardingActivity flips the two containers' visibility.
+             ==================================================================== -->
+        <LinearLayout
+            android:id="@+id/ob_step_how"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:gravity="center"
-            android:text="@string/hv_onboard_network"
-            android:textColor="@color/hv_text_dim"
-            android:textSize="12sp" />
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
 
-        <Button
-            android:id="@+id/connect"
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                style="@style/TextVox.Tag"
+                android:text="HOW THIS WORKS" />
+
+            <!-- What the being is -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:text="Hermes is your AI agent — an entity that lives on your own gateway. Vox gives it a body: a presence that listens, thinks and speaks back. You talk to it like a person, not a chatbot page."
+                android:textColor="@color/hv_text"
+                android:textSize="15sp" />
+
+            <!-- Voice modes (B: one-line behavioral difference per mode).
+                 The two lines below are filled by OnboardingActivity from the
+                 shared voiceModeLine() copy so Settings/coach marks agree. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                style="@style/TextVox.Label"
+                android:text="VOICE MODE — HOW YOU TALK" />
+
+            <TextView
+                android:id="@+id/ob_mode_realtime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="@color/hv_text"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/ob_mode_enhanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/hv_text"
+                android:textSize="14sp" />
+
+            <!-- Mic vs PTT: this build is hands-free in every mode (the old
+                 walkie-talkie/push-to-talk path was stripped) — say so plainly. -->
+            <TextView
+                android:id="@+id/ob_mic_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Mic vs push-to-talk: Vox is hands-free in every mode — you just talk. There is no PTT button to hold."
+                android:textColor="@color/hv_text_dim"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/ob_got_it"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/bg_button_primary"
+                android:elevation="4dp"
+                android:text="Got it — connect"
+                android:textColor="@color/hv_bg"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/ob_skip_how"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                style="@style/TextVox.Label"
+                android:text="Skip for now" />
+        </LinearLayout>
+
+        <!-- ====================================================================
+             #120-A: the connection form (endpoint + key + model + verify +
+             Skip). Hidden on first run until "Got it" reveals it.
+             ==================================================================== -->
+        <LinearLayout
+            android:id="@+id/ob_step_connect"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/bg_button_primary"
-            android:elevation="4dp"
-            android:text="@string/hv_connect_verify"
-            android:textColor="@color/hv_bg"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/skip"
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            style="@style/TextVox.Label"
-            android:text="@string/hv_skip"
-            android:layout_gravity="center_horizontal" />
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/url"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:background="@drawable/bg_input"
+                android:hint="@string/hv_url_hint"
+                android:inputType="textUri"
+                android:padding="14dp"
+                android:textColor="@color/hv_text"
+                android:textColorHint="@color/hv_text_dim"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/key"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_input"
+                android:hint="@string/hv_key_hint"
+                android:inputType="textPassword"
+                android:padding="14dp"
+                android:textColor="@color/hv_text"
+                android:textColorHint="@color/hv_text_dim"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/model"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_input"
+                android:hint="@string/hv_model_hint"
+                android:inputType="text"
+                android:padding="14dp"
+                android:textColor="@color/hv_text"
+                android:textColorHint="@color/hv_text_dim"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:text="@string/hv_onboard_network"
+                android:textColor="@color/hv_text_dim"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/connect"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/bg_button_primary"
+                android:elevation="4dp"
+                android:text="@string/hv_connect_verify"
+                android:textColor="@color/hv_bg"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/skip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                style="@style/TextVox.Label"
+                android:text="@string/hv_skip"
+                android:layout_gravity="center_horizontal" />
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+</ScrollView>

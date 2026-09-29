@@ -31,10 +31,14 @@
             </intent-filter>
         </activity>
 
+        <!-- #130: the connection form lives inside the onboarding scroll container,
+             so the IME must resize the window (not pan it) for the focused field and
+             the Connect button to stay reachable while typing. -->
         <activity
             android:name=".OnboardingActivity"
             android:exported="false"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".SettingsActivity"
