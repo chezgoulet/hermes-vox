@@ -36,11 +36,14 @@ barge-in conversation line.
 ## In flight — `0.8`, the accelerator series
 
 Ships as **one 0.8.0** at the end. Every increment lands on `testing` as a nightly first;
-`main` stays on the last release until the series closes.
+`main` stays on the last release until the series closes — cut once inside the series as a
+*fix* release: **0.7.3** (vc115) is the first-run block from #130 and nothing else
+(`docs/RELEASE-0.7.3.md`); the accelerator content stays here for 0.8.0.
 
 **The hallmark: acceleration, provable and perceptible.**
 
-- `[x]` **0.7.3 — Gemma on the GPU.** `Backend.CPU()` was an untouched default; the manifest had
+- `[x]` **Gemma on the GPU** (was labelled `0.7.3`; that number became the first-run fix).
+  `Backend.CPU()` was an untouched default; the manifest had
   zero `<uses-native-library>` grants. GPU-first with CPU fallback, plus the `VoxThreads` policy.
 - `[x]` **M1 — ER instrumentation.** The counters, `gemma-render` percentiles, `should_emit`.
   Before this, "no perceptible difference" was only an impression.

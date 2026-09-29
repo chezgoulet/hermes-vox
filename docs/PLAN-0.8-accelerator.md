@@ -1,7 +1,7 @@
 # PLAN — Hermes Vox 0.8: the accelerator series
 
-Series thesis: **0.7.3 made the hardware path *possible*; 0.8 makes it *provable and
-perceptible*.** GPU acceleration is the hallmark feature. The Enhanced-Realtime presence
+Series thesis: **the accelerator work made the hardware path *possible*; 0.8 makes it
+*provable and perceptible*.** GPU acceleration is the hallmark feature. The Enhanced-Realtime presence
 work rides on it: the whole point of moving the express model off the CPU is to buy the
 soul a sub-second beat, and a beat nobody can hear is not a feature.
 
@@ -15,7 +15,7 @@ Scope, as set by Christopher (2026-09-10):
 ## The gates (hard, in order — nothing downstream is provable until each lands)
 
 **G1 — the GPU actually initializes on a Tensor G4.** Field log: `GemmaExpress loaded: … backend=gpu`.
-**STATUS: UNPROVEN.** 0.7.3 is code-complete and gated, but the accelerator path can only be
+**STATUS: UNPROVEN.** The accelerator code is complete and gated on `testing`, but it can only be
 confirmed on the device. This is the gate on the entire series.
 - If `backend=cpu`: read the GPU-init error immediately above it in the same log.
   Ladder: (a) confirm the two `<uses-native-library>` grants survived the merge;
@@ -37,7 +37,8 @@ it — including "no perceptible difference" — has been an impression. **Deliv
 
 ## The inventory (the review, with status — nothing dropped)
 
-Found across the 2026-09-10 review. **Shipped in 0.7.3** are marked ✔.
+Found across the 2026-09-10 review. **Landed on `testing` (unreleased — for 0.8.0)** are marked ✔.
+(`0.7.3` was cut as the first-run fix release and does not carry these; see `docs/RELEASE-0.7.3.md`.)
 
 | # | Finding | Status |
 |---|---|---|
@@ -46,11 +47,11 @@ Found across the 2026-09-10 review. **Shipped in 0.7.3** are marked ✔.
 | 3 | The intent classifier is a narration selector, not a router — every route still submits to the mind | **M3** |
 | 4 | `ErTelemetry.line()` has ZERO call sites — the Phase-8 instrumentation is collected and never emitted | **M1** |
 | 5 | `gemma-e2b` is `recommended=false` and 2.6 GB → absent on most installs; the one live Gemma path degrades to the canned `RoutedExpress` line | **M3 (decision)** |
-| 6 | Model sizes understated across the whole table (Gemma ~540 MB light) | ✔ 0.7.3 |
-| 7 | Whisper and Piper pinned to `numThreads = 1` | ✔ 0.7.3 |
-| 8 | `Backend.CPU()` since day one, never revisited | ✔ 0.7.3 |
-| 9 | Manifest missing the two `<uses-native-library>` grants (GPU could not work at all) | ✔ 0.7.3 |
-| 10 | `DEVICE_VERIFY.md` claimed the runtime "targets the device NPU" | ✔ 0.7.3 |
+| 6 | Model sizes understated across the whole table (Gemma ~540 MB light) | ✔ testing |
+| 7 | Whisper and Piper pinned to `numThreads = 1` | ✔ testing |
+| 8 | `Backend.CPU()` since day one, never revisited | ✔ testing |
+| 9 | Manifest missing the two `<uses-native-library>` grants (GPU could not work at all) | ✔ testing |
+| 10 | `DEVICE_VERIFY.md` claimed the runtime "targets the device NPU" | ✔ testing |
 | 11 | `ROADMAP.md` still says ER is "not yet wired into the immersive view (issue #52)" — `RealtimeActivity` was deleted in 0.5.4, the call mode IS the surface. Anchor rotten | **M6** |
 | 12 | "Mic indicator live but interrupt words VANISH" — barge fails intermittently, speech not replayed | **M4 (log first)** |
 | 13 | The express fallback is INIT-ONLY: if GPU init succeeds and a generation later fails, we degrade to the canned line, never retry on CPU | **M6** |
@@ -162,7 +163,7 @@ semantic endpointer was a matter of wiring the classifier to STT partials. It is
 partials to wire**, because the recogniser is offline. A model choice foreclosed a logic upgrade, and
 the fix is a model swap (0.9), not a milestone.
 
-**Landed on `testing`** (each a verified nightly, gate green): 0.7.3 GPU · M1 instrumentation ·
+**Landed on `testing`** (each a verified nightly, gate green): GPU (was labelled 0.7.3) · M1 instrumentation ·
 M2 ladder · M2.1/M2.2 double-load · M3a knobs · M3 lists-out · M3 router · M3c prompt + greeting +
 router numbers · the two community PRs.
 
