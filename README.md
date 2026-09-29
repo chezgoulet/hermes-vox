@@ -102,6 +102,10 @@ brain. Ironclad rules:
 This keeps **"the entity IS Hermes"** airtight: one soul, two layers (Hermes =
 owner + mind; Gemma = the voice).
 
+For the whole system on one page — the layers, the Hermes API contract, how each
+piece maps to Sesame's components of voice presence, and the honest gaps — see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Build & install
 
 ```bash
