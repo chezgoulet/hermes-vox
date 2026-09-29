@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.hermesvox.mobile.HermesSession
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------------------
 // #120-B: canonical one-line voice-mode comparison. There are exactly TWO voice
@@ -58,6 +59,10 @@ class OnboardingActivity : AppCompatActivity() {
         if (pre.getString("theme", "system")!! == "dark") androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
+        // #130: the presence yields space when the text is large or the window is
+        // short, so the button below the prose stays a short scroll away. The copy
+        // and the action never shrink — only the decoration does.
+        applyAvatarSize()
 
         url = findViewById(R.id.url)
         key = findViewById(R.id.key)
@@ -96,6 +101,28 @@ class OnboardingActivity : AppCompatActivity() {
     private fun showConnectStep() {
         findViewById<android.view.View>(R.id.ob_step_how).visibility = android.view.View.GONE
         findViewById<android.view.View>(R.id.ob_step_connect).visibility = android.view.View.VISIBLE
+    }
+
+    /**
+     * #130: size the presence for this device. The column scrolls, so this is not
+     * about reachability — it is about how far a first-time user has to scroll to
+     * the one button that moves them forward, at a text scale where the prose can
+     * easily be a full screen taller than the window.
+     *
+     * At the declared size the layout is left strictly alone, so "the default
+     * screen is unchanged" is exactly true rather than approximately true (the
+     * declaration itself is pinned to AVATAR_FULL_DP by OnboardingLayoutTest).
+     */
+    private fun applyAvatarSize() {
+        val cfg = resources.configuration
+        val dp = OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp)
+        if (dp == OnboardingLayout.AVATAR_FULL_DP) return
+        val px = (dp * resources.displayMetrics.density).roundToInt()
+        val avatar = findViewById<android.view.View>(R.id.ob_avatar)
+        val lp = avatar.layoutParams
+        lp.width = px
+        lp.height = px
+        avatar.layoutParams = lp
     }
 
     /** #120-A: tell the user what Skip actually skips before doing it. */
