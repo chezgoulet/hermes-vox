@@ -44,7 +44,7 @@ jobs:
       - name: Install gomobile + build the mobile.aar
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
-          go install golang.org/x/mobile/cmd/gomobile@latest || true
+          go install github.com/ebitengine/gomobile/cmd/gomobile@v0.0.0-20260820040257-d11f821a26a6
           export GOMOBILE=$(go env GOPATH)/bin/gomobile
           $GOMOBILE init > /dev/null 2>&1 || true
           mkdir -p android/app/libs
@@ -81,19 +81,9 @@ jobs:
           key: gradle-${{ hashFiles('android/app/build.gradle') }}
           restore-keys: gradle-
 
-      - name: Build release APK (system gradle — the repo has no wrapper jar)
+      - name: Build release APK + unit tests
         working-directory: android
-        run: |
-          # The repo ships gradle-wrapper.properties but NO gradle-wrapper.jar
-          # (the 0.4.0-era gap; ./gradlew cannot run). Install Gradle 8.12.1
-          # (the version the project is proven on) via the action cache.
-          GRADLE_DIR=/opt/gradle-8.12.1
-          if [ ! -x $GRADLE_DIR/bin/gradle ]; then
-            curl -fsSL -o /tmp/gradle.zip \
-              https://services.gradle.org/distributions/gradle-8.12.1-bin.zip
-            unzip -q /tmp/gradle.zip -d /opt
-          fi
-          $GRADLE_DIR/bin/gradle --no-daemon -q assembleRelease testReleaseUnitTest
+        run: ./gradlew --no-daemon -q assembleRelease testReleaseUnitTest
 
       - name: Test roll-up (fail the build on any failure)
         working-directory: android

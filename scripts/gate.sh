@@ -1,34 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hermes Vox — full build/verify gate (handoff §10).
-# One command: Go gates -> gomobile bind -> STAGE AAR -> Gradle assembleDebug.
-# The staging step is load-bearing: Gradle consumes app/libs/mobile.aar (a
-# COPY); skipping it builds against a stale bind silently ("up-to-date" lies).
-# NOTE (bind-strip): the old Ebitengine js-wasm/cmd-app build path is GONE.
-# Hermes Vox is 100% Android-native now; the mobile bind only exports the
-# HermesSession voice logic.
+# One command: Go gates -> gomobile bind -> STAGE AAR -> Gradle assembleDebug +
+# unit tests. The staging step is load-bearing: Gradle consumes
+# app/libs/mobile.aar (a COPY); skipping it builds against a stale bind silently
+# ("up-to-date" lies).
+#
+# Portable: runs from any checkout. Toolchain locations come from the
+# environment (JAVA_HOME, ANDROID_HOME, ANDROID_NDK_HOME); the defaults below
+# are the maintainer's build host and only apply when a variable is unset.
 set -euo pipefail
-cd /home/c/hermes-vox
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-export JAVA_HOME=/home/c/jdk-17.0.12+7
-export ANDROID_HOME=/home/c/Android/Sdk
-export ANDROID_NDK_HOME=/home/c/Android/Sdk/ndk/25.2.9519653   # literal path — $ANDROID_HOME expansion inside the same export is empty
-export GOBIN=/home/c/.local/bin
-export GOMODCACHE=/home/c/hermes-vox/.tools/cache/go-mod
-export GOCACHE=/home/c/hermes-vox/.tools/cache/go-build
-export GOTOOLCHAIN=go1.26.4
-export GOMOBIN=$GOBIN
-export PATH=$JAVA_HOME/bin:$GOBIN:$PATH
+export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17.0.12+7}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/25.2.9519653}"
+export GOBIN="${GOBIN:-$HOME/.local/bin}"
+export GOMODCACHE="${GOMODCACHE:-$ROOT/.tools/cache/go-mod}"
+export GOCACHE="${GOCACHE:-$ROOT/.tools/cache/go-build}"
+export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.4}"
+export PATH="$JAVA_HOME/bin:$GOBIN:$PATH"
+
+# Pinned to the gomobile the project is proven on (the Ebitengine fork).
+GOMOBILE_VERSION=v0.0.0-20260820040257-d11f821a26a6
 
 echo "== [0/5] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
 echo "== [1/5] go vet =="
-go vet ./voice/...
+go vet ./voice/... ./mobile/...
 
 echo "== [2/5] go test -race (offline) =="
-go test -race ./voice/...
+go test -race ./voice/... ./mobile/...
 
 echo "== [3/5] gomobile bind -> mobile.aar =="
+command -v gomobile >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION"
 gomobile init >/dev/null 2>&1 || true
 gomobile bind -target android -androidapi 23 -javapkg com.hermesvox \
   -o mobile.aar github.com/chezgoulet/hermes-vox/mobile
@@ -38,9 +44,8 @@ mkdir -p android/app/libs
 cp -f mobile.aar android/app/libs/mobile.aar
 ls -la android/app/libs/mobile.aar
 
-echo "== [5/5] gradle assembleDebug =="
-GRADLE=/home/c/.gradle/wrapper/dists/gradle-8.12.1-bin/eumc4uhoysa37zql93vfjkxy0/gradle-8.12.1/bin/gradle
-(cd android && "$GRADLE" --no-daemon clean assembleDebug -q)
-ls -la android/app/build/outputs/apk/debug/app-debug.apk
+echo "== [5/5] gradle assembleDebug + unit tests =="
+(cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
+ls -la android/app/build/outputs/apk/debug/*.apk
 
 echo "GATE-GREEN"
