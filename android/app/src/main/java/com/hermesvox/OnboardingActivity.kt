@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.hermesvox.mobile.HermesSession
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------------------
 // #120-B: canonical one-line voice-mode comparison. There are exactly TWO voice
@@ -107,11 +108,16 @@ class OnboardingActivity : AppCompatActivity() {
      * about reachability — it is about how far a first-time user has to scroll to
      * the one button that moves them forward, at a text scale where the prose can
      * easily be a full screen taller than the window.
+     *
+     * At the declared size the layout is left strictly alone, so "the default
+     * screen is unchanged" is exactly true rather than approximately true (the
+     * declaration itself is pinned to AVATAR_FULL_DP by OnboardingLayoutTest).
      */
     private fun applyAvatarSize() {
         val cfg = resources.configuration
-        val px = (OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp) *
-                resources.displayMetrics.density).toInt()
+        val dp = OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp)
+        if (dp == OnboardingLayout.AVATAR_FULL_DP) return
+        val px = (dp * resources.displayMetrics.density).roundToInt()
         val avatar = findViewById<android.view.View>(R.id.ob_avatar)
         val lp = avatar.layoutParams
         lp.width = px

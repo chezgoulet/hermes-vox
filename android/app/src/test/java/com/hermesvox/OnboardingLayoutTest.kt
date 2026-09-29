@@ -99,17 +99,27 @@ class OnboardingLayoutTest {
         // Precondition, stated here too so this test cannot pass vacuously on a
         // layout whose root does not scroll at all (which is the #130 bug).
         assertEquals("the scroll container must be the root", "ScrollView", r.tagName)
-        val inside = ids(r).filter { it != "ob_scroll" }.toSet()
-        val outside = ids(r).toSet().minus(inside).minus("ob_scroll")
-        assertTrue("views referenced by code but outside the scroll container: $outside", outside.isEmpty())
-
-        val missing = actionable.filterNot { it in inside }
+        // Note: because the container IS the root, an "outside the container" set can
+        // never be non-empty — an earlier draft asserted exactly that and it was dead
+        // logic. A sibling at the root is the real hazard, and "exactly one child"
+        // above covers it.
+        val declared = ids(r).filter { it != "ob_scroll" }.toSet()
+        val missing = actionable.filterNot { it in declared }
         assertTrue("the layout no longer declares: $missing", missing.isEmpty())
     }
 
     @Test fun the_presence_is_still_addressable_by_the_activity() {
         // OnboardingActivity sizes the avatar by id; a rename here would crash first run.
+        val r = root()
         assertTrue("ob_avatar must exist for OnboardingActivity.applyAvatarSize()",
-            "ob_avatar" in ids(root()))
+            "ob_avatar" in ids(r))
+
+        // applyAvatarSize() leaves the layout untouched at AVATAR_FULL_DP, so the
+        // declaration and that constant must not drift apart: if they do, either the
+        // default screen silently resizes or the early return never fires.
+        val avatar = descendants(r).first { attr(it, "id") == "@+id/ob_avatar" }
+        val want = "${OnboardingLayout.AVATAR_FULL_DP}dp"
+        assertEquals("avatar width declaration", want, attr(avatar, "layout_width"))
+        assertEquals("avatar height declaration", want, attr(avatar, "layout_height"))
     }
 }
