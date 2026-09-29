@@ -130,7 +130,7 @@ func TestStreamWaitPushWakesOnDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pl struct {
-		Done   bool   `json:"done"`
+		Done   bool `json:"done"`
 		Events []struct {
 			Type  string `json:"type"`
 			Delta string `json:"delta"`

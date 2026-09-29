@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -129,8 +128,7 @@ func (c *HermesResponsesClient) Response(ctx context.Context, input string, prev
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("hermes responses %s: %s", resp.Status, string(b))
+		return nil, fmt.Errorf("hermes responses %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	var out responsesAPI
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

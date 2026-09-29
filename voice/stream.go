@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +24,11 @@ import (
 //	response.output_text.delta  -> Delta (incremental assistant text)
 //	response.completed          -> final ResponseID + usage
 //
+// Per the API server docs, mid-turn commentary (progress preambles, text a
+// model writes alongside its tool calls) arrives as its own message item with
+// "phase": "commentary". It is surfaced as Commentary — never as Delta — so
+// the app can show it as live progress without speaking it as the answer.
+//
 // NOTE: the json tags MUST mirror what the Android/Kotlin side reads
 // (e.optString("type") / optString("item_type") / …). A struct without tags
 // serializes capitalized field names and the app renders nothing.
@@ -30,12 +37,13 @@ type StreamEvent struct {
 	ResponseID string `json:"response_id"` // set on created/completed
 	ItemType   string `json:"item_type"`   // "message" | "function_call" | "function_call_output"
 	ItemID     string `json:"item_id"`
-	Name       string `json:"name"`      // tool name (function_call)
-	Arguments  string `json:"arguments"` // raw JSON arguments (function_call)
-	Output     string `json:"output"`    // tool output text (function_call_output)
-	Delta      string `json:"delta"`     // incremental text (output_text.delta)
-	Text       string `json:"text"`      // accumulated assistant text so far
-	Done       bool   `json:"done"`      // true once response.completed was consumed
+	Name       string `json:"name"`       // tool name (function_call)
+	Arguments  string `json:"arguments"`  // raw JSON arguments (function_call)
+	Output     string `json:"output"`     // tool output text (function_call_output)
+	Delta      string `json:"delta"`      // incremental ANSWER text (output_text.delta)
+	Commentary string `json:"commentary"` // mid-turn progress text (phase=commentary) — never spoken as the reply
+	Text       string `json:"text"`       // accumulated assistant text so far
+	Done       bool   `json:"done"`       // true once response.completed was consumed
 }
 
 // StreamResult is the finished outcome of a streamed turn.
@@ -44,13 +52,22 @@ type StreamResult struct {
 	ResponseID string
 }
 
+type sseError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type sseEnvelope struct {
 	Type   string `json:"type"`
 	ItemID string `json:"item_id"`
 	Delta  string `json:"delta"`
-	Item   *struct {
+	// Message/Code are set on a top-level "error" event.
+	Message string `json:"message"`
+	Code    string `json:"code"`
+	Item    *struct {
 		ID        string          `json:"id"`
 		Type      string          `json:"type"`
+		Phase     string          `json:"phase"`
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 		Output    json.RawMessage `json:"output"`
@@ -60,9 +77,43 @@ type sseEnvelope struct {
 		} `json:"content"`
 	} `json:"item"`
 	Response *struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
+		ID                string    `json:"id"`
+		Status            string    `json:"status"`
+		Error             *sseError `json:"error"`
+		IncompleteDetails *struct {
+			Reason string `json:"reason"`
+		} `json:"incomplete_details"`
 	} `json:"response"`
+}
+
+// streamIdleTimeout bounds how long a stream may go without receiving ANY
+// bytes. Every Hermes SSE stream emits a ": keepalive" comment after 10s of
+// silence, so a minute of nothing means the connection is gone (a Wi-Fi to
+// cellular hand-off, a tailnet drop) rather than a slow tool call. Without the
+// watchdog a dead socket was only noticed at the app's 120s wall-clock limit.
+// A var so tests can shorten it.
+var streamIdleTimeout = 60 * time.Second
+
+// streamHTTP is the shared client for SSE turns. Sharing it lets consecutive
+// voice turns reuse the kept-alive connection (no fresh TCP + TLS handshake on
+// every utterance — first-token latency matters on a call). There is no overall
+// Timeout because SSE bodies are long-lived: the request context owns
+// cancellation (barge-in) and streamIdleTimeout catches dead connections. The
+// dial/TLS/header timeouts make an unreachable gateway fail in seconds instead
+// of hanging on the OS connect timeout.
+var streamHTTP = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          4,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+	},
 }
 
 // streamState tracks one in-flight stream (the poll-drain surface used by the
@@ -76,6 +127,12 @@ type streamState struct {
 	done   bool
 	err    string
 	cancel context.CancelFunc
+	// commentary holds the ids of phase=commentary message items, so their
+	// text deltas (if a gateway streams them) stay out of the spoken reply.
+	commentary map[string]bool
+	// failure is the gateway's own reason when the turn ends in response.failed
+	// / an error event — surfaced instead of a generic "ended without completion".
+	failure string
 	// notify is the push-side wake (#39): each buffered SSE event (and the
 	// terminal done) signals it so the app wakes the moment data lands instead
 	// of sleeping a fixed 240ms poll tick. Buffered(1) coalesces bursts (one
@@ -104,6 +161,17 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 	if err != nil {
 		return nil, err
 	}
+	// The idle watchdog cancels this derived context; the caller's ctx stays
+	// the barge-in handle.
+	ctx, cancelIdle := context.WithCancel(ctx)
+	defer cancelIdle()
+	var stalled atomic.Bool
+	idle := time.AfterFunc(streamIdleTimeout, func() {
+		stalled.Store(true)
+		cancelIdle()
+	})
+	defer idle.Stop()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/responses"), bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
@@ -111,23 +179,20 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	setEntityHeaders(req, c.apiKey, c.sessionScope())
-	// No client Timeout: SSE bodies are long-lived; ctx owns cancellation.
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := streamHTTP.Do(req)
 	if err != nil {
+		if stalled.Load() {
+			return nil, errStreamStalled
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("hermes stream %s: %s", resp.Status, string(b))
+		return nil, fmt.Errorf("hermes stream %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 
 	var result StreamResult
-	evName := ""
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
-	dispatch := func(dataLine string) {
+	dispatch := func(evName, dataLine string) {
 		var env sseEnvelope
 		if err := json.Unmarshal([]byte(dataLine), &env); err != nil {
 			return
@@ -159,9 +224,20 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 					st.text.WriteString("\n[tool-done]")
 					ev.Text = st.text.String()
 				case "message":
+					commentary := env.Item.Phase == "commentary"
+					if commentary {
+						if st.commentary == nil {
+							st.commentary = map[string]bool{}
+						}
+						st.commentary[env.Item.ID] = true
+					}
 					for _, ct := range env.Item.Content {
 						if ct.Type == "output_text" && ct.Text != "" && name == "response.output_item.done" {
-							ev.Delta = ct.Text
+							if commentary {
+								ev.Commentary += ct.Text
+							} else {
+								ev.Delta = ct.Text
+							}
 						}
 					}
 					ev.Text = st.text.String()
@@ -169,8 +245,12 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 			}
 		case "response.output_text.delta":
 			ev.ItemID = env.ItemID
-			ev.Delta = env.Delta
-			st.text.WriteString(ev.Delta)
+			if st.commentary[env.ItemID] {
+				ev.Commentary = env.Delta
+			} else {
+				ev.Delta = env.Delta
+				st.text.WriteString(ev.Delta)
+			}
 			ev.Text = st.text.String()
 		case "response.output_text.done":
 			ev.Text = st.text.String()
@@ -182,6 +262,35 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 			ev.Done = true
 			ev.Text = st.text.String()
 			st.done = true
+		case "response.incomplete":
+			// The turn stopped short (e.g. an output budget). Whatever was said is
+			// still the entity's answer, so it completes normally when there is
+			// text; with nothing said it is a failure with the gateway's reason.
+			if env.Response != nil && env.Response.ID != "" {
+				ev.ResponseID = env.Response.ID
+				st.respID = env.Response.ID
+			}
+			if plainText(st.text.String()) != "" {
+				ev.Done = true
+				st.done = true
+			} else {
+				reason := "incomplete"
+				if env.Response != nil && env.Response.IncompleteDetails != nil && env.Response.IncompleteDetails.Reason != "" {
+					reason = "incomplete: " + env.Response.IncompleteDetails.Reason
+				}
+				st.failure = "hermes response " + reason
+			}
+			ev.Text = st.text.String()
+		case "response.failed", "error":
+			msg := env.Message
+			if env.Response != nil && env.Response.Error != nil && env.Response.Error.Message != "" {
+				msg = env.Response.Error.Message
+			}
+			if msg == "" {
+				msg = "the gateway reported a failure"
+			}
+			st.failure = "hermes response failed: " + msg
+			ev.Text = st.text.String()
 		default:
 			ev.Text = st.text.String()
 		}
@@ -203,32 +312,74 @@ func (c *HermesResponsesClient) streamInto(ctx context.Context, input string, pr
 		}
 	}
 
+	// SSE framing: an event is its "event:"/"data:" lines up to a blank line;
+	// multiple data lines join with "\n"; lines starting with ":" are comments
+	// (Hermes' keepalive). A data line arriving while a complete JSON payload
+	// is already buffered is dispatched first, which tolerates producers that
+	// omit the blank separator.
+	var (
+		evName string
+		data   []string
+	)
+	flush := func() {
+		if len(data) > 0 {
+			payload := strings.Join(data, "\n")
+			if payload != "[DONE]" && payload != "" {
+				dispatch(evName, payload)
+			}
+		}
+		evName, data = "", nil
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 	for scanner.Scan() {
+		idle.Reset(streamIdleTimeout) // any bytes — keepalives included — prove the link is up
 		line := scanner.Text()
 		switch {
+		case line == "":
+			flush()
+		case strings.HasPrefix(line, ":"):
+			// comment / keepalive
 		case strings.HasPrefix(line, "event:"):
+			if len(data) > 0 {
+				flush()
+			}
 			evName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if data == "[DONE]" || data == "" {
-				continue
+			d := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
+			if len(data) > 0 && json.Valid([]byte(strings.Join(data, "\n"))) {
+				name := evName
+				flush()
+				evName = name
 			}
-			dispatch(data)
+			data = append(data, d)
 		}
+	}
+	flush()
+	if stalled.Load() {
+		return &result, errStreamStalled
 	}
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		return &result, fmt.Errorf("hermes stream read: %w", err)
 	}
 	st.mu.Lock()
 	completed := st.done
+	failure := st.failure
 	reply := plainText(st.text.String())
 	st.mu.Unlock()
+	if !completed && failure != "" {
+		return &result, errors.New(failure)
+	}
 	if result.Reply == "" && !completed {
 		return &result, fmt.Errorf("hermes stream: ended without completion")
 	}
 	result.Reply = reply
 	return &result, nil
 }
+
+// errStreamStalled is returned when the idle watchdog fires: no bytes (not
+// even a keepalive) for streamIdleTimeout.
+var errStreamStalled = errors.New("hermes stream: connection lost (no data from the gateway)")
 
 // extractToolOutput pulls human-readable text out of a function_call_output's
 // output field (string, or [{type:input_text,text:...}] as shipped live).

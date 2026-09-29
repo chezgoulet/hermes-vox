@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"io"
 	"net/http"
 	"strings"
 )
@@ -116,4 +117,16 @@ func (c *HermesRunClient) sessionScope() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sessionKey
+}
+
+// maxErrorBody caps how much of a non-2xx body is read into an error. Error
+// text travels to the app's log and UI; an unbounded read of a misbehaving
+// proxy's HTML page (or a hostile endpoint) is wasted memory and log noise.
+const maxErrorBody = 2048
+
+// readErrorBody reads at most maxErrorBody bytes of an error response body,
+// trimmed, for inclusion in an error message.
+func readErrorBody(r io.Reader) string {
+	b, _ := io.ReadAll(io.LimitReader(r, maxErrorBody))
+	return strings.TrimSpace(string(b))
 }

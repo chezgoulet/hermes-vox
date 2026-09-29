@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -87,8 +86,7 @@ func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("hermes %s: %s", resp.Status, string(b))
+		return "", fmt.Errorf("hermes %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	var out chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

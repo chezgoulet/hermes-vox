@@ -86,8 +86,7 @@ func (g *HermesGatewayClient) DeleteResponse(id string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("hermes delete response %s: %s", resp.Status, string(b))
+		return fmt.Errorf("hermes delete response %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	return nil
 }

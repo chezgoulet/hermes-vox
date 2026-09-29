@@ -1086,6 +1086,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
                 }
+                // Mid-turn commentary (phase=commentary): the entity narrating its
+                // progress. The connector never puts it in `delta`, so it is not
+                // spoken as the answer; the dev log shows it once, when the item closes.
+                "response.output_item.done" -> {
+                    val c = e.optString("commentary")
+                    if (c.isNotBlank()) main.post { listener?.onLog("// entity: ${c.replace("\n", " ").take(160)}") }
+                }
                 "response.completed" -> main.post { listener?.onLog("// response completed") }
             }
         }
