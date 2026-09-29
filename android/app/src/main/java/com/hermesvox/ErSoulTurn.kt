@@ -65,7 +65,7 @@ object ErSoulTurn {
      *
      * "Varied by personality" is the point: the SOUL renders the greeting against its own VOX.md,
      * so it is the entity's hello and not a fixed line. The prohibition is grounded in the field:
-     * asked to render with nothing to go on, this model produced "Hello, Christopher. How can I
+     * asked to render with nothing to go on, this model produced "Hello, Sam. How can I
      * help you today?" — service-desk register. A person greeting someone they know does not ask
      * what they need.
      */
@@ -183,7 +183,7 @@ object ErSoulTurn {
         return recent.any { (said, at) -> nowMs - at <= windowMs && norm(said) == n }
     }
 
-    /** Case- and punctuation-insensitive, so "Hello, Christopher." and "hello christopher"
+    /** Case- and punctuation-insensitive, so "Hello, Sam." and "hello sam"
      *  are recognised as the same line — which is exactly the pair the field produced. */
     private fun norm(s: String): String = s
         .lowercase()

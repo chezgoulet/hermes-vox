@@ -1,6 +1,6 @@
 # DIRECTIVE — Hermes Agent (NousResearch) adversarial code review (Opus). Read-only.
 
-You are reviewing a COPY of the Hermes Agent codebase at /home/c/hermes-review
+You are reviewing a COPY of the Hermes Agent codebase at ~/hermes-review
 (HEAD fdc342c0), cloned into an isolated sandbox. DO NOT modify, commit, or
 "fix" anything. DO NOT touch /home/robot/.hermes/hermes-agent (the LIVE gateway
 this review is about). Your ONLY deliverable is a findings REPORT. You may read

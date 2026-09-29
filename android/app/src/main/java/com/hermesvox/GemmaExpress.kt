@@ -120,7 +120,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      *
      * The beat needs a SHORT line, fast. Our warm renders are ~2.2s, and the workaround that
      * suggests itself — pre-generate a set of lines and play them from cache — is an array of canned
-     * responses. Christopher named it correctly: that is the pattern this series spent its whole
+     * responses. The maintainer named it correctly: that is the pattern this series spent its whole
      * length deleting, wearing better clothes. So before designing around it, measure what the
      * workaround assumes.
      *

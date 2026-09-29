@@ -47,7 +47,7 @@ fence, retirement, focus, BargeGate/EscapeRule, ReplySettleRule, crash guard,
 transcript reveal chars logic, session_turns. CrawlView setRole/setText signature.
 
 ## Gate
-cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
 :app:testDebugUnitTest -q --no-daemon exit 0 (+ assembleRelease must compile).
 
 ## Deliverable — one commit

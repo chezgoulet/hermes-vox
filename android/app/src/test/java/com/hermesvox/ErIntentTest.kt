@@ -83,7 +83,7 @@ class ErIntentTest {
     }
 
     @Test fun take_your_time_is_never_a_barge() {
-        // THE asymmetry (Christopher's question, sacrosanct): a patient backchannel must never
+        // THE asymmetry (the maintainer's question, sacrosanct): a patient backchannel must never
         // cancel the mind's fifteen seconds of work.
         for (t in listOf("take your time", "no rush", "it's okay", "go on", "still there", "hmm, hi")) {
             assertFalse("'$t' must NOT barge", ErIntent.isGenuineBarge(t))

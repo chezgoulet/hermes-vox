@@ -23,7 +23,7 @@ type HermesSession struct {
 }
 
 // NewHermesSession connects to the Local Hermes agent (the entity). baseURL is
-// the gateway API server (e.g. http://100.84.47.125:8642), apiKey is the Hermes
+// the gateway API server (e.g. https://gateway.example.ts.net), apiKey is the Hermes
 // API_SERVER_KEY (secret — entered by the user, never committed), model is the
 // model route (usually "hermes-agent" → the real profile agent).
 func NewHermesSession(baseURL, apiKey, model string) *HermesSession {

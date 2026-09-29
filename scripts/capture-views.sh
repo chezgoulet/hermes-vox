@@ -5,16 +5,18 @@
 # running emulator, into a timestamped output dir. Re-run after any UI change to
 # re-shoot everything.
 #
-# Usage:  HERMES_VOX_API_KEY=<key> bash scripts/capture-views.sh [outdir]
+# Usage:  HERMES_VOX_URL=<gateway-url> HERMES_VOX_API_KEY=<key> bash scripts/capture-views.sh [outdir]
 #   (default outdir: $PWD/shots/<timestamp>)
 # Requires: emulator-5554 online, the app installed, the entity gateway reachable.
 set -uo pipefail
-export PATH=/home/c/Android/Sdk/platform-tools:$PATH
+export PATH="${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools:$PATH"
 A="adb -s emulator-5554"
 OUT="${1:-$PWD/shots/$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$OUT"
 KEY="${HERMES_VOX_API_KEY:-${HV_KEY:-}}"
 [ -z "$KEY" ] && { echo "set HERMES_VOX_API_KEY"; exit 1; }
+URL="${HERMES_VOX_URL:-}"
+[ -z "$URL" ] && { echo "set HERMES_VOX_URL (your gateway endpoint)"; exit 1; }
 
 cx(){  # resource-id -> center
   $A shell uiautomator dump /sdcard/u.xml >/dev/null 2>&1 || true
@@ -36,7 +38,7 @@ seed_prefs(){
   cat > /tmp/hv.xml <<EOF
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
-  <string name="url">http://100.84.47.125:8642</string>
+  <string name="url">$URL</string>
   <string name="model">hermes-agent</string>
   <string name="key">$KEY</string>
 </map>
@@ -77,7 +79,7 @@ $A shell input keyevent 4; sleep 1
 
 echo "=== 6/6 Pipeline-active Main (live SSE tool turn) ==="
 $A shell am force-stop com.hermesvox; sleep 1
-$A shell "am start -n com.hermesvox/.MainActivity --es url http://100.84.47.125:8642 --es key $KEY --es say 'Use your shell tool to run exactly: echo vox-ui-live and reply with just its output.'"
+$A shell "am start -n com.hermesvox/.MainActivity --es url $URL --es key $KEY --es say 'Use your shell tool to run exactly: echo vox-ui-live and reply with just its output.'"
 sleep 11
 shot 06_pipeline_active
 echo "DONE: shots in $OUT"

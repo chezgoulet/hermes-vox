@@ -233,9 +233,10 @@ Give two devices the same scope only when you *want* them to share one memory.
 
 
 ### I get "Cleartext HTTP traffic not permitted" (Android) when connecting.
-Android blocks plain HTTP unless the host is in the app's
-`network_security_config.xml`, which only ships a few example hosts. Don't
-rebuild the APK — put the gateway behind HTTPS on your tailnet:
+Vox only speaks HTTPS to your gateway (plain HTTP would expose your API key and
+audio on the network). The one exception is a tailnet MagicDNS name, whose
+traffic the tailnet already encrypts. Put the gateway behind HTTPS on your
+tailnet:
 
 1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
 2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`

@@ -1456,7 +1456,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * /compress (K2, 0.5.2) — ask the GATEWAY to compact this conversation's context
-     * so a long session can keep going. Christopher's ask, verbatim: "We need to
+     * so a long session can keep going. The maintainer's ask, verbatim: "We need to
      * expose a compress command to the user through this app."
      *
      * This is gateway-side compaction, not an app-side trim: [CompressCommand.DIRECTIVE]

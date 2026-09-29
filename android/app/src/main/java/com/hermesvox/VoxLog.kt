@@ -33,7 +33,7 @@ object VoxLog {
     private var writer: BufferedWriter? = null
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     @Volatile private var debugFile = false
-    /** 0.6.10 (Christopher's rule): "verbose file log" ON = the file NEVER
+    /** 0.6.10 (the maintainer's rule): "verbose file log" ON = the file NEVER
      *  truncates or auto-prunes — a dev session captures EVERYTHING, unambiguously.
      *  Rotation/retention are only for the default (verbose OFF) mode, where the
      *  5MB×2 window protects storage on a device that never asked for deep logs.
@@ -110,7 +110,7 @@ object VoxLog {
     private fun rotateIfNeeded() {
         val cur = file ?: return
         synchronized(rotationLock) {
-            // 0.6.10 (Christopher's rule): verbose file log ON = NEVER rotate or
+            // 0.6.10 (the maintainer's rule): verbose file log ON = NEVER rotate or
             // prune — the developer opted into capturing everything; truncation
             // here is exactly the "the early turns are gone" failure the rule
             // exists to kill. Rotation only runs in the default (verbose OFF)

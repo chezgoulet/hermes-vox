@@ -15,8 +15,8 @@ import (
 //
 // Gated: they SKIP unless BOTH are set —
 //   HERMES_VOX_LIVE=1
-//   HERMES_VOX_HERMES_API_KEY=<API_SERVER_KEY>   (secret; House env store)
-// Optional: HERMES_VOX_HERMES_URL (default http://100.84.47.125:8642),
+//   HERMES_VOX_HERMES_API_KEY=<API_SERVER_KEY>   (secret; from your environment)
+// Optional: HERMES_VOX_HERMES_URL (default http://127.0.0.1:8642),
 //           HERMES_VOX_HERMES_MODEL (default hermes-agent),
 //           HERMES_VOX_HERMES_SESSION_KEY (the X-Hermes-Session-Key scope; when
 //           set, every live turn below carries it — the way a real multi-user

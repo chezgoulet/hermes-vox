@@ -2,7 +2,7 @@ name: nightly-build
 
 # Hermes Vox NIGHTLY — a build per merge into `testing`.
 #
-# The git flow (2026-09-08, Christopher):
+# The git flow (2026-09-08):
 #   main     — deployable/buildable always; releases are cut FROM main ONLY.
 #   testing  — integration branch; features branch off testing and merge INTO
 #              testing. Every push/merge to testing produces a NIGHTLY artifact:

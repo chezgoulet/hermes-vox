@@ -10,8 +10,8 @@ import java.io.File
  * these in order (silero VAD for barge-in, Piper for warm TTS, Whisper for
  * offline STT); the source host + which models to install are user-visible.
  *
- * Sovereign/local-first: model FILES come from an open-source store (the house
- * Thelio by default, adjustable in Settings); inference runs fully offline.
+ * Sovereign/local-first: model FILES come from an open-source store (the upstream
+ * k2-fsa release by default, adjustable in Settings); inference runs fully offline.
  */
 data class ModelSpec(
     val id: String,

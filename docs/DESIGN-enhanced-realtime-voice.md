@@ -72,7 +72,7 @@ INVARIANTS (the "sacrosanct" of identity sync):
 ### Soul — variable, agent-authored (open fields the prompt leaves blank for the agent)
 name, self-image, 2-3 sentence essence, register/tone/catchphrases, how it addresses
 the user, the relationship, the handful of distilled memory facts that give warmth
-(e.g. "you bake; moving to Quebec; daughter Béatrice; family names"), humor, what
+(e.g. a shared hobby, a current project, the names the user goes by), humor, what
 it's proud of.
 
 ## Linting at authoring time (the "sacrosanct" guarantee)

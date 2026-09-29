@@ -1,8 +1,8 @@
 # DIRECTIVE — Hermes Vox (chezgoulet/hermes-vox) adversarial code review (Opus). Read-only.
 
-You are reviewing a COPY of the Hermes Vox Android app at /home/c/vox-review
+You are reviewing a COPY of the Hermes Vox Android app at ~/vox-review
 (HEAD 9c1a95f5, main). It is isolated in a sandbox. DO NOT modify, commit, or
-"fix" anything. DO NOT touch /home/c/hermes-vox or any live checkout. Your ONLY
+"fix" anything. DO NOT touch <repo> or any live checkout. Your ONLY
 deliverable is a findings REPORT. You may read files and run read-only commands,
 but you must not write tracked files or touch the live app/gateway.
 

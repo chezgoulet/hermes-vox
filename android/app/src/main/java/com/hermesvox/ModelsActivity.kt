@@ -17,7 +17,7 @@ import androidx.core.content.ContextCompat
  * one-line plain-language purpose, a download-with-progress / cancel /
  * installed state, and a configurable source host. "Download recommended
  * (blessed)" fetches the whole default set.
- * Sovereign: the models are FILES from an open-source store (the house Thelio by
+ * Sovereign: the models are FILES from an open-source store (the upstream release by
  * default); inference runs fully offline. No cloud APIs, no keys.
  *
  * #114-denominator: REQUIRED == RECOMMENDED == ModelCatalog.required, the SAME

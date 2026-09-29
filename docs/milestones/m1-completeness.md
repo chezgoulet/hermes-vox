@@ -7,7 +7,7 @@ Date: 2026-08-25 · Host: Thelio (c@sasquatch) · Emulator-5554 (Android 15)
 1. **Go unit tests** — `go test ./voice/...` ok (offline, mocked).
 2. **Live integration suite** (`voice/integration_live_test.go`, gated by
    `HERMES_VOX_LIVE=1` + `HERMES_VOX_HERMES_API_KEY`) — 6/6 PASS against the
-   REAL gateway (http://100.84.47.125:8642, model hermes-agent):
+   REAL gateway (http://<your-gateway-host>:8642, model hermes-agent):
 
 ```
 --- PASS: TestLiveResponsesTurn        (1.31s)  reply="vox-live-turn-ok"

@@ -329,7 +329,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // Re-initialize any pipeline leg that stopped warming (e.g. after stop() reset the
         // ready flags) so a fresh start doesn't listen against a dead TTS/STT/VAD.
         ensureWarm()
-        // Don't open the mic until the models are fully warm (Christopher: the delayed
+        // Don't open the mic until the models are fully warm (maintainer: the delayed
         // first turn + the double-fire both came from listening before the pipeline loaded).
         if (!isWarm()) {
             listener?.onState("warming")
@@ -1420,7 +1420,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // 0.6.4 crash guard: the segment walk assumes sane inputs. A corrupt or
         // zero/negative sample count (an engine race under teardown) would send
         // SpeechCursor.of into a division by segSamples==0 → ArithmeticException
-        // → the crash Christopher saw when the reply rendered. Guard: refuse the
+        // → the crash the maintainer saw when the reply rendered. Guard: refuse the
         // segment, keep the cursor honest with what has already been registered.
         if (samples <= 0 || text.isEmpty()) return
         synchronized(cursorLock) {

@@ -61,7 +61,7 @@ func (c *HermesResponsesClient) SetProvider(provider string) {
 // 100KB of skills + re-audited its own state mid-call because nothing told it
 // to just answer).
 //
-// 0.6.4 tuning (Christopher's field note: "the conversation should be more
+// 0.6.4 tuning (the maintainer's field note: "the conversation should be more
 // normal" — hello got "let me think hold on hm", aggressive): the prefix now
 // carries the PRESENCE-CADENCE contract — the model knows the app renders its
 // own spoken acknowledgments ("let me think", fillers), so the model must NOT

@@ -21,7 +21,7 @@ class ErSoulTurnTest {
     }
 
     @Test fun the_directive_carries_the_tool_context_when_known() {
-        // Point 1, Christopher: the soul should know what the mind is using so it can be
+        // Point 1: the soul should know what the mind is using so it can be
         // topical — and it rides the SAME render as the decision, so it costs no extra call.
         val d = ErSoulTurn.directive("what's in my inbox?", "reading the email inbox")
         assertTrue(d.contains("reading the email inbox"))
@@ -53,8 +53,8 @@ class ErSoulTurnTest {
     }
 
     @Test fun an_answer_is_spoken() {
-        assertEquals(ErSoulTurn.Outcome.Spoken("Hello, Christopher."),
-            ErSoulTurn.parse("  Hello, Christopher.  "))
+        assertEquals(ErSoulTurn.Outcome.Spoken("Hello, Sam."),
+            ErSoulTurn.parse("  Hello, Sam.  "))
     }
 
     @Test fun a_blank_render_is_nothing_not_speech() {
@@ -115,19 +115,19 @@ class ErSoulTurnTest {
 
     @Test fun the_same_line_inside_the_window_is_a_repeat() {
         // Exactly the field pair: this sentence seven times in thirty-nine seconds.
-        val said = "Hello, Christopher. How can I help you today?"
+        val said = "Hello, Sam. How can I help you today?"
         val recent = listOf(said to 1_000L)
         assertTrue(ErSoulTurn.isRepeat(said, recent, 2_000L))
-        assertTrue("case/punctuation-insensitive", ErSoulTurn.isRepeat("hello christopher how can i help you today", recent, 2_000L))
+        assertTrue("case/punctuation-insensitive", ErSoulTurn.isRepeat("hello sam how can i help you today", recent, 2_000L))
         assertTrue("still inside the window", ErSoulTurn.isRepeat(said, recent, 30_000L))
     }
 
     @Test fun a_different_line_is_not_a_repeat_and_the_window_expires() {
-        val recent = listOf("Hello, Christopher." to 1_000L)
+        val recent = listOf("Hello, Sam." to 1_000L)
         assertFalse("a different line is what a person says next",
             ErSoulTurn.isRepeat("Checking your inbox now.", recent, 2_000L))
         assertFalse("outside the window it may be said again",
-            ErSoulTurn.isRepeat("Hello, Christopher.", recent, 40_000L))
+            ErSoulTurn.isRepeat("Hello, Sam.", recent, 40_000L))
     }
 
     @Test fun the_greeting_directive_opens_the_call_and_forbids_the_service_desk() {
@@ -139,13 +139,13 @@ class ErSoulTurnTest {
         assertTrue("must ask for the soul's OWN voice", g.contains("in your own voice"))
         assertTrue("must bound the length", g.contains("under about twenty words"))
         // Grounded in the field: asked to render with nothing to go on, this model produced
-        // "Hello, Christopher. How can I help you today?" — service-desk register. A person
+        // "Hello, Sam. How can I help you today?" — service-desk register. A person
         // greeting someone they know does not ask what they need.
         assertTrue("must forbid the service-desk greeting", g.contains("Do not ask what they need"))
     }
 
     @Test fun both_directives_bound_the_margin() {
-        // Christopher: tighten the margins on soul utterances so the line is short enough to
+        // Maintainer: tighten the margins on soul utterances so the line is short enough to
         // hand over cleanly rather than compete with a healthy gateway.
         assertTrue(ErSoulTurn.directive("hi").contains("under about twenty words"))
         assertTrue(ErSoulTurn.greetingDirective().contains("under about twenty words"))

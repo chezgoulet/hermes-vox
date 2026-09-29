@@ -995,7 +995,7 @@ class AvatarView @JvmOverloads constructor(
         }
     }
 
-    /** Wave 1 (A_TAKU): the octopus transport machine — Christopher's WANDER / FIXATE /
+    /** Wave 1 (A_TAKU): the octopus transport machine — the maintainer's WANDER / FIXATE /
      *  MOVE-ON. Runs once per frame, allocates nothing. Phase changes set a target; the
      *  body offset (ox,oy) and heading (hAng) ease toward it, so the octopus glides
      *  along a curved drift, then pauses and orients toward an "interesting" point, then

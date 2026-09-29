@@ -40,7 +40,7 @@ CHANGE: Replace the iteration cap with a wall-clock deadline. e.g.
 KEEP-LIST: do NOT touch barge-in/escape-rule, reveal-freeze, silenceAll, the
   stream-poll event handling, gate-release. Only the loop condition + the throw
   path change.
-VERIFY: cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 gradle :app:testDebugUnitTest
+VERIFY: cd android && JAVA_HOME=~/jdk-17.0.12+7 gradle :app:testDebugUnitTest
   -q --no-daemon (exit 0) AND assembleRelease compiles.
 RISK: a reply genuinely longer than 120s would still be cut; acceptable (that's the
   intended timeout), and far better than current ~15-20s truncation.

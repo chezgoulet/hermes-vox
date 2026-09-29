@@ -7,12 +7,12 @@ import (
 // Config is the runtime configuration for the voice engine. It is loaded from
 // the environment so secrets (the Hermes API key) are never committed.
 type Config struct {
-	// HermesBaseURL is the local Hermes agent endpoint. Verified live: the House
-	// Hermes gateway API server at http://100.84.47.125:8642 (the same entity the
-	// phone app fronts). Empty disables the "entity IS Hermes" connector.
+	// HermesBaseURL is YOUR Hermes gateway's API server (e.g.
+	// http://127.0.0.1:8642, the API server's default bind). Empty disables the
+	// "entity IS Hermes" connector — there is no built-in gateway.
 	HermesBaseURL string
 	// HermesAPIKey is the Hermes API_SERVER_KEY (bearer). SECRET — from the
-	// environment (House env store), never committed.
+	// environment, never committed.
 	HermesAPIKey string
 	// HermesModel is the model Hermes serves. The virtual "hermes-agent" routes to
 	// the REAL profile agent (memory/identity/tools) — this is what makes the
@@ -45,13 +45,14 @@ func LoadFromEnv() Config {
 	}
 }
 
-// Default returns a default Config pointed at the verified local Hermes agent
-// (base URL + model), with the API key left for the environment (secret-safe).
+// Default returns a default Config pointed at a gateway on this machine (the
+// Hermes API server's own default bind, 127.0.0.1:8642) with the model route,
+// and the API key left for the environment (secret-safe).
 // The key must be provided via env; a zero key yields a client that errors on
 // the entity (never a fake reply).
 func Default() Config {
 	return Config{
-		HermesBaseURL: "http://100.84.47.125:8642",
+		HermesBaseURL: "http://127.0.0.1:8642",
 		HermesModel:   "hermes-agent",
 	}
 }
