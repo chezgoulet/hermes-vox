@@ -135,7 +135,10 @@ class OnboardingActivity : AppCompatActivity() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Skip for now?")
             .setMessage("You can explore first, but nothing works until you connect to your Hermes gateway AND download the voice models — you need both before you can talk. You can do either later from Settings (⚙).")
-            .setPositiveButton("Skip anyway") { _, _ -> goMain() }
+            .setPositiveButton("Skip anyway") { _, _ ->
+                prefs.edit().putBoolean(FirstRunRoute.PREF_SKIPPED, true).apply()
+                goMain()
+            }
             .setNegativeButton("Keep setting up", null)
             .show()
     }

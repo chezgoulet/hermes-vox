@@ -270,8 +270,9 @@ class MainActivity : AppCompatActivity() {
             setStatus(getString(R.string.hv_connected), false)
         }
 
-        // First run → onboarding (no stored endpoint yet).
-        if (prefs.getString("url", "").orEmpty().isBlank()) {
+        // First run → onboarding (no stored endpoint yet), unless the user chose
+        // "Skip for now" there (FirstRunRoute).
+        if (FirstRunRoute.shouldOnboard(prefs.getString("url", ""), prefs.getBoolean(FirstRunRoute.PREF_SKIPPED, false))) {
             openOnboarding(); return
         }
         // C0: endpoint set but no user-entered key -> main screen shows the clear
