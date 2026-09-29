@@ -58,6 +58,7 @@ jobs:
       - name: gomobile bind -> app/libs/mobile.aar
         run: |
           go install github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION
+          go install github.com/ebitengine/gomobile/cmd/gobind@$GOMOBILE_VERSION
           export PATH=$PATH:$(go env GOPATH)/bin
           gomobile init >/dev/null 2>&1 || true
           gomobile bind -target android -androidapi 23 -javapkg com.hermesvox \

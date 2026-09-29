@@ -35,6 +35,7 @@ go test -race ./voice/... ./mobile/...
 
 echo "== [3/5] gomobile bind -> mobile.aar =="
 command -v gomobile >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION"
+command -v gobind >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gobind@$GOMOBILE_VERSION"
 gomobile init >/dev/null 2>&1 || true
 gomobile bind -target android -androidapi 23 -javapkg com.hermesvox \
   -o mobile.aar github.com/chezgoulet/hermes-vox/mobile
