@@ -119,6 +119,7 @@ class OnboardingActivity : AppCompatActivity() {
      * declaration itself is pinned to AVATAR_FULL_DP by OnboardingLayoutTest).
      */
     private fun applyAvatarSize() {
+        findViewById<AvatarView>(R.id.ob_avatar).setPortalShape(-1f)   // the being greets you through a portal
         val cfg = resources.configuration
         val dp = OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp)
         if (dp == OnboardingLayout.AVATAR_FULL_DP) return

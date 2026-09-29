@@ -87,6 +87,24 @@ class AvatarView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     /**
+     * Clips the being's black surface to a shape. Every frame paints an opaque
+     * black base (see onDraw), which is invisible on the OLED-black theme but is a
+     * hard-edged black rectangle on the light theme. Clipping it to a circle
+     * (a portal) or a rounded window makes that surface read as deliberate.
+     * [cornerDp] < 0 = a circle; otherwise a rounded rectangle with that radius.
+     */
+    fun setPortalShape(cornerDp: Float) {
+        val r = cornerDp * resources.displayMetrics.density
+        outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                if (cornerDp < 0f) outline.setOval(0, 0, view.width, view.height)
+                else outline.setRoundRect(0, 0, view.width, view.height, r)
+            }
+        }
+        clipToOutline = true
+    }
+
+    /**
      * One inhabitant of the swarm: a physics body with a FIXED identity (its slot in the
      * body, its size / brightness / flicker character) and a MUTABLE state (where it is
      * right now, how fast, how bright).

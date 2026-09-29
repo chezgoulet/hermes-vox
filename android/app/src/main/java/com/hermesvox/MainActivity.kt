@@ -257,6 +257,7 @@ class MainActivity : AppCompatActivity() {
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
+        avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
         convoText = findViewById(R.id.convo_text)
         handleModeUi()

@@ -47,10 +47,22 @@ class CrawlView @JvmOverloads constructor(
         val textChanged = t != full
         if (!textChanged && spokenChars == spoken) return
         spoken = spokenChars
-        if (textChanged) { full = t; layout = null }   // relayout only when the text itself moved
+        if (textChanged) {
+            full = t; layout = null   // relayout only when the text itself moved
+            // The crawl is canvas-drawn, so TalkBack cannot see the words unless
+            // they are also the view's description. The voice already speaks the
+            // reply, so this is deliberately NOT a live region (no double speech):
+            // a screen-reader user can focus the crawl to re-read it.
+            if (role == "reply") contentDescription = t
+        }
         invalidate()
     }
-    fun setRole(r: String) { role = r; layout = null; invalidate() }
+    fun setRole(r: String) {
+        role = r; layout = null
+        // The SSE/dev log is diagnostic noise for a screen reader.
+        importantForAccessibility = if (r == "sse") IMPORTANT_FOR_ACCESSIBILITY_NO else IMPORTANT_FOR_ACCESSIBILITY_YES
+        invalidate()
+    }
 
     override fun onDraw(canvas: Canvas) {
         if (full.isBlank()) { postInvalidateOnAnimation(); return }

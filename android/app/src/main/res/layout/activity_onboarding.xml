@@ -146,9 +146,13 @@
                 android:id="@+id/ob_skip_how"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="2dp"
                 style="@style/TextVox.Label"
-                android:text="Skip for now" />
+                android:text="Skip for now"
+                android:minHeight="48dp"
+                android:minWidth="48dp"
+                android:gravity="center"
+                android:paddingHorizontal="16dp" />
         </LinearLayout>
 
         <!-- ====================================================================
@@ -241,10 +245,14 @@
                 android:id="@+id/skip"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="4dp"
                 style="@style/TextVox.Label"
                 android:text="@string/hv_skip"
-                android:layout_gravity="center_horizontal" />
+                android:layout_gravity="center_horizontal"
+                android:minHeight="48dp"
+                android:minWidth="48dp"
+                android:gravity="center"
+                android:paddingHorizontal="16dp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
