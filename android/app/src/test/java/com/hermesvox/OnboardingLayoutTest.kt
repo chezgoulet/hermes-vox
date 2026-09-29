@@ -78,11 +78,17 @@ class OnboardingLayoutTest {
 
     @Test fun root_is_a_scroll_container_that_can_stretch() {
         val r = root()
-        assertEquals("the onboarding root must scroll, not clip", "ScrollView", r.tagName)
-        assertEquals("fillViewport is what keeps the default layout centred", "true", attr(r, "fillViewport"))
+        // A subclass is fine (NestedScrollView is the better container once anything
+        // androidx scrolls inside), but it must be a *vertical* scroll container —
+        // HorizontalScrollView as the root would silently re-create the bug.
+        assertTrue("the onboarding root must scroll, not clip (got ${r.tagName})",
+            r.tagName in setOf("ScrollView", "NestedScrollView"))
+        assertEquals("fillViewport is what keeps the default layout centred",
+            "true", attr(r, "fillViewport")?.lowercase())
         assertEquals("match_parent", attr(r, "layout_width"))
         assertEquals("match_parent", attr(r, "layout_height"))
         assertEquals("ob_scroll", attr(r, "id")?.removePrefix("@+id/"))
+        assertEquals("@color/hv_bg", attr(r, "background"))
     }
 
     @Test fun scroll_content_is_wrap_content() {
@@ -92,13 +98,21 @@ class OnboardingLayoutTest {
         // fillViewport stretches a wrap_content child to the viewport height; a
         // match_parent child would defeat it and the container could never scroll.
         assertEquals("wrap_content", attr(kids[0], "layout_height"))
+        // ...and the column's own centring + padding are what make "the default screen
+        // is unchanged" true. Without these two assertions a refactor could delete them
+        // and every test would still pass while the content jumped to the top/edges:
+        // verified by mutation, this is the half of the claim that was unguarded.
+        assertEquals("the column must centre its content, as the old root did",
+            "center", attr(kids[0], "gravity"))
+        assertEquals("28dp", attr(kids[0], "padding"))
     }
 
     @Test fun every_identified_view_is_inside_the_scroll_container() {
         val r = root()
         // Precondition, stated here too so this test cannot pass vacuously on a
         // layout whose root does not scroll at all (which is the #130 bug).
-        assertEquals("the scroll container must be the root", "ScrollView", r.tagName)
+        assertTrue("the scroll container must be the root",
+            r.tagName in setOf("ScrollView", "NestedScrollView"))
         // Note: because the container IS the root, an "outside the container" set can
         // never be non-empty — an earlier draft asserted exactly that and it was dead
         // logic. A sibling at the root is the real hazard, and "exactly one child"

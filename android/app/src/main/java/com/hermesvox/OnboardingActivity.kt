@@ -101,6 +101,11 @@ class OnboardingActivity : AppCompatActivity() {
     private fun showConnectStep() {
         findViewById<android.view.View>(R.id.ob_step_how).visibility = android.view.View.GONE
         findViewById<android.view.View>(R.id.ob_step_connect).visibility = android.view.View.VISIBLE
+        // #130: a fresh step starts at its top. If the explainer had to be scrolled to
+        // reach its button, the form would otherwise open at the same offset with its
+        // first field above the fold — ScrollView only re-clamps when the new content
+        // fits, so the old offset survives a form that is still taller than the window.
+        findViewById<android.widget.ScrollView>(R.id.ob_scroll).scrollTo(0, 0)
     }
 
     /**

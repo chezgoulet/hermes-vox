@@ -16,6 +16,13 @@ import org.junit.Test
  */
 class OnboardingAvatarSizeTest {
 
+    @Test fun the_design_bounds_are_pinned() {
+        // Everything else asserts against these two symbolically, so without this a
+        // silent change of the numbers — the floor to 120, say — would pass every test.
+        assertEquals(140, OnboardingLayout.AVATAR_MIN_DP)
+        assertEquals(250, OnboardingLayout.AVATAR_FULL_DP)
+    }
+
     @Test fun default_configuration_is_unchanged() {
         // Pixel 8 at Font size Default / Display size Default: the layout keeps the
         // presence exactly as it is declared, so nothing about the default screen moves.
