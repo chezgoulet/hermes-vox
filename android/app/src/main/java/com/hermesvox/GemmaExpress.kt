@@ -4,9 +4,9 @@ import android.content.Context
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import kotlinx.coroutines.runBlocking  // still used to park the express() thread
 import java.io.File
 
 /**
@@ -107,12 +107,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      * repeat-spacing rail so the second render is a real second measurement.
      */
     private fun warmUp() {
-        val t0 = System.currentTimeMillis()
-        try { render("working", "", "calm") } catch (_: Throwable) {}
-        VoxLog.d("GemmaExpress warm-up ms=${System.currentTimeMillis() - t0}")
-        // The second measurement IS the probe's full-persona leg — same render count as before,
-        // one more number, and it answers the question the beat's design depends on.
-        try { Thread.sleep(1300) } catch (_: InterruptedException) {}
+        // Prime the soul's rolling conversation: this render pays the persona prefill ONCE, at
+        // load, where the user already expects to wait. Every render after it is warm.
+        val prime = timed { generateWarm(PRIME_DIRECTIVE) }
+        VoxLog.d("GemmaExpress warm-up ms=$prime (soul conversation primed)")
+        try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
         probePrefill()
     }
 
@@ -142,7 +141,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // Separation, not the spacing rail: each measurement gets a settled GPU.
         try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
         val minimal = timed { generate(MINIMAL_PERSONA, directive) }
-        VoxLog.d("express-probe full=${full}ms minimal=${minimal}ms personaChars=${persona.length}")
+        // The number the rolling conversation exists for: the same kind of render, on the warm
+        // conversation, with the persona already in the KV cache.
+        try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
+        val warm = timed { generateWarm(PRIME_DIRECTIVE) }
+        VoxLog.d("express-probe full=${full}ms minimal=${minimal}ms warm=${warm}ms personaChars=${persona.length}")
     }
 
     private inline fun timed(f: () -> String): Long {
@@ -169,7 +172,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     // the persona is ~600 tokens and a render is capped at 256 output.
                     // 8k keeps real headroom for a growing VOX.md and for bounded
                     // conversation reuse later, while cutting the cache 4x.
-                    maxNumTokens = 8192,
+                    maxNumTokens = SoulBudget.MAX_TOKENS,
                     // 0.8/M2.1: LiteRT-LM's docs call this out ("Pick a writable dir.
                     // This can improve 2nd load time.") and its published benchmarks are
                     // cache-enabled — we were paying the uncached first-load path on
@@ -199,7 +202,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // run on the produced text, so a too-soon request paid for a full generation
         // and then discarded it. Same outcome (the guard returned null -> the caller
         // fell back to the routed line), no wasted render.
-        if (System.currentTimeMillis() - lastRenderAt < ErGemmaGuard.MIN_RENDER_SPACING_MS) {
+        // A turn decision is exempt: it is one per caller utterance by construction, and the
+        // rail used to drop it outright when a narration had rendered a moment earlier — the
+        // caller's turn then got no soul decision and no beat at all.
+        val spaced = intent != VoiceOrchestrator.INTENT_SOUL_TURN
+        if (spaced && System.currentTimeMillis() - lastRenderAt < ErGemmaGuard.MIN_RENDER_SPACING_MS) {
             // 0.8/M3c: return SILENCE, not the stand-in. The field caught this: the rail
             // correctly skipped a regeneration and then SPEAKED the RoutedExpress fallback
             // ("Just a sec — let me look that up."), because the old return was the fallback —
@@ -210,7 +217,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         }
         val t0 = System.currentTimeMillis()
         try {
-            return render(intent, content, tone)
+            return render(intent, content, tone, spaced)
         } finally {
             // 0.8/M1: the soul's OWN latency is the number that decides whether the
             // instant lane is viable (gate G2). Measured on-device, never estimated.
@@ -220,19 +227,81 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     }
 
     /** The render itself, timed by [express]. */
-    private fun render(intent: String, content: String, tone: String): String {
-        if (!loaded || llm == null) return fallback.express(intent, content, tone)
-        val prompt = "Operator directive: intent=$intent. Content to render: $content"
+    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true): String {
+        if (!loaded || llm == null) return fallback.express(intent, content, tone)   // soul intents -> "" (RoutedExpress)
+        // The soul intents carry a complete directive (ErSoulTurn); anything else is the legacy
+        // operator-directive shape.
+        val prompt = if (intent in VoiceOrchestrator.SOUL_INTENTS) content
+            else "Operator directive: intent=$intent. Content to render: $content"
         return try {
-            generate(persona, prompt)
+            generateWarm(prompt)
                 // 0.6.3: the render rails — cap runaway output, enforce spacing.
-                .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), lastRenderAt) ?: "" }
-                .ifBlank { fallback.express(intent, content, tone) }
+                .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), if (spaced) lastRenderAt else 0L) ?: "" }
+                // The soul intents are parsed by the caller: blank means "nothing", never the
+                // canned stand-in pretending to be the soul.
+                .ifBlank { if (intent in VoiceOrchestrator.SOUL_INTENTS) "" else fallback.express(intent, content, tone) }
                 .also { lastRenderAt = System.currentTimeMillis() }
         } catch (e: Throwable) {
             VoxLog.e("GemmaExpress gen failed: ${e.message}")
-            fallback.express(intent, content, tone)
+            if (intent in VoiceOrchestrator.SOUL_INTENTS) "" else fallback.express(intent, content, tone)
         }
+    }
+
+    // ---- The rolling soul conversation ----
+    //
+    // Every render used to build a FRESH Conversation, so the ~600-token persona was re-prefilled
+    // on every call against a ~10-token output — which is where the ~2.2 s warm render went. The
+    // 0.8 notes concluded "no reset, so no reuse"; reuse does not need a reset. The soul keeps ONE
+    // conversation: the persona is prefilled once (at load, by the prime), and each render only
+    // prefills its own directive. Its history is a feature, not a cost: the soul sees what it has
+    // already said this session, which is exactly what stops a stuck-record repeat, and it hears
+    // the caller's recent turns, which is contextual awareness for free. The KV cache is bounded,
+    // so the conversation ROTATES before it fills (SoulBudget) and whenever the persona changes
+    // (a VOX.md resync).
+
+    private val genLock = Any()
+    private var soulConv: Conversation? = null
+    private var soulConvPersona: String? = null
+    @Volatile private var cancelRequested = false
+
+    /** Render [prompt] on the warm soul conversation, creating or rotating it as needed. */
+    private fun generateWarm(prompt: String): String {
+        val engine = llm ?: return ""
+        val p = persona
+        synchronized(genLock) {
+            cancelRequested = false
+            var conv = soulConv
+            val tokens = try { conv?.getTokenCount() ?: 0 } catch (_: Throwable) { SoulBudget.MAX_TOKENS }
+            val alive = try { conv?.isAlive == true } catch (_: Throwable) { false }
+            if (conv == null || !alive || soulConvPersona != p || SoulBudget.shouldRotate(tokens)) {
+                if (conv != null) VoxLog.d("event=soul-conv-rotate tokens=$tokens alive=$alive personaChanged=${soulConvPersona != p}")
+                closeSoul()
+                conv = engine.createConversation(ConversationConfig(
+                    systemInstruction = Contents.of(p),
+                    maxOutputToken = 256,
+                ))
+                soulConv = conv; soulConvPersona = p
+            }
+            return try {
+                val out = send(conv!!, prompt)
+                if (cancelRequested) "" else out
+            } catch (t: Throwable) {
+                closeSoul()   // a failed conversation is never reused
+                throw t
+            }
+        }
+    }
+
+    private fun closeSoul() {
+        try { soulConv?.close() } catch (_: Throwable) {}
+        soulConv = null; soulConvPersona = null
+    }
+
+    /** Stop the render in flight (a turn decision is pre-empting a narration). Its output is
+     *  discarded — a cancelled narration must never be spoken half-formed. */
+    override fun cancelInFlight() {
+        cancelRequested = true
+        try { soulConv?.cancelProcess() } catch (_: Throwable) {}
     }
 
     /**
@@ -241,7 +310,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      */
     private fun generate(personaOverride: String, prompt: String): String {
         val engine = llm ?: return ""
-        return runBlocking {
+        return synchronized(genLock) {
             engine.createConversation(ConversationConfig(
                 systemInstruction = Contents.of(personaOverride),
                     // 0.8/M3: bounds a presence line, and sits ABOVE ErGemmaGuard's char
@@ -250,7 +319,13 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     // guard) leaves room for the soul to hold a short conversation rather
                     // than being cut off mid-thought.
                     maxOutputToken = 256,
-                )).use { conv ->
+                )).use { conv -> send(conv, prompt) }
+        }
+    }
+
+    /** One message on [conv], collected via the callback API. */
+    private fun send(conv: Conversation, prompt: String): String {
+        run {
                     // 0.6.6: the CALLBACK API, not the Flow API. The Flow overload's
                     // onDone closes the ProducerScope channel
                     // (SendChannel.close$default) — a method reference that does
@@ -274,11 +349,13 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                         override fun onDone() { done.countDown() }
                         override fun onError(t: Throwable) { error = t; done.countDown() }
                     })
-                    done.await(20, java.util.concurrent.TimeUnit.SECONDS)
+                    if (!done.await(20, java.util.concurrent.TimeUnit.SECONDS)) {
+                        try { conv.cancelProcess() } catch (_: Throwable) {}
+                        throw IllegalStateException("soul render timed out")
+                    }
                     error?.let { throw it }
-                    sb.toString()
+                    return sb.toString().trim()
                 }
-            }.trim()
     }
     @Volatile private var lastRenderAt = 0L
 
@@ -294,6 +371,12 @@ class GemmaExpress(private val context: Context) : VoxExpress {
          */
         val MINIMAL_PERSONA =
             "You are the voice of an agent on a phone call. Reply in one short spoken sentence."
+
+        /** Primes the rolling conversation at load (and times the warm render in the probe).
+         *  Phrased as part of the story so it is harmless history for the soul. */
+        val PRIME_DIRECTIVE =
+            "(The phone voice client has started. No call is connected yet. Reply with exactly " +
+                ErSoulTurn.ESCALATE + ".)"
 
         /** Above this, the probe's full-vs-minimal comparison stops measuring anything. */
         const val MAX_MINIMAL_PERSONA_CHARS = 150

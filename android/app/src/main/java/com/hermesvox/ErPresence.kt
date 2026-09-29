@@ -101,6 +101,19 @@ class ErPresence(
         return d.route
     }
 
+    /**
+     * The soul spoke a line of its own this window — a beat or a full answer. Recorded for the
+     * mind's soul-sync (synchronously, so it is in the epilogue the mind's turn carries), and it
+     * IS the window's presence: the nonverbal preamble must not also play, and the first-word
+     * metric starts here.
+     */
+    fun noteSoulSpoke(kind: String, text: String, nowMs: Long) {
+        synchronized(preambleSaidCount) { preambleSaidCount.value++ }
+        spokeThisWindow = true
+        markFirstWord(nowMs, mindStartedAt)
+        synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(nowMs, kind, text)) }
+    }
+
     /** The mind (gateway) has started working — arm the filler tick. */
     fun startWindow(nowMs: Long) {
         mindStartedAt = nowMs

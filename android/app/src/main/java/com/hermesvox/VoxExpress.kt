@@ -20,6 +20,9 @@ interface VoxExpress {
 
     /** True when the on-device expression model is actually available. */
     val available: Boolean
+
+    /** Abandon the render in flight, discarding its output (an urgent render is pre-empting it). */
+    fun cancelInFlight() {}
 }
 
 /** Routing stand-in so the ORCHESTRATION is provable before the model port.
@@ -28,6 +31,9 @@ interface VoxExpress {
 class RoutedExpress : VoxExpress {
     override val available get() = true
     override fun express(intent: String, content: String, tone: String): String = when (intent) {
+        // A soul intent's content is a DIRECTIVE to the model, not text to say. The stand-in has
+        // no model, so it has nothing to say — echoing the content would speak the directive.
+        in VoiceOrchestrator.SOUL_INTENTS -> ""
         "acknowledge" -> when (tone) {
             "warm" -> "Mm — got it, I'm on it."
             else -> "Right."
@@ -51,28 +57,32 @@ class RoutedExpress : VoxExpress {
  */
 enum class VoiceOwner { GEMMA, HERMES }
 
-class VoiceOrchestrator(private val express: VoxExpress) {
+class VoiceOrchestrator(
+    private val express: VoxExpress,
+    /** Injected so the render scheduling is testable on the JVM (VoxLog needs android.util.Log). */
+    private val log: (String) -> Unit = { VoxLog.d(it) },
+) {
     var owner: VoiceOwner = VoiceOwner.GEMMA; private set
     var gemmaAvailable: Boolean = true
 
     /** 0.6.2: async express — the on-device Gemma generation can take hundreds
-     *  of ms (runBlocking inside GemmaExpress.express); it must NEVER run on the
-     *  main thread (the UI callback that drives narration lives there — the ANR
-     *  risk). The render runs on a daemon thread; the caller's callback receives
-     *  the glue (or null on failure/no model) on ITS thread of choice. The
-     *  fallback (RoutedExpress) is instant, so the async hop costs ~nothing. */
-    /**
-     * 0.8/M2.2: at most ONE render in flight — latest-wins, matching speakGlue's own
-     * "latest narration wins" contract.
+     *  of ms; it must NEVER run on the main thread (the ANR risk). The render runs on
+     *  a daemon thread; the caller's callback receives the glue (or null on
+     *  failure/no model) on ITS thread of choice.
      *
-     * Each render is a full prefill of the persona (LiteRT-LM's Conversation exposes
-     * no reset, so every express() builds a fresh conversation), and renders SERIALIZE
-     * inside one Engine. Overlapping requests therefore cost N generations of wall
-     * time and yield at most one usable line: the 09-10 field log measured 18221ms and
-     * 24401ms for renders whose uncontended cost is ~2200-3200ms. A request arriving
-     * while one is running is dropped outright.
-     */
-    private val renderInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+     *  0.8/M2.2 made this one-render-in-flight, dropping any request that arrived while
+     *  one ran. That was right for narration and wrong for the caller's turn: a turn
+     *  decision that landed during a narration render was dropped outright, so the caller
+     *  got neither the soul's answer nor its beat. Now there are two classes:
+     *   - URGENT ([INTENT_SOUL_TURN]): never dropped. A running render is cancelled
+     *     (its output discarded) and the urgent one runs next; a newer urgent request
+     *     supersedes an older queued one (latest-wins — only the newest turn matters).
+     *   - everything else: dropped while anything is in flight, as before. */
+    private val lock = Any()
+    private var busy = false
+    private var pending: Req? = null
+
+    private class Req(val intent: String, val content: String, val tone: String, val onGlue: (String?) -> Unit)
 
     fun expressAsync(
         intent: String,
@@ -80,20 +90,58 @@ class VoiceOrchestrator(private val express: VoxExpress) {
         tone: String = "warm",
         onGlue: (String?) -> Unit,
     ) {
-        if (!renderInFlight.compareAndSet(false, true)) {
-            VoxLog.d("event=er-render-drop reason=in-flight")
+        val req = Req(intent, content, tone, onGlue)
+        val urgent = intent == INTENT_SOUL_TURN
+        var superseded: Req? = null
+        var queued = false
+        synchronized(lock) {
+            if (busy) {
+                if (!urgent) {
+                    log("event=er-render-drop reason=in-flight intent=$intent")
+                    return
+                }
+                superseded = pending
+                pending = req
+                queued = true
+            } else {
+                busy = true
+            }
+        }
+        if (queued) {
+            superseded?.onGlue?.invoke(null)
+            log("event=er-render-preempt intent=$intent")
+            express.cancelInFlight()
             return
         }
+        launch(req)
+    }
+
+    private fun launch(req: Req) {
         Thread {
             try {
                 val glue = try {
-                    if (gemmaAvailable) express.express(intent, content, tone) else null
+                    if (gemmaAvailable) express.express(req.intent, req.content, req.tone) else null
                 } catch (_: Throwable) { null }
-                onGlue(glue)
+                req.onGlue(glue)
             } finally {
-                renderInFlight.set(false)
+                val next = synchronized(lock) {
+                    val n = pending
+                    pending = null
+                    if (n == null) busy = false
+                    n
+                }
+                if (next != null) launch(next)
             }
         }.apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }.start()
+    }
+
+    companion object {
+        /** The caller's turn (and the call-open greeting): the soul's decision + beat. Urgent. */
+        const val INTENT_SOUL_TURN = "soul-turn"
+        /** Tool narration: the soul may say a line about what the mind is doing, or nothing. */
+        const val INTENT_SOUL_NARRATE = "soul-narrate"
+        /** Intents whose content is a complete soul directive (ErSoulTurn), parsed by the caller. */
+        val SOUL_INTENTS = setOf(INTENT_SOUL_TURN, INTENT_SOUL_NARRATE)
     }
 
     /** The user spoke — Gemma acknowledges/narrates (holds the floor). */

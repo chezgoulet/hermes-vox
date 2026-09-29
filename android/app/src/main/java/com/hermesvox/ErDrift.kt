@@ -31,8 +31,8 @@ object ErDrift {
     /** The epilogue appended to the mind's turn input. Empty when nothing to
      *  sync (non-ER / no soul actions this turn) — the turn text is then
      *  byte-identical to today's. */
-    fun epilogue(actions: List<SoulAction>, vibe: Vibe): String {
-        if (actions.isEmpty() && vibe.lastAck.isBlank() && vibe.mood == "neutral" && vibe.energy == "normal") return ""
+    fun epilogue(actions: List<SoulAction>, vibe: Vibe, soulAnswered: Boolean = false): String {
+        if (!soulAnswered && actions.isEmpty() && vibe.lastAck.isBlank() && vibe.mood == "neutral" && vibe.energy == "normal") return ""
         val sb = StringBuilder(" [soul-sync:")
         if (actions.isNotEmpty()) {
             sb.append(" soul already said:")
@@ -43,6 +43,14 @@ object ErDrift {
         }
         if (vibe.mood != "neutral" || vibe.energy != "normal") {
             sb.append(" user vibe: mood=${vibe.mood} energy=${vibe.energy}")
+        }
+        if (soulAnswered) {
+            // The voice already answered this turn in full (it was small talk). The mind keeps the
+            // right to override — but if it has nothing to add, the token keeps it silent, and the
+            // exchange still lands in the mind's own session history.
+            sb.append(" — the voice already answered the caller; if you have nothing substantive to add, " +
+                "reply with exactly ${MindSkip.TOKEN} and nothing else]")
+            return sb.toString()
         }
         sb.append(" — do not repeat or contradict the soul's lines; answer the question itself]")
         return sb.toString()

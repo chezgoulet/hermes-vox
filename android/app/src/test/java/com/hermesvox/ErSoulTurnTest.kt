@@ -63,6 +63,54 @@ class ErSoulTurnTest {
         assertEquals(ErSoulTurn.Outcome.Nothing, ErSoulTurn.parse("   "))
     }
 
+    // ---- the beat: the soul opens the mind's turns too ----
+
+    @Test fun the_directive_asks_for_the_beat_on_the_minds_turns() {
+        val d = ErSoulTurn.directive("what's the weather tomorrow?")
+        assertTrue(d.contains("two to six words"))
+        assertTrue("the Contract rides the directive", d.contains("must not contain any fact"))
+    }
+
+    @Test fun a_leading_token_with_words_is_a_beat() {
+        assertEquals(ErSoulTurn.Outcome.Beat("Ooh, good question..."),
+            ErSoulTurn.parse("${ErSoulTurn.ESCALATE} Ooh, good question"))
+        // Punctuation the model supplied is kept; it already carries the prosody.
+        assertEquals(ErSoulTurn.Outcome.Beat("Hmm, let me think."),
+            ErSoulTurn.parse("<<ESCALATE>> \"Hmm, let me think.\""))
+    }
+
+    @Test fun a_trailing_token_with_words_is_a_beat() {
+        assertEquals(ErSoulTurn.Outcome.Beat("Right, so..."),
+            ErSoulTurn.parse("Right, so ${ErSoulTurn.ESCALATE}"))
+    }
+
+    @Test fun a_bracketless_token_is_never_read_aloud() {
+        // The failure this guards: "ESCALATE Hmm" parsed as speech and Piper saying "escalate".
+        assertEquals(ErSoulTurn.Outcome.Beat("Hmm, okay..."), ErSoulTurn.parse("ESCALATE Hmm, okay"))
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("<ESCALATE>"))
+    }
+
+    @Test fun an_unsafe_opener_escalates_silently() {
+        // A number is a fact: the Contract is enforced in code, not trusted to the model.
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} It's 72 degrees"))
+        // Too long to be a beat — that is an answer the soul must not give.
+        assertEquals(ErSoulTurn.Outcome.Escalate,
+            ErSoulTurn.parse("${ErSoulTurn.ESCALATE} well I think the forecast says it will rain all day"))
+        // Markup never reaches the voice.
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} [thinking]"))
+    }
+
+    @Test fun the_opener_uses_only_its_first_line() {
+        assertEquals("Let me see...", ErSoulTurn.opener("Let me see\nThe answer is rain"))
+    }
+
+    @Test fun the_narration_directive_names_the_tool_and_offers_silence() {
+        val d = ErSoulTurn.narrationDirective("web_search", "flights to Lisbon")
+        assertTrue(d.contains("web_search (flights to Lisbon)"))
+        assertTrue(d.contains(ErSoulTurn.ESCALATE))
+        assertFalse(ErSoulTurn.narrationDirective("terminal").contains("()"))
+    }
+
     // ---- the same-text guard: the field defect, pinned ----
 
     @Test fun the_same_line_inside_the_window_is_a_repeat() {
