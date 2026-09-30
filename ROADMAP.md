@@ -1,8 +1,9 @@
 # Hermes Vox — Roadmap
 
-Hermes Vox is an open-source **voice client for the Hermes agent**: a particle-being
+Hermes Vox is an open-source **voice client for the Hermes agent**: a GPU-drawn being
 you talk to on your phone, with on-device speech processing and a hands-free,
-barge-in conversation line.
+barge-in conversation line. It is a work in progress: installable and useful today,
+with the items below still open.
 
 **Status keys:** `[x]` shipped · `[ ]` in progress / planned · `[?]` open question · `[-]` deferred.
 
@@ -30,15 +31,21 @@ barge-in conversation line.
 - **0.7.x — the aura arc.** `0.7.2` shipped the halo bake — the emitter's near-black rim baked
   to true transparent at ~0.66 radius; the hardware-layer theory was falsified in field and the
   layer removed. Field-verified on both Natural and Adaptive colour profiles.
+- **0.8.0 — the accelerator release** (released 2026-09-30, `docs/RELEASE-0.8.0.md`). Gemma on
+  the GPU; Enhanced Realtime complete (the warm soul, the beat, `<<SKIP>>`); Supertonic TTS by
+  bake-off; the soul hears the caller's tone; whole-utterance STT with a transcript validator,
+  the "heard" line and optional Parakeet; the mic stays open after a reply; background,
+  resumable model downloads; int8 Whisper; the being rebuilt on OpenGL ES 3 with 27 shapes;
+  keep-screen-on during calls; an icon rendered from the being's own shaders. The series log
+  is below.
 
 ---
 
-## In flight — `0.8`, the accelerator series
+## `0.8` — the accelerator series (released as 0.8.0; field verification open)
 
-Ships as **one 0.8.0** at the end. Every increment lands on `testing` as a nightly first;
-`main` stays on the last release until the series closes — cut once inside the series as a
-*fix* release: **0.7.3** (vc115) is the first-run block from #130 and nothing else
-(`docs/RELEASE-0.7.3.md`); the accelerator content stays here for 0.8.0.
+Shipped as **one 0.8.0** on 2026-09-30. Every increment landed on `testing` as a nightly first.
+The one fix release cut inside the series was **0.7.3** (vc115), the first-run block from #130
+(`docs/RELEASE-0.7.3.md`). The `[ ]` items below are the field work still open after the release.
 
 **The hallmark: acceleration, provable and perceptible.**
 
@@ -111,7 +118,7 @@ looked inert — for a brand-new reason.
 **Nobody settles who owns a turn by routing it to one of two generators. The floor is taken in
 beats.**
 
-`[ ]` **The beat (A′).** The soul takes the *opening beat of every turn*, instantly; the mind
+`[x]` **The beat (A′)** — built in 0.8.0 (vc133) as a *generated* beat from the warm soul. The soul takes the *opening beat of every turn*, instantly; the mind
 preempts exactly as it does now; escalation decides only whether the soul *continues*. This kills
 the race without discarding anyone's work, and it makes ER audible on every turn rather than only
 the turns the router hands over.
@@ -128,8 +135,9 @@ the beat free.
 
 Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-plans-2026-09-10.md`.
 
-- `[ ]` **F3a — the vanish bug.** Mic light on while interrupted words disappear. Log before
-  hypothesis: does it happen early in a fresh connection, and do the words arrive later or vanish?
+- `[x]` **F3a — the vanish bug.** Mic light on while interrupted words disappear. Fixed in 0.8.0
+  (`BargeCarry`, #12): the interrupting words are kept from their onset and become the next
+  turn. Field witness: `event=barge-carry`.
 - `[ ]` **F3b — real-world turn-taking.** The in-cabin endpointer A/B (open since 0.6.8) and the
   **adaptive barge floor** — near-misses cluster at 0.10–0.13 on a 0.10 floor in a noisy room;
   sample ambient at call start rather than using an absolute threshold.
@@ -160,10 +168,9 @@ Whisper here is an offline recogniser — it transcribes a complete utterance af
 endpointer never sees words, only silence. Semantic turn detection and mid-speech backchannelling
 are *unreachable* in the current arrangement, not under-tuned.
 
-- `[ ]` **Kokoro for TTS.** 82M, StyleTTS2-derived, Apache-2.0, CPU, **already supported by
-  sherpa-onnx** — a model change inside an existing dependency. Roughly double Piper's cost,
-  first audio ~90 ms, materially better naturalness. The cheapest quality win in the stack.
-  Limits: fixed voices, no cloning.
+- `[x]` **A better voice — decided by bake-off.** Kokoro was the candidate here; the measured
+  bake-off (`docs/VOICE-BAKEOFF.md`) found its int8 build slower than real time on the target
+  and chose **Supertonic** instead, which shipped in 0.8.0. More voice choice stays in scope.
 - `[ ]` **Streaming STT** — Moonshine (edge-first, streaming v2 encoder) or SenseVoiceSmall
   (non-autoregressive, ~70 ms per 10 s, and in the same forward pass returns **emotion and
   audio-event detection**: laughter, coughing, applause, background music). If its English holds
@@ -185,6 +192,16 @@ directly with the GPU-contention and thermal findings above.
 
 Every swap is a claim until it is A/B'd on the device with everything else running. The visual arc
 taught us that a change which should obviously help can be inert.
+
+---
+
+## Distribution
+
+- `[x]` **GitHub releases + Obtainium.** Signed APKs on every release; nightly pre-releases from
+  `testing`. Obtainium tracks the repo directly.
+- `[x]` **Project site** — [hermesvox.org](https://hermesvox.org).
+- `[ ]` **Google Play** — coming soon. AAB + Play App Signing (`docs/PLAY-APP-SIGNING.md`), the
+  data-safety form, beta framing. It stays a bring-your-own-gateway client.
 
 ---
 

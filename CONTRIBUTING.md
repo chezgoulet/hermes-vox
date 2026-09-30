@@ -160,9 +160,11 @@ re-verifies them under a "KEEP-list — verified" section. Current list:
    test (`BargeGateTest.kt`, `ReplySettleRuleTest.kt`, `ExecGuardTest.kt`,
    `TurnGateReleaseTest.kt`). Behavior changes here require the matching contract
    test change in the same commit.
-4. **The particle-being `AvatarView`.** The emergent swarm's visual vocabulary
-   (grown from 13 to 20 archetypes in 0.5.5 — `docs/RELEASE-0.5.5.md`), the
-   `VisualStyle` category system, and cycle-all must stay intact.
+4. **The being (`AvatarView` + `BeingRenderer`/`BeingShaders`).** `AvatarView` is the
+   brain (state and tool → shape, categories, cycle-all); the GPU renderer draws the 27
+   shapes. The shape tokens in `AvatarView.SHAPE_TOKENS` are persisted in prefs — never
+   renumber or rename them. The launcher icon is rendered from the same shaders
+   (`tools/icon/render_icon.py`); re-run it when the shaders change.
 5. **No secrets in the APK.** The gateway API key is user-entered (onboarding +
    Settings), stored via `SecureStore`; there is deliberately no compiled-in
    default and the C0 release guard fails the build if a key injection is ever
@@ -171,9 +173,10 @@ re-verifies them under a "KEEP-list — verified" section. Current list:
 ### Code style
 
 - **Alloc-free hot paths.** The render loop and the audio loop allocate once and
-  reuse. `AvatarView` allocates all 320 particles in `init`; the per-frame loop
-  writes primitives only — no `Pair`, no lambda, no boxing, no `Random`, no
-  `sin()` in the loop (sine LUTs instead) (`AvatarView.kt:91-98,132-133,167-168`).
+  reuse. The being's particles are stateless — each one's position is computed in the
+  vertex shader from its identity — so the render thread uploads a handful of uniforms
+  per frame and allocates nothing; the audio loop likewise writes primitives only — no
+  `Pair`, no lambda, no boxing in the hot path.
   Use **const/preallocated arrays, not `listOf`, in hot loops**.
 - **Pure-JVM rule objects.** Anything with a decision worth testing off-device
   (gate logic, settle rules, endpoint rules, key resolution) is a plain object
@@ -207,7 +210,9 @@ re-verifies them under a "KEEP-list — verified" section. Current list:
   `docs/PLAN-*.md` / `docs/BUILD-DIRECTIVE-*.md` / `docs/CLAUDE-BRIEF-*.md`
   with exact file:line targets, a KEEP-list, verification, and risk.
 - Milestone status lives in `docs/milestones/`; day logs in `journal/`;
-  screenshots in `docs/screenshots/`.
+  screenshots in `docs/screenshots/` (the README's images; recapture them when the UI
+  changes). The public site is a separate repo, `chezgoulet/hermes-vox-site`
+  (hermesvox.org).
 
 ---
 
