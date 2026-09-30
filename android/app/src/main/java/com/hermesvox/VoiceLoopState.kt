@@ -11,9 +11,15 @@ package com.hermesvox
  *   release (#60). Later releases for the same epoch are no-ops.
  * - mayStart(): the early-turn-start gate. A turn may START once the normalized
  *   partial hypothesis is unchanged since the previous snapshot AND the speaker
- *   has been silent for >= earlySilenceMs — a genuine pause, not a mid-word cut.
+ *   has been silent for >= earlySilenceMs AND the hypothesis reads as a finished
+ *   thought (EarlyStartRule.looksComplete). earlySilenceMs is floored at
+ *   EarlyStartRule.MIN_EARLY_SILENCE_MS: the old 450 ms default ended turns on an
+ *   ordinary mid-sentence thinking pause. The partial is a TRIGGER only — the
+ *   caller transcribes the whole segment for the turn text (EarlyStartRule).
  */
-class VoiceLoopState(private val earlySilenceMs: Long = 450L) {
+class VoiceLoopState(earlySilenceMs: Long = EarlyStartRule.MIN_EARLY_SILENCE_MS) {
+
+    private val earlySilenceMs = EarlyStartRule.effectiveSilenceMs(earlySilenceMs)
 
     @Volatile private var epoch = 0L
     @Volatile private var releasedForEpoch = false
@@ -40,7 +46,8 @@ class VoiceLoopState(private val earlySilenceMs: Long = 450L) {
 
     @Synchronized fun mayStart(text: String, silentMs: Long, nowMs: Long): Boolean {
         val n = normalize(text)
-        val stable = n.isNotBlank() && silentMs >= earlySilenceMs && n == lastNormalized
+        val stable = n.isNotBlank() && silentMs >= earlySilenceMs && n == lastNormalized &&
+            EarlyStartRule.looksComplete(text)
         if (n != lastNormalized) { lastNormalized = n; lastPartialAt = nowMs }
         return stable
     }

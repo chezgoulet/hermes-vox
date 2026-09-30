@@ -62,6 +62,27 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <!-- "Heard": the exact text the last voice turn sent Hermes, one dim line
+             under the being that fades — so a mishearing is caught (and barged
+             over) while the reply is still coming. Display only; polite live
+             region so TalkBack users hear it too (HeardLine). -->
+        <TextView
+            android:id="@+id/heard_line"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:paddingStart="16dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="16dp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:fontFamily="monospace"
+            android:textSize="13sp"
+            android:textColor="@color/hv_text_dim"
+            android:accessibilityLiveRegion="polite"
+            android:alpha="0"
+            android:visibility="invisible" />
+
         <!-- Conversation mode: a persistent, readable transcript (a11y). -->
         <ScrollView
             android:id="@+id/conversation"

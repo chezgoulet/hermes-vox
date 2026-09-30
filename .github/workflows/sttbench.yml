@@ -1,0 +1,36 @@
+name: sttbench
+
+# Opt-in on-device STT regression bench (tools/sttbench). NOT a PR gate: it
+# downloads hundreds of MB of sha256-pinned models, so it only runs when started
+# by hand from the Actions tab. The report is the job log + a JSON artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "whisper-base | whisper-small | parakeet-v2 | parakeet-v3 | zipformer-stream | all"
+        default: whisper-base
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned runner deps
+        run: pip install -r tools/sttbench/requirements.txt
+      - name: Fetch + verify models, run the bench
+        env:
+          MODEL: ${{ inputs.model }}   # via env, never interpolated into the script
+        run: |
+          python tools/sttbench/run_bench.py --model "$MODEL" --fetch -v --json sttbench.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sttbench
+          path: sttbench.json

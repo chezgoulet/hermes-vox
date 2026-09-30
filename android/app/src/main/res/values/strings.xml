@@ -18,5 +18,7 @@
     <string name="hv_label_appearance">APPEARANCE</string>
     <string name="hv_label_about">ABOUT</string>
     <string name="hv_connected">Connected</string>
+    <!-- What a voice turn sent Hermes (the dim "heard" line); read by TalkBack. -->
+    <string name="hv_heard_cd">You said: %1$s</string>
     <string name="hv_not_connected">Not connected</string>
 </resources>

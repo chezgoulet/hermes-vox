@@ -39,6 +39,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         fun onLog(line: String)         // stream-console line (events, tool progress)
         fun onReply(finalText: String)  // assembled final reply (for TTS + settle)
         fun onError(msg: String)
+        /** The exact text a voice turn is about to send Hermes — "what it heard".
+         *  Shown briefly so a mishearing is noticed (and barged over) before the
+         *  reply lands. Display only: hosts must not persist it unless the user
+         *  opted into `log_transcripts`. */
+        fun onHeard(text: String) {}
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -127,7 +132,21 @@ class VoiceController(private val context: Context, private val session: HermesS
     // passes the live turnGen), so a gen guard would drop a legitimate second turn's
     // summary. Log-honesty only — no gate behavior.
     @Volatile private var lastTurnLoggedEpoch = -1L
-    private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", 450).toLong())
+    // The early-start pause: the pref may raise it, never below EarlyStartRule's floor.
+    private val voiceState = VoiceLoopState(micInt("vad_early_silence_ms", EarlyStartRule.MIN_EARLY_SILENCE_MS.toInt()).toLong())
+    // Fix 1 (early start never truncates): the newest partial hypothesis of the
+    // CURRENT segment, with the sample span it was decoded from — reusable as the
+    // turn text only when EarlyStartRule.mayReusePartial says it covered the whole
+    // utterance. segCounter ids the segment so a late worker never leaks a stale
+    // partial into the next one; earlyCommitSeg marks a partial-triggered commit.
+    private class PartialHyp(val segId: Long, val text: String, val start: Int, val end: Int)
+    private val latestPartial = java.util.concurrent.atomic.AtomicReference<PartialHyp?>(null)
+    @Volatile private var segCounter = 0L
+    @Volatile private var earlyCommitSeg = -1L
+    // #12 (the vanish): the interrupting utterance, captured by the barge drain from
+    // its speech onset (with pre-roll) and carried into the next segment. Owned by
+    // the capture thread. See BargeCarry.
+    private val bargeCarry = BargeCarry(16000)
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
@@ -282,7 +301,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** On-device Whisper leg when its model is installed, else platform (null). */
     private fun onDeviceStt(): VoxStt? {
         val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
-        return if (ModelCatalog.isInstalled(context, model)) OfflineWhisperStt(context, model) else null
+        return if (ModelCatalog.isInstalled(context, model)) onDeviceSttFor(context, model) else null
     }
 
     private fun buildStt(): VoxStt? {
@@ -291,7 +310,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         return when (resolveSttLeg(backend, prefString(KEY_STT_REMOTE_URL, ""),
             ModelCatalog.isInstalled(context, model))) {
             ModelCatalog.BACKEND_REMOTE -> RemoteStt(context).also { remoteLeg = it }
-            ModelCatalog.BACKEND_ONDEVICE -> OfflineWhisperStt(context, model)
+            ModelCatalog.BACKEND_ONDEVICE -> onDeviceSttFor(context, model)
             else -> null   // platform SpeechRecognizer (Settings -> Platform)
         }
     }
@@ -391,6 +410,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             // mic) instead of throwing into the platform-STT fallback below.
             if (!execSubmit {
                 val seg = ArrayList<Float>(sr)
+                // #12: the interrupting utterance carried out of the last barge drain;
+                // non-null means the next segment STARTS with it (already in speech).
+                var seed: FloatArray? = null
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
@@ -414,13 +436,28 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // O(1) append/overwrite — the old ArrayList<Float> did removeAt(0)
                     // per sample (an O(n) arraycopy + a box per sample, every read).
                     val preBuf = FloatRing(sr / 4)
-                    val segStart = android.os.SystemClock.uptimeMillis()
                     seg.clear()
+                    val segId = ++segCounter
+                    latestPartial.set(null)
+                    // TranscriptValidator inputs: the frames the VAD called speech.
+                    var speechSamples = 0
+                    // EarlyStartRule.mayReusePartial: seg index just past the last speech frame.
+                    var lastSpeechEnd = 0
+                    val seeded = seed
+                    seed = null
+                    if (seeded != null) {
+                        // #12: the barge's words open this segment — in speech, with their
+                        // onset pre-roll, so the utterance is transcribed whole as the turn.
+                        for (f in seeded) seg.add(f)
+                        inSpeech = true
+                        speechSamples = seeded.size
+                        lastSpeechEnd = seg.size
+                    }
+                    val segStart = android.os.SystemClock.uptimeMillis() - seg.size * 1000L / sr
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
                     val partialEnabled = micBool("partial_stt", true)
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
-                    var earlyStartText: String? = null
-                    while (listening && !commitRequested && earlyStartText == null && !focusPause) {
+                    while (listening && !commitRequested && !focusPause) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
                         val frames = FloatArray(n)
@@ -442,6 +479,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
                             for (f in frames) seg.add(f)
+                            if (spoke) { speechSamples += n; lastSpeechEnd = seg.size }
                         }
                         if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
                         // B2 (revised): the old maxMs break chopped a long continuous
@@ -450,7 +488,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // it stops only on a real pause (>100ms); the absolute ceiling
                         // is opt-in (vad_max_hard_ms, default 0 = disabled). The caller's
                         // 800ms pause rule owns normal turn ends. The partial early-start
-                        // worker keeps running inside an extended segment (6s snapshot).
+                        // worker keeps running inside an extended segment (a 6 s tail
+                        // snapshot past 8 s — a trigger only; the text is the whole segment).
                         val elapsedMs = android.os.SystemClock.uptimeMillis() - segStart
                         if (EndpointRule.shouldStop(elapsedMs, silentMs.toLong(), maxMs.toLong(), hardMs)) break
                         if (inSpeech && elapsedMs >= maxMs && !extendedLogged) {
@@ -458,15 +497,20 @@ class VoiceController(private val context: Context, private val session: HermesS
                             VoxLog.d("event=endpoint-extended ms=$elapsedMs")
                         }
                         // #38 partial STT: on a SEPARATE worker (never block capture),
-                        // snapshot a bounded tail + transcribe; start the turn EARLY on
-                        // a stable partial (unchanged hypothesis + a >=450ms pause).
+                        // snapshot + transcribe; END the capture EARLY on a stable partial
+                        // that reads as a finished thought after a genuine pause
+                        // (VoiceLoopState.mayStart / EarlyStartRule). The partial is a
+                        // TRIGGER: the turn text is the whole segment's transcription,
+                        // or this partial only when it covered the whole utterance.
                         if (partialEnabled && inSpeech && !turnInFlight && !focusPause &&
                             android.os.SystemClock.uptimeMillis() - lastPartialMs >= 900 &&
                             seg.size >= (sr * minSpeechMs / 1000)) {
                             lastPartialMs = android.os.SystemClock.uptimeMillis()
                             if (!partialRunning) {
                                 partialRunning = true
-                                val snap = seg.subList(maxOf(0, seg.size - sr * 6), seg.size).toFloatArray()
+                                val snapStart = EarlyStartRule.snapshotStart(seg.size, sr)
+                                val snapEnd = seg.size
+                                val snap = seg.subList(snapStart, snapEnd).toFloatArray()
                                 val now = android.os.SystemClock.uptimeMillis()
                                 val sm = silentMs.toLong()   // immutable snapshot: don't read the mutable silentMs in the lambda
                                 // H3: guard the partial-STT submit (from the capture thread — it
@@ -477,11 +521,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                                     try {
                                         val t = runCatching { stt?.transcribe(snap, sr) }.getOrNull()
                                         if (t.isNullOrBlank()) return@partial
+                                        if (segCounter == segId) latestPartial.set(PartialHyp(segId, t, snapStart, snapEnd))
                                         if (voiceState.mayStart(t, sm, now)) {
                                             main.post {
-                                                if (!turnInFlight && !commitRequested) {
+                                                if (!turnInFlight && !commitRequested && segCounter == segId) {
                                                     listener?.onLog(if (logTranscripts()) "// partial → ${t.take(120)}" else "// (partial)")
-                                                    earlyStartText = t
+                                                    earlyCommitSeg = segId
                                                     commitRequested = true   // drain the loop; the turn runs below
                                                 }
                                             }
@@ -503,23 +548,40 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // buffered while r was unread are flushed (not barge-checked) at the
                     // drain start below — the tail of the user's own utterance must never
                     // re-trigger the barge gate.
-                    val text = if (inSpeech && seg.size >= (sr * minSpeechMs / 1000)) {
-                        try { stt?.transcribe(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
-                    } else null
+                    // Fix 1: the turn text is ALWAYS a transcription of the whole segment
+                    // (windowed past the recognizer's window — transcribeWhole). The
+                    // newest partial stands in for it only when it was decoded from the
+                    // segment's first sample and no speech arrived after its snapshot:
+                    // then it IS the whole utterance, and reusing it is the latency win.
+                    val early = earlyCommitSeg == segId
+                    val speechOk = inSpeech && seg.size >= (sr * minSpeechMs / 1000)
+                    val partial = latestPartial.get()?.takeIf { it.segId == segId }
+                    val reused = speechOk && partial != null &&
+                        EarlyStartRule.mayReusePartial(partial.start, partial.end, lastSpeechEnd)
+                    val text = when {
+                        !speechOk -> null
+                        reused -> partial!!.text
+                        else -> try { stt?.transcribeWhole(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
+                    }
                     if (text != null) LatencyStats.pushStt(android.os.SystemClock.uptimeMillis() - segStart)   // #40 speech->text
-                    val t = (earlyStartText ?: text ?: "").trim()
-                    VoxLog.d("realtime: speech=$inSpeech ms=${seg.size * 1000 / sr} early=${earlyStartText != null} text=${if (logTranscripts()) t.take(120) else "<hidden>"}")
-                    // Noise / no-speech / non-speech (static/buzzing/[SOUND]) + too-short
-                    // fragments: stop r (it must be stopped before the next startRecording)
-                    // and keep listening.
-                    // 0.6.8 (the car-run field bug): the bracket filter only catches
-                    // LEADING brackets — Whisper's noise hallucinations like
-                    // "(buzzing)" or "[inaudible]" APPENDED to real speech slip
-                    // through and enter the server chain (the "replies with a
-                    // previous message" report). Strip bracketed non-speech tokens
-                    // anywhere; refuse the turn if nothing substantive remains.
-                    val cleaned = t.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
-                    if (focusPause || cleaned.isBlank() || cleaned.length < 3) {
+                    val t = (text ?: "").trim()
+                    val speechMs = speechSamples * 1000L / sr
+                    val clipMs = seg.size * 1000L / sr
+                    VoxLog.d("realtime: speech=$inSpeech ms=$clipMs speechMs=$speechMs early=$early stt=${if (reused) "partial" else "whole"} text=${if (logTranscripts()) t.take(120) else "<hidden>"}")
+                    // Noise / no-speech / non-speech + Whisper's hallucinations: stop r (it
+                    // must be stopped before the next startRecording) and keep listening.
+                    // 0.6.8 (the car-run field bug) stripped bracketed tags ("(buzzing)",
+                    // "[inaudible]") anywhere; TranscriptValidator keeps that and adds the
+                    // speech-evidence rules (implausible words/sec, runaway repetition,
+                    // the non-speech phrase list on low-speech clips, min speech ratio).
+                    val verdict = if (t.isEmpty()) TranscriptValidator.Verdict.Reject("empty")
+                        else TranscriptValidator.validate(t, speechMs, clipMs)
+                    val cleaned = (verdict as? TranscriptValidator.Verdict.Accept)?.text.orEmpty()
+                    if (verdict is TranscriptValidator.Verdict.Reject && t.isNotEmpty())
+                        VoxLog.d("event=stt-reject reason=${verdict.reason} speechMs=$speechMs clipMs=$clipMs text=${if (logTranscripts()) t.take(80) else "<hidden>"}")
+                    if (verdict is TranscriptValidator.Verdict.Accept && verdict.collapsed)
+                        VoxLog.d("event=stt-collapse reason=repetition text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
+                    if (focusPause || cleaned.isBlank()) {
                         VoxLog.dd("realtime: noise-refuse raw=${if (logTranscripts()) t.take(60) else "<hidden>"}")
                         try { r.stop() } catch (_: Throwable) {}
                         continue
@@ -541,12 +603,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
                     VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
+                    // Fix 4: show what Hermes is about to be sent, before the reply exists.
+                    main.post { listener?.onHeard(cleaned) }
                     main.post { runStreamedTurn(cleaned, myGen, fromVoice = true) }
                     // Single-capture barge drain. While the gate is locked we keep r
                     // recording and read frames here — compute RMS, feed the SHARED VAD,
                     // and route a barge check when `speaking` (playback mode) or
-                    // `turnInFlight && !speaking` (generation mode). Frames are DISCARDED
-                    // (never appended to seg). A barge decision posts bargeIn() on main,
+                    // `turnInFlight && !speaking` (generation mode). Frames are not
+                    // appended to seg — but #12: every read also feeds bargeCarry (a 2 s
+                    // history + the speech onset), and once a barge fires every later
+                    // read is KEPT, so the interrupting words seed the next segment
+                    // instead of vanishing. A barge decision posts bargeIn() on main,
                     // which releases the latch -> this drain exits. The reads pace at
                     // real-time (blocking), so the drain never lags the mic into a buffer
                     // flood; the latch is observed between reads (<= one read after the
@@ -596,6 +663,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // transcribe ran) WITHOUT checks: the user's own just-sent utterance
                     // must never re-trigger the barge gate as the turn starts. Non-blocking
                     // reads return only what is already buffered, so nothing new is lost.
+                    bargeCarry.reset()
                     var flushGuard = 64
                     while (flushGuard-- > 0) {
                         val dn = try { r.read(shortBuf, 0, shortBuf.size, AudioRecord.READ_NON_BLOCKING) } catch (_: Throwable) { 0 }
@@ -625,7 +693,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val spk = speaking
                         if (spk) { if (!sawPlayback) { sawPlayback = true; playbackSince = readAt } }
                         else sawPlayback = false
-                        if (!bargeInEnabled || bargeFired) continue            // drain-only (no buffer flood)
+                        if (!bargeInEnabled) continue                          // drain-only (no buffer flood)
+                        val frames = FloatArray(n)
+                        for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
+                        if (bargeFired) {
+                            // #12: the barge already fired — keep every word the user is
+                            // still saying; it becomes the next turn (BargeCarry).
+                            bargeCarry.push(frames, true)
+                            continue
+                        }
                         // Playback grace: skip checks for barge_grace_ms after `speaking`
                         // became true so the TTS onset is never mistaken for the user
                         // (generation mode is exempt — nothing plays yet).
@@ -645,10 +721,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
                             }
                         } else skipStateSinceMs = 0L
-                        if (inGrace || stateSkip) { sustainedMs = 0L; sustainedLevelMs = 0L; lastVadSpeechAt = 0L; continue }
+                        if (inGrace || stateSkip) {
+                            sustainedMs = 0L; sustainedLevelMs = 0L; lastVadSpeechAt = 0L
+                            bargeCarry.push(frames, false)   // history only (pre-roll), never an onset
+                            continue
+                        }
                         var acc = 0.0
-                        val frames = FloatArray(n)
-                        for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; acc += frames[i] * frames[i] }
+                        for (f in frames) acc += f * f
                         val level = Math.sqrt(acc / n)
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
                         // ER Phase 5: capture the interrupting speech while it plays —
@@ -668,6 +747,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                         // active RMS floor: rmsMin with VAD, rmsMin*1.4 without
                         val floor = if (vadAvailable) bargeRmsMin else bargeRmsMin * BargeGate.NO_VAD_RMS_BOOST
+                        // #12: onset tracking for the carry — speech-like = the VAD agrees or
+                        // the level clears the barge floor (the measured residual echo on this
+                        // AEC path sits below it; see BargeGate).
+                        bargeCarry.push(frames, vadSpeech || level > floor)
                         // 0.6.2 echo guard: track glue playback end so the capture skip
                         // window (erEchoSkipMs) starts when the filler's tail is dying.
                         if (glueSpeaking) erEchoSkipSinceMs = readAt
@@ -687,6 +770,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs, msSinceVadSpeech, peakLevel = peakRms)) {
                             VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
+                            bargeCarry.fire()   // #12: freeze onset-minus-pre-roll .. now; keep the rest
                             main.post { bargeIn() }
                             bargeFired = true
                             sustainedMs = 0L
@@ -720,9 +804,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (!gateReleased && gateLockedNow - gateClosedAt >= TURN_GATE_TIMEOUT_MS && gateLockedNow - lastActivityAt > GATE_STALL_IDLE_MS)
                         VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms sinceActivity=${gateLockedNow - lastActivityAt}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
                     vad?.reset()   // clear barge-window VAD state before the next turn's segmentation
-                    try { r.stop() } catch (_: Throwable) {}
-                    // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
-                    android.os.SystemClock.sleep(450L)
+                    // #12 (the vanish): this is where interrupting words used to die — r.stop()
+                    // threw away the buffered audio and the 450 ms cooldown below deafened the
+                    // mic while the user was mid-sentence. A fired barge whose gate released
+                    // (anything but an ER HOLD) now carries its audio into the next segment,
+                    // and the recorder keeps running. event=barge-carry is the field witness:
+                    // seeded=true + a later realtime: line with speech=true proves the words
+                    // survived; seeded=false names why they were (deliberately) not a turn.
+                    if (bargeCarry.fired) {
+                        val held = erHoldReleasedGen == myGen
+                        val carriedMs = bargeCarry.carriedMs
+                        val leadMs = bargeCarry.leadMs
+                        if (BargeCarry.shouldSeed(true, gateReleased, held) && listening) {
+                            seed = bargeCarry.take()
+                            VoxLog.d("event=barge-carry gen=$myGen seeded=true ms=$carriedMs leadMs=$leadMs")
+                        } else {
+                            bargeCarry.reset()
+                            VoxLog.d("event=barge-carry gen=$myGen seeded=false reason=${if (held) "hold" else if (!listening) "stopped" else "gate-timeout"} ms=$carriedMs")
+                        }
+                    }
+                    if (seed == null) {
+                        try { r.stop() } catch (_: Throwable) {}
+                        // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
+                        android.os.SystemClock.sleep(450L)
+                    }
                 }
                 loopActive = false
                 // #19: the natural loop exit never runs stop() (the caller's terminal
@@ -1729,9 +1834,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         val myGen = turnGen
         VoxLog.er("event=er-barge-fire hold=staged frames=${segSnapshot.size} gen=$myGen")
         execSubmit barge@{
-            val said = try {
-                if (segSnapshot.size >= 16000 * 300 / 1000) stt?.transcribe(segSnapshot, 16000)?.trim() else null
+            val raw = try {
+                if (segSnapshot.size >= 16000 * 300 / 1000) stt?.transcribeWhole(segSnapshot, 16000)?.trim() else null
             } catch (_: Throwable) { null }
+            // Fix 2: the classifier reads a validated transcript too — a hallucinated
+            // "(buzzing)" / looped phrase is no utterance (null → HOLD, the safe side).
+            // speechMs unknown here (-1): only the text-shape rules apply.
+            val said = raw?.let { (TranscriptValidator.validate(it, -1L, -1L) as? TranscriptValidator.Verdict.Accept)?.text }
             val verdict = ErBargeGate.decide(said)
             ErTelemetry.barge(verdict)   // Phase 8: the false-cancel rate
             VoxLog.er("event=er-barge-verdict gen=$myGen text=${if (logTranscripts()) (said ?: "").take(80) else "<hidden>"} verdict=$verdict")

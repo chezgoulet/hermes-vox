@@ -143,6 +143,13 @@ silence. This moves to 0.9 with the streaming-STT swap. See
 - **The vanish bug (#12) first, from a log, never a hypothesis.** Discriminator already agreed:
   does the failed-interrupt speech arrive later as a normal turn (captured, flag unset) or
   vanish entirely (frames never evaluated)?
+  - **Fixed from the code (vc135, `BargeCarry`).** The frames were evaluated and then thrown
+    away: the drain discarded every read, and after the barge released the gate the loop
+    stopped the recorder (dropping its buffer) and slept a 450 ms cooldown before segmenting
+    from silence — a short interruption was over before the mic reopened; an ER CANCEL
+    transcribed the words only to classify them. The carry keeps them from onset (with
+    pre-roll) into the next segment. Field witness: `event=barge-carry seeded=true` followed
+    by that turn's `realtime: speech=true` line.
 
 ### M5 — VOX.md quality — ✅ PROMPT REMADE (vc127); the stems are the next piece
 - A/B: mirrored VOX.md vs the generic persona, same prompts.
