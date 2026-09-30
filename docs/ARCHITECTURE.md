@@ -148,7 +148,10 @@ Both are drawn on true OLED black.
 - `VoiceService` (foreground, microphone type) owns the live call in the background.
 - The gateway key is user-entered and Keystore-encrypted (`SecureStore`); release
   builds fail if a key injection is ever added. Backups are disabled.
-- Models download in-app, sha256-verified, zip-slip guarded (`ModelDownloader`).
+- Models download in-app through a foreground service (`ModelDownloadService`,
+  `ModelDownloads`), so they survive leaving the screen. Downloads are resumable over HTTP
+  `Range` (`DownloadResume`), wait out network loss without failing, and are sha256-verified
+  and zip-slip guarded before install (`ModelDownloader`).
 - Logs are local-only and transcript logging is opt-in (`VoxLog`).
 
 ## How Vox maps to Sesame's four components
