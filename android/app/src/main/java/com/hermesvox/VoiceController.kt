@@ -254,10 +254,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** The speech pipeline: TTS + STT + VAD, each loading its own on-device model.
      *  Built by [init] unless this controller exists only to probe the gateway. */
     private fun initPipeline() {
-        // Blessed default: auto-use the warm on-device Piper voice once it's
-        // installed; fall back to System only if Piper isn't present. (The old
-        // default of "system" left the app speaking via a silent system TTS.)
-        val voice = prefString("tts", if (ModelCatalog.isInstalled(context, "piper-lessac")) "piper" else "system")
+        // Blessed default: auto-use the best installed on-device voice — Supertonic (the
+        // bake-off winner), else Piper — and System only when neither is present. An explicit
+        // user choice in Settings always wins.
+        val voice = prefString("tts", ModelCatalog.defaultTts(context))
         tts = buildTts(context, voice)
         // 0.5.0-previewA speech-locked transcript: the warm engine reports each phrase
         // (text, samples) as it hands it to the playback track, in playback order.

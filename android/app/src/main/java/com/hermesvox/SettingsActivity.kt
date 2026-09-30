@@ -409,13 +409,27 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
-                arrayOf("System (fallback)", "Kokoro", "Piper (on-device)"),
-                arrayOf("system", "kokoro", "piper"), "tts", R.id.set_tts_val)
+                arrayOf("Supertonic (on-device, recommended)", "Piper (on-device, lighter)", "System (fallback)"),
+                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val)
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
         // option was removed — WarmTts is a no-op stub, so it never produced
         // audio (never offer an option that doesn't work). The engines now honor
         // this pref (see voiceRegister), so the picker really affects output.
+        // The engine's built-in voice (Supertonic: 0-4 female F1-F5, 5-9 male M1-M5 —
+        // measured by pitch in the bake-off). Applies from the next reply.
+        findViewById<LinearLayout>(R.id.row_tts_speaker).setOnClickListener {
+            val labels = (0 until 10).map { speakerLabel(it) }.toTypedArray()
+            val cur = prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER)
+            AlertDialog.Builder(this)
+                .setTitle("Speaker (Supertonic)")
+                .setSingleChoiceItems(labels, cur.coerceIn(0, 9)) { d, which ->
+                    prefs.edit().putInt(SherpaTts.KEY_SPEAKER, which).apply()
+                    findViewById<TextView>(R.id.set_tts_speaker_val).text = labels[which]
+                    d.dismiss()
+                }
+                .setNegativeButton("Cancel", null).show()
+        }
         findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
             pick("Voice (register)", arrayOf("System", "Bright", "Deep"),
                 arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val)
@@ -460,7 +474,8 @@ class SettingsActivity : AppCompatActivity() {
         val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
-        findViewById<TextView>(R.id.set_tts_val).text = label("tts", "system")
+        findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
+        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER))
         findViewById<TextView>(R.id.set_voice_val).text = label("voice", "system")
         refreshSttRemotePanel()
     }
@@ -489,7 +504,7 @@ class SettingsActivity : AppCompatActivity() {
                 modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
             findViewById<TextView>(R.id.set_stt_grpval)?.text =
                 sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
-            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", "system")
+            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
             findViewById<TextView>(R.id.set_appearance_grpval)?.text = label("theme", "system")
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
                 VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
@@ -943,11 +958,13 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun speakerLabel(i: Int): String = if (i < 5) "F${i + 1} · female" else "M${i - 4} · male"
+
     private fun label(prefKey: String, default: String): String {
         val tok = prefs.getString(prefKey, default) ?: default
         return when (tok) {
             "on-device" -> "On-device"
-            "system" -> "System"; "kokoro" -> "Kokoro"; "piper" -> "Piper"
+            "system" -> "System"; "kokoro" -> "System"; "piper" -> "Piper"; "supertonic" -> "Supertonic"
             "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
             "dark" -> "Dark"; "light" -> "Light"
             else -> tok
@@ -980,7 +997,8 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(KEY_STT_REMOTE_MODEL, "")
                 .putString(KEY_STT_REMOTE_KEY, "")
             GROUP_TTS -> e
-                .putString("tts", "system")
+                .remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
+                .remove(SherpaTts.KEY_SPEAKER)
                 .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
                 .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
             GROUP_ENTITY -> e

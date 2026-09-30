@@ -32,3 +32,6 @@ keystore/*
 /runs/
 *.iml
 .evidence/
+
+# Claude Code local state (agent worktrees)
+.claude/
