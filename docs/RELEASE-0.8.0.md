@@ -70,6 +70,16 @@ Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series c
   the pill clears.
 - The Speaker row appears only for the engine it controls (Supertonic).
 
+## Downloads that finish (vc137)
+
+- **Downloads keep going** when you leave the Models screen or lock the phone. They run in
+  the background with a progress notification (and a Pause button).
+- **Resume, not restart.** A stopped or failed download continues from the last byte it
+  had (HTTP range requests). Losing the network no longer fails it: it waits, then resumes
+  by itself. Cancel is now **Pause**, and the card offers Resume. The sha256 check still
+  guards every install, so a bad resume can never install a corrupt model.
+- Downloads run one at a time, and there's a free-space check before starting.
+
 ## Public-release hygiene
 
 - No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.

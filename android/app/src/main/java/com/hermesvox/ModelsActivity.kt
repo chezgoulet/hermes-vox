@@ -7,7 +7,6 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
@@ -30,7 +29,12 @@ class ModelsActivity : AppCompatActivity() {
     private lateinit var list: LinearLayout
     private lateinit var reqStatus: TextView
     private lateinit var downloadAll: Button
-    private val downloader = ModelDownloader(this)
+    /** The screen only OBSERVES downloads (ModelDownloads owns them, in a foreground service),
+     *  so leaving mid-download no longer kills it and coming back shows where it is. */
+    private val observer = ModelDownloads.Observer { id, st ->
+        ModelCatalog.blessed.firstOrNull { it.id == id }?.let { render(it, st) }
+        if (st is ModelDownloads.State.Installed) updateHeaderStatus()
+    }
     private val cards = mutableMapOf<String, CardUi>()
     // The required set = the recommended set (single convention, see header).
     private val required: List<ModelSpec> get() = ModelCatalog.required
@@ -49,7 +53,8 @@ class ModelsActivity : AppCompatActivity() {
         downloadAll.setOnClickListener {
             // Installs the REQUIRED (recommended) set only — same set the header
             // counts and the Settings badge counts (#114-denominator).
-            ModelCatalog.required.filter { !ModelCatalog.isInstalled(this, it.id) }.forEach { start(it) }
+            ModelCatalog.required.filter { !ModelCatalog.isInstalled(this, it.id) }
+                .forEach { ModelDownloads.enqueue(this, it) }
         }
 
         // Make the REQUIRED set explicit — list the recommended models that
@@ -67,8 +72,9 @@ class ModelsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.m_how)?.text =
             "The required set is your offline voice: hearing you (STT · Whisper), " +
             "knowing when you start and stop talking (VAD · Silero), and speaking " +
-            "replies (TTS · Piper) — all on-device. Gemma below is optional: it " +
-            "powers Enhanced Realtime (alpha) phone-call presence."
+            "replies (TTS · Supertonic) — all on-device. Gemma below is optional: it " +
+            "powers Enhanced Realtime (alpha) phone-call presence. Downloads keep going " +
+            "if you leave this screen, and a stopped download resumes where it left off."
         buildCards()
     }
 
@@ -109,78 +115,96 @@ class ModelsActivity : AppCompatActivity() {
             val state = v.findViewById<TextView>(R.id.mi_state)
             val progress = v.findViewById<ProgressBar>(R.id.mi_progress)
             cards[spec.id] = CardUi(action, state, progress, v.findViewById(R.id.mi_size))
-            action.setOnClickListener { start(spec) }
             list.addView(v)
-            refreshCard(spec)
+            render(spec, ModelDownloads.state(this, spec))
         }
     }
 
-    private fun start(spec: ModelSpec) {
-        if (ModelCatalog.isInstalled(this, spec.id)) { finishInstall(spec.id); return }
-        val c = cards[spec.id] ?: return
-        c.action.text = "Cancel"
-        c.action.setOnClickListener { downloader.cancel() }
-        c.progress.visibility = android.view.View.VISIBLE
-        c.progress.progress = 0
-        c.state.text = "Downloading…"
-        c.state.setTextColor(ContextCompat.getColor(this, R.color.hv_text_dim))
-        downloader.download(spec, object : ModelDownloader.Listener {
-            override fun onProgress(id: String, downloaded: Long, total: Long) {
-                runOnUiThread {
-                    // Use KB so a >2 GB download doesn't overflow Int (the Gemma
-                    // zip is 2.2 GB; total.toInt()/downloaded.toInt() overflows).
-                    c.progress.max = (total / 1024).toInt().coerceAtLeast(1)
-                    c.progress.progress = (downloaded / 1024).toInt().coerceIn(0, c.progress.max)
-                    // #16: progress reads in MB + %, not raw KB.
-                    val pct = if (total > 0) downloaded * 100 / total else 0L
-                    c.state.text = "Downloading… $pct% (" +
-                        "%.1f".format(downloaded / 1048576.0) + " / " +
-                        "%.1f".format(total / 1048576.0) + " MB)"
-                }
-            }
-            override fun onDone(id: String) { runOnUiThread { finishInstall(id) } }
-            override fun onError(id: String, msg: String) {
-                runOnUiThread {
-                    c.progress.visibility = android.view.View.GONE
-                    c.state.text = "Error: $msg"
-                    c.state.setTextColor(ContextCompat.getColor(this@ModelsActivity, R.color.hv_danger))
-                    c.action.text = "Retry"
-                    c.action.setOnClickListener { start(spec) }
-                    Toast.makeText(this@ModelsActivity, "$id: $msg", Toast.LENGTH_LONG).show()
-                }
-            }
-        })
+    override fun onStart() {
+        super.onStart()
+        ModelDownloads.observe(observer)
+        // Re-sync on return: a download that progressed (or finished) while we were away.
+        for (spec in ModelCatalog.blessed) render(spec, ModelDownloads.state(this, spec))
+        updateHeaderStatus()
     }
 
-    private fun finishInstall(id: String) {
-        val c = cards[id] ?: return
-        c.progress.visibility = android.view.View.GONE
-        c.state.text = "✓ Installed"
-        c.state.setTextColor(ContextCompat.getColor(this, R.color.hv_ok))
-        c.action.text = "Installed"
-        c.action.isEnabled = false
-        updateHeaderStatus()   // the last required model flips the header to "Voice ready"
+    override fun onStop() {
+        ModelDownloads.unobserve(observer)
+        super.onStop()
     }
 
-    // Sets the card's UI from the installed state. Does NOT call finishInstall
-    // (that was the StackOverflow recursion: finishInstall -> refreshCard ->
-    // finishInstall -> ...).
-    private fun refreshCard(spec: ModelSpec) {
+    private fun mb(b: Long) = "%.1f".format(b / 1048576.0)
+
+    /** One card, drawn from the download state. Every state says what tapping will do. */
+    private fun render(spec: ModelSpec, st: ModelDownloads.State) {
         val c = cards[spec.id] ?: return
-        if (ModelCatalog.isInstalled(this, spec.id)) {
-            c.state.text = "✓ Installed"
-            c.state.setTextColor(ContextCompat.getColor(this, R.color.hv_ok))
-            c.action.text = "Installed"
-            c.action.isEnabled = false
-        } else {
-            // #6: a missing REQUIRED model reads as blocking (warning color +
-            // "required" copy); an optional model stays neutral informational.
-            c.state.text = if (spec.recommended) "⚠ Required — not installed"
-                else "Not installed"
-            c.state.setTextColor(ContextCompat.getColor(this,
-                if (spec.recommended) R.color.hv_warn else R.color.hv_text_dim))
-            c.action.text = "Download"
-            c.action.isEnabled = true
+        val dim = ContextCompat.getColor(this, R.color.hv_text_dim)
+        c.action.isEnabled = true
+        when (st) {
+            ModelDownloads.State.Installed -> {
+                c.progress.visibility = android.view.View.GONE
+                c.state.text = "✓ Installed"
+                c.state.setTextColor(ContextCompat.getColor(this, R.color.hv_ok))
+                c.action.text = "Installed"
+                c.action.isEnabled = false
+            }
+            ModelDownloads.State.Queued -> {
+                c.progress.visibility = android.view.View.VISIBLE
+                c.progress.isIndeterminate = true
+                c.state.text = "Waiting — downloads run one at a time"
+                c.state.setTextColor(dim)
+                c.action.text = "Cancel"
+                c.action.setOnClickListener { ModelDownloads.cancel(this, spec.id) }
+            }
+            is ModelDownloads.State.Running -> {
+                c.progress.visibility = android.view.View.VISIBLE
+                c.state.setTextColor(dim)
+                c.action.text = "Pause"
+                c.action.setOnClickListener { ModelDownloads.cancel(this, spec.id) }
+                when (st.phase) {
+                    ModelDownloader.Phase.DOWNLOAD -> {
+                        c.progress.isIndeterminate = st.total <= 0
+                        // KB so a >2 GB download doesn't overflow Int (Gemma is 2.6 GB).
+                        c.progress.max = (st.total / 1024).toInt().coerceAtLeast(1)
+                        c.progress.progress = (st.done / 1024).toInt().coerceIn(0, c.progress.max)
+                        val pct = if (st.total > 0) st.done * 100 / st.total else 0L
+                        c.state.text = "Downloading… $pct% (${mb(st.done)} / ${mb(st.total)} MB)"
+                    }
+                    ModelDownloader.Phase.WAITING_NETWORK -> {
+                        c.progress.isIndeterminate = true
+                        c.state.text = "Waiting for network… (${mb(st.done)} MB kept, resumes automatically)"
+                    }
+                    // Verifying and unpacking are short and not pausable (the bytes are all
+                    // here): the button says what is happening instead of offering a no-op.
+                    ModelDownloader.Phase.VERIFY -> {
+                        c.progress.isIndeterminate = true; c.state.text = "Verifying…"
+                        c.action.text = "Verifying…"; c.action.isEnabled = false
+                    }
+                    ModelDownloader.Phase.UNPACK -> {
+                        c.progress.isIndeterminate = true; c.state.text = "Installing…"
+                        c.action.text = "Installing…"; c.action.isEnabled = false
+                    }
+                }
+            }
+            is ModelDownloads.State.Paused -> {
+                val pct = if (st.total > 0) (st.done * 100 / st.total).coerceIn(0, 99) else 0L
+                c.progress.visibility = android.view.View.VISIBLE
+                c.progress.isIndeterminate = false
+                c.progress.max = 100; c.progress.progress = pct.toInt()
+                c.state.text = if (st.reason != null) "Stopped at $pct%: ${st.reason}" else "Paused at $pct% (${mb(st.done)} MB kept)"
+                c.state.setTextColor(ContextCompat.getColor(this, if (st.reason != null) R.color.hv_danger else R.color.hv_warn))
+                c.action.text = "Resume"
+                c.action.setOnClickListener { ModelDownloads.enqueue(this, spec) }
+            }
+            ModelDownloads.State.Idle -> {
+                c.progress.visibility = android.view.View.GONE
+                // #6: a missing REQUIRED model reads as blocking (warning color + "required"
+                // copy); an optional model stays neutral informational.
+                c.state.text = if (spec.recommended) "⚠ Required — not installed" else "Not installed"
+                c.state.setTextColor(ContextCompat.getColor(this, if (spec.recommended) R.color.hv_warn else R.color.hv_text_dim))
+                c.action.text = "Download"
+                c.action.setOnClickListener { ModelDownloads.enqueue(this, spec) }
+            }
         }
     }
 }
