@@ -1073,7 +1073,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Voice"
+                        android:text="Delivery"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_voice_val"

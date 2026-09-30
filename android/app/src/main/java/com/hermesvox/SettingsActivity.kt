@@ -443,8 +443,8 @@ class SettingsActivity : AppCompatActivity() {
                 .setNegativeButton("Cancel", null).show()
         }
         findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
-            pick("Voice (register)", arrayOf("System", "Bright", "Deep"),
-                arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val)
+            pick("Delivery", arrayOf("Natural", "Bright", "Deep"),
+                arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val) { previewVoice() }
         }
 
         // Per sub-menu RESTORE DEFAULTS (via the central restoreDefaults helper).
@@ -488,7 +488,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
         findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER))
-        findViewById<TextView>(R.id.set_voice_val).text = label("voice", "system")
+        findViewById<TextView>(R.id.set_voice_val).text = deliveryLabel()
         refreshSttRemotePanel()
     }
 
@@ -992,6 +992,12 @@ class SettingsActivity : AppCompatActivity() {
         preview?.let { try { it.stop(); it.shutdown() } catch (_: Throwable) {} }
         preview = null
         super.onDestroy()
+    }
+
+    /** The `voice` pref is the delivery register; its "system" token reads as "Natural" here so
+     *  it is never confused with the System TTS engine one row up. */
+    private fun deliveryLabel(): String = when (prefs.getString("voice", "system")) {
+        "bright" -> "Bright"; "deep" -> "Deep"; else -> "Natural"
     }
 
     private fun speakerLabel(i: Int): String = if (i < 5) "F${i + 1} · female" else "M${i - 4} · male"

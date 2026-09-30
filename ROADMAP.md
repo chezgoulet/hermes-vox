@@ -72,6 +72,9 @@ Ships as **one 0.8.0** at the end. Every increment lands on `testing` as a night
   what the voice did — including that it already answered, when it may reply `<<SKIP>>`
   (`MindSkip`) and stay silent. The beat→reply audio handoff is explicit. See
   `docs/DESIGN-enhanced-realtime-voice.md` §DECISION (the warm soul).
+- `[x]` **The voice + the soul's ears (vc134).** Supertonic by measured bake-off
+  (`docs/VOICE-BAKEOFF.md`); Gemma 4 E2B audio input so the soul hears the caller's tone
+  (`VoiceMood` → delivery + the vibe Hermes is told).
 - `[ ]` **Field session on the beat** — the `express-probe … warm=` line and
   `soul(beat= … mind-skip=)` are the numbers that prove it on a real device.
 - `[ ]` **Community PRs #128 / #129** — merged, gated, field-tested alongside our own changes.
