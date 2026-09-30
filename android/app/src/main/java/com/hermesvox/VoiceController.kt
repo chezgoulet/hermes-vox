@@ -138,6 +138,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val latestPartial = java.util.concurrent.atomic.AtomicReference<PartialHyp?>(null)
     @Volatile private var segCounter = 0L
     @Volatile private var earlyCommitSeg = -1L
+    // #12 (the vanish): the interrupting utterance, captured by the barge drain from
+    // its speech onset (with pre-roll) and carried into the next segment. Owned by
+    // the capture thread. See BargeCarry.
+    private val bargeCarry = BargeCarry(16000)
     // Guards idempotent pipeline re-init on start() so overlapping starts don't double-init.
     @Volatile private var initializing = false
     // Bounded wait on the turn-gate so a stuck reply can't wedge the listen loop forever.
@@ -401,6 +405,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             // mic) instead of throwing into the platform-STT fallback below.
             if (!execSubmit {
                 val seg = ArrayList<Float>(sr)
+                // #12: the interrupting utterance carried out of the last barge drain;
+                // non-null means the next segment STARTS with it (already in speech).
+                var seed: FloatArray? = null
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
@@ -431,7 +438,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var speechSamples = 0
                     // EarlyStartRule.mayReusePartial: seg index just past the last speech frame.
                     var lastSpeechEnd = 0
-                    val segStart = android.os.SystemClock.uptimeMillis()
+                    val seeded = seed
+                    seed = null
+                    if (seeded != null) {
+                        // #12: the barge's words open this segment — in speech, with their
+                        // onset pre-roll, so the utterance is transcribed whole as the turn.
+                        for (f in seeded) seg.add(f)
+                        inSpeech = true
+                        speechSamples = seeded.size
+                        lastSpeechEnd = seg.size
+                    }
+                    val segStart = android.os.SystemClock.uptimeMillis() - seg.size * 1000L / sr
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
                     val partialEnabled = micBool("partial_stt", true)
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
@@ -585,8 +602,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // Single-capture barge drain. While the gate is locked we keep r
                     // recording and read frames here — compute RMS, feed the SHARED VAD,
                     // and route a barge check when `speaking` (playback mode) or
-                    // `turnInFlight && !speaking` (generation mode). Frames are DISCARDED
-                    // (never appended to seg). A barge decision posts bargeIn() on main,
+                    // `turnInFlight && !speaking` (generation mode). Frames are not
+                    // appended to seg — but #12: every read also feeds bargeCarry (a 2 s
+                    // history + the speech onset), and once a barge fires every later
+                    // read is KEPT, so the interrupting words seed the next segment
+                    // instead of vanishing. A barge decision posts bargeIn() on main,
                     // which releases the latch -> this drain exits. The reads pace at
                     // real-time (blocking), so the drain never lags the mic into a buffer
                     // flood; the latch is observed between reads (<= one read after the
@@ -636,6 +656,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // transcribe ran) WITHOUT checks: the user's own just-sent utterance
                     // must never re-trigger the barge gate as the turn starts. Non-blocking
                     // reads return only what is already buffered, so nothing new is lost.
+                    bargeCarry.reset()
                     var flushGuard = 64
                     while (flushGuard-- > 0) {
                         val dn = try { r.read(shortBuf, 0, shortBuf.size, AudioRecord.READ_NON_BLOCKING) } catch (_: Throwable) { 0 }
@@ -665,7 +686,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val spk = speaking
                         if (spk) { if (!sawPlayback) { sawPlayback = true; playbackSince = readAt } }
                         else sawPlayback = false
-                        if (!bargeInEnabled || bargeFired) continue            // drain-only (no buffer flood)
+                        if (!bargeInEnabled) continue                          // drain-only (no buffer flood)
+                        val frames = FloatArray(n)
+                        for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
+                        if (bargeFired) {
+                            // #12: the barge already fired — keep every word the user is
+                            // still saying; it becomes the next turn (BargeCarry).
+                            bargeCarry.push(frames, true)
+                            continue
+                        }
                         // Playback grace: skip checks for barge_grace_ms after `speaking`
                         // became true so the TTS onset is never mistaken for the user
                         // (generation mode is exempt — nothing plays yet).
@@ -685,10 +714,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
                             }
                         } else skipStateSinceMs = 0L
-                        if (inGrace || stateSkip) { sustainedMs = 0L; sustainedLevelMs = 0L; lastVadSpeechAt = 0L; continue }
+                        if (inGrace || stateSkip) {
+                            sustainedMs = 0L; sustainedLevelMs = 0L; lastVadSpeechAt = 0L
+                            bargeCarry.push(frames, false)   // history only (pre-roll), never an onset
+                            continue
+                        }
                         var acc = 0.0
-                        val frames = FloatArray(n)
-                        for (i in 0 until n) { frames[i] = shortBuf[i] / 32768f; acc += frames[i] * frames[i] }
+                        for (f in frames) acc += f * f
                         val level = Math.sqrt(acc / n)
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
                         // ER Phase 5: capture the interrupting speech while it plays —
@@ -708,6 +740,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                         // active RMS floor: rmsMin with VAD, rmsMin*1.4 without
                         val floor = if (vadAvailable) bargeRmsMin else bargeRmsMin * BargeGate.NO_VAD_RMS_BOOST
+                        // #12: onset tracking for the carry — speech-like = the VAD agrees or
+                        // the level clears the barge floor (the measured residual echo on this
+                        // AEC path sits below it; see BargeGate).
+                        bargeCarry.push(frames, vadSpeech || level > floor)
                         // 0.6.2 echo guard: track glue playback end so the capture skip
                         // window (erEchoSkipMs) starts when the filler's tail is dying.
                         if (glueSpeaking) erEchoSkipSinceMs = readAt
@@ -727,6 +763,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs, msSinceVadSpeech, peakLevel = peakRms)) {
                             VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
+                            bargeCarry.fire()   // #12: freeze onset-minus-pre-roll .. now; keep the rest
                             main.post { bargeIn() }
                             bargeFired = true
                             sustainedMs = 0L
@@ -760,9 +797,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (!gateReleased && gateLockedNow - gateClosedAt >= TURN_GATE_TIMEOUT_MS && gateLockedNow - lastActivityAt > GATE_STALL_IDLE_MS)
                         VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms sinceActivity=${gateLockedNow - lastActivityAt}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
                     vad?.reset()   // clear barge-window VAD state before the next turn's segmentation
-                    try { r.stop() } catch (_: Throwable) {}
-                    // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
-                    android.os.SystemClock.sleep(450L)
+                    // #12 (the vanish): this is where interrupting words used to die — r.stop()
+                    // threw away the buffered audio and the 450 ms cooldown below deafened the
+                    // mic while the user was mid-sentence. A fired barge whose gate released
+                    // (anything but an ER HOLD) now carries its audio into the next segment,
+                    // and the recorder keeps running. event=barge-carry is the field witness:
+                    // seeded=true + a later realtime: line with speech=true proves the words
+                    // survived; seeded=false names why they were (deliberately) not a turn.
+                    if (bargeCarry.fired) {
+                        val held = erHoldReleasedGen == myGen
+                        val carriedMs = bargeCarry.carriedMs
+                        val leadMs = bargeCarry.leadMs
+                        if (BargeCarry.shouldSeed(true, gateReleased, held) && listening) {
+                            seed = bargeCarry.take()
+                            VoxLog.d("event=barge-carry gen=$myGen seeded=true ms=$carriedMs leadMs=$leadMs")
+                        } else {
+                            bargeCarry.reset()
+                            VoxLog.d("event=barge-carry gen=$myGen seeded=false reason=${if (held) "hold" else if (!listening) "stopped" else "gate-timeout"} ms=$carriedMs")
+                        }
+                    }
+                    if (seed == null) {
+                        try { r.stop() } catch (_: Throwable) {}
+                        // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
+                        android.os.SystemClock.sleep(450L)
+                    }
                 }
                 loopActive = false
                 // #19: the natural loop exit never runs stop() (the caller's terminal
