@@ -35,3 +35,7 @@ keystore/*
 
 # Claude Code local state (agent worktrees)
 .claude/
+
+# sttbench: model cache + venv (hundreds of MB; fetched by run_bench.py --fetch)
+/tools/sttbench/.models
+/tools/sttbench/.venv

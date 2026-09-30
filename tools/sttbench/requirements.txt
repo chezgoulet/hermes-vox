@@ -1,0 +1,5 @@
+# sttbench host runner — pinned. sherpa-onnx matches the app's runtime AAR
+# (scripts/fetch-runtime.sh: sherpa-onnx-1.13.6.aar).
+sherpa-onnx==1.13.6
+numpy==2.1.3
+soundfile==0.12.1
