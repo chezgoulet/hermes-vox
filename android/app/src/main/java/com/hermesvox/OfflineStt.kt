@@ -142,14 +142,40 @@ class OfflineWhisperStt(context: Context, modelId: String = "whisper-base") : Sh
     /** 30 s encoder limit minus tail-padding room (SttWindows). */
     override val maxWindowMs: Int get() = SttWindows.WHISPER_WINDOW_MS
 
+    /** The weights file for [part] ("encoder"/"decoder"): int8 when present (canonical name, or
+     *  the upstream `<model>-<part>.int8.onnx` of an install that predates the rename), else fp32. */
+    private fun whisperFile(part: String): File? {
+        File(dir, "$part.int8.onnx").takeIf { it.exists() }?.let { return it }
+        dir.listFiles()?.firstOrNull { it.name.endsWith("-$part.int8.onnx") }?.let { return it }
+        return File(dir, "$part.onnx").takeIf { it.exists() }
+    }
+
+    /** Once the int8 weights are in use, the fp32 copies are dead weight (~200 MB for base,
+     *  ~480 MB for small) on the user's storage. */
+    private fun pruneFp32IfInt8() {
+        for (part in listOf("encoder", "decoder")) {
+            val int8 = whisperFile(part) ?: continue
+            if (!int8.name.contains(".int8.")) continue
+            val fp32 = File(dir, "$part.onnx")
+            if (fp32.exists() && fp32.delete()) VoxLog.d("$name: pruned unused fp32 $part (int8 in use)")
+        }
+    }
+
     /** The decode language: "en" for the .en models (they only speak English);
      *  a multilingual model gets the `stt_language` pref ("" = auto-detect). */
     private val language: String = ModelCatalog.whisperLanguage(modelId,
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(ModelCatalog.KEY_STT_LANGUAGE, "") ?: "")
 
     override fun buildConfig(): OfflineRecognizerConfig? {
-        val e = File(dir, "encoder.onnx"); val d = File(dir, "decoder.onnx"); val t = File(dir, "tokens.txt")
-        if (!e.exists() || !d.exists() || !t.exists()) return null
+        // INT8 FIRST. The upstream package ships int8 weights beside the fp32 ones, and the app
+        // used to load fp32 only (the rename rule never matched the int8 files). The bench
+        // (tools/sttbench, 25 clips) measured whisper-base int8 at 4.5% WER vs 5.6% fp32 (noisy
+        // 16% vs 32%), a little faster even on x86, at a quarter of the memory — and ARM phone
+        // cores have dedicated int8 dot-product instructions. fp32 stays the fallback for an
+        // install that only has it.
+        val e = whisperFile("encoder"); val d = whisperFile("decoder"); val t = File(dir, "tokens.txt")
+        if (e == null || d == null || !t.exists()) return null
+        pruneFp32IfInt8()
         // sherpa-off-community shape (official kotlin-api + issue #2071):
         // tokens path + modelType belong on OfflineModelConfig, built via
         // the NO-ARG ctor + setters (NOT the full-arg ctor).

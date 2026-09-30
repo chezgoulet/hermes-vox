@@ -89,7 +89,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 }
             } catch (e: Throwable) {
                 VoxLog.e("GemmaExpress load failed: ${e.message}")
-                loaded = false; llm = null; onReady(false)
+                loaded = false; llm = null; loadFailed = true; onReady(false)
             } finally {
                 synchronized(loadLock) { loading = false }
             }
@@ -99,6 +99,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      *  this is what lets a field log PROVE whether the GPU path is live on a given
      *  device, instead of leaving it to inference from frame drops. */
     @Volatile var activeBackend: String = "none"
+        private set
+
+    /** A real load failure this session (no backend could start the model) — distinct from the
+     *  `false` a caller gets while another load is already in flight. */
+    @Volatile var loadFailed = false
         private set
 
     /**
