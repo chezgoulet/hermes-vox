@@ -39,6 +39,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         fun onLog(line: String)         // stream-console line (events, tool progress)
         fun onReply(finalText: String)  // assembled final reply (for TTS + settle)
         fun onError(msg: String)
+        /** The exact text a voice turn is about to send Hermes — "what it heard".
+         *  Shown briefly so a mishearing is noticed (and barged over) before the
+         *  reply lands. Display only: hosts must not persist it unless the user
+         *  opted into `log_transcripts`. */
+        fun onHeard(text: String) {}
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -598,6 +603,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
                     VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
+                    // Fix 4: show what Hermes is about to be sent, before the reply exists.
+                    main.post { listener?.onHeard(cleaned) }
                     main.post { runStreamedTurn(cleaned, myGen, fromVoice = true) }
                     // Single-capture barge drain. While the gate is locked we keep r
                     // recording and read frames here — compute RMS, feed the SHARED VAD,

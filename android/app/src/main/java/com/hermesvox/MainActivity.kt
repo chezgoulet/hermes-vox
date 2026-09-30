@@ -43,6 +43,14 @@ class MainActivity : AppCompatActivity() {
     private var toolCount = 0
     private lateinit var conversation: android.widget.ScrollView
     private lateinit var convoText: android.widget.TextView
+    // The dim "heard" line (HeardLine): what the last voice turn sent Hermes.
+    private lateinit var heardLine: android.widget.TextView
+    private val fadeHeard = Runnable {
+        heardLine.animate().alpha(0f).setDuration(900L).withEndAction {
+            heardLine.visibility = View.INVISIBLE
+            heardLine.text = ""; heardLine.contentDescription = null
+        }.start()
+    }
     private var convoBuf = ""
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
@@ -260,6 +268,7 @@ class MainActivity : AppCompatActivity() {
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
         convoText = findViewById(R.id.convo_text)
+        heardLine = findViewById(R.id.heard_line)
         handleModeUi()
         updateStreamVisibility()
         // Tap the presence = STOP (hush): interrupt the reply + cancel the stream
@@ -1322,6 +1331,31 @@ class MainActivity : AppCompatActivity() {
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             feed(MotionState.Signal.REST); appendStream("// $msg")
         } }
+        override fun onHeard(text: String) { runOnUiThread {
+            // Conversation mode already IS a transcript: the words go there, in memory
+            // only (convoBuf is never persisted). Presence mode gets the fading line.
+            appendConvo("You: $text")
+            if (conversation.visibility != View.VISIBLE) showHeard(text)
+        } }
+    }
+
+    /** Show the heard line: fade in, hold for its reading time (longer when a
+     *  screen reader asks for it), fade out. A new turn replaces the old line. */
+    private fun showHeard(text: String) {
+        mainHandler.removeCallbacks(fadeHeard)
+        heardLine.animate().cancel()
+        heardLine.text = HeardLine.displayText(text)
+        // TalkBack reads the full words (polite live region, set in the layout).
+        heardLine.contentDescription = getString(R.string.hv_heard_cd, text)
+        heardLine.visibility = View.VISIBLE
+        heardLine.animate().alpha(0.9f).setDuration(180L).start()
+        var hold = HeardLine.holdMs(text)
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val am = getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+            if (am != null) hold = am.getRecommendedTimeoutMillis(hold.toInt(),
+                android.view.accessibility.AccessibilityManager.FLAG_CONTENT_TEXT).toLong()
+        }
+        mainHandler.postDelayed(fadeHeard, hold)
     }
 
     // SSE tool name -> being shape motif (null = default vortex/compile gyre).
