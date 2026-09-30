@@ -78,11 +78,21 @@ single source of truth for the wire protocol.
 ### 2. Hearing and turn-taking — on-device
 - **VAD:** Silero via sherpa-onnx gates the open line; `BargeGate` decides when speech
   during playback is a real interruption (level + duration, with a level-only escape).
-- **STT:** Whisper via sherpa-onnx (`OfflineStt`), or an optional self-hosted endpoint
-  (`RemoteStt`). Whisper here is *batch* — it sees a finished utterance, not partials.
-  That is the main structural latency gap (see Gaps).
+- **STT:** on-device via sherpa-onnx (`OfflineStt`) — Whisper base.en by default,
+  tiny/small, or NVIDIA Parakeet-TDT 0.6B v2 (opt-in; the most accurate and fastest on
+  the bench) — or an optional self-hosted endpoint (`RemoteStt`). Recognition is *batch*:
+  it sees a finished utterance. The turn text is always the **whole** utterance
+  (`SttWindows` windows anything past 25 s); a partial transcript may only *trigger* an
+  early end on a genuine finished-sentence pause, and is reused as the text only when it
+  covered the whole utterance (`EarlyStartRule`). Every transcript passes
+  `TranscriptValidator` (noise tags, implausible words/sec, runaway repetition,
+  Whisper's "thank you"-on-silence priors, minimum speech ratio) before it is a turn,
+  and the words sent are shown briefly as a dim "heard" line (`HeardLine`).
+  `tools/sttbench` measures all of this (WER / RTF / hallucinations on a 25-clip corpus).
 - **Barge-in:** one cut path stops audio, cancels the stream and releases the turn
-  gate (`VoiceController`, `StreamFence`, `StreamRetirementState`).
+  gate (`VoiceController`, `StreamFence`, `StreamRetirementState`). The interrupting
+  words are kept from their onset (with pre-roll) and become the next turn
+  (`BargeCarry`) — unless an Enhanced-Realtime HOLD judged them a backchannel.
 
 ### 3. The voice — on-device
 Supertonic (ten voices, 44.1 kHz) via sherpa-onnx is the recommended voice, chosen by a
@@ -154,9 +164,17 @@ Both are drawn on true OLED black.
 
 ## Gaps, honestly
 
-- **Streaming STT.** Offline Whisper gives no partial transcripts, so there is no
-  semantic endpointing and turn-end waits on silence. A streaming recogniser is the 0.9
-  prerequisite ([plan][plan08], M4).
+- **Streaming STT.** The offline recognisers give no streaming partials (the capture loop
+  re-decodes snapshots), so endpointing is silence plus a conservative finished-sentence
+  check, not semantic. A streaming recogniser is the 0.9 prerequisite ([plan][plan08], M4);
+  the bench's streaming zipformer is fast but 2.6x whisper-base's WER on accents.
+- **STT on a real phone.** The sttbench numbers are host CPU. Parakeet's phone RTF and
+  resident memory (a 482 MB download) are unmeasured, which is why whisper-base stays the
+  default. The vanish fix (`BargeCarry`) is proven from the code and unit-tested; its
+  field witness is the `event=barge-carry` log line.
+- **First words after a reply ends.** A natural turn end still stops the recorder and
+  sleeps a 450 ms cooldown (so the reply's echo tail is not heard as the user); a user who
+  starts talking in that window loses the first syllables. Only a *barge* carries audio.
 - **The beat, in the field.** Built and unit-tested; its latency on a real phone GPU
   is what the `express-probe … warm=` log line and the `soul(beat=…)` counters prove.
 - **Voice expressiveness.** Supertonic is natural but has no emotion control; mood

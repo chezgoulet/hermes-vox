@@ -36,6 +36,28 @@ Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series c
   Settings → Enhanced Realtime) and falls back to words alone where the audio path is
   unavailable.
 
+## Hermes hears what you said (vc135)
+
+- **The whole sentence, every time.** The early turn start used to send the text of only the
+  last 6 seconds, and fired on a half-second thinking pause. Now a partial transcript can only
+  end your turn on a real pause after a finished sentence, and what Hermes receives is always a
+  transcription of everything you said — including turns longer than Whisper's 30-second window.
+- **No more invented words.** Every transcript is checked before it becomes a turn: noise tags,
+  impossibly fast speech, a decoder stuck repeating itself, and Whisper's "Thank you." on
+  near-silence are refused (a real "thank you" still gets through). Refusals are logged without
+  your words unless "Log spoken transcript" is on.
+- **See what it heard.** A dim line under the being shows the words that were sent, then fades
+  — mishearings are obvious and you can correct them by talking over the reply. TalkBack reads
+  it; it is never saved to disk.
+- **Interrupting no longer loses your words** (#12, "the vanish"). When you talk over a reply,
+  what you say — from its first syllable — becomes your next turn.
+- **Parakeet (optional).** NVIDIA Parakeet-TDT 0.6B joins the speech models: on our test corpus
+  it is more accurate (3.4% vs 5.6% word error) and 2.5x faster than the default Whisper, and
+  heard nothing in silence. It is a 482 MB download, so Whisper base stays the default for now.
+- Whisper's end padding is now explicit (it always was 1000 frames; the bench shows the smaller
+  values the upstream docs suggest make it loop or drop final words).
+- New: `tools/sttbench`, a 25-clip WER / speed / hallucination bench with the baseline numbers.
+
 ## Public-release hygiene
 
 - No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.
