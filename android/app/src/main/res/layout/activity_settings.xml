@@ -1246,12 +1246,22 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Keep screen on during calls"
-                        style="@style/HvRowTitle" />
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Keep screen on during calls"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="The screen stays lit while a call is open. The power button still turns it off."
+                            style="@style/HvRowValue" />
+                    </LinearLayout>
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/set_keep_screen_on"
                         android:layout_width="wrap_content"

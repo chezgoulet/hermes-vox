@@ -872,10 +872,10 @@ class MainActivity : AppCompatActivity() {
             VoxLog.d("event=wake acquired")
         } catch (e: Exception) { VoxLog.e("event=wake-acquire-failed err=${e.message}") }
         // K2 (0.5.0.3) screen-alive toggle (Settings → Appearance, keep_screen_on,
-        // default OFF): FLAG_KEEP_SCREEN_ON is a WINDOW flag — no permission, NOT a
+        // default ON since 0.8): FLAG_KEEP_SCREEN_ON is a WINDOW flag — no permission, NOT a
         // WAKE_LOCK. Armed here, at call start beside the wake acquisition; released
         // unconditionally in stopVoiceWake (the same teardown as focus/wake).
-        if (prefs.getBoolean("keep_screen_on", false)) {
+        if (prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             VoxLog.d("event=screen-alive armed")
         }
@@ -886,7 +886,7 @@ class MainActivity : AppCompatActivity() {
      *  lands the moment the call surface is back — on OR off. The controller gate keeps
      *  a stale callLive (e.g. after /new) from re-arming a flag with no live line. */
     private fun applyKeepScreenOn() {
-        val on = callLive && liveController != null && prefs.getBoolean("keep_screen_on", false)
+        val on = callLive && liveController != null && prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
         if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
