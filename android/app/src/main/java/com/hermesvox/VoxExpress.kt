@@ -23,6 +23,11 @@ interface VoxExpress {
 
     /** Abandon the render in flight, discarding its output (an urgent render is pre-empting it). */
     fun cancelInFlight() {}
+
+    /** [express], with the caller's utterance as audio (a WAV) the model may listen to. An
+     *  engine that cannot hear ignores it. */
+    fun expressHeard(intent: String, content: String, tone: String, audio: ByteArray?): String =
+        express(intent, content, tone)
 }
 
 /** Routing stand-in so the ORCHESTRATION is provable before the model port.
@@ -82,15 +87,16 @@ class VoiceOrchestrator(
     private var busy = false
     private var pending: Req? = null
 
-    private class Req(val intent: String, val content: String, val tone: String, val onGlue: (String?) -> Unit)
+    private class Req(val intent: String, val content: String, val tone: String, val audio: ByteArray?, val onGlue: (String?) -> Unit)
 
     fun expressAsync(
         intent: String,
         content: String = "",
         tone: String = "warm",
+        audio: ByteArray? = null,
         onGlue: (String?) -> Unit,
     ) {
-        val req = Req(intent, content, tone, onGlue)
+        val req = Req(intent, content, tone, audio, onGlue)
         val urgent = intent == INTENT_SOUL_TURN
         var superseded: Req? = null
         var queued = false
@@ -120,7 +126,7 @@ class VoiceOrchestrator(
         Thread {
             try {
                 val glue = try {
-                    if (gemmaAvailable) express.express(req.intent, req.content, req.tone) else null
+                    if (gemmaAvailable) express.expressHeard(req.intent, req.content, req.tone, req.audio) else null
                 } catch (_: Throwable) { null }
                 req.onGlue(glue)
             } finally {

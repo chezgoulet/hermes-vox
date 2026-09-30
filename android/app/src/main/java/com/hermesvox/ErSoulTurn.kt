@@ -86,9 +86,14 @@ object ErSoulTurn {
      * person says while they start to answer. One render yields both the routing decision and the
      * opening beat, so the soul takes the floor on every turn instead of only on the ones it owns.
      */
-    fun directive(callerText: String, toolContext: String? = null): String {
+    fun directive(callerText: String, toolContext: String? = null, heard: Boolean = false): String {
         val ctx = if (toolContext.isNullOrBlank()) "" else " The mind is currently working on: $toolContext."
-        return "The caller just said: \"$callerText\".$ctx " +
+        // When the caller's voice rides the render, the soul reads their TONE first — the mood
+        // (VoiceMood) that steers the voice's delivery and the vibe the mind is told.
+        val ears = if (!heard) "" else
+            "You can hear the caller: their voice is attached. Start your reply with their tone as ONE tag — " +
+                "{calm}, {warm}, {lively} or {tense} — judged from HOW they sound, then continue. "
+        return ears + "The caller just said: \"$callerText\".$ctx " +
             "If this is a greeting, some smalltalk, or something about how they are feeling, reply with " +
             "ONE short warm sentence in your own voice, under about twenty words. " +
             "If answering it needs a fact, a tool, a real-world action, or a plan — or if you are not " +

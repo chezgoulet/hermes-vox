@@ -206,6 +206,17 @@ class SettingsActivity : AppCompatActivity() {
                 else "Every interruption cancels the entity's work (pre-ER behavior)",
                 Toast.LENGTH_LONG).show()
         }
+        // The soul hears the caller's audio (Gemma's own audio encoder, on-device) and reads their
+        // tone — the mood that steers the voice's delivery and the vibe the mind is told.
+        val swHears = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_hears)
+        swHears.isChecked = prefs.getBoolean(SoulAudio.PREF, true)
+        swHears.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(SoulAudio.PREF, checked).apply()
+            Toast.makeText(this,
+                if (checked) "The soul hears your tone — audio stays on this phone"
+                else "The soul reads your words only",
+                Toast.LENGTH_SHORT).show()
+        }
         // 0.6.7 Tier 1: the presence-voice mode (silent / sounds / spoken).
         findViewById<LinearLayout>(R.id.row_er_voice).setOnClickListener {
             val modes = arrayOf("Silent (motion only)", "Sounds (natural mm/breath)", "Spoken (sentence fillers)")
@@ -410,7 +421,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
                 arrayOf("Supertonic (on-device, recommended)", "Piper (on-device, lighter)", "System (fallback)"),
-                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val)
+                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val) { previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
         // option was removed — WarmTts is a no-op stub, so it never produced
@@ -427,6 +438,7 @@ class SettingsActivity : AppCompatActivity() {
                     prefs.edit().putInt(SherpaTts.KEY_SPEAKER, which).apply()
                     findViewById<TextView>(R.id.set_tts_speaker_val).text = labels[which]
                     d.dismiss()
+                    previewVoice()
                 }
                 .setNegativeButton("Cancel", null).show()
         }
@@ -956,6 +968,30 @@ class SettingsActivity : AppCompatActivity() {
                 d.dismiss(); onApplied?.invoke()
             }
             .show()
+    }
+
+    /** The voice you pick is the voice you hear: a short line in the chosen engine + speaker, so
+     *  choosing between ten voices is a listening decision, not a guess from a label. The engine
+     *  loads for this line only and is released when it finishes (or the next preview starts). */
+    private var preview: VoxTts? = null
+    private fun previewVoice() {
+        preview?.let { try { it.stop(); it.shutdown() } catch (_: Throwable) {} }
+        val t = buildTts(this, prefs.getString("tts", null) ?: ModelCatalog.defaultTts(this))
+        preview = t
+        t.init { ok ->
+            if (!ok || preview !== t) return@init
+            val t0 = android.os.SystemClock.uptimeMillis()
+            t.speak("Hi — this is how I'll sound when we talk.") {
+                VoxLog.d("event=voice-preview engine=${t.name} ms=${android.os.SystemClock.uptimeMillis() - t0}")
+                if (preview === t) { try { t.shutdown() } catch (_: Throwable) {}; preview = null }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        preview?.let { try { it.stop(); it.shutdown() } catch (_: Throwable) {} }
+        preview = null
+        super.onDestroy()
     }
 
     private fun speakerLabel(i: Int): String = if (i < 5) "F${i + 1} · female" else "M${i - 4} · male"

@@ -804,11 +804,15 @@ class MainActivity : AppCompatActivity() {
      *  from the field rather than assumed: how often the soul answers, how often it hands over,
      *  and how often nothing usable came back. */
     private fun wireSoul(c: VoiceController) {
-        c.soulDecide = { kind, text, toolContext, cb ->
+        c.soulDecide = { kind, text, toolContext, audio, cb ->
+            val wav = SoulAudio.wav(audio)
+            val heard = wav != null && (express as? GemmaExpress)?.hears == true
             val directive = if (kind == ErSoulTurn.KIND_GREETING) ErSoulTurn.greetingDirective()
-            else ErSoulTurn.directive(text, toolContext)
-            orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_TURN, directive, "warm") { glue ->
-                val o = ErSoulTurn.parse(glue)
+            else ErSoulTurn.directive(text, toolContext, heard)
+            orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_TURN, directive, "warm", if (heard) wav else null) { glue ->
+                // The tone tag leads (when the soul heard the caller); the decision follows.
+                val (mood, rest) = VoiceMood.split(glue)
+                val o = ErSoulTurn.parse(rest)
                 val decision = when (o) {
                     is ErSoulTurn.Outcome.Spoken -> "answer"
                     is ErSoulTurn.Outcome.Beat -> "beat"
@@ -821,8 +825,8 @@ class MainActivity : AppCompatActivity() {
                     is ErSoulTurn.Outcome.Beat -> o.opener.length
                     else -> 0
                 }
-                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars")
-                cb(o)
+                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"}")
+                cb(o, mood)
             }
         }
     }
