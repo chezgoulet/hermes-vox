@@ -39,3 +39,7 @@ keystore/*
 # sttbench: model cache + venv (hundreds of MB; fetched by run_bench.py --fetch)
 /tools/sttbench/.models
 /tools/sttbench/.venv
+
+# compiled Python bytecode (never commit these)
+__pycache__/
+*.pyc
