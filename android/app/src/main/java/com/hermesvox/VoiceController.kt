@@ -155,7 +155,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  Given the caller's utterance and what the mind is doing, it returns the line the soul
      *  should say — or null, meaning escalate or nothing, in which case the mind's answer is
      *  the voice. Runs off-main; the callback lands on the caller's thread. */
-    @Volatile var soulDecide: ((kind: String, text: String, toolContext: String?, cb: (ErSoulTurn.Outcome) -> Unit) -> Unit)? = null
+    @Volatile var soulDecide: ((kind: String, text: String, toolContext: String?, audio: FloatArray?, cb: (ErSoulTurn.Outcome, VoiceMood?) -> Unit) -> Unit)? = null
+    /** The committed voice turn's audio (16 kHz), for the soul's ears. Set with turnUtterance. */
+    @Volatile private var turnAudio: FloatArray? = null
 
     /**
      * 0.8/M3c: open the call with the soul's own greeting — ER only, and only once the pipeline
@@ -165,7 +167,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      */
     fun soulGreet() {
         val decide = soulDecide ?: return
-        decide(ErSoulTurn.KIND_GREETING, "", null) { o ->
+        decide(ErSoulTurn.KIND_GREETING, "", null, null) { o, _ ->
             // A greeting is spoken whole; a greeting that escalates or opens a beat says nothing.
             val line = (o as? ErSoulTurn.Outcome.Spoken)?.text
             if (line.isNullOrBlank()) return@decide
@@ -190,6 +192,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         val decided = java.util.concurrent.CountDownLatch(1)
         var submitted = false
         var answered = false
+        var mood: VoiceMood? = null
     }
 
     /** Would a soul line be heard right now? Checked BEFORE the mind is told the voice answered —
@@ -254,10 +257,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** The speech pipeline: TTS + STT + VAD, each loading its own on-device model.
      *  Built by [init] unless this controller exists only to probe the gateway. */
     private fun initPipeline() {
-        // Blessed default: auto-use the warm on-device Piper voice once it's
-        // installed; fall back to System only if Piper isn't present. (The old
-        // default of "system" left the app speaking via a silent system TTS.)
-        val voice = prefString("tts", if (ModelCatalog.isInstalled(context, "piper-lessac")) "piper" else "system")
+        // Blessed default: auto-use the best installed on-device voice — Supertonic (the
+        // bake-off winner), else Piper — and System only when neither is present. An explicit
+        // user choice in Settings always wins.
+        val voice = prefString("tts", ModelCatalog.defaultTts(context))
         tts = buildTts(context, voice)
         // 0.5.0-previewA speech-locked transcript: the warm engine reports each phrase
         // (text, samples) as it hands it to the playback track, in playback order.
@@ -529,6 +532,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // capture — only the INTERRUPTING speech may fill it.
                     synchronized(erBargeSeg) { erBargeSeg.clear() }
                     turnUtterance = cleaned
+                    turnAudio = if (inSpeech) seg.toFloatArray() else null   // the soul's ears (ER)
                     val myGen = turnGen
                     val bargeRmsMin = micFloat("barge_rms_min", 0.10f)
                     // 0.6.2 echo guard: read the user-facing slider once per turn.
@@ -885,10 +889,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         // wait is not dead air: the beat plays through it. A decision that lands after the submit
         // may only speak a beat — the mind was not told about a late answer.
         soulSpokeThisTurn = false
+        (tts as? SherpaTts)?.mood = VoiceMood.WARM   // a heard mood applies to the turn it was heard in
         val soulTurn = SoulTurnState()
         val decide = soulDecide
         if (voiceTurn && erPresenceOn && decide != null && openerRoute == ErIntent.Route.ACK_AND_YIELD) {
-            decide(ErSoulTurn.KIND_TURN, text, null) { o ->
+            val heardAudio = if (prefsGetBoolean(SoulAudio.PREF, true)) turnAudio else null
+            decide(ErSoulTurn.KIND_TURN, text, null, heardAudio) { o, mood ->
                 val (line, isBeat) = when (o) {
                     is ErSoulTurn.Outcome.Spoken -> o.text to false
                     is ErSoulTurn.Outcome.Beat -> o.opener to true
@@ -896,6 +902,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 var speak = false
                 synchronized(soulTurn) {
+                    // The tone the soul heard: it steers this turn's delivery, and it rides to the
+                    // mind in the epilogue when it lands before the submit.
+                    if (mood != null && gen == turnGen) {
+                        soulTurn.mood = mood
+                        (tts as? SherpaTts)?.mood = mood
+                        VoxLog.er("event=er-mood mood=${mood.name.lowercase()} gen=$gen")
+                    }
                     if (line != null && gen == turnGen && !genCancelled &&
                         (!soulTurn.submitted || SoulGate.lateMaySpeak(isBeat)) && canDeliverSoulLine(line)) {
                         speak = true
@@ -960,10 +973,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val waitMs = if (voiceTurn) SoulGate.waitMs(ErTelemetry.renderP50()) else 0L
                 if (waitMs > 0) soulTurn.decided.await(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS)
                 if (genCancelled) return@execSubmit
-                val answered = synchronized(soulTurn) { soulTurn.submitted = true; soulTurn.answered }
+                val (answered, heardMood) = synchronized(soulTurn) { soulTurn.submitted = true; soulTurn.answered to soulTurn.mood }
                 mindSkip = MindSkip.Filter(answered)
                 val drift = if (voiceTurn) {
-                    ErDrift.epilogue(erPresence.drainSoulActions(), ErDrift.Vibe(), soulAnswered = answered)
+                    ErDrift.epilogue(erPresence.drainSoulActions(),
+                        heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe(),
+                        soulAnswered = answered)
                 } else ""
                 val turnText = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
                 val sid = if (voiceTurn) session.voiceTurn(turnText) else session.startStream(text)

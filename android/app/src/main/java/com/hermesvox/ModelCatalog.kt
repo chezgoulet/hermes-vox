@@ -44,10 +44,15 @@ object ModelCatalog {
             "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", true, "",
             "Hears when you start or stop speaking, so you can interrupt hands-free"),
         ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,
-            "Piper en-US canonical LibriTTS-R medium", true, 2,
-            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", true,
+            "Piper en-US canonical LibriTTS-R medium · the lighter alternative voice", true, 7,
+            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
             "Speaks Hermes' replies aloud in a natural voice — fully offline"),
+        ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 80.3,
+            "On-device neural voice · fast, natural (model: OpenRAIL-M)", true, 2,
+            "8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259", true,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2",
+            "Speaks Hermes' replies in a natural voice, fully offline — the recommended voice"),
         ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 118.1,
             "Offline STT · fastest, lightest", true, 3,
             "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd", false, "",
@@ -75,6 +80,14 @@ object ModelCatalog {
 
     /** Required models that are not yet installed (app-private model dirs). */
     fun missingRequired(context: Context): List<ModelSpec> = required.filter { !isInstalled(context, it.id) }
+
+    /** The TTS engine token used when the user has not chosen one: the best installed
+     *  on-device voice (Supertonic, then Piper), else the system voice. */
+    fun defaultTts(context: Context): String = when {
+        isInstalled(context, "supertonic") -> "supertonic"
+        isInstalled(context, "piper-lessac") -> "piper"
+        else -> "system"
+    }
 
     /** The on-device STT model -> model-id map (Settings STT model picker). */
     val sttModels = listOf(
@@ -126,6 +139,8 @@ object ModelCatalog {
             "whisper-tiny", "whisper-base", "whisper-small" -> listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
             "silero-vad" -> listOf("silero_vad.onnx")
             "piper-lessac" -> listOf("model.onnx", "tokens.txt")
+            "supertonic" -> listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx",
+                "vector_estimator.int8.onnx", "vocoder.int8.onnx", "tts.json", "unicode_indexer.bin", "voice.bin")
             "gemma-e2b" -> listOf("gemma-4-E2B-it.litertlm")
             else -> return d.exists() && (d.listFiles()?.isNotEmpty() == true)
         }

@@ -24,6 +24,18 @@ Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series c
 - Fixes: turn decisions are never dropped behind tool narration; tool narration names the tool
   and never speaks a control token; without the model, a soul directive can no longer be spoken.
 
+## A better voice, and a soul that hears (vc134)
+
+- **Supertonic** is the new recommended on-device voice: ten voices at 44.1 kHz, about ten
+  times faster than real time. It was chosen by a measured bake-off against Pocket TTS and
+  Kokoro (`docs/VOICE-BAKEOFF.md`). Piper remains as the lighter option. Settings adds a
+  Speaker picker, and choosing an engine, speaker or delivery plays a short sample.
+- **The soul hears your tone** (Enhanced Realtime). Gemma 4 E2B listens to the last few
+  seconds of what you said, not just the transcript. Your tone gently steers how the voice
+  speaks and what Hermes is told about the moment. It runs on-device only (switch in
+  Settings → Enhanced Realtime) and falls back to words alone where the audio path is
+  unavailable.
+
 ## Public-release hygiene
 
 - No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.

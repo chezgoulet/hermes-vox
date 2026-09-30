@@ -3,6 +3,7 @@ package com.hermesvox
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Engine
@@ -72,7 +73,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 // a missing accelerator: a CPU presence beats no presence.
                 val (e, backend) = initEngine()
                 llm = e; loaded = true; activeBackend = backend
-                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend")
+                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears")
                 warmUp()
                 onReady(true)
             } catch (e: Throwable) {
@@ -158,14 +159,21 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      *  initializes; throws the CPU attempt's error if neither works (the caller
      *  then reports the layer unavailable, exactly as before). */
     private fun initEngine(): Pair<Engine, String> {
-        val attempts: List<Pair<String, () -> Backend>> =
-            listOf("gpu" to { Backend.GPU() }, "cpu" to { Backend.CPU() })
+        // Each accelerator is tried WITH the audio encoder first (the soul hears the caller's
+        // tone), then text-only: a model file or device without a working audio path must cost
+        // the soul its ears, never its voice.
+        val attempts: List<Triple<String, () -> Backend, Boolean>> = listOf(
+            Triple("gpu", { Backend.GPU() }, true), Triple("gpu", { Backend.GPU() }, false),
+            Triple("cpu", { Backend.CPU() }, true), Triple("cpu", { Backend.CPU() }, false))
         var lastError: Throwable? = null
-        for ((name, backend) in attempts) {
+        for ((name, backend, withAudio) in attempts) {
             try {
                 val e = Engine(EngineConfig(
                     modelPath = modelFile.absolutePath,
                     backend = backend(),
+                    // The audio encoder runs on the CPU: it encodes a few seconds once per turn,
+                    // and keeping it off the GPU leaves the GPU to the language model.
+                    audioBackend = if (withAudio) Backend.CPU() else null,
                     // 0.8/M3: maxNumTokens IS the kv-cache size (LiteRT-LM KDoc: "equivalent
                     // to the size of the kv-cache"). Left null it inherits the model's
                     // full 32k context, which is 4x more than this layer can ever use:
@@ -185,10 +193,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 if (name == "cpu" && lastError != null) {
                     VoxLog.e("GemmaExpress: GPU unavailable (${lastError?.message}) — running on CPU")
                 }
+                hears = withAudio
                 return e to name
             } catch (t: Throwable) {
                 lastError = t
-                VoxLog.e("GemmaExpress: $name backend init failed: ${t.message}")
+                VoxLog.e("GemmaExpress: $name backend (audio=$withAudio) init failed: ${t.message}")
             }
         }
         throw lastError ?: IllegalStateException("GemmaExpress: no backend available")
@@ -197,7 +206,15 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private val loadLock = Object()
     @Volatile private var loading = false
 
-    override fun express(intent: String, content: String, tone: String): String {
+    /** True when the engine came up with its audio encoder; cleared for the session if a heard
+     *  render fails, so one bad audio path degrades to text-only rather than failing every turn. */
+    @Volatile var hears = false
+        private set
+
+    override fun express(intent: String, content: String, tone: String): String =
+        expressHeard(intent, content, tone, null)
+
+    override fun expressHeard(intent: String, content: String, tone: String, audio: ByteArray?): String {
         // 0.8/M2.2: rail 3 BEFORE the generation, not after. The spacing check used to
         // run on the produced text, so a too-soon request paid for a full generation
         // and then discarded it. Same outcome (the guard returned null -> the caller
@@ -217,7 +234,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         }
         val t0 = System.currentTimeMillis()
         try {
-            return render(intent, content, tone, spaced)
+            return render(intent, content, tone, spaced, if (hears) audio else null)
         } finally {
             // 0.8/M1: the soul's OWN latency is the number that decides whether the
             // instant lane is viable (gate G2). Measured on-device, never estimated.
@@ -227,14 +244,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     }
 
     /** The render itself, timed by [express]. */
-    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true): String {
+    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true, audio: ByteArray? = null): String {
         if (!loaded || llm == null) return fallback.express(intent, content, tone)   // soul intents -> "" (RoutedExpress)
         // The soul intents carry a complete directive (ErSoulTurn); anything else is the legacy
         // operator-directive shape.
         val prompt = if (intent in VoiceOrchestrator.SOUL_INTENTS) content
             else "Operator directive: intent=$intent. Content to render: $content"
         return try {
-            generateWarm(prompt)
+            generateWarmHeard(prompt, audio)
                 // 0.6.3: the render rails — cap runaway output, enforce spacing.
                 .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), if (spaced) lastRenderAt else 0L) ?: "" }
                 // The soul intents are parsed by the caller: blank means "nothing", never the
@@ -264,8 +281,24 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private var soulConvPersona: String? = null
     @Volatile private var cancelRequested = false
 
+    /** A heard render; if the audio path fails, drop the soul's ears for the session and render
+     *  the same directive text-only — the turn still gets its decision. */
+    private fun generateWarmHeard(prompt: String, audio: ByteArray?): String {
+        if (audio == null) return generateWarm(prompt)
+        val t0 = System.currentTimeMillis()
+        return try {
+            generateWarm(prompt, audio).also {
+                VoxLog.d("event=soul-heard audioBytes=${audio.size} ms=${System.currentTimeMillis() - t0}")
+            }
+        } catch (e: Throwable) {
+            hears = false
+            VoxLog.e("GemmaExpress: heard render failed (${e.message}) — the soul reads words only this session")
+            generateWarm(prompt)
+        }
+    }
+
     /** Render [prompt] on the warm soul conversation, creating or rotating it as needed. */
-    private fun generateWarm(prompt: String): String {
+    private fun generateWarm(prompt: String, audio: ByteArray? = null): String {
         val engine = llm ?: return ""
         val p = persona
         synchronized(genLock) {
@@ -283,7 +316,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 soulConv = conv; soulConvPersona = p
             }
             return try {
-                val out = send(conv!!, prompt)
+                val out = send(conv!!, prompt, audio)
                 if (cancelRequested) "" else out
             } catch (t: Throwable) {
                 closeSoul()   // a failed conversation is never reused
@@ -323,8 +356,9 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         }
     }
 
-    /** One message on [conv], collected via the callback API. */
-    private fun send(conv: Conversation, prompt: String): String {
+    /** One message on [conv], collected via the callback API. [audio] (a WAV) rides the same
+     *  message ahead of the text, so the model hears the caller before it reads the directive. */
+    private fun send(conv: Conversation, prompt: String, audio: ByteArray? = null): String {
         run {
                     // 0.6.6: the CALLBACK API, not the Flow API. The Flow overload's
                     // onDone closes the ProducerScope channel
@@ -338,7 +372,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     val sb = StringBuilder()
                     val done = java.util.concurrent.CountDownLatch(1)
                     var error: Throwable? = null
-                    conv.sendMessageAsync(prompt, object : com.google.ai.edge.litertlm.MessageCallback {
+                    val cb = object : com.google.ai.edge.litertlm.MessageCallback {
                         override fun onMessage(m: com.google.ai.edge.litertlm.Message) {
                             // The message's Contents may carry text and/or tool
                             // calls; the presence layer only renders TEXT parts.
@@ -348,7 +382,9 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                         }
                         override fun onDone() { done.countDown() }
                         override fun onError(t: Throwable) { error = t; done.countDown() }
-                    })
+                    }
+                    if (audio != null) conv.sendMessageAsync(Contents.of(Content.AudioBytes(audio), Content.Text(prompt)), cb)
+                    else conv.sendMessageAsync(prompt, cb)
                     if (!done.await(20, java.util.concurrent.TimeUnit.SECONDS)) {
                         try { conv.cancelProcess() } catch (_: Throwable) {}
                         throw IllegalStateException("soul render timed out")

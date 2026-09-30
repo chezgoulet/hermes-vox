@@ -85,8 +85,12 @@ single source of truth for the wire protocol.
   gate (`VoiceController`, `StreamFence`, `StreamRetirementState`).
 
 ### 3. The voice — on-device
-Piper TTS via sherpa-onnx (`SherpaTts`, streaming by sentence) with the system TTS as a
-fallback. `SpeechCursor` locks the on-screen words to what has actually been spoken.
+Supertonic (ten voices, 44.1 kHz) via sherpa-onnx is the recommended voice, chosen by a
+measured bake-off ([voice bake-off][bakeoff]); Piper is the lighter option and the system
+TTS the fallback. One engine (`SherpaTts` + `SherpaVoice`) streams by sentence behind the
+same fence for every voice. Delivery follows the caller's mood as the soul heard it
+(`VoiceMood`: speed and pause length). `SpeechCursor` locks the on-screen words to what
+has actually been spoken.
 
 ### 4. The presence — Enhanced Realtime (the soul)
 Enhanced Realtime adds a small on-device model as the *soul's voice*, never a second
@@ -108,6 +112,11 @@ brain ([design][er-design]):
   it), then carries what the voice did. If the voice already answered, the mind may
   reply `<<SKIP>>` — filtered so it is never heard. No double answers, and the voice's
   line lands in the mind's own session history.
+- **The soul hears (`SoulAudio`, `VoiceMood`).** Gemma 4 E2B's own audio encoder takes
+  the caller's last few seconds of audio alongside the transcript. The soul tags their
+  tone (`{calm}` `{warm}` `{lively}` `{tense}`), which steers the voice's delivery and
+  becomes the vibe Hermes is told. On-device only, with a fallback to words alone if the
+  audio path is unavailable.
 - **Safety lists stay deterministic (`ErIntent`).** Only backchannel-never-cancels and
   barge-cancels use enumerable rules. A 2B model is never in the abort path.
 - **Presence ladder (`ErFillers`, `ErPresence`, `ErClips`).** Under 900 ms, silence
@@ -136,7 +145,7 @@ Both are drawn on true OLED black.
 
 | Sesame component | Vox mechanism | Status |
 |---|---|---|
-| Emotional intelligence | Soul answers emotion/small talk in the agent's voice; the vibe travels via VOX.md | Shipped (ER, alpha) |
+| Emotional intelligence | The soul *hears* the caller's tone (Gemma audio input); mood steers the voice's delivery and the vibe Hermes is told | Shipped (ER, alpha); field-verify |
 | Conversational dynamics | The beat on every turn, barge-in, backchannel hold, presence ladder, arbiter, speech-locked text | Shipped; semantic end-of-turn **blocked** on streaming STT |
 | Contextual awareness | Tool-aware narration; Hermes' own memory and context | Shipped |
 | Consistent personality | One identity: `SOUL.md` → agent-authored VOX.md → soul prompt | Shipped (ER) |
@@ -150,8 +159,9 @@ Both are drawn on true OLED black.
   prerequisite ([plan][plan08], M4).
 - **The beat, in the field.** Built and unit-tested; its latency on a real phone GPU
   is what the `express-probe … warm=` log line and the `soul(beat=…)` counters prove.
-- **Voice expressiveness.** Piper is fast but not CSM-grade prosody. The TTS seam
-  (`SherpaTts`) is where a more expressive on-device voice would plug in.
+- **Voice expressiveness.** Supertonic is natural but has no emotion control; mood
+  moves only speed and pauses. Prosody conditioned on the conversation (Sesame's CSM,
+  or its compact descendant Marvis) is not yet runnable on Android; see the bake-off.
 - **Half-duplex.** Vox listens *or* speaks (with barge-in), not both. Full-duplex
   models are the long-horizon path ([research][research]).
 
@@ -159,3 +169,4 @@ Both are drawn on true OLED black.
 [er-design]: DESIGN-enhanced-realtime-voice.md
 [plan08]: PLAN-0.8-accelerator.md
 [research]: research-on-device-voice-2026-08-27.md
+[bakeoff]: VOICE-BAKEOFF.md
