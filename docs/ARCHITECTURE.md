@@ -139,10 +139,25 @@ brain ([design][er-design]):
   p50/p95, arbiter and barge outcomes.
 
 ### 5. The being and the words — UI
-`AvatarView` is the presence: a generative particle being with 20 archetypes. It reacts
-to *real* agent state (listening, thinking, speaking, stalls, and each tool call's
-motif via `MotionState`). `CrawlView` renders the reply locked to the voice.
-Both are drawn on true OLED black.
+The being is drawn on the GPU (OpenGL ES 3, on its own thread: `BeingThread`,
+`BeingRenderer`):
+- **6,000 stateless particles.** Each one's position is computed in the vertex shader
+  every frame from its identity and its shape's exact geometry (`BeingShaders`), so rings
+  are rings, lids are curves and solids have depth-shaded backs.
+- **27 shapes,** each designed to read as its name: the nebula, iris, galaxy, jellyfish,
+  globe scan, constellation, terminal, flame, Möbius ribbon, black hole, flower,
+  soundwave, lightning, atom, eye, ripples, radar, octopus, lit sphere, DNA helix, knot,
+  aurora, harmonograph, tesseract, mandala, butterfly and hourglass.
+- **Staggered morphs,** with a swirl mid-flight, between any two shapes.
+- **Light:** two-level bloom and a luminance-preserving filmic tone curve; categories that
+  want trails get real frame feedback.
+- **Frame pacing:** 60 fps, paused when not visible. It is back-pressured by a GPU fence
+  and steps quality down (fewer points, a smaller buffer, one bloom level) if a device
+  cannot keep up, so it can never starve the UI.
+
+`AvatarView` remains the brain: state and tool → shape (`MotionState`, the per-state
+picks), the palettes and visual categories, and the eye, octopus and recoil state.
+`CrawlView` renders the reply locked to the voice. Both sit on true OLED black.
 
 ### 6. Lifecycle and trust
 - `VoiceService` (foreground, microphone type) owns the live call in the background.
