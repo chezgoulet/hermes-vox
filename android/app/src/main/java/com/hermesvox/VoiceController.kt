@@ -413,6 +413,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // #12: the interrupting utterance carried out of the last barge drain;
                 // non-null means the next segment STARTS with it (already in speech).
                 var seed: FloatArray? = null
+                // EchoTailRule: when the previous reply's audio ended + its plausible tail. 0 = no
+                // reply just played (first segment, or after a barge-seeded turn).
+                var echoGuardUntil = 0L
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
@@ -554,6 +557,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // segment's first sample and no speech arrived after its snapshot:
                     // then it IS the whole utterance, and reusing it is the latency win.
                     val early = earlyCommitSeg == segId
+                    // EchoTailRule: the mic reopened live (no deaf cooldown), so the reply's own
+                    // tail can land in the first segment. Short speech that ended inside the guard
+                    // is that tail — drop it before any transcription. Anything longer, or later,
+                    // is the caller answering straight away, and keeps every syllable.
+                    val speechEndAt = android.os.SystemClock.uptimeMillis() - (seg.size - lastSpeechEnd) * 1000L / sr
+                    val guardUntil = echoGuardUntil
+                    echoGuardUntil = 0L   // one guarded segment per reply
+                    if (seeded == null && inSpeech && EchoTailRule.isEchoTail(speechEndAt, speechSamples * 1000L / sr, guardUntil)) {
+                        VoxLog.d("event=echo-tail-drop speechMs=${speechSamples * 1000L / sr} endedMsAfterGuard=${speechEndAt - guardUntil}")
+                        continue
+                    }
                     val speechOk = inSpeech && seg.size >= (sr * minSpeechMs / 1000)
                     val partial = latestPartial.get()?.takeIf { it.segId == segId }
                     val reused = speechOk && partial != null &&
@@ -824,9 +838,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                     }
                     if (seed == null) {
-                        try { r.stop() } catch (_: Throwable) {}
-                        // Post-turn cooldown + mic drain: don't re-capture the utterance we just sent.
-                        android.os.SystemClock.sleep(450L)
+                        // No deaf cooldown (EchoTailRule): the recorder keeps running so a caller
+                        // who answers straight away keeps their first syllables; the reply's echo
+                        // tail is judged on the next segment instead.
+                        echoGuardUntil = android.os.SystemClock.uptimeMillis() + EchoTailRule.GUARD_MS
                     }
                 }
                 loopActive = false
