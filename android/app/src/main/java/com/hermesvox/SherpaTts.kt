@@ -184,14 +184,24 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // IMPORTANT: sherpa requires assetManager=null when loading from
                 // an absolute filesystem path (filesDir) — else it tries to read
                 // the file as an asset and aborts (issue #2562).
-                tts = OfflineTts(null, cfg)
-                VoxLog.d("SherpaTts loaded: piper model threads=$ttsThreads cores=${Runtime.getRuntime().availableProcessors()}")
+                val eng = OfflineTts(null, cfg)
+                val warmMs = warm(eng)
+                tts = eng
+                VoxLog.d("SherpaTts loaded: piper model threads=$ttsThreads cores=${Runtime.getRuntime().availableProcessors()} warmMs=$warmMs")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("SherpaTts init failed: ${e.message}")
                 onReady(false)
             }
         }
+    }
+
+    /** READY MEANS WARM: one throwaway synthesis before the engine reports ready, so the first
+     *  reply is not the cold ONNX pass. Nothing is played. Returns the warm-up time (ms). */
+    private fun warm(eng: OfflineTts): Long {
+        val t0 = System.currentTimeMillis()
+        try { synth(eng, "Okay.") } catch (_: Throwable) {}
+        return System.currentTimeMillis() - t0
     }
 
     private fun initSupertonic(onReady: (Boolean) -> Unit) {
@@ -211,8 +221,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                     voiceStyle = f("voice.bin").absolutePath
                 }
                 val modelCfg = OfflineTtsModelConfig(supertonic = st, numThreads = ttsThreads, provider = "cpu")
-                tts = OfflineTts(null, OfflineTtsConfig(modelCfg, "", "", 256, 1.0f))   // assetManager=null: absolute path (#2562)
-                VoxLog.d("SherpaTts loaded: supertonic speakers=${tts?.numSpeakers()} threads=$ttsThreads")
+                val eng = OfflineTts(null, OfflineTtsConfig(modelCfg, "", "", 256, 1.0f))   // assetManager=null: absolute path (#2562)
+                val warmMs = warm(eng)
+                tts = eng
+                VoxLog.d("SherpaTts loaded: supertonic speakers=${eng.numSpeakers()} threads=$ttsThreads warmMs=$warmMs")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("SherpaTts(supertonic) init failed: ${e.message}")

@@ -172,9 +172,10 @@ Both are drawn on true OLED black.
   resident memory (a 482 MB download) are unmeasured, which is why whisper-base stays the
   default. The vanish fix (`BargeCarry`) is proven from the code and unit-tested; its
   field witness is the `event=barge-carry` log line.
-- **First words after a reply ends.** A natural turn end still stops the recorder and
-  sleeps a 450 ms cooldown (so the reply's echo tail is not heard as the user); a user who
-  starts talking in that window loses the first syllables. Only a *barge* carries audio.
+- **Echo-tail judgement, in the field.** After a reply the mic reopens live (no deaf
+  cooldown); a short segment that ended inside the 450 ms tail window is dropped as echo
+  (`EchoTailRule`, logged as `event=echo-tail-drop`). Its thresholds are unit-tested, not yet
+  tuned against real speaker echo.
 - **The beat, in the field.** Built and unit-tested; its latency on a real phone GPU
   is what the `express-probe … warm=` log line and the `soul(beat=…)` counters prove.
 - **Voice expressiveness.** Supertonic is natural but has no emotion control; mood

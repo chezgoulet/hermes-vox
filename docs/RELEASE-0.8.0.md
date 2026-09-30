@@ -58,6 +58,18 @@ Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series c
   values the upstream docs suggest make it loop or drop final words).
 - New: `tools/sttbench`, a 25-clip WER / speed / hallucination bench with the baseline numbers.
 
+## Answer straight away; ready means warm (vc136)
+
+- **No more clipped first words.** After every reply the mic used to go deaf for 450 ms, so
+  answering immediately lost your first syllables. The mic now stays open; the reply's own
+  echo is recognised afterwards (short, and ended inside that window) instead of by not
+  listening.
+- **"Preparing your voice" now means ready.** The soul used to report ready before priming,
+  so the pill cleared while it was still warming up and the first turn waited behind it. Now
+  the soul is primed, and the voice and speech recognizer each finish a warm-up pass, before
+  the pill clears.
+- The Speaker row appears only for the engine it controls (Supertonic).
+
 ## Public-release hygiene
 
 - No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.

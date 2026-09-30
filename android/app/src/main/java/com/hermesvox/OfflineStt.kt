@@ -76,9 +76,18 @@ abstract class SherpaOfflineStt(protected val context: Context, protected val mo
             try {
                 val cfg = buildConfig()
                 if (cfg == null) { onReady(false); return@thread }
-                rec = OfflineRecognizer(null, cfg)   // assetManager=null: absolute-path model
+                val r = OfflineRecognizer(null, cfg)   // assetManager=null: absolute-path model
+                // READY MEANS WARM: one throwaway decode of a second of faint noise before the
+                // leg reports ready, so the caller's first utterance is not the cold ONNX pass
+                // (first-run graph init + allocation). The output is discarded.
+                val tw = System.currentTimeMillis()
+                try {
+                    val warm = FloatArray(16000) { ((it * 7919) % 200 - 100) / 100_000f }
+                    val s = r.createStream(); s.acceptWaveform(warm, 16000); r.decode(s); s.release()
+                } catch (_: Throwable) {}
+                rec = r
                 ready = true
-                VoxLog.d("$name loaded: threads=$sttThreads cores=${Runtime.getRuntime().availableProcessors()}")
+                VoxLog.d("$name loaded: threads=$sttThreads cores=${Runtime.getRuntime().availableProcessors()} warmMs=${System.currentTimeMillis() - tw}")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("$name init failed: ${e.message}")
