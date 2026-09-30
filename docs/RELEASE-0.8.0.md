@@ -95,6 +95,23 @@ Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series c
   hangs the call for 90 s on "Preparing your voice" and then claims the models failed; the
   call opens and the warning says what is missing.
 
+## The being, rebuilt (vc139)
+
+- **Drawn on the GPU.** The being is now 6,000 points of light rendered with OpenGL ES 3
+  on its own thread, with real bloom and a filmic tone curve. It used to be 320 soft dots
+  on the CPU. Every shape is exact, so each one reads as what it is.
+- **Every shape redesigned.** The iris has fibres and a breathing pupil. The galaxy has
+  spiral arms and the jellyfish a pulsing bell with tentacles. The globe turns under a
+  scan band, the constellation's links carry travelling pulses, and the terminal types
+  itself out. The flame rises and throws embers, and the black hole has a lensed accretion
+  disk. The eye darts and blinks, the radar sweeps and its blips answer, the octopus swims,
+  and the sphere is lit.
+- **Eight new shapes:** DNA helix, knot, aurora, harmonograph, tesseract, mandala,
+  butterfly, and an hourglass for waiting.
+- **Smooth morphs** between any two shapes, and **trails** for the Comet category.
+- **Efficient by design:** 60 fps, paused in the background, and it lowers its own
+  quality on a GPU that cannot keep up rather than slowing the phone.
+
 ## Public-release hygiene
 
 - No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.
