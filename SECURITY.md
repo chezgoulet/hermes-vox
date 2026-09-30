@@ -45,7 +45,7 @@ Hermes Vox is a **connect-only client**. It does not host the agent, does not
 ship a gateway, has no accounts, and makes no cloud calls of its own. The user
 brings their own Hermes gateway and enters its address **and** its API key in
 the app (onboarding + Settings → Entity). Speech processing is on-device by
-default (Whisper STT, Silero VAD, Piper TTS); the only network destinations are
+default (Whisper STT, Silero VAD, Supertonic TTS); the only network destinations are
 the endpoint the user configures and the model hosts the user's downloads come
 from (`README.md:134-157`).
 

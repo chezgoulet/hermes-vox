@@ -47,7 +47,7 @@ beyond Sesame:
   │                                │                 ▼
   │                                └──► ErArbiter (P0 stop · P1 mind · P2 soul · P3 filler)
   │                                                  │
-  └──── barge-in (cuts audio + cancels stream) ◄── Piper TTS / system TTS ─► speaker
+  └──── barge-in (cuts audio + cancels stream) ◄── Supertonic / Piper TTS ─► speaker
                                                      │
                             AvatarView (the being) ◄─┴─► CrawlView (the words)
 ```

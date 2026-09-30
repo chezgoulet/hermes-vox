@@ -8,8 +8,6 @@ removed.)
 
 - [ ] **Enhanced Realtime: wire Gemma presence into the immersive view.** The Gemma 4 E2B
       expression layer loads (LiteRT-LM) but is Main-only. Issue #52.
-- [ ] **Recapture the README screenshots against the current build** (Post-0.5.6). The
-      settings.png is unrelated, main_rest/onboarding are duplicated. A device task.
 - [ ] **Strip the dead Ebitengine bind** (`game/`, `mobile/mobile.go` `Start()`), `go mod
       tidy` away Ebitengine, rebuild `mobile.aar`, and re-gate the whole app. Keeps the
       portable `voice/` + `mobile/session.go`; drops dead native surface + the X11 build
