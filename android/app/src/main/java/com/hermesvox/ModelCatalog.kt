@@ -163,7 +163,12 @@ object ModelCatalog {
     fun isInstalled(context: Context, id: String): Boolean {
         val d = modelDir(context, id)
         val markers = when (id) {
-            "whisper-tiny", "whisper-base", "whisper-small" -> listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
+            // int8 or fp32 weights (OfflineWhisperStt prefers int8 and prunes fp32 once int8 is in use).
+            "whisper-tiny", "whisper-base", "whisper-small" -> return File(d, "tokens.txt").exists() &&
+                listOf("encoder", "decoder").all { p ->
+                    File(d, "$p.onnx").exists() || File(d, "$p.int8.onnx").exists() ||
+                        d.listFiles()?.any { it.name.endsWith("-$p.int8.onnx") } == true
+                }
             "parakeet-v2" -> listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
             "silero-vad" -> listOf("silero_vad.onnx")
             "piper-lessac" -> listOf("model.onnx", "tokens.txt")

@@ -14,8 +14,10 @@ package com.hermesvox
  *    long audio. Half the cores, floored at 2 (one thread starves the encoder)
  *    and capped at 4 (past that the decode is memory-bound and the extra threads
  *    only steal CPU from the capture path).
- *  - TTS (Piper) — already outruns real time, so a modest 2; more would compete
- *    with the reply's own streaming playback for no throughput gain.
+ *  - TTS (Piper, Supertonic) — 2 wherever there are 4+ cores. Measured on Supertonic:
+ *    the first sentence synthesizes in 249 ms on 1 thread, 171 ms on 2, and no faster on 3
+ *    or 4 — so 2 is the knee. (The old cores/4 rule gave 4- and 6-core phones ONE thread,
+ *    a 45% slower first sentence.)
  *  - VAD — stays at ONE thread on purpose: it is evaluated per 30 ms frame on the
  *    capture path, where frame jitter costs more than any throughput win.
  *
@@ -41,7 +43,7 @@ object VoxThreads {
 
     /** Piper thread count. */
     fun tts(cores: Int, pref: Int): Int =
-        if (pref in MIN..MAX) pref else (cores / 4).coerceIn(1, 2)
+        if (pref in MIN..MAX) pref else (cores / 2).coerceIn(1, 2)
 
     /** The value string shown on the Settings row. */
     fun label(pref: Int): String =

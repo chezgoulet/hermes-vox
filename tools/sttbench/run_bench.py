@@ -87,7 +87,7 @@ def fetch(model_dir, ids):
         print(f"ok {mid} (sha256 verified)")
 
 
-def build(mid, model_dir, threads, tail_paddings):
+def build(mid, model_dir, threads, tail_paddings, int8=False):
     import sherpa_onnx as so
     tarball, _, kind = MODELS[mid]
     d = model_dir / tarball.replace(".tar.bz2", "")
@@ -95,10 +95,10 @@ def build(mid, model_dir, threads, tail_paddings):
         raise SystemExit(f"{d} missing — run with --fetch")
     if kind == "whisper":
         stem = mid.split("-")[1] + ".en"
-        # The app uses the fp32 encoder/decoder (ModelDownloader renames
-        # "*-encoder.onnx", which the int8 files do not match).
+        # --int8 selects the int8 weights the upstream package ships beside the fp32 ones.
+        q = ".int8" if int8 else ""
         return kind, so.OfflineRecognizer.from_whisper(
-            encoder=str(d / f"{stem}-encoder.onnx"), decoder=str(d / f"{stem}-decoder.onnx"),
+            encoder=str(d / f"{stem}-encoder{q}.onnx"), decoder=str(d / f"{stem}-decoder{q}.onnx"),
             tokens=str(d / f"{stem}-tokens.txt"), language="en", task="transcribe",
             num_threads=threads, tail_paddings=tail_paddings, decoding_method="greedy_search")
     if kind == "nemo":
@@ -201,7 +201,7 @@ def edit_distance(r, h):
 
 # ---------------------------------------------------------------- run
 def run(mid, args):
-    kind, rec = build(mid, args.models, args.threads, args.tail_paddings)
+    kind, rec = build(mid, args.models, args.threads, args.tail_paddings, args.int8)
     manifest = [json.loads(l) for l in open(CORPUS / "manifest.jsonl")]
     rows, errs, words, dec, aud = [], 0, 0, 0.0, 0.0
     cat = {}
@@ -247,6 +247,7 @@ def main():
                     help="whisper window seconds (SttWindows); 0 = one decode call, no windowing")
     ap.add_argument("--old-early-start", action="store_true",
                     help="decode only each clip's last 6 s (the pre-fix early-start text) for comparison")
+    ap.add_argument("--int8", action="store_true", help="whisper: use the package's int8 encoder/decoder")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
     ids = DEFAULT_SET if args.model == "all" else [args.model]

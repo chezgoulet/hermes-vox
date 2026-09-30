@@ -27,6 +27,9 @@ class VoxThreadsTest {
     @Test fun auto_tts_is_conservative() {
         assertEquals(1, VoxThreads.tts(2, VoxThreads.AUTO))
         assertEquals(2, VoxThreads.tts(8, VoxThreads.AUTO))
+        // 4- and 6-core phones get the measured knee (2), not the old cores/4 = 1.
+        assertEquals(2, VoxThreads.tts(4, VoxThreads.AUTO))
+        assertEquals(2, VoxThreads.tts(6, VoxThreads.AUTO))
         assertEquals(2, VoxThreads.tts(9, VoxThreads.AUTO))     // Pixel 9 class
         assertEquals(2, VoxThreads.tts(16, VoxThreads.AUTO))
     }

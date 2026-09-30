@@ -80,6 +80,21 @@ Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series c
   guards every install, so a bad resume can never install a corrupt model.
 - Downloads run one at a time, and there's a free-space check before starting.
 
+## Getting more from the hardware (vc138)
+
+- **Speech recognition runs on int8 weights.** The app loaded Whisper's full-precision files
+  and ignored the int8 ones shipped beside them. Measured on the STT bench: whisper-base int8
+  has 4.5% word error vs 5.6% (noisy audio 16% vs 32%), uses a quarter of the memory, and is
+  faster; ARM phone cores have dedicated int8 instructions. The unused full-precision files
+  are removed after the switch (~290 MB freed for base, ~480 MB for small).
+- **The voice gets two CPU threads on 4- and 6-core phones** (it got one): first sentence
+  249 ms → 171 ms measured; more threads measured no faster.
+- **The being draws on the display's own frame clock** (vsync-aligned ~30 fps) instead of a
+  30 ms timer that landed on uneven frames. Smoother motion at the same GPU cost.
+- Enhanced Realtime without the presence model (or with one that cannot start) no longer
+  hangs the call for 90 s on "Preparing your voice" and then claims the models failed; the
+  call opens and the warning says what is missing.
+
 ## Public-release hygiene
 
 - No personal cleartext exceptions: every gateway needs TLS except tailnet MagicDNS names.

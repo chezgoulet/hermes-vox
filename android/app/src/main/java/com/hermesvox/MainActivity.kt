@@ -392,7 +392,13 @@ class MainActivity : AppCompatActivity() {
         // audio (GPU work contending with a live turn). Realtime never waits on it: it
         // does not use the express model, so gating it there would add a full cold load
         // for nothing. Diagnostics keep the per-leg detail; the UI shows one word.
-        val soulReady = !modeIsEnhanced() || express.available
+        // Wait for the soul only when it can actually arrive. Without the presence model
+        // installed — or with one that failed to start on this device — the old gate waited
+        // the full 90 s and then reported "Voice models failed to load", which was false: the
+        // voice was ready, the soul simply was not coming. The call opens, and the ER
+        // requirement pill (refreshModelsGate / the load callback) says what is missing.
+        val soulComing = ModelCatalog.isInstalled(this, "gemma-e2b") && (express as? GemmaExpress)?.loadFailed != true
+        val soulReady = !modeIsEnhanced() || express.available || !soulComing
         if (!c.isWarm() || !soulReady) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
             if (warmRetries < 180) {
@@ -1634,7 +1640,7 @@ class MainActivity : AppCompatActivity() {
             // Load the on-device model once. A model that is installed but cannot start (no
             // supported accelerator/CPU path on this device) is said out loud, not hidden.
             if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) g.load { ok ->
-                if (!ok) runOnUiThread {
+                if (!ok && g.loadFailed) runOnUiThread {
                     modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
                 }
             }
@@ -1669,14 +1675,33 @@ class MainActivity : AppCompatActivity() {
         avatar.setVisualGlow(prefs.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
     }
 
+    /** ~30 fps for the being, with slack so the check lands on the right vsync at 60/90/120 Hz. */
+    private val FRAME_BUDGET_NS = 33_333_333L
+    private val FRAME_SLACK_NS = 4_000_000L
+
     private fun startAvatarLoop() {
         lastSignalAt = android.os.SystemClock.uptimeMillis()
         val tick = object : Runnable {
             // previewB rides THIS clock — no parallel animation loop. It is posted on
             // the avatar, so it dies with the view exactly as it always has.
-            override fun run() { motionTick(); avatar.invalidate(); avatar.postDelayed(this, 30) }
+            //
+            // VSYNC-ALIGNED at ~30 fps. It used to be postDelayed(30): a 30 ms period divides
+            // neither a 16.7 ms (60 Hz) nor an 8.3 ms (120 Hz) frame, so draws landed on
+            // uneven vsyncs (visible micro-stutter). postOnAnimation runs on the display's
+            // own frame clock, and drawing only when a 30 fps budget has elapsed lands every
+            // Nth vsync — the same GPU cost (the GPU is shared with the soul model), even
+            // pacing. Motion is time-based (dt from real time), so the cadence is free to change.
+            private var lastDrawNs = 0L
+            override fun run() {
+                val now = System.nanoTime()
+                if (now - lastDrawNs >= FRAME_BUDGET_NS - FRAME_SLACK_NS) {
+                    lastDrawNs = now
+                    motionTick(); avatar.invalidate()
+                }
+                avatar.postOnAnimation(this)
+            }
         }
-        avatar.post(tick)
+        avatar.postOnAnimation(tick)
     }
 
     /** If a probe.wav is present in the selected STT model dir, transcribe it (proof hook). */

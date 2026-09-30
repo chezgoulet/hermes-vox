@@ -239,6 +239,8 @@ class ModelDownloader(context: Context) {
         }
         when (specId) {
             "whisper-tiny", "whisper-base", "whisper-small" -> {
+                rename(".*-encoder\\.int8\\.onnx", "encoder.int8.onnx")
+                rename(".*-decoder\\.int8\\.onnx", "decoder.int8.onnx")
                 rename(".*-encoder\\.onnx", "encoder.onnx")
                 rename(".*-decoder\\.onnx", "decoder.onnx")
                 rename(".*-tokens\\.txt", "tokens.txt")
