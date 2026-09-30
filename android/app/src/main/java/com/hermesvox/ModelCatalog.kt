@@ -65,8 +65,18 @@ object ModelCatalog {
             "Offline STT · best accuracy, heaviest", true, 5,
             "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false, "",
             "Turns your speech into text on-device — most accurate, heavier"),
+        // Parakeet-TDT 0.6B v2 (NVIDIA, CC-BY-4.0), the sherpa-onnx int8 packaging;
+        // sha256 of the upstream asr-models release artifact. Opt-in: on the sttbench
+        // corpus it beats whisper-base.en on accuracy AND speed (host CPU: WER 3.4% vs
+        // 5.6%, RTF 0.08 vs 0.19, noisy clips 4% vs 32%, no hallucinated text on
+        // non-speech) but it is a 482 MB download and a larger resident model, so the
+        // default stays whisper-base until it is measured on a phone.
+        ModelSpec("parakeet-v2", "Parakeet TDT 0.6B v2 (int8)", "stt", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2", 482.5,
+            "Offline STT · most accurate + fastest, largest download (English)", true, 6,
+            "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad", false, "",
+            "Turns your speech into text on-device — most accurate, larger download"),
         ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,
-            "On-device expression layer (Enhanced Realtime, alpha)", true, 6,
+            "On-device expression layer (Enhanced Realtime, alpha)", true, 7,
             "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", false,
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
             "Optional on-device presence layer for Enhanced Realtime (alpha) mode — runs on the GPU")
@@ -93,10 +103,27 @@ object ModelCatalog {
     val sttModels = listOf(
         "whisper-tiny" to "Whisper tiny.en",
         "whisper-base" to "Whisper base.en",
-        "whisper-small" to "Whisper small.en"
+        "whisper-small" to "Whisper small.en",
+        "parakeet-v2" to "Parakeet TDT 0.6B v2"
     )
     /** Blessed default STT model id. */
     const val DEFAULT_STT_MODEL = "whisper-base"
+
+    /** Decode language for a MULTILINGUAL Whisper model ("" = auto-detect). The
+     *  shipped .en models ignore it (they only transcribe English). */
+    const val KEY_STT_LANGUAGE = "stt_language"
+
+    /** The STT models decoded by sherpa's NeMo transducer path (not Whisper). */
+    fun isTransducerStt(modelId: String): Boolean = modelId.startsWith("parakeet-")
+
+    /** English-only Whisper checkpoints (the upstream ".en" exports). */
+    private val ENGLISH_ONLY_WHISPER = setOf("whisper-tiny", "whisper-base", "whisper-small")
+
+    /** The language a Whisper model is decoded with: always "en" for the .en
+     *  models (passing anything else is meaningless to them), else the user's
+     *  `stt_language` pref, trimmed/lowercased ("" = let Whisper detect it). */
+    fun whisperLanguage(modelId: String, pref: String?): String =
+        if (modelId in ENGLISH_ONLY_WHISPER) "en" else pref.orEmpty().trim().lowercase()
 
     const val KEY_STT_BACKEND = "stt_backend"
     const val KEY_STT_MODEL = "stt_model"
@@ -137,6 +164,7 @@ object ModelCatalog {
         val d = modelDir(context, id)
         val markers = when (id) {
             "whisper-tiny", "whisper-base", "whisper-small" -> listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
+            "parakeet-v2" -> listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
             "silero-vad" -> listOf("silero_vad.onnx")
             "piper-lessac" -> listOf("model.onnx", "tokens.txt")
             "supertonic" -> listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx",

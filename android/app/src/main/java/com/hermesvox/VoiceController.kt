@@ -282,7 +282,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** On-device Whisper leg when its model is installed, else platform (null). */
     private fun onDeviceStt(): VoxStt? {
         val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
-        return if (ModelCatalog.isInstalled(context, model)) OfflineWhisperStt(context, model) else null
+        return if (ModelCatalog.isInstalled(context, model)) onDeviceSttFor(context, model) else null
     }
 
     private fun buildStt(): VoxStt? {
@@ -291,7 +291,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         return when (resolveSttLeg(backend, prefString(KEY_STT_REMOTE_URL, ""),
             ModelCatalog.isInstalled(context, model))) {
             ModelCatalog.BACKEND_REMOTE -> RemoteStt(context).also { remoteLeg = it }
-            ModelCatalog.BACKEND_ONDEVICE -> OfflineWhisperStt(context, model)
+            ModelCatalog.BACKEND_ONDEVICE -> onDeviceSttFor(context, model)
             else -> null   // platform SpeechRecognizer (Settings -> Platform)
         }
     }
