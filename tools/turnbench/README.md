@@ -3,7 +3,7 @@
 A TurnBench submission predictor that simulates the **deployed Hermes Vox**
 turn-end (EOT) and barge-in (interruption) rules on the benchmark's two-channel
 audio, using the same Silero VAD v4 model the Vox capture loop feeds
-(`silero_vad.onnx`, scp'd from `sasquatch:/home/c/hermes-vox/models-store/silero-vad.zip`,
+(`silero_vad.onnx`, scp'd from `sasquatch:<repo>/models-store/silero-vad.zip`,
 v4 ONNX signature `x[1,512] / h[2,1,64] / c[2,1,64] -> prob`).
 
 Reference source for all operating points: the `/tmp/vox-work` checkout

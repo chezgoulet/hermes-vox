@@ -8,104 +8,155 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
-import kotlin.concurrent.thread
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
 /**
- * ModelDownloader — streams a blessed model from its CANONICAL UPSTREAM URL
- * (the k2-fsa sherpa-onnx model zoo by default) into app-private storage,
- * handles the upstream formats (zip / tar.bz2 / a bare onnx), and unpacks to
- * filesDir/models/<id>/. Supports cancel + progress.
+ * ModelDownloader — the transfer engine behind [ModelDownloads]: streams a blessed model from
+ * its CANONICAL UPSTREAM URL into app-private storage, verifies its pinned sha256, and unpacks
+ * the upstream format (zip / tar.bz2 / a bare onnx) to filesDir/models/<id>/.
+ *
+ * RESUMABLE (DownloadResume): the partial file survives failures and cancels, beside a small
+ * record of the artifact it belongs to (URL + pinned sha256). The next attempt asks for the
+ * missing bytes with a Range header instead of starting over; a mid-stream error retries by
+ * itself with backoff, resuming each time. The sha256 over the COMPLETE file is still the gate
+ * to installing, so a bad resume costs a re-download, never a corrupt model. Blocking — it runs
+ * on the download service's worker thread.
  */
-class ModelDownloader(private val context: Context) {
+class ModelDownloader(context: Context) {
+    private val context = context.applicationContext
 
-    interface Listener {
-        fun onProgress(id: String, downloaded: Long, total: Long)
-        fun onDone(id: String)
-        fun onError(id: String, msg: String)
+    /** Where the transfer is: fetching bytes, waiting for a network, hashing, or unpacking. */
+    enum class Phase { DOWNLOAD, WAITING_NETWORK, VERIFY, UNPACK }
+
+    /** True when the phone has a network that claims internet (the download can proceed). */
+    private fun online(): Boolean = try {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    } catch (_: Throwable) { true }   // unknown: let the attempt decide
+
+    private fun partFile(id: String) = File(File(context.filesDir, "downloads").apply { mkdirs() }, "$id.part")
+    private fun metaFile(id: String) = File(partFile(id).path + ".meta")
+
+    /** Bytes already on disk for this model's current artifact (0 when none or stale). */
+    fun partialBytes(spec: ModelSpec): Long {
+        val part = partFile(spec.id)
+        if (!part.exists()) return 0L
+        val meta = metaFile(spec.id).takeIf { it.exists() }?.readLines().orEmpty()
+        return if (DownloadResume.sameArtifact(meta.getOrNull(0), meta.getOrNull(1), urlFor(spec), spec.sha256)) part.length() else 0L
     }
 
-    @Volatile private var cancelled = false
-    private var activeId: String? = null
+    /** Drop a partial (the user discards it, or the artifact proved bad). */
+    fun discardPartial(id: String) { partFile(id).delete(); metaFile(id).delete() }
 
-    fun download(spec: ModelSpec, listener: Listener) {
-        thread {
-            activeId = spec.id
-            cancelled = false
-            val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-            var wl: android.os.PowerManager.WakeLock? = null
-            try { wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hermesvox:model-dl"); wl.acquire(30 * 60 * 1000L) } catch (_: Throwable) {}
-
-            try {
-                VoxLog.d("model " + spec.id + ": downloading " + spec.file)
-                val err = doDownload(spec, listener)
-                VoxLog.d("model " + spec.id + ": result=" + (if (err != null) err else "OK"))
-                if (cancelled) listener.onError(spec.id, "cancelled")
-                else if (err != null) listener.onError(spec.id, err)
-                else listener.onDone(spec.id)
-            } catch (e: Throwable) {
-                if (!cancelled) { VoxLog.d("model " + spec.id + ": threw " + e.message); listener.onError(spec.id, e.message ?: "download failed") }
-            } finally { activeId = null; try { wl?.release() } catch (_: Exception) {} }
-        }
-    }
-
-    fun cancel() { cancelled = true }
-
-    private fun doDownload(spec: ModelSpec, listener: Listener): String? {
+    private fun urlFor(spec: ModelSpec): String {
         val base = ModelCatalog.source(context).trimEnd('/')
-        val urlStr = if (spec.url.isNotBlank()) spec.url else "$base/${spec.file}"
-        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
+        return if (spec.url.isNotBlank()) spec.url else "$base/${spec.file}"
+    }
+
+    /**
+     * Fetch, verify and install [spec]. Returns null on success, "cancelled", or an error
+     * message. [cancelled] is polled between reads; [progress] reports (phase, done, total).
+     */
+    fun run(spec: ModelSpec, cancelled: () -> Boolean, progress: (Phase, Long, Long) -> Unit): String? {
+        if (spec.sha256.isBlank()) return "model has no pinned sha256"
+        val url = urlFor(spec)
+        val part = partFile(spec.id)
+        if (partialBytes(spec) == 0L) { part.delete() }
+        metaFile(spec.id).writeText("$url\n${spec.sha256}\n")
+
+        var total = -1L
+        var attempt = 0
+        while (true) {
+            if (cancelled()) return "cancelled"
+            val r = try {
+                transfer(url, part, cancelled) { done, t -> total = t; progress(Phase.DOWNLOAD, done, t) }
+            } catch (e: java.io.IOException) {
+                "stream: ${e.message ?: e.javaClass.simpleName}"
+            }
+            when {
+                r == null -> break                                  // every byte is on disk
+                r == "cancelled" -> return r                         // kept: resumes next time
+                r.startsWith("fatal:") -> { discardPartial(spec.id); return r.removePrefix("fatal:") }
+                r.startsWith("space:") -> return r.removePrefix("space:")
+                // Offline is not a failure of this download: wait for a network without
+                // spending retries (a tunnel, a lift, a train), then resume where it stopped.
+                !online() -> {
+                    VoxLog.w("event=model-dl-offline id=${spec.id} have=${part.length()} — waiting for a network")
+                    progress(Phase.WAITING_NETWORK, part.length(), total)
+                    while (!online()) { if (cancelled()) return "cancelled"; Thread.sleep(1000) }
+                    VoxLog.d("event=model-dl-online id=${spec.id} — resuming")
+                }
+                ++attempt > DownloadResume.MAX_RETRIES -> return "$r — tap to resume from ${part.length() / 1048576} MB"
+                else -> {
+                    val wait = DownloadResume.backoffMs(attempt)
+                    VoxLog.w("event=model-dl-retry id=${spec.id} attempt=$attempt waitMs=$wait have=${part.length()} err=$r")
+                    val until = System.currentTimeMillis() + wait
+                    while (System.currentTimeMillis() < until) { if (cancelled()) return "cancelled"; Thread.sleep(250) }
+                }
+            }
         }
-        val tmp = File(context.filesDir, "${spec.id}.part")
-        var tmpDir: File? = null
+
+        progress(Phase.VERIFY, 0, part.length())
+        val digest = sha256(part)
+        if (!digest.equals(spec.sha256, true)) {
+            discardPartial(spec.id)   // a bad byte anywhere: only a clean fetch can fix it
+            return "sha256 mismatch — the download was corrupt; it will start fresh"
+        }
+
+        progress(Phase.UNPACK, 0, part.length())
+        val tmpDir = File(context.filesDir, spec.id + ".tmp")
+        try {
+            tmpDir.deleteRecursively(); tmpDir.mkdirs()
+            unpkg(part, tmpDir, spec.file, spec.id)
+            val dir = ModelCatalog.modelDir(context, spec.id)
+            dir.deleteRecursively(); dir.parentFile?.mkdirs()
+            if (!tmpDir.renameTo(dir)) return "unpack swap failed"
+        } finally { tmpDir.deleteRecursively() }
+        discardPartial(spec.id)
+        return null
+    }
+
+    /** One HTTP attempt: resume [part] from its current size. Null when complete; otherwise a
+     *  reason (prefixed "fatal:" when the partial must be discarded, "space:" when out of room). */
+    private fun transfer(url: String, part: File, cancelled: () -> Boolean, progress: (Long, Long) -> Unit): String? {
+        val have = if (part.exists()) part.length() else 0L
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
+            if (have > 0) setRequestProperty("Range", "bytes=$have-")
+        }
         try {
             conn.connect()
-            if (conn.responseCode != 200) return "HTTP ${conn.responseCode} for $urlStr"
-            val totalL: Long = conn.contentLengthLong
-            if (totalL < 0) return "unknown-length"
-
-            var dl = 0L
-            FileOutputStream(tmp).use { out ->
+            val plan = DownloadResume.plan(have, conn.responseCode, conn.contentLengthLong, conn.getHeaderField("Content-Range"))
+            VoxLog.d("event=model-dl-attempt have=$have code=${conn.responseCode} plan=$plan")
+            val (offset, total) = when (plan) {
+                is DownloadResume.Plan.Complete -> return null
+                is DownloadResume.Plan.Fail -> return plan.reason
+                is DownloadResume.Plan.Write -> plan.offset to plan.total
+            }
+            if (total <= 0) { part.delete(); return "server did not report the size; retrying fresh" }
+            val free = part.parentFile?.usableSpace ?: Long.MAX_VALUE
+            val need = DownloadResume.bytesNeeded(total, offset, isArchive = !url.endsWith(".onnx") && !url.endsWith(".litertlm"))
+            if (free < need) return "space:not enough storage — need ${need / 1048576} MB free, have ${free / 1048576} MB"
+            var done = offset
+            FileOutputStream(part, offset > 0).use { out ->
                 BufferedInputStream(conn.inputStream).use { inp ->
                     val buf = ByteArray(64 * 1024)
                     var lastReport = 0L
                     while (true) {
-                        if (cancelled) break
+                        if (cancelled()) return "cancelled"
                         val n = inp.read(buf)
                         if (n < 0) break
-                        out.write(buf, 0, n); dl += n
+                        out.write(buf, 0, n); done += n
                         val now = System.currentTimeMillis()
-                        if (now - lastReport > 250) { listener.onProgress(spec.id, dl, totalL); lastReport = now }
+                        if (now - lastReport > 250) { progress(done, total); lastReport = now }
                     }
-                    listener.onProgress(spec.id, dl, totalL)
                 }
             }
-            if (cancelled) { tmp.delete(); return "cancelled" }
-
-            if (dl != totalL) { tmp.delete(); return "truncated download" }
-
-            if (spec.sha256.isBlank()) { tmp.delete(); return "model has no pinned sha256" }
-            val digest = sha256(tmp)
-            if (!digest.equals(spec.sha256, true)) { tmp.delete(); return "sha256 mismatch" }
-
-            tmpDir = File(context.filesDir, spec.id + ".tmp")
-            tmpDir.deleteRecursively(); tmpDir.mkdirs()
-            unpkg(tmp, tmpDir, spec.file, spec.id)
-            val dir = ModelCatalog.modelDir(context, spec.id)
-            dir.deleteRecursively(); dir.parentFile?.mkdirs()
-            if (!tmpDir.renameTo(dir)) { tmpDir.deleteRecursively(); return "unpack swap failed" }
-            return null
-        } catch (e: Throwable) {
-            tmpDir?.deleteRecursively()
-            tmp.delete()
-            throw e
-        } finally {
-            tmpDir?.deleteRecursively()
-            tmp.delete()
-            conn.disconnect()
-        }
+            progress(done, total)
+            return if (done == total) null else "truncated at $done of $total"
+        } finally { conn.disconnect() }
     }
 
     // Handles zip, tar.bz2, and a bare onnx file.
@@ -188,6 +239,8 @@ class ModelDownloader(private val context: Context) {
         }
         when (specId) {
             "whisper-tiny", "whisper-base", "whisper-small" -> {
+                rename(".*-encoder\\.int8\\.onnx", "encoder.int8.onnx")
+                rename(".*-decoder\\.int8\\.onnx", "decoder.int8.onnx")
                 rename(".*-encoder\\.onnx", "encoder.onnx")
                 rename(".*-decoder\\.onnx", "decoder.onnx")
                 rename(".*-tokens\\.txt", "tokens.txt")

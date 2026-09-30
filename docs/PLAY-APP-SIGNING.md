@@ -32,7 +32,7 @@ cd android
 # -> android/app/build/outputs/bundle/release/hermes-vox-<version>.aab
 ```
 
-(On the Thelio: `/home/c/gradle-8.12.1/bin/gradle bundleRelease --no-daemon`.)
+(On the Thelio: `~/gradle-8.12.1/bin/gradle bundleRelease --no-daemon`.)
 
 The AAB is **signed with the release key** (not the debug key). Verify before upload:
 

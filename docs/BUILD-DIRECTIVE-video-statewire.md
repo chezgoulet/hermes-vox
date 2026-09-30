@@ -1,6 +1,6 @@
 # BUILD-DIRECTIVE: video state-wiring (Wave 1 shapes fire in their named states + configurable)
 
-REPO (sandbox): `/home/c/vox-wave1` — branch `video-wave1`, HEAD `6053d55` (the 7 Wave 1
+REPO (sandbox): `~/vox-wave1` — branch `video-wave1`, HEAD `6053d55` (the 7 Wave 1
 shapes already landed + gated). Read `docs/design-menu-shapes.md` + the existing
 `docs/BUILD-DIRECTIVE-video-wave1.md`. The 7 shapes are DONE — you add the STATE WIRING +
 SETTINGS on top, do NOT re-do the shapes.
@@ -54,7 +54,7 @@ least keep them consistent). If you judge a cleaner approach (e.g. a single "sta
 with one picker), do that AND explain why.
 
 ## Verify after EACH edit (anchor rule)
-cd /home/c/vox-wave1/android && /home/c/gradle-8.12.1/bin/gradle compileReleaseKotlin --no-daemon
+cd ~/vox-wave1/android && ~/gradle-8.12.1/bin/gradle compileReleaseKotlin --no-daemon
 MUST succeed before the next edit. FINAL: assembleRelease testReleaseUnitTest -> BUILD SUCCESSFUL.
 Do NOT bump versionName/versionCode (release time).
 

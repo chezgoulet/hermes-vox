@@ -42,14 +42,12 @@ class ErDriftTest {
     }
 
     @Test fun vibe_updates_from_classifier_routes() {
-        var v = ErDrift.Vibe()
-        v = ErDrift.updateVibe(v, ErIntent.Route.SOUL_DIRECT)
-        assertEquals("warm", v.mood)
-        assertEquals("high", v.energy)
-        v = ErDrift.updateVibe(v, ErIntent.Route.ACK_AND_YIELD)
+        // 0.8/M3c: the SOUL_DIRECT route is gone with the routing, so its "warm/high" branch
+        // went with it. Two routes remain — the mind's lane marks the ack, the patient lane
+        // changes nothing.
+        val v = ErDrift.updateVibe(ErDrift.Vibe(), ErIntent.Route.ACK_AND_YIELD)
         assertEquals("let me think", v.lastAck)
-        val before = v
-        assertEquals(before, ErDrift.updateVibe(v, ErIntent.Route.HOLD_ONLY))   // patient: no change
+        assertEquals(v, ErDrift.updateVibe(v, ErIntent.Route.HOLD_ONLY))   // patient: no change
     }
 
     @Test fun log_is_capped() {

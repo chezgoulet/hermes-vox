@@ -29,7 +29,7 @@ user is responsible for setting up. We can recommend tailscale and nebula."
 ## D4 — Version bump C0+C1 batch marker (NO release notes yet)
 - versionCode 78, versionName "0.4.0-beta1". Release notes file lands with C2/C3 when
   the 0.4.0 batch actually releases. (Public consumers must never see the word baked.)
-- Gate: gradle :app:testDebugUnitTest exit 0 (harness now at /home/c/gradle-8.12.1/bin/gradle).
+- Gate: gradle :app:testDebugUnitTest exit 0 (harness now at ~/gradle-8.12.1/bin/gradle).
 
 ## Verification (Torc)
 - Grep strings.xml for both texts; read the onboarding layout diff (ScrollView intact,

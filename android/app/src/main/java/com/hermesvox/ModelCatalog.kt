@@ -10,8 +10,8 @@ import java.io.File
  * these in order (silero VAD for barge-in, Piper for warm TTS, Whisper for
  * offline STT); the source host + which models to install are user-visible.
  *
- * Sovereign/local-first: model FILES come from an open-source store (the house
- * Thelio by default, adjustable in Settings); inference runs fully offline.
+ * Sovereign/local-first: model FILES come from an open-source store (the upstream
+ * k2-fsa release by default, adjustable in Settings); inference runs fully offline.
  */
 data class ModelSpec(
     val id: String,
@@ -35,32 +35,51 @@ object ModelCatalog {
     const val DEFAULT_SOURCE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 
     val blessed: List<ModelSpec> = listOf(
-        ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.5,
+        // sizeMB = the REAL download size in decimal MB, from each artifact's
+        // Content-Length. The whole table was systematically understated before
+        // (Gemma by ~540 MB, whisper-small by ~96 MB) and ModelsActivity renders
+        // this number directly, so it has to be the true cost of the download.
+        ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.6,
             "Barge-in / wake trigger (replaces the RMS hack)", true, 1,
             "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", true, "",
             "Hears when you start or stop speaking, so you can interrupt hands-free"),
-        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 78.0,
-            "Piper en-US canonical LibriTTS-R medium", true, 2,
-            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", true,
+        ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,
+            "Piper en-US canonical LibriTTS-R medium · the lighter alternative voice", true, 7,
+            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
             "Speaks Hermes' replies aloud in a natural voice — fully offline"),
-        ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 86.0,
+        ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 80.3,
+            "On-device neural voice · fast, natural (model: OpenRAIL-M)", true, 2,
+            "8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259", true,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2",
+            "Speaks Hermes' replies in a natural voice, fully offline — the recommended voice"),
+        ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 118.1,
             "Offline STT · fastest, lightest", true, 3,
             "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd", false, "",
             "Turns your speech into text on-device — the fast, light option"),
-        ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 162.0,
+        ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 208.6,
             "Offline STT · blessed default (balanced)", true, 4,
             "475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542", true, "",
             "Turns your speech into text on-device — the balanced default"),
-        ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 540.0,
+        ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 635.7,
             "Offline STT · best accuracy, heaviest", true, 5,
             "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false, "",
             "Turns your speech into text on-device — most accurate, heavier"),
-        ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2050.0,
-            "On-device expression layer (Enhanced Realtime, alpha)", true, 6,
+        // Parakeet-TDT 0.6B v2 (NVIDIA, CC-BY-4.0), the sherpa-onnx int8 packaging;
+        // sha256 of the upstream asr-models release artifact. Opt-in: on the sttbench
+        // corpus it beats whisper-base.en on accuracy AND speed (host CPU: WER 3.4% vs
+        // 5.6%, RTF 0.08 vs 0.19, noisy clips 4% vs 32%, no hallucinated text on
+        // non-speech) but it is a 482 MB download and a larger resident model, so the
+        // default stays whisper-base until it is measured on a phone.
+        ModelSpec("parakeet-v2", "Parakeet TDT 0.6B v2 (int8)", "stt", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2", 482.5,
+            "Offline STT · most accurate + fastest, largest download (English)", true, 6,
+            "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad", false, "",
+            "Turns your speech into text on-device — most accurate, larger download"),
+        ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,
+            "On-device expression layer (Enhanced Realtime, alpha)", true, 7,
             "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", false,
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-            "Optional on-device presence layer for Enhanced Realtime (alpha) mode")
+            "Optional on-device presence layer for Enhanced Realtime (alpha) mode — runs on the GPU")
     )
 
     // #114-denominator: REQUIRED and RECOMMENDED are THE SAME SET, everywhere.
@@ -72,14 +91,39 @@ object ModelCatalog {
     /** Required models that are not yet installed (app-private model dirs). */
     fun missingRequired(context: Context): List<ModelSpec> = required.filter { !isInstalled(context, it.id) }
 
+    /** The TTS engine token used when the user has not chosen one: the best installed
+     *  on-device voice (Supertonic, then Piper), else the system voice. */
+    fun defaultTts(context: Context): String = when {
+        isInstalled(context, "supertonic") -> "supertonic"
+        isInstalled(context, "piper-lessac") -> "piper"
+        else -> "system"
+    }
+
     /** The on-device STT model -> model-id map (Settings STT model picker). */
     val sttModels = listOf(
         "whisper-tiny" to "Whisper tiny.en",
         "whisper-base" to "Whisper base.en",
-        "whisper-small" to "Whisper small.en"
+        "whisper-small" to "Whisper small.en",
+        "parakeet-v2" to "Parakeet TDT 0.6B v2"
     )
     /** Blessed default STT model id. */
     const val DEFAULT_STT_MODEL = "whisper-base"
+
+    /** Decode language for a MULTILINGUAL Whisper model ("" = auto-detect). The
+     *  shipped .en models ignore it (they only transcribe English). */
+    const val KEY_STT_LANGUAGE = "stt_language"
+
+    /** The STT models decoded by sherpa's NeMo transducer path (not Whisper). */
+    fun isTransducerStt(modelId: String): Boolean = modelId.startsWith("parakeet-")
+
+    /** English-only Whisper checkpoints (the upstream ".en" exports). */
+    private val ENGLISH_ONLY_WHISPER = setOf("whisper-tiny", "whisper-base", "whisper-small")
+
+    /** The language a Whisper model is decoded with: always "en" for the .en
+     *  models (passing anything else is meaningless to them), else the user's
+     *  `stt_language` pref, trimmed/lowercased ("" = let Whisper detect it). */
+    fun whisperLanguage(modelId: String, pref: String?): String =
+        if (modelId in ENGLISH_ONLY_WHISPER) "en" else pref.orEmpty().trim().lowercase()
 
     const val KEY_STT_BACKEND = "stt_backend"
     const val KEY_STT_MODEL = "stt_model"
@@ -119,9 +163,17 @@ object ModelCatalog {
     fun isInstalled(context: Context, id: String): Boolean {
         val d = modelDir(context, id)
         val markers = when (id) {
-            "whisper-tiny", "whisper-base", "whisper-small" -> listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
+            // int8 or fp32 weights (OfflineWhisperStt prefers int8 and prunes fp32 once int8 is in use).
+            "whisper-tiny", "whisper-base", "whisper-small" -> return File(d, "tokens.txt").exists() &&
+                listOf("encoder", "decoder").all { p ->
+                    File(d, "$p.onnx").exists() || File(d, "$p.int8.onnx").exists() ||
+                        d.listFiles()?.any { it.name.endsWith("-$p.int8.onnx") } == true
+                }
+            "parakeet-v2" -> listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
             "silero-vad" -> listOf("silero_vad.onnx")
             "piper-lessac" -> listOf("model.onnx", "tokens.txt")
+            "supertonic" -> listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx",
+                "vector_estimator.int8.onnx", "vocoder.int8.onnx", "tts.json", "unicode_indexer.bin", "voice.bin")
             "gemma-e2b" -> listOf("gemma-4-E2B-it.litertlm")
             else -> return d.exists() && (d.listFiles()?.isNotEmpty() == true)
         }

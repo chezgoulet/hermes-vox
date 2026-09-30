@@ -1,9 +1,9 @@
 # SPRINT-PLAN DIRECTIVE — Plan the fix batch (qwen3.8-max). You plan; a CHEAPER model implements.
 
-You are planning a fix sprint for the Hermes Vox codebase at /home/c/vox-review
+You are planning a fix sprint for the Hermes Vox codebase at ~/vox-review
 (main, HEAD 9c1a95f5). Read the full findings report at
-/home/c/vox-review/docs/REVIEW-0.5.2-findings.md (also at
-/home/c/vox-review/REVIEW-DIRECTIVE.md for context).
+~/vox-review/docs/REVIEW-0.5.2-findings.md (also at
+~/vox-review/REVIEW-DIRECTIVE.md for context).
 
 Your ONLY deliverable is a SPRINT MAP (a plan), not code. You will NOT implement
 anything. The implementation will be delegated to a MUCH CHEAPER model
@@ -67,7 +67,7 @@ and risk. Recommend a delivery order. Groups:
    - the precise change (before → after, code-level)
    - the KEEP-list (what this task must NOT touch)
    - a verification step (the exact command/test that proves it: usually
-     `cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 gradle :app:testDebugUnitTest
+     `cd android && JAVA_HOME=~/jdk-17.0.12+7 gradle :app:testDebugUnitTest
      -q --no-daemon` exit 0, plus assembleRelease compiles; for Go: `go test
      ./voice/...` / `go build ./...` / `go vet ./*/...`)
    - the risk (what could break if done wrong)

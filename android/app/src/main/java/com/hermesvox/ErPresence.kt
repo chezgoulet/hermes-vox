@@ -23,7 +23,8 @@ import android.os.Looper
  * no-op (Realtime behavior byte-identical).
  */
 class ErPresence(
-    private val speakGlue: (String) -> Unit,
+    /** utterance + a SOURCE tag, so the field log can name who spoke (0.8/M3). */
+    private val speakGlue: (String, String) -> Unit,
     /** 0.6.7: the user's filler-density slider (Settings ER section).
      *  Read live per tick so a slider change lands on the next turn. */
     private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
@@ -43,6 +44,9 @@ class ErPresence(
     // 0.6.5: monotonic count of LAG lines said THIS window — the fail-soft line
     // must be once per window (the 3s trailing count let it repeat forever).
     private val lagSaidCount = object { var value = 0 }
+    // 0.8/M2: monotonic count of preamble cues OFFERED this window (at most one —
+    // a repeated "mm" is the chatty failure the field already rejected).
+    private val preambleSaidCount = object { var value = 0 }
     private var lastRoute: ErIntent.Route = ErIntent.Route.ACK_AND_YIELD
     // ER Phase 7: what the soul already voiced this turn (the drift-sync log
     // the mind sees so it doesn't re-state confirmations).
@@ -56,16 +60,23 @@ class ErPresence(
     /** 0.6.2: presence OFF — the classifier/telemetry/log still run (the mind's
      *  drift-sync stays honest) but every speakGlue is swallowed. A live mute,
      *  not a teardown: the window lifecycle is unchanged. */
-    val silentProxy: ErPresence by lazy { ErPresence({ /* presence muted */ }) }
+    val silentProxy: ErPresence by lazy { ErPresence({ _, _ -> /* presence muted */ }) }
 
     /** True while the presence loop is running (diagnostics/ER label). */
     @Volatile var active = false
         private set
 
+    /** 0.8/M1: did the SOUL say anything during the current mind-work window? The
+     *  window closes when the mind's reply arrives, so this is exactly "did the soul
+     *  speak before the reply" — the ER-delta numerator. Reset per window. */
+    @Volatile private var spokeThisWindow = false
+
     /** The user finished an utterance — classify it and open the window.
      *  fromVoice=true only (typed sends never trigger presence). Returns the
      *  route for the caller's log line. */
     fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
+        spokeThisWindow = false   // 0.8/M1: a new window starts here
+        firstWordSeen = false     // 0.8/M2.1: and so does the first-word metric
         val d = ErIntent.classify(text)
         lastRoute = d.route
         ErTelemetry.classify(d.route)   // Phase 8: the miss-rate denominator
@@ -73,16 +84,9 @@ class ErPresence(
             ErIntent.Route.HOLD_ONLY -> {
                 // The patient user. No escalation, no filler; a soft in-register
                 // ack (P3, cuttable by a real barge) at most.
-                speakGlue("okay — take the time you need")
+                speakGlue("okay — take the time you need", "presence-hold")
+                spokeThisWindow = true
                 VoxLog.er("er:intent=backchannel route=hold")
-            }
-            ErIntent.Route.SOUL_DIRECT -> {
-                // The soul's own lane (emotion/smalltalk): Gemma converses directly.
-                // The expression itself is rendered by the GemmaExpress path in the
-                // host; presence only opens a quiet window (no fillers needed —
-                // the soul is speaking).
-                mindStartedAt = nowMs
-                VoxLog.er("er:intent=${d.cls.name.lowercase()} route=soul-direct")
             }
             ErIntent.Route.ACK_AND_YIELD -> {
                 // The mind's lane: ack + yield (Miles rule #1). Open the filler window.
@@ -97,11 +101,25 @@ class ErPresence(
         return d.route
     }
 
+    /**
+     * The soul spoke a line of its own this window — a beat or a full answer. Recorded for the
+     * mind's soul-sync (synchronously, so it is in the epilogue the mind's turn carries), and it
+     * IS the window's presence: the nonverbal preamble must not also play, and the first-word
+     * metric starts here.
+     */
+    fun noteSoulSpoke(kind: String, text: String, nowMs: Long) {
+        synchronized(preambleSaidCount) { preambleSaidCount.value++ }
+        spokeThisWindow = true
+        markFirstWord(nowMs, mindStartedAt)
+        synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(nowMs, kind, text)) }
+    }
+
     /** The mind (gateway) has started working — arm the filler tick. */
     fun startWindow(nowMs: Long) {
         mindStartedAt = nowMs
         synchronized(fillerTimes) { fillerTimes.clear() }
         synchronized(lagSaidCount) { lagSaidCount.value = 0 }
+        synchronized(preambleSaidCount) { preambleSaidCount.value = 0 }
         active = true
         arm()
     }
@@ -114,14 +132,29 @@ class ErPresence(
                 val now = android.os.SystemClock.uptimeMillis()
                 val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
                 if (mindStartedAt > 0 && windowOpenedAt != mindStartedAt) windowOpenedAt = mindStartedAt
-                val o = ErFillers.tick(now, mindStartedAt, recent, warm = false, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value })
-                if (o.speak != null) {
-                    // Phase 8: soul first-word = the first glue after the window opened.
-                    if (windowOpenedAt > 0 && synchronized(soulActions) { soulActions.isEmpty() }) {
-                        ErTelemetry.soulFirstWord(now - windowOpenedAt)
+                val o = ErFillers.tick(now, mindStartedAt, recent, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value }, preambleSaid = synchronized(preambleSaidCount) { preambleSaidCount.value })
+                // 0.8/M2: the nonverbal preamble cue — the middle rung. Delivered as a
+                // CLIP only, never as text (Piper must not read an interjection), so
+                // 'spoken' mode stays silent here by design and a missing clip degrades
+                // to silence rather than to words. This is the rung that makes ER
+                // actually audible on a healthy gateway, where the 4s fail-soft line
+                // never fires.
+                if (o.state == ErFillers.State.PREAMBLE) {
+                    synchronized(preambleSaidCount) { preambleSaidCount.value++ }
+                    val ctx = clipContext
+                    if (voiceMode == "sounds" && ctx != null &&
+                        ErClips.play(ctx, ErClips.clipFor("neutral", 0))) {
+                        spokeThisWindow = true
+                        markFirstWord(now, windowOpenedAt)
+                        VoxLog.er("er:preamble clip=neutral")
                     }
+                }
+                if (o.speak != null) {
+                    // Phase 8: soul first-word = the first cue after the window opened.
+                    markFirstWord(now, windowOpenedAt)
                     synchronized(fillerTimes) { fillerTimes.add(now) }
                     if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
+                    spokeThisWindow = true
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
                     // 0.6.7 Tier 1: deliver per the presence-voice mode.
                     // sounds = ErClips (private track — never Piper, never the
@@ -134,10 +167,10 @@ class ErPresence(
                             val ctx = clipContext!!   // single-threaded tick loop; no concurrent mutation
                             val clip = ErClips.clipFor(kind, synchronized(fillerTimes) { fillerTimes.size })
                             val played = ErClips.play(ctx, clip)
-                            if (!played) main.post { speakGlue(o.speak!!) }   // clip missing → spoken fallback
+                            if (!played) main.post { speakGlue(o.speak!!, "presence-filler-clip-fallback") }   // clip missing → spoken fallback
                             else VoxLog.er("er:clip=$clip kind=$kind")
                         }
-                        else -> main.post { speakGlue(o.speak!!) }
+                        else -> main.post { speakGlue(o.speak!!, "presence-filler") }
                     }
                 }
                 if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
@@ -151,9 +184,24 @@ class ErPresence(
         main.postDelayed(t, 1_000L)
     }
 
+    /** 0.8/M2.1: the FIRST soul output of a window owns the first-word metric — once.
+     *  The old marker was `soulActions.isEmpty()`, and the preamble deliberately does
+     *  NOT add a drift-sync entry (a nonverbal is not information worth syncing to the
+     *  mind) — so the later lag cue re-recorded and inflated p95 ~4x in the 09-10 field
+     *  log: p50=1007ms, p95=4050ms, from three cues that all measured ~1.0s. */
+    private fun markFirstWord(now: Long, windowOpenedAt: Long) {
+        if (firstWordSeen) return
+        firstWordSeen = true
+        if (windowOpenedAt > 0) ErTelemetry.soulFirstWord(now - windowOpenedAt)
+    }
+
+    @Volatile private var firstWordSeen = false
+
     /** The mind's reply arrived (or the turn was cut) — everything stops; the
      *  reply's own speech has precedence via the existing speak() path. */
     fun onMindReply() {
+        ErTelemetry.window(spokeThisWindow)   // 0.8/M1: close the ER-delta window
+        spokeThisWindow = false
         stop()
     }
 
@@ -179,11 +227,11 @@ class ErPresence(
         val ctx = clipContext
         when {
             voiceMode == "sounds" && ctx != null -> {
-                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue("still working on it — the connection's a little slow")
+                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue("still working on it — the connection's a little slow", "presence-stall-clip-fallback")
                 VoxLog.er("er:stall-voiced idleMs=$idleMs mode=sounds")
             }
             else -> {
-                speakGlue("still working on it — the connection's a little slow")
+                speakGlue("still working on it — the connection's a little slow", "presence-stall")
                 VoxLog.er("er:stall-voiced idleMs=$idleMs mode=spoken")
             }
         }

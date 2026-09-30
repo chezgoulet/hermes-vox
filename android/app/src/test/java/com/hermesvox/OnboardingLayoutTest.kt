@@ -36,7 +36,7 @@ class OnboardingLayoutTest {
         "connect",      // the only forward control on the connection form
         "ob_skip_how",  // both skip affordances sit with their step's button
         "skip",
-        "url", "key", "model"  // the form's fields
+        "url", "key", "model", "scope"  // the form's fields
     )
 
     private fun layoutFile(): File {

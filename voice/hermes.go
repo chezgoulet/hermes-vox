@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -35,7 +35,15 @@ type HermesClient struct {
 	// direct provider path), so model+provider together switch the entity's backend
 	// — a model-only request would be silently ignored without direct_model_requests.
 	provider string
-	http     *http.Client
+	// mu guards sessionKey: the app re-declares the scope mid-session after the
+	// user edits Settings, while Chat reads it on the request path. A Go string
+	// header is two words, so an unsynchronized write is a torn read waiting to
+	// happen (the same reason HermesResponsesClient locks).
+	mu sync.RWMutex
+	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
+	// per-transcript default). Guarded by mu. See entity.go.
+	sessionKey string
+	http       *http.Client
 }
 
 func NewHermesClient(baseURL, apiKey, model string) *HermesClient {
@@ -66,22 +74,19 @@ func (c *HermesClient) Chat(ctx context.Context, messages []ChatMessage) (string
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat/completions", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/chat/completions"), bytes.NewReader(buf))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("hermes %s: %s", resp.Status, string(b))
+		return "", fmt.Errorf("hermes %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	var out chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 0.6.10 — the verbose-never-prunes contract (Christopher's rule): with the
+ * 0.6.10 — the verbose-never-prunes contract (the maintainer's rule): with the
  * verbose file log toggled ON, the log NEVER truncates or auto-prunes — a dev
  * session captures everything, unambiguously. Rotation exists ONLY for the
  * default (verbose OFF) mode.

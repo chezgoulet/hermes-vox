@@ -75,9 +75,9 @@ in-device, then expand. Rich/energetic default; drive-param sweep toward minimal
 the first device pass reads as too busy.
 
 ## Gate
-cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
 :app:testDebugUnitTest -q --no-daemon exit 0. Build requires android/local.properties
-(sdk.dir=/home/c/Android/Sdk) + libs from /home/c/hermes-vox/android/app/libs if
+(sdk.dir=~/Android/Sdk) + libs from <repo>/android/app/libs if
 missing in the clone.
 
 ## Deliverable — one commit, print

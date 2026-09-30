@@ -64,9 +64,9 @@ counters, CrawlView setRole/role logic, avatar state setters. This is additive
 to the *display* only.
 
 ## Gate
-cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
 :app:testDebugUnitTest -q --no-daemon exit 0. Build requires android/local.properties
-(sdk.dir=/home/c/Android/Sdk) + libs copied from /home/c/hermes-vox/android/app/libs
+(sdk.dir=~/Android/Sdk) + libs copied from <repo>/android/app/libs
 (mobile.aar, sherpa-onnx-1.13.6.aar) if missing in the clone.
 
 ## Deliverable

@@ -1,14 +1,21 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * ErIntent — the 5-class classifier. The invariant under test: real questions
- * and actions ESCALATE to the mind (never answered by the soul), backchannels
- * NEVER escalate, and ambiguity defaults to the mind. Plus the Phase 5 seed:
- * genuine barges vs backchannels.
+ * ErIntent — the SAFETY classifier (0.8/M3c). The contract under test is much smaller than
+ * it used to be, and that is the point:
+ *
+ *  - a backchannel HOLDS and never escalates or cancels (the sacrosanct asymmetry), and
+ *  - every other utterance is the MIND's lane, so the presence ladder always runs and no
+ *    turn can be silently skipped by a misroute.
+ *
+ * The old suite asserted which of greeting/smalltalk/emotion/information/action each phrase
+ * belonged to. That routing is gone — the soul model decides it now — and those assertions
+ * went with it. What remains is the part that must never be a judgement call.
  */
 class ErIntentTest {
 
@@ -27,81 +34,59 @@ class ErIntentTest {
         }
     }
 
-    @Test fun backchannel_with_punctuation_still_holds() {
-        assertEquals(ErIntent.Route.HOLD_ONLY, route("Take your time."))
-        assertEquals(ErIntent.Route.HOLD_ONLY, route("okay, go on"))
+    @Test fun a_backchannel_plus_a_short_remnant_stays_a_backchannel() {
+        // A marker plus a <3-char remnant still holds — "hmm, hi" is a hesitation, not a
+        // greeting. This priority is sacrosanct and pinned so a future edit cannot reorder it.
+        assertEquals(ErIntent.Route.HOLD_ONLY, route("hmm, hi"))
+        assertEquals(ErIntent.Class.BACKCHANNEL, cls("hmm, hi"))
     }
 
-    // ---- information/action: ACK_AND_YIELD (the mind's lane) ----
-
-    @Test fun questions_escalate_to_the_mind() {
-        for (t in listOf(
-            "what's the wind at the grasslands?",
-            "when does the season open",
-            "how do I brine a turkey",
-            "tell me about the Bjorkquist decision",
-            "is there rain coming",
-        )) {
-            assertEquals("'$t' must yield to the mind", ErIntent.Route.ACK_AND_YIELD, route(t))
-        }
-    }
-
-    @Test fun actions_escalate_to_the_mind() {
-        for (t in listOf(
-            "remind me to call the bank",
-            "send an email to Josh",
-            "set a timer for 20 minutes",
-            "turn on the porch lights",
-            "schedule the coop delivery",
-        )) {
-            assertEquals(ErIntent.Route.ACK_AND_YIELD, route(t))
-            assertEquals(ErIntent.Class.ACTION, cls(t))
-        }
-    }
-
-    // ---- the soul's own lane: SOUL_DIRECT ----
-
-    @Test fun emotion_and_smalltalk_stay_with_the_soul() {
-        for (t in listOf(
-            "I'm worried about the move",
-            "hello!",
-            "good morning",
-            "how are you today",
-            "thank you for yesterday",
-            "who are you really",
-        )) {
-            assertEquals("'$t' must be the soul's", ErIntent.Route.SOUL_DIRECT, route(t))
-        }
-    }
-
-    // ---- the ambiguity default ----
-
-    @Test fun ambiguity_defaults_to_the_mind() {
-        // A bare noun-ish utterance that matches nothing: yield (cheap miss).
-        assertEquals(ErIntent.Route.ACK_AND_YIELD, route("hmm the thing about the coop"))
-    }
-
-    // ---- the ordering guarantees (safety design) ----
-
-    @Test fun a_question_after_backchannel_opening_still_escalates() {
-        // "okay what's the weather" — the backchannel opener must not swallow
-        // the question. Backchannel matches are exact/leading-token; the
-        // question word still triggers escalation.
+    @Test fun a_backchannel_opener_with_a_real_question_escalates() {
+        // The compounding rule that survives: "okay, what's the weather" is a patient opener
+        // followed by a real question, and the question must reach the mind.
         assertEquals(ErIntent.Route.ACK_AND_YIELD, route("okay what's the weather"))
     }
 
-    @Test fun genuine_barge_beats_a_question_shape() {
-        // "wait, what's this?" — the redirect is the barge, not a question to answer.
-        assertTrue(ErIntent.isGenuineBarge("wait, what's this?"))
+    // ---- the de-routing: nothing else is classified as a lane ----
+
+    @Test fun every_non_backchannel_turn_is_the_minds_lane() {
+        // The regression this pins: these are exactly the utterances that the deleted keyword
+        // routing got WRONG in the field (greeting variants, a question behind a greeting, a
+        // discourse marker in front of a greeting). None of them may be routed away from the
+        // mind any more, because a lane that skips the presence ladder goes silent — which is
+        // the failure this whole change removes. Whether the SOUL also speaks is now the soul
+        // model's decision, not this classifier's.
+        for (t in listOf(
+            "hey there", "how are you", "how are ya?", "so how's it going?",
+            "well hello there", "hello there. how are ya?", "who are you",
+            "hey, what's the weather", "hey there, what's the weather",
+            "what's up with the server", "can you send the email",
+            "i'm tired, can you send the email", "what time is it in Windsor",
+        )) {
+            assertEquals("'$t' must be the mind's lane", ErIntent.Route.ACK_AND_YIELD, route(t))
+            assertEquals("'$t'", ErIntent.Class.MIND, cls(t))
+        }
+    }
+
+    @Test fun the_quiet_caller_still_yields_to_the_mind_rather_than_vanishing() {
+        // An empty transcript is the one case that holds: there is nothing to answer.
+        assertEquals(ErIntent.Route.HOLD_ONLY, route(""))
+    }
+
+    // ---- genuine barge: the safety decision, unchanged ----
+
+    @Test fun barges_are_genuine() {
+        assertTrue(ErIntent.isGenuineBarge("never mind"))
         assertTrue(ErIntent.isGenuineBarge("actually, cancel that"))
         assertTrue(ErIntent.isGenuineBarge("no wait — instead do X"))
+        assertTrue(ErIntent.isGenuineBarge("stop"))
     }
 
     @Test fun take_your_time_is_never_a_barge() {
-        // THE asymmetry (Christopher's question, sacrosanct): a patient
-        // backchannel must never cancel the mind's 15s of work.
-        for (t in listOf("take your time", "no rush", "it's okay", "go on", "still there")) {
-            assertTrue("'$t' must NOT barge", !ErIntent.isGenuineBarge(t))
+        // THE asymmetry (the maintainer's question, sacrosanct): a patient backchannel must never
+        // cancel the mind's fifteen seconds of work.
+        for (t in listOf("take your time", "no rush", "it's okay", "go on", "still there", "hmm, hi")) {
+            assertFalse("'$t' must NOT barge", ErIntent.isGenuineBarge(t))
         }
     }
 }

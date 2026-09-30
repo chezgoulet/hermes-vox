@@ -3,7 +3,7 @@ I have everything I need. Here is the report.
 ---
 
 # Hermes Vox — Adversarial Code Review
-**Target:** `/home/c/vox-review` @ `9c1a95f` (main) · read-only · nothing modified
+**Target:** `~/vox-review` @ `9c1a95f` (main) · read-only · nothing modified
 **Scope:** Part 1 (empty `tool_calls` attribution) + Part 2 (general correctness/maintainability)
 **Verification performed:** full read of the Go module (`voice/`, `mobile/`, `cmd/`), full read of `VoiceController.kt`, `MainActivity.kt`, `AvatarView.kt`, `VisualStyle.kt` and every network/credential call site; exhaustive greps for `tool_calls` / `conversation_history` / `messages` across all file types; `go test ./voice/...` → **PASS** (`ok github.com/chezgoulet/hermes-vox/voice 0.812s`). `go vet` on `game/` fails only for a missing `X11/Xlib.h` in this sandbox (environment, not code).
 

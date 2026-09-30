@@ -4,24 +4,46 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import com.k2fsa.sherpa.onnx.GeneratedAudio
+import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsSupertonicModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 import kotlin.concurrent.thread
 
 /**
- * SherpaTts — a REAL warm on-device voice: Piper (sherpa-onnx) synthesizes the
- * reply into float PCM, streamed to an AudioTrack. Loads the model the app
- * downloaded into filesDir/models/piper-lessac/. If the model is missing or the
- * engine fails to load, it reports isWarm=false and the pipeline uses system TTS
- * (a seamless fallback — never a broken turn). Fully offline, no cloud.
+ * The on-device voices SherpaTts can run. All playback, streaming, fencing and speech-cursor
+ * machinery is shared; a voice only decides how the engine is configured and how one phrase is
+ * synthesized.
+ *
+ * The 2026-09-29 bake-off (docs/VOICE-BAKEOFF.md) chose SUPERTONIC as the recommended voice:
+ * ~10x faster than real time on a desktop CPU with two threads (RTF 0.10-0.15), 44.1 kHz, ten
+ * built-in voices, and every word of the test sentence intact on eight of ten voices. Kokoro
+ * int8 was slower than real time; Pocket TTS dropped and misheard words.
  */
-class SherpaTts(private val context: Context) : VoxTts {
+enum class SherpaVoice(val modelId: String, val displayName: String) {
+    PIPER("piper-lessac", "Piper"),
+    SUPERTONIC("supertonic", "Supertonic"),
+}
+
+/**
+ * SherpaTts — a REAL warm on-device voice: a sherpa-onnx engine ([SherpaVoice]) synthesizes the
+ * reply into float PCM, streamed to an AudioTrack. Loads the model the app downloaded into
+ * filesDir/models/<modelId>/. If the model is missing or the engine fails to load, it reports
+ * isWarm=false and the pipeline uses system TTS (a seamless fallback — never a broken turn).
+ * Fully offline, no cloud.
+ */
+class SherpaTts(private val context: Context, private val voice: SherpaVoice = SherpaVoice.PIPER) : VoxTts {
     companion object {
         /** Playback RMS that drives the presence motion to full amplitude (previewB). */
         const val RMS_FULL = 0.22f
+        /** The built-in voice the multi-speaker engines use (Settings → TTS & Voice). */
+        const val KEY_SPEAKER = "tts_speaker"
+        /** Supertonic F2: clean in the bake-off's intelligibility check. */
+        const val DEFAULT_SPEAKER = 1
     }
     private var tts: OfflineTts? = null
     private var streamTrack: AudioTrack? = null
@@ -88,13 +110,34 @@ class SherpaTts(private val context: Context) : VoxTts {
     // null-track "first chunk" rebuild that kept the reply going up to 4s after
     // the cut). Pure + unit-tested (StreamFence) so the ordering is proven.
     private val streamFence = StreamFence()
-    override val name: String get() = "Piper"
+    override val name: String get() = voice.displayName
     override val isWarm: Boolean get() = tts != null
     override val supportsStreaming: Boolean get() = isWarm
     override val warmReason: String
-        get() = if (tts != null) "" else "piper model not loaded"
+        get() = if (tts != null) "" else "${voice.displayName} model not loaded"
 
-    private val dir get() = File(context.filesDir, "models/piper-lessac")
+    private val dir get() = File(context.filesDir, "models/${voice.modelId}")
+
+    /** The caller's mood as the soul heard it (VoiceMood): steers speed and pause length on
+     *  engines that expose them. WARM = the untouched delivery. Set per turn by the controller. */
+    @Volatile var mood: VoiceMood = VoiceMood.WARM
+
+    /** Which of the engine's built-in voices speaks (Supertonic: 0-4 F1-F5, 5-9 M1-M5). */
+    private val speaker: Int get() =
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(KEY_SPEAKER, DEFAULT_SPEAKER)
+
+    /** One phrase through the engine, with the voice's own controls. */
+    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when (voice) {
+        SherpaVoice.PIPER -> eng.generate(text, 0, voiceSpeed)
+        SherpaVoice.SUPERTONIC -> {
+            val m = mood
+            eng.generateWithConfig(text, GenerationConfig().apply {
+                sid = speaker.coerceIn(0, (eng.numSpeakers() - 1).coerceAtLeast(0))
+                speed = voiceSpeed * m.speed
+                silenceScale = m.silenceScale
+            })
+        }
+    }
 
     /** `tts_voice_usage` kill-switch (default false): route the playback AudioTracks
      *  through USAGE_VOICE_COMMUNICATION so the VOICE_COMMUNICATION capture's platform
@@ -116,7 +159,16 @@ class SherpaTts(private val context: Context) : VoxTts {
      *  system=1.0 (shipped default) -> output identical when untouched. */
     private val voiceSpeed: Float by lazy { voiceRegister(currentVoiceRegister(context)).first }
 
+    /** The Piper thread count (VoxThreads): the Settings override, else a modest 2.
+     *  Piper already outruns real time — this only shortens the synthesis gap
+     *  between streamed sentences. Baked in at construction; applies on reload. */
+    private val ttsThreads: Int = VoxThreads.tts(
+        Runtime.getRuntime().availableProcessors(),
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(VoxThreads.PREF, VoxThreads.AUTO),
+    )
+
     override fun init(onReady: (Boolean) -> Unit) {
+        if (voice == SherpaVoice.SUPERTONIC) { initSupertonic(onReady); return }
         thread {
             try {
                 val model = File(dir, "model.onnx")
@@ -127,16 +179,55 @@ class SherpaTts(private val context: Context) : VoxTts {
                 val dataDir = File(dir, "espeak-ng-data")
                 val vits = OfflineTtsVitsModelConfig(
                     model.absolutePath, "", tokens.absolutePath, dataDir.absolutePath, "", 0.667f, 0.8f, 1.0f)
-                val modelCfg = OfflineTtsModelConfig(vits = vits, numThreads = 1, provider = "cpu")
+                val modelCfg = OfflineTtsModelConfig(vits = vits, numThreads = ttsThreads, provider = "cpu")
                 val cfg = OfflineTtsConfig(modelCfg, "", "", 256, 1.0f)
                 // IMPORTANT: sherpa requires assetManager=null when loading from
                 // an absolute filesystem path (filesDir) — else it tries to read
                 // the file as an asset and aborts (issue #2562).
-                tts = OfflineTts(null, cfg)
-                VoxLog.d("SherpaTts loaded: piper model")
+                val eng = OfflineTts(null, cfg)
+                val warmMs = warm(eng)
+                tts = eng
+                VoxLog.d("SherpaTts loaded: piper model threads=$ttsThreads cores=${Runtime.getRuntime().availableProcessors()} warmMs=$warmMs")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("SherpaTts init failed: ${e.message}")
+                onReady(false)
+            }
+        }
+    }
+
+    /** READY MEANS WARM: one throwaway synthesis before the engine reports ready, so the first
+     *  reply is not the cold ONNX pass. Nothing is played. Returns the warm-up time (ms). */
+    private fun warm(eng: OfflineTts): Long {
+        val t0 = System.currentTimeMillis()
+        try { synth(eng, "Okay.") } catch (_: Throwable) {}
+        return System.currentTimeMillis() - t0
+    }
+
+    private fun initSupertonic(onReady: (Boolean) -> Unit) {
+        thread {
+            try {
+                fun f(name: String) = File(dir, name)
+                val files = listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx", "vector_estimator.int8.onnx",
+                    "vocoder.int8.onnx", "tts.json", "unicode_indexer.bin", "voice.bin")
+                if (files.any { !f(it).exists() }) { onReady(false); return@thread }
+                val st = OfflineTtsSupertonicModelConfig().apply {
+                    durationPredictor = f("duration_predictor.int8.onnx").absolutePath
+                    textEncoder = f("text_encoder.int8.onnx").absolutePath
+                    vectorEstimator = f("vector_estimator.int8.onnx").absolutePath
+                    vocoder = f("vocoder.int8.onnx").absolutePath
+                    ttsJson = f("tts.json").absolutePath
+                    unicodeIndexer = f("unicode_indexer.bin").absolutePath
+                    voiceStyle = f("voice.bin").absolutePath
+                }
+                val modelCfg = OfflineTtsModelConfig(supertonic = st, numThreads = ttsThreads, provider = "cpu")
+                val eng = OfflineTts(null, OfflineTtsConfig(modelCfg, "", "", 256, 1.0f))   // assetManager=null: absolute path (#2562)
+                val warmMs = warm(eng)
+                tts = eng
+                VoxLog.d("SherpaTts loaded: supertonic speakers=${eng.numSpeakers()} threads=$ttsThreads warmMs=$warmMs")
+                onReady(true)
+            } catch (e: Throwable) {
+                VoxLog.e("SherpaTts(supertonic) init failed: ${e.message}")
                 onReady(false)
             }
         }
@@ -151,14 +242,14 @@ class SherpaTts(private val context: Context) : VoxTts {
             // be undone by this very call. A changed token drops the utterance unplayed.
             val token = streamFence.stopEpoch
             try {
-                val audio = t.generate(text, 0, voiceSpeed)
+                val audio = synth(t, text)
                 val samples = audio.samples ?: return@thread onDone()
                 val sr = audio.sampleRate
-                VoxLog.d("piper generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
+                VoxLog.d("${voice.modelId} generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
                 play(samples, sr, token, text)
                 onDone()
             } catch (e: Throwable) {
-                VoxLog.e("piper speak: ${e.message}")
+                VoxLog.e("${voice.modelId} speak: ${e.message}")
                 onDone()
             }
         }
@@ -225,9 +316,9 @@ class SherpaTts(private val context: Context) : VoxTts {
             // tail of every reply — the mid-synthesis truncation), then release. The
             // wait is the fence-aware one: a stop skips it and the track is already gone.
             finishStreaming()
-            VoxLog.d("piper played $at samples")
+            VoxLog.d("${voice.modelId} played $at samples")
         } catch (e: Throwable) {
-            VoxLog.e("piper play: ${e.message}")
+            VoxLog.e("${voice.modelId} play: ${e.message}")
         }
     }
 
@@ -237,12 +328,12 @@ class SherpaTts(private val context: Context) : VoxTts {
         val t = tts ?: return false
         val token = streamFence.stopEpoch   // 0.4.0.4: cancel a stop that lands mid-synth
         return try {
-            val audio = t.generate(text, 0, voiceSpeed)
+            val audio = synth(t, text)
             val samples = audio.samples ?: return false
-            VoxLog.d("piper gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
+            VoxLog.d("${voice.modelId} gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
             play(samples, audio.sampleRate, token, text)
             true
-        } catch (e: Throwable) { VoxLog.e("piper speakBlocking: ${e.message}"); false }
+        } catch (e: Throwable) { VoxLog.e("${voice.modelId} speakBlocking: ${e.message}"); false }
     }
 
     /** #25: arm reply-streaming TTS. The persistent playback track is built LAZILY on
@@ -284,7 +375,7 @@ class SherpaTts(private val context: Context) : VoxTts {
         if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
         val eng = tts ?: return false
         return try {
-            val audio = eng.generate(text, 0, voiceSpeed)
+            val audio = synth(eng, text)
             val samples = audio.samples ?: return false
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
@@ -307,7 +398,7 @@ class SherpaTts(private val context: Context) : VoxTts {
                 liveBuf = samples; liveBase = streamWritten
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
-            VoxLog.d("piper chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
+            VoxLog.d("${voice.modelId} chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
             // L2: this phrase is next on the track — register it BEFORE the first write so
             // the reveal can interpolate through it while the head is inside it.
             try { onAudioSegment?.invoke(text, samples.size) } catch (_: Throwable) {}

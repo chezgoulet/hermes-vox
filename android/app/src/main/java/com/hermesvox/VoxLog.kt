@@ -33,7 +33,7 @@ object VoxLog {
     private var writer: BufferedWriter? = null
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     @Volatile private var debugFile = false
-    /** 0.6.10 (Christopher's rule): "verbose file log" ON = the file NEVER
+    /** 0.6.10 (the maintainer's rule): "verbose file log" ON = the file NEVER
      *  truncates or auto-prunes — a dev session captures EVERYTHING, unambiguously.
      *  Rotation/retention are only for the default (verbose OFF) mode, where the
      *  5MB×2 window protects storage on a device that never asked for deep logs.
@@ -110,7 +110,7 @@ object VoxLog {
     private fun rotateIfNeeded() {
         val cur = file ?: return
         synchronized(rotationLock) {
-            // 0.6.10 (Christopher's rule): verbose file log ON = NEVER rotate or
+            // 0.6.10 (the maintainer's rule): verbose file log ON = NEVER rotate or
             // prune — the developer opted into capturing everything; truncation
             // here is exactly the "the early turns are gone" failure the rule
             // exists to kill. Rotation only runs in the default (verbose OFF)
@@ -132,14 +132,25 @@ object VoxLog {
         }
     }
 
-    /** Never let a crash vanish silently — log it, then die. */
+    @Volatile private var handlerInstalled = false
+
+    /** Never let a crash vanish silently — log it, then hand it to the handler
+     *  that was installed before us (the platform's), so the crash still reaches
+     *  Android's own reporting (DropBox / Play vitals). Installed once per process:
+     *  init runs on every MainActivity creation. */
     private fun setUncaughtHandler() {
+        synchronized(rotationLock) {
+            if (handlerInstalled) return
+            handlerInstalled = true
+        }
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
                 append("CRASH", "thread=${t?.name} ${e.toString()}\n${e.stackTraceToString()}")
                 Log.e(TAG, "CRASH thread=${t?.name} ${e.stackTraceToString()}")
             } catch (_: Throwable) {}
-            android.os.Process.killProcess(android.os.Process.myPid())
+            if (prev != null) prev.uncaughtException(t, e)
+            else android.os.Process.killProcess(android.os.Process.myPid())
         }
     }
 }

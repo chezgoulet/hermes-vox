@@ -43,6 +43,14 @@ class MainActivity : AppCompatActivity() {
     private var toolCount = 0
     private lateinit var conversation: android.widget.ScrollView
     private lateinit var convoText: android.widget.TextView
+    // The dim "heard" line (HeardLine): what the last voice turn sent Hermes.
+    private lateinit var heardLine: android.widget.TextView
+    private val fadeHeard = Runnable {
+        heardLine.animate().alpha(0f).setDuration(900L).withEndAction {
+            heardLine.visibility = View.INVISIBLE
+            heardLine.text = ""; heardLine.contentDescription = null
+        }.start()
+    }
     private var convoBuf = ""
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
@@ -220,15 +228,22 @@ class MainActivity : AppCompatActivity() {
 
     /** DEBUG-ONLY harness entry (inert when !isDebuggable). Lets the emulator
      *  stress script configure the session + drive a text turn without fighting
-     *  onboarding/IME. NOT reachable in release (debuggable=false), so it does
-     *  NOT reopen the #1 intent-injection surface. */
+     *  onboarding/IME. Extras: url, model, key, scope, text. `scope` is applied
+     *  when PRESENT — an explicit empty string clears the declared scope, which
+     *  is how a script exercises the undeclared path; url/model/key stay
+     *  blank-means-ignore. NOT reachable in release (debuggable=false), so it
+     *  does NOT reopen the #1 intent-injection surface. */
     private fun handleDebugHarness(intent: android.content.Intent?) {
         if (intent == null) return
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
         val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
         val m = intent.getStringExtra("model"); val text = intent.getStringExtra("text")
+        val sc = intent.getStringExtra("scope")
         if (!u.isNullOrBlank()) prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").apply()
         if (!k.isNullOrBlank()) prefs.edit().putString("key", (SecureStore.encrypt(k) ?: k)).apply()
+        // The SAME rule the UI uses, so a script cannot store a scope the gateway
+        // would reject, nor one silently rewritten into a different identity.
+        if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
     }
 
@@ -250,8 +265,10 @@ class MainActivity : AppCompatActivity() {
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
+        avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
         convoText = findViewById(R.id.convo_text)
+        heardLine = findViewById(R.id.heard_line)
         handleModeUi()
         updateStreamVisibility()
         // Tap the presence = STOP (hush): interrupt the reply + cancel the stream
@@ -263,8 +280,9 @@ class MainActivity : AppCompatActivity() {
             setStatus(getString(R.string.hv_connected), false)
         }
 
-        // First run → onboarding (no stored endpoint yet).
-        if (prefs.getString("url", "").orEmpty().isBlank()) {
+        // First run → onboarding (no stored endpoint yet), unless the user chose
+        // "Skip for now" there (FirstRunRoute).
+        if (FirstRunRoute.shouldOnboard(prefs.getString("url", ""), prefs.getBoolean(FirstRunRoute.PREF_SKIPPED, false))) {
             openOnboarding(); return
         }
         // C0: endpoint set but no user-entered key -> main screen shows the clear
@@ -356,7 +374,10 @@ class MainActivity : AppCompatActivity() {
      *  and the C3 route-change rebuild (both are start()/stop() compositions; no
      *  new engine code). The caller has already done the reset/permission checks. */
     private fun openVoiceLine(s: HermesSession) {
-        val c = liveController ?: VoiceController(applicationContext, s).also { liveController = it }
+        val c = liveController ?: VoiceController(applicationContext, s).also {
+            liveController = it
+            wireSoul(it)
+        }
         c.attachListeners(listener)
         if (!ModelCatalog.isInstalled(this, ModelCatalog.DEFAULT_STT_MODEL)) {
             // #12: this used to be a dead label ("...Settings > Voice models").
@@ -365,11 +386,24 @@ class MainActivity : AppCompatActivity() {
             modelsMissingPill("Voice model not installed — tap to download")
             return
         }
-        if (!c.isWarm()) {
-            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()}")
+        // 0.8/M3: in Enhanced mode the express layer is part of "initialized". A call
+        // must not open with the soul's voice still loading — the field log shows Gemma
+        // finishing 22s INTO a call, with its warm-up renders running over turn 1's
+        // audio (GPU work contending with a live turn). Realtime never waits on it: it
+        // does not use the express model, so gating it there would add a full cold load
+        // for nothing. Diagnostics keep the per-leg detail; the UI shows one word.
+        // Wait for the soul only when it can actually arrive. Without the presence model
+        // installed — or with one that failed to start on this device — the old gate waited
+        // the full 90 s and then reported "Voice models failed to load", which was false: the
+        // voice was ready, the soul simply was not coming. The call opens, and the ER
+        // requirement pill (refreshModelsGate / the load callback) says what is missing.
+        val soulComing = ModelCatalog.isInstalled(this, "gemma-e2b") && (express as? GemmaExpress)?.loadFailed != true
+        val soulReady = !modeIsEnhanced() || express.available || !soulComing
+        if (!c.isWarm() || !soulReady) {
+            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
-                // LOCAL pipeline load — this and only this is "Warming up".
+                // LOCAL pipeline load — this and only this is "Initializing".
                 warmingNow = true
                 showPhase()
                 mainHandler.postDelayed({ if (!isFinishing) openVoiceLine(s) }, 500)
@@ -383,7 +417,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         // Warmth just completed. THIS is the moment the gateway may honestly be
-        // tested (B2c): re-dial now, so the pill moves Warming up -> Dialing ->
+        // tested (B2c): re-dial now, so the pill moves Initializing -> Dialing ->
         // Connected instead of sitting on a single sticky word. The line opens
         // immediately underneath — the dial reports, it does not gate.
         val wasWarming = warmingNow
@@ -410,6 +444,11 @@ class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
         setStatus("On call", false)
+        // 0.8/M3c: THE SOUL OPENS THE CALL. In ER the entity greets you first, in its own voice,
+        // before the mind has anything to answer — so there is no race to lose and the mode is
+        // perceptible from the first second rather than only on slow turns. The greeting is
+        // RENDERED by the soul against its own VOX.md, so it varies by personality.
+        if (modeIsEnhanced()) c.soulGreet()
     }
 
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
@@ -508,6 +547,13 @@ class MainActivity : AppCompatActivity() {
         val total = ModelCatalog.required.size
         if (missing.isEmpty()) {
             modelsGate?.visibility = android.view.View.GONE
+            // Locked decision #2: the presence model is a REQUIREMENT of Enhanced Realtime. ER
+            // without it is not a quiet downgrade to a canned stand-in — the user is told, and one
+            // tap takes them to the download.
+            if (modeIsEnhanced() && !ModelCatalog.isInstalled(this, "gemma-e2b")) {
+                modelsMissingPill("⚠ Enhanced Realtime needs the presence model — tap to download")
+                return
+            }
             modelsWarnReset()
             return
         }
@@ -716,11 +762,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---- 0.5.1 Part B: the status pill reports the REAL phase ------------------
-    // "Warming up" used to be the only pre-connected word the pill knew, and it was
+    // "Initializing" is the only pre-connected word the pill knows, and it used to be
     // sticky: it covered the local pipeline load AND every network wait, so a cold
     // gateway and a loading STT model looked identical and neither ever resolved.
     // Now the phase is derived (ConnectionPhase — pure, unit-proven) from three facts
-    // this Activity actually knows, and the pill follows Warming up -> Dialing ->
+    // this Activity actually knows, and the pill follows Initializing -> Dialing ->
     // Connected because those are three different things.
     @Volatile private var probe = ConnectionPhase.Probe.NOT_TESTED
     @Volatile private var probeInFlight = false
@@ -757,11 +803,46 @@ class MainActivity : AppCompatActivity() {
         probeInFlight = true
         probe = ConnectionPhase.Probe.IN_FLIGHT
         showPhase()
-        val c = liveController ?: VoiceController(applicationContext, s)
+        val c = liveController ?: VoiceController(applicationContext, s, probeOnly = true)
         c.testConnectionAsync(includeStream) { p, _ ->
             probeInFlight = false
             probe = p
             if (!isFinishing) showPhase()
+        }
+    }
+
+    /** 0.8/M3c: the soul's decision path. The host owns the express layer, so it renders — and
+     *  the render's OUTPUT is the routing decision (a line to say, or the escalate token),
+     *  which is why there are no keyword lists in the path any more.
+     *
+     *  Every outcome is logged, because the router is new and its behaviour must be measurable
+     *  from the field rather than assumed: how often the soul answers, how often it hands over,
+     *  and how often nothing usable came back. */
+    private fun wireSoul(c: VoiceController) {
+        c.soulDecide = { kind, text, toolContext, audio, cb ->
+            val wav = SoulAudio.wav(audio)
+            val heard = wav != null && (express as? GemmaExpress)?.hears == true
+            val directive = if (kind == ErSoulTurn.KIND_GREETING) ErSoulTurn.greetingDirective()
+            else ErSoulTurn.directive(text, toolContext, heard)
+            orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_TURN, directive, "warm", if (heard) wav else null) { glue ->
+                // The tone tag leads (when the soul heard the caller); the decision follows.
+                val (mood, rest) = VoiceMood.split(glue)
+                val o = ErSoulTurn.parse(rest)
+                val decision = when (o) {
+                    is ErSoulTurn.Outcome.Spoken -> "answer"
+                    is ErSoulTurn.Outcome.Beat -> "beat"
+                    ErSoulTurn.Outcome.Escalate -> "escalate"
+                    ErSoulTurn.Outcome.Nothing -> "nothing"
+                }
+                ErTelemetry.soulDecision(decision)
+                val chars = when (o) {
+                    is ErSoulTurn.Outcome.Spoken -> o.text.length
+                    is ErSoulTurn.Outcome.Beat -> o.opener.length
+                    else -> 0
+                }
+                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"}")
+                cb(o, mood)
+            }
         }
     }
 
@@ -791,10 +872,10 @@ class MainActivity : AppCompatActivity() {
             VoxLog.d("event=wake acquired")
         } catch (e: Exception) { VoxLog.e("event=wake-acquire-failed err=${e.message}") }
         // K2 (0.5.0.3) screen-alive toggle (Settings → Appearance, keep_screen_on,
-        // default OFF): FLAG_KEEP_SCREEN_ON is a WINDOW flag — no permission, NOT a
+        // default ON since 0.8): FLAG_KEEP_SCREEN_ON is a WINDOW flag — no permission, NOT a
         // WAKE_LOCK. Armed here, at call start beside the wake acquisition; released
         // unconditionally in stopVoiceWake (the same teardown as focus/wake).
-        if (prefs.getBoolean("keep_screen_on", false)) {
+        if (prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             VoxLog.d("event=screen-alive armed")
         }
@@ -805,7 +886,7 @@ class MainActivity : AppCompatActivity() {
      *  lands the moment the call surface is back — on OR off. The controller gate keeps
      *  a stale callLive (e.g. after /new) from re-arming a flag with no live line. */
     private fun applyKeepScreenOn() {
-        val on = callLive && liveController != null && prefs.getBoolean("keep_screen_on", false)
+        val on = callLive && liveController != null && prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
         if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -1031,6 +1112,9 @@ class MainActivity : AppCompatActivity() {
         @Volatile private var sesKey: String? = null
         @Volatile private var sesModel: String? = null
         @Volatile private var sesProvider: String? = null
+        // The declared entity scope (X-Hermes-Session-Key): part of the session
+        // identity, so changing it re-dials exactly like url/key/model do.
+        @Volatile private var sesScope: String? = null
         @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
@@ -1079,17 +1163,27 @@ class MainActivity : AppCompatActivity() {
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
         val p = prefs.getString("provider", "").orEmpty()
+        // The entity scope (X-Hermes-Session-Key) — WHO this device is to the
+        // gateway. One gateway can serve the whole team behind ONE shared bearer
+        // key, so with no scope every install writes into the same long-term
+        // memory. Blank = undeclared (the gateway's per-transcript default),
+        // which is what every install did before this setting existed.
+        val sc = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         if (u.isBlank()) return
         // C0: no user-entered key -> surface the Settings prompt (never connect
         // with an empty auth / baked fallback).
         if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
-        if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p) {
+        if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
             session = HermesSession(u, k, m)
             // The provider is a per-request override the Go /v1/responses client sends
             // (the blessed LIGHT PATH) — set it after construction so every connector
             // (stream/chat/runs) forwards the chosen gateway backend.
             session?.setProvider(p)
-            sesUrl = u; sesKey = k; sesModel = m; sesProvider = p
+            // Same shape for the declared scope: the gomobile constructor keeps its
+            // signature and the Go session forwards the value to every connector
+            // (/v1/responses, /v1/chat/completions, /v1/runs).
+            session?.setSessionKey(sc)
+            sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
@@ -1120,6 +1214,7 @@ class MainActivity : AppCompatActivity() {
         appendConvo("You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
+            wireSoul(it)
             s.resetConversation()
             LatencyStats.resetSessionTurns()   // C3: first-use controller = fresh session
         }
@@ -1203,17 +1298,25 @@ class MainActivity : AppCompatActivity() {
                 motionTool = mapTool(nm)
                 feed(MotionState.Signal.TOOL_CALL)   // -> avatar.onTool (existing motif)
                 // phone-call presence: Gemma narrates the work (Hermes preempts on the real reply)
-                if (prefs.getBoolean("presence", true)) {
+                // 0.8/M2.2: only ASK for narration the guard would actually accept.
+                // Generating it and then having speakGlue reject it is the worst case:
+                // a full prefill + generation of GPU time, thrown away, competing with
+                // the being's render loop. (09-10 log: five such wasted renders in one
+                // tool-heavy turn.)
+                // Narration is the soul's, so it exists only in Enhanced Realtime: in Realtime the
+                // line was rendered for a status pill that is hidden, which was pure GPU waste. The
+                // tool is NAMED so the line can be topical, and the soul may decline — the token
+                // means silence, and it is parsed, never spoken.
+                val narrationWanted = modeIsEnhanced() && prefs.getBoolean("presence", true) &&
+                    liveController?.glueBlocked() != true
+                if (narrationWanted) {
+                    val args = line.removePrefix("◆ tool: ").substringAfter(' ', "").take(60)
                     // 0.6.2: async render — the Gemma generation must never run on
                     // main (the ANR risk). The glue lands back on main via runOnUiThread.
-                    orch.expressAsync("working", "", "calm") { glue ->
-                        if (glue.isNullOrBlank()) return@expressAsync
-                        runOnUiThread {
-                            setStatus(glue, false)
-                            // Narration split: real-time signals (quiet/visual); only enhanced
-                            // voices the mid-work chatter (Gemma presence).
-                            if (modeIsEnhanced()) liveController?.speakGlue(glue)
-                        }
+                    orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_NARRATE, ErSoulTurn.narrationDirective(nm, args), "calm") { glue ->
+                        val said = (ErSoulTurn.parse(glue) as? ErSoulTurn.Outcome.Spoken)?.text
+                        if (said.isNullOrBlank()) return@expressAsync
+                        runOnUiThread { liveController?.speakGlue(said, source = "tool-narration") }
                     }
                 }
             } else if (line.startsWith("◆ tool · ")) {
@@ -1234,6 +1337,31 @@ class MainActivity : AppCompatActivity() {
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             feed(MotionState.Signal.REST); appendStream("// $msg")
         } }
+        override fun onHeard(text: String) { runOnUiThread {
+            // Conversation mode already IS a transcript: the words go there, in memory
+            // only (convoBuf is never persisted). Presence mode gets the fading line.
+            appendConvo("You: $text")
+            if (conversation.visibility != View.VISIBLE) showHeard(text)
+        } }
+    }
+
+    /** Show the heard line: fade in, hold for its reading time (longer when a
+     *  screen reader asks for it), fade out. A new turn replaces the old line. */
+    private fun showHeard(text: String) {
+        mainHandler.removeCallbacks(fadeHeard)
+        heardLine.animate().cancel()
+        heardLine.text = HeardLine.displayText(text)
+        // TalkBack reads the full words (polite live region, set in the layout).
+        heardLine.contentDescription = getString(R.string.hv_heard_cd, text)
+        heardLine.visibility = View.VISIBLE
+        heardLine.animate().alpha(0.9f).setDuration(180L).start()
+        var hold = HeardLine.holdMs(text)
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val am = getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+            if (am != null) hold = am.getRecommendedTimeoutMillis(hold.toInt(),
+                android.view.accessibility.AccessibilityManager.FLAG_CONTENT_TEXT).toLong()
+        }
+        mainHandler.postDelayed(fadeHeard, hold)
     }
 
     // SSE tool name -> being shape motif (null = default vortex/compile gyre).
@@ -1372,7 +1500,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * /compress (K2, 0.5.2) — ask the GATEWAY to compact this conversation's context
-     * so a long session can keep going. Christopher's ask, verbatim: "We need to
+     * so a long session can keep going. The maintainer's ask, verbatim: "We need to
      * expose a compress command to the user through this app."
      *
      * This is gateway-side compaction, not an app-side trim: [CompressCommand.DIRECTIVE]
@@ -1505,10 +1633,17 @@ class MainActivity : AppCompatActivity() {
     // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
     private fun handleModeUi() {
         applyLayoutMode()
+        refreshModelsGate()   // the ER requirement pill follows the mode
         val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
         if (mode == ModelCatalog.MODE_ENHANCED) {
             val g = express as? GemmaExpress
-            if (g != null && !g.available) g.load {}   // load the on-device model once
+            // Load the on-device model once. A model that is installed but cannot start (no
+            // supported accelerator/CPU path on this device) is said out loud, not hidden.
+            if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) g.load { ok ->
+                if (!ok && g.loadFailed) runOnUiThread {
+                    modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
+                }
+            }
         }
         // 0.6.7: the presence-voice mode is a live read — a Settings change
         // lands on the next tick without rebuilding the controller.
@@ -1540,14 +1675,33 @@ class MainActivity : AppCompatActivity() {
         avatar.setVisualGlow(prefs.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
     }
 
+    /** ~30 fps for the being, with slack so the check lands on the right vsync at 60/90/120 Hz. */
+    private val FRAME_BUDGET_NS = 33_333_333L
+    private val FRAME_SLACK_NS = 4_000_000L
+
     private fun startAvatarLoop() {
         lastSignalAt = android.os.SystemClock.uptimeMillis()
         val tick = object : Runnable {
             // previewB rides THIS clock — no parallel animation loop. It is posted on
             // the avatar, so it dies with the view exactly as it always has.
-            override fun run() { motionTick(); avatar.invalidate(); avatar.postDelayed(this, 30) }
+            //
+            // VSYNC-ALIGNED at ~30 fps. It used to be postDelayed(30): a 30 ms period divides
+            // neither a 16.7 ms (60 Hz) nor an 8.3 ms (120 Hz) frame, so draws landed on
+            // uneven vsyncs (visible micro-stutter). postOnAnimation runs on the display's
+            // own frame clock, and drawing only when a 30 fps budget has elapsed lands every
+            // Nth vsync — the same GPU cost (the GPU is shared with the soul model), even
+            // pacing. Motion is time-based (dt from real time), so the cadence is free to change.
+            private var lastDrawNs = 0L
+            override fun run() {
+                val now = System.nanoTime()
+                if (now - lastDrawNs >= FRAME_BUDGET_NS - FRAME_SLACK_NS) {
+                    lastDrawNs = now
+                    motionTick(); avatar.invalidate()
+                }
+                avatar.postOnAnimation(this)
+            }
         }
-        avatar.post(tick)
+        avatar.postOnAnimation(tick)
     }
 
     /** If a probe.wav is present in the selected STT model dir, transcribe it (proof hook). */

@@ -43,7 +43,7 @@ func (*Local) Synthesize(context.Context, string) ([]byte, error) {
 	return nil, errNotImplemented("local Synthesize")
 }
 
-// SelfHosted localizes the voice via the Thelio/Odroid model server
+// SelfHosted localizes the voice via a model server you run
 // (lemonade/llama.cpp/VLLM/Ollama) running MiniCPM-o for full-duplex realtime —
 // sovereign, no cloud.
 type SelfHosted struct{}

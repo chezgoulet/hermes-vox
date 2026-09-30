@@ -1,0 +1,157 @@
+package com.hermesvox
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * ErSoulTurn — the soul's turn contract. Under test: the directive asks the question AND
+ * carries the tool context in one call, the parse errs toward escalating, and the same-text
+ * guard catches the exact repetition the field produced.
+ */
+class ErSoulTurnTest {
+
+    // ---- the directive: one call, and it carries what the soul needs ----
+
+    @Test fun the_directive_carries_the_callers_words_and_the_token() {
+        val d = ErSoulTurn.directive("hey, how are you?")
+        assertTrue(d.contains("\"hey, how are you?\""))
+        assertTrue("the escalate route must be offered", d.contains(ErSoulTurn.ESCALATE))
+    }
+
+    @Test fun the_directive_carries_the_tool_context_when_known() {
+        // Point 1: the soul should know what the mind is using so it can be
+        // topical — and it rides the SAME render as the decision, so it costs no extra call.
+        val d = ErSoulTurn.directive("what's in my inbox?", "reading the email inbox")
+        assertTrue(d.contains("reading the email inbox"))
+        // And with no context it must not leave an empty clause behind.
+        assertFalse(ErSoulTurn.directive("hi", null).contains("working on"))
+        assertFalse(ErSoulTurn.directive("hi", "  ").contains("working on"))
+    }
+
+    // ---- the parse: escalation wins ----
+
+    @Test fun a_bare_or_wrapped_token_escalates() {
+        for (r in listOf(
+            ErSoulTurn.ESCALATE,
+            "  ${ErSoulTurn.ESCALATE}  ",
+            "\"${ErSoulTurn.ESCALATE}\"",
+            "<ESCALATE>",
+            "ESCALATE",
+            "escalate.",
+        )) {
+            assertEquals("'$r' must escalate", ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse(r))
+        }
+    }
+
+    @Test fun a_line_that_merely_mentions_the_token_still_escalates() {
+        // The asymmetry is deliberate: a false escalate costs the mind answering instead, while
+        // a missed escalate means the soul spoke when it should not have.
+        assertEquals(ErSoulTurn.Outcome.Escalate,
+            ErSoulTurn.parse("I would ${ErSoulTurn.ESCALATE} this one."))
+    }
+
+    @Test fun an_answer_is_spoken() {
+        assertEquals(ErSoulTurn.Outcome.Spoken("Hello, Sam."),
+            ErSoulTurn.parse("  Hello, Sam.  "))
+    }
+
+    @Test fun a_blank_render_is_nothing_not_speech() {
+        assertEquals(ErSoulTurn.Outcome.Nothing, ErSoulTurn.parse(null))
+        assertEquals(ErSoulTurn.Outcome.Nothing, ErSoulTurn.parse(""))
+        assertEquals(ErSoulTurn.Outcome.Nothing, ErSoulTurn.parse("   "))
+    }
+
+    // ---- the beat: the soul opens the mind's turns too ----
+
+    @Test fun the_directive_asks_for_the_beat_on_the_minds_turns() {
+        val d = ErSoulTurn.directive("what's the weather tomorrow?")
+        assertTrue(d.contains("two to six words"))
+        assertTrue("the Contract rides the directive", d.contains("must not contain any fact"))
+    }
+
+    @Test fun a_leading_token_with_words_is_a_beat() {
+        assertEquals(ErSoulTurn.Outcome.Beat("Ooh, good question..."),
+            ErSoulTurn.parse("${ErSoulTurn.ESCALATE} Ooh, good question"))
+        // Punctuation the model supplied is kept; it already carries the prosody.
+        assertEquals(ErSoulTurn.Outcome.Beat("Hmm, let me think."),
+            ErSoulTurn.parse("<<ESCALATE>> \"Hmm, let me think.\""))
+    }
+
+    @Test fun a_trailing_token_with_words_is_a_beat() {
+        assertEquals(ErSoulTurn.Outcome.Beat("Right, so..."),
+            ErSoulTurn.parse("Right, so ${ErSoulTurn.ESCALATE}"))
+    }
+
+    @Test fun a_bracketless_token_is_never_read_aloud() {
+        // The failure this guards: "ESCALATE Hmm" parsed as speech and Piper saying "escalate".
+        assertEquals(ErSoulTurn.Outcome.Beat("Hmm, okay..."), ErSoulTurn.parse("ESCALATE Hmm, okay"))
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("<ESCALATE>"))
+    }
+
+    @Test fun an_unsafe_opener_escalates_silently() {
+        // A number is a fact: the Contract is enforced in code, not trusted to the model.
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} It's 72 degrees"))
+        // Too long to be a beat — that is an answer the soul must not give.
+        assertEquals(ErSoulTurn.Outcome.Escalate,
+            ErSoulTurn.parse("${ErSoulTurn.ESCALATE} well I think the forecast says it will rain all day"))
+        // Markup never reaches the voice.
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} [thinking]"))
+    }
+
+    @Test fun the_opener_uses_only_its_first_line() {
+        assertEquals("Let me see...", ErSoulTurn.opener("Let me see\nThe answer is rain"))
+    }
+
+    @Test fun the_narration_directive_names_the_tool_and_offers_silence() {
+        val d = ErSoulTurn.narrationDirective("web_search", "flights to Lisbon")
+        assertTrue(d.contains("web_search (flights to Lisbon)"))
+        assertTrue(d.contains(ErSoulTurn.ESCALATE))
+        assertFalse(ErSoulTurn.narrationDirective("terminal").contains("()"))
+    }
+
+    // ---- the same-text guard: the field defect, pinned ----
+
+    @Test fun the_same_line_inside_the_window_is_a_repeat() {
+        // Exactly the field pair: this sentence seven times in thirty-nine seconds.
+        val said = "Hello, Sam. How can I help you today?"
+        val recent = listOf(said to 1_000L)
+        assertTrue(ErSoulTurn.isRepeat(said, recent, 2_000L))
+        assertTrue("case/punctuation-insensitive", ErSoulTurn.isRepeat("hello sam how can i help you today", recent, 2_000L))
+        assertTrue("still inside the window", ErSoulTurn.isRepeat(said, recent, 30_000L))
+    }
+
+    @Test fun a_different_line_is_not_a_repeat_and_the_window_expires() {
+        val recent = listOf("Hello, Sam." to 1_000L)
+        assertFalse("a different line is what a person says next",
+            ErSoulTurn.isRepeat("Checking your inbox now.", recent, 2_000L))
+        assertFalse("outside the window it may be said again",
+            ErSoulTurn.isRepeat("Hello, Sam.", recent, 40_000L))
+    }
+
+    @Test fun the_greeting_directive_opens_the_call_and_forbids_the_service_desk() {
+        // The structural fix for the race: opening the call has NO competitor — the mind has
+        // nothing to answer yet — so the soul is perceptible from the first second instead of
+        // only on slow turns.
+        val g = ErSoulTurn.greetingDirective()
+        assertTrue("must frame the call as just connected", g.contains("just connected"))
+        assertTrue("must ask for the soul's OWN voice", g.contains("in your own voice"))
+        assertTrue("must bound the length", g.contains("under about twenty words"))
+        // Grounded in the field: asked to render with nothing to go on, this model produced
+        // "Hello, Sam. How can I help you today?" — service-desk register. A person
+        // greeting someone they know does not ask what they need.
+        assertTrue("must forbid the service-desk greeting", g.contains("Do not ask what they need"))
+    }
+
+    @Test fun both_directives_bound_the_margin() {
+        // Maintainer: tighten the margins on soul utterances so the line is short enough to
+        // hand over cleanly rather than compete with a healthy gateway.
+        assertTrue(ErSoulTurn.directive("hi").contains("under about twenty words"))
+        assertTrue(ErSoulTurn.greetingDirective().contains("under about twenty words"))
+    }
+
+    @Test fun silence_is_treated_as_a_repeat() {
+        assertTrue(ErSoulTurn.isRepeat("   ", emptyList(), 0L))
+    }
+}

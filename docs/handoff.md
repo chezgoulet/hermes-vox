@@ -1,6 +1,6 @@
 # Hermes Vox — Handoff to the Next Agent
 
-**Repo:** `chezgoulet/hermes-vox` (public) · **Host:** Thelio `c@sasquatch` · **App dir:** `/home/c/hermes-vox/android` · **APK:** release build, versioned `hermes-vox-<version>.apk`
+**Repo:** `chezgoulet/hermes-vox` (public) · **Host:** Thelio `c@sasquatch` · **App dir:** `<repo>/android` · **APK:** release build, versioned `hermes-vox-<version>.apk`
 **Latest release:** `0.3.7` (Latest). **Working head:** `07607af` (un-released 0.3.7+n). **Target:** 0.4.0 (see Gates).
 
 ---
@@ -11,8 +11,8 @@ A **fully local voice assistant for Android** that talks to the **Hermes gateway
 
 ## 2. Build / test environment
 
-- **Build env (all on Thelio):** `GOTOOLCHAIN=go1.26.4`, `GOMODCACHE=/home/c/hermes-vox/.tools/cache/go-mod`, `GOCACHE=…/go-build`, `JAVA_HOME=/home/c/jdk-17.0.12+7`, `ANDROID_HOME=/home/c/Android/Sdk`. Gradle: `/home/c/.gradle/wrapper/dists/gradle-8.12.1-bin/eumc4uhoysa37zql93vfjkxy0/gradle-8.12.1/bin/gradle`. **Helper script:** `/home/c/hermes-vox/vox_build.sh` (sets all env + runs `assembleRelease`; build with `--no-daemon`). The app depends on `app/libs/mobile.aar` (the gomobile Go connector) + `sherpa-onnx-1.13.6.aar` — rebuild `mobile.aar` only if you change the `voice/` Go code (gomobile).
-- **Test emulator:** `emulator-5554` (Android 15, x86_64, headless `phonon_test` AVD), `com.hermesvox` installed. Drive via `adb -s emulator-5554` + `uiautomator dump` for element bounds + `exec-out screencap`. The emulator boots with NO default route + NO DNS (can't reach the gateway or the internet), and no voice models are installed (0/6) — so the voice-loop runtime needs the device. **The gateway STREAM is now testable from the emulator** via `adb reverse tcp:8642 tcp:8642` + a host TCP forwarder on the Thelio (`127.0.0.1:8642` → `100.84.47.125:8642`) + the app pointed at `http://127.0.0.1:8642`. Detail: `references/hermes-vox-emulator-gateway-bridge-2026-08-26.md`.
+- **Build env (all on Thelio):** `GOTOOLCHAIN=go1.26.4`, `GOMODCACHE=<repo>/.tools/cache/go-mod`, `GOCACHE=…/go-build`, `JAVA_HOME=~/jdk-17.0.12+7`, `ANDROID_HOME=~/Android/Sdk`. Gradle: `~/.gradle/wrapper/dists/gradle-8.12.1-bin/eumc4uhoysa37zql93vfjkxy0/gradle-8.12.1/bin/gradle`. **Helper script:** `<repo>/vox_build.sh` (sets all env + runs `assembleRelease`; build with `--no-daemon`). The app depends on `app/libs/mobile.aar` (the gomobile Go connector) + `sherpa-onnx-1.13.6.aar` — rebuild `mobile.aar` only if you change the `voice/` Go code (gomobile).
+- **Test emulator:** `emulator-5554` (Android 15, x86_64, headless `phonon_test` AVD), `com.hermesvox` installed. Drive via `adb -s emulator-5554` + `uiautomator dump` for element bounds + `exec-out screencap`. The emulator boots with NO default route + NO DNS (can't reach the gateway or the internet), and no voice models are installed (0/6) — so the voice-loop runtime needs the device. **The gateway STREAM is now testable from the emulator** via `adb reverse tcp:8642 tcp:8642` + a host TCP forwarder on the Thelio (`127.0.0.1:8642` → `<your-gateway-host>:8642`) + the app pointed at `http://127.0.0.1:8642`. Detail: `references/hermes-vox-emulator-gateway-bridge-2026-08-26.md`.
 - **Mandate (Christopher): run rounds of UI testing AND function testing through this test environment before shipping any build to the device.**
 
 ## 3. Current state (what works vs open) — updated 2026-08-26

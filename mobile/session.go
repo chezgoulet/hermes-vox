@@ -23,7 +23,7 @@ type HermesSession struct {
 }
 
 // NewHermesSession connects to the Local Hermes agent (the entity). baseURL is
-// the gateway API server (e.g. http://100.84.47.125:8642), apiKey is the Hermes
+// the gateway API server (e.g. https://gateway.example.ts.net), apiKey is the Hermes
 // API_SERVER_KEY (secret — entered by the user, never committed), model is the
 // model route (usually "hermes-agent" → the real profile agent).
 func NewHermesSession(baseURL, apiKey, model string) *HermesSession {
@@ -70,6 +70,35 @@ func (s *HermesSession) SetProvider(provider string) {
 	}
 	if s.streams != nil {
 		s.streams.SetProvider(provider)
+	}
+}
+
+// SetSessionKey declares WHO this install is to the gateway. It stamps
+// X-Hermes-Session-Key on every entity request the session makes
+// (/v1/responses, /v1/chat/completions, /v1/runs), which the API server uses to
+// derive a STABLE long-term-memory scope per channel.
+//
+// Why: API_SERVER_KEY is ONE bearer credential for the whole deployment — it
+// names the gateway, not the caller. Several people (or several devices) can
+// point at the same gateway, and with no session key they all write into the
+// same long-term-memory scope. "" leaves the gateway's per-transcript default
+// in place (what every install did before this setter existed), so
+// single-user setups are unchanged.
+//
+// gomobile: an additive setter — NewHermesSession's Java signature is
+// untouched, in the same shape as SetProvider/SetModel above.
+func (s *HermesSession) SetSessionKey(scope string) {
+	if s == nil {
+		return
+	}
+	if s.conv != nil && s.conv.Hermes != nil {
+		s.conv.Hermes.SetSessionKey(scope)
+	}
+	if s.streams != nil {
+		s.streams.SetSessionKey(scope)
+	}
+	if s.runs != nil {
+		s.runs.SetSessionKey(scope)
 	}
 }
 

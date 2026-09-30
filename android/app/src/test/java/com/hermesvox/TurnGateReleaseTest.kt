@@ -43,10 +43,26 @@ class TurnGateReleaseTest {
     }
 
     @Test fun stable_partial_gates_early_turn_start() {
+        val state = VoiceLoopState(earlySilenceMs = 600)
+        assertFalse(state.mayStart("Hello.", silentMs = 200, nowMs = 1_000))      // pause too short -> no early start
+        assertFalse(state.mayStart("Hello.", silentMs = 200, nowMs = 1_400))      // short pause -> no
+        assertFalse(state.mayStart("Hello world.", silentMs = 700, nowMs = 1_900)) // text CHANGED -> no
+        assertTrue(state.mayStart("Hello world.", silentMs = 700, nowMs = 2_400))  // unchanged + >=600ms + complete -> early start
+    }
+
+    @Test fun early_start_floor_rejects_the_old_450ms_pause() {
+        // The pre-fix default: a 450-599 ms pause is an ordinary thinking pause.
         val state = VoiceLoopState(earlySilenceMs = 450)
-        assertFalse(state.mayStart("hello", silentMs = 200, nowMs = 1_000))     // pause too short -> no early start
-        assertFalse(state.mayStart("hello", silentMs = 200, nowMs = 1_400))     // short pause -> no
-        assertFalse(state.mayStart("hello world", silentMs = 500, nowMs = 1_900)) // text CHANGED -> no
-        assertTrue(state.mayStart("hello world", silentMs = 500, nowMs = 2_400))  // unchanged + >=450ms -> early start
+        assertFalse(state.mayStart("Book a table.", silentMs = 500, nowMs = 1_000))
+        assertFalse(state.mayStart("Book a table.", silentMs = 500, nowMs = 1_900))  // stable, but under the floor
+        assertTrue(state.mayStart("Book a table.", silentMs = 600, nowMs = 2_800))
+    }
+
+    @Test fun early_start_never_fires_on_a_dangling_thought() {
+        val state = VoiceLoopState()
+        assertFalse(state.mayStart("So I was thinking that", silentMs = 900, nowMs = 1_000))
+        assertFalse(state.mayStart("So I was thinking that", silentMs = 900, nowMs = 1_900))  // stable + long pause, but unfinished
+        assertFalse(state.mayStart("I want to go to the...", silentMs = 900, nowMs = 2_800))
+        assertFalse(state.mayStart("I want to go to the...", silentMs = 900, nowMs = 3_700))
     }
 }

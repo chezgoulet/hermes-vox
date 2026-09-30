@@ -49,7 +49,7 @@ SherpaTts, VoiceController turn engine (conn-test surface only for K1), the 13-a
 swarm. ONLY the conn-test probe + the /compress command dispatcher change.
 
 ## Gate (assembleRelease, must compile; testDebugUnitTest exit 0)
-cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 /home/c/gradle-8.12.1/bin/gradle
+cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle
 :app:testDebugUnitTest -q --no-daemon  (exit 0) AND assembleRelease compiles.
 
 ## Deliverable — one commit

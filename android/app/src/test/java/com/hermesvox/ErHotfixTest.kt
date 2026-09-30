@@ -51,25 +51,26 @@ class ErHotfixTest {
     // ---- filler cap (the user slider) ----
 
     @Test fun cap_zero_is_fully_silent() {
-        val o = ErFillers.tick(10_000L + 1_500L, 10_000L, 0, warm = false, userGoneMs = 0L, cap = 0)
+        val o = ErFillers.tick(10_000L + 1_500L, 10_000L, 0, userGoneMs = 0L, cap = 0)
         assertEquals(null, o.speak)
         assertEquals(ErFillers.State.SILENT, o.state)
     }
 
     // 0.6.7: these tests assumed spoken fillers at 1.5-2.5s — under the ladder,
-    // SILENCE_FIRST_MS (4s) gates ALL voice under four seconds. The cap tests
-    // now exercise the FAIL-SOFT slot (the only place the cap binds anymore).
+    // words are gated to the fail-soft slot. 0.8/M2 restored a NONVERBAL middle
+    // rung, so the cap tests still exercise the fail-soft slot (the only place the
+    // cap binds a SPOKEN line; the cue is capped separately in ErFillersTest).
     @Test fun cap_one_allows_one_filler_then_silence() {
-        val first = ErFillers.tick(10_000L + 5_000L, 10_000L, 0, warm = false, userGoneMs = 0L, cap = 1)
+        val first = ErFillers.tick(10_000L + 5_000L, 10_000L, 0, userGoneMs = 0L, cap = 1)
         assertTrue(first.speak != null)
-        val second = ErFillers.tick(10_000L + 6_000L, 10_000L, 1, warm = false, userGoneMs = 0L, cap = 1)
+        val second = ErFillers.tick(10_000L + 6_000L, 10_000L, 1, userGoneMs = 0L, cap = 1)
         assertEquals(null, second.speak)
     }
 
     @Test fun default_cap_unchanged_at_two() {
-        val first = ErFillers.tick(10_000L + 5_000L, 10_000L, 1, warm = false, userGoneMs = 0L)
+        val first = ErFillers.tick(10_000L + 5_000L, 10_000L, 1, userGoneMs = 0L)
         assertTrue(first.speak != null)
-        val second = ErFillers.tick(10_000L + 6_000L, 10_000L, 2, warm = false, userGoneMs = 0L)
+        val second = ErFillers.tick(10_000L + 6_000L, 10_000L, 2, userGoneMs = 0L)
         assertEquals(null, second.speak)
     }
 

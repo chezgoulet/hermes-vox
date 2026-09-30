@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 # TCP forwarder: listen on 127.0.0.1:8642, forward to the Hermes gateway.
-# This lets the Android emulator reach the Odroid gateway THROUGH THE HOST's
+# This lets the Android emulator reach your gateway THROUGH THE HOST's
 # network stack via `adb reverse tcp:8642 tcp:8642` (the emulator connects to its
 # own 127.0.0.1:8642, adb forwards it to the host's 127.0.0.1:8642, we forward it
 # out to the gateway over the host's route). No guest networking config needed.
-import socket, threading, sys
+import os, socket, threading, sys
 
 LISTEN = ("127.0.0.1", 8642)
-UPSTREAM = ("100.84.47.125", 8642)
+# Your gateway, as host:port — e.g. `HERMES_VOX_UPSTREAM=gw.example.ts.net:8642 python3 gwproxy.py`.
+_up = os.environ.get("HERMES_VOX_UPSTREAM", "")
+if ":" not in _up:
+    sys.exit("set HERMES_VOX_UPSTREAM=<gateway-host>:<port>")
+UPSTREAM = (_up.rsplit(":", 1)[0], int(_up.rsplit(":", 1)[1]))
 
 def handle(conn, addr):
     upstream = None

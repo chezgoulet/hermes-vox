@@ -47,7 +47,7 @@ barge-nearmiss/gap/skipcheck lines that explain a missed barge.
 
 ## Rules
 - NO behavior changes to barge threshold, endpointing, silence, retirement, focus.
-- Gate: /home/c/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
+- Gate: ~/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
 - One commit 'telemetry: barge near-miss + mic-gap probes; gate-timeout activity
   measure; no phantom turn on hangup — 0.4.0.1'
 - Print D_DONE <hash> + PROBE_SITES <file:line list> + SETTLE_GUARD <how>.

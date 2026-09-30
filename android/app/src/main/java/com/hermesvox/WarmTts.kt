@@ -108,8 +108,13 @@ class WarmTts(private val context: Context) : VoxTts {
 fun buildTts(context: Context, prefer: String): VoxTts {
     return try {
         when (prefer) {
-            "piper" -> if (ModelCatalog.isInstalled(context, "piper-lessac")) SherpaTts(context)
+            "piper" -> if (ModelCatalog.isInstalled(context, "piper-lessac")) SherpaTts(context, SherpaVoice.PIPER)
                 else { VoxLog.d("tts: piper requested but model not installed -> system fallback"); SystemTts(context) }
+            "supertonic" -> if (ModelCatalog.isInstalled(context, "supertonic")) SherpaTts(context, SherpaVoice.SUPERTONIC)
+                else { VoxLog.d("tts: supertonic requested but model not installed -> system fallback"); SystemTts(context) }
+            // "kokoro" was offered but its runtime was a stub that always fell back to the
+            // system voice; the bake-off measured Kokoro int8 slower than real time, so the
+            // token now resolves like any unknown one (system), and Settings no longer offers it.
             "kokoro" -> kokoroBackend(context)
             else -> SystemTts(context)   // "system" (and unknown tokens) -> system
         }

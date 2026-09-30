@@ -358,6 +358,25 @@
                         android:checked="true" />
                 </LinearLayout>
 
+                <LinearLayout
+                    android:id="@+id/row_er_hears"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="The soul hears your tone (on-device, audio never leaves the phone)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_hears"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
                 <!-- 0.6.7 Tier 1: the presence-voice mode. -->
                 <LinearLayout
                     android:id="@+id/row_er_voice"
@@ -888,6 +907,29 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- 0.7.3: the CPU-thread budget for BOTH on-device speech legs.
+                     The LLM moved to the GPU, so the CPU is now the speech
+                     pipeline's; this is where you spend it. Auto = derived
+                     (Whisper: half the cores capped at 4; Piper: 2). -->
+                <LinearLayout
+                    android:id="@+id/row_stt_threads"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice CPU threads (STT + TTS)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_threads_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Auto"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <!-- Remote STT (server) config — revealed ONLY when the backend
                      picker above says "remote". The key field stores via
                      SecureStore (never in prefs XML in clear). -->
@@ -904,7 +946,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="6dp"
                         android:background="@drawable/bg_input"
-                        android:hint="Server URL · http://192.168.1.9:13305/v1 or https://…"
+                        android:hint="Server URL · https://your-stt-host/v1"
                         android:inputType="textUri"
                         android:padding="14dp"
                         android:textColor="@color/hv_text"
@@ -1031,13 +1073,34 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Voice"
+                        android:text="Delivery"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_voice_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="System"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- Which of the on-device engine's built-in voices speaks (Supertonic:
+                     five female, five male). -->
+                <LinearLayout
+                    android:id="@+id/row_tts_speaker"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Speaker"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_tts_speaker_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="F2"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
@@ -1183,12 +1246,22 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Keep screen on during calls"
-                        style="@style/HvRowTitle" />
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Keep screen on during calls"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="The screen stays lit while a call is open. The power button still turns it off."
+                            style="@style/HvRowValue" />
+                    </LinearLayout>
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/set_keep_screen_on"
                         android:layout_width="wrap_content"

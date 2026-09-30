@@ -18,7 +18,7 @@ class ErBargeGateTest {
     }
 
     @Test fun backchannels_hold_the_mind() {
-        // THE asymmetry (Christopher's "take your time" question): a patient
+        // THE asymmetry (the maintainer's "take your time" question): a patient
         // user must never kill 15s of the mind's work.
         for (t in listOf("take your time", "no rush", "it's okay", "go on",
             "mhmm", "okay, go on", "still there", "right")) {

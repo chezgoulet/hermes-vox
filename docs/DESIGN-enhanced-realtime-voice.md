@@ -72,7 +72,7 @@ INVARIANTS (the "sacrosanct" of identity sync):
 ### Soul — variable, agent-authored (open fields the prompt leaves blank for the agent)
 name, self-image, 2-3 sentence essence, register/tone/catchphrases, how it addresses
 the user, the relationship, the handful of distilled memory facts that give warmth
-(e.g. "you bake; moving to Quebec; daughter Béatrice; family names"), humor, what
+(e.g. a shared hobby, a current project, the names the user goes by), humor, what
 it's proud of.
 
 ## Linting at authoring time (the "sacrosanct" guarantee)
@@ -81,7 +81,16 @@ A validator checks the produced VOX.md: (a) Contract bytes identical to canonica
 (public-facing app — the House hard limit). "Sacrosanct" enforced at creation AND
 at runtime, since relying on a 2B to *remember* a rule is how it drifts.
 
-## Soft escalation, controller-gated (the safety invariant)
+## Soft escalation, controller-gated (the safety invariant) — SUPERSEDED IN PART
+
+> **Superseded in part (2026-09-10, 0.8/M3c).** What survives is the *controller-gating*: escalation
+> is honored and bounded in code, and the delivery guards (no second answer in a turn, no soul line
+> after a reply has begun) are still the invariant. What is gone is the **class-based routing** —
+> "tool/fact/plan classes route regardless" — because that is the pattern machinery, and it was
+> removed from the decision path entirely. The 2B now decides by *output*, not by category: it speaks,
+> or it emits `<<ESCALATE>>` (see "DECISION — the soul decides; the lists stop routing" below).
+> Kept for provenance; do not implement from this section.
+
 Soft path chosen (Christopher agreed) — the 2B may converse on smalltalk/emotional
 content directly and escalate on real work. The safety rule: escalation is
 **initiated by the 2B** (recognizes "beyond me") but **honored/gated by the controller
@@ -201,3 +210,160 @@ THREADING:
 - 0.5.0-B: state-driven presence motion (stall→waiting-constellation etc.).
 - This design: the VOICE + IDENTITY architecture that Enhanced Realtime uses them for.
 These ship together as the "presence" release that ER opens into.
+
+---
+
+# DECISION (2026-09-10, 0.8/M3c) — the soul decides; the lists stop routing
+
+## The problem, stated with numbers
+
+The intent classifier held **174 literal substrings** across seven lists — 32 backchannel,
+34 action, 31 information, 26 emotion, 20 smalltalk, 16 greeting, 15 barge — and decided
+from them whether a turn belonged to the soul or the mind. It could not converge, and the
+field proved it inside one afternoon with three misses, each fix breeding the next:
+
+- *"So how's it going?"* → **information** (a leading discourse marker hid the greeting)
+- *"hey, what's the weather"* → **smalltalk** (a real question rode in behind a greeting)
+- *"how are ya?"* → **information** (a greeting variant the lists did not contain)
+
+A fourth patch would have produced a fourth edge case. The tell is that each fix was a
+*language* judgement expressed as a string list, and language does not enumerate. Worse, the
+consequence was not cosmetic: a turn routed to the soul lane **skipped the presence ladder
+entirely**, so a misroute bought silence for the whole mind-work window — 10.5 s in a normal
+turn, 79 s in a stalled one.
+
+## The decision
+
+**Ask the soul model the question, once per turn, and let its output be the decision.**
+Gemma reads the caller's line with the Contract in front of it and either answers as the soul
+or emits a single escalate token. Nothing else routes.
+
+**1. The keyword lists keep one job, and it is a safety job.** Backchannel-never-escalates and
+barge-cancels stay deterministic, enumerable and auditable. You do not want a 2B model in the
+abort path, and those lists are *supposed* to be finite — a safety rule that stops growing is
+correct, not limited. `ErIntent` is now that object and nothing more: `HOLD_ONLY` or
+`ACK_AND_YIELD`, and every non-backchannel turn is the mind's lane until the soul says
+otherwise.
+
+**2. The mind runs in parallel, and that is the safety net.** Every turn still goes to the
+mind, whose reply preempts the soul by the existing `speak()` precedence. A wrong soul answer
+therefore cannot do damage — it can only be wrong about *who speaks first* — which is what
+makes a model-based router acceptable where a model-based abort decision would not be.
+
+**3. One render per turn, not two.** The soul's decision and its knowledge of what the mind is
+doing ride the *same* call. The tool context (which tool is running, what it is for) is fed
+into that render so the soul's line can be topical — *"checking your inbox now"* rather than a
+generic greeting. Two calls per turn would double the GPU cost for no gain.
+
+**4. Narration comes INSIDE the presence loop.** The tool-call narration path currently fires
+per tool event, outside the loop, with no density discipline at all. That is the defect the
+field exposed: seven *identical* greetings across thirty-nine seconds of one turn —
+seventeen seconds of GPU to say the same wrong thing seven times.
+
+**5. A spacing guard must yield silence, never the stand-in.** The rail correctly skipped a
+regeneration and then spoke the `RoutedExpress` fallback line, because `express()` returns the
+fallback when the guard fires. Two-line fix.
+
+**6. A same-text guard.** Nothing currently stops the same sentence twice in a window. The
+field defect was not the *number* of utterances; it was that seven came out identical, blind to
+time and blind to what was happening. A stuck-record guard is the actual fix.
+
+**7. The count is not a constant.** What governs how much the soul says is **change** (a new
+tool starting is a natural beat, and where a topical acknowledgement belongs), **density**
+(the existing per-3s cap and the user's slider), **duration** (silence-first, then fail-soft),
+and the soul's own judgement of whether saying anything adds anything. A fixed per-turn number
+is exactly the kind of constant that breaks in context.
+
+## Status of this document
+
+**The decision render landed.** As of 0.8/M3c (`testing`, vc126–vc129): the lists are out of the
+decision path, one render per turn carries the caller's line and its output *is* the decision
+(a line to speak, or `<<ESCALATE>>`), the prelude describes a **decider** rather than a renderer,
+the soul opens the call with a greeting rendered against its own VOX.md, and
+`soul(answer=N escalate=N nothing=N)` carries the router's numbers in the per-call line.
+
+**What is next, and it changes the shape: the beat.** On a healthy gateway the soul still loses
+the mid-turn race — the mind's first token lands in ~1.8 s, the soul's render takes ~2.5 s, and the
+delivery guard correctly drops the soul line. The direction agreed on 2026-09-10 is **A′**: the soul
+takes the *opening beat of every turn*, instantly, from pre-rendered personality stems; the mind
+preempts as it does today; escalation decides only whether the soul *continues*. Escalation stops
+being turn ownership and becomes a continuation decision. See
+`docs/DESIGN-enhanced-realtime-voice.md` §DECISION (beat) and `.hermes/reviews/` for the field
+research behind it.
+
+---
+
+# DECISION (2026-09-10) — the beat: the floor is taken in beats, not owned by a model
+
+Christopher approved A′ after the field research (`vox-er-turn-taking-field-research-2026-09-10.md`).
+
+**The finding.** Nobody in this field settles who owns a turn by routing it to one of two generators.
+Sesame's CSM models content and prosody but explicitly *not* conversation structure — "turn taking,
+pauses, pacing" — and their own blog calls full-duplex models that learn it the future. OpenAI's turn
+detection is a semantic classifier with a probability and a timeout, plus an `eagerness` preset.
+ElevenLabs, the most deployed conversational stack, is cascaded with a dedicated turn-taking model.
+The floor is taken in beats, and the live question is *when to take it and when to yield*.
+
+**The decision.** The soul takes the opening beat of **every** turn. The mind runs exactly as it does
+now and preempts when its answer is ready — ordinary barge-in, the beat is simply cut short.
+Escalation governs only whether the soul *continues* past the beat.
+
+**Why this is the right shape for us.** It removes the race rather than managing it, because a beat
+of three to six words is not a 2.5-second render. It makes ER audible on every turn instead of only
+the turns the router hands over — which is the structural answer to "no perceptible difference". And
+it discards nobody's work: the cancellation consequence that attended the earlier "the soul owns the
+turn" proposal dissolves entirely.
+
+**The build consequence.** The beat must be **pre-rendered**, not generated. The VOX.md pipeline
+emits the entity's own stem vocabulary — its actual backchannel register, authored by the soul rather
+than a generic clip library — synthesised once at init in the same voice as everything else. This is a
+change to that pipeline's contract.
+
+**Sequencing.** The beat first, because it is what changes how a call sounds. The semantic endpointer
+(probability + `eagerness`) and intent-dependent re-entry delay come after the .9 arrangement work,
+because they need streaming partials to exist before they can be built at all.
+
+**The invariant that survives unchanged.** No second answer in a turn; no soul line after the mind's
+reply has begun; the soul never originates a fact. Presence is the soul's job; intelligence is the
+mind's — the beat changes *when* the soul speaks, not what it is allowed to know.
+
+
+---
+
+# DECISION (2026-09-29) — the warm soul, the generated beat, and the mind that is told
+
+**What changed the premise.** The beat was designed around a ~2.2 s render and a conclusion from
+M2.2: "LiteRT-LM's Conversation has no reset, so one conversation cannot be reused across renders."
+Reuse never needed a reset. The render was slow because every call built a fresh Conversation and
+re-prefilled a ~600-token persona to produce ~10 tokens. The soul now keeps **one rolling
+conversation**: primed at load, each render prefilling only its own directive. Its history is a
+feature — the soul sees what it already said (the stuck-record defect cannot recur in-session) and
+the caller's recent turns. `SoulBudget` rotates it before the 8k KV cache fills, and a VOX.md
+resync rotates it immediately. The probe logs `warm=` beside `full=` and `minimal=`.
+
+**The beat is generated, not listed.** On the mind's turns, the same single render returns
+`<<ESCALATE>>` plus two to six words the soul would say as it starts to think (`Outcome.Beat`).
+The canned-stems anti-pattern stays reverted: the opener is contextual, and the conversation
+history keeps it from repeating. The Contract is enforced in code, not trusted to a 2B — an opener
+with a digit, markup, or more than seven words escalates silently.
+
+**The soul decides first, and the mind is told.** Deciding in parallel meant the mind could never
+know what the voice had done, which is the double answer (soul greets, mind greets again). Now the
+mind's submit waits for the decision for a bounded, adaptive moment (`SoulGate`: the measured render
+p50 + 200 ms, capped at 900 ms, and **zero** when the soul is measured slow — a CPU fallback never
+taxes the mind). That wait is not dead air: the beat plays through it. The mind's turn then carries
+the truth in the soul-sync epilogue — the opener used, or that the voice already answered, in which
+case the mind may reply `<<SKIP>>`. `MindSkip.Filter` holds back the stream's first characters so
+the token is never heard. The mind keeps its override (decision #1): anything but the token plays.
+The submitted/answered pair is decided under one lock, so an answer is either in the mind's
+epilogue or never spoken; a decision that arrives late may only speak a beat.
+
+**The handoff is explicit.** A glue one-shot replaces the stream track, so a reply chunk written
+while a beat played was lost — with a beat on every turn, the first words of most answers. The
+streaming worker now lets a beat land (≤1.2 s), cuts it if it runs long, and re-opens the track;
+a late glue callback can no longer reset a track the reply owns. This is Miles rule #2 (the mind
+snaps in) and #4 (P1 over P3) made mechanical.
+
+**Invariants unchanged.** The soul never originates a fact; no second answer in a turn; no soul line
+after the mind's reply has begun; the lists stay out of routing; ER requires the presence model
+(and now says so, with a tappable pill, instead of degrading silently).

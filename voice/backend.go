@@ -6,7 +6,7 @@ import "context"
 // entity); the backend only localizes STT (voice->text) and TTS (text->voice).
 //
 // Live implementations: Cloud (Hermes-hosted STT+TTS), Local (on-device
-// Gemma-4-E2B + Moonshine/piper), SelfHosted (Thelio lemonade/llama.cpp). STT
+// Gemma-4-E2B + Moonshine/piper), SelfHosted (a lemonade/llama.cpp server you run). STT
 // and TTS are platform-specific (audio) — the interface is the contract, and a
 // mock is provided for testability. The conversation always goes through
 // Hermes (the HermesClient), so the entity stays Hermes in every mode.

@@ -41,18 +41,28 @@ enhancement (downloadable, runtime is the last integrate step).
   stand-in (the phone-call glue still works).
 - **Walkie Talkie** — hold **PTT** to talk (release to send), or type + **SEND**.
 
-## Verify on the device (the emulator is function-only; real mic/NPU here)
+## Verify on the device (the emulator is function-only; real mic/GPU here)
 
 1. **Voice turn** — tap 🎤/PTT → talk → being gathers (working) → Hermes answers
    → Piper speaks. No cloud.
 2. **Barge-in** — talk over Hermes mid-answer → it cuts + re-listens.
 3. **The being** — reacts to real tool calls (terminal→bracket, web→scan,
    file→fold, memory→constellation).
-4. **Gemma (Enhanced)** — download `gemma-e2b` in Voice models; the device loads
-   it via LiteRT-LM + the being narrates the work in the phone-call voice
-   (`GemmaExpress loaded:` logs). Note: the LiteRT-LM runtime targets the device
-   NPU — the x86_64 emulator can't load it; verify on the Pixel.
-5. **Heartbeat of the design** — the Star-Wars reply crawl, the eye-being,
+4. **Gemma (Enhanced) — GPU** — download `gemma-e2b` in Voice models (~2.6 GB);
+   the device loads it via LiteRT-LM and the being narrates the work in the
+   phone-call voice. **Read the log line: `GemmaExpress loaded: … backend=gpu`.**
+   A `backend=cpu` there means the accelerator did not come up — the app still
+   works (the CPU fallback is deliberate), but the fast path is not live, so
+   check that line before believing the GPU is running. The LiteRT-LM runtime
+   targets the GPU (and CPU); a Google Tensor **NPU** would need a model compiled
+   for that specific SoC and none exists for the Pixel 9. The x86_64 emulator
+   cannot load the model at all — verify on the Pixel.
+5. **Voice CPU threads** — Settings → STT → "Voice CPU threads". `Auto` derives
+   Whisper = half the cores (capped at 4) and Piper = 2. The load logs prove what
+   ran: look for `OfflineWhisperStt loaded: … threads=N cores=M` and
+   `SherpaTts loaded: … threads=N`. A/B 1 vs 4 on the same utterance; the change
+   lands on the next voice-model load.
+6. **Heartbeat of the design** — the Star-Wars reply crawl, the eye-being,
    Rajdhani type, the three modes.
 
 ## Troubleshooting

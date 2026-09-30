@@ -3,7 +3,7 @@ package com.hermesvox
 /**
  * CompressCommand — the user-facing /compress (context compaction), 0.5.2 K2.
  *
- * WHY IT EXISTS (Christopher, 2026-09-07, at the end of a 15-turn session):
+ * WHY IT EXISTS (maintainer, 2026-09-07, at the end of a 15-turn session):
  * "We need to expose a compress command to the user through this app and/or have
  * [the entity do it]." A long conversation eventually fills the agent's context;
  * the gateway agent can compact its own thread, but nothing in the app could ask

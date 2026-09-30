@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Model downloads keep running with the Models screen closed (ModelDownloadService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:icon="@mipmap/ic_launcher"
@@ -18,6 +20,15 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- LiteRT-LM GPU backend (0.7.3): the on-device express model has to reach
+             the vendor OpenCL stack. Without these two grants the app cannot open
+             libOpenCL.so / libvndksupport.so from /vendor, so Backend.GPU() cannot
+             initialize and GemmaExpress falls back to CPU. Both are declared
+             optional: the app must still install and run where the vendor library
+             is absent, and the CPU fallback is the safety net, not a hard failure. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
 
         <activity
             android:name=".MainActivity"
@@ -33,7 +44,8 @@
 
         <!-- #130: the connection form lives inside the onboarding scroll container,
              so the IME must resize the window (not pan it) for the focused field and
-             the Connect button to stay reachable while typing. -->
+             the Connect button to stay reachable while typing. Without this, the
+             keyboard covered the button on a screen that could not scroll. -->
         <activity
             android:name=".OnboardingActivity"
             android:exported="false"
@@ -54,6 +66,11 @@
             android:name=".VoiceService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.hermesvox.fileprovider"

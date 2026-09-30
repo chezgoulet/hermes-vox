@@ -35,7 +35,7 @@ Two honesty defects in the observability we now steer by:
 ## Rules
 - Touch NOTHING in: silenceAll, fence, retirement, barge, focus (C3), endpointing.
 - No version bump (release bump is the separate cut commit after this merges).
-- Gate: /home/c/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
+- Gate: ~/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
 - Commit: 'polish: firstAudio measured at real audio + firstText added; VoxLog 5MB
   rotation (C4)'  (one commit)
 - Print K1_SEAM <how firstAudio is hooked> + K2_ROTATION_SITE <file:line>.

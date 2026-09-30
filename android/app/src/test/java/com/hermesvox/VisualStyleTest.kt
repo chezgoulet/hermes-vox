@@ -14,7 +14,7 @@ import org.junit.Test
  *  1. the default category is an EXACT identity, so an untouched install renders what
  *     0.5.0.3 rendered;
  *  2. the categories are genuinely different from each other on the axes that matter
- *     (palette, light, mass, motion) — Christopher's test: not one family relabelled, and
+ *     (palette, light, mass, motion) — the maintainer's test: not one family relabelled, and
  *     never a pure recolour of another;
  *  3. the eased-scalar shade path the crossfade runs on is the SAME math as the Style
  *     path, so a cycle-all transition converges exactly on each target family;
@@ -90,7 +90,7 @@ class VisualStyleTest {
     }
 
     @Test fun no_category_is_a_pure_recolour_of_another() {
-        // Christopher's test, made precise: two families must differ on more than hue. The
+        // the maintainer's test, made precise: two families must differ on more than hue. The
         // NON-colour axes are the light model (coreHeat, edge), the mass (halo, size) and
         // the motion (flicker, energy) + trails. If two shared ALL of those they would be
         // the same being wearing a different colour. Assert every family has a distinct

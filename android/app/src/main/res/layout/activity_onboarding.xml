@@ -11,13 +11,13 @@
   of content in a ~760dp window and was hard-blocked on first run
   (chezgoulet/hermes-vox#130).
 
-  Two invariants hold this screen together, both asserted by OnboardingLayoutTest
-  so a refactor cannot quietly undo them:
-    1. every actionable control (ob_got_it, connect, the form fields, ob_skip_how,
-       skip) lives INSIDE the scroll container — never below it;
-    2. the container uses fillViewport, so when the content does fit, the column is
-       stretched to the window height and `gravity="center"` centres it exactly as
-       before: the default-settings layout is unchanged.
+  Two invariants hold this screen together, both asserted by
+  OnboardingLayoutTest so a refactor cannot quietly undo them:
+    1. every actionable control (ob_got_it, connect, the four form fields,
+       ob_skip_how, skip) lives INSIDE the scroll container — never below it;
+    2. the container uses fillViewport, so when the content does fit, the column
+       is stretched to the window height and `gravity="center"` centres it
+       exactly as before: the default-settings layout is unchanged.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ob_scroll"
@@ -27,7 +27,7 @@
     android:fillViewport="true"
     android:scrollbars="vertical">
 
-    <!-- The greetings column. `gravity="center"` with fillViewport above keeps the
+    <!-- The greetings column. `gravity="center"` + fillViewport above keep the
          centred composition on every device whose window is tall enough. -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -146,9 +146,13 @@
                 android:id="@+id/ob_skip_how"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="2dp"
                 style="@style/TextVox.Label"
-                android:text="Skip for now" />
+                android:text="Skip for now"
+                android:minHeight="48dp"
+                android:minWidth="48dp"
+                android:gravity="center"
+                android:paddingHorizontal="16dp" />
         </LinearLayout>
 
         <!-- ====================================================================
@@ -201,6 +205,22 @@
                 android:textColorHint="@color/hv_text_dim"
                 android:textSize="16sp" />
 
+            <!-- Optional: who this install is, on a gateway shared by several
+                 people. Blank is a valid answer (the gateway then scopes memory
+                 per transcript). Same field as Settings → Entity → Entity scope. -->
+            <EditText
+                android:id="@+id/scope"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_input"
+                android:hint="@string/hv_scope_hint"
+                android:inputType="text"
+                android:padding="14dp"
+                android:textColor="@color/hv_text"
+                android:textColorHint="@color/hv_text_dim"
+                android:textSize="16sp" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -225,10 +245,14 @@
                 android:id="@+id/skip"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="4dp"
                 style="@style/TextVox.Label"
                 android:text="@string/hv_skip"
-                android:layout_gravity="center_horizontal" />
+                android:layout_gravity="center_horizontal"
+                android:minHeight="48dp"
+                android:minWidth="48dp"
+                android:gravity="center"
+                android:paddingHorizontal="16dp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

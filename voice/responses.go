@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -24,7 +23,10 @@ type HermesResponsesClient struct {
 	mu       sync.RWMutex
 	model    string
 	provider string // optional per-request inference-backend override ("" = gateway default)
-	http     *http.Client
+	// sessionKey is the optional X-Hermes-Session-Key scope ("" = the gateway's
+	// per-transcript default). Guarded by mu. See entity.go.
+	sessionKey string
+	http       *http.Client
 }
 
 func NewHermesResponsesClient(baseURL, apiKey, model string) *HermesResponsesClient {
@@ -59,7 +61,7 @@ func (c *HermesResponsesClient) SetProvider(provider string) {
 // 100KB of skills + re-audited its own state mid-call because nothing told it
 // to just answer).
 //
-// 0.6.4 tuning (Christopher's field note: "the conversation should be more
+// 0.6.4 tuning (the maintainer's field note: "the conversation should be more
 // normal" — hello got "let me think hold on hm", aggressive): the prefix now
 // carries the PRESENCE-CADENCE contract — the model knows the app renders its
 // own spoken acknowledgments ("let me think", fillers), so the model must NOT
@@ -114,22 +116,19 @@ func (c *HermesResponsesClient) Response(ctx context.Context, input string, prev
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/responses", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, EntityURL(c.baseURL, "/v1/responses"), bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	setEntityHeaders(req, c.apiKey, c.sessionScope())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("hermes responses %s: %s", resp.Status, string(b))
+		return nil, fmt.Errorf("hermes responses %s: %s", resp.Status, readErrorBody(resp.Body))
 	}
 	var out responsesAPI
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

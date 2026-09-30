@@ -102,30 +102,51 @@ brain. Ironclad rules:
 This keeps **"the entity IS Hermes"** airtight: one soul, two layers (Hermes =
 owner + mind; Gemma = the voice).
 
+For the whole system on one page — the layers, the Hermes API contract, how each
+piece maps to Sesame's components of voice presence, and the honest gaps — see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Build & install
 
 ```bash
-# Android SDK + JDK 17 on PATH; the emulator or a device attached.
-cd android && ./gradlew assembleDebug
-# -> android/app/build/outputs/apk/debug/app-debug.apk
+# Go 1.26, JDK 17, Android SDK + NDK 25.2 (JAVA_HOME / ANDROID_HOME /
+# ANDROID_NDK_HOME exported). One command fetches the verified sherpa-onnx
+# runtime, binds the Go connector (mobile.aar), builds the APK and runs every
+# test — see CONTRIBUTING.md:
+bash scripts/gate.sh
+# -> android/app/build/outputs/apk/debug/hermes-vox-<version>.apk
 ```
 
 Install on a device (or `adb install` on the emulator):
 
 ```bash
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
 ```
 
-On first launch: enter the entity endpoint (`http://<host>:8642`) + your API key
-(or your Hermes profile name), then download the blessed models in
+On first launch: enter the entity endpoint (`http://<host>:8642`) **and** your
+gateway's `API_SERVER_KEY`, then download the blessed models in
 **Settings → Voice models** (Silero VAD, Piper TTS, Whisper STT — on-device,
 offline). The TTS engine defaults to the Android **system** voice; to use the
 fully-offline Piper voice, download the Piper model in-app and select it under
 **Settings → TTS & Voice**. Point the app at your Hermes gateway; the entity is
 your agent.
 
+Both fields are required — the gateway answers an unauthenticated request with
+`401 Invalid gateway API key`, so there is no endpoint-only mode. Two notes on
+the fields:
+
+- **The endpoint may carry a trailing slash.** Vox trims it; the gateway itself
+  answers `404` for `//v1/...` and for a trailing-slash path, which used to break
+  onboarding with a misleading "check URL + key".
+- **A Hermes profile name is not an alternative to the key** — it is the *model*
+  value. The gateway advertises its profile name as a model id on `/v1/models`,
+  so on a non-default profile put that name in **Model** instead of
+  `hermes-agent`. Vox does not yet speak the gateway's `/p/<profile>/` URL-prefix
+  routing (that path needs the profile's own `API_SERVER_KEY`); it is a separate
+  feature from the model alias.
+
 > **Google Play is planned — not shipped.** A Play Store release is on the
-> roadmap for a future point release (we're on 0.5.x today), so there is no store
+> roadmap for a future point release, so there is no store
 > listing yet — install the APK above, or follow the repo for the first release.
 > Whenever it lands, Vox will stay a bring-your-own-gateway client.
 
@@ -157,6 +178,32 @@ your agent.
   trade; use TLS if a host is ever public).
 - The entity connector uses Bearer auth; no secrets in the repo.
 
+## More than one person, one gateway
+
+Every Vox install authenticates with the same bearer credential: the gateway's
+`API_SERVER_KEY` names the *deployment*, not the caller. Two people — or two
+devices — behind one gateway are therefore indistinguishable to the entity unless
+the client says who it is.
+
+Vox says it with the API server's own identity header,
+**`X-Hermes-Session-Key`** (**Settings → Entity → Entity scope**, optional):
+
+- It is a **stable per-channel identifier** — `agent:vox:tablet:cody`,
+  `agent:vox:phone:colin`; the gateway's documented example shape is
+  `agent:main:webui:dm:user-42`.
+- Hermes derives the **long-term-memory scope** from it, so each person gets
+  their own memory while still talking to the *same* entity (the reasoning,
+  skills and tools stay the agent's — nothing here is a persona layer).
+- **Blank means not declared:** the gateway then scopes memory per transcript,
+  which is exactly what every install did before this setting existed. A
+  single-user setup needs nothing here.
+- It is not a credential — it names a channel, not a caller — so unlike the API
+  key it is stored unencrypted in app prefs. The gateway accepts up to 256
+  characters and rejects CR/LF/NUL; Vox validates before sending and says why
+  rather than silently rewriting the value.
+
+Give two devices the same scope only when you *want* them to share one memory.
+
 ## Privacy
 
 - **A user-managed private network is assumed.** Vox speaks HTTP + bearer auth to
@@ -186,9 +233,10 @@ your agent.
 
 
 ### I get "Cleartext HTTP traffic not permitted" (Android) when connecting.
-Android blocks plain HTTP unless the host is in the app's
-`network_security_config.xml`, which only ships a few example hosts. Don't
-rebuild the APK — put the gateway behind HTTPS on your tailnet:
+Vox only speaks HTTPS to your gateway (plain HTTP would expose your API key and
+audio on the network). The one exception is a tailnet MagicDNS name, whose
+traffic the tailnet already encrypts. Put the gateway behind HTTPS on your
+tailnet:
 
 1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
 2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`
@@ -197,3 +245,13 @@ rebuild the APK — put the gateway behind HTTPS on your tailnet:
 
 As a fallback, any `*.ts.net` MagicDNS name may now be reached over cleartext
 (tailnet-private by construction).
+
+### I connect but every call fails — is it the endpoint?
+
+Check the endpoint for a **trailing slash, a doubled path, or a path prefix**.
+The Hermes API server answers `404 Not Found` for `/v1/models/` and for
+`//v1/models` (verified against a live gateway), so a pasted `http://host:8642/`
+used to fail onboarding's real probe with a misleading "Could not reach the
+entity — check URL + key". Vox now trims a trailing slash on every connector; if
+you are pointing at a reverse proxy or a `/p/<profile>` prefix, make sure the
+path it forwards matches exactly (`/v1/responses`, not `/hermes/v1/responses`).

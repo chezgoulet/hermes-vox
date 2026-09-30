@@ -34,7 +34,7 @@ Add '## Walkie-talkie mode removed' section to docs/RELEASE-0.4.0.md (create fro
 the C1-era stub if absent, listing C0 + C1 + C2 bullets).
 
 ## Gate
-cd android && /home/c/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q → exit 0.
+cd android && ~/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q → exit 0.
 Existing tests must stay green unmodified EXCEPT any that assert PTT behavior —
 those tests get DELETED with the feature (note each one removed + why).
 Commit: 'polish: strip walkie-talkie (PTT) mode — hands-free realtime is the only loop (C2)'.

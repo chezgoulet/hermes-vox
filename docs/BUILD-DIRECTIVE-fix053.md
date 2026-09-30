@@ -1,6 +1,6 @@
 # BUILD DIRECTIVE — qwen3.8-max implements the 0.5.3 sprint map. Build the BEST version.
 
-You are the engineer building the 0.5.3 fix batch. Repo: /home/c/vox-fix053
+You are the engineer building the 0.5.3 fix batch. Repo: ~/vox-fix053
 (branch fix-batch-053, base = main 9c1a95f5/0.5.2). Read the sprint map FIRST:
 docs/SPRINT-MAP.md. It is the authoritative task list — 10 commits, each with
 exact file:line, the change, KEEP-list, verification, and risk. The full Opus
@@ -31,9 +31,9 @@ each task, you have license — and are expected — to:
 - ONE COMMIT PER TASK. Commit message: the task id + short description,
   e.g. `fix(voice): H1 — wall-clock deadline for stream loop (no 600-event cap)`.
 - After each per-file change, run its verification before moving on:
-  * Kotlin: `cd android && JAVA_HOME=/home/c/jdk-17.0.12+7 gradle :app:testDebugUnitTest
+  * Kotlin: `cd android && JAVA_HOME=~/jdk-17.0.12+7 gradle :app:testDebugUnitTest
     -q --no-daemon` (exit 0) and `:app:assembleRelease` compiles.
-  * Go: `cd /home/c/vox-fix053 && go build ./... && go test ./voice/...` (exit 0).
+  * Go: `cd ~/vox-fix053 && go build ./... && go test ./voice/...` (exit 0).
   The sandbox has the AAR libs + local.properties installed so the baseline compiles.
   Do NOT leave a task half-done or a broken build between commits.
 - ADD a regression test per bug where the sprint map says so (H1, H3, H2, M2, M5, M1).

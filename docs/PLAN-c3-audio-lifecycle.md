@@ -46,7 +46,7 @@ undefined behavior; a headset switch mid-call likely keeps audio on the dead rou
 - Do not touch: silenceAll internals, StreamRetirementState, fence, barge-watch,
   EndpointRule. focus-loss USES silenceAll; it does not reinvent it.
 - Grep after: requestAudioFocus, onAudioFocusChange, AudioDeviceCallback all >0.
-- Gate: /home/c/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
+- Gate: ~/gradle-8.12.1/bin/gradle :app:testDebugUnitTest -q exit 0.
 - Commit: 'polish: audio focus + route-change handling + session_turns logging (C3)'
 - Print C3_DONE <hash> + FOCUS_OWNER <file + why> + SESSION_TURNS_SITE <file:line>.
 
