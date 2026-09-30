@@ -738,14 +738,14 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default OFF). The flag it
+    /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default ON since 0.8). The flag it
      *  controls is a plain WINDOW flag (FLAG_KEEP_SCREEN_ON) MainActivity arms at
      *  call start and clears at the call teardown — no permission, no WAKE_LOCK.
      *  Bound here + re-bound by restore-defaults (GROUP_APPEARANCE). */
     private fun bindKeepScreenOn() {
         findViewById<SwitchCompat>(R.id.set_keep_screen_on).apply {
-            isChecked = prefs.getBoolean("keep_screen_on", false)
-            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("keep_screen_on", on).apply() }
+            isChecked = prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, on).apply() }
         }
     }
 
@@ -1072,7 +1072,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_APPEARANCE -> e
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
-                .putBoolean("keep_screen_on", false)   // K2 (0.5.0.3): screen-alive default OFF
+                .putBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
             GROUP_VISUALS -> e
                 .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
                 .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling
