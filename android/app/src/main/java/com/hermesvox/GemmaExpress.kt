@@ -72,10 +72,21 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 // opened and initEngine() falls back to CPU. Never fail the layer for
                 // a missing accelerator: a CPU presence beats no presence.
                 val (e, backend) = initEngine()
-                llm = e; loaded = true; activeBackend = backend
-                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears")
+                llm = e; activeBackend = backend
+                // READY MEANS WARM. `available` used to flip true BEFORE the warm-up, so the
+                // "Preparing your voice" pill cleared while the soul was still priming and
+                // probing — three renders and ~4 s of spacing sleeps holding the engine lock —
+                // and the call's greeting and first turn queued behind them (the field log's
+                // "warm-up renders over turn 1"). The soul is available once it is primed.
                 warmUp()
+                loaded = true
+                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears (primed)")
                 onReady(true)
+                // The full-vs-minimal prefill probe is diagnostic and holds the engine for
+                // seconds, so it runs only for a verbose-log field session, after ready.
+                if (context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean("debug_log", false)) {
+                    kotlin.concurrent.thread(isDaemon = true) { probePrefill() }
+                }
             } catch (e: Throwable) {
                 VoxLog.e("GemmaExpress load failed: ${e.message}")
                 loaded = false; llm = null; onReady(false)
@@ -109,11 +120,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      */
     private fun warmUp() {
         // Prime the soul's rolling conversation: this render pays the persona prefill ONCE, at
-        // load, where the user already expects to wait. Every render after it is warm.
+        // load, where the user already expects to wait. Every render after it is warm — and the
+        // second, short render measures exactly that (the number the beat depends on).
         val prime = timed { generateWarm(PRIME_DIRECTIVE) }
-        VoxLog.d("GemmaExpress warm-up ms=$prime (soul conversation primed)")
-        try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
-        probePrefill()
+        val warm = timed { generateWarm(PRIME_DIRECTIVE) }
+        VoxLog.d("GemmaExpress warm-up primeMs=$prime express-probe warm=${warm}ms")
     }
 
     /**
@@ -142,11 +153,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // Separation, not the spacing rail: each measurement gets a settled GPU.
         try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
         val minimal = timed { generate(MINIMAL_PERSONA, directive) }
-        // The number the rolling conversation exists for: the same kind of render, on the warm
-        // conversation, with the persona already in the KV cache.
-        try { Thread.sleep(ErGemmaGuard.MIN_RENDER_SPACING_MS + 150) } catch (_: InterruptedException) {}
-        val warm = timed { generateWarm(PRIME_DIRECTIVE) }
-        VoxLog.d("express-probe full=${full}ms minimal=${minimal}ms warm=${warm}ms personaChars=${persona.length}")
+        VoxLog.d("express-probe full=${full}ms minimal=${minimal}ms personaChars=${persona.length}")
     }
 
     private inline fun timed(f: () -> String): Long {

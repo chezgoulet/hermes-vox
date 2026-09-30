@@ -421,7 +421,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
                 arrayOf("Supertonic (on-device, recommended)", "Piper (on-device, lighter)", "System (fallback)"),
-                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val) { previewVoice() }
+                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
         // option was removed — WarmTts is a no-op stub, so it never produced
@@ -488,6 +488,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
         findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER))
+        syncSpeakerRow()
         findViewById<TextView>(R.id.set_voice_val).text = deliveryLabel()
         refreshSttRemotePanel()
     }
@@ -998,6 +999,16 @@ class SettingsActivity : AppCompatActivity() {
      *  it is never confused with the System TTS engine one row up. */
     private fun deliveryLabel(): String = when (prefs.getString("voice", "system")) {
         "bright" -> "Bright"; "deep" -> "Deep"; else -> "Natural"
+    }
+
+    /** The Speaker row exists only for the engine it controls. Piper's model has hundreds of
+     *  unlabelled audiobook speakers (not a picker anyone can use), and the system voice is the
+     *  OS's own — so the row shows for Supertonic and hides otherwise, never offering a choice
+     *  that changes nothing. */
+    private fun syncSpeakerRow() {
+        val engine = prefs.getString("tts", null) ?: ModelCatalog.defaultTts(this)
+        findViewById<LinearLayout>(R.id.row_tts_speaker)?.visibility =
+            if (engine == "supertonic") android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun speakerLabel(i: Int): String = if (i < 5) "F${i + 1} · female" else "M${i - 4} · male"
