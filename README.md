@@ -176,7 +176,7 @@ will stay a bring-your-own-gateway client.
 1. Enter your gateway **endpoint** (for example `https://<machine>.<tailnet>.ts.net`)
    **and** its `API_SERVER_KEY`. Both are required; the gateway answers an
    unauthenticated request with `401`.
-2. Download the three required models in **Settings → Models**: Silero VAD, Supertonic
+2. Download the three required models in **Settings → Voice models**: Silero VAD, Supertonic
    and Whisper base.en (about 290 MB in total). Parakeet (482 MB) and Gemma 4 E2B
    (2.6 GB, for Enhanced Realtime) are optional.
 3. Tap the call button and talk.
@@ -295,7 +295,7 @@ a `/p/<profile>` prefix, make sure the forwarded path matches exactly (`/v1/resp
 not `/hermes/v1/responses`).
 
 ### "Preparing your voice…" stays up
-The required models are not all installed yet. Open **Settings → Models**; downloads
+The required models are not all installed yet. Open **Settings → Voice models**; downloads
 continue in the background and resume after network loss.
 
 ## Credits
