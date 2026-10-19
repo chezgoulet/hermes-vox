@@ -125,3 +125,33 @@ upstream AAR; compiling sherpa from source made it visible.
 **Committed to:** `LICENSE` GPL-3.0, a `NOTICE` naming each component and the
 source offer, README/architecture/site saying GPL-3.0, and the F-Droid metadata
 field `License: GPL-3.0-only`. Models downloaded at runtime keep their own terms.
+
+## D12 — Notifications: an armed session in 1.x; routing and a BYO endpoint in 2.x
+
+The House operates no notification infrastructure — no push service of our own, no
+FCM, no Google Play Services. Nothing wakes a phone that is not running the app.
+
+**1.x — the armed session.** The user can arm the line for a specific wait ("call me
+when the build finishes"). While armed, the app holds a foreground service and its
+existing gateway connection open, with a visible indicator and a visible battery
+cost, and delivers the completion as a local notification or in the entity's voice.
+If the app is killed, the arm dies with it. A disconnect reconnects to the same
+session; there is no offline mode and no capture while disconnected.
+
+Armed is not listening: the socket and the foreground service are held, the
+microphone is not. The two states carry distinct indicators, because a user who
+cannot tell them apart will assume the worse one. An arm is bounded — it has a
+visible expiry and it ends on the run's terminal state, failure or timeout, never
+because the socket merely stayed open.
+
+**2.x — per-notification-type routing, with the BYO endpoint.** Fine-grained control
+per notification class — voice call, text only, none, or delegated to another
+surface such as Telegram or Discord — ships with the user-supplied push endpoint:
+the user provides their own push server, the app speaks UnifiedPush, and we operate
+and promise nothing.
+
+Rationale: reachability is the user's decision, not a service we run, and a phone
+that is not running the app cannot be woken without either Google or a push server
+somewhere. Policy only earns its place once there is more than one transport to
+choose between, which is why the routing table lands with the endpoint rather than
+with the armed session.
