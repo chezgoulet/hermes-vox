@@ -368,11 +368,13 @@ class MainActivity : AppCompatActivity() {
         // baked fallback). connectFromPrefs/send/talk/startCall re-surface it.
         if (GatewayKey.isMissing(storedKey())) setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
 
-        // Warming splash: created BEFORE the connection flow so autoOpenLine can
-        // toggle it. (Originally created after connectFromPrefs, so on a device where
-        // the mic permission + models are present autoOpenLine read warming.visibility
-        // before it was initialized -> UninitializedPropertyAccessException -> the app
-        // would not open at all. Cold-launch regression was 0.3.8.)
+        // Warming splash: created BEFORE the connection flow (0.3.8: reading it before
+        // init crashed the cold launch) and GONE until a voice line actually opens.
+        // Nothing opens a line on launch any more — openVoiceLine has exactly two
+        // callers, the start-call path and the audio-route rebuild — so a splash created
+        // VISIBLE is never dismissed: the app parked on "Preparing your voice…" and hid
+        // the endpoint error underneath it. Visibility is owned by openVoiceLine alone;
+        // this is its only starting state.
         warming = android.widget.TextView(this).apply {
             text = "Preparing your voice\u2026"
             textSize = 18f
@@ -380,6 +382,7 @@ class MainActivity : AppCompatActivity() {
             gravity = android.view.Gravity.CENTER
             setBackgroundColor(0xFF06070B.toInt())
             typeface = android.graphics.Typeface.MONOSPACE
+            visibility = android.view.View.GONE
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
