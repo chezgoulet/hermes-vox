@@ -17,6 +17,13 @@ MODEL_ID="${1:?model id: qwen | smollm | gemma}"
 BACKEND="${2:-cpu}"
 REPS="${3:-3}"
 SHAPE="${4:-presence}"
+# KV budget to request; empty = the model's own default. The app itself asks for 8192.
+MAXTOK="${MAXTOK:-}"
+# CPU thread count; empty = the runtime default. The app never sets one, so the default row
+# is the honest one and a threads row is a diagnostic.
+THREADS="${THREADS:-}"
+# One Engine per render (what Qwen3.5 requires; the app uses one Engine + many Conversations).
+FRESH="${FRESH:-}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ADB="${ADB:-${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb}"
@@ -34,16 +41,18 @@ case "$MODEL_ID" in
 esac
 
 mkdir -p "$OUT"
-TAG="${MODEL_ID}-${BACKEND}-${SHAPE}"
+TAG="${MODEL_ID}-${BACKEND}-${SHAPE}${THREADS:+-t$THREADS}${FRESH:+-fresh}"
 
 thermal() {
-  # Thermal status (0 none .. 6 shutdown) + battery temperature + the hottest zone.
-  local status batt hottest
-  status="$($ADB shell dumpsys thermalservice 2>/dev/null | sed -n 's/.*Thermal Status: \([a-z]*\).*/\1/p' | head -1)"
+  # Thermal status (0 none .. 6 shutdown), battery temperature, and the hottest CPU/GPU zone.
+  # /sys/class/thermal needs root on this build, so the zones come from dumpsys instead.
+  local dump status batt big
+  dump="$($ADB shell dumpsys thermalservice 2>/dev/null)"
+  status="$(printf '%s' "$dump" | sed -n 's/^Thermal Status: *\([0-9]*\).*/\1/p' | head -1)"
   batt="$($ADB shell dumpsys battery 2>/dev/null | sed -n 's/.*temperature: \([0-9]*\).*/\1/p' | head -1)"
-  hottest="$($ADB shell 'cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1' | tr -d '\r')"
-  printf '{"t":%s,"thermal_status":"%s","battery_c_x10":%s,"hottest_zone_mc":%s}' \
-    "$(date +%s)" "${status:-unknown}" "${batt:-0}" "${hottest:-0}"
+  big="$(printf '%s' "$dump" | sed -n 's/.*Temperature{mValue=\([0-9.]*\).*mName=BIG.*/\1/p' | head -1)"
+  printf '{"t":%s,"thermal_status":%s,"battery_c_x10":%s,"big_c":%s}' \
+    "$(date +%s)" "${status:-null}" "${batt:-0}" "${big:-null}"
 }
 
 echo "== $TAG: thermal before"
@@ -75,6 +84,9 @@ timeout 420 $ADB shell am instrument -w \
   -e bench.backends "$BACKEND" \
   -e bench.reps "$REPS" \
   -e bench.shape "$SHAPE" \
+  ${MAXTOK:+-e bench.maxTokens "$MAXTOK"} \
+  ${THREADS:+-e bench.threads "$THREADS"} \
+  ${FRESH:+-e bench.freshEngine true} \
   -e bench.dir "$BENCH_DIR" \
   -e bench.results "$RESULTS_ABS" \
   "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner" 2>&1 | tail -25

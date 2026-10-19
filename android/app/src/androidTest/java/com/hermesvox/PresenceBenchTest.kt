@@ -57,6 +57,35 @@ class PresenceBenchTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     /**
+     * KV-cache size to request, or null for the model's own default.
+     *
+     * This matters for D4: the app asks for 8192 (`SoulBudget.MAX_TOKENS`) on every engine
+     * init. A model whose bundle declares a smaller budget (Qwen3.5 0.8B keeps KV for its six
+     * full-attention layers at 4096) may refuse that, which would make "swap the model file"
+     * false. Measured both ways rather than assumed.
+     */
+    private val maxTokens: Int? by lazy {
+        args.getString("bench.maxTokens")?.trim()?.toIntOrNull()
+    }
+
+    /** CPU thread count to request; null leaves the runtime's default. Diagnostic. */
+    private val cpuThreads: Int? by lazy {
+        args.getString("bench.threads")?.trim()?.toIntOrNull()
+    }
+
+    /**
+     * One Engine per render instead of one Engine and many Conversations.
+     *
+     * Qwen3.5 carries recurrent (GatedDeltaNet) state that LiteRT-LM does not reset for a new
+     * Conversation on an Engine that already ran one: the model card documents it and tells you
+     * to build a new Engine per conversation. This mode measures what Qwen actually requires,
+     * including the engine init it would have to pay on every render.
+     */
+    private val freshEngine: Boolean by lazy {
+        args.getString("bench.freshEngine")?.trim() == "true"
+    }
+
+    /**
      * Models live in the app's OWN external files dir: `adb push` can write there (the shell
      * user is in ext_data_rw) and the app can read it with no storage permission. The dir is
      * created by the app on first use, so it is app-owned rather than shell-owned.
@@ -97,10 +126,22 @@ class PresenceBenchTest {
 
         for (id in models) for (backend in backends) {
             val name = catalog[id] ?: continue
-            val modelFile = File(benchDir, name)
-            if (!modelFile.exists()) {
+            val source = File(benchDir, name)
+            if (!source.exists()) {
                 emit(out, "{\"model\":\"$id\",\"backend\":\"$backend\",\"error\":\"missing model file $name\"}")
                 continue
+            }
+            // The app loads models from filesDir (internal, ext4). /sdcard is FUSE-backed:
+            // a mmap'd model there page-faults through the FUSE daemon for every weight page,
+            // which measures the storage layer rather than the model. Copy once, then measure.
+            val modelFile = File(File(context.filesDir, "bench-models"), name)
+            if (!modelFile.exists() || modelFile.length() != source.length()) {
+                val tc = System.nanoTime()
+                modelFile.parentFile?.mkdirs()
+                source.inputStream().use { i -> modelFile.outputStream().use { o -> i.copyTo(o, 1 shl 20) } }
+                emit(out, json(id, backend, shape, rep = -3, cold = true,
+                    copyMs = (System.nanoTime() - tc) / 1_000_000,
+                    bytes = modelFile.length()))
             }
             runOne(out, id, modelFile, backend, shape, reps, initTimeoutS)
         }
@@ -115,11 +156,35 @@ class PresenceBenchTest {
         reps: Int,
         initTimeoutS: Long,
     ) {
-        val backend = if (backendName == "gpu") Backend.GPU() else Backend.CPU()
+        val backend: Backend = if (backendName == "gpu") Backend.GPU()
+            else if (cpuThreads != null) Backend.CPU(cpuThreads) else Backend.CPU()
         val cacheDir = File(benchDir, "cache-$id-$backendName")
         // COLD: no compile cache at all, which is what a fresh install has.
         cacheDir.deleteRecursively()
         cacheDir.mkdirs()
+
+        if (freshEngine) {
+            // What Qwen requires: a new Engine per render, because the recurrent state is not
+            // reset for a new Conversation. The compile cache is kept after the first init, so
+            // this is the steady-state cost of that shape, not the fresh-install one.
+            for (rep in 1..reps) {
+                val r = initEngine(modelFile, backend, cacheDir, initTimeoutS)
+                if (r.engine == null) {
+                    emit(out, json(id, backendName, shape, rep, cold = rep == 1,
+                        initMs = r.ms, error = r.error))
+                    continue
+                }
+                try {
+                    generate(out, id, r.engine, backendName, shape, 1, cold = rep == 1,
+                        initMs = r.ms, repBase = rep)
+                } finally {
+                    try { r.engine.close() } catch (_: Throwable) {}
+                }
+            }
+            emit(out, json(id, backendName, shape, rep = -2, cold = false,
+                hwmKb = vmHwmKb(), rssKb = vmRssKb()))
+            return
+        }
 
         val cold = initEngine(modelFile, backend, cacheDir, initTimeoutS)
         if (cold.engine == null) {
@@ -170,8 +235,9 @@ class PresenceBenchTest {
                     modelPath = modelFile.absolutePath,
                     backend = backend,
                     // The presence layer never needs 32k: the persona is ~600 tokens and a
-                    // render is capped at 256 output. 8k is what GemmaExpress asks for.
-                    maxNumTokens = 8192,
+                    // render is capped at 256 output. 8k is what GemmaExpress asks for;
+                    // bench.maxTokens overrides it (or leaves the model default).
+                    maxNumTokens = maxTokens,
                     cacheDir = cacheDir.path,
                 ))
                 e.initialize()
@@ -196,9 +262,12 @@ class PresenceBenchTest {
         shape: String,
         reps: Int,
         cold: Boolean,
+        initMs: Long? = null,
+        repBase: Int = 0,
     ) {
         val system = if (shape == "persona") LONG_PERSONA else SHORT_SYSTEM
-        for (rep in 1..reps) {
+        for (r in 1..reps) {
+            val rep = repBase + r
             var conv: Conversation? = null
             try {
                 val cfg = ConversationConfig(
@@ -251,7 +320,7 @@ class PresenceBenchTest {
                 val tokens = try { conv.getTokenCount() } catch (_: Throwable) { -1 }
                 emit(out,
                     json(id, backendName, shape, rep, cold,
-                        initMs = null, convMs = convMs, ttftMs = ttftMs, totalMs = totalMs,
+                        initMs = initMs, convMs = convMs, ttftMs = ttftMs, totalMs = totalMs,
                         chunks = n, wallTokPerS = wallTokPerS,
                         rtTtftMs = bi?.timeToFirstTokenInSecond?.times(1000.0),
                         rtDecodeTokPerS = bi?.lastDecodeTokensPerSecond,
@@ -280,6 +349,8 @@ class PresenceBenchTest {
         cold: Boolean,
         initMs: Long? = null,
         convMs: Long? = null,
+        copyMs: Long? = null,
+        bytes: Long? = null,
         ttftMs: Long? = null,
         totalMs: Long? = null,
         chunks: Int? = null,
@@ -306,6 +377,7 @@ class PresenceBenchTest {
         kv("model", model, q = true); kv("backend", backend, q = true)
         kv("shape", shape, q = true); kv("rep", rep); kv("cold", cold)
         kv("init_ms", initMs); kv("conv_ms", convMs)
+        kv("copy_ms", copyMs); kv("bytes", bytes)
         kv("ttft_ms", ttftMs); kv("total_ms", totalMs); kv("chunks", chunks)
         kv("wall_tok_s", wallTokPerS); kv("rt_ttft_ms", rtTtftMs)
         kv("rt_decode_tok_s", rtDecodeTokPerS); kv("rt_decode_tokens", rtDecodeTokens)
