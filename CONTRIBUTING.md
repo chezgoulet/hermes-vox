@@ -59,7 +59,8 @@ no secrets required, so fork PRs are gated too.
 1. `scripts/fetch-runtime.sh` — the sherpa-onnx runtime AAR, SHA-256 verified.
 2. `go vet ./voice/... ./mobile/...`
 3. `go test -race ./voice/... ./mobile/...` (offline)
-4. `gomobile bind -target android -androidapi 23 -javapkg com.hermesvox -o mobile.aar github.com/chezgoulet/hermes-vox/mobile`
+4. `scripts/bind-aar.sh` → `mobile.aar` (pinned gomobile; `-trimpath` + canonical
+   build path — see `docs/REPRODUCIBLE.md`)
 5. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`)
 
 ### The AAR staging step is load-bearing

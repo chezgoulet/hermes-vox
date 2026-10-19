@@ -46,11 +46,9 @@ jobs:
           export PATH=$PATH:$(go env GOPATH)/bin
           go install github.com/ebitengine/gomobile/cmd/gomobile@v0.0.0-20260820040257-d11f821a26a6
           go install github.com/ebitengine/gomobile/cmd/gobind@v0.0.0-20260820040257-d11f821a26a6
-          export GOMOBILE=$(go env GOPATH)/bin/gomobile
-          $GOMOBILE init > /dev/null 2>&1 || true
+          gomobile init > /dev/null 2>&1 || true
           mkdir -p android/app/libs
-          $GOMOBILE bind -target android -androidapi 23 -javapkg com.hermesvox \
-            -o android/app/libs/mobile.aar github.com/chezgoulet/hermes-vox/mobile
+          bash scripts/bind-aar.sh android/app/libs/mobile.aar
 
       # The release keystore is repository-encrypted (age, key = repo secret).
       # Nightlies are signed with the SAME release key AND carry a versionCode at or
