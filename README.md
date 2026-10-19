@@ -263,11 +263,12 @@ The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.
 
 ## Status
 
-**0.8.0 — "the accelerator release"** is the current release
-([notes](docs/RELEASE-0.8.0.md)). What is in progress, honestly:
+**0.8.1 — "the headset release"** is the current release
+([notes](docs/RELEASE-0.8.1.md)). What is in progress, honestly:
 
 - **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
-  GPU, Parakeet's on-phone speed, echo handling after a reply.
+  GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
+  added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
 - **0.9 — voice and the arrangement:** streaming speech recognition (to unlock semantic
   turn-taking and backchannels), a presence-sized soul model, and more voice choice.
 - **Google Play:** coming soon.
