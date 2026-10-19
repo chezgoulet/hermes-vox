@@ -60,7 +60,8 @@ engine. Measurements: `docs/PRESENCE-BENCH.md`.
 
 Arms: sherpa streaming Zipformer 20M (43.6 MB, Apache-2.0), Zipformer 06-26
 (72.7 MB, Apache-2.0), Nemotron 0.6B (631 MB, NVIDIA licence), and Vosk (40 MB
-model, Maven AAR) as the non-sherpa control. Moonshine v2 is a separate decision
+model, Maven AAR) as the non-sherpa control — later dropped without being run (see
+the residual note below). Moonshine v2 is a separate decision
 because it is a second runtime, not a config swap.
 
 **Metrics:** partial latency (median/p90/p95), finalisation latency, WER on a
@@ -91,11 +92,14 @@ no licence file. The weights are **never bundled** — downloaded at runtime, wi
 the agreement, the attribution string and the model-card link shown and accepted
 on the download screen.
 
-**Residual, recorded rather than assumed:** the **Vosk control arm was not run**.
-It does not affect the default (the sherpa arms are already separated by ~3× in
-both cost and accent WER), but it leaves the low-end fallback comparison —
-Zipformer against Vosk — unmeasured. Anyone proposing Vosk as the fallback is
-proposing an unmeasured arm.
+**Residual, recorded rather than assumed:** the **Vosk control arm was never run**,
+and is now **dropped rather than outstanding** (Christopher, 2026-10-19). Vosk needs
+a second ASR runtime — its own Maven AAR and model format, not a config swap — and
+F-Droid path B already builds sherpa-onnx and onnxruntime from source, so a third
+native dependency costs twice: in the recipe and in review. Nothing measured suggests
+it beats the Zipformer, which is our measured low-end fallback. It comes back only as
+a proposal with a number attached, never as an untested default. The A/B therefore
+stands as "best of four sherpa arms", not "best of five".
 
 ## D6 — Wake word: ship "Hey Hermes", personalise, then arbitrary phrases
 
