@@ -7,7 +7,15 @@ we're not publishing to Play yet.
 
 ## Standard release (every cut)
 
-1. **Bump the version** in `android/app/build.gradle` (`versionCode` + `versionName`).
+1. **Bump the version** in `android/app/build.gradle` (`versionCode` + `versionName`) —
+   **on `testing`, before the merge** (`chore(release): 0.7.0 (112) — version bump +
+   release notes on testing (pre-merge per the flow)` is the pattern). The merge then
+   carries the new code into `main`, and the two branches agree afterwards.
+   **The one way to get this wrong:** bumping inside the merge commit on `main` only.
+   `testing` then stays a code behind, every nightly from then on carries a `versionCode`
+   below the release's, and Android refuses the downgrade — so a phone on the release
+   cannot take a nightly without uninstalling first. 0.8.0 did exactly that (`33786fa`);
+   `testing` was brought forward to 141 to repair it.
 2. **Gate the full tree** — the authoritative build is on the Thelio (`c@sasquatch`):
    - Go: `go test ./voice/...` (+ `go vet ./voice/...`)
    - Bind + stage: `gomobile bind` → `mobile.aar` → copy into `android/app/libs/`
@@ -21,6 +29,12 @@ we're not publishing to Play yet.
 4. **Release** via `gh release create` with the version + notes (referencing
    `docs/RELEASE-<version>.md`).
 5. **Confirm** on a phone: install, connect to your gateway, one live call.
+
+**Nightlies are not releases.** Every merge into `testing` publishes a `nightly-*`
+prerelease built from that commit (`.github/workflows/nightly.yml`) and tagged at it: it
+is signed with the release key and carries a `versionCode` at or above the release's, so
+it installs over a release; it never becomes "Latest", and it is not a cut. Only steps
+1–5 make a release, and only from `main`.
 
 ## Play Store builds (the compliance half — standard going forward)
 
