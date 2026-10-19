@@ -2,8 +2,6 @@
 # Cross-platform build orchestration.
 #
 # Design:
-#   - Detect host GOOS/GOARCH via uname/Go runtime (no flags).
-#   - Pin GOCACHE / GOMODCACHE under .tools/cache so CI and dev stay in sync.
 #   - Invoke the Python build driver (scripts/build.py) as the canonical
 #     no-flag entry point. The Makefile is the human-facing convenience layer;
 #     the Python driver is the authoritative target matrix + feasibility report.
@@ -11,22 +9,14 @@
 # Targets:
 #   build     Build every possible target from the current host.
 #   clean     Remove build output.
-#   test      Run Go unit tests.
+#   test      Run the gate (Android build + unit tests).
 #   verify    Build + verify the artifact matrix.
 #   help      Show available targets.
-
-GO_TOOLCHAIN ?= go1.26.4
-GO           := $(GO_TOOLCHAIN)
 
 TOOLS_DIR    := .tools
 CACHE_DIR    := $(TOOLS_DIR)/cache
 BIN_DIR      := $(TOOLS_DIR)/bin
 RELEASE_DIR  := releases
-
-export GOCACHE     := $(abspath $(CACHE_DIR)/go-build)
-export GOMODCACHE  := $(abspath $(CACHE_DIR)/go-mod)
-export GOFLAGS     := -mod=mod
-export GOENV       := $(abspath $(TOOLS_DIR)/goenv)
 
 .PHONY: all build clean test verify help tools
 all: build
@@ -44,27 +34,22 @@ clean:
 	@echo "✓ Clean complete."
 
 test:
-	@echo "▶ Running Go tests..."
-	$(GO) test ./...
+	@echo "▶ Running the gate (Android build + unit tests)..."
+	bash scripts/gate.sh
 
 verify: build
 	@echo "▶ Verifying artifact matrix..."
 	python scripts/build.py --verify
 
 tools:
-	@echo "▶ Ensuring toolchain $(GO_TOOLCHAIN) is available..."
-	$(GO) version
+	@echo "▶ Ensuring a JDK is available..."
+	java -version
 
 help:
 	@echo "Ebitengine Boilerplate — available targets:"
 	@echo ""
 	@echo "  build     Build every possible target from this host (no flags)"
 	@echo "  clean     Remove releases/ and .tools/"
-	@echo "  test      Run Go unit tests"
+	@echo "  test      Run the gate (Android build + unit tests)"
 	@echo "  verify    Build then verify the artifact matrix"
-	@echo "  tools     Check the Go toolchain is available"
-	@echo ""
-	@echo "Environment (auto-set):"
-	@echo "  GOCACHE     = $(GOCACHE)"
-	@echo "  GOMODCACHE  = $(GOMODCACHE)"
-	@echo "  GO_TOOLCHAIN = $(GO_TOOLCHAIN)"
+	@echo "  tools     Check a JDK is available"

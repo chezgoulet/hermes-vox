@@ -4,6 +4,12 @@ Android 15 and newer can run with 16 KB memory pages instead of 4 KB. A native
 library built for 4 KB pages cannot be loaded on such a device, and Google Play
 requires 16 KB support for apps targeting Android 15+.
 
+> **Since #126 the Go binding is gone**, and with it `libgojni.so` and
+> `scripts/bind-aar.sh`. Every native library left in the APK comes from an upstream
+> AAR and reports `align 0x4000` (measured 2026-10-19 with `llvm-readelf -l` on all
+> 18 `.so` files: sherpa-onnx, onnxruntime, litertlm), and the debug APK passes
+> `zipalign -c -P 16 4`. The rest of this page is the history of the fix.
+
 ## What was wrong
 
 `libgojni.so` (gomobile's Go binding) was linked by NDK r25, which aligns `LOAD`

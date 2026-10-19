@@ -1,0 +1,4 @@
+data: {"type":"response.created","response":{"id":"resp_f"}}
+
+data: {"type":"response.failed","response":{"id":"resp_f","status":"failed","error":{"code":"server_error","message":"provider quota exhausted"}}}
+

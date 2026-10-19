@@ -1,9 +1,9 @@
 name: ci
 
 # The pull-request gate. Every PR into `testing` or `main` (and every push to
-# them) runs the Go connector checks and the Android build + unit tests. It
-# needs no secrets: the sherpa-onnx runtime comes from the public upstream
-# release (SHA-256 pinned in scripts/fetch-runtime.sh) and the APK is a debug
+# them) runs the Android build + unit tests (the Kotlin voice core and its
+# stream parity harness included). It needs no secrets: the sherpa-onnx runtime
+# comes from the public upstream release (SHA-256 pinned in scripts/fetch-runtime.sh) and the APK is a debug
 # build, so it runs for forks too. Signing and publishing stay in nightly.yml.
 
 on:
@@ -19,50 +19,18 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Pinned to the gomobile the project is proven on (the Ebitengine fork).
-  GOMOBILE_VERSION: v0.0.0-20260820040257-d11f821a26a6
-
 jobs:
-  go:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l voice mobile)
-          if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
-      - name: go vet
-        run: go vet ./voice/... ./mobile/...
-      - name: go test -race
-        run: go test -race ./voice/... ./mobile/...
-
   android:
     runs-on: ubuntu-latest
-    needs: go
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
       - uses: gradle/actions/setup-gradle@v4
       - name: Fetch the pinned sherpa-onnx runtime (sha256-verified)
         run: bash scripts/fetch-runtime.sh
-      - name: gomobile bind -> app/libs/mobile.aar
-        run: |
-          go install github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION
-          go install github.com/ebitengine/gomobile/cmd/gobind@$GOMOBILE_VERSION
-          export PATH=$PATH:$(go env GOPATH)/bin
-          gomobile init >/dev/null 2>&1 || true
-          mkdir -p android/app/libs
-          bash scripts/bind-aar.sh android/app/libs/mobile.aar
       - name: Build debug APK + unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug testDebugUnitTest
@@ -72,30 +40,3 @@ jobs:
         with:
           name: unit-test-reports
           path: android/app/build/reports/tests/
-
-  # Regression gate for hermes-vox #138: the bound libgojni.so used to differ
-  # between builds (absolute checkout path + gomobile's random work dir ended up
-  # in DWARF/.gopclntab/.rodata/build info). Two binds from different paths must
-  # produce a byte-identical mobile.aar. See docs/REPRODUCIBLE.md.
-  reproducible:
-    runs-on: ubuntu-latest
-    needs: go
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Install pinned gomobile
-        run: |
-          go install github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION
-          go install github.com/ebitengine/gomobile/cmd/gobind@$GOMOBILE_VERSION
-          export PATH=$PATH:$(go env GOPATH)/bin
-          gomobile init >/dev/null 2>&1 || true
-      - name: Two binds from different paths must be byte-identical
-        run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
-          bash scripts/repro-check.sh

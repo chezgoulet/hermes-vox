@@ -1,0 +1,48 @@
+{
+  "fixture": "barge",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "resp_c",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        }
+      ],
+      "snapshots": [
+        {
+          "done": false,
+          "response_id": "resp_c",
+          "text": "",
+          "transcript": ""
+        }
+      ],
+      "cancel": {
+        "poll_after_cancel_fails": true,
+        "second_cancel_ok": true
+      }
+    }
+  ],
+  "held_connection_closed": true,
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "hi",
+      "stream": true,
+      "previous_response_id": ""
+    }
+  ]
+}

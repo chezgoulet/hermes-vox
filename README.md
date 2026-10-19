@@ -192,10 +192,9 @@ Notes on the fields:
 ### Build from source
 
 ```bash
-# Go 1.26, JDK 17, Android SDK + NDK 25.2 (JAVA_HOME / ANDROID_HOME /
-# ANDROID_NDK_HOME exported). One command fetches the verified sherpa-onnx
-# runtime, binds the Go connector (mobile.aar), builds the APK and runs every
-# test — see CONTRIBUTING.md:
+# JDK 17 and the Android SDK (JAVA_HOME / ANDROID_HOME exported). One command
+# fetches the verified sherpa-onnx runtime, builds the APK and runs every test —
+# see CONTRIBUTING.md:
 bash scripts/gate.sh
 # -> android/app/build/outputs/apk/debug/hermes-vox-<version>.apk
 adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
@@ -208,10 +207,10 @@ adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
 - **Speech.** [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runs Silero VAD,
   Whisper or Parakeet STT, and Supertonic or Piper TTS, all on the CPU with tuned
   thread counts.
-- **The entity.** The Hermes gateway (`/v1/responses` streaming, `/v1/runs`), reached
+- **The entity.** The Hermes gateway (`/v1/responses` streaming), reached
   over your private network. Hermes does all the reasoning, tools and memory.
-- **The connector.** Go, bound with gomobile (`voice/`, `mobile/`): the SSE stream, tool
-  events, and stream cancellation for barge-in.
+- **The connector.** Kotlin (`com.hermesvox.core`, no extra dependencies): the SSE
+  stream, tool events, and stream cancellation for barge-in.
 - **The soul.** Gemma 4 E2B on LiteRT-LM, GPU-first with a CPU fallback (Enhanced
   Realtime only).
 - **The being.** OpenGL ES 3 on its own thread: 6,000 stateless particles placed by
@@ -272,7 +271,7 @@ The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.
 - **0.9 — voice and the arrangement:** streaming speech recognition (to unlock semantic
   turn-taking and backchannels), a presence-sized soul model, and more voice choice.
 - **Google Play:** coming soon.
-- **Longer horizon:** full-duplex conversation, and a desktop client on the same Go core.
+- **Longer horizon:** full-duplex conversation, and a desktop client.
 
 The details are in [ROADMAP.md](ROADMAP.md).
 

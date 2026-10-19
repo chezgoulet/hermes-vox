@@ -1,0 +1,70 @@
+{
+  "fixture": "framing",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "m1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "one ",
+          "commentary": "",
+          "text": "one ",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "m1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "two",
+          "commentary": "",
+          "text": "one two",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "resp_x",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "one two",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "resp_x",
+          "text": "one two",
+          "transcript": "one two"
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "hi",
+      "stream": true,
+      "previous_response_id": ""
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import com.hermesvox.mobile.HermesSession
+import com.hermesvox.core.HermesSession
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -1090,12 +1090,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // genCancelled; break so the turn's worker retires without settling a
                     // ghost reply (the gate was already released by bargeIn()).
                     if (genCancelled) { terminal.cancel(); break }
-                    // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The Go
-                    // side (WaitStream) signals the app the instant an SSE event lands, so
+                    // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The
+                    // session (waitStream) signals the app the instant an SSE event lands, so
                     // deltas render as they arrive; the 100ms budget is only the idle floor
                     // (no data yet -> check again). End-of-stream completion wakes too, so
                     // `done` is observed promptly and never padded by a poll-tick.
-                    try { session.waitStream(sid, 100) } catch (e: Exception) { if (!genCancelled) VoxLog.w("event=stream-wait err=${e.message?.take(120)} gen=$gen tries=$tries") } // gomobile raises on a retired stream
+                    try { session.waitStream(sid, 100) } catch (e: Exception) { if (!genCancelled) VoxLog.w("event=stream-wait err=${e.message?.take(120)} gen=$gen tries=$tries") } // raises on a retired stream
                     var payload: String? = null
                     try { payload = session.pollStreamJSON(sid) } catch (e: Exception) {
                         // 0.6.8 (the field poll-storm): a stream orphaned by process death
@@ -1988,7 +1988,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      * The gateway key is stored ENCRYPTED at rest (SecureStore, AES/GCM: the pref
      * value is "ivB64:ctB64"), and every LIVE path resolves it before use —
      * MainActivity.storedKey(), the Settings test, onboarding, all of them go
-     * through GatewayKey.resolve(stored, SecureStore::decrypt) and hand the Go
+     * through GatewayKey.resolve(stored, SecureStore::decrypt) and hand the
      * session the PLAINTEXT key.
      *
      * The conn-test probe did not. It read the raw pref and sent

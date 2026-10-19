@@ -1,0 +1,18 @@
+#! voice
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_r","status":"completed"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"i1","delta":"Hello "}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"i1","delta":"world"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","text":"Hello world"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_r","status":"completed"}}
+
+data: [DONE]
+

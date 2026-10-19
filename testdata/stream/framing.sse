@@ -1,0 +1,11 @@
+: keepalive
+event: response.output_text.delta
+data: {"type":"response.output_text.delta",
+data: "item_id":"m1","delta":"one "}
+
+: keepalive
+data: {"type":"response.output_text.delta","item_id":"m1","delta":"two"}
+data: {"type":"response.completed","response":{"id":"resp_x"}}
+
+data: [DONE]
+

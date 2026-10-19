@@ -6,7 +6,7 @@ import org.junit.Test
 
 /**
  * ER Phase 1 — the voice-mode signal (the "the agent knows it's on a call"
- * mechanism). The prefix lives in Go (voice.UserTurnPrefix) and rides each
+ * mechanism). The prefix lives in core.ResponsesClient.USER_TURN_PREFIX and rides each
  * voice turn's user text; these tests pin the CONTRACT the app relies on:
  *
  *  - the prefix is call-register: concise + spoken + no markdown, and carries
@@ -20,12 +20,17 @@ import org.junit.Test
  */
 class ErVoicePrefixTest {
 
-    /** What the app sends (mobile.HermesSession.VoiceTurn builds from this). */
+    /** What the app sends (core.HermesSession.voiceTurn builds from this). */
     private val expectedCore =
         "[Voice input — the app adds its own spoken acknowledgments like \"let me think\" while you work, so do NOT re-state that you are thinking or working. Greet the caller naturally first if they greet you. Then respond conversationally, 2-4 sentences. " +
             "Speak plainly, no code or markdown. Answer from what you know; do NOT do " +
             "exhaustive tool work or re-audit your own docs/state unless the caller " +
             "explicitly asks.] "
+
+    @Test
+    fun `the session sends exactly this prefix`() {
+        assertEquals(expectedCore, com.hermesvox.core.ResponsesClient.USER_TURN_PREFIX)
+    }
 
     @Test
     fun `prefix carries the call-register + anti-tool-spiral contract`() {

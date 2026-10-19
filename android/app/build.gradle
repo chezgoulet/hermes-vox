@@ -63,7 +63,9 @@ android {
 
 dependencies {
     implementation 'org.apache.commons:commons-compress:1.26.2'
-    implementation fileTree(include: ['*.aar'], dir: 'libs')
+    // Only the pinned sherpa-onnx runtime (scripts/fetch-runtime.sh). Named rather than
+    // '*.aar' so a stale mobile.aar from a pre-#126 checkout can never be packaged.
+    implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: 'libs')
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'
