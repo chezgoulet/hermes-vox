@@ -53,8 +53,19 @@ MODELS = {
                     "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad", "nemo"),
     "parakeet-v3": ("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
                     "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf", "nemo"),
+    # Verified 2026-10-19: this is the artifact the streaming A/B measured
+    # (docs/STT-AB.md): fresh download from the URL below is 310,414,022 bytes
+    # and hashes to this pin, and the on-device arm's model directory is
+    # byte-identical to its extracted contents (encoder sha256 5022b2ec…).
+    # The "74685102…" hash once written into STT-AB.md was a transcription
+    # error, not upstream drift; do not pin to it.
     "zipformer-stream": ("sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2",
                          "639e25b578e9e997131402199419c13a941f8e4e198e2da1ce57dbf5cf401282", "online"),
+}
+# Second witness for the artifacts whose size is known. A SHA-256 pin is the
+# authority; the size catches a truncated/partial download before hashing it.
+SIZES = {
+    "zipformer-stream": 310414022,
 }
 DEFAULT_SET = ["whisper-base", "whisper-small", "parakeet-v2", "parakeet-v3", "zipformer-stream"]
 
@@ -81,6 +92,10 @@ def fetch(model_dir, ids):
         if got != pin:
             dst.unlink()
             raise SystemExit(f"sha256 mismatch for {tarball}: {got}")
+        want = SIZES.get(mid)
+        if want is not None and dst.stat().st_size != want:
+            raise SystemExit(f"size mismatch for {tarball}: "
+                             f"{dst.stat().st_size} != {want}")
         if not (model_dir / tarball.replace(".tar.bz2", "")).exists():
             with tarfile.open(dst) as t:
                 t.extractall(model_dir, filter="data")

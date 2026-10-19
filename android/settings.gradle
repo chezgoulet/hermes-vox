@@ -3,4 +3,5 @@
 // toolchain resolver may silently download a different JDK, hurting
 // reproducibility (#166).
 include ':app'
+include ':bench'
 rootProject.name = "hermes-vox-android"
