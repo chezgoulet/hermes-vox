@@ -1,0 +1,5 @@
+#! hold
+#! cancel_after_events 1
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_c","status":"in_progress"}}
+

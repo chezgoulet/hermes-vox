@@ -94,6 +94,16 @@ type sseEnvelope struct {
 // A var so tests can shorten it.
 var streamIdleTimeout = 60 * time.Second
 
+// SetStreamIdleTimeout replaces the idle watchdog's bound and returns the old one.
+// It exists for the stream parity harness (tools/streamdump), which replays the
+// timeout fixture with a short bound; production never calls it. Not safe to call
+// while a stream is in flight.
+func SetStreamIdleTimeout(d time.Duration) time.Duration {
+	old := streamIdleTimeout
+	streamIdleTimeout = d
+	return old
+}
+
 // streamHTTP is the shared client for SSE turns. Sharing it lets consecutive
 // voice turns reuse the kept-alive connection (no fresh TCP + TLS handshake on
 // every utterance — first-token latency matters on a call). There is no overall

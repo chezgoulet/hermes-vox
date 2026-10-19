@@ -1,0 +1,15 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_t","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"id":"fc1","type":"function_call","name":"terminal","arguments":"{\"command\":\"date\"}"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"id":"fo1","type":"function_call_output","output":[{"type":"input_text","text":"Mon Aug 25 10:00:00 UTC 2026"}]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"m1","delta":"It is ten."}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_t","status":"completed"}}
+

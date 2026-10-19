@@ -1,0 +1,12 @@
+#! stored {"id":"resp_compress","output":[{"type":"message","content":[{"type":"output_text","text":"compacted"}]}]}
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_voice_1","status":"in_progress"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"i1","delta":"hello there"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_voice_1","status":"completed"}}
+
+data: [DONE]
+

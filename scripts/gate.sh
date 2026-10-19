@@ -41,10 +41,12 @@ echo "== [0/5] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
 echo "== [1/5] go vet =="
-go vet ./voice/... ./mobile/...
+go vet ./voice/... ./mobile/... ./tools/streamdump/...
 
 echo "== [2/5] go test -race (offline) =="
-go test -race ./voice/... ./mobile/...
+# tools/streamdump replays testdata/stream/*.sse against the committed goldens
+# (the Go half of the stream parity harness; StreamParityTest is the Kotlin half).
+go test -race ./voice/... ./mobile/... ./tools/streamdump/...
 
 echo "== [3/5] gomobile bind -> mobile.aar =="
 command -v gomobile >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION"
