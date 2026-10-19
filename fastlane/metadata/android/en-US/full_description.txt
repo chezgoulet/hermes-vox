@@ -1,0 +1,9 @@
+Hermes Vox gives a voice to Hermes, the AI agent you already run, and puts it on your phone.
+
+It is a client, not a service: you point it at a Hermes gateway you control — the same one your other agents use — and talk to it. The app ships no account, no subscription and no server of its own.
+
+Speech recognition runs on the device, so audio is not sent to a third party for transcription. What leaves the phone is what you choose to send to your gateway.
+
+The conversation is shown as a living presence rather than a message list: a GPU-drawn being that moves with the agent's state, with a transcript you can read back.
+
+Requires Android 7.0 or newer and a reachable Hermes gateway. Bring your own gateway; the app does not include one.

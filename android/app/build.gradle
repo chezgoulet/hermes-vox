@@ -29,18 +29,24 @@ android {
     }
     signingConfigs {
         release {
-            def kp = keystoreProps
-            storeFile new File(repoRoot, kp.getProperty("storeFile", "keystore/release.keystore"))
-            storePassword kp.getProperty("storePassword")
-            keyAlias kp.getProperty("keyAlias", "hermes-vox")
-            keyPassword kp.getProperty("keyPassword")
+            // Sign only when the maintainer's keystore is present. An F-Droid
+            // build runs without it and must produce an unsigned APK that the
+            // buildserver signs with its own key; failing there would make the
+            // app unbuildable from source for everyone but us.
+            if (keystorePropFile.exists()) {
+                def kp = keystoreProps
+                storeFile new File(repoRoot, kp.getProperty("storeFile", "keystore/release.keystore"))
+                storePassword kp.getProperty("storePassword")
+                keyAlias kp.getProperty("keyAlias", "hermes-vox")
+                keyPassword kp.getProperty("keyPassword")
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources false
-            signingConfig signingConfigs.release
+            if (keystorePropFile.exists()) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
         }
