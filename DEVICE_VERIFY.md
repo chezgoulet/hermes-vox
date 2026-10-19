@@ -68,6 +68,17 @@ Optional: Whisper tiny/small, **Parakeet-TDT 0.6B** (most accurate, 482 MB), **P
    The change lands on the next voice-model load.
 7. **Keep-awake** — the screen stays on during a call and times out normally after it
    (Settings → Appearance & Presence).
+8. **A headset becomes the route (#149)** — pair a Bluetooth headset, open a call, and read
+   the log: `event=comm-route action=set ok=true type=BT_SCO` (or `BLE_HEADSET`) listing the
+   devices it could see, and `event=comm-route action=cleared` when you hang up. Talk with
+   the phone's own mic covered — what Hermes reports has to come from the headset. A USB or
+   wired headset should take the same route.
+   Two honest limits, both field-visible rather than hidden: the route follows the
+   `VOICE_COMMUNICATION` capture source, so with Settings → Mic → hardware AEC/NS **off** the
+   app records a raw phone mic and stays on the phone; and that path is the platform's
+   communication route, which **Android 12+** selects via `setCommunicationDevice()`. Below
+   Android 12 the app starts the legacy SCO link, which the platform confirms later — the
+   line rebuilds when the SCO device appears, so the first turn there is the one to doubt.
 
 ## Troubleshooting
 
@@ -78,3 +89,9 @@ Optional: Whisper tiny/small, **Parakeet-TDT 0.6B** (most accurate, 482 MB), **P
 - **A model download stalls** — it resumes by itself when the network returns; the
   notification has Pause and Resume.
 - **No natural voice** — Supertonic isn't installed, so the system TTS is speaking.
+- **A headset is attached but the phone's own mic is used** — read `event=comm-route` at line
+  open. `action=none` alongside the device list means the platform offered nothing routable
+  (a headset connected for media only is not a microphone), and `action=set ok=false` means
+  the route was refused. Check that Android's own dialer uses the headset mic — if it does
+  not, the pairing is the problem, not the app. With hardware AEC/NS off, capture is a raw
+  phone mic by design (verify step 8).

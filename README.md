@@ -111,6 +111,10 @@ and a face without adding a second brain:
   thinking, types itself out while running a command, links a constellation while
   recalling, rises as a flame while the answer streams, and becomes a soundwave as it
   speaks.
+- **Your headset, not the desk.** A Bluetooth or wired headset attached to the phone
+  becomes the call's route — microphone and speaker — the way a phone call would use it
+  (#149). A headset mic needs the default hardware AEC/NS capture source; see
+  `DEVICE_VERIFY.md` for the log lines and the two honest limits.
 - **The reply, as words.** The answer scrolls under the being, locked to what has actually
   been spoken.
 - **Enhanced Realtime (alpha).** An on-device Gemma 4 E2B "soul" (LiteRT-LM, on the GPU)
