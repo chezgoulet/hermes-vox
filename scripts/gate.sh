@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Hermes Vox — full build/verify gate (handoff §10).
-# One command: Go gates -> gomobile bind -> STAGE AAR -> Gradle assembleDebug +
-# unit tests. The staging step is load-bearing: Gradle consumes
-# app/libs/mobile.aar (a COPY); skipping it builds against a stale bind silently
-# ("up-to-date" lies).
+# One command: Go gates -> gomobile bind -> Gradle assembleDebug + unit tests.
+# The app no longer links the bind (#126: the voice core is Kotlin); the Go
+# steps stay until the Go code is removed.
 #
 # Portable: runs from any checkout. Toolchain locations come from the
 # environment (JAVA_HOME, ANDROID_HOME, ANDROID_NDK_HOME); the defaults below
@@ -37,30 +36,25 @@ export PATH="$JAVA_HOME/bin:$GOBIN:$PATH"
 # Pinned to the gomobile the project is proven on (the Ebitengine fork).
 GOMOBILE_VERSION=v0.0.0-20260820040257-d11f821a26a6
 
-echo "== [0/5] fetch pinned runtime deps =="
+echo "== [0/4] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
-echo "== [1/5] go vet =="
+echo "== [1/4] go vet =="
 go vet ./voice/... ./mobile/... ./tools/streamdump/...
 
-echo "== [2/5] go test -race (offline) =="
+echo "== [2/4] go test -race (offline) =="
 # tools/streamdump replays testdata/stream/*.sse against the committed goldens
 # (the Go half of the stream parity harness; StreamParityTest is the Kotlin half).
 go test -race ./voice/... ./mobile/... ./tools/streamdump/...
 
-echo "== [3/5] gomobile bind -> mobile.aar =="
+echo "== [3/4] gomobile bind -> mobile.aar =="
 command -v gomobile >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION"
 command -v gobind >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gobind@$GOMOBILE_VERSION"
 gomobile init >/dev/null 2>&1 || true
 # Reproducible bind: -trimpath + a canonical build path. See docs/REPRODUCIBLE.md.
 bash scripts/bind-aar.sh "$ROOT/mobile.aar"
 
-echo "== [4/5] stage AAR into android/app/libs (load-bearing) =="
-mkdir -p android/app/libs
-cp -f mobile.aar android/app/libs/mobile.aar
-ls -la android/app/libs/mobile.aar
-
-echo "== [5/5] gradle assembleDebug + unit tests =="
+echo "== [4/4] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
 

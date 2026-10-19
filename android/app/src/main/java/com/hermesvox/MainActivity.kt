@@ -12,8 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.hermesvox.mobile.HermesSession
-import go.Seq
+import com.hermesvox.core.HermesSession
 
 /**
  * MainActivity — the front-of-house surface. Hosts the avatar, the live reply,
@@ -257,7 +256,6 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({ handleDebugHarness(intent) }, 800L)
         active = this
         setContentView(R.layout.activity_main)
-        Seq.setContext(applicationContext)
         VoxLog.init(applicationContext)
         CrashLog.init(applicationContext)
         maybeRunWhisperProbe()
@@ -1242,13 +1240,12 @@ class MainActivity : AppCompatActivity() {
         if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
             session = HermesSession(u, k, m)
-            // The provider is a per-request override the Go /v1/responses client sends
-            // (the blessed LIGHT PATH) — set it after construction so every connector
-            // (stream/chat/runs) forwards the chosen gateway backend.
+            // The provider is a per-request override the /v1/responses client sends
+            // (the blessed LIGHT PATH) — set it after construction so streamed and
+            // stored turns both forward the chosen gateway backend.
             session?.setProvider(p)
-            // Same shape for the declared scope: the gomobile constructor keeps its
-            // signature and the Go session forwards the value to every connector
-            // (/v1/responses, /v1/chat/completions, /v1/runs).
+            // Same shape for the declared scope: the session stamps it on every
+            // entity request (/v1/models, /v1/responses).
             session?.setSessionKey(sc)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
@@ -1479,7 +1476,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** /models — native chooser from the REAL gateway catalog (GET /api/model/options).
-     *  Selecting a model sets the app model+provider prefs that the Go /v1/responses
+     *  Selecting a model sets the app model+provider prefs that the /v1/responses
      *  client sends per request (the blessed LIGHT PATH) — the gateway overrides the
      *  entity's inference backend, while the entity's memory/skills/context stay. */
     private fun showModelChooser() {
@@ -1628,7 +1625,7 @@ class MainActivity : AppCompatActivity() {
             val u = prefs.getString("url", "").orEmpty()
             val k = storedKey()
             val m = prefs.getString("model", "hermes-agent").orEmpty()
-            val ok = try { com.hermesvox.mobile.HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
+            val ok = try { HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
             runOnUiThread {
                 resetActiveConversation()
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)

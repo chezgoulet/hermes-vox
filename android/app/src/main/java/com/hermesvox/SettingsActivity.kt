@@ -328,7 +328,7 @@ class SettingsActivity : AppCompatActivity() {
         // Off the UI thread: the directive turn is a real /v1/responses call
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
-            val s = com.hermesvox.mobile.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
+            val s = com.hermesvox.core.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
             // 0.6.2: a retry rides the SAME server-side chain (previous_response_id
             // inside turnStored), so the entity still has its prior attempt in
             // context — the corrective note lands with the entity already knowing
@@ -706,7 +706,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
         bindKeepScreenOn()
         findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
-            val c = com.hermesvox.VoiceController(this, com.hermesvox.mobile.HermesSession(
+            val c = com.hermesvox.VoiceController(this, com.hermesvox.core.HermesSession(
                 prefs.getString("url", "").orEmpty(),
                 SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty(), ""))
             // 0.5.1: the test runs OFF the UI thread. Run on it — as this handler used
