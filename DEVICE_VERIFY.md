@@ -1,77 +1,80 @@
 # Hermes Vox — sideload & on-device verify (the "make it work on the phone" guide)
 
-The APK is a thin voice client whose mind is your Hermes agent. It must be on the
-**same network as the Hermes gateway + the model store** (tailnet or LAN). The
-**core (Realtime / Walkie Talkie) works on-device** with the blessed models
-downloaded in-app; the on-device **Gemma model** is the Enhanced-Realtime
-enhancement (downloadable, runtime is the last integrate step).
+The APK is a thin voice client whose mind is your Hermes agent. The phone must be able
+to reach **your Hermes gateway** (tailnet or LAN, over HTTPS — see the README's
+troubleshooting) and, once, the model hosts for the in-app downloads. **Realtime works
+on-device** with the three required models; the on-device **Gemma model** is the
+optional Enhanced Realtime (alpha) layer.
 
-## Sideload
+## Install
 
-- **APK:** `android/app/build/outputs/apk/release/app-release.apk` (signed,
-  sideloadable; 193 MB — bundles the on-device speech native libs).
-  (Dev: `.../debug/app-debug.apk` also installs.)
-- `adb install -r app-release.apk` on the device, or copy + tap to install
-  (allow "install from unknown sources").
+- **Obtainium** — add `https://github.com/chezgoulet/hermes-vox` as a GitHub source; it
+  installs and updates the signed release APK.
+- **Release APK** — `hermes-vox-<version>.apk` from
+  [Releases](https://github.com/chezgoulet/hermes-vox/releases) (~96 MB; it bundles the
+  on-device speech native libraries). Nightly pre-releases come from `testing`.
+- **Your own build** — `bash scripts/gate.sh`, then
+  `adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk`.
 
-## First-run (onboarding)
+## First run (onboarding)
 
-1. **Entity endpoint** — `http://<host>:8642` (the Hermes API-server gateway on
-   the tailnet). The device must reach it.
-2. **API key** — user-entered (encrypted at rest, never committed). The entity
-   connector does a real Ping (never fake-success).
-3. **Agent name** — the Hermes profile name; shown center-top after connect.
+1. **Entity endpoint** — your gateway, e.g. `https://<machine>.<tailnet>.ts.net`.
+2. **API key** — the gateway's `API_SERVER_KEY` (Keystore-encrypted, never committed).
+   The connector does a real ping (never a fake success).
+3. **Model** — `hermes-agent`, or your Hermes profile name on a non-default profile.
+   The agent's name shows centre-top once connected.
 
-## Download the blessed models (on-device)
+## Download the models (on-device)
 
-**Settings → Voice models.** The blessed set downloads from the in-app source
-(default the House store, configurable), stream → sha256-verify → unpack
-(no cloud, no sideload):
-- **Silero VAD** (barge-in)
-- **Piper · en-US** (warm on-device TTS)
-- **Whisper base.en** (on-device STT; tiny/small are options)
+**Settings → Models → Voice models.** Downloads run in the background with a progress
+notification, pause and resume, wait out network loss, and are sha256-verified before
+install. Required (about 290 MB):
+
+- **Silero VAD** — hears when you start and stop speaking (barge-in).
+- **Supertonic** — the recommended on-device voice (ten speakers, 44.1 kHz).
+- **Whisper base.en** — on-device speech-to-text (int8).
+
+Optional: Whisper tiny/small, **Parakeet-TDT 0.6B** (most accurate, 482 MB), **Piper**
+(a lighter voice), and **Gemma 4 E2B (presence)** for Enhanced Realtime (2.6 GB).
 
 ## Which mode does what
 
-- **Realtime** — hands-free open line: talk, the being listens (VAD) + barge-in,
-  Hermes answers, warm Piper speaks. Keyboard works too.
-- **Enhanced Realtime** — same + the on-device **Gemma 4 E2B** expression layer.
-  Download **Gemma 4 E2B (presence)** in **Settings → Voice models** (in-app,
-  sha256-verified) — it's ~2 GB. Until then it gracefully uses the routed
-  stand-in (the phone-call glue still works).
-- **Walkie Talkie** — hold **PTT** to talk (release to send), or type + **SEND**.
+- **Realtime** — a hands-free open line: talk, the being listens (VAD), barge-in to
+  interrupt, Hermes answers, Supertonic speaks. There is no push-to-talk.
+- **Enhanced Realtime (alpha)** — the same, plus the on-device Gemma 4 E2B soul: it
+  greets you, speaks the first beat of each turn while Hermes works, and answers small
+  talk itself. Without the presence model the call still opens and says what is missing,
+  with one tap to the download.
 
-## Verify on the device (the emulator is function-only; real mic/GPU here)
+## Verify on the device (the emulator is function-only; real mic and GPU here)
 
-1. **Voice turn** — tap 🎤/PTT → talk → being gathers (working) → Hermes answers
-   → Piper speaks. No cloud.
-2. **Barge-in** — talk over Hermes mid-answer → it cuts + re-listens.
-3. **The being** — reacts to real tool calls (terminal→bracket, web→scan,
-   file→fold, memory→constellation).
-4. **Gemma (Enhanced) — GPU** — download `gemma-e2b` in Voice models (~2.6 GB);
-   the device loads it via LiteRT-LM and the being narrates the work in the
-   phone-call voice. **Read the log line: `GemmaExpress loaded: … backend=gpu`.**
-   A `backend=cpu` there means the accelerator did not come up — the app still
-   works (the CPU fallback is deliberate), but the fast path is not live, so
-   check that line before believing the GPU is running. The LiteRT-LM runtime
-   targets the GPU (and CPU); a Google Tensor **NPU** would need a model compiled
-   for that specific SoC and none exists for the Pixel 9. The x86_64 emulator
-   cannot load the model at all — verify on the Pixel.
-5. **Voice CPU threads** — Settings → STT → "Voice CPU threads". `Auto` derives
-   Whisper = half the cores (capped at 4) and Piper = 2. The load logs prove what
-   ran: look for `OfflineWhisperStt loaded: … threads=N cores=M` and
-   `SherpaTts loaded: … threads=N`. A/B 1 vs 4 on the same utterance; the change
-   lands on the next voice-model load.
-6. **Heartbeat of the design** — the Star-Wars reply crawl, the eye-being,
-   Rajdhani type, the three modes.
+1. **Voice turn** — tap the call button, talk. The being turns to its thinking shape,
+   Hermes answers, Supertonic speaks, and the reply scrolls locked to the voice. A dim
+   "heard" line shows what was sent.
+2. **Barge-in** — talk over a reply. It stops, and your words become the next turn
+   (log: `event=barge-carry`).
+3. **The being** — reacts to real tool calls: a command → the terminal, web → the radar,
+   memory → the constellation, a long wait → the hourglass. It should hold 60 fps.
+4. **Gemma (Enhanced Realtime) on the GPU** — download Gemma 4 E2B, switch the mode, and
+   **read the log line `GemmaExpress loaded: … backend=gpu`.** `backend=cpu` means the
+   accelerator did not come up: the app still works (the CPU fallback is deliberate),
+   but the fast path is not live. The Pixel 9's Tensor NPU is not usable (no model is
+   compiled for it), and the x86_64 emulator cannot load the model at all.
+5. **The soul's numbers** — `express-probe … warm=`, `soul(beat= … mind-skip=)`,
+   `hears=true`, `event=soul-heard ms=`.
+6. **Voice CPU threads** — Settings → STT → "Voice CPU threads". `Auto` derives Whisper
+   = half the cores (2–4) and the voice = 2. The load logs prove what ran:
+   `OfflineWhisperStt loaded: … threads=N cores=M` and `SherpaTts loaded: … threads=N`.
+   The change lands on the next voice-model load.
+7. **Keep-awake** — the screen stays on during a call and times out normally after it
+   (Settings → Appearance & Presence).
 
 ## Troubleshooting
 
-- **"Connect first" / ping fails** — the device can't reach the gateway; check
-  the tailnet/LAN + the endpoint (`/v1/models` must be reachable).
-- **Model download fails** — the store source isn't reachable on the device; set
-  a reachable source in Settings → Voice models.
-- **STT unavailable** — the on-device Whisper model isn't installed (download it)
-  or the backend is "Platform (Google)" without it. On-device Whisper is the
-  local-first default.
-- **No warm voice** — Piper isn't installed; it falls back to the system TTS.
+- **"Can't reach the gateway"** — check the network/tailnet and the endpoint;
+  `/v1/models` must answer. Plain `http://` is refused except for `*.ts.net` names.
+- **"Preparing your voice…" stays up** — a required model is missing or still
+  downloading (Settings → Models).
+- **A model download stalls** — it resumes by itself when the network returns; the
+  notification has Pause and Resume.
+- **No natural voice** — Supertonic isn't installed, so the system TTS is speaking.

@@ -45,9 +45,9 @@ Hermes Vox is a **connect-only client**. It does not host the agent, does not
 ship a gateway, has no accounts, and makes no cloud calls of its own. The user
 brings their own Hermes gateway and enters its address **and** its API key in
 the app (onboarding + Settings → Entity). Speech processing is on-device by
-default (Whisper STT, Silero VAD, Piper TTS); the only network destinations are
+default (Whisper STT, Silero VAD, Supertonic TTS); the only network destinations are
 the endpoint the user configures and the model hosts the user's downloads come
-from (`README.md:134-157`).
+from (`README.md` § *Privacy*, lines 249-256).
 
 The security boundary therefore has three sides:
 
@@ -130,14 +130,14 @@ The security boundary therefore has three sides:
   safe **only over a network the user controls** — a private LAN or a VPN/tunnel
   (Tailscale/Nebula — Vox suggests, never requires, a product). Without one, the
   key and audio cross the path in plaintext on listed cleartext hosts. This is a
-  documented trade, not an accident (`README.md:148-157`).
+  documented trade, not an accident (`README.md` § *Privacy*, lines 251-252).
 - On-device speech means audio need not leave the device except as turn text to
   the user's gateway.
 
 ### Model downloads
 
 - Downloads stream → **sha256-verify** → unpack with a zip-slip guard into
-  app-private storage (`README.md:142-143`). A mismatched hash aborts the
+  app-private storage (`README.md` § *Security*, lines 224-225). A mismatched hash aborts the
   install.
 
 ### Release integrity
