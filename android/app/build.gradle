@@ -29,6 +29,9 @@ android {
         targetSdkVersion 34
         versionCode 142
         versionName "0.8.1"
+        // Instrumented tests are the on-device measurement path (docs/PRESENCE-BENCH.md):
+        // they need a device, so gate.sh never runs them, and they never ship in an APK.
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // C0 (0.4.0): no gateway key is injected or baked here. The Hermes gateway
         // API key is USER-ENTERED in the app (onboarding + Settings → Entity,
         // SecureStore-encrypted). The release guard below fails the build if a
@@ -100,6 +103,9 @@ dependencies {
     implementation('com.google.ai.edge.litertlm:litertlm-android:0.16.1') { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-reflect' }
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
     testImplementation 'junit:junit:4.13.2'
+    // Presence bench (docs/PRESENCE-BENCH.md): on-device only, instrumented.
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
 }
 
 // ---------------------------------------------------------------------------
