@@ -372,9 +372,11 @@ Before shipping, decide two things this study cannot:
 
 ## 6. What was not measured (and would change the answer)
 
-- **Vosk was not run.** It is the remaining arm in D5 and needs a second runtime
-  (Maven AAR), not a config swap. The conclusion is "best of four sherpa arms",
-  not "best of five".
+- **Vosk was not run, and the arm is dropped by decision (2026-10-19).** It needs a
+  second ASR runtime (Maven AAR), not a config swap, and it would be a third native
+  dependency in the F-Droid recipe. The conclusion is "best of four sherpa arms",
+  not "best of five"; it returns only with a measurement attached.
+  See `docs/DECISIONS.md` D5.
 - **Sustained thermal behaviour is not measured.** Every cell is ≤ 3.3 minutes of
   audio in a fresh process. Nemotron runs at 0.68–0.76 RTF on 4 threads; over a
   20-minute dictation the Pixel will heat and throttle, and the 94–102 ms feed lag
