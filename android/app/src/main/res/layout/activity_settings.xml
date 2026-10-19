@@ -1083,8 +1083,9 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- Which of the on-device engine's built-in voices speaks (Supertonic:
-                     five female, five male). -->
+                <!-- Which of the on-device engine's built-in voices speaks. The title
+                     and contents follow the engine selected by the `tts` pref
+                     (Supertonic: ten named voices; Piper: curated + numeric id). -->
                 <LinearLayout
                     android:id="@+id/row_tts_speaker"
                     style="@style/HvRow"
@@ -1092,6 +1093,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
                     <TextView
+                        android:id="@+id/set_tts_speaker_title"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Speaker"
