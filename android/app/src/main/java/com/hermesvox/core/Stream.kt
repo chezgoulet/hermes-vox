@@ -302,7 +302,12 @@ internal object Streams {
                         }
                         "function_call_output" -> {
                             ev.output = toolOutput(item.output)
-                            st.text.append("\n[tool-done]")
+                            // Close the marker line. Without the trailing newline the next
+                            // output_text delta was appended to "[tool-done]" itself, so
+                            // plainText() dropped that whole line and a turn that used a
+                            // tool spoke nothing. The Go core had the same bug; the port
+                            // preserved it faithfully, and this fixes it deliberately.
+                            st.text.append("\n[tool-done]\n")
                             ev.text = st.text.toString()
                         }
                         "message" -> {

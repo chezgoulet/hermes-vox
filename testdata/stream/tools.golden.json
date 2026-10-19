@@ -39,7 +39,7 @@
           "output": "Mon Aug 25 10:00:00 UTC 2026",
           "delta": "",
           "commentary": "",
-          "text": "\n[tool:terminal]\n[tool-done]",
+          "text": "\n[tool:terminal]\n[tool-done]\n",
           "done": false
         },
         {
@@ -52,7 +52,7 @@
           "output": "",
           "delta": "It is ten.",
           "commentary": "",
-          "text": "\n[tool:terminal]\n[tool-done]It is ten.",
+          "text": "\n[tool:terminal]\n[tool-done]\nIt is ten.",
           "done": false
         },
         {
@@ -65,7 +65,7 @@
           "output": "",
           "delta": "",
           "commentary": "",
-          "text": "\n[tool:terminal]\n[tool-done]It is ten.",
+          "text": "\n[tool:terminal]\n[tool-done]\nIt is ten.",
           "done": true
         }
       ],
@@ -74,8 +74,8 @@
           "done": true,
           "error": "",
           "response_id": "resp_t",
-          "text": "",
-          "transcript": "\n[tool:terminal]\n[tool-done]It is ten."
+          "text": "It is ten.",
+          "transcript": "\n[tool:terminal]\n[tool-done]\nIt is ten."
         }
       ]
     }

@@ -11,9 +11,11 @@ optional Enhanced Realtime (alpha) layer.
 - **Obtainium** — add `https://github.com/chezgoulet/hermes-vox` as a GitHub source; it
   installs and updates the signed release APK.
 - **Release APK** — `hermes-vox-<version>.apk` from
-  [Releases](https://github.com/chezgoulet/hermes-vox/releases) (~96 MB through 0.8.1, about
-  18 MB less once the Kotlin core (#126) ships; it bundles the on-device speech native
-  libraries). Nightly pre-releases come from `testing`.
+  [Releases](https://github.com/chezgoulet/hermes-vox/releases) (~96 MB through 0.8.1). The
+  Kotlin core (#126) removes the gomobile payload: measured 40.3 MB smaller on the debug
+  build (four ABIs), and roughly 18 MB on the release (two ABIs — an estimate until a
+  release APK is measured). What remains is the on-device speech runtime. Nightly
+  pre-releases come from `testing`.
 - **Your own build** — `bash scripts/gate.sh`, then
   `adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk`.
 

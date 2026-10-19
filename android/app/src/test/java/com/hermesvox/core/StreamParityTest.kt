@@ -180,4 +180,20 @@ class StreamParityTest {
     companion object {
         const val TURN_BUDGET_MS = 10_000L
     }
+
+    /**
+     * #126 review: a turn that used a tool appended its answer to the "[tool-done]"
+     * marker line, and plainText() drops any line beginning with that marker — so
+     * such a turn spoke nothing. The Go core had the same bug and the original
+     * goldens therefore pinned it; the port preserved it faithfully and it was
+     * fixed deliberately, with the goldens regenerated.
+     */
+    @Test
+    fun `a turn that used a tool speaks its answer`() {
+        val out = plain(Json.parse(Json.encode(replay(parse(File(fixtureDir(), "tools.sse")))))) as Map<*, *>
+        val turns = out["turns"] as List<*>
+        val snapshots = (turns.last() as Map<*, *>)["snapshots"] as List<*>
+        val last = snapshots.last() as Map<*, *>
+        assertEquals("It is ten.", last["text"])
+    }
 }

@@ -78,7 +78,7 @@
           "output": "{\"rows\":2}",
           "delta": "",
           "commentary": "",
-          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n",
           "done": false
         },
         {
@@ -91,7 +91,7 @@
           "output": "[{\"type\":\"input_text\",\"text\":7}]",
           "delta": "",
           "commentary": "",
-          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n\n[tool-done]\n",
           "done": false
         },
         {
@@ -117,7 +117,7 @@
           "output": "",
           "delta": "😀 �",
           "commentary": "",
-          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n\n[tool-done]\n😀 �",
           "done": false
         },
         {
@@ -130,7 +130,7 @@
           "output": "",
           "delta": "b",
           "commentary": "",
-          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n\n[tool-done]\n😀 �",
           "done": false
         },
         {
@@ -143,7 +143,7 @@
           "output": "",
           "delta": "",
           "commentary": "",
-          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n\n[tool-done]\n😀 �",
           "done": true
         }
       ],
@@ -152,8 +152,8 @@
           "done": true,
           "error": "",
           "response_id": "resp_m",
-          "text": "folded",
-          "transcript": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �"
+          "text": "folded\n😀 �",
+          "transcript": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n\n[tool-done]\n😀 �"
         }
       ]
     }
