@@ -1,0 +1,39 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+// On-device A/B harness for streaming STT (docs/STT-AB.md).
+//
+// A SEPARATE applicationId (com.hermesvox.bench) on purpose: measuring must not
+// replace or restart the copy of Hermes Vox the user (or another agent) is using
+// on the shared Pixel. It links the same pinned sherpa-onnx AAR the app ships
+// (../app/libs, fetched by scripts/fetch-runtime.sh), so the numbers describe the
+// runtime that would actually ship.
+android {
+    namespace 'com.hermesvox.bench'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.hermesvox.bench"
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    // Same artifact the app packages (named, never '*.aar').
+    implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: '../app/libs')
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'
+}

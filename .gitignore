@@ -43,3 +43,9 @@ keystore/*
 # compiled Python bytecode (never commit these)
 __pycache__/
 *.pyc
+
+# sttbench-stream: generated corpus (mixed noise conditions), alignment cache and
+# raw device results — all regenerable by scripts/stt-ab.sh.
+/tools/sttbench-stream/corpus
+/tools/sttbench-stream/.cache
+/tools/sttbench-stream/results
