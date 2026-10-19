@@ -72,6 +72,47 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
         return res.reply
     }
 
+    // ---- Streamed turns: the SSE events as they arrive ----
+
+    /**
+     * Begins a streamed VOICE turn: [startStream] with the phone-call voice prefix
+     * ([ResponsesClient.USER_TURN_PREFIX]) in front of the user text. ER Phase 1, "the
+     * agent knows it's on a call": the prefix is a per-turn user-message prefix (as
+     * the Hermes CLI's voice mode does), never a persisted instruction, so the prompt
+     * cache stays intact and it works on any stock gateway.
+     */
+    fun voiceTurn(text: String): String = Streams.start(responses, ResponsesClient.USER_TURN_PREFIX + text, lastID)
+
+    /**
+     * Begins a streamed turn (/v1/responses stream:true, chained off the head) and
+     * returns a stream id. Drain with [pollStreamJSON]; end with [cancelStream]
+     * (barge-in) or let it complete (the done poll carries the reply + response_id).
+     */
+    fun startStream(text: String): String = Streams.start(responses, text, lastID)
+
+    /**
+     * The events buffered since the last poll, as one JSON payload:
+     * {"done","error"(done only),"events","response_id","text","transcript"}. Any
+     * response_id it carries becomes the chain head. The done poll retires the
+     * stream; polling a retired id throws.
+     */
+    fun pollStreamJSON(streamID: String): String {
+        val r = Streams.poll(streamID)
+        if (r.responseId.isNotEmpty()) lastID = r.responseId
+        return r.json
+    }
+
+    /**
+     * Blocks until the stream has new data, the turn completes, or [deadlineMs]
+     * passes. True = poll now; false = idle timeout. The push-side wake (#39) that
+     * replaced a fixed 240ms poll tick.
+     */
+    fun waitStream(streamID: String, deadlineMs: Long): Boolean = Streams.wait(streamID, deadlineMs)
+
+    /** Aborts an in-flight streamed turn (barge-in): closes the connection, which
+     *  aborts the gateway's generation, and retires the stream. */
+    fun cancelStream(streamID: String) = Streams.cancel(streamID)
+
     /** Starts a NEW conversation: drops the chain head. The gateway-side history
      *  remains until its own retention clears it. */
     fun resetConversation() {

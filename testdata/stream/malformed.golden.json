@@ -1,0 +1,174 @@
+{
+  "fixture": "malformed",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "resp_m",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "m1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "folded ",
+          "commentary": "",
+          "text": "folded ",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "function_call",
+          "item_id": "fc1",
+          "name": "probe",
+          "arguments": "null",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "folded \n[tool:probe]",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "function_call",
+          "item_id": "fc2",
+          "name": "probe",
+          "arguments": "{\"q\":\"x\"}",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "folded \n[tool:probe]\n[tool:probe]",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "function_call_output",
+          "item_id": "fo1",
+          "name": "",
+          "arguments": "",
+          "output": "{\"rows\":2}",
+          "delta": "",
+          "commentary": "",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "function_call_output",
+          "item_id": "fo2",
+          "name": "",
+          "arguments": "",
+          "output": "[{\"type\":\"input_text\",\"text\":7}]",
+          "delta": "",
+          "commentary": "",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "reasoning",
+          "item_id": "r1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "m1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "😀 �",
+          "commentary": "",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �",
+          "done": false
+        },
+        {
+          "type": "response.output_item.done",
+          "response_id": "",
+          "item_type": "message",
+          "item_id": "m2",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "b",
+          "commentary": "",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "resp_m",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "resp_m",
+          "text": "folded",
+          "transcript": "folded \n[tool:probe]\n[tool:probe]\n[tool-done]\n[tool-done]😀 �"
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "hi",
+      "stream": true,
+      "previous_response_id": ""
+    }
+  ]
+}
