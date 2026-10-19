@@ -1520,7 +1520,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             sLock.notifyAll()
         }
     }
-    private fun speakingEnabledByUser() = speakEnabled()
     private fun stopStreaming() {
         streamed = false
         synchronized(sLock) { sQueue.clear(); sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
