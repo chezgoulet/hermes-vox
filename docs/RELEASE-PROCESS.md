@@ -48,7 +48,17 @@ is the same one a rebuild produces.
 6. **Release** via `gh release create` with the version + notes (referencing
    `docs/RELEASE-<version>.md`), attaching the APK and its `SHA256SUMS`.
 
-7. **Confirm** on a phone: install, connect to your gateway, one live call.
+7. **Ask the site to rebuild** — the page is generated from the tag:
+
+   ```sh
+   scripts/notify-site.sh vX.Y.Z
+   ```
+
+   It needs a `gh` token with access to `chezgoulet/hermes-vox-site`. If the
+   dispatch is missed, the site's daily self-heal rebuilds from the latest release,
+   so the cost is a day of staleness rather than a page that drifts.
+
+8. **Confirm** on a phone: install, connect to your gateway, one live call.
 
 **Nightlies are not releases.** Every merge into `testing` publishes a `nightly-*`
 prerelease built from that commit (`.github/workflows/nightly.yml`) and tagged at it:
