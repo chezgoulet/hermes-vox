@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Same defaults as scripts/gate.sh so the check is runnable on its own.
-export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17.0.12+7}"
+export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/25.2.9519653}"
 # Same toolchain pin as scripts/gate.sh; without it a cold host tries to
