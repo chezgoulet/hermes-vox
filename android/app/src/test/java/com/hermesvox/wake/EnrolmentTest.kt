@@ -72,6 +72,47 @@ class EnrolmentTest {
     }
 
     @Test
+    fun the_steps_are_the_phrase_takes_then_free_speech_then_room() {
+        val steps = EnrolmentPrompts.steps
+        assertEquals(EnrolmentPrompts.takes + 2, steps.size)
+        assertTrue(steps.dropLast(2).all { it.kind == TakeKind.PHRASE })
+        assertEquals(steps.dropLast(2).map { it.index }, (0 until EnrolmentPrompts.takes).toList())
+        assertEquals(TakeKind.SPEECH, steps[steps.size - 2].kind)
+        assertEquals(TakeKind.ROOM, steps.last().kind)
+    }
+
+    @Test
+    fun the_long_takes_meet_the_verifier_floors() {
+        // Upstream's custom verifier: >= ~10 s of the speaker saying other things,
+        // ~5 s of background. Both are asked for at 15 s.
+        assertEquals(10_000, TakeKind.SPEECH.minMs)
+        assertEquals(5_000, TakeKind.ROOM.minMs)
+        assertEquals(15_000, TakeKind.SPEECH.maxMs)
+        assertEquals(15_000, TakeKind.ROOM.maxMs)
+    }
+
+    @Test
+    fun free_speech_duration_and_level() {
+        assertTrue(TakeMeasure.of(tone(9.0, 8_000)).problemFor(TakeKind.SPEECH)!!.startsWith("Too short"))
+        assertNull(TakeMeasure.of(tone(10.0, 8_000)).problemFor(TakeKind.SPEECH))
+        assertNull(TakeMeasure.of(tone(15.0, 8_000)).problemFor(TakeKind.SPEECH))
+        assertTrue(TakeMeasure.of(tone(16.0, 8_000)).problemFor(TakeKind.SPEECH)!!.startsWith("Too long"))
+        assertTrue(TakeMeasure.of(tone(12.0, 50)).problemFor(TakeKind.SPEECH)!!.startsWith("Too quiet"))
+    }
+
+    @Test
+    fun a_quiet_room_passes_where_a_phrase_take_would_be_too_quiet() {
+        // About -60 dBFS: a quiet room, far below a voice.
+        val quiet = TakeMeasure.of(tone(15.0, 45))
+        assertNull(quiet.problemFor(TakeKind.ROOM))
+        assertTrue(quiet.problemFor(TakeKind.PHRASE)!!.startsWith("Too long"))
+        assertTrue(TakeMeasure.of(tone(2.0, 45)).problemFor(TakeKind.PHRASE)!!.startsWith("Too quiet"))
+        assertTrue(TakeMeasure.of(tone(4.0, 45)).problemFor(TakeKind.ROOM)!!.startsWith("Too short"))
+        assertTrue(TakeMeasure.of(ShortArray(16_000 * 15)).problemFor(TakeKind.ROOM)!!.startsWith("Silent"))
+        assertTrue(TakeMeasure.of(tone(15.0, 8_000)).problemFor(TakeKind.ROOM)!!.startsWith("Too loud for a quiet take"))
+    }
+
+    @Test
     fun the_inert_engine_never_fires_and_wants_80ms_frames() {
         assertEquals(1280, WakeWordEngine.FRAME_SAMPLES)
         assertFalse(InertWakeWordEngine.available)

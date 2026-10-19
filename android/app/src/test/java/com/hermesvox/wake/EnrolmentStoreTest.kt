@@ -43,6 +43,20 @@ class EnrolmentStoreTest {
     private fun goodTake(seconds: Double = 1.2): ShortArray =
         ShortArray((16_000 * seconds).toInt()) { i -> (8_000 * sin(2 * PI * 220 * i / 16_000)).toInt().toShort() }
 
+    /** 15 s of low noise, about -60 dBFS: a quiet room. */
+    private fun room(seconds: Double = 15.0): ShortArray {
+        val r = java.util.Random(7)
+        return ShortArray((16_000 * seconds).toInt()) { (r.nextGaussian() * 33).toInt().toShort() }
+    }
+
+    /** A store holding everything a verifier needs. */
+    private fun complete(store: EnrolmentStore) {
+        store.grantConsent()
+        repeat(EnrolmentPrompts.MIN_TAKES) { store.save(it, goodTake()) }
+        store.save(TakeKind.SPEECH, goodTake(15.0))
+        store.save(TakeKind.ROOM, room())
+    }
+
     @Test
     fun save_is_refused_without_consent_and_nothing_is_written() {
         val d = dir()
@@ -94,7 +108,7 @@ class EnrolmentStoreTest {
         val pcm = goodTake()
         store.save(0, pcm)
         val onDisk = File(d, "take-00.hvw").readBytes()
-        val plain = EnrolmentStore.encode(0, 16_000, pcm)
+        val plain = EnrolmentStore.encode(TakeKind.PHRASE, 0, 16_000, pcm)
         // No 64-byte window of the plaintext appears in the file.
         val window = plain.copyOfRange(1_000, 1_064)
         assertFalse(onDisk.toList().windowed(64).any { it == window.toList() })
@@ -156,6 +170,106 @@ class EnrolmentStoreTest {
         store.save(0, goodTake()); store.save(1, goodTake())
         store.delete(0)
         assertEquals(sortedSetOf(1), store.recorded())
+    }
+
+    @Test
+    fun long_takes_are_refused_without_consent() {
+        val d = dir()
+        val store = EnrolmentStore(d, SoftCipher())
+        assertEquals(EnrolmentStore.SaveResult.NoConsent, store.save(TakeKind.SPEECH, goodTake(15.0)))
+        assertEquals(EnrolmentStore.SaveResult.NoConsent, store.save(TakeKind.ROOM, room()))
+        assertTrue(d.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun speech_and_room_takes_are_labelled_encrypted_and_round_trip() {
+        val d = dir()
+        val store = EnrolmentStore(d, SoftCipher())
+        store.grantConsent()
+        val speech = goodTake(14.0)
+        val quiet = room()
+        assertTrue(store.save(TakeKind.SPEECH, speech) is EnrolmentStore.SaveResult.Saved)
+        assertTrue(store.save(TakeKind.ROOM, quiet) is EnrolmentStore.SaveResult.Saved)
+        assertTrue(File(d, "speech.hvw").isFile)
+        assertTrue(File(d, "room.hvw").isFile)
+        val window = EnrolmentStore.encode(TakeKind.SPEECH, 0, 16_000, speech).copyOfRange(1_000, 1_064).toList()
+        assertFalse(File(d, "speech.hvw").readBytes().toList().windowed(64).any { it == window })
+        assertArrayEquals(speech, store.load(TakeKind.SPEECH))
+        assertArrayEquals(quiet, store.load(TakeKind.ROOM))
+        // The long takes are not phrase takes: the phrase count is untouched.
+        assertEquals(0, store.count())
+    }
+
+    @Test
+    fun long_takes_are_measured_by_their_own_rules() {
+        val store = EnrolmentStore(dir(), SoftCipher())
+        store.grantConsent()
+        // A phrase-length take is too short to be free speech.
+        val short = store.save(TakeKind.SPEECH, goodTake(2.0))
+        assertTrue((short as EnrolmentStore.SaveResult.Rejected).reason.startsWith("Too short"))
+        // Speech-level audio is not a quiet room.
+        val loud = store.save(TakeKind.ROOM, goodTake(15.0))
+        assertTrue((loud as EnrolmentStore.SaveResult.Rejected).reason.startsWith("Too loud for a quiet take"))
+        // A muted mic records digital silence.
+        val dead = store.save(TakeKind.ROOM, ShortArray(16_000 * 15))
+        assertTrue((dead as EnrolmentStore.SaveResult.Rejected).reason.startsWith("Silent"))
+        assertFalse(store.has(TakeKind.SPEECH))
+        assertFalse(store.has(TakeKind.ROOM))
+    }
+
+    @Test
+    fun a_speech_file_renamed_to_room_does_not_load() {
+        val d = dir()
+        val store = EnrolmentStore(d, SoftCipher())
+        store.grantConsent()
+        store.save(TakeKind.SPEECH, goodTake(12.0))
+        File(d, "speech.hvw").copyTo(File(d, "room.hvw"))
+        assertNull(store.load(TakeKind.ROOM))
+    }
+
+    @Test
+    fun verifier_material_is_complete_only_with_takes_speech_and_room() {
+        val store = EnrolmentStore(dir(), SoftCipher())
+        complete(store)
+        assertTrue(store.verifierMaterialComplete())
+        store.delete(TakeKind.ROOM)
+        assertFalse(store.verifierMaterialComplete())
+        store.save(TakeKind.ROOM, room())
+        store.delete(TakeKind.SPEECH)
+        assertFalse(store.verifierMaterialComplete())
+        store.save(TakeKind.SPEECH, goodTake(15.0))
+        store.delete(0)
+        assertFalse("below the take minimum", store.verifierMaterialComplete())
+    }
+
+    @Test
+    fun delete_all_removes_the_long_takes_too() {
+        val d = dir()
+        val cipher = SoftCipher()
+        val store = EnrolmentStore(d, cipher)
+        complete(store)
+        store.deleteAll()
+        assertFalse(store.has(TakeKind.SPEECH))
+        assertFalse(store.has(TakeKind.ROOM))
+        assertFalse(d.exists())
+        assertEquals(1, cipher.destroyed)
+    }
+
+    @Test
+    fun the_long_takes_are_unreadable_once_the_key_is_destroyed() {
+        val cipher = SoftCipher()
+        val store = EnrolmentStore(dir(), cipher)
+        complete(store)
+        cipher.destroy()
+        assertNull(store.load(TakeKind.SPEECH))
+        assertNull(store.load(TakeKind.ROOM))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun a_phrase_take_saved_by_kind_is_a_bug() {
+        val store = EnrolmentStore(dir(), SoftCipher())
+        store.grantConsent()
+        store.save(TakeKind.PHRASE, goodTake())
     }
 
     @Test(expected = IllegalArgumentException::class)

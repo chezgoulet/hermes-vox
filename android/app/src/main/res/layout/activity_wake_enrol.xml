@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- #45: wake-word enrolment (preview). Records the owner's takes of the wake
-     phrase, encrypted and device-local. Starts no background listening. -->
+     phrase, 15 s of free speech and 15 s of room sound, encrypted and device-local.
+     Starts no background listening. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -74,7 +75,7 @@
                     android:layout_height="48dp"
                     android:layout_marginTop="12dp"
                     android:background="@drawable/bg_button_primary"
-                    android:text="I agree — keep my takes on this phone"
+                    android:text="I agree — keep my recordings on this phone"
                     android:textColor="@color/hv_bg"
                     android:textSize="15sp" />
             </LinearLayout>
@@ -103,6 +104,17 @@
                 android:textColor="@color/hv_text"
                 android:textSize="18sp" />
 
+            <!-- Why the long takes are needed; hidden for phrase takes. -->
+            <TextView
+                android:id="@+id/wk_why"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/hv_text_dim"
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/wk_result"
                 android:layout_width="match_parent"
@@ -127,7 +139,7 @@
                 android:layout_height="48dp"
                 android:layout_marginTop="20dp"
                 android:background="@drawable/bg_button_ghost"
-                android:text="Delete all my takes"
+                android:text="Delete all my recordings"
                 android:textColor="@color/hv_text"
                 android:textSize="14sp" />
         </LinearLayout>

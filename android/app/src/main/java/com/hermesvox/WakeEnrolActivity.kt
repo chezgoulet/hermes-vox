@@ -18,6 +18,7 @@ import com.hermesvox.wake.EnrolmentPrompts
 import com.hermesvox.wake.EnrolmentStore
 import com.hermesvox.wake.InertWakeWordEngine
 import com.hermesvox.wake.KeystoreTakeCipher
+import com.hermesvox.wake.TakeKind
 import com.hermesvox.wake.TakeMeasure
 import com.hermesvox.wake.WakeWordEngine
 import java.io.ByteArrayOutputStream
@@ -25,8 +26,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * WakeEnrolActivity — records the owner's takes of "Hey Hermes" for the future
- * personal verifier (#45, D6; design in docs/WAKE-WORD.md).
+ * WakeEnrolActivity — records the owner's takes of "Hey Hermes", plus ~15 s of
+ * free speech and ~15 s of their room, for the future personal verifier (#45, D6;
+ * design in docs/WAKE-WORD.md §3).
  *
  * Foundation only: the mic opens while this screen is visible and a take is being
  * recorded, and closes when the take ends or the screen pauses. No service, no
@@ -44,7 +46,10 @@ class WakeEnrolActivity : AppCompatActivity() {
     private lateinit var result: TextView
     private lateinit var record: Button
     private lateinit var promptList: LinearLayout
+    private lateinit var why: TextView
 
+    private val steps = EnrolmentPrompts.steps
+    /** Index into [steps]. */
     private var selected = 0
     @Volatile private var recording = false
     /** Set when a take in flight must not be kept (screen paused, takes deleted). */
@@ -61,17 +66,20 @@ class WakeEnrolActivity : AppCompatActivity() {
         result = findViewById(R.id.wk_result)
         record = findViewById(R.id.wk_record)
         promptList = findViewById(R.id.wk_prompts)
+        why = findViewById(R.id.wk_why)
 
         findViewById<android.view.View>(R.id.wk_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.wk_status).text =
-            "Not listening. This preview only records your takes of \"${EnrolmentPrompts.PHRASE}\" " +
-            "so the wake word can later learn your voice. Nothing runs in the background " +
-            "and nothing is sent anywhere. (Detector: ${engine.id}.)"
+            "Not listening. This preview only records your takes of \"${EnrolmentPrompts.PHRASE}\", " +
+            "15 seconds of you talking and 15 seconds of your room, so the wake word can later " +
+            "learn your voice. Nothing runs in the background and nothing is sent anywhere. " +
+            "(Detector: ${engine.id}.)"
         findViewById<TextView>(R.id.wk_consent_text).text =
-            "Your takes are a recording of your voice — biometric data. They are encrypted " +
-            "with a key held by this phone, kept only in this app's private storage, never " +
-            "backed up, and never sent to your gateway without asking you separately. You " +
-            "can delete them at any time here."
+            "These recordings — your takes of the phrase, 15 seconds of you talking freely, and " +
+            "15 seconds of your room — are recordings of your voice: biometric data. They are " +
+            "encrypted with a key held by this phone, kept only in this app's private storage, " +
+            "never backed up, never uploaded, and used only for the wake word. You can delete " +
+            "them at any time here."
         findViewById<Button>(R.id.wk_consent).setOnClickListener { store.grantConsent(); render() }
         findViewById<Button>(R.id.wk_delete).setOnClickListener { confirmDeleteAll() }
         record.setOnClickListener { if (recording) recording = false else startTake() }
@@ -86,23 +94,26 @@ class WakeEnrolActivity : AppCompatActivity() {
         if (recording) { recording = false; discardNext = true }
     }
 
-    private fun firstMissing(): Int {
-        val have = store.recorded()
-        return (0 until EnrolmentPrompts.takes).firstOrNull { it !in have } ?: 0
-    }
+    private fun firstMissing(): Int = steps.indexOfFirst { !store.has(it) }.coerceAtLeast(0)
 
     private fun render() {
         val consented = store.hasConsent()
         findViewById<android.view.View>(R.id.wk_consent_box).visibility =
             if (consented) android.view.View.GONE else android.view.View.VISIBLE
-        val have = store.recorded()
-        count.text = "${have.size} of ${EnrolmentPrompts.takes} takes recorded" +
-            if (EnrolmentPrompts.isReady(have.size)) " — enough to personalise"
-            else " — ${EnrolmentPrompts.MIN_TAKES} needed"
+        val takes = store.count()
+        val speech = store.has(TakeKind.SPEECH)
+        val room = store.has(TakeKind.ROOM)
+        count.text = "$takes of ${EnrolmentPrompts.takes} takes · free speech ${if (speech) "✓" else "○"}" +
+            " · room ${if (room) "✓" else "○"}" +
+            when {
+                store.verifierMaterialComplete() -> " — enough to personalise"
+                !EnrolmentPrompts.isReady(takes) -> " — ${EnrolmentPrompts.MIN_TAKES} takes needed"
+                else -> " — record both long takes to finish"
+            }
         promptList.removeAllViews()
-        EnrolmentPrompts.prompts.forEachIndexed { i, text ->
+        steps.forEachIndexed { i, step ->
             promptList.addView(TextView(this).apply {
-                this.text = (if (i in have) "✓ " else "○ ") + "${i + 1}. $text"
+                this.text = (if (store.has(step)) "✓ " else "○ ") + "${i + 1}. ${step.prompt}"
                 textSize = 14f
                 setPadding(0, 10, 0, 10)
                 setTextColor(ContextCompat.getColor(this@WakeEnrolActivity,
@@ -110,12 +121,23 @@ class WakeEnrolActivity : AppCompatActivity() {
                 setOnClickListener { if (!recording) { selected = i; result.text = ""; render() } }
             })
         }
-        prompt.text = "Take ${selected + 1}: say \"${EnrolmentPrompts.PHRASE}\" — " +
-            EnrolmentPrompts.prompts[selected].replaceFirstChar { it.lowercase() }
+        val step = steps[selected]
+        prompt.text = when (step.kind) {
+            TakeKind.PHRASE -> "Take ${selected + 1}: say \"${EnrolmentPrompts.PHRASE}\" — " +
+                step.prompt.replaceFirstChar { it.lowercase() }
+            TakeKind.SPEECH -> "Free speech: ${step.prompt.replaceFirstChar { it.lowercase() }}"
+            TakeKind.ROOM -> "Your room: ${step.prompt.replaceFirstChar { it.lowercase() }}"
+        }
+        why.text = when (step.kind) {
+            TakeKind.PHRASE -> ""
+            TakeKind.SPEECH -> EnrolmentPrompts.SPEECH_WHY
+            TakeKind.ROOM -> EnrolmentPrompts.ROOM_WHY
+        }
+        why.visibility = if (step.kind == TakeKind.PHRASE) android.view.View.GONE else android.view.View.VISIBLE
         record.isEnabled = consented
         record.text = when {
             recording -> "Stop"
-            selected in have -> "Record again"
+            store.has(step) -> "Record again"
             else -> "Record"
         }
     }
@@ -126,16 +148,20 @@ class WakeEnrolActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
             return
         }
-        val index = selected
+        val step = steps[selected]
         recording = true
         discardNext = false
-        result.text = "Listening… tap Stop when you've said it."
+        result.text = when (step.kind) {
+            TakeKind.PHRASE -> "Listening… tap Stop when you've said it."
+            TakeKind.SPEECH -> "Recording… keep talking; it stops by itself at ${step.kind.maxMs / 1000} s."
+            TakeKind.ROOM -> "Recording the room… stay quiet; it stops by itself at ${step.kind.maxMs / 1000} s."
+        }
         render()
-        recorder = Thread({ captureTake(index) }, "wake-enrol").apply { start() }
+        recorder = Thread({ captureTake(step) }, "wake-enrol").apply { start() }
     }
 
-    /** Off the main thread: capture up to [TakeMeasure.MAX_MS], then measure + seal. */
-    private fun captureTake(index: Int) {
+    /** Off the main thread: capture up to the step's [TakeKind.maxMs], then measure + seal. */
+    private fun captureTake(step: EnrolmentPrompts.Step) {
         val sr = WakeWordEngine.SAMPLE_RATE
         val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val pcm = ByteArrayOutputStream()
@@ -147,7 +173,7 @@ class WakeEnrolActivity : AppCompatActivity() {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, 4096))
             if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); failure = "The microphone is busy." }
             else try {
-                val cap = sr * 2 * TakeMeasure.MAX_MS / 1000
+                val cap = sr * 2 * step.kind.maxMs / 1000
                 val buf = ByteArray(maxOf(minBuf, 4096))
                 r.startRecording()
                 while (recording && pcm.size() < cap) {
@@ -168,7 +194,11 @@ class WakeEnrolActivity : AppCompatActivity() {
         val samples = ShortArray(bytes.size / 2).also {
             ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(it)
         }
-        val saved = if (failure != null) null else store.save(index, samples, sr)
+        val saved = when {
+            failure != null -> null
+            step.kind == TakeKind.PHRASE -> store.save(step.index, samples, sr)
+            else -> store.save(step.kind, samples, sr)
+        }
         val message = when (saved) {
             null -> failure
             is EnrolmentStore.SaveResult.Saved -> "Kept — ${describe(saved.measure)}"
@@ -188,12 +218,12 @@ class WakeEnrolActivity : AppCompatActivity() {
     private fun confirmDeleteAll() {
         if (busy) { result.text = "Finish the take first."; return }
         AlertDialog.Builder(this)
-            .setTitle("Delete all takes?")
-            .setMessage("Removes every recorded take, your consent, and the key that encrypts them. You can record again later.")
+            .setTitle("Delete all recordings?")
+            .setMessage("Removes every phrase take, the free-speech and room recordings, your consent, and the key that encrypts them. You can record again later.")
             .setPositiveButton("Delete") { _, _ ->
                 store.deleteAll()
                 selected = 0
-                result.text = "All takes deleted."
+                result.text = "All recordings deleted."
                 render()
             }
             .setNegativeButton("Cancel", null)
