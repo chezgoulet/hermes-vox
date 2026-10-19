@@ -193,16 +193,23 @@ are *unreachable* in the current arrangement, not under-tuned.
 - `[x]` **A better voice — decided by bake-off.** Kokoro was the candidate here; the measured
   bake-off (`docs/VOICE-BAKEOFF.md`) found its int8 build slower than real time on the target
   and chose **Supertonic** instead, which shipped in 0.8.0. More voice choice stays in scope.
-- `[ ]` **Streaming STT** — Moonshine (edge-first, streaming v2 encoder) or SenseVoiceSmall
-  (non-autoregressive, ~70 ms per 10 s, and in the same forward pass returns **emotion and
-  audio-event detection**: laughter, coughing, applause, background music). If its English holds
-  up against `whisper-base` in an on-device A/B, the affect and event tags give the presence layer
-  *measured* inputs and retire the last of the keyword machinery. This swap is what unblocks
-  semantic endpointing and mid-speech beats.
-- `[ ]` **A presence-sized soul model** — LFM2-0.7–1.2B class rather than the current 2.6 GB /
-  ~2.2 s-per-render Gemma 4 E2B, which is roughly 20–30× the size its job implies. Chosen
-  **together with the voice**, because the entity has one throat: if the presence voice and the
-  reply voice come from different models, the entity splits in the ear.
+- `[x]` **Streaming STT — measured, D5 amended.** The A/B ran on the Pixel 7 with four
+  sherpa streaming arms; **Nemotron 0.6B at the 160 ms chunk won on accuracy and accent**
+  (1.4 / 2.6 / 1.7 % WER against the 06-26 Zipformer's 2.0 / 4.5 / 2.8 %, and 11.9 % against
+  38.8 % on accented speech) at 3.1× the CPU and memory. The 20M arm is unusable. Moonshine and
+  SenseVoiceSmall were not part of this A/B — they are second runtimes, not config swaps, and
+  stay a separate decision. Numbers, method and raw results: `docs/STT-AB.md`; the decision and
+  its cost are D5 in `docs/DECISIONS.md`.
+- `[ ]` **Adopt the streaming arm in the app** — gated on one in-app co-residency run (VAD +
+  STT + TTS + presence in a live call). The RTF 0.68–0.76 was measured alone and is not
+  evidence that it holds beside the rest of the pipeline; until that run passes, the shipped
+  STT path does not change.
+- `[-]` **A presence-sized soul model — answered, not built.** D4 was amended on measurement:
+  Qwen 3.5 0.8B is rejected (the fp32 GPU engine does not fit Mali; CPU is ~5× slower; its
+  recurrent state is not reset per conversation), SmolLM2 360M measured slower still, and
+  **Gemma 4 E2B stays** the presence default. The 2.6 GB / ~2.2 s-per-render cost is accepted
+  until a smaller model can be shown to be faster *and* correct in the app's conversation
+  shape. Numbers: `docs/PRESENCE-BENCH.md`.
 - `[ ]` **Then** the semantic endpointer and intent-dependent re-entry delay — both of which need
   the partials to exist before they can be built at all.
 
