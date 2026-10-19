@@ -1,0 +1,69 @@
+package com.hermesvox
+
+/**
+ * What changed in this version, and what the user has to do about it.
+ *
+ * The notes ship inside the APK rather than being fetched: an update banner that
+ * needs the network to explain itself is useless on the launch where the network
+ * is exactly what broke. Entries live here, next to the version that ships them,
+ * and are covered by unit tests.
+ *
+ * Alerts are for things a user must act on — a breaking change, a new permission,
+ * a migration — not for marketing. An alert carries a short body and one action
+ * the app can route itself.
+ */
+internal enum class AlertAction { ENTITY, MODELS, URL, NONE }
+
+internal data class ReleaseAlert(
+    val id: String,
+    val title: String,
+    val body: String,
+    val action: AlertAction,
+    val label: String,
+    val url: String = "",
+)
+
+internal data class ReleaseNote(
+    val versionCode: Int,
+    val versionName: String,
+    val title: String,
+    val bullets: List<String>,
+    val alerts: List<ReleaseAlert> = emptyList(),
+)
+
+internal object ReleaseNotes {
+
+    /** 0 means "this install has never recorded a version" — a fresh install. */
+    const val PREF_LAST_SEEN = "last_seen_version_code"
+
+    /**
+     * Show on an upgrade only. A fresh install meets onboarding, not a changelog,
+     * and a downgrade (a sideload of an older APK) must not resurrect old notes.
+     */
+    fun shouldShow(seenVersion: Int, currentVersion: Int, hasEntry: Boolean): Boolean =
+        hasEntry && seenVersion > 0 && currentVersion > seenVersion
+
+    fun forVersion(versionCode: Int): ReleaseNote? = ENTRIES.firstOrNull { it.versionCode == versionCode }
+
+    val ENTRIES: List<ReleaseNote> = listOf(
+        ReleaseNote(
+            versionCode = 142,
+            versionName = "0.8.1",
+            title = "The headset release",
+            bullets = listOf(
+                "A paired Bluetooth, wired or USB headset becomes the call's route — at line open, and again if one is attached mid-call.",
+                "Nightlies are tagged at the commit they were built from and install over the release.",
+                "The microphone, speech recognition and voice models behave exactly as before.",
+            ),
+        ),
+
+        // 0.9 will add its breaking-change alert here, e.g.
+        // ReleaseAlert(
+        //     id = "https-only",
+        //     title = "Your gateway must use HTTPS",
+        //     body = "Android now blocks plain HTTP. Serve the gateway with `tailscale serve --bg 8080` and enter https://<machine>.<tailnet>.ts.net.",
+        //     action = AlertAction.ENTITY,
+        //     label = "Open connection settings",
+        // ),
+    )
+}
