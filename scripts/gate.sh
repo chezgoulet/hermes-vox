@@ -1,61 +1,43 @@
 #!/usr/bin/env bash
 # Hermes Vox — full build/verify gate (handoff §10).
-# One command: Go gates -> gomobile bind -> Gradle assembleDebug + unit tests.
-# The app no longer links the bind (#126: the voice core is Kotlin); the Go
-# steps stay until the Go code is removed.
+# One command: fetch the pinned runtime -> Gradle assembleDebug + unit tests ->
+# confirm the stream parity harness ran. The voice core is Kotlin (#126); there is
+# no Go, gomobile or NDK step.
 #
 # Portable: runs from any checkout. Toolchain locations come from the
-# environment (JAVA_HOME, ANDROID_HOME, ANDROID_NDK_HOME); the defaults below
-# are the maintainer's build host and only apply when a variable is unset.
+# environment (JAVA_HOME, ANDROID_HOME); the defaults below are the maintainer's
+# build host and only apply when a variable is unset.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/${ANDROID_NDK_VERSION:-25.2.9519653}}"
 
 # A gate that silently substitutes a different toolchain is not a gate: the
-# release build is pinned to JDK 17 and the NDK the app was measured on, so a
-# missing default must stop the run and name what is installed.
+# release build is pinned to JDK 17, so a missing default must stop the run.
 gate_die() { echo "gate: $*" >&2; exit 2; }
 [ -x "$JAVA_HOME/bin/java" ] || gate_die "JAVA_HOME=$JAVA_HOME has no bin/java. Set JAVA_HOME to a JDK 17."
 java_major="$("$JAVA_HOME/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -n1)"
 [ "$java_major" = "17" ] || gate_die "JAVA_HOME=$JAVA_HOME is Java ${java_major:-unknown}; this gate is pinned to 17."
 [ -d "$ANDROID_HOME" ] || gate_die "ANDROID_HOME=$ANDROID_HOME does not exist."
-[ -d "$ANDROID_NDK_HOME" ] || gate_die "ANDROID_NDK_HOME=$ANDROID_NDK_HOME does not exist. Installed: $(ls "$ANDROID_HOME/ndk" 2>/dev/null | tr '\n' ' '). Set ANDROID_NDK_VERSION or ANDROID_NDK_HOME."
 echo "gate: JAVA_HOME=$JAVA_HOME"
-echo "gate: ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+export PATH="$JAVA_HOME/bin:$PATH"
 
-export GOBIN="${GOBIN:-$HOME/.local/bin}"
-export GOMODCACHE="${GOMODCACHE:-$ROOT/.tools/cache/go-mod}"
-export GOCACHE="${GOCACHE:-$ROOT/.tools/cache/go-build}"
-export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.4}"
-export PATH="$JAVA_HOME/bin:$GOBIN:$PATH"
-
-# Pinned to the gomobile the project is proven on (the Ebitengine fork).
-GOMOBILE_VERSION=v0.0.0-20260820040257-d11f821a26a6
-
-echo "== [0/4] fetch pinned runtime deps =="
+echo "== [0/2] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
-echo "== [1/4] go vet =="
-go vet ./voice/... ./mobile/... ./tools/streamdump/...
-
-echo "== [2/4] go test -race (offline) =="
-# tools/streamdump replays testdata/stream/*.sse against the committed goldens
-# (the Go half of the stream parity harness; StreamParityTest is the Kotlin half).
-go test -race ./voice/... ./mobile/... ./tools/streamdump/...
-
-echo "== [3/4] gomobile bind -> mobile.aar =="
-command -v gomobile >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gomobile@$GOMOBILE_VERSION"
-command -v gobind >/dev/null || go install "github.com/ebitengine/gomobile/cmd/gobind@$GOMOBILE_VERSION"
-gomobile init >/dev/null 2>&1 || true
-# Reproducible bind: -trimpath + a canonical build path. See docs/REPRODUCIBLE.md.
-bash scripts/bind-aar.sh "$ROOT/mobile.aar"
-
-echo "== [4/4] gradle assembleDebug + unit tests =="
+echo "== [1/2] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
+
+echo "== [2/2] stream parity harness ran =="
+# StreamParityTest replays testdata/stream/*.sse against the committed goldens.
+# A gate that passes because the harness silently stopped running is not a gate.
+parity=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.StreamParityTest.xml
+[ -f "$parity" ] || gate_die "StreamParityTest did not run ($parity missing)."
+grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$parity" \
+  || gate_die "StreamParityTest did not pass cleanly: $(grep -o 'tests="[^>]*' "$parity" | head -n1)"
+echo "gate: parity OK over $(ls testdata/stream/*.sse | wc -l) fixtures"
 
 echo "GATE-GREEN"

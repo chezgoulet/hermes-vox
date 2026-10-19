@@ -9,15 +9,15 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 /**
- * The Kotlin half of the stream parity harness (#126). Every fixture under
- * testdata/stream is replayed through [HermesSession] by the same driver as
- * tools/streamdump (the app's own wait → poll loop), and the outcome must equal
- * the committed golden — which the Go core produced and its TestGoldens still
- * checks. A drift on either side fails a gate.
+ * The stream parity harness (#126). Every fixture under testdata/stream is replayed
+ * through [HermesSession] by the app's own wait → poll loop, and the outcome must
+ * equal the committed golden. The goldens were produced by the Go core (the
+ * since-removed tools/streamdump) and matched by this Kotlin core before the Go code
+ * was deleted, so they are the frozen spec of the streaming behaviour.
  *
- * To add a fixture: write testdata/stream/<name>.sse (directives are documented in
- * tools/streamdump/main.go), run `go run ./tools/streamdump -update
- * testdata/stream/<name>.sse`, review the golden, commit both.
+ * Fixture format and how to add one: testdata/stream/README.md. To write a golden
+ * for a NEW fixture, run with STREAM_GOLDEN_UPDATE=1 — it writes only the missing
+ * goldens, never overwrites one; review the output before committing it.
  */
 class StreamParityTest {
 
@@ -73,7 +73,7 @@ class StreamParityTest {
                 if (!stream) { w.send(200, "OK", fx.stored); return@TestServer }
                 w.sse()
                 var i = 0
-                while (i < fx.body.length) {   // line by line, flushed, like streamdump
+                while (i < fx.body.length) {   // line by line, flushed after each
                     val j = fx.body.indexOf('\n', i).let { if (it < 0) fx.body.length else it + 1 }
                     w.write(fx.body.substring(i, j))
                     i = j
@@ -142,6 +142,15 @@ class StreamParityTest {
         is JNull -> null
     }
 
+    /** The golden layout: two-space indent, one key per line. */
+    private fun pretty(v: Any?, ind: String): String = when (v) {
+        is Map<*, *> -> if (v.isEmpty()) "{}" else v.entries.joinToString(",\n", "{\n", "\n$ind}") {
+            "$ind  ${Json.encode(it.key.toString())}: ${pretty(it.value, "$ind  ")}"
+        }
+        is List<*> -> if (v.isEmpty()) "[]" else v.joinToString(",\n", "[\n", "\n$ind]") { "$ind  ${pretty(it, "$ind  ")}" }
+        else -> Json.encode(v)
+    }
+
     private fun fixtureDir(): File {
         var d: File? = File(System.getProperty("user.dir")).absoluteFile
         while (d != null) {
@@ -159,12 +168,13 @@ class StreamParityTest {
         val drifted = ArrayList<String>()
         for (f in fixtures) {
             val golden = File(f.parentFile, f.name.removeSuffix(".sse") + ".golden.json")
-            assertTrue("${f.name} has no golden (run streamdump -update)", golden.isFile)
-            val want = plain(Json.parse(golden.readText()))
             val got = plain(Json.parse(Json.encode(replay(parse(f)))))
+            if (!golden.isFile && System.getenv("STREAM_GOLDEN_UPDATE") == "1") golden.writeText(pretty(got, "") + "\n")
+            assertTrue("${f.name} has no golden (see testdata/stream/README.md)", golden.isFile)
+            val want = plain(Json.parse(golden.readText()))
             if (got != want) drifted += "${f.name}\n--- kotlin\n${Json.encode(got)}\n--- golden\n${Json.encode(want)}"
         }
-        assertEquals("drifted from the Go goldens:\n" + drifted.joinToString("\n\n"), 0, drifted.size)
+        assertEquals("drifted from the goldens:\n" + drifted.joinToString("\n\n"), 0, drifted.size)
     }
 
     companion object {
