@@ -12,3 +12,8 @@ Optional on-device voice models, downloaded in-app (not bundled):
   - Supertonic TTS (Supertone Inc.) — model under the OpenRAIL-M license
     (https://huggingface.co/Supertone/supertonic-2/blob/main/LICENSE)
   - Piper voices via the sherpa-onnx project
+  - NVIDIA Parakeet-TDT 0.6B v2 (optional STT) — CC-BY-4.0
+    (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2)
+  - OpenAI Whisper (STT) — MIT; Silero VAD — MIT
+
+The Rajdhani typeface (Indian Type Foundry) is bundled under the SIL Open Font License 1.1.

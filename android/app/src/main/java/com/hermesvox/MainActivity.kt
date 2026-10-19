@@ -438,6 +438,10 @@ class MainActivity : AppCompatActivity() {
         // C3 H2: route changes (BT/USB/wired headset) mid-call rebuild capture+playback
         // so both halves re-attach to the new default route. Registered per call open.
         registerRouteCallback()
+        // #149: choose the call's audio route BEFORE capture opens — a headset's mic
+        // only becomes the source once the communication route names it, and an
+        // AudioRecord opened first holds the phone's own mic for that turn.
+        CommRoute.select(this)
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
@@ -1008,10 +1012,9 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
     // C3 H2 — AUDIO DEVICE ROUTE CHANGES. Registered per call open, unregistered on
     // stop (the same wake/focus release paths). When a BT/USB/wired headset appears
-    // or disappears mid-call, capture + playback re-attach to the new default route
-    // with a fresh-call composition: stop the old controller -> 250ms -> openVoiceLine
-    // (start). No SCO routing is added (out of scope): VOICE_COMMUNICATION capture
-    // follows whatever route the platform keeps.
+    // or disappears mid-call, capture + playback re-attach to the new route with a
+    // fresh-call composition: stop the old controller -> 250ms -> openVoiceLine
+    // (start), which re-runs CommRoute.select against the new device list (#149).
     // ---------------------------------------------------------------------------
     @Volatile private var routeCallbackRegistered = false
     @Volatile private var routeRebuildScheduled = false
@@ -1071,6 +1074,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun unregisterRouteCallback() {
+        // #149: the audio route lives exactly as long as the call, and this is the one
+        // place every teardown path funnels through (endCall, a reset, onStop) — so the
+        // selection is released here rather than at each of them, where a single miss
+        // would leave a finished call routed to a headset.
+        CommRoute.clear(this)
         if (!routeCallbackRegistered) return
         try {
             val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager

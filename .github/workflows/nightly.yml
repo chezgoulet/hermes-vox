@@ -53,8 +53,11 @@ jobs:
             -o android/app/libs/mobile.aar github.com/chezgoulet/hermes-vox/mobile
 
       # The release keystore is repository-encrypted (age, key = repo secret).
-      # Nightlies are signed with the SAME release key so an Obtainium nightly
-      # can be installed over / alongside a release without an uninstall.
+      # Nightlies are signed with the SAME release key AND carry a versionCode at or
+      # above the release's (see the pre-merge bump in docs/RELEASE-PROCESS.md), so an
+      # Obtainium nightly can be installed over / alongside a release without an
+      # uninstall. Same key alone is not enough — a lower versionCode is a downgrade and
+      # Android refuses it.
       - name: Install age
         run: |
           curl -fsSL -o /tmp/age.tar.gz https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz
@@ -114,6 +117,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
+          # Must name the built commit: without it, action-gh-release tags the DEFAULT
+          # branch, so a nightly built from `testing` lands its tag on `main` — a tag
+          # whose name says one commit and whose ref says another.
+          target_commitish: ${{ github.sha }}
           name: "Nightly ${{ env.TAG }}"
           prerelease: true
           make_latest: false          # NEVER becomes "Latest" — releases from main do

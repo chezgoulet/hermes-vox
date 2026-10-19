@@ -28,7 +28,7 @@ under your control:
   detecting when you start/stop speaking (`OfflineStt.kt`, `SileroVadGate`). The
   transcription text is what the agent hears — see §2 for where it goes.
 - **Text you type or send** to the agent, and the agent's replies (displayed and spoken
-  aloud via on-device Piper TTS, `SherpaTts.kt`).
+  aloud via on-device Supertonic or Piper TTS, `SherpaTts.kt`).
 - **The gateway endpoint address and API key you enter** during onboarding
   (`OnboardingActivity.kt`) and in Settings. Both are entered by you; nothing is
   pre-configured or baked into the app (see §3).
@@ -107,8 +107,10 @@ Voice functionality uses models that you download into the app's **private stora
 (`filesDir/models/<id>`) from the in-app **Settings → Voice models** screen:
 
 - **Silero VAD** — on-device voice-activity detection (hearing when you speak).
-- **Piper TTS** — fully offline text-to-speech voice (sherpa-onnx runtime).
-- **Whisper (tiny/base/small)** — on-device speech-to-text (sherpa-onnx runtime).
+- **Supertonic TTS** (recommended) and **Piper TTS** (lighter) — fully offline
+  text-to-speech voices (sherpa-onnx runtime).
+- **Whisper (tiny/base/small)** and **Parakeet-TDT 0.6B (optional)** — on-device
+  speech-to-text (sherpa-onnx runtime).
 - **Gemma 4 E2B (optional)** — the on-device "expression layer" used only by the
   **Enhanced Realtime (alpha)** voice mode (`GemmaExpress.kt`, loaded via Google's
   LiteRT-LM engine). It runs entirely on your device, has no tool access, and generates
@@ -180,7 +182,7 @@ The code files behind each claim (all in the repository at the link above):
 | Mic capture + foreground mic service | `android/app/src/main/AndroidManifest.xml` |
 | On-device Whisper STT + Silero VAD, offline | `android/app/src/main/java/com/hermesvox/OfflineStt.kt` |
 | Remote STT opt-in hard gate; no transcript logging | `android/app/src/main/java/com/hermesvox/RemoteStt.kt`, `VoiceController.kt` |
-| On-device Piper TTS | `android/app/src/main/java/com/hermesvox/SherpaTts.kt` |
+| On-device Supertonic / Piper TTS | `android/app/src/main/java/com/hermesvox/SherpaTts.kt` |
 | On-device Gemma expression layer (optional model) | `android/app/src/main/java/com/hermesvox/GemmaExpress.kt`, `ModelCatalog.kt` |
 | Model catalog, sources, sizes, hashes; app-private install dir | `android/app/src/main/java/com/hermesvox/ModelCatalog.kt`, `ModelDownloader.kt` |
 | Key entry in onboarding; encrypted write | `android/app/src/main/java/com/hermesvox/OnboardingActivity.kt` |
