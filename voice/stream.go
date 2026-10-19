@@ -408,14 +408,20 @@ func extractToolOutput(raw json.RawMessage) string {
 // plainText strips the [tool:*] markers from the live transcript, yielding the
 // assistant's spoken reply only.
 func plainText(transcript string) string {
-	var sb strings.Builder
+	kept := make([]string, 0, 4)
 	for _, line := range strings.Split(transcript, "\n") {
 		if strings.HasPrefix(line, "[tool:") || strings.HasPrefix(line, "[tool-done]") {
 			continue
 		}
-		sb.WriteString(line)
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		kept = append(kept, strings.TrimSpace(line))
 	}
-	return strings.TrimSpace(sb.String())
+	// Keep the boundaries: gluing lines together joined the last word of one
+	// with the first of the next ("...done.Next..."), which both corrupts the
+	// reply and removes the pause the voice engine would otherwise take.
+	return strings.Join(kept, "\n")
 }
 
 // ---- Poll-drain surface (gomobile-friendly) ----
