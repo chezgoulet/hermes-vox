@@ -20,8 +20,11 @@ recommendation; the 20M arm is unusable.**
 | words seen in partials | 99 % | 97 % | 97 % | 65 % | 61 % | 65 % | 53 % | 46 % |
 | RTF | 0.19 | 0.20 | 0.19 | 0.21 | 0.15 | 0.16 | 0.15 | 0.17 |
 | RSS peak | 291 MB | 290 MB | 287 MB | 296 MB | 248 MB | 249 MB | 245 MB | 240 MB |
-| cold start | 3559 ms | | | | 808 ms | | | |
-| CPU s / audio-hour | 3946 | | | | 3299 | | | |
+
+Repeat: quiet re-run for both arms gave identical transcripts on all 15 clips,
+median latency ±8 ms, RTF identical to three decimals.
+| cold start | 3548 ms | | | | 805 ms | | | |
+| CPU s / audio-hour | 4046 | | | | 3381 | | | |
 
 Paired on words both arms surfaced: 20M is ~75 ms faster (856 vs 965 median,
 quiet) — real, small, and swamped by 19 points of WER. The full analysis,
@@ -84,5 +87,7 @@ method and caveats are in `docs/STT-AB.md`.
 ad7c8b0 bench: on-device streaming-STT A/B harness
 2d2a482 sttbench-stream: corpus conditions, word-onset ground truth and A/B scoring
 98f06d6 bench: write results under files/results, fix the endpoint rule3 default
+bece647 docs: STT-AB results on the Pixel 7 with the evidence committed
+9826a3e sttbench-stream: commit the run configs and the scored summary
 ```
-(plus a docs commit with `docs/STT-AB.md`)
+(plus a final docs touch-up commit)
