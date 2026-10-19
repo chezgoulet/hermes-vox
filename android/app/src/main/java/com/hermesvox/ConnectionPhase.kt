@@ -147,6 +147,15 @@ object ConnectionPhase {
         }
         if (streamCode == 401 || streamCode == 403) return Probe.AUTH
         if (cold(streamCode)) return Probe.COLD
+        // 400 means the route EXISTS, the credential was accepted, and the body was
+        // parsed and then refused. The probe's body is deliberately empty — no `input`,
+        // stream off, so the test cannot make the entity think (M2) — and the gateway
+        // answers 400 "Missing 'input' field" to it. That is the probe working, not the
+        // connection failing: field, 2026-10-19, the Settings test read FAILED on every
+        // build against a gateway that was streaming turns fine.
+        // Only 400 is forgiven. 404 (no route), 405 (not this kind of service) and the
+        // rest still mean the app is pointed at something it cannot use.
+        if (streamCode == 400) return Probe.OK
         if (streamCode < 200 || streamCode >= 400) return Probe.GATEWAY_ERROR
         return Probe.OK
     }

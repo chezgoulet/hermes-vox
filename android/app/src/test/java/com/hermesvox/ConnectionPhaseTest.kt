@@ -72,6 +72,18 @@ class ConnectionPhaseTest {
         assertEquals(Pr.OK, ConnectionPhase.classify(200, "", 200, ""))
         assertEquals(Pr.OK, ConnectionPhase.classify(200, "", 307, ""))
         assertEquals(Pr.OK, ConnectionPhase.classify(200, "", SKIP, ""))   // ping-only dial
+        // FIELD 2026-10-19: the Settings test sends a body with no `input` on purpose
+        // (M2 — the probe must not make the entity think), the gateway answers 400
+        // "Missing 'input' field", and every build reported FAILED against a gateway
+        // that was streaming turns. A 400 proves route + credential; nothing wider is
+        // forgiven (405 still means this is not the gateway).
+        assertEquals(Pr.OK, ConnectionPhase.classify(200, "", 400, ""))
+        assertEquals(Pr.GATEWAY_ERROR, ConnectionPhase.classify(200, "", 405, ""))
+        // 404 is different: the route the app needs is not there.
+        assertEquals(Pr.GATEWAY_ERROR, ConnectionPhase.classify(200, "", 404, ""))
+        // Auth still wins over the 400 rule.
+        assertEquals(Pr.AUTH, ConnectionPhase.classify(200, "", 401, ""))
+        assertEquals(Pr.AUTH, ConnectionPhase.classify(200, "", 403, ""))
     }
 
     @Test fun no_ping_response_at_all_is_the_only_UNREACHABLE() {
@@ -101,8 +113,19 @@ class ConnectionPhaseTest {
 
     @Test fun wrong_service_or_route_is_a_gateway_error_not_a_network_problem() {
         assertEquals(Pr.GATEWAY_ERROR, ConnectionPhase.classify(404, "", SKIP, ""))
-        assertEquals(Pr.GATEWAY_ERROR, ConnectionPhase.classify(200, "", 400, ""))
+        // The 400 case moved on 2026-10-19: it used to mean "we sent a real body and
+        // something refused it", which is genuinely wrong. Since M2 the probe sends NO
+        // input on purpose, so a 400 is the gateway's expected answer to it — see
+        // a_400_from_the_stream_probe_is_the_probe_working.
         assertEquals(Pr.GATEWAY_ERROR, ConnectionPhase.classify(200, "", NONE, "SSLException: bad record"))
+    }
+
+    @Test fun a_400_from_the_stream_probe_is_the_probe_working() {
+        // FIELD: the Settings test read FAILED on every build against a gateway that
+        // streamed turns fine. `{"model":"","stream":false}` gets 400 "Missing input
+        // field" — the route is there and the key was accepted; only the deliberately
+        // empty body was refused.
+        assertEquals(Pr.OK, ConnectionPhase.classify(200, "", 400, ""))
     }
 
     @Test fun a_test_blocked_before_the_network_is_reported_as_blocked() {
