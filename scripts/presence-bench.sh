@@ -6,8 +6,8 @@
 # This script is the host driver: it installs nothing it does not need to, pushes the model,
 # records the thermal/Ambient conditions around the run, and pulls the JSONL results.
 #
-#   scripts/presence-bench.sh qwen cpu 3
-#   scripts/presence-bench.sh gemma gpu 1
+#   scripts/presence-bench.sh qwen cpu 3 presence
+#   scripts/presence-bench.sh gemma gpu 1 presence cool
 #
 # Requirements: the debug app is installed on the phone (its process is the measurement
 # process), the androidTest APK is built, and the .litertlm files are in $MODEL_SRC.
@@ -17,6 +17,9 @@ MODEL_ID="${1:?model id: qwen | smollm | gemma}"
 BACKEND="${2:-cpu}"
 REPS="${3:-3}"
 SHAPE="${4:-presence}"
+# Free-form tag for the result file name (a pass name, "cool", "busy"...). Without it two
+# passes of the same row silently overwrite each other's numbers.
+EXTRA="${5:-}"
 # KV budget to request; empty = the model's own default. The app itself asks for 8192.
 MAXTOK="${MAXTOK:-}"
 # CPU thread count; empty = the runtime default. The app never sets one, so the default row
@@ -24,6 +27,8 @@ MAXTOK="${MAXTOK:-}"
 THREADS="${THREADS:-}"
 # One Engine per render (what Qwen3.5 requires; the app uses one Engine + many Conversations).
 FRESH="${FRESH:-}"
+# Output-token cap; empty = the harness default (32, a presence line). A long shape uses 128.
+MAXOUT="${MAXOUT:-}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ADB="${ADB:-${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb}"
@@ -41,7 +46,7 @@ case "$MODEL_ID" in
 esac
 
 mkdir -p "$OUT"
-TAG="${MODEL_ID}-${BACKEND}-${SHAPE}${THREADS:+-t$THREADS}${FRESH:+-fresh}"
+TAG="${MODEL_ID}-${BACKEND}-${SHAPE}${THREADS:+-t$THREADS}${FRESH:+-fresh}${MAXOUT:+-o$MAXOUT}${EXTRA:+-$EXTRA}"
 
 thermal() {
   # Thermal status (0 none .. 6 shutdown), battery temperature, and the hottest CPU/GPU zone.
@@ -58,8 +63,12 @@ thermal() {
 echo "== $TAG: thermal before"
 BEFORE="$(thermal)"; echo "$BEFORE"
 
-# The model, if it is not already on the phone.
-if ! $ADB shell "[ -f $BENCH_DIR/$FILE ]" 2>/dev/null; then
+# The model, if it is not already on the phone at the right size. A push killed by a host
+# timeout leaves a TRUNCATED file behind, and a truncated .litertlm fails deep inside the
+# runtime — so compare sizes rather than existence.
+WANT=$(stat -c%s "$MODEL_SRC/$FILE")
+HAVE=$($ADB shell "stat -c %s $BENCH_DIR/$FILE 2>/dev/null" 2>/dev/null | tr -d "\r")
+if [ "$HAVE" != "$WANT" ]; then
   # The model dir must be APP-owned: /sdcard/Android/data/<pkg> created by the shell cannot be
   # written by the app, and the harness needs to create its per-run compile-cache dirs inside it.
   # A no-op instrumentation run creates it as the app.
@@ -68,7 +77,7 @@ if ! $ADB shell "[ -f $BENCH_DIR/$FILE ]" 2>/dev/null; then
     $ADB shell am instrument -w -e bench.models none \
       "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner" >/dev/null 2>&1 || true
   fi
-  echo "== pushing $FILE ($(stat -c%s "$MODEL_SRC/$FILE") bytes)"
+  echo "== pushing $FILE ($WANT bytes; phone had ${HAVE:-none})"
   $ADB push "$MODEL_SRC/$FILE" "$BENCH_DIR/" >/dev/null
 fi
 
@@ -87,6 +96,7 @@ timeout 420 $ADB shell am instrument -w \
   ${MAXTOK:+-e bench.maxTokens "$MAXTOK"} \
   ${THREADS:+-e bench.threads "$THREADS"} \
   ${FRESH:+-e bench.freshEngine true} \
+  ${MAXOUT:+-e bench.maxOut "$MAXOUT"} \
   -e bench.dir "$BENCH_DIR" \
   -e bench.results "$RESULTS_ABS" \
   "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner" 2>&1 | tail -25

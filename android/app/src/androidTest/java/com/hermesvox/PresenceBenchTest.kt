@@ -68,6 +68,11 @@ class PresenceBenchTest {
         args.getString("bench.maxTokens")?.trim()?.toIntOrNull()
     }
 
+    /** Output-token cap. Default 32 (a presence line); a long shape asks for more. */
+    private val maxOut: Int by lazy {
+        args.getString("bench.maxOut")?.trim()?.toIntOrNull() ?: 32
+    }
+
     /** CPU thread count to request; null leaves the runtime's default. Diagnostic. */
     private val cpuThreads: Int? by lazy {
         args.getString("bench.threads")?.trim()?.toIntOrNull()
@@ -266,6 +271,9 @@ class PresenceBenchTest {
         repBase: Int = 0,
     ) {
         val system = if (shape == "persona") LONG_PERSONA else SHORT_SYSTEM
+        // "long" asks for a paragraph: with a 32-token cap a presence line is two tokens
+        // ("Hello!"), and a decode rate measured over two chunks is noise.
+        val user = if (shape == "long") LONG_USER_LINE else USER_LINE
         for (r in 1..reps) {
             val rep = repBase + r
             var conv: Conversation? = null
@@ -274,7 +282,7 @@ class PresenceBenchTest {
                     systemInstruction = Contents.of(system),
                     // Greedy: one sample path, no sampler noise between models.
                     samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0, seed = 0),
-                    maxOutputToken = 32,
+                    maxOutputToken = maxOut,
                 )
                 val tConv = System.nanoTime()
                 conv = engine.createConversation(cfg)
@@ -286,7 +294,7 @@ class PresenceBenchTest {
                 val done = CountDownLatch(1)
                 var err: Throwable? = null
                 val t0 = System.nanoTime()
-                conv.sendMessageAsync(USER_LINE, object : MessageCallback {
+                conv.sendMessageAsync(user, object : MessageCallback {
                     override fun onMessage(m: Message) {
                         if (firstAt.compareAndSet(0, System.nanoTime())) {
                             // first chunk latency is wall-clock from the send
@@ -412,6 +420,11 @@ class PresenceBenchTest {
         const val SHORT_SYSTEM =
             "You are the voice of an agent on a phone call. Reply in one short spoken sentence. " +
                 "Never say you are an AI or a model."
+
+        /** Forces a multi-sentence answer, for a decode rate that is measured over many chunks. */
+        const val LONG_USER_LINE =
+            "Operator directive: intent=narration. Content to render: describe, in about eighty " +
+                "words, what the agent can hear on a call right now."
 
         const val USER_LINE =
             "Operator directive: intent=greeting. Content to render: the caller just picked up " +
