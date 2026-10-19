@@ -94,7 +94,7 @@ and a face without adding a second brain:
   keys in the app.
 - **One agent, many doors.** Vox is one more frontend to the same Hermes instance that
   already serves you on Telegram, desktop or the CLI. It never forks the agent.
-- **Open.** Apache-2.0, reproducible build, secret-free CI.
+- **Open.** GPL-3.0, reproducible build, secret-free CI.
 
 ## What it does
 
@@ -320,4 +320,6 @@ Nous Research.
 
 ## License
 
-[Apache-2.0](LICENSE).
+[GPL-3.0](LICENSE).
+
+The app is GPL-3.0 because the on-device speech runtime statically links espeak-ng, which is GPL-3.0; see [NOTICE](NOTICE) for the component list and the source-offer. On-device models are downloaded separately and keep their own terms.
