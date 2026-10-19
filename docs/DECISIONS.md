@@ -62,6 +62,8 @@ start. Measured on the Pixel 7, in quiet, TV and kitchen noise.
 Enrolment audio is voice biometric data: device-local, encrypted, deletable, and
 sent to a gateway only with explicit consent.
 
+Design, evidence and open questions: `docs/WAKE-WORD.md`.
+
 ## D7 — Audio cues are part of the product
 
 Procedurally generated from the being's own motion vocabulary, unique to us.
