@@ -22,7 +22,7 @@ median word-visible latency is ~0.95 s (p95 ~1.45 s) even for the winner.
 | On-device harness: loads a streaming recognizer, feeds WAV in wall-clock pace, records every partial, finalisation, decode time, feed lag, RSS, CPU, battery counters | `android/bench/` (separate APK `com.hermesvox.bench`, same pinned `sherpa-onnx-1.13.6.aar`) |
 | Corpus builder: three noise conditions + word-level ground truth by forced alignment | `tools/sttbench-stream/build_ab_corpus.py` |
 | Runner + scorer: adb push/launch/pull, then WER, latency, stability, RTF, RSS, battery | `tools/sttbench-stream/run_ab.py`, `scripts/stt-ab.sh` |
-| Raw device results (one JSON per arm × condition, every partial with its timestamp) | `tools/sttbench-stream/results/raw/` (gitignored) |
+| Raw device results (one JSON per arm × condition, every partial with its timestamp) | `tools/sttbench-stream/results/raw/` — committed, so every table below can be recomputed with `run_ab.py --score-only` |
 
 The bench is a **separate package** on purpose. The Pixel is shared with another
 agent; a measurement must never replace, restart or re-sign the copy of Hermes
@@ -31,9 +31,9 @@ Vox someone else is using. It also keeps the harness out of the shipping APK —
 
 The harness flags a run as `interrupted` if its activity loses the foreground
 (another app brought to front, screen off, task switch) and the host refuses to
-score it. That check exists because it fired: the first quiet run of this study
-was invalidated by a concurrent agent launching their own probe app, and the
-numbers below are from runs that passed.
+score it. That check exists because it fired: an early `tv` run of this study was
+invalidated by a concurrent agent launching their own probe app, and the numbers
+below are only from runs that passed.
 
 Feed pacing is real time (20 ms chunks), not "decode as fast as possible": a
 partial's latency only means something if audio arrives at microphone rate. Each
