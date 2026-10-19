@@ -23,7 +23,7 @@ func EntityURL(baseURL, path string) string {
 
 // SessionKeyHeader is the API server's per-channel identity header. The gateway
 // advertises it in GET /v1/capabilities as features.session_key_header, accepts
-// it on /v1/chat/completions, /v1/responses and /v1/runs, and echoes it back on
+// it on /v1/chat/completions and /v1/responses, and echoes it back on
 // the response. It derives a STABLE long-term-memory scope per channel —
 // independent of the transcript-scoped X-Hermes-Session-Id, which rotates on
 // /new.
@@ -98,22 +98,6 @@ func (c *HermesResponsesClient) SetSessionKey(scope string) {
 // sessionScope reads the declared scope under the client lock. Kept separate
 // from buildBody's lock so header stamping never nests locks.
 func (c *HermesResponsesClient) sessionScope() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.sessionKey
-}
-
-// SetSessionKey declares this client's long-term-memory scope (see
-// SessionKeyHeader) for the cancellable /v1/runs path. Locked like the other
-// two: StartRun/RunStatus/CancelRun read it, and cancel can fire mid-run.
-func (c *HermesRunClient) SetSessionKey(scope string) {
-	c.mu.Lock()
-	c.sessionKey = scope
-	c.mu.Unlock()
-}
-
-// sessionScope reads the declared scope under the client lock.
-func (c *HermesRunClient) sessionScope() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sessionKey

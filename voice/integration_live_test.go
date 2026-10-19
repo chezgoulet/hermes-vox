@@ -11,7 +11,7 @@ import (
 // Live integration tests — THE COMPLETENESS TEST (handoff §6.2). These run
 // against the REAL Hermes gateway (the same entity the phone fronts) and prove
 // the whole entity connector end-to-end: a turn, the previous_response_id
-// chain, the SSE stream, and the runs/cancel barge-in round-trip.
+// chain, the SSE stream, and the stream-cancel barge-in.
 //
 // Gated: they SKIP unless BOTH are set —
 //   HERMES_VOX_LIVE=1
@@ -48,11 +48,6 @@ func liveResponses(t *testing.T) *HermesResponsesClient {
 	c := liveConfig(t).ResponsesClient()
 	c.http.Timeout = 120 * time.Second
 	return c
-}
-
-func liveRuns(t *testing.T) *HermesRunClient {
-	t.Helper()
-	return liveConfig(t).RunClient()
 }
 
 // 1. A real turn against the live agent returns a real reply + a response id.
@@ -162,44 +157,6 @@ func TestLiveStreamToolProgress(t *testing.T) {
 		t.Fatal("function_call carried no tool name")
 	}
 	t.Logf("tool progress ok: name=%s", callName)
-}
-
-// 5. The barge-in round-trip: start a LONG cancellable run, see it running,
-// cancel it mid-flight, confirm the server marks it cancelled.
-func TestLiveRunCancelRoundTrip(t *testing.T) {
-	rc := liveRuns(t)
-	ctx := context.Background()
-	runID, err := rc.StartRun(ctx, `Use your shell tool to run exactly: sleep 45 && echo done-slow. Then report the output.`, "", "")
-	if err != nil {
-		t.Fatalf("StartRun failed: %v", err)
-	}
-	if !strings.HasPrefix(runID, "run_") {
-		t.Fatalf("bad run id %q", runID)
-	}
-	// Poll until it's observed working (or bail).
-	var sawRunning bool
-	for i := 0; i < 20; i++ {
-		time.Sleep(500 * time.Millisecond)
-		statusText, err := rc.RunStatus(ctx, runID)
-		if err != nil {
-			break // terminal failure state surfaced as error — fine
-		}
-		if statusText != "" {
-			break // finished too fast; still a valid lifecycle
-		}
-		sawRunning = true
-		break
-	}
-	if err := rc.CancelRun(ctx, runID); err != nil {
-		t.Fatalf("CancelRun failed: %v", err)
-	}
-	// Give the server a beat, then confirm terminal state via raw status.
-	time.Sleep(2 * time.Second)
-	final, _ := rc.RunStatus(ctx, runID)
-	t.Logf("cancel round-trip ok: run=%s sawRunning=%v final=%q", runID, sawRunning, final)
-	if sawRunning && final != "" {
-		t.Fatalf("run produced output after cancel: %q", final)
-	}
 }
 
 // 6. Streaming barge-in: cancel the stream ctx mid-generation; the client

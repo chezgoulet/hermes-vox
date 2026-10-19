@@ -5,12 +5,9 @@ import (
 	"fmt"
 )
 
-// Conversation composes a voice Backend (STT/TTS localization) with the Hermes
-// connector (the entity). The turn loop: audio -> Transcribe -> Hermes -> Synthesize.
-// The entity stays Hermes in every mode — the Backend only localizes the voice,
-// Hermes owns the reasoning/tools/memory/context.
+// Conversation is the Hermes connector (the entity): Hermes owns the
+// reasoning/tools/memory/context. Speech in and out is the app's concern.
 type Conversation struct {
-	Backend Backend
 	Hermes  *HermesClient
 	History []ChatMessage
 
@@ -26,8 +23,8 @@ type Conversation struct {
 	// the live one, orphaning the conversation it was meant to preserve.
 }
 
-func NewConversation(b Backend, h *HermesClient) *Conversation {
-	return &Conversation{Backend: b, Hermes: h}
+func NewConversation(h *HermesClient) *Conversation {
+	return &Conversation{Hermes: h}
 }
 
 // Reset drops the client-side chat history, starting a fresh conversation. The
@@ -39,7 +36,7 @@ func (c *Conversation) Reset() {
 }
 
 // TurnText sends a text turn straight to Hermes (the mind) and returns its reply.
-// Used on non-audio platforms (the shell emits text; the Backend covers audio).
+// The app handles speech; this is the text leg.
 // History is kept client-side (the stateless chat path).
 func (c *Conversation) TurnText(ctx context.Context, text string) (string, error) {
 	if c.Hermes == nil {
@@ -84,25 +81,4 @@ func (c *Conversation) TurnTextStored(ctx context.Context, text string, prevID s
 		return nil, fmt.Errorf("voice: no Hermes responses client configured (set Responses)")
 	}
 	return c.Responses.Response(ctx, text, prevID)
-}
-
-// TurnAudio is the full voice turn: Transcribe -> Hermes -> Synthesize. Returns
-// the Hermes reply text and the synthesized audio for playback / the avatar.
-func (c *Conversation) TurnAudio(ctx context.Context, audio []byte) (string, []byte, error) {
-	if c.Backend == nil {
-		return "", nil, fmt.Errorf("voice: no backend configured")
-	}
-	text, err := c.Backend.Transcribe(ctx, audio)
-	if err != nil {
-		return "", nil, err
-	}
-	reply, err := c.TurnText(ctx, text)
-	if err != nil {
-		return "", nil, err
-	}
-	out, err := c.Backend.Synthesize(ctx, reply)
-	if err != nil {
-		return reply, nil, err
-	}
-	return reply, out, nil
 }

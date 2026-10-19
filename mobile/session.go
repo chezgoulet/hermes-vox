@@ -10,14 +10,13 @@ import (
 )
 
 // HermesSession is a Java-friendly handle to the entity connector. The native
-// Android shell calls NewHermesSession + the Turn/Stream/Run family to talk
+// Android shell calls NewHermesSession + the Turn/Stream family to talk
 // to the SAME agent (the entity) — the Go source of truth (HermesClient +
-// Conversation + HermesResponsesClient + HermesRunClient), not a Kotlin
+// Conversation + HermesResponsesClient), not a Kotlin
 // re-implementation.
 type HermesSession struct {
 	conv    *voice.Conversation
 	streams *voice.HermesResponsesClient
-	runs    *voice.HermesRunClient
 	gw      *voice.HermesGatewayClient
 	lastID  string // server-side context: the latest response id (chained automatically)
 }
@@ -28,19 +27,18 @@ type HermesSession struct {
 // model route (usually "hermes-agent" → the real profile agent).
 func NewHermesSession(baseURL, apiKey, model string) *HermesSession {
 	client := voice.NewHermesClient(baseURL, apiKey, model)
-	conv := voice.NewConversation(&voice.Cloud{}, client)
+	conv := voice.NewConversation(client)
 	responses := voice.NewHermesResponsesClient(baseURL, apiKey, model)
 	conv.Responses = responses
 	return &HermesSession{
 		conv:    conv,
 		streams: responses,
-		runs:    voice.NewHermesRunClient(baseURL, apiKey, model),
 		gw:      voice.NewHermesGatewayClient(baseURL, apiKey),
 	}
 }
 
 // SetModel overrides the model route across every connector the session uses
-// (/v1/responses, /v1/chat/completions, /v1/runs). The /models chooser sets it
+// (/v1/responses, /v1/chat/completions). The /models chooser sets it
 // so the gateway switches the entity's inference backend per request.
 func (s *HermesSession) SetModel(model string) {
 	if s == nil {
@@ -51,9 +49,6 @@ func (s *HermesSession) SetModel(model string) {
 	}
 	if s.streams != nil {
 		s.streams.SetModel(model)
-	}
-	if s.runs != nil {
-		s.runs.SetModel(model)
 	}
 }
 
@@ -75,7 +70,7 @@ func (s *HermesSession) SetProvider(provider string) {
 
 // SetSessionKey declares WHO this install is to the gateway. It stamps
 // X-Hermes-Session-Key on every entity request the session makes
-// (/v1/responses, /v1/chat/completions, /v1/runs), which the API server uses to
+// (/v1/responses, /v1/chat/completions), which the API server uses to
 // derive a STABLE long-term-memory scope per channel.
 //
 // Why: API_SERVER_KEY is ONE bearer credential for the whole deployment — it
@@ -96,9 +91,6 @@ func (s *HermesSession) SetSessionKey(scope string) {
 	}
 	if s.streams != nil {
 		s.streams.SetSessionKey(scope)
-	}
-	if s.runs != nil {
-		s.runs.SetSessionKey(scope)
 	}
 }
 
@@ -257,38 +249,4 @@ func (s *HermesSession) ResetConversation() {
 		s.lastID = ""
 		s.conv.Reset()
 	}
-}
-
-// ---- Cancellable runs (the long-form leg; the original barge-in path) ----
-
-// StartRun starts a cancellable agent run (POST /v1/runs — accepted as
-// 200/201/202 by the client). Returns a run_id to poll/cancel.
-func (s *HermesSession) StartRun(text string) (string, error) {
-	if s == nil || s.runs == nil {
-		return "", fmt.Errorf("voice: no Hermes session")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	return s.runs.StartRun(ctx, text, "", "")
-}
-
-// RunStatus polls a run; returns the agent's reply when complete, "" while the
-// run is still working. gomobile bind supports at most (T, error).
-func (s *HermesSession) RunStatus(runID string) (string, error) {
-	if s == nil || s.runs == nil {
-		return "", fmt.Errorf("voice: no Hermes session")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	return s.runs.RunStatus(ctx, runID)
-}
-
-// CancelRun aborts a running agent generation (POST /v1/runs/{id}/stop).
-func (s *HermesSession) CancelRun(runID string) error {
-	if s == nil || s.runs == nil {
-		return fmt.Errorf("voice: no Hermes session")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	return s.runs.CancelRun(ctx, runID)
 }

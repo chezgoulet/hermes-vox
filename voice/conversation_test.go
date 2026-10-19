@@ -16,7 +16,7 @@ func TestConversationTurnText(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewConversation(&mockBackend{"mock"}, NewHermesClient(srv.URL, "k", "m"))
+	c := NewConversation(NewHermesClient(srv.URL, "k", "m"))
 	reply, err := c.TurnText(context.Background(), "hello")
 	if err != nil {
 		t.Fatal(err)
@@ -29,28 +29,8 @@ func TestConversationTurnText(t *testing.T) {
 	}
 }
 
-func TestConversationTurnAudio(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"reply text"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := NewConversation(&mockBackend{"mock"}, NewHermesClient(srv.URL, "k", "m"))
-	reply, out, err := c.TurnAudio(context.Background(), []byte("AUDIO"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reply != "reply text" {
-		t.Fatalf("reply %q", reply)
-	}
-	if string(out) != "AUDIO" {
-		t.Fatalf("synthesized audio %q", out)
-	}
-}
-
 func TestConversationRequiresHermes(t *testing.T) {
-	c := NewConversation(&mockBackend{"mock"}, nil)
+	c := NewConversation(nil)
 	if _, err := c.TurnText(context.Background(), "x"); err == nil {
 		t.Fatal("expected error: the entity IS Hermes (no Hermes client)")
 	}
@@ -67,7 +47,7 @@ func TestConversationReset(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewConversation(&mockBackend{"mock"}, NewHermesClient(srv.URL, "k", "m"))
+	c := NewConversation(NewHermesClient(srv.URL, "k", "m"))
 	c.Responses = NewHermesResponsesClient(srv.URL, "k", "m")
 
 	// H2: TurnTextStored is stateless — the caller passes the chain head and reads the
@@ -108,7 +88,7 @@ func TestTurnTextStoredChainsCallerID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewConversation(&mockBackend{"mock"}, NewHermesClient(srv.URL, "k", "m"))
+	c := NewConversation(NewHermesClient(srv.URL, "k", "m"))
 	c.Responses = NewHermesResponsesClient(srv.URL, "k", "m")
 
 	res, err := c.TurnTextStored(context.Background(), "/compress", "resp_voice_1")

@@ -9,7 +9,7 @@ import (
 
 // TestScopeRedeclarationIsRaceFree exercises the setters while requests are in
 // flight — the app re-declares the scope when the user edits Settings, which can
-// land mid-turn (or mid-run, on the cancel path). Run under `go test -race`:
+// land mid-turn. Run under `go test -race`:
 // this is the case that used to be unexercised, so a clean -race run meant
 // "never tried", not "proven safe".
 //
@@ -22,7 +22,7 @@ func TestScopeRedeclarationIsRaceFree(t *testing.T) {
 	defer srv.Close()
 
 	chat := NewHermesClient(srv.URL, "testkey", "hermes-agent")
-	runs := NewHermesRunClient(srv.URL, "testkey", "hermes-agent")
+	responses := NewHermesResponsesClient(srv.URL, "testkey", "hermes-agent")
 	ctx := context.Background()
 
 	stop := make(chan struct{})
@@ -38,7 +38,7 @@ func TestScopeRedeclarationIsRaceFree(t *testing.T) {
 			}
 			scope := "agent:vox:dev:member-" + strconv.Itoa(i%8)
 			chat.SetSessionKey(scope)
-			runs.SetSessionKey(scope)
+			responses.SetSessionKey(scope)
 		}
 	}()
 
@@ -46,8 +46,8 @@ func TestScopeRedeclarationIsRaceFree(t *testing.T) {
 		if _, err := chat.Chat(ctx, []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
 			t.Fatalf("chat: %v", err)
 		}
-		if _, err := runs.StartRun(ctx, "hi", "", ""); err != nil {
-			t.Fatalf("run: %v", err)
+		if _, err := responses.Response(ctx, "hi", ""); err != nil {
+			t.Fatalf("response: %v", err)
 		}
 	}
 	close(stop)

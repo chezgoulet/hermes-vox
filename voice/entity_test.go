@@ -113,14 +113,6 @@ func recordingEntityServer(t *testing.T, rec *probeRecorder) *httptest.Server {
 		case r.URL.Path == "/v1/models":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"object":"list","data":[]}`)
-		case strings.HasSuffix(r.URL.Path, "/stop"):
-			w.WriteHeader(http.StatusNoContent)
-		case strings.HasPrefix(r.URL.Path, "/v1/runs/"):
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"status":"completed","output":"ok"}`)
-		case r.URL.Path == "/v1/runs":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"run_id":"run_1"}`)
 		case r.URL.Path == "/v1/chat/completions":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
@@ -144,8 +136,8 @@ func recordingEntityServer(t *testing.T, rec *probeRecorder) *httptest.Server {
 // can serve several people (or several devices), and API_SERVER_KEY is a single
 // shared bearer credential — it names the deployment, not the caller. The
 // declared scope must therefore ride EVERY request the entity sees
-// (/v1/chat/completions, /v1/responses non-streaming AND streaming, /v1/runs
-// start/status/cancel, the /v1/models probe). A path that forgets it writes
+// (/v1/chat/completions, /v1/responses non-streaming AND streaming, the
+// /v1/models probe). A path that forgets it writes
 // another person's turns into the shared memory scope — exactly the bug this
 // header exists to fix.
 func TestSessionKeyRidesEveryEntityRequest(t *testing.T) {
@@ -174,25 +166,10 @@ func TestSessionKeyRidesEveryEntityRequest(t *testing.T) {
 		t.Fatalf("stream: %v", err)
 	}
 
-	runs := NewHermesRunClient(srv.URL, "testkey", "hermes-agent")
-	runs.SetSessionKey(scope)
-	if _, err := runs.StartRun(ctx, "hi", "", ""); err != nil {
-		t.Fatalf("start run: %v", err)
-	}
-	if _, err := runs.RunStatus(ctx, "run_1"); err != nil {
-		t.Fatalf("run status: %v", err)
-	}
-	if err := runs.CancelRun(ctx, "run_1"); err != nil {
-		t.Fatalf("cancel run: %v", err)
-	}
-
 	wantPaths := []string{
 		"POST /v1/chat/completions",
 		"POST /v1/responses",
 		"GET /v1/models",
-		"POST /v1/runs",
-		"GET /v1/runs/run_1",
-		"POST /v1/runs/run_1/stop",
 	}
 	for _, p := range wantPaths {
 		got, ok := rec.get(p)
@@ -255,12 +232,8 @@ func TestNoScopeDeclaredSendsNoSessionKeyHeader(t *testing.T) {
 	if _, err := streams.Response(ctx, "hi", ""); err != nil {
 		t.Fatalf("response: %v", err)
 	}
-	runs := NewHermesRunClient(srv.URL, "testkey", "hermes-agent")
-	if _, err := runs.StartRun(ctx, "hi", "", ""); err != nil {
-		t.Fatalf("start run: %v", err)
-	}
 
-	for _, p := range []string{"POST /v1/chat/completions", "POST /v1/responses", "POST /v1/runs"} {
+	for _, p := range []string{"POST /v1/chat/completions", "POST /v1/responses"} {
 		got, ok := rec.get(p)
 		if !ok {
 			t.Errorf("%s never reached the server", p)
@@ -302,7 +275,7 @@ func TestConfigLoadsSessionKeyFromEnv(t *testing.T) {
 // TestConfigScopesEveryConnector is the contract a Go consumer depends on: a
 // Config is the whole world it gets, so EVERY connector the Config hands out
 // must carry the declared scope. Config.Client() used to be the only one that
-// did — /v1/responses and /v1/runs were built by callers, so a caller that
+// did — /v1/responses was built by callers, so a caller that
 // forgot a line silently ran a single-tenant path (the very failure this header
 // exists to fix, one layer up).
 func TestConfigScopesEveryConnector(t *testing.T) {
@@ -324,11 +297,8 @@ func TestConfigScopesEveryConnector(t *testing.T) {
 	if _, err := cfg.ResponsesClient().Response(ctx, "hi", ""); err != nil {
 		t.Fatalf("responses: %v", err)
 	}
-	if _, err := cfg.RunClient().StartRun(ctx, "hi", "", ""); err != nil {
-		t.Fatalf("run: %v", err)
-	}
 
-	for _, p := range []string{"POST /v1/chat/completions", "POST /v1/responses", "POST /v1/runs"} {
+	for _, p := range []string{"POST /v1/chat/completions", "POST /v1/responses"} {
 		got, ok := rec.get(p)
 		if !ok {
 			t.Errorf("%s never reached the server", p)

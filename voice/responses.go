@@ -105,8 +105,8 @@ type responsesAPI struct {
 
 // Response sends a turn to the entity and returns the reply + the new response id.
 // Pass previousResponseID (from the prior ResponseResult) to keep the full
-// server-side conversation (incl. tool calls) across turns. Non-streaming for now;
-// runs/cancel (the barge-in abort) is a follow-on layer.
+// server-side conversation (incl. tool calls) across turns. Non-streaming; the
+// streamed path (StartStream/CancelStream) carries the barge-in abort.
 func (c *HermesResponsesClient) Response(ctx context.Context, input string, previousResponseID string) (*ResponseResult, error) {
 	body, err := c.buildBody(input, previousResponseID, false)
 	if err != nil {

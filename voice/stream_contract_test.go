@@ -200,30 +200,3 @@ func TestStreamErrorBodyBounded(t *testing.T) {
 		t.Fatalf("error not bounded: len=%d", len(err.Error()))
 	}
 }
-
-func TestRunStatusTerminalStates(t *testing.T) {
-	for _, tc := range []struct {
-		body, want string
-	}{
-		{`{"status":"interrupted","error":"Gateway shutdown interrupted the run."}`, "hermes run interrupted: Gateway shutdown interrupted the run."},
-		{`{"status":"failed","error":{"message":"boom"}}`, "hermes run failed: boom"},
-		{`{"status":"cancelled"}`, "hermes run cancelled"},
-	} {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.WriteString(w, tc.body)
-		}))
-		_, err := NewHermesRunClient(srv.URL, "k", "m").RunStatus(context.Background(), "run_1")
-		srv.Close()
-		if err == nil || err.Error() != tc.want {
-			t.Fatalf("%s: err = %v, want %q", tc.body, err, tc.want)
-		}
-	}
-	// In-flight states are not failures.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"status":"waiting_for_approval"}`)
-	}))
-	defer srv.Close()
-	if out, err := NewHermesRunClient(srv.URL, "k", "m").RunStatus(context.Background(), "run_1"); err != nil || out != "" {
-		t.Fatalf("waiting_for_approval: out=%q err=%v", out, err)
-	}
-}
