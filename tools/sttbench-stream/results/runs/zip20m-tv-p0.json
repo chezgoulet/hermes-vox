@@ -1,0 +1,110 @@
+{
+ "run_id": "zip20m-tv-p0",
+ "model": {
+  "id": "zip20m",
+  "encoder": "/sdcard/Android/data/com.hermesvox.bench/files/models/zip20m/encoder-epoch-99-avg-1.int8.onnx",
+  "decoder": "/sdcard/Android/data/com.hermesvox.bench/files/models/zip20m/decoder-epoch-99-avg-1.int8.onnx",
+  "joiner": "/sdcard/Android/data/com.hermesvox.bench/files/models/zip20m/joiner-epoch-99-avg-1.int8.onnx",
+  "tokens": "/sdcard/Android/data/com.hermesvox.bench/files/models/zip20m/tokens.txt"
+ },
+ "threads": 4,
+ "chunk_ms": 20,
+ "trailing_silence_ms": 500,
+ "max_tail_ms": 3000,
+ "realtime": true,
+ "warmup": true,
+ "reps": 1,
+ "clips": [
+  {
+   "id": "short_01",
+   "condition": "tv",
+   "category": "short",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/short_01.wav",
+   "reference": "YOU WILL BE FRANK WITH ME I ALWAYS AM"
+  },
+  {
+   "id": "short_02",
+   "condition": "tv",
+   "category": "short",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/short_02.wav",
+   "reference": "WHO TOUCHES ME AM I IN BED"
+  },
+  {
+   "id": "short_03",
+   "condition": "tv",
+   "category": "short",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/short_03.wav",
+   "reference": "I WONDER IF I'VE BEEN CHANGED IN THE NIGHT"
+  },
+  {
+   "id": "short_04",
+   "condition": "tv",
+   "category": "short",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/short_04.wav",
+   "reference": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FIFTY FIVE"
+  },
+  {
+   "id": "short_05",
+   "condition": "tv",
+   "category": "short",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/short_05.wav",
+   "reference": "AND WHAT THROUGH THE LEFT HAND WINDOW"
+  },
+  {
+   "id": "short_06",
+   "condition": "tv",
+   "category": "short",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/short_06.wav",
+   "reference": "WILL THE HURONS HEAR HIS GROANS"
+  },
+  {
+   "id": "long_01",
+   "condition": "tv",
+   "category": "long",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/long_01.wav",
+   "reference": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPENED BEFORE THEM"
+  },
+  {
+   "id": "long_02",
+   "condition": "tv",
+   "category": "long",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/long_02.wav",
+   "reference": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE IN WITNESSING SUCH AN EXHIBITION OF WEAKNESS IN AN ENEMY SO LONG HATED AND SO MUCH FEARED"
+  },
+  {
+   "id": "long_03",
+   "condition": "tv",
+   "category": "long",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/long_03.wav",
+   "reference": "SECURE AS HE THOUGHT IN THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HIDALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFAL HIS FAMILY"
+  },
+  {
+   "id": "long_04",
+   "condition": "tv",
+   "category": "long",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/long_04.wav",
+   "reference": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY HAD ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT AND THE ARMY"
+  },
+  {
+   "id": "verylong_01",
+   "condition": "tv",
+   "category": "verylong",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/verylong_01.wav",
+   "reference": "BUT THERE IS ALWAYS A STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEAMS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS ON THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT AS POSSIBLE"
+  },
+  {
+   "id": "pause_01",
+   "condition": "tv",
+   "category": "pause",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/pause_01.wav",
+   "reference": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY MUTTERING TO HIMSELF AS HE CAME OH THE DUCHESS THE DUCHESS"
+  },
+  {
+   "id": "pause_02",
+   "condition": "tv",
+   "category": "pause",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/tv/pause_02.wav",
+   "reference": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY CORN BAGS"
+  }
+ ]
+}

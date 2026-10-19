@@ -1,0 +1,270 @@
+{
+ "zip0626": {
+  "accent": {
+   "clips": 4,
+   "audio_s": 21.2,
+   "wer": 0.3881,
+   "wer_words": 67,
+   "latency_median": 909.6,
+   "latency_p90": 1283.5,
+   "latency_p95": 1449.2,
+   "latency_mean": 797.0,
+   "post_word_median": 640.2,
+   "post_word_p95": 1097.2,
+   "finalisation_median": 1036.7,
+   "finalisation_p95": 1179.7,
+   "tail_decode_median": 178.4,
+   "revisions_per_word": 1.02,
+   "rtf": 0.214,
+   "rss_peak_mb": 295.6,
+   "words_observed": 43,
+   "word_coverage": 0.654,
+   "feed_lag_mean_ms": 4.53,
+   "feed_lag_max_ms": 101.7,
+   "hallucinations": 0
+  },
+  "kitchen": {
+   "clips": 13,
+   "audio_s": 134.8,
+   "wer": 0.0284,
+   "wer_words": 352,
+   "latency_median": 936.9,
+   "latency_p90": 1334.9,
+   "latency_p95": 1456.6,
+   "latency_mean": 402.7,
+   "post_word_median": 656.2,
+   "post_word_p95": 1066.7,
+   "finalisation_median": 720.7,
+   "finalisation_p95": 1080.8,
+   "tail_decode_median": 142.7,
+   "revisions_per_word": 1.26,
+   "rtf": 0.194,
+   "rss_peak_mb": 286.5,
+   "words_observed": 342,
+   "word_coverage": 0.972,
+   "feed_lag_mean_ms": 4.56,
+   "feed_lag_max_ms": 101.9,
+   "hallucinations": 0
+  },
+  "quiet": {
+   "clips": 15,
+   "audio_s": 142.8,
+   "wer": 0.0199,
+   "wer_words": 352,
+   "latency_median": 955.5,
+   "latency_p90": 1328.4,
+   "latency_p95": 1450.5,
+   "latency_mean": 411.9,
+   "post_word_median": 670.4,
+   "post_word_p95": 1104.6,
+   "finalisation_median": 841.4,
+   "finalisation_p95": 1124.8,
+   "tail_decode_median": 151.4,
+   "revisions_per_word": 1.29,
+   "rtf": 0.193,
+   "rss_peak_mb": 291.4,
+   "words_observed": 346,
+   "word_coverage": 0.99,
+   "feed_lag_mean_ms": 4.23,
+   "feed_lag_max_ms": 103.7,
+   "hallucinations": 0
+  },
+  "tv": {
+   "clips": 13,
+   "audio_s": 134.8,
+   "wer": 0.0455,
+   "wer_words": 352,
+   "latency_median": 941.9,
+   "latency_p90": 1328.5,
+   "latency_p95": 1468.0,
+   "latency_mean": 409.2,
+   "post_word_median": 661.8,
+   "post_word_p95": 1110.1,
+   "finalisation_median": 725.2,
+   "finalisation_p95": 952.1,
+   "tail_decode_median": 136.7,
+   "revisions_per_word": 1.26,
+   "rtf": 0.198,
+   "rss_peak_mb": 289.7,
+   "words_observed": 339,
+   "word_coverage": 0.966,
+   "feed_lag_mean_ms": 4.97,
+   "feed_lag_max_ms": 102.3,
+   "hallucinations": 0
+  },
+  "_meta": {
+   "runs": 4,
+   "cold_start_ms": 3547.9,
+   "rss_peak_mb": 305.7,
+   "energy_mwh_total": 0.0,
+   "audio_s": 433.6,
+   "battery_mwh_per_audio_hour": 0.0,
+   "energy_charge_uah": 16000,
+   "cpu_s_per_audio_hour": 4045.9
+  }
+ },
+ "zip20m": {
+  "accent": {
+   "clips": 4,
+   "audio_s": 21.2,
+   "wer": 0.5522,
+   "wer_words": 67,
+   "latency_median": 761.7,
+   "latency_p90": 985.7,
+   "latency_p95": 1106.2,
+   "latency_mean": 724.7,
+   "post_word_median": 506.5,
+   "post_word_p95": 699.1,
+   "finalisation_median": 855.7,
+   "finalisation_p95": 1124.6,
+   "tail_decode_median": 153.4,
+   "revisions_per_word": 0.72,
+   "rtf": 0.174,
+   "rss_peak_mb": 240.2,
+   "words_observed": 30,
+   "word_coverage": 0.457,
+   "feed_lag_mean_ms": 2.97,
+   "feed_lag_max_ms": 70.5,
+   "hallucinations": 0
+  },
+  "kitchen": {
+   "clips": 13,
+   "audio_s": 134.8,
+   "wer": 0.2415,
+   "wer_words": 352,
+   "latency_median": 871.1,
+   "latency_p90": 1268.6,
+   "latency_p95": 1407.7,
+   "latency_mean": 167.6,
+   "post_word_median": 576.1,
+   "post_word_p95": 1007.5,
+   "finalisation_median": 490.5,
+   "finalisation_p95": 841.7,
+   "tail_decode_median": 90.8,
+   "revisions_per_word": 0.75,
+   "rtf": 0.153,
+   "rss_peak_mb": 244.9,
+   "words_observed": 269,
+   "word_coverage": 0.525,
+   "feed_lag_mean_ms": 2.85,
+   "feed_lag_max_ms": 71.5,
+   "hallucinations": 0
+  },
+  "quiet": {
+   "clips": 15,
+   "audio_s": 142.8,
+   "wer": 0.2074,
+   "wer_words": 352,
+   "latency_median": 855.7,
+   "latency_p90": 1230.9,
+   "latency_p95": 1378.8,
+   "latency_mean": 170.9,
+   "post_word_median": 563.9,
+   "post_word_p95": 985.2,
+   "finalisation_median": 489.0,
+   "finalisation_p95": 1015.4,
+   "tail_decode_median": 67.1,
+   "revisions_per_word": 0.86,
+   "rtf": 0.153,
+   "rss_peak_mb": 248.0,
+   "words_observed": 279,
+   "word_coverage": 0.61,
+   "feed_lag_mean_ms": 2.98,
+   "feed_lag_max_ms": 71.2,
+   "hallucinations": 0
+  },
+  "tv": {
+   "clips": 13,
+   "audio_s": 134.8,
+   "wer": 0.2017,
+   "wer_words": 352,
+   "latency_median": 878.0,
+   "latency_p90": 1296.3,
+   "latency_p95": 1493.4,
+   "latency_mean": 211.4,
+   "post_word_median": 577.6,
+   "post_word_p95": 1124.4,
+   "finalisation_median": 604.1,
+   "finalisation_p95": 888.9,
+   "tail_decode_median": 99.1,
+   "revisions_per_word": 0.91,
+   "rtf": 0.156,
+   "rss_peak_mb": 249.0,
+   "words_observed": 287,
+   "word_coverage": 0.65,
+   "feed_lag_mean_ms": 2.91,
+   "feed_lag_max_ms": 75.8,
+   "hallucinations": 0
+  },
+  "_meta": {
+   "runs": 4,
+   "cold_start_ms": 805.4,
+   "rss_peak_mb": 253.0,
+   "energy_mwh_total": 0.0,
+   "audio_s": 433.6,
+   "battery_mwh_per_audio_hour": 0.0,
+   "energy_charge_uah": 38000,
+   "cpu_s_per_audio_hour": 3380.6
+  }
+ },
+ "_paired": {
+  "accent": {
+   "words": 30,
+   "zip0626": {
+    "median": 896.3,
+    "p95": 1414.8
+   },
+   "zip20m": {
+    "median": 761.7,
+    "p95": 1106.2
+   },
+   "median_diff_ms": -77.9
+  },
+  "kitchen": {
+   "words": 267,
+   "zip0626": {
+    "median": 943.5,
+    "p95": 1483.7
+   },
+   "zip20m": {
+    "median": 871.1,
+    "p95": 1409.3
+   },
+   "median_diff_ms": -73.1
+  },
+  "quiet": {
+   "words": 278,
+   "zip0626": {
+    "median": 965.0,
+    "p95": 1478.5
+   },
+   "zip20m": {
+    "median": 856.0,
+    "p95": 1379.7
+   },
+   "median_diff_ms": -75.6
+  },
+  "tv": {
+   "words": 282,
+   "zip0626": {
+    "median": 943.4,
+    "p95": 1508.1
+   },
+   "zip20m": {
+    "median": 877.3,
+    "p95": 1495.7
+   },
+   "median_diff_ms": -75.1
+  }
+ },
+ "_arms": [
+  "zip0626",
+  "zip20m"
+ ],
+ "_conds": [
+  "accent",
+  "kitchen",
+  "quiet",
+  "tv"
+ ]
+}
