@@ -96,6 +96,12 @@ Optional: Whisper tiny/small, **Parakeet-TDT 0.6B** (most accurate, 482 MB), **P
 
 ## Verify on the device (the emulator is function-only; real mic and GPU here)
 
+**Cold launch first.** Force-stop the app, open it, and leave it alone: the being appears
+and the screen stays usable. It must **not** sit on "Preparing your voice…" with no call
+running — that splash belongs to a voice line opening, and one that never clears also
+covers the endpoint error underneath it. Tap the call button and the splash may appear for
+a second or two while the models warm, then the line opens and it goes.
+
 1. **Voice turn** — tap the call button, talk. The being turns to its thinking shape,
    Hermes answers, Supertonic speaks, and the reply scrolls locked to the voice. A dim
    "heard" line shows what was sent.
