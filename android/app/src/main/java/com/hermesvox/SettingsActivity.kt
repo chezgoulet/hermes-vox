@@ -105,6 +105,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
         findViewById<android.view.View>(R.id.row_grp_stt)?.setOnClickListener { showSection(SECTION_STT) }
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
+        findViewById<android.view.View>(R.id.row_grp_wake)?.setOnClickListener {
+            startActivity(android.content.Intent(this, WakeEnrolActivity::class.java))
+        }
         findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
@@ -563,6 +566,10 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.set_stt_grpval)?.text =
                 sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
             findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
+            // Counting files only — no decryption on the Settings home.
+            findViewById<TextView>(R.id.set_wake_grpval)?.text =
+                "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
+                "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
             findViewById<TextView>(R.id.set_appearance_grpval)?.text =
                 label("theme", "system") + " · " + label("layout_mode", "presence")
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =

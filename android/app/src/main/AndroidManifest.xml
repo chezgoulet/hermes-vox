@@ -62,6 +62,12 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- #45: wake-word enrolment (preview) — records takes only; no service. -->
+        <activity
+            android:name=".WakeEnrolActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <service
             android:name=".VoiceService"
             android:exported="false"
