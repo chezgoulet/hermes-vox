@@ -19,6 +19,34 @@ optional Enhanced Realtime (alpha) layer.
 - **Your own build** — `bash scripts/gate.sh`, then
   `adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk`.
 
+## Upgrading to 0.9 — HTTPS for entity endpoints
+
+0.9 moves the turn traffic onto Android's own HTTP stack, which enforces the
+network security policy the app has always declared: **plain HTTP is refused for
+every host except a tailnet MagicDNS name**. This is deliberate, and it is the
+one breaking change in 0.9.
+
+If your gateway was `http://192.168.x.x:8080` (or any bare IP), you have two ways
+to keep it working:
+
+1. **Serve it over HTTPS with the tailnet's own certificate** — on the gateway
+   host:
+
+   ```sh
+   tailscale serve --bg 8080
+   ```
+
+   then enter `https://<machine>.<tailnet>.ts.net` as the entity endpoint. The
+   certificate is issued by the tailnet CA; the app trusts user-installed CAs for
+   entity endpoints (Settings → Security → Trust device certificates), so no
+   rebuild and no cleartext.
+2. **Put any HTTPS terminator in front of it** — Caddy, Traefik with a real
+   certificate, or Cloudflare Tunnel — and enter that HTTPS URL.
+
+A plain-HTTP gateway now fails with an error that says exactly this, including
+the `tailscale serve` command. Model downloads were always HTTPS and are
+unaffected.
+
 ## First run (onboarding)
 
 A true first run opens on a **HOW THIS WORKS** step, not a form: it says what the

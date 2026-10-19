@@ -112,10 +112,25 @@ internal object Entity {
             return block(c)
         } catch (e: IOException) {
             if (fired.get()) throw HermesException("$what: timed out after ${timeoutMs / 1000}s")
+            // Android refuses cleartext to anything but a tailnet name (#126). The
+            // platform's message names the rule but not the way out of it.
+            cleartextHint(e.message)?.let { throw HermesException(it) }
             throw e
         } finally {
             timer.cancel(false)
         }
+    }
+
+    /**
+     * The actionable form of Android's cleartext refusal. Returns null for any other
+     * error, so a caller can rethrow the original.
+     */
+    fun cleartextHint(message: String?): String? {
+        if (message == null || !message.contains("CLEARTEXT", ignoreCase = true)) return null
+        return "This gateway is plain HTTP, which Android blocks for anything but a tailnet " +
+            "name. Serve it over HTTPS — on the gateway host run `tailscale serve --bg 8080`, " +
+            "then enter https://<machine>.<tailnet>.ts.net here. " +
+            "See DEVICE_VERIFY.md → Upgrading to 0.9."
     }
 
     /** Go's strings.TrimSpace: trims Unicode White_Space (which Kotlin's trim() and

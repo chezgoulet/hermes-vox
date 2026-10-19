@@ -120,3 +120,15 @@ STREAM_GOLDEN_UPDATE=1 ./gradlew testDebugUnitTest --tests '*StreamParityTest'
 which writes only goldens that are missing, then read the new golden line by line
 before committing both. It was produced by the code under test, so it is a
 specification only once a person has checked it.
+
+## The one breaking change: HTTPS entity endpoints
+
+Turns now go through the platform HTTP stack, so the app's network security
+policy finally applies to them: **cleartext is refused for every host except a
+tailnet MagicDNS name**. A gateway addressed as `http://192.168.x.x:8080` stops
+working on upgrade.
+
+The way out is one command on the gateway host — `tailscale serve --bg 8080` —
+after which the endpoint is `https://<machine>.<tailnet>.ts.net`. Any HTTPS
+terminator works as well. The failure message in the app names this, and
+`DEVICE_VERIFY.md` has the step-by-step under "Upgrading to 0.9".
