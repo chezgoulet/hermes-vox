@@ -8,6 +8,10 @@ apply plugin: 'org.jetbrains.kotlin.android'
 // Gradle root is android/; the keystore dir sits one level up at the REPO root, so
 // resolve explicitly against repoRoot = rootProject.projectDir.parentFile (hermes-vox/).
 def repoRoot = rootProject.projectDir.parentFile
+// F-Droid builds re-sign the APK with its own key, so it must be able to ask
+// Gradle for an unsigned release APK. -PhermesVoxUnsigned skips assigning the
+// release signing config; normal developer/release builds are unchanged.
+def unsignedBuild = project.hasProperty('hermesVoxUnsigned')
 def keystoreProps = new Properties()
 def keystorePropFile = new File(repoRoot, "keystore/keystore.properties")
 if (keystorePropFile.exists()) {
@@ -40,7 +44,7 @@ android {
         release {
             minifyEnabled true
             shrinkResources false
-            signingConfig signingConfigs.release
+            if (!unsignedBuild) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
         }
@@ -61,11 +65,32 @@ android {
     }
 }
 
+// F-Droid path B (#165): the source-built AAR (scripts/build-sherpa-aar.sh) has
+// no libonnxruntime.so of its own; it links against the Maven Central runtime.
+// The upstream release AAR (scripts/fetch-runtime.sh) bundles that library, so
+// adding the Maven artifact alongside it would ship two onnxruntimes — reject
+// that combination instead of guessing. The source AAR has its own name so the
+// two can never be silently confused.
+def sourceSherpaAar = file('libs/sherpa-onnx-1.13.6-src.aar')
+def upstreamSherpaAar = file('libs/sherpa-onnx-1.13.6.aar')
+if (sourceSherpaAar.exists() && upstreamSherpaAar.exists()) {
+    throw new GradleException(
+        "android/app/libs contains both sherpa-onnx-1.13.6-src.aar and " +
+        "sherpa-onnx-1.13.6.aar. Keep exactly one: the source-built AAR " +
+        "(scripts/build-sherpa-aar.sh) or the upstream release AAR " +
+        "(scripts/fetch-runtime.sh).")
+}
+
 dependencies {
     implementation 'org.apache.commons:commons-compress:1.26.2'
     // Only the pinned sherpa-onnx runtime (scripts/fetch-runtime.sh). Named rather than
     // '*.aar' so a stale mobile.aar from a pre-#126 checkout can never be packaged.
     implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: 'libs')
+    // Source-built AAR: exactly one onnxruntime, from Maven Central (the version
+    // the C++ build linked against; headers come from the same artifact).
+    if (sourceSherpaAar.exists()) {
+        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'
+    }
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'

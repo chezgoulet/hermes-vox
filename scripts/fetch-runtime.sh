@@ -6,8 +6,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 AAR=android/app/libs/sherpa-onnx-1.13.6.aar
+# A source-built AAR (scripts/build-sherpa-aar.sh, F-Droid path B) takes
+# precedence when present. It deliberately has a distinct name so it can never
+# be confused with the upstream release artifact, and it does not bundle
+# libonnxruntime.so — app/build.gradle pulls that from Maven Central.
+SRC_AAR=android/app/libs/sherpa-onnx-1.13.6-src.aar
 URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/sherpa-onnx-1.13.6.aar"
 SHA256="0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698"
+
+if [ -f "$SRC_AAR" ]; then
+  if [ -f "$AAR" ]; then
+    echo "both $SRC_AAR and $AAR exist — remove one (two sherpa AARs would duplicate classes/JNI)"; exit 1
+  fi
+  echo "have $SRC_AAR (source-built, see docs/FDROID.md)"
+  exit 0
+fi
 
 verify() { echo "$SHA256  $1" | sha256sum -c --quiet - ; }
 
