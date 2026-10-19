@@ -1,0 +1,2443 @@
+{
+ "run_id": "zip0626-tv-p0",
+ "model_id": "zip0626",
+ "threads": 4,
+ "chunk_ms": 20,
+ "realtime": true,
+ "trailing_silence_ms": 500,
+ "reps": 1,
+ "load_ms": 3625.652956,
+ "rss_base_kb": 106560,
+ "rss_after_load_kb": 291848,
+ "clips": [
+  {
+   "id": "short_01",
+   "condition": "tv",
+   "category": "short",
+   "reference": "YOU WILL BE FRANK WITH ME I ALWAYS AM",
+   "seconds": 3.315,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1193.024944,
+     "t": "YOU",
+     "d": 266.50398800000005
+    },
+    {
+     "a": 1440,
+     "w": 1472.147055,
+     "t": "YOU WILL BE",
+     "d": 318.2751870000001
+    },
+    {
+     "a": 1760,
+     "w": 1819.472861,
+     "t": "YOU WILL BE FRANK",
+     "d": 397.0098470000001
+    },
+    {
+     "a": 2080,
+     "w": 2119.240642,
+     "t": "YOU WILL BE FRANK WITH ME",
+     "d": 455.6016440000001
+    },
+    {
+     "a": 2720,
+     "w": 2746.914349,
+     "t": "YOU WILL BE FRANK WITH ME I",
+     "d": 549.0378420000001
+    },
+    {
+     "a": 3040,
+     "w": 3066.489788,
+     "t": "YOU WILL BE FRANK WITH ME I ALWAYS",
+     "d": 594.9123950000001
+    },
+    {
+     "a": 3355,
+     "w": 3383.366335,
+     "t": "YOU WILL BE FRANK WITH ME I ALWAYS AM",
+     "d": 642.809571
+    }
+   ],
+   "final_text": "YOU WILL BE FRANK WITH ME I ALWAYS AM",
+   "clip_end_wall_ms": 3300.610801,
+   "endpoint_wall_ms": 4025.809613,
+   "endpoints": [
+    4025.809613
+   ],
+   "final_wall_ms": 4025.846926,
+   "tail_ms": 680,
+   "decode_ms": 730.293417,
+   "tail_decode_ms": 135.38102199999992,
+   "rtf": 0.2202996733031674,
+   "feed_lag_mean_ms": 4.959532897590361,
+   "feed_lag_max_ms": 83.816325,
+   "first_partial_wall_ms": 1193.024944,
+   "cpu_ticks": 364,
+   "rss_before_kb": 287760,
+   "rss_kb": 288084,
+   "rep": 0
+  },
+  {
+   "id": "short_02",
+   "condition": "tv",
+   "category": "short",
+   "reference": "WHO TOUCHES ME AM I IN BED",
+   "seconds": 2.215,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1151.998658,
+     "t": "WHO TOUCH",
+     "d": 208.319417
+    },
+    {
+     "a": 1440,
+     "w": 1471.721965,
+     "t": "WHO TOUCHES",
+     "d": 259.518269
+    },
+    {
+     "a": 1760,
+     "w": 1786.403524,
+     "t": "WHO TOUCHES ME",
+     "d": 305.42850599999997
+    },
+    {
+     "a": 2080,
+     "w": 2107.40503,
+     "t": "WHO TOUCHES ME AM I",
+     "d": 352.33044299999995
+    },
+    {
+     "a": 2395,
+     "w": 2464.17155,
+     "t": "WHO TOUCHES ME AM I IN BE",
+     "d": 439.67101899999994
+    },
+    {
+     "a": 2715,
+     "w": 2760.337485,
+     "t": "WHO TOUCHES ME AM I IN BED",
+     "d": 504.54683299999994
+    }
+   ],
+   "final_text": "WHO TOUCHES ME AM I IN BED",
+   "clip_end_wall_ms": 2200.228476,
+   "endpoint_wall_ms": 3100.221803,
+   "endpoints": [
+    3100.221803
+   ],
+   "final_wall_ms": 3100.255657,
+   "tail_ms": 820,
+   "decode_ms": 588.5808499999999,
+   "tail_decode_ms": 236.250407,
+   "rtf": 0.26572498871331823,
+   "feed_lag_mean_ms": 3.8999814954954948,
+   "feed_lag_max_ms": 84.26766,
+   "first_partial_wall_ms": 1151.998658,
+   "cpu_ticks": 297,
+   "rss_before_kb": 288600,
+   "rss_kb": 288888,
+   "rep": 0
+  },
+  {
+   "id": "short_03",
+   "condition": "tv",
+   "category": "short",
+   "reference": "I WONDER IF I'VE BEEN CHANGED IN THE NIGHT",
+   "seconds": 2.715,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1152.162801,
+     "t": "I WONDER",
+     "d": 224.474406
+    },
+    {
+     "a": 1440,
+     "w": 1476.34139,
+     "t": "I WONDER IF I",
+     "d": 280.461304
+    },
+    {
+     "a": 1760,
+     "w": 1791.291545,
+     "t": "I WONDER IF I'VE BEEN",
+     "d": 331.307374
+    },
+    {
+     "a": 2080,
+     "w": 2107.063599,
+     "t": "I WONDER IF I'VE BEEN CHANG",
+     "d": 377.87552999999997
+    },
+    {
+     "a": 2400,
+     "w": 2429.013795,
+     "t": "I WONDER IF I'VE BEEN CHANGED",
+     "d": 426.40441999999996
+    },
+    {
+     "a": 2715,
+     "w": 2749.570151,
+     "t": "I WONDER IF I'VE BEEN CHANGED IN THE",
+     "d": 475.60437099999996
+    },
+    {
+     "a": 3035,
+     "w": 3058.683636,
+     "t": "I WONDER IF I'VE BEEN CHANGED IN THE NIGHT",
+     "d": 518.7293709999999
+    }
+   ],
+   "final_text": "I WONDER IF I'VE BEEN CHANGED IN THE NIGHT",
+   "clip_end_wall_ms": 2749.596966,
+   "endpoint_wall_ms": 3700.152101,
+   "endpoints": [
+    3700.152101
+   ],
+   "final_wall_ms": 3700.179363,
+   "tail_ms": 960,
+   "decode_ms": 632.6632099999999,
+   "tail_decode_ms": 157.05883899999998,
+   "rtf": 0.23302512338858192,
+   "feed_lag_mean_ms": 4.021590911764705,
+   "feed_lag_max_ms": 89.751383,
+   "first_partial_wall_ms": 1152.162801,
+   "cpu_ticks": 333,
+   "rss_before_kb": 289404,
+   "rss_kb": 288920,
+   "rep": 0
+  },
+  {
+   "id": "short_04",
+   "condition": "tv",
+   "category": "short",
+   "reference": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FIFTY FIVE",
+   "seconds": 3.45,
+   "partials": [
+    {
+     "a": 800,
+     "w": 846.119751,
+     "t": "THIS",
+     "d": 162.489665
+    },
+    {
+     "a": 1120,
+     "w": 1158.982789,
+     "t": "THIS WAS",
+     "d": 220.975912
+    },
+    {
+     "a": 1440,
+     "w": 1478.576295,
+     "t": "THIS WAS AT THE MAR",
+     "d": 278.889771
+    },
+    {
+     "a": 1760,
+     "w": 1788.745443,
+     "t": "THIS WAS AT THE MARCH",
+     "d": 327.141073
+    },
+    {
+     "a": 2080,
+     "w": 2109.093995,
+     "t": "THIS WAS AT THE MARCH ELEC",
+     "d": 375.784872
+    },
+    {
+     "a": 2400,
+     "w": 2465.157879,
+     "t": "THIS WAS AT THE MARCH ELECTION",
+     "d": 460.439128
+    },
+    {
+     "a": 2720,
+     "w": 2772.643881,
+     "t": "THIS WAS AT THE MARCH ELECTION EIGHTE",
+     "d": 532.726279
+    },
+    {
+     "a": 3040,
+     "w": 3109.470216,
+     "t": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FI",
+     "d": 620.5512709999999
+    },
+    {
+     "a": 3360,
+     "w": 3394.11727,
+     "t": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FIFTY",
+     "d": 674.306073
+    },
+    {
+     "a": 3670,
+     "w": 3694.176597,
+     "t": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FIFTY FIVE",
+     "d": 718.1298039999999
+    }
+   ],
+   "final_text": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FIFTY FIVE",
+   "clip_end_wall_ms": 3441.708701,
+   "endpoint_wall_ms": 4336.826662,
+   "endpoints": [
+    4336.826662
+   ],
+   "final_wall_ms": 4336.871747,
+   "tail_ms": 860,
+   "decode_ms": 810.9563019999999,
+   "tail_decode_ms": 136.65022899999997,
+   "rtf": 0.2350597976811594,
+   "feed_lag_mean_ms": 5.330923722543352,
+   "feed_lag_max_ms": 77.424154,
+   "first_partial_wall_ms": 846.119751,
+   "cpu_ticks": 413,
+   "rss_before_kb": 289700,
+   "rss_kb": 290140,
+   "rep": 0
+  },
+  {
+   "id": "short_05",
+   "condition": "tv",
+   "category": "short",
+   "reference": "AND WHAT THROUGH THE LEFT HAND WINDOW",
+   "seconds": 2.64,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1158.616618,
+     "t": "AND",
+     "d": 227.82421899999997
+    },
+    {
+     "a": 1440,
+     "w": 1506.07487,
+     "t": "AND WHAT",
+     "d": 313.554607
+    },
+    {
+     "a": 1760,
+     "w": 1803.634604,
+     "t": "AND WHAT THROUGH THE LEFT",
+     "d": 376.57971299999997
+    },
+    {
+     "a": 2080,
+     "w": 2126.881918,
+     "t": "AND WHAT THROUGH THE LEFT HAND",
+     "d": 443.045614
+    },
+    {
+     "a": 2400,
+     "w": 2479.007447,
+     "t": "AND WHAT THROUGH THE LEFT HAND WIND",
+     "d": 541.389324
+    },
+    {
+     "a": 2720,
+     "w": 2754.99874,
+     "t": "AND WHAT THROUGH THE LEFT HAND WINDOW",
+     "d": 595.9790869999999
+    }
+   ],
+   "final_text": "AND WHAT THROUGH THE LEFT HAND WINDOW",
+   "clip_end_wall_ms": 2620.577272,
+   "endpoint_wall_ms": 3394.413128,
+   "endpoints": [
+    3394.413128
+   ],
+   "final_wall_ms": 3394.451906,
+   "tail_ms": 720,
+   "decode_ms": 693.695354,
+   "tail_decode_ms": 152.30602999999996,
+   "rtf": 0.2627633916666666,
+   "feed_lag_mean_ms": 6.50968868939394,
+   "feed_lag_max_ms": 79.486125,
+   "first_partial_wall_ms": 1158.616618,
+   "cpu_ticks": 332,
+   "rss_before_kb": 290656,
+   "rss_kb": 290772,
+   "rep": 0
+  },
+  {
+   "id": "short_06",
+   "condition": "tv",
+   "category": "short",
+   "reference": "WILL THE HURONS HEAR HIS GROANS",
+   "seconds": 2.24,
+   "partials": [
+    {
+     "a": 800,
+     "w": 832.87618,
+     "t": "WILL",
+     "d": 157.365723
+    },
+    {
+     "a": 1120,
+     "w": 1183.791341,
+     "t": "WILL THE HER",
+     "d": 240.106038
+    },
+    {
+     "a": 1440,
+     "w": 1476.500285,
+     "t": "WILL THE HERONS",
+     "d": 296.139852
+    },
+    {
+     "a": 1760,
+     "w": 1851.805868,
+     "t": "WILL THE HERONS HEAR HIS",
+     "d": 407.278402
+    },
+    {
+     "a": 2080,
+     "w": 2117.222413,
+     "t": "WILL THE HERONS HEAR HIS GROAN",
+     "d": 464.057699
+    },
+    {
+     "a": 2400,
+     "w": 2467.779298,
+     "t": "WILL THE HERONS HEAR HIS GROANS",
+     "d": 550.634074
+    }
+   ],
+   "final_text": "WILL THE HERONS HEAR HIS GROANS",
+   "clip_end_wall_ms": 2220.364503,
+   "endpoint_wall_ms": 3095.57068,
+   "endpoints": [
+    3095.57068
+   ],
+   "final_wall_ms": 3095.611695,
+   "tail_ms": 800,
+   "decode_ms": 685.933635,
+   "tail_decode_ms": 221.87593599999997,
+   "rtf": 0.30622037276785713,
+   "feed_lag_mean_ms": 7.154893901785714,
+   "feed_lag_max_ms": 91.89205,
+   "first_partial_wall_ms": 832.87618,
+   "cpu_ticks": 322,
+   "rss_before_kb": 291288,
+   "rss_kb": 287620,
+   "rep": 0
+  },
+  {
+   "id": "long_01",
+   "condition": "tv",
+   "category": "long",
+   "reference": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPENED BEFORE THEM",
+   "seconds": 11.065,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1193.224488,
+     "t": "SHE",
+     "d": 257.625204
+    },
+    {
+     "a": 1440,
+     "w": 1478.004232,
+     "t": "SHE TAUGHT",
+     "d": 315.13562
+    },
+    {
+     "a": 1760,
+     "w": 1788.232463,
+     "t": "SHE TAUGHT HER DAUGH",
+     "d": 362.84745200000003
+    },
+    {
+     "a": 2080,
+     "w": 2101.846843,
+     "t": "SHE TAUGHT HER DAUGHTER",
+     "d": 404.277099
+    },
+    {
+     "a": 2400,
+     "w": 2428.280112,
+     "t": "SHE TAUGHT HER DAUGHTER THEN",
+     "d": 452.129597
+    },
+    {
+     "a": 3040,
+     "w": 3118.843344,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY",
+     "d": 592.499307
+    },
+    {
+     "a": 3360,
+     "w": 3419.946738,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER",
+     "d": 671.926919
+    },
+    {
+     "a": 3680,
+     "w": 3719.258506,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN",
+     "d": 730.69527
+    },
+    {
+     "a": 4000,
+     "w": 4031.911664,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION",
+     "d": 782.0193260000001
+    },
+    {
+     "a": 4320,
+     "w": 4386.390098,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR",
+     "d": 867.503946
+    },
+    {
+     "a": 4640,
+     "w": 4682.587771,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT",
+     "d": 929.552123
+    },
+    {
+     "a": 4960,
+     "w": 4992.723554,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT",
+     "d": 981.802001
+    },
+    {
+     "a": 5280,
+     "w": 5348.937828,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE",
+     "d": 1069.403401
+    },
+    {
+     "a": 5600,
+     "w": 5642.448611,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A",
+     "d": 1131.376382
+    },
+    {
+     "a": 5920,
+     "w": 5948.778526,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY",
+     "d": 1179.66638
+    },
+    {
+     "a": 6240,
+     "w": 6272.815962,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE",
+     "d": 1231.917886
+    },
+    {
+     "a": 6560,
+     "w": 6588.579512,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD",
+     "d": 1279.965534
+    },
+    {
+     "a": 6880,
+     "w": 6908.920657,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH",
+     "d": 1328.294025
+    },
+    {
+     "a": 7200,
+     "w": 7230.225264,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HO",
+     "d": 1377.988646
+    },
+    {
+     "a": 7520,
+     "w": 7544.639489,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPIT",
+     "d": 1422.261514
+    },
+    {
+     "a": 7840,
+     "w": 7920.549239,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY",
+     "d": 1522.076699
+    },
+    {
+     "a": 8160,
+     "w": 8206.03695,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVE",
+     "d": 1585.3660869999999
+    },
+    {
+     "a": 8480,
+     "w": 8506.531417,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED",
+     "d": 1631.3021219999998
+    },
+    {
+     "a": 8800,
+     "w": 8824.048914,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND",
+     "d": 1674.8898499999998
+    },
+    {
+     "a": 9120,
+     "w": 9151.234542,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE",
+     "d": 1725.625852
+    },
+    {
+     "a": 9440,
+     "w": 9520.623865,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRI",
+     "d": 1824.903603
+    },
+    {
+     "a": 9760,
+     "w": 9813.86882,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT",
+     "d": 1898.315305
+    },
+    {
+     "a": 10080,
+     "w": 10109.605758,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FU",
+     "d": 1947.344887
+    },
+    {
+     "a": 10400,
+     "w": 10424.810267,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE",
+     "d": 1991.625527
+    },
+    {
+     "a": 10720,
+     "w": 10798.960658,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPEN",
+     "d": 2089.533404
+    },
+    {
+     "a": 11040,
+     "w": 11082.377203,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPENED FOR",
+     "d": 2151.310341
+    },
+    {
+     "a": 11365,
+     "w": 11394.551316,
+     "t": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPENED FOR THEM",
+     "d": 2200.3349989999997
+    }
+   ],
+   "final_text": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPENED FOR THEM",
+   "clip_end_wall_ms": 11082.564499,
+   "endpoint_wall_ms": 12036.873744,
+   "endpoints": [
+    12036.873744
+   ],
+   "final_wall_ms": 12036.957322,
+   "tail_ms": 940,
+   "decode_ms": 2302.2103239999997,
+   "tail_decode_ms": 150.8999829999998,
+   "rtf": 0.20806238807049252,
+   "feed_lag_mean_ms": 5.108760707581224,
+   "feed_lag_max_ms": 84.089885,
+   "first_partial_wall_ms": 1193.224488,
+   "cpu_ticks": 1167,
+   "rss_before_kb": 289192,
+   "rss_kb": 289756,
+   "rep": 0
+  },
+  {
+   "id": "long_02",
+   "condition": "tv",
+   "category": "long",
+   "reference": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE IN WITNESSING SUCH AN EXHIBITION OF WEAKNESS IN AN ENEMY SO LONG HATED AND SO MUCH FEARED",
+   "seconds": 10.755,
+   "partials": [
+    {
+     "a": 800,
+     "w": 869.176269,
+     "t": "DELI",
+     "d": 153.532185
+    },
+    {
+     "a": 1120,
+     "w": 1155.386678,
+     "t": "DELIVERED",
+     "d": 208.465494
+    },
+    {
+     "a": 1440,
+     "w": 1496.980225,
+     "t": "DELIVERED IN A",
+     "d": 284.929443
+    },
+    {
+     "a": 1760,
+     "w": 1823.963501,
+     "t": "DELIVERED IN A STRONG",
+     "d": 367.45426399999997
+    },
+    {
+     "a": 2080,
+     "w": 2119.028362,
+     "t": "DELIVERED IN A STRONG TONE",
+     "d": 425.92651299999994
+    },
+    {
+     "a": 2400,
+     "w": 2491.276693,
+     "t": "DELIVERED IN A STRONG TONE OF ASS",
+     "d": 536.3290199999999
+    },
+    {
+     "a": 2720,
+     "w": 2749.834718,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT",
+     "d": 584.496012
+    },
+    {
+     "a": 3360,
+     "w": 3388.551189,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED",
+     "d": 680.715168
+    },
+    {
+     "a": 3680,
+     "w": 3714.632244,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRA",
+     "d": 734.883259
+    },
+    {
+     "a": 4000,
+     "w": 4031.234377,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFIC",
+     "d": 785.6673169999999
+    },
+    {
+     "a": 4320,
+     "w": 4348.22335,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION",
+     "d": 833.4191079999999
+    },
+    {
+     "a": 4640,
+     "w": 4732.78585,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAV",
+     "d": 945.1504309999999
+    },
+    {
+     "a": 4960,
+     "w": 5008.233645,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD",
+     "d": 1012.8716629999999
+    },
+    {
+     "a": 5280,
+     "w": 5307.71627,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE",
+     "d": 1060.0444739999998
+    },
+    {
+     "a": 5600,
+     "w": 5675.864545,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WI",
+     "d": 1154.8305659999999
+    },
+    {
+     "a": 5920,
+     "w": 5960.043053,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESS",
+     "d": 1214.3475339999998
+    },
+    {
+     "a": 6240,
+     "w": 6279.27401,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH",
+     "d": 1273.0860589999998
+    },
+    {
+     "a": 6560,
+     "w": 6591.031253,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EX",
+     "d": 1323.5954179999997
+    },
+    {
+     "a": 6880,
+     "w": 6924.019371,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION",
+     "d": 1387.0655509999997
+    },
+    {
+     "a": 7200,
+     "w": 7226.707645,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WE",
+     "d": 1433.1308179999996
+    },
+    {
+     "a": 7520,
+     "w": 7550.075768,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS",
+     "d": 1482.5756829999996
+    },
+    {
+     "a": 7840,
+     "w": 7870.432498,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND",
+     "d": 1532.4484039999995
+    },
+    {
+     "a": 8160,
+     "w": 8186.137211,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEM",
+     "d": 1578.0321849999996
+    },
+    {
+     "a": 8480,
+     "w": 8507.649336,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY",
+     "d": 1625.0867099999996
+    },
+    {
+     "a": 8800,
+     "w": 8832.922937,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO",
+     "d": 1677.4637039999996
+    },
+    {
+     "a": 9120,
+     "w": 9147.033736,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HA",
+     "d": 1723.8885089999997
+    },
+    {
+     "a": 9440,
+     "w": 9469.818119,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HATED",
+     "d": 1773.2723799999997
+    },
+    {
+     "a": 9760,
+     "w": 9846.708094,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HATED AND",
+     "d": 1878.5800789999996
+    },
+    {
+     "a": 10080,
+     "w": 10125.188359,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HATED AND SO",
+     "d": 1943.2672539999996
+    },
+    {
+     "a": 10400,
+     "w": 10442.267908,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HATED AND SO MUCH FE",
+     "d": 2004.7348239999997
+    },
+    {
+     "a": 10720,
+     "w": 10747.032842,
+     "t": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HATED AND SO MUCH FEARED",
+     "d": 2051.2333179999996
+    }
+   ],
+   "final_text": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE ON WITNESSING SUCH AN EXHIBITION OF WEAKNESS AND ENEMY SO LONG HATED AND SO MUCH FEARED",
+   "clip_end_wall_ms": 10747.30221,
+   "endpoint_wall_ms": 11381.430099,
+   "endpoints": [
+    11381.430099
+   ],
+   "final_wall_ms": 11381.497035,
+   "tail_ms": 600,
+   "decode_ms": 2149.1586519999996,
+   "tail_decode_ms": 97.92533400000002,
+   "rtf": 0.19982879144583912,
+   "feed_lag_mean_ms": 4.931580282527881,
+   "feed_lag_max_ms": 92.814089,
+   "first_partial_wall_ms": 869.176269,
+   "cpu_ticks": 1144,
+   "rss_before_kb": 291328,
+   "rss_kb": 292076,
+   "rep": 0
+  },
+  {
+   "id": "long_03",
+   "condition": "tv",
+   "category": "long",
+   "reference": "SECURE AS HE THOUGHT IN THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HIDALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFAL HIS FAMILY",
+   "seconds": 12.44,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1170.600261,
+     "t": "SE",
+     "d": 265.019978
+    },
+    {
+     "a": 1440,
+     "w": 1481.137615,
+     "t": "SECURE",
+     "d": 325.56062799999995
+    },
+    {
+     "a": 1760,
+     "w": 1800.987631,
+     "t": "SECURE AS HE",
+     "d": 385.90161099999995
+    },
+    {
+     "a": 2080,
+     "w": 2104.98165,
+     "t": "SECURE AS HE THOUGHT",
+     "d": 430.38513199999994
+    },
+    {
+     "a": 2720,
+     "w": 2757.618125,
+     "t": "SECURE AS HE THOUGHT AND THE",
+     "d": 583.800985
+    },
+    {
+     "a": 3040,
+     "w": 3074.722536,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL",
+     "d": 637.942464
+    },
+    {
+     "a": 3360,
+     "w": 3387.564292,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMIN",
+     "d": 684.916463
+    },
+    {
+     "a": 3680,
+     "w": 3709.867515,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION",
+     "d": 734.110718
+    },
+    {
+     "a": 4000,
+     "w": 4028.272829,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF",
+     "d": 781.502971
+    },
+    {
+     "a": 4320,
+     "w": 4348.482872,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTIC",
+     "d": 829.33781
+    },
+    {
+     "a": 4640,
+     "w": 4677.081668,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN",
+     "d": 885.652548
+    },
+    {
+     "a": 4960,
+     "w": 4991.601036,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY",
+     "d": 936.6809910000001
+    },
+    {
+     "a": 5600,
+     "w": 5628.466597,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE",
+     "d": 1032.1943780000001
+    },
+    {
+     "a": 5920,
+     "w": 5955.288537,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARA",
+     "d": 1086.7402760000002
+    },
+    {
+     "a": 6240,
+     "w": 6267.9939,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF",
+     "d": 1133.9056810000002
+    },
+    {
+     "a": 6560,
+     "w": 6592.439213,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS",
+     "d": 1185.5781250000002
+    },
+    {
+     "a": 6880,
+     "w": 6909.874312,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISP",
+     "d": 1234.7203780000002
+    },
+    {
+     "a": 7200,
+     "w": 7239.481612,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED",
+     "d": 1293.4937340000001
+    },
+    {
+     "a": 7520,
+     "w": 7556.278772,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHAB",
+     "d": 1348.9840490000001
+    },
+    {
+     "a": 7840,
+     "w": 7868.14246,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS",
+     "d": 1396.43225
+    },
+    {
+     "a": 8480,
+     "w": 8579.161137,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD",
+     "d": 1569.0131410000001
+    },
+    {
+     "a": 8800,
+     "w": 8861.307541,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HAD",
+     "d": 1649.8117650000002
+    },
+    {
+     "a": 9120,
+     "w": 9162.610234,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO",
+     "d": 1711.6774060000002
+    },
+    {
+     "a": 9440,
+     "w": 9473.821742,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS",
+     "d": 1764.7788050000001
+    },
+    {
+     "a": 9760,
+     "w": 9786.485072,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR",
+     "d": 1810.5740520000002
+    },
+    {
+     "a": 10080,
+     "w": 10109.635381,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM",
+     "d": 1859.5254270000003
+    },
+    {
+     "a": 10400,
+     "w": 10431.408331,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING",
+     "d": 1910.2357950000003
+    },
+    {
+     "a": 10720,
+     "w": 10773.538132,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY",
+     "d": 1983.0602580000002
+    },
+    {
+     "a": 11040,
+     "w": 11080.349615,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISAS",
+     "d": 2042.4040080000002
+    },
+    {
+     "a": 11360,
+     "w": 11387.964524,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISASTER",
+     "d": 2089.6970170000004
+    },
+    {
+     "a": 11680,
+     "w": 11710.056077,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEF",
+     "d": 2138.9639030000003
+    },
+    {
+     "a": 12000,
+     "w": 12034.072597,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFALL HIS",
+     "d": 2192.2394560000002
+    },
+    {
+     "a": 12320,
+     "w": 12352.106655,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFALL HIS FAMI",
+     "d": 2243.6121770000004
+    },
+    {
+     "a": 12640,
+     "w": 12670.605638,
+     "t": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFALL HIS FAMILY",
+     "d": 2293.397252
+    }
+   ],
+   "final_text": "SECURE AS HE THOUGHT AND THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HADALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFALL HIS FAMILY",
+   "clip_end_wall_ms": 12420.190762,
+   "endpoint_wall_ms": 12989.350186,
+   "endpoints": [
+    12989.350186
+   ],
+   "final_wall_ms": 12989.428148,
+   "tail_ms": 520,
+   "decode_ms": 2342.0460550000003,
+   "tail_decode_ms": 98.43387799999982,
+   "rtf": 0.18826736776527334,
+   "feed_lag_mean_ms": 4.260918749196139,
+   "feed_lag_max_ms": 99.209437,
+   "first_partial_wall_ms": 1170.600261,
+   "cpu_ticks": 1286,
+   "rss_before_kb": 293648,
+   "rss_kb": 288760,
+   "rep": 0
+  },
+  {
+   "id": "long_04",
+   "condition": "tv",
+   "category": "long",
+   "reference": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY HAD ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT AND THE ARMY",
+   "seconds": 20.155,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1150.244345,
+     "t": "THE FREE",
+     "d": 230.332723
+    },
+    {
+     "a": 1440,
+     "w": 1463.022462,
+     "t": "THE FREE STATE",
+     "d": 272.906169
+    },
+    {
+     "a": 1760,
+     "w": 1791.179648,
+     "t": "THE FREE STATE MEN",
+     "d": 323.474569
+    },
+    {
+     "a": 2080,
+     "w": 2111.80359,
+     "t": "THE FREE STATE MEN HAD",
+     "d": 374.752238
+    },
+    {
+     "a": 2400,
+     "w": 2437.327231,
+     "t": "THE FREE STATE MEN HAD ONLY",
+     "d": 431.552734
+    },
+    {
+     "a": 2720,
+     "w": 2742.36727,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR",
+     "d": 473.470377
+    },
+    {
+     "a": 3040,
+     "w": 3070.234702,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONV",
+     "d": 522.909505
+    },
+    {
+     "a": 3360,
+     "w": 3453.602622,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTION",
+     "d": 634.977539
+    },
+    {
+     "a": 3680,
+     "w": 3709.248578,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS",
+     "d": 683.3308109999999
+    },
+    {
+     "a": 4320,
+     "w": 4350.49573,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR",
+     "d": 784.2568769999999
+    },
+    {
+     "a": 4640,
+     "w": 4662.214276,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIG",
+     "d": 826.0286869999999
+    },
+    {
+     "a": 4960,
+     "w": 4989.823407,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE",
+     "d": 875.3495689999999
+    },
+    {
+     "a": 5280,
+     "w": 5302.826988,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR",
+     "d": 917.7075609999998
+    },
+    {
+     "a": 5600,
+     "w": 5673.05233,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE",
+     "d": 1009.7947599999998
+    },
+    {
+     "a": 6240,
+     "w": 6291.558068,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND",
+     "d": 1152.2840999999999
+    },
+    {
+     "a": 6560,
+     "w": 6593.157189,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE",
+     "d": 1204.9282649999998
+    },
+    {
+     "a": 6880,
+     "w": 6906.742842,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL",
+     "d": 1251.0174979999997
+    },
+    {
+     "a": 7200,
+     "w": 7232.948409,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT",
+     "d": 1303.4724549999996
+    },
+    {
+     "a": 7520,
+     "w": 7546.425704,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE",
+     "d": 1349.4281839999996
+    },
+    {
+     "a": 7840,
+     "w": 7902.073734,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NOR",
+     "d": 1430.9784359999996
+    },
+    {
+     "a": 8160,
+     "w": 8181.797449,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH",
+     "d": 1472.2462989999997
+    },
+    {
+     "a": 8800,
+     "w": 8847.336186,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CON",
+     "d": 1618.0927349999997
+    },
+    {
+     "a": 9120,
+     "w": 9152.061325,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRA",
+     "d": 1669.6525489999997
+    },
+    {
+     "a": 9440,
+     "w": 9476.278244,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY",
+     "d": 1725.4075949999997
+    },
+    {
+     "a": 10080,
+     "w": 10151.219569,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT",
+     "d": 1850.9838489999995
+    },
+    {
+     "a": 10400,
+     "w": 10441.79863,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SEC",
+     "d": 1912.2902859999995
+    },
+    {
+     "a": 10720,
+     "w": 10746.115158,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET",
+     "d": 1957.8948599999994
+    },
+    {
+     "a": 11040,
+     "w": 11065.274379,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBIN",
+     "d": 2002.6962919999994
+    },
+    {
+     "a": 11360,
+     "w": 11383.608608,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION",
+     "d": 2045.8353299999994
+    },
+    {
+     "a": 12000,
+     "w": 12027.390509,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE",
+     "d": 2146.8707709999994
+    },
+    {
+     "a": 12320,
+     "w": 12351.690558,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TER",
+     "d": 2198.0198189999996
+    },
+    {
+     "a": 12640,
+     "w": 12734.99138,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITOR",
+     "d": 2312.234948
+    },
+    {
+     "a": 12960,
+     "w": 12996.170742,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL",
+     "d": 2367.8980749999996
+    },
+    {
+     "a": 13280,
+     "w": 13319.129157,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICI",
+     "d": 2426.6090119999994
+    },
+    {
+     "a": 13600,
+     "w": 13672.169644,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS",
+     "d": 2518.1140979999996
+    },
+    {
+     "a": 14240,
+     "w": 14265.470832,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEG",
+     "d": 2605.642297
+    },
+    {
+     "a": 14560,
+     "w": 14650.385587,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE",
+     "d": 2714.7482139999997
+    },
+    {
+     "a": 15200,
+     "w": 15227.52255,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE",
+     "d": 2797.9735969999997
+    },
+    {
+     "a": 15520,
+     "w": 15543.943164,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS",
+     "d": 2841.352055
+    },
+    {
+     "a": 15840,
+     "w": 15875.745044,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS",
+     "d": 2896.461755
+    },
+    {
+     "a": 16480,
+     "w": 16509.939787,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COUR",
+     "d": 2994.7877639999997
+    },
+    {
+     "a": 16800,
+     "w": 16824.006519,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS",
+     "d": 3038.296594
+    },
+    {
+     "a": 17440,
+     "w": 17473.237354,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE",
+     "d": 3181.518681
+    },
+    {
+     "a": 17760,
+     "w": 17796.164844,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITI",
+     "d": 3237.060469
+    },
+    {
+     "a": 18080,
+     "w": 18108.688485,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OF",
+     "d": 3285.226851
+    },
+    {
+     "a": 18400,
+     "w": 18428.443572,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFIC",
+     "d": 3333.091434
+    },
+    {
+     "a": 18720,
+     "w": 18746.76836,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS",
+     "d": 3379.317101
+    },
+    {
+     "a": 19040,
+     "w": 19057.233652,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE",
+     "d": 3416.1570260000003
+    },
+    {
+     "a": 19360,
+     "w": 19385.340342,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDE",
+     "d": 3460.9781930000004
+    },
+    {
+     "a": 19680,
+     "w": 19733.602752,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT",
+     "d": 3533.7540310000004
+    },
+    {
+     "a": 20000,
+     "w": 20033.951222,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT AND THE",
+     "d": 3587.1700870000004
+    },
+    {
+     "a": 20315,
+     "w": 20352.825938,
+     "t": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT AND THE ARM",
+     "d": 3643.6608100000003
+    }
+   ],
+   "final_text": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY AT ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT AND THE ARM",
+   "clip_end_wall_ms": 20140.468801,
+   "endpoint_wall_ms": 20352.853444,
+   "endpoints": [
+    20352.853444
+   ],
+   "final_wall_ms": 20352.953461,
+   "tail_ms": 160,
+   "decode_ms": 3643.6608100000003,
+   "tail_decode_ms": 56.49072299999989,
+   "rtf": 0.180781980153808,
+   "feed_lag_mean_ms": 4.255941430555552,
+   "feed_lag_max_ms": 95.014573,
+   "first_partial_wall_ms": 1150.244345,
+   "cpu_ticks": 1974,
+   "rss_before_kb": 291124,
+   "rss_kb": 294404,
+   "rep": 0
+  },
+  {
+   "id": "verylong_01",
+   "condition": "tv",
+   "category": "verylong",
+   "reference": "BUT THERE IS ALWAYS A STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEAMS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS ON THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT AS POSSIBLE",
+   "seconds": 31.65,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1147.850912,
+     "t": "BUT",
+     "d": 216.916056
+    },
+    {
+     "a": 1440,
+     "w": 1471.325318,
+     "t": "BUT THERE",
+     "d": 267.870972
+    },
+    {
+     "a": 1760,
+     "w": 1789.543051,
+     "t": "BUT THERE IS ALWAYS",
+     "d": 316.921021
+    },
+    {
+     "a": 2080,
+     "w": 2110.61316,
+     "t": "BUT THERE IS ALWAYS AS",
+     "d": 366.917725
+    },
+    {
+     "a": 2400,
+     "w": 2432.046917,
+     "t": "BUT THERE IS ALWAYS AS STRONG",
+     "d": 418.39689200000004
+    },
+    {
+     "a": 2720,
+     "w": 2746.926352,
+     "t": "BUT THERE IS ALWAYS AS STRONGER",
+     "d": 464.63623100000007
+    },
+    {
+     "a": 3040,
+     "w": 3079.166058,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE",
+     "d": 523.214722
+    },
+    {
+     "a": 3360,
+     "w": 3392.214886,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE",
+     "d": 574.893595
+    },
+    {
+     "a": 4000,
+     "w": 4031.380169,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN",
+     "d": 670.9106850000001
+    },
+    {
+     "a": 4320,
+     "w": 4402.914878,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN",
+     "d": 772.54362
+    },
+    {
+     "a": 4640,
+     "w": 4706.824017,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRI",
+     "d": 858.2980140000001
+    },
+    {
+     "a": 4960,
+     "w": 4994.806114,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT",
+     "d": 912.6389160000001
+    },
+    {
+     "a": 5280,
+     "w": 5308.985802,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER",
+     "d": 961.1760250000001
+    },
+    {
+     "a": 5600,
+     "w": 5629.229413,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN",
+     "d": 1009.8585610000001
+    },
+    {
+     "a": 6880,
+     "w": 6909.31702,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND",
+     "d": 1202.6501060000003
+    },
+    {
+     "a": 7200,
+     "w": 7232.730472,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW",
+     "d": 1254.8205970000004
+    },
+    {
+     "a": 7520,
+     "w": 7556.099572,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE",
+     "d": 1310.3355710000003
+    },
+    {
+     "a": 7840,
+     "w": 7867.226932,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POUR",
+     "d": 1357.1083980000003
+    },
+    {
+     "a": 8160,
+     "w": 8189.465377,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN",
+     "d": 1405.9123530000004
+    },
+    {
+     "a": 8480,
+     "w": 8516.534265,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS",
+     "d": 1461.9404700000005
+    },
+    {
+     "a": 8800,
+     "w": 8830.796879,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEING",
+     "d": 1512.2205810000005
+    },
+    {
+     "a": 9120,
+     "w": 9150.514368,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS",
+     "d": 1562.1804200000006
+    },
+    {
+     "a": 9440,
+     "w": 9518.359542,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND",
+     "d": 1659.8993740000005
+    },
+    {
+     "a": 9760,
+     "w": 9800.991745,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING",
+     "d": 1720.2718110000005
+    },
+    {
+     "a": 10400,
+     "w": 10488.177943,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARK",
+     "d": 1877.5315360000004
+    },
+    {
+     "a": 10720,
+     "w": 10762.197596,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES",
+     "d": 1939.1974700000005
+    },
+    {
+     "a": 11040,
+     "w": 11085.408208,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG",
+     "d": 2004.0330010000005
+    },
+    {
+     "a": 11360,
+     "w": 11390.909714,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WE",
+     "d": 2054.4152440000003
+    },
+    {
+     "a": 11680,
+     "w": 11711.004726,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET",
+     "d": 2104.865236
+    },
+    {
+     "a": 12000,
+     "w": 12028.68185,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW",
+     "d": 2152.985678
+    },
+    {
+     "a": 12960,
+     "w": 12997.230027,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND",
+     "d": 2354.578248
+    },
+    {
+     "a": 13280,
+     "w": 13349.414313,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING",
+     "d": 2443.2849539999997
+    },
+    {
+     "a": 13600,
+     "w": 13643.538703,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP",
+     "d": 2506.2917899999998
+    },
+    {
+     "a": 13920,
+     "w": 13952.84099,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY",
+     "d": 2558.5848809999998
+    },
+    {
+     "a": 14560,
+     "w": 14595.150723,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PAT",
+     "d": 2683.1187359999994
+    },
+    {
+     "a": 14880,
+     "w": 14958.373013,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF",
+     "d": 2780.7386089999995
+    },
+    {
+     "a": 15200,
+     "w": 15258.474332,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID",
+     "d": 2858.6357849999995
+    },
+    {
+     "a": 15520,
+     "w": 15561.931078,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN",
+     "d": 2919.9502389999993
+    },
+    {
+     "a": 15840,
+     "w": 15878.932055,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MO",
+     "d": 2978.1298849999994
+    },
+    {
+     "a": 16160,
+     "w": 16184.025317,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS",
+     "d": 3021.6423359999994
+    },
+    {
+     "a": 16480,
+     "w": 16505.7,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE",
+     "d": 3066.8370789999994
+    },
+    {
+     "a": 16800,
+     "w": 16827.904102,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED",
+     "d": 3114.1960069999996
+    },
+    {
+     "a": 17120,
+     "w": 17191.950285,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES",
+     "d": 3203.5530629999994
+    },
+    {
+     "a": 17440,
+     "w": 17488.189543,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE",
+     "d": 3271.2267289999995
+    },
+    {
+     "a": 17760,
+     "w": 17803.915861,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHE",
+     "d": 3334.5389039999995
+    },
+    {
+     "a": 18080,
+     "w": 18105.542611,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED",
+     "d": 3379.5696659999994
+    },
+    {
+     "a": 19040,
+     "w": 19057.682586,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND",
+     "d": 3510.901412999999
+    },
+    {
+     "a": 19360,
+     "w": 19392.142832,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING",
+     "d": 3562.338952999999
+    },
+    {
+     "a": 19680,
+     "w": 19713.388234,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN",
+     "d": 3614.691003999999
+    },
+    {
+     "a": 20000,
+     "w": 20029.681447,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUD",
+     "d": 3663.480757999999
+    },
+    {
+     "a": 20320,
+     "w": 20357.067637,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WA",
+     "d": 3719.9586229999986
+    },
+    {
+     "a": 20640,
+     "w": 20666.894256,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER",
+     "d": 3766.388024999999
+    },
+    {
+     "a": 20960,
+     "w": 21052.503387,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT",
+     "d": 3877.3177119999987
+    },
+    {
+     "a": 21280,
+     "w": 21318.721649,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRY",
+     "d": 3935.3751259999985
+    },
+    {
+     "a": 21600,
+     "w": 21634.086233,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALO",
+     "d": 3988.8116489999984
+    },
+    {
+     "a": 21920,
+     "w": 21962.342906,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHA",
+     "d": 4050.6044139999985
+    },
+    {
+     "a": 22240,
+     "w": 22269.89617,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL",
+     "d": 4099.837201999999
+    },
+    {
+     "a": 22560,
+     "w": 22596.68979,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE",
+     "d": 4155.879152999999
+    },
+    {
+     "a": 22880,
+     "w": 22910.038504,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN",
+     "d": 4205.293540999999
+    },
+    {
+     "a": 23840,
+     "w": 23929.446585,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO",
+     "d": 4411.654094999999
+    },
+    {
+     "a": 24160,
+     "w": 24187.661796,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRR",
+     "d": 4458.7851169999985
+    },
+    {
+     "a": 24480,
+     "w": 24510.033378,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR",
+     "d": 4508.264079999998
+    },
+    {
+     "a": 25120,
+     "w": 25151.403048,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE",
+     "d": 4638.341513999998
+    },
+    {
+     "a": 25440,
+     "w": 25478.722709,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW",
+     "d": 4696.503541999998
+    },
+    {
+     "a": 25760,
+     "w": 25790.978976,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BI",
+     "d": 4746.882284999998
+    },
+    {
+     "a": 26080,
+     "w": 26156.220146,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DU",
+     "d": 4841.058309999998
+    },
+    {
+     "a": 26400,
+     "w": 26460.790662,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS",
+     "d": 4921.343384999997
+    },
+    {
+     "a": 27040,
+     "w": 27067.362358,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE",
+     "d": 5012.746744999998
+    },
+    {
+     "a": 27360,
+     "w": 27389.931939,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING",
+     "d": 5061.995401999998
+    },
+    {
+     "a": 27680,
+     "w": 27715.046197,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE",
+     "d": 5116.3801669999975
+    },
+    {
+     "a": 28000,
+     "w": 28077.76751,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUN",
+     "d": 5213.064940999998
+    },
+    {
+     "a": 28320,
+     "w": 28352.411431,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF",
+     "d": 5264.826089999998
+    },
+    {
+     "a": 28640,
+     "w": 28673.462253,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING",
+     "d": 5317.690469999998
+    },
+    {
+     "a": 28960,
+     "w": 28989.442275,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A D",
+     "d": 5366.525959999998
+    },
+    {
+     "a": 29280,
+     "w": 29313.470839,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK",
+     "d": 5419.330483999998
+    },
+    {
+     "a": 29920,
+     "w": 30001.609634,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH",
+     "d": 5559.648069999998
+    },
+    {
+     "a": 30240,
+     "w": 30287.368911,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH",
+     "d": 5625.524046999998
+    },
+    {
+     "a": 30560,
+     "w": 30599.884292,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY",
+     "d": 5684.765827999998
+    },
+    {
+     "a": 30880,
+     "w": 30910.806656,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT",
+     "d": 5734.957111999998
+    },
+    {
+     "a": 31200,
+     "w": 31232.656916,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT AS",
+     "d": 5786.968789999998
+    },
+    {
+     "a": 31520,
+     "w": 31547.899226,
+     "t": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT AS POSS",
+     "d": 5834.242267999998
+    }
+   ],
+   "final_text": "BUT THERE IS ALWAYS AS STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEINGS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS AND THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT AS POSS",
+   "clip_end_wall_ms": 31640.27211,
+   "endpoint_wall_ms": 31650.553726,
+   "endpoints": [
+    31650.553726
+   ],
+   "final_wall_ms": 31650.751155,
+   "tail_ms": 20,
+   "decode_ms": 5834.242267999998,
+   "tail_decode_ms": 0,
+   "rtf": 0.18433624859399678,
+   "feed_lag_mean_ms": 4.462590161718253,
+   "feed_lag_max_ms": 92.535736,
+   "first_partial_wall_ms": 1147.850912,
+   "cpu_ticks": 3113,
+   "rss_before_kb": 297824,
+   "rss_kb": 296672,
+   "rep": 0
+  },
+  {
+   "id": "pause_01",
+   "condition": "tv",
+   "category": "pause",
+   "reference": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY MUTTERING TO HIMSELF AS HE CAME OH THE DUCHESS THE DUCHESS",
+   "seconds": 16.115,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1164.60315,
+     "t": "IT WAS",
+     "d": 212.201824
+    },
+    {
+     "a": 1440,
+     "w": 1481.890179,
+     "t": "IT WAS THE WHITE",
+     "d": 273.608562
+    },
+    {
+     "a": 1760,
+     "w": 1784.068157,
+     "t": "IT WAS THE WHITE RAB",
+     "d": 317.276612
+    },
+    {
+     "a": 2080,
+     "w": 2111.029787,
+     "t": "IT WAS THE WHITE RABBIT",
+     "d": 367.806682
+    },
+    {
+     "a": 2400,
+     "w": 2424.307619,
+     "t": "IT WAS THE WHITE RABBIT RETURNING",
+     "d": 411.63029
+    },
+    {
+     "a": 3040,
+     "w": 3069.755739,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDID",
+     "d": 509.138999
+    },
+    {
+     "a": 3360,
+     "w": 3387.81531,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY",
+     "d": 556.423097
+    },
+    {
+     "a": 3680,
+     "w": 3767.510419,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED",
+     "d": 662.505739
+    },
+    {
+     "a": 4000,
+     "w": 4024.60657,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PA",
+     "d": 706.6883969999999
+    },
+    {
+     "a": 4320,
+     "w": 4348.270063,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF",
+     "d": 754.4008799999999
+    },
+    {
+     "a": 4640,
+     "w": 4663.603844,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE K",
+     "d": 797.3965669999999
+    },
+    {
+     "a": 4960,
+     "w": 4998.81295,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLO",
+     "d": 855.7228609999999
+    },
+    {
+     "a": 5280,
+     "w": 5310.796146,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES",
+     "d": 905.9814059999999
+    },
+    {
+     "a": 5600,
+     "w": 5627.418623,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE",
+     "d": 952.8588879999999
+    },
+    {
+     "a": 5920,
+     "w": 5948.799686,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND",
+     "d": 1001.2542729999999
+    },
+    {
+     "a": 6240,
+     "w": 6277.294722,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND",
+     "d": 1057.9973559999999
+    },
+    {
+     "a": 6560,
+     "w": 6594.004358,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE",
+     "d": 1111.475628
+    },
+    {
+     "a": 6880,
+     "w": 6910.466312,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FA",
+     "d": 1161.4374599999999
+    },
+    {
+     "a": 7200,
+     "w": 7230.457239,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN",
+     "d": 1211.3426109999998
+    },
+    {
+     "a": 7520,
+     "w": 7550.470992,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER",
+     "d": 1261.2573239999997
+    },
+    {
+     "a": 9760,
+     "w": 9826.278041,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE",
+     "d": 1680.3728039999996
+    },
+    {
+     "a": 10080,
+     "w": 10112.246303,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME",
+     "d": 1732.0970059999997
+    },
+    {
+     "a": 10400,
+     "w": 10482.100022,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING",
+     "d": 1833.4296479999998
+    },
+    {
+     "a": 10720,
+     "w": 10770.213954,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG",
+     "d": 1902.6657729999997
+    },
+    {
+     "a": 11040,
+     "w": 11094.370082,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN",
+     "d": 1976.5386979999996
+    },
+    {
+     "a": 11360,
+     "w": 11392.742926,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT",
+     "d": 2028.8072929999996
+    },
+    {
+     "a": 11680,
+     "w": 11756.298102,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY",
+     "d": 2122.8121349999997
+    },
+    {
+     "a": 12320,
+     "w": 12378.037441,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTER",
+     "d": 2252.9128419999997
+    },
+    {
+     "a": 12640,
+     "w": 12693.571825,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO",
+     "d": 2324.966634
+    },
+    {
+     "a": 12960,
+     "w": 12991.513435,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF",
+     "d": 2375.99707
+    },
+    {
+     "a": 13280,
+     "w": 13306.516975,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS",
+     "d": 2421.924845
+    },
+    {
+     "a": 13600,
+     "w": 13627.086636,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE",
+     "d": 2468.477661
+    },
+    {
+     "a": 13920,
+     "w": 13946.847338,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME",
+     "d": 2514.773153
+    },
+    {
+     "a": 14560,
+     "w": 14583.075569,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME O",
+     "d": 2605.305258
+    },
+    {
+     "a": 14880,
+     "w": 14907.992643,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME OH",
+     "d": 2652.7336029999997
+    },
+    {
+     "a": 15200,
+     "w": 15283.003548,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME OH THE DUCH",
+     "d": 2750.9343679999997
+    },
+    {
+     "a": 15520,
+     "w": 15561.986255,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME OH THE DUCHESS",
+     "d": 2812.3387059999995
+    },
+    {
+     "a": 15840,
+     "w": 15881.311816,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME OH THE DUCHESS THE",
+     "d": 2873.1083179999996
+    },
+    {
+     "a": 16155,
+     "w": 16181.360767,
+     "t": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME OH THE DUCHESS THE DUCHESS",
+     "d": 2919.011557
+    }
+   ],
+   "final_text": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY LETTERING TO HIMSELF AS HE CAME OH THE DUCHESS THE DUCHESS",
+   "clip_end_wall_ms": 16101.633797,
+   "endpoint_wall_ms": 16825.400481,
+   "endpoints": [
+    16825.400481
+   ],
+   "final_wall_ms": 16825.489918,
+   "tail_ms": 680,
+   "decode_ms": 3012.81364,
+   "tail_decode_ms": 139.70532200000025,
+   "rtf": 0.18695709835556934,
+   "feed_lag_mean_ms": 4.28335756947891,
+   "feed_lag_max_ms": 87.536135,
+   "first_partial_wall_ms": 1164.60315,
+   "cpu_ticks": 1604,
+   "rss_before_kb": 298508,
+   "rss_kb": 293060,
+   "rep": 0
+  },
+  {
+   "id": "pause_02",
+   "condition": "tv",
+   "category": "pause",
+   "reference": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY CORN BAGS",
+   "seconds": 16.075,
+   "partials": [
+    {
+     "a": 1440,
+     "w": 1504.187256,
+     "t": "A LARGE",
+     "d": 343.112794
+    },
+    {
+     "a": 1760,
+     "w": 1821.896932,
+     "t": "A LARGE OPEN",
+     "d": 424.523072
+    },
+    {
+     "a": 2080,
+     "w": 2133.400188,
+     "t": "A LARGE OPEN FI",
+     "d": 496.220215
+    },
+    {
+     "a": 2400,
+     "w": 2439.592286,
+     "t": "A LARGE OPEN FIRE",
+     "d": 555.272664
+    },
+    {
+     "a": 2720,
+     "w": 2755.082032,
+     "t": "A LARGE OPEN FIREPLACE",
+     "d": 609.87504
+    },
+    {
+     "a": 3040,
+     "w": 3068.819052,
+     "t": "A LARGE OPEN FIREPLACE WITH RU",
+     "d": 658.187866
+    },
+    {
+     "a": 3360,
+     "w": 3388.604453,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DO",
+     "d": 706.344523
+    },
+    {
+     "a": 3680,
+     "w": 3779.039674,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN",
+     "d": 824.4068609999999
+    },
+    {
+     "a": 4000,
+     "w": 4028.801149,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT",
+     "d": 872.855388
+    },
+    {
+     "a": 4640,
+     "w": 4733.298342,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND",
+     "d": 1050.8509119999999
+    },
+    {
+     "a": 4960,
+     "w": 5036.779624,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE",
+     "d": 1147.129761
+    },
+    {
+     "a": 5280,
+     "w": 5320.218142,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARD",
+     "d": 1206.9348149999998
+    },
+    {
+     "a": 5600,
+     "w": 5627.090619,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED",
+     "d": 1253.450725
+    },
+    {
+     "a": 5920,
+     "w": 5945.209882,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR",
+     "d": 1298.1557209999999
+    },
+    {
+     "a": 7200,
+     "w": 7230.929975,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED",
+     "d": 1488.742676
+    },
+    {
+     "a": 9440,
+     "w": 9466.812545,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR",
+     "d": 1839.1273600000002
+    },
+    {
+     "a": 9760,
+     "w": 9789.561487,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR EN",
+     "d": 1888.0891520000002
+    },
+    {
+     "a": 10080,
+     "w": 10114.170618,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END",
+     "d": 1941.6000980000003
+    },
+    {
+     "a": 10400,
+     "w": 10430.154871,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLE",
+     "d": 1991.1698820000004
+    },
+    {
+     "a": 10720,
+     "w": 10749.808802,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES",
+     "d": 2040.4592700000003
+    },
+    {
+     "a": 11040,
+     "w": 11070.113775,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL",
+     "d": 2089.9637460000004
+    },
+    {
+     "a": 11360,
+     "w": 11391.114141,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STA",
+     "d": 2140.4684660000003
+    },
+    {
+     "a": 11680,
+     "w": 11766.618414,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP",
+     "d": 2246.4913340000003
+    },
+    {
+     "a": 13280,
+     "w": 13324.80917,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE",
+     "d": 2615.887616000001
+    },
+    {
+     "a": 13600,
+     "w": 13674.918097,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE",
+     "d": 2709.4645610000007
+    },
+    {
+     "a": 13920,
+     "w": 13956.133795,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE",
+     "d": 2765.0994080000005
+    },
+    {
+     "a": 14240,
+     "w": 14268.162035,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR",
+     "d": 2812.7604190000006
+    },
+    {
+     "a": 14880,
+     "w": 14945.727343,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EM",
+     "d": 2940.4152850000005
+    },
+    {
+     "a": 15200,
+     "w": 15265.027758,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY",
+     "d": 3024.8020850000003
+    },
+    {
+     "a": 15520,
+     "w": 15569.73898,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY CORN BA",
+     "d": 3093.9501560000003
+    },
+    {
+     "a": 15840,
+     "w": 15874.469001,
+     "t": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY CORN BAGS",
+     "d": 3147.8511160000003
+    }
+   ],
+   "final_text": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR BED AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY CORN BAGS",
+   "clip_end_wall_ms": 16060.64047,
+   "endpoint_wall_ms": 16509.744474,
+   "endpoints": [
+    16509.744474
+   ],
+   "final_wall_ms": 16509.814746,
+   "tail_ms": 400,
+   "decode_ms": 3247.6793230000003,
+   "tail_decode_ms": 99.82820700000002,
+   "rtf": 0.20203292833592537,
+   "feed_lag_mean_ms": 5.369177809701494,
+   "feed_lag_max_ms": 102.324422,
+   "first_partial_wall_ms": 1504.187256,
+   "cpu_ticks": 1631,
+   "rss_before_kb": 294896,
+   "rss_kb": 293972,
+   "rep": 0
+  }
+ ],
+ "cpu_ticks_total": 14882,
+ "rss_peak_kb": 300832,
+ "rss_end_kb": 293972,
+ "energy": {
+  "before": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3888000,
+   "current_ua": 76250,
+   "pct": 100
+  },
+  "after": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3892000,
+   "current_ua": 350625,
+   "pct": 100
+  },
+  "energy_nwh_delta": 0,
+  "charge_uah_delta": 4000
+ },
+ "interrupted": false,
+ "device": "Google Pixel 7",
+ "sdk": 37,
+ "started_at": 1792432746563,
+ "_arm": "zip0626",
+ "_condition": "tv",
+ "_run": "zip0626-tv-p0"
+}

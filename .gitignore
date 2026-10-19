@@ -48,4 +48,6 @@ __pycache__/
 # raw device results — all regenerable by scripts/stt-ab.sh.
 /tools/sttbench-stream/corpus
 /tools/sttbench-stream/.cache
-/tools/sttbench-stream/results
+# raw device results ARE committed (they are the evidence for docs/STT-AB.md);
+# logs and the regenerated summary are not.
+/tools/sttbench-stream/results/*.log

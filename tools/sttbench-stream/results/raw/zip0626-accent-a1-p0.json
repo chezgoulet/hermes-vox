@@ -1,0 +1,430 @@
+{
+ "run_id": "zip0626-accent-a1-p0",
+ "model_id": "zip0626",
+ "threads": 4,
+ "chunk_ms": 20,
+ "realtime": true,
+ "trailing_silence_ms": 500,
+ "reps": 1,
+ "load_ms": 3352.108726,
+ "rss_base_kb": 110896,
+ "rss_after_load_kb": 303728,
+ "clips": [
+  {
+   "id": "accent_01",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S DEGREE CAN JUST GIVE ME A BETTER PAY JOB LATER",
+   "seconds": 6.97,
+   "partials": [
+    {
+     "a": 800,
+     "w": 846.960409,
+     "t": "YES",
+     "d": 164.421874
+    },
+    {
+     "a": 1120,
+     "w": 1148.578411,
+     "t": "YES I",
+     "d": 212.554727
+    },
+    {
+     "a": 1440,
+     "w": 1498.210247,
+     "t": "YES I DO",
+     "d": 289.824746
+    },
+    {
+     "a": 2080,
+     "w": 2155.619305,
+     "t": "YES I DO BECAUSE",
+     "d": 434.706744
+    },
+    {
+     "a": 2720,
+     "w": 2768.61308,
+     "t": "YES I DO BECAUSE AS",
+     "d": 551.817177
+    },
+    {
+     "a": 3040,
+     "w": 3103.230674,
+     "t": "YES I DO BECAUSE AS YOU KNOW",
+     "d": 633.357379
+    },
+    {
+     "a": 3680,
+     "w": 3710.789309,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A",
+     "d": 743.2579740000001
+    },
+    {
+     "a": 4000,
+     "w": 4023.971682,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER",
+     "d": 786.6558830000001
+    },
+    {
+     "a": 4320,
+     "w": 4346.008181,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GRE",
+     "d": 832.0774730000002
+    },
+    {
+     "a": 4640,
+     "w": 4667.001712,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM",
+     "d": 878.6101470000002
+    },
+    {
+     "a": 4960,
+     "w": 4987.077721,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST",
+     "d": 925.2190740000002
+    },
+    {
+     "a": 5280,
+     "w": 5307.054935,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST GET ME",
+     "d": 971.7434470000002
+    },
+    {
+     "a": 5920,
+     "w": 5949.028893,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST GET ME A BETTER",
+     "d": 1066.8595360000002
+    },
+    {
+     "a": 6560,
+     "w": 6582.800785,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST GET ME A BETTER PAY JO",
+     "d": 1169.1420890000002
+    },
+    {
+     "a": 6880,
+     "w": 6907.344527,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST GET ME A BETTER PAY JOB",
+     "d": 1215.9510900000002
+    },
+    {
+     "a": 7190,
+     "w": 7214.514205,
+     "t": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST GET ME A BETTER PAY JOB LATER",
+     "d": 1259.9263910000002
+    }
+   ],
+   "final_text": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S GREET HIM JUST GET ME A BETTER PAY JOB LATER",
+   "clip_end_wall_ms": 6960.158817,
+   "endpoint_wall_ms": 7866.115442,
+   "endpoints": [
+    7866.115442
+   ],
+   "final_wall_ms": 7866.174443,
+   "tail_ms": 860,
+   "decode_ms": 1364.4550780000002,
+   "tail_decode_ms": 148.50398799999994,
+   "rtf": 0.19576113027259687,
+   "feed_lag_mean_ms": 3.987110277936968,
+   "feed_lag_max_ms": 78.979818,
+   "first_partial_wall_ms": 846.960409,
+   "cpu_ticks": 738,
+   "rss_before_kb": 300524,
+   "rss_kb": 301248,
+   "rep": 0
+  },
+  {
+   "id": "accent_02",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "INTERESTING INTERESTING BECAUSE YOU'VE ALWAYS SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED ABOUT",
+   "seconds": 5.47,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1159.453533,
+     "t": "IN",
+     "d": 249.604532
+    },
+    {
+     "a": 1440,
+     "w": 1516.570476,
+     "t": "IN THAT THING",
+     "d": 343.82609
+    },
+    {
+     "a": 1760,
+     "w": 1836.562786,
+     "t": "IN THAT THING THAT THE",
+     "d": 439.872924
+    },
+    {
+     "a": 2080,
+     "w": 2106.275758,
+     "t": "IN THAT THING THAT THE HOLLOWA",
+     "d": 485.53605100000004
+    },
+    {
+     "a": 2400,
+     "w": 2439.030804,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID",
+     "d": 543.957845
+    },
+    {
+     "a": 2720,
+     "w": 2752.512168,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT",
+     "d": 595.926229
+    },
+    {
+     "a": 3040,
+     "w": 3065.491864,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS",
+     "d": 640.9098720000001
+    },
+    {
+     "a": 4000,
+     "w": 4083.872602,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING",
+     "d": 838.590332
+    },
+    {
+     "a": 4320,
+     "w": 4369.763674,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU",
+     "d": 906.607218
+    },
+    {
+     "a": 4640,
+     "w": 4674.418012,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU WERE NOT",
+     "d": 960.52067
+    },
+    {
+     "a": 4960,
+     "w": 4989.638878,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN",
+     "d": 1009.654296
+    },
+    {
+     "a": 5280,
+     "w": 5309.023318,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTER",
+     "d": 1058.241007
+    },
+    {
+     "a": 5590,
+     "w": 5613.354658,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED",
+     "d": 1101.090494
+    },
+    {
+     "a": 5910,
+     "w": 5933.296146,
+     "t": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED ABOUT",
+     "d": 1143.928263
+    }
+   ],
+   "final_text": "IN THAT THING THAT THE HOLLOWAY SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED ABOUT",
+   "clip_end_wall_ms": 5460.589847,
+   "endpoint_wall_ms": 6586.544315,
+   "endpoints": [
+    6586.544315
+   ],
+   "final_wall_ms": 6586.578495,
+   "tail_ms": 1080,
+   "decode_ms": 1304.534261,
+   "tail_decode_ms": 246.29325399999993,
+   "rtf": 0.23848889597806217,
+   "feed_lag_mean_ms": 5.598159463503649,
+   "feed_lag_max_ms": 101.655477,
+   "first_partial_wall_ms": 1159.453533,
+   "cpu_ticks": 653,
+   "rss_before_kb": 301764,
+   "rss_kb": 302680,
+   "rep": 0
+  },
+  {
+   "id": "accent_03",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "I THINK EVEN IF YOU DON'T LIVE ON THE GROUND FLOOR YOU MIGHT HAVE RATS THEY GO THROUGH THE WALLS",
+   "seconds": 3.79,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1156.524902,
+     "t": "EVEN",
+     "d": 192.265909
+    },
+    {
+     "a": 1760,
+     "w": 1822.991455,
+     "t": "EVEN YOU'LL ONLY",
+     "d": 306.243203
+    },
+    {
+     "a": 2080,
+     "w": 2111.076539,
+     "t": "EVEN YOU'LL ONLY REMEMBER",
+     "d": 356.832558
+    },
+    {
+     "a": 2400,
+     "w": 2457.909343,
+     "t": "EVEN YOU'LL ONLY REMEMBER THAT",
+     "d": 433.328977
+    },
+    {
+     "a": 2720,
+     "w": 2765.02828,
+     "t": "EVEN YOU'LL ONLY REMEMBER THAT GLORY",
+     "d": 497.694863
+    },
+    {
+     "a": 3040,
+     "w": 3071.100099,
+     "t": "EVEN YOU'LL ONLY REMEMBER THAT GLORY MIGHT HAVE",
+     "d": 548.126667
+    },
+    {
+     "a": 3680,
+     "w": 3705.386069,
+     "t": "EVEN YOU'LL ONLY REMEMBER THAT GLORY MIGHT HAVE THEY GO",
+     "d": 644.897582
+    },
+    {
+     "a": 3990,
+     "w": 4013.61491,
+     "t": "EVEN YOU'LL ONLY REMEMBER THAT GLORY MIGHT HAVE THEY GO THROUGH THE",
+     "d": 688.265705
+    },
+    {
+     "a": 4310,
+     "w": 4369.615155,
+     "t": "EVEN YOU'LL ONLY REMEMBER THAT GLORY MIGHT HAVE THEY GO THROUGH THE WOLF",
+     "d": 767.390746
+    }
+   ],
+   "final_text": "EVEN YOU'LL ONLY REMEMBER THAT GLORY MIGHT HAVE THEY GO THROUGH THE WOLF",
+   "clip_end_wall_ms": 3780.22636,
+   "endpoint_wall_ms": 4969.468874,
+   "endpoints": [
+    4969.468874
+   ],
+   "final_wall_ms": 4969.514691,
+   "tail_ms": 1160,
+   "decode_ms": 853.217406,
+   "tail_decode_ms": 208.31982399999993,
+   "rtf": 0.22512332612137204,
+   "feed_lag_mean_ms": 4.178546236842106,
+   "feed_lag_max_ms": 84.549194,
+   "first_partial_wall_ms": 1156.524902,
+   "cpu_ticks": 454,
+   "rss_before_kb": 303196,
+   "rss_kb": 300280,
+   "rep": 0
+  },
+  {
+   "id": "accent_04",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "HI YOU LOOK TIRED TODAY DID YOU HAD A BIG DAY",
+   "seconds": 5.02,
+   "partials": [
+    {
+     "a": 1120,
+     "w": 1145.139323,
+     "t": "I",
+     "d": 190.817587
+    },
+    {
+     "a": 1760,
+     "w": 1791.999756,
+     "t": "I YOU LOOK",
+     "d": 326.08191
+    },
+    {
+     "a": 2400,
+     "w": 2466.870769,
+     "t": "I YOU LOOK TIRED",
+     "d": 454.697064
+    },
+    {
+     "a": 2720,
+     "w": 2750.699993,
+     "t": "I YOU LOOK TIRED TO",
+     "d": 504.916384
+    },
+    {
+     "a": 3040,
+     "w": 3075.581829,
+     "t": "I YOU LOOK TIRED TO DAY",
+     "d": 559.974774
+    },
+    {
+     "a": 4320,
+     "w": 4349.125124,
+     "t": "I YOU LOOK TIRED TO DAY DO YOU",
+     "d": 808.26815
+    },
+    {
+     "a": 4960,
+     "w": 4980.208987,
+     "t": "I YOU LOOK TIRED TO DAY DO YOU HAD A BIG",
+     "d": 898.29053
+    },
+    {
+     "a": 5280,
+     "w": 5306.818036,
+     "t": "I YOU LOOK TIRED TO DAY DO YOU HAD A BIG DAY",
+     "d": 944.627689
+    }
+   ],
+   "final_text": "I YOU LOOK TIRED TO DAY DO YOU HAD A BIG DAY",
+   "clip_end_wall_ms": 5000.12252,
+   "endpoint_wall_ms": 5947.629926,
+   "endpoints": [
+    5947.629926
+   ],
+   "final_wall_ms": 5947.679853,
+   "tail_ms": 900,
+   "decode_ms": 1035.4356320000002,
+   "tail_decode_ms": 137.14510200000018,
+   "rtf": 0.20626207808764943,
+   "feed_lag_mean_ms": 4.341430023904382,
+   "feed_lag_max_ms": 74.63501,
+   "first_partial_wall_ms": 1145.139323,
+   "cpu_ticks": 521,
+   "rss_before_kb": 301060,
+   "rss_kb": 301052,
+   "rep": 0
+  }
+ ],
+ "cpu_ticks_total": 3527,
+ "rss_peak_kb": 313040,
+ "rss_end_kb": 301052,
+ "energy": {
+  "before": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3844000,
+   "current_ua": -1210312,
+   "pct": 100
+  },
+  "after": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3844000,
+   "current_ua": 395312,
+   "pct": 100
+  },
+  "energy_nwh_delta": 0,
+  "charge_uah_delta": 0
+ },
+ "interrupted": false,
+ "device": "Google Pixel 7",
+ "sdk": 37,
+ "started_at": 1792434547186,
+ "_arm": "zip0626",
+ "_condition": "accent",
+ "_run": "zip0626-accent-a1-p0"
+}

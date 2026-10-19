@@ -5,10 +5,10 @@ is that measurement: two sherpa-onnx streaming arms, run on the phone through th
 runtime the app ships, in real time, in three noise conditions.
 
 **Bottom line: `sherpa-onnx-streaming-zipformer-en-2023-06-26` (int8) wins and is
-the only one of the two that is usable.** The 20M arm is 2.7× faster to load and
-~75 ms faster per word, but it transcribes 21 % of words wrong against 2.6 %, and
-on 3 of 13 clips it returns nothing at all. Accuracy dominates: a fast transcript
-you have to repeat is slower than a slow transcript you don't.
+the only one of the two that is usable.** The 20M arm is 4.4× faster to load and
+~75 ms faster per word, but it scores 20–24 % WER against 2–5 %, and on two of
+thirteen clean clips it returns nothing at all. Accuracy dominates: a fast
+transcript you have to repeat is slower than a slow transcript you don't.
 
 Both arms are still slow enough that the partial-text UX needs a design decision:
 median word-visible latency is ~0.95 s (p95 ~1.45 s) even for the winner.
@@ -44,8 +44,10 @@ would say so (measured mean 2.8–5.0 ms, i.e. it kept up).
 
 Both are the upstream sherpa-onnx int8 transducer exports — encoder, decoder,
 joiner, `tokens.txt` — with `greedy_search`, 4 threads (the app's
-`VoxThreads.stt` default: half the cores, capped at 4), endpointing disabled
-during the utterance and a shared 500 ms trailing-silence rule for finalisation.
+`VoxThreads.stt` default: cores/2, floored at 2 and capped at 4, which is 4 on
+this phone). Endpoint detection is enabled with a shared 500 ms trailing-silence
+rule but only *consulted* after a clip's audio has been fed, so a mid-utterance
+pause cannot cut the utterance in half here; it exists to time finalisation.
 
 | arm | artifact | download | on-disk int8 encoder | licence |
 |---|---|---|---|---|
@@ -87,7 +89,7 @@ conditions:
 small English model is most likely to fall over there and averaging them into
 "quiet" would hide it.
 
-Total: 17 speech clips × 3 conditions + 4 accent + 2 silence = 57 runs per arm,
+Total: 17 speech clips × 3 conditions + 4 accent + 2 silence = 57 clips per arm,
 497.5 s of audio per full pass.
 
 ### Ground truth word onsets
@@ -123,23 +125,31 @@ user experiences). "post-word" subtracts the word's end — the model's own dela
 "words seen" is the fraction of reference words that ever appeared in a partial:
 a low figure means the latency statistics describe only the easy subset.
 
-| metric | 0626 quiet | 0626 tv | 0626 kitchen | 20M quiet | 20M tv | 20M kitchen |
-|---|---|---|---|---|---|---|
-| WER | **2.0 %** | **5.0 %** | **3.0 %** | 21.0 % | 20.0 % | 24.0 % |
-| partial latency median | 955 ms | 942 ms | 937 ms | 856 ms | 878 ms | 871 ms |
-| p90 | 1328 | 1329 | 1335 | 1231 | 1296 | 1269 |
-| p95 | 1451 | 1468 | 1457 | 1379 | 1493 | 1408 |
-| post-word median | 670 | 662 | 656 | 564 | 578 | 576 |
-| finalisation median | 841 | 725 | 721 | 489 | 604 | 491 |
-| finalisation p95 | 1125 | 952 | 1081 | 1015 | 889 | 842 |
-| revisions / word | 1.29 | 1.26 | 1.26 | 0.86 | 0.91 | 0.75 |
-| words seen in partials | **99 %** | 97 % | 97 % | 61 % | 65 % | 53 % |
-| RTF | 0.19 | 0.20 | 0.19 | 0.15 | 0.16 | 0.15 |
-| RSS peak | 291 MB | 290 MB | 287 MB | 248 MB | 249 MB | 245 MB |
-| feed lag mean | 4.2 ms | 5.0 ms | 4.6 ms | 3.0 ms | 2.9 ms | 2.9 ms |
+| metric | 0626 quiet | 0626 tv | 0626 kitchen | 0626 accent | 20M quiet | 20M tv | 20M kitchen | 20M accent |
+|---|---|---|---|---|---|---|---|---|
+| WER | **2.0 %** | **5.0 %** | **3.0 %** | **39 %** | 21.0 % | 20.0 % | 24.0 % | 55 % |
+| partial latency median | 955 ms | 942 ms | 937 ms | 910 ms | 856 ms | 878 ms | 871 ms | 762 ms |
+| p90 | 1328 | 1329 | 1335 | 1284 | 1231 | 1296 | 1269 | 986 |
+| p95 | 1451 | 1468 | 1457 | 1449 | 1379 | 1493 | 1408 | 1106 |
+| post-word median | 670 | 662 | 656 | 640 | 564 | 578 | 576 | 507 |
+| finalisation median | 841 | 725 | 721 | 1037 | 489 | 604 | 491 | 856 |
+| finalisation p95 | 1125 | 952 | 1081 | 1180 | 1015 | 889 | 842 | 1125 |
+| revisions / word | 1.29 | 1.26 | 1.26 | 1.02 | 0.86 | 0.91 | 0.75 | 0.72 |
+| words seen in partials | **99 %** | 97 % | 97 % | 65 % | 61 % | 65 % | 53 % | 46 % |
+| RTF | 0.19 | 0.20 | 0.19 | 0.21 | 0.15 | 0.16 | 0.15 | 0.17 |
+| RSS peak | 291 MB | 290 MB | 287 MB | 296 MB | 248 MB | 249 MB | 245 MB | 240 MB |
+| feed lag mean | 4.2 ms | 5.0 ms | 4.6 ms | 4.5 ms | 3.0 ms | 2.9 ms | 2.9 ms | 3.0 ms |
 
-Cold start (model load in a fresh process, median of 3 runs): **3559 ms** for
-`zip0626`, **808 ms** for `zip20m`. CPU: 3946 s vs 3299 s per audio-hour.
+Cold start (model load in a fresh process, median of 4 runs): **3548 ms** for
+`zip0626`, **805 ms** for `zip20m`. CPU: 4046 s vs 3381 s per audio-hour.
+
+### Repeatability
+
+`quiet` was re-run for both arms on the same clips. Final transcripts were
+**identical on all 15 clips for both arms**; per-word latency moved by −8 ms
+(0626) and +1 ms (20M) at the median, and −1 / +18 ms at p95. RTF was identical to
+three decimals. The measurement is stable enough that the 20M-vs-0626 gap is not
+noise.
 
 ### Paired latency (the fair comparison)
 
@@ -153,8 +163,7 @@ both arms to words *both* surfaced, in the same clips:
 | tv | 282 | 943 / 1508 ms | 877 / 1496 ms | −75 ms |
 | kitchen | 267 | 944 / 1484 ms | 871 / 1409 ms | −73 ms |
 
-So the speed difference is real, small, and irrelevant next to the 18-point WER
-gap.
+So the speed difference is real, small, and irrelevant next to the WER gap.
 
 ### What the numbers say
 
@@ -164,27 +173,35 @@ gap.
    offline Whisper base.en default scores 5.6 % (and 32 % on noise) on the host
    bench, so this is not a "streaming costs accuracy" trade so much as a better
    model.
-2. **The 20M arm fails in a specific, reproducible way**: it drops the first
-   1–1.5 s of every utterance (the ~1.28 s left-context window) and returns an
-   empty hypothesis on 3 of 13 clean clips. Same on host, same in fp32, same on
-   its own test wav? — no: its bundled `test_wavs/0.wav` decodes correctly, so the
-   artifact is intact; it is the checkpoint's behaviour on this speech. Either
+2. **Accented conversational speech is the winner's weak spot.** 39 % WER on the
+   four EdAcc clips (host check with the same model and all-at-once decoding:
+   37 %, so it is the model, not the phone). Those clips are disfluent,
+   conversational and non-native; the model was trained on read speech. This is
+   the one result that argues against making streaming the default for a real
+   user rather than for a demo — and it needs a larger accent corpus before it is
+   a number anyone should plan around.
+3. **The 20M arm fails in a specific, reproducible way**: the opening 1–1.5 s of
+   every utterance is missing (roughly its 1.28 s left-context window), two of the
+   thirteen clean clips return an empty hypothesis and a third returns a single
+   letter. Same on the host, same with the fp32 encoder, so it is the checkpoint's
+   behaviour rather than the phone or the harness — while its own bundled
+   `test_wavs/0.wav` decodes correctly, so the artifact itself is intact. Either
    way it cannot ship: "YOU WILL BE FRANK WITH ME" → `""`.
-3. **Finalisation is dominated by the endpoint rule, not the model.** With a
+4. **Finalisation is dominated by the endpoint rule, not the model.** With a
    shared 500 ms trailing-silence rule, the median is 721–841 ms (0626) and
    489–604 ms (20M). The model-dependent tail is small; the win, if we want one,
    is in endpointing, not in the recognizer.
-4. **Latency is the product problem, not WER.** ~0.95 s median to first visible
+5. **Latency is the product problem, not WER.** ~0.95 s median to first visible
    word, ~1.45 s p95, is too slow for the "words appear as you speak" feel the
    chat UI wants. Both arms are chunk-16/chunk-32 streaming zipformers with
    right-context lookahead; a chunk-8 or left-context-only export would trade a
    little WER for several hundred ms. That is a follow-up measurement, not a
    guess.
-5. **Revisions are high** (1.26–1.29 edits per word across successive partials
+6. **Revisions are high** (1.26–1.29 edits per word across successive partials
    for the winner). That is the cost of the low-latency lookahead: the UI will
    show text that changes. Design for it (fade/underline committed-only text)
    rather than pretending partials are final.
-6. **Cold start 3.6 s** for the winner is a real first-turn cost, and it is paid
+7. **Cold start 3.5 s** for the winner is a real first-turn cost, and it is paid
    again after every process death. Preloading at app start (or keeping the
    recognizer alive while the mic screen is open) is worth it.
 
@@ -200,9 +217,9 @@ before switching the default.
 Do **not** adopt the 20M arm. It is smaller and faster to load, and that is the
 whole of its case; its output is not usable English on this corpus.
 
-Before shipping anything, decide the endpoint rule as a product parameter. At
-500 ms it costs ~0.7–0.8 s of the perceived turn latency and it is the cheapest
-second to win.
+Before shipping anything, decide the endpoint rule as a product parameter. The
+500 ms rule this study shared is what produces the measured 0.72–0.84 s
+finalisation median, and it is the cheapest second to win.
 
 ## 6. What was not measured (and would change the answer)
 
@@ -214,7 +231,7 @@ second to win.
 - **Battery per audio-hour is not measured.** The phone was USB-powered for the
   whole study (`dumpsys battery`: USB powered, charge counter *rising*) and
   `BATTERY_PROPERTY_ENERGY_COUNTER` reported 0. What is reported instead is total
-  CPU seconds per audio-hour (3299 vs 3946), which ranks the two arms but is not
+  CPU seconds per audio-hour (0626 4046 s, 20M 3381 s), which ranks the two arms but is not
   a battery number. A real measurement needs an unplugged, screen-off, sustained
   run of 20+ minutes per arm.
 - **"TV" and "kitchen" are synthetic proxies** (babble at 10 dB, pink+clatter at
@@ -222,9 +239,9 @@ second to win.
   kitchen is impulsive and non-stationary in ways pink noise is not.
 - **Onsets carry ~±100 ms of systematic error** (see §3). Between-arm comparison
   is unaffected; absolute latency claims are not precise to the millisecond.
-- **One pass per cell** (plus a repeat of `quiet` for the winner). Run-to-run
-  variance of the medians is therefore not characterised beyond that repeat, and
-  the p95 rests on ~270–1000 word observations depending on cell.
+- **One pass per cell**, plus a repeat of `quiet` for both arms (§4, repeatability).
+  The repeat is the only evidence on run-to-run variance; p95 rests on ~270–1000
+  word observations depending on cell.
 - **Only one device, one thread count (4), one chunk size (20 ms), one endpoint
   rule (500 ms).** The Pixel 7 is the target; a slower phone would change RTF and
   possibly the feed-lag picture.
