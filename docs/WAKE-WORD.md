@@ -342,7 +342,7 @@ Not built yet:
    fastest, matches upstream, but those are the datasets that made upstream license its
    models CC BY-NC-SA), or build a negative set from clearly licensed corpora (e.g.
    Common Voice CC0, LibriSpeech, MUSAN) at the cost of days of pipeline work. This
-   decides what licence the shipped model can carry in an Apache-2.0, F-Droid app.
+   decides what licence the shipped model can carry in a GPL-3.0, F-Droid app.
    The question to answer: *which corpora may a model shipped in this app be trained
    on, and does the Piper voice used for synthetic positives (`libritts_r`) pass the
    same test?* A related one: the Hermes agent install already carries a

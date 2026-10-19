@@ -1,19 +1,38 @@
 Hermes Vox
-Copyright 2026 ChezGoulet
+Copyright (C) 2026 ChezGoulet
 
-This product includes software developed by:
-  - the Hermes agent project (Nous Research)
-  - the sherpa-onnx project (k2-fsa / Vox)
-  - Google's Gemma 4 E2B (Enhanced Realtime alpha, separate license)
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3.
 
-Licensed under the Apache License, Version 2.0.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
-Optional on-device voice models, downloaded in-app (not bundled):
-  - Supertonic TTS (Supertone Inc.) — model under the OpenRAIL-M license
-    (https://huggingface.co/Supertone/supertonic-2/blob/main/LICENSE)
-  - Piper voices via the sherpa-onnx project
-  - NVIDIA Parakeet-TDT 0.6B v2 (optional STT) — CC-BY-4.0
-    (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2)
-  - OpenAI Whisper (STT) — MIT; Silero VAD — MIT
+The full licence text is in LICENSE. The source for the exact build you have is
+the repository at https://github.com/chezgoulet/hermes-vox, at the tag matching
+the version shown in Settings → About.
 
-The Rajdhani typeface (Indian Type Foundry) is bundled under the SIL Open Font License 1.1.
+## Why GPL-3.0
+
+The on-device speech runtime, sherpa-onnx, statically links espeak-ng, which is
+GPL-3.0. Distributing that combination makes the combined work GPL-3.0, so the
+app is GPL-3.0 as a whole rather than Apache-2.0 with an undeclared GPL
+component inside it.
+
+## Third-party components in the build
+
+  - sherpa-onnx (k2-fsa) — Apache-2.0
+  - espeak-ng (the fork used by sherpa-onnx) — GPL-3.0
+  - ONNX Runtime (Microsoft) — MIT
+  - Hermes Agent client protocol and documentation (Nous Research)
+
+## Models (downloaded separately, not part of the app)
+
+These are data, not code, and carry their own terms:
+
+  - Supertonic TTS (Supertone Inc.) — OpenRAIL-M
+  - Whisper (OpenAI) — MIT weights, packaged by sherpa-onnx
+  - Silero VAD — MIT
+  - Piper voices — per-voice licences, shown in the model list
+  - Gemma 4 E2B (Google) — Gemma Terms of Use

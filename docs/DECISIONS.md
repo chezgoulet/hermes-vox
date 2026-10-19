@@ -95,3 +95,15 @@ Shown once on the first launch after an upgrade — never on a fresh install, ne
 twice for the same version, never on a downgrade. Release notes ship inside the
 APK. Breaking changes carry one action the app routes itself (for 0.9: HTTPS →
 Entity & Connection).
+
+## D11 — Licence: GPL-3.0
+
+The app is GPL-3.0. sherpa-onnx's TTS support statically links espeak-ng
+(GPL-3.0) for Piper phonemes; Apache-2.0 and GPL-3.0 combine only under GPL-3.0,
+so the whole app is GPL-3.0 rather than Apache-2.0 with an undeclared GPL
+component inside it. This was already true of every release we shipped with the
+upstream AAR; compiling sherpa from source made it visible.
+
+**Committed to:** `LICENSE` GPL-3.0, a `NOTICE` naming each component and the
+source offer, README/architecture/site saying GPL-3.0, and the F-Droid metadata
+field `License: GPL-3.0-only`. Models downloaded at runtime keep their own terms.
