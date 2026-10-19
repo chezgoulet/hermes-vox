@@ -1705,6 +1705,13 @@ class VoiceController(private val context: Context, private val session: HermesS
      */
     fun glueBlocked(): Boolean = !shouldSpeak() || speaking || streamingReplyLive()
 
+    /**
+     * #156: will this turn be voiced? The cue layer asks before playing the
+     * "reply ready" cue — when speech follows, the voice IS the signal, and a cue must
+     * never run into TTS (D7). Read-only; it changes no turn behaviour.
+     */
+    fun voiceWillSpeak(): Boolean = shouldSpeak()
+
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
