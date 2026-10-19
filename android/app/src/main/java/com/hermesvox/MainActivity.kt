@@ -270,15 +270,30 @@ class MainActivity : AppCompatActivity() {
         // would reject, nor one silently rewritten into a different identity.
         if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
-        // #156: drive a cue (and the TTS-suppression flag) without a turn, so the
-        // ringer/DND/volume/haptics device matrix can be exercised from adb. Debug-only
-        // by the FLAG_DEBUGGABLE guard above — inert in a release build.
-        intent.getStringExtra("cue")?.let { name ->
-            val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
-            if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
+        // #156: the device matrix needs to PUT the phone into each state and then fire
+        // a cue. There is no shell command for the ringer mode on this build, so the
+        // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
+        // SETTINGS + DND access for SILENT). Order matters and is deliberate: state
+        // first, the TTS-suppression witness next, and the cue LAST, all on the main
+        // thread, so one intent is one deterministic test. Debug-only by the
+        // FLAG_DEBUGGABLE guard above; inert in a release build.
+        intent.getStringExtra("ringer")?.let { mode ->
+            val am = getSystemService(android.media.AudioManager::class.java)
+            runCatching {
+                am?.ringerMode = when (mode.lowercase()) {
+                    "silent" -> android.media.AudioManager.RINGER_MODE_SILENT
+                    "vibrate" -> android.media.AudioManager.RINGER_MODE_VIBRATE
+                    else -> android.media.AudioManager.RINGER_MODE_NORMAL
+                }
+            }
+            VoxLog.d("event=harness ringer=$mode now=${am?.ringerMode}")
         }
         if (intent.hasExtra("cue_voice")) {
             SoundCuePlayer.setVoiceActive(intent.getBooleanExtra("cue_voice", false))
+        }
+        intent.getStringExtra("cue")?.let { name ->
+            val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
+            if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
         }
     }
 

@@ -88,32 +88,55 @@ strong two-beat / two heavier beats).
 - `android/app/src/main/java/com/hermesvox/MainActivity.kt` — wiring to the state edges
 - `android/app/src/main/java/com/hermesvox/VoiceController.kt` — `voiceWillSpeak()`
 
-## Device matrix (Pixel 7, Android 17)
+## Device matrix (Pixel 7 `2A091FDH200AJ1`, Android 17, debug build 0.8.1)
 
-Filled in by the verification run; see the PR/report for the evidence lines. Method:
-`adb shell am start -n com.hermesvox/.MainActivity --es cue <family>`, with the ringer /
-DND / media-volume / haptics state set beforehand; the expectation column is
-`CuePolicy.decide`, the result column is what the phone actually did, read from
-`event=cue` lines and `adb shell dumpsys audio`.
+Method: `adb shell am start -n com.hermesvox/.MainActivity --es cue <family>`, with the
+phone's state set beforehand (ringer through the debug `--es ringer` harness, DND through
+`cmd notification set_dnd`, media volume through the volume keys, haptics through
+`settings put system haptic_feedback_enabled`). "Heard/felt" is read back from
+`dumpsys audio` (the AudioTrack's usage, format and `event:started`) and
+`dumpsys vibrator_manager` (the effect's duration and amplitude steps); nobody was in
+the room to listen, so the evidence is the system's own record of the output.
 
-| state | expected | heard/felt | log |
+| state | expected | result (evidence) | log line |
 |---|---|---|---|
-| normal ringer, media 50% | audio | | |
-| vibrate ringer | haptic | | |
-| silent ringer (opt-in off) | nothing | | |
-| silent ringer (opt-in on) | audio | | |
-| DND on | nothing | | |
-| media volume 0 | haptic | | |
-| system haptics off (vibrate ringer) | nothing | | |
-| TTS speaking | nothing | | |
-| headphones | audio in the headset | | |
-| Bluetooth | audio on the speaker | | |
+| normal ringer, media 12/25 | audio | AudioTrack, `usage=USAGE_ASSISTANCE_SONIFICATION`, 22.05 kHz mono, `event:started`, stream 12/25 | `action=audio reason=heard ringer=normal dnd=false vol=10/25` |
+| vibrate ringer | haptic | 167 ms effect, `usage: TOUCH`, steps 9/55/9 ms | `action=haptic reason=vibrate-haptic ringer=vibrate` |
+| silent ringer, opt-in off | silent | nothing | `action=silent reason=dnd ringer=silent dnd=true` ¹ |
+| silent ringer, opt-in on | silent under DND | nothing (`sound_cues_silent=true` in prefs) | `action=silent reason=dnd preview=false` ¹ |
+| DND on | silent | nothing | `action=silent reason=dnd ringer=silent vol=0/25` |
+| media volume 0, haptics on | haptic | 203 ms effect, `usage: TOUCH` | `action=haptic reason=inaudible-haptic vol=0/25` |
+| vibrate ringer, system haptics off | silent | nothing | `action=silent reason=vibrate haptics=false` |
+| TTS speaking | silent | nothing | `action=silent reason=tts` |
+| cues off, preview tapped | audio | AudioTrack started; Settings toast "Previewing the reply-ready cue" | `action=audio reason=preview preview=true` |
+| cues off + TTS speaking, preview tapped | silent | nothing | `action=silent reason=tts preview=true` |
+| headphones | — | **not verified**: Pixel 7 has no jack and no USB-C adapter was attached | — |
+| Bluetooth | — | **not verified**: BT off, no device paired | — |
+
+¹ On this build a SILENT ringer and DND are the same state: an app with DND access that
+sets `RINGER_MODE_SILENT` turns the interruption filter to NONE, and turning DND off
+restores the ringer to NORMAL. So on-device the DND rule (3, "not now") is what the
+phone actually exercises; the silent-rigner rule (4) and its opt-in are covered by
+`CuePolicyTest`, not reachable separately on this handset.
+
+Real transitions, with the configured endpoint (`127.0.0.1:9`) unreachable:
+
+```
+13:34:43.454 event=cue cue=listening action=audio reason=heard       <- call start
+13:34:27.785 event=cue cue=thinking  action=audio reason=heard       <- text turn
+13:34:27.813 event=cue cue=error     action=audio reason=heard       <- reply-error
+```
+
+`REPLY_READY` is only played when the turn will not be voiced, so with a live gateway it
+would be suppressed by design (the voice is the signal) and it was observed through the
+Settings preview instead.
 
 ## What this deliberately does not do
 
 - No audio focus request: a < 300 ms sonification is a UI sound, and ducking the
   user's music for it would be the rudeness the policy exists to avoid. (A cue is
   suppressed anyway while the being's own TTS is speaking.)
-- No background cues: a cue fires only from a turn edge reached by the activity.
+- Cues are not queued or replayed: if the policy says silent, that moment is gone. A
+  cue reports the present, it is not a notification.
 - No cue for "warming" or for a barge: a barge is the user's own action, and a cue
   under it would be noise on top of noise.

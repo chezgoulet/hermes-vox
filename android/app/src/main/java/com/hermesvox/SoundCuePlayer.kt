@@ -1,14 +1,15 @@
 package com.hermesvox
 
+import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import android.app.NotificationManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -193,7 +194,15 @@ class SoundCuePlayer(context: Context) {
         if (!v.hasVibrator()) return
         val (timings, amplitudes) = CueSynth.haptic(cue)
         if (Build.VERSION.SDK_INT >= 26) {
-            v.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+            val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
+            if (Build.VERSION.SDK_INT >= 33) {
+                // Label it as TOUCH feedback: the cue is a UI signal, so it follows the
+                // same intensity/feedback settings as a tap instead of pretending to be
+                // a notification (which DND and the ringer would treat differently).
+                v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
+            } else {
+                v.vibrate(effect)
+            }
         } else {
             @Suppress("DEPRECATION")
             v.vibrate(timings, -1)
@@ -209,8 +218,5 @@ class SoundCuePlayer(context: Context) {
         @Volatile private var voiceActive = false
 
         fun setVoiceActive(on: Boolean) { voiceActive = on }
-
-        /** Exposed for the diagnostic line + tests of the wiring, not for policy. */
-        fun isVoiceActive(): Boolean = voiceActive
     }
 }
