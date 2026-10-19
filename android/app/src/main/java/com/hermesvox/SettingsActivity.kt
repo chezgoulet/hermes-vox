@@ -11,12 +11,14 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
 
 /**
- * SettingsActivity — a real settings screen. Sections: Entity (endpoint/model/
- * key, new conversation), Voice pipeline (STT/TTS/voice, barge-in), Appearance
- * (theme), About. Values are stored as stable TOKENS (the logic reads tokens,
- * e.g. buildTts checks "kokoro"/"piper"); the UI renders human labels.
+ * SettingsActivity — a real settings screen. Home sections: Voice mode, Voice
+ * models, Entity & Connection, Mic & Barge-in, Transcription (STT), Spoken
+ * replies, Appearance & Layout, Visuals, About & Diagnostics. Values are stored
+ * as stable TOKENS (the logic reads tokens, e.g. buildTts checks
+ * "kokoro"/"piper"); the UI renders human labels.
  */
 class SettingsActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
@@ -37,6 +39,7 @@ class SettingsActivity : AppCompatActivity() {
         bindFlows()
         bindAppearance()
         bindMicSettings()
+        bindJargonHelp()
         bindVisuals()
         bindGroups()
         bindSectionRestoreRows()
@@ -56,9 +59,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(ids[section]!!).visibility = android.view.View.VISIBLE
         findViewById<android.widget.ScrollView>(R.id.settings_scroll).scrollTo(0, 0)
         findViewById<TextView>(R.id.set_title).text = when (section) {
-            SECTION_ENTITY -> "Entity & Connection"; SECTION_SPEECH -> "Speech & Mic"
-            SECTION_STT -> "STT & Transcription"; SECTION_TTS -> "TTS & Voice"
-            SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Presence"
+            SECTION_ENTITY -> "Entity & Connection"; SECTION_SPEECH -> "Mic & Barge-in"
+            SECTION_STT -> "Transcription (STT)"; SECTION_TTS -> "Spoken replies"
+            SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Layout"
             SECTION_VISUALS -> "Visuals"
             else -> "About & Diagnostics"
         }
@@ -72,6 +75,9 @@ class SettingsActivity : AppCompatActivity() {
             R.id.sec_models, R.id.sec_appearance, R.id.sec_visuals, R.id.sec_about)
         ids.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<TextView>(R.id.set_title).text = "Settings"
+        // Subtitles are a summary of what changed while inside a section.
+        refreshModelsVal()
+        refreshGrpVals()
     }
 
     private fun bindGroups() {
@@ -100,10 +106,10 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun bindSectionRestoreRows() {
         bindRestoreRow(R.id.row_restore_entity, GROUP_ENTITY, "Entity & Connection")
-        bindRestoreRow(R.id.row_restore_models, GROUP_MODELS, "Models")
-        bindRestoreRow(R.id.row_restore_appearance, GROUP_APPEARANCE, "Appearance")
+        bindRestoreRow(R.id.row_restore_models, GROUP_MODELS, "Voice models")
+        bindRestoreRow(R.id.row_restore_appearance, GROUP_APPEARANCE, "Appearance & Layout")
         bindRestoreRow(R.id.row_restore_visuals, GROUP_VISUALS, "Visuals")
-        bindRestoreRow(R.id.row_restore_about, GROUP_ABOUT, "About")
+        bindRestoreRow(R.id.row_restore_about, GROUP_ABOUT, "About & Diagnostics")
     }
 
     private fun bindEntity() {
@@ -194,7 +200,7 @@ class SettingsActivity : AppCompatActivity() {
         swPresence.isChecked = prefs.getBoolean("er_presence", true)
         swPresence.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean("er_presence", checked).apply()
-            Toast.makeText(this, if (checked) "Soul presence on" else "Soul presence off (ER stays wired, quieter)",
+            Toast.makeText(this, if (checked) "Soul narration on" else "Soul narration off (ER stays wired, quieter)",
                 Toast.LENGTH_SHORT).show()
         }
         swBarge.isChecked = prefs.getBoolean("er_semantic_barge", true)
@@ -223,7 +229,7 @@ class SettingsActivity : AppCompatActivity() {
             val tokens = arrayOf("silent", "sounds", "spoken")
             val cur = prefs.getString("er_presence_voice", "sounds") ?: "sounds"
             AlertDialog.Builder(this)
-                .setTitle("Presence voice (Enhanced Realtime)")
+                .setTitle("Narration voice (Enhanced Realtime)")
                 .setSingleChoiceItems(modes, tokens.indexOf(cur).coerceAtLeast(0)) { d, which ->
                     prefs.edit().putString("er_presence_voice", tokens[which]).apply()
                     findViewById<TextView>(R.id.set_er_voice_val).text = modes[which].substringBefore(" (")
@@ -427,21 +433,12 @@ class SettingsActivity : AppCompatActivity() {
         // option was removed — WarmTts is a no-op stub, so it never produced
         // audio (never offer an option that doesn't work). The engines now honor
         // this pref (see voiceRegister), so the picker really affects output.
-        // The engine's built-in voice (Supertonic: 0-4 female F1-F5, 5-9 male M1-M5 —
-        // measured by pitch in the bake-off). Applies from the next reply.
-        findViewById<LinearLayout>(R.id.row_tts_speaker).setOnClickListener {
-            val labels = (0 until 10).map { speakerLabel(it) }.toTypedArray()
-            val cur = prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER)
-            AlertDialog.Builder(this)
-                .setTitle("Speaker (Supertonic)")
-                .setSingleChoiceItems(labels, cur.coerceIn(0, 9)) { d, which ->
-                    prefs.edit().putInt(SherpaTts.KEY_SPEAKER, which).apply()
-                    findViewById<TextView>(R.id.set_tts_speaker_val).text = labels[which]
-                    d.dismiss()
-                    previewVoice()
-                }
-                .setNegativeButton("Cancel", null).show()
-        }
+        // The engine's built-in voice. The row follows the ENGINE selected by the
+        // `tts` pref: Supertonic's ten measured voices (0-4 female F1-F5, 5-9 male
+        // M1-M5) or Piper's curated eight plus a numeric id for the rest (LibriTTS-R
+        // medium has hundreds — not a list anyone scrolls). Either way a choice
+        // previews immediately and is stored per engine (VoiceSpeakers).
+        findViewById<LinearLayout>(R.id.row_tts_speaker).setOnClickListener { pickSpeaker() }
         findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
             pick("Delivery", arrayOf("Natural", "Bright", "Deep"),
                 arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val) { previewVoice() }
@@ -452,8 +449,8 @@ class SettingsActivity : AppCompatActivity() {
         // resets with GROUP_ENTITY (row_restore_entity) and the voice register resets
         // with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice") — the standalone
         // Mode/Voice branches and their row_mode_reset/row_voice_reset rows are gone.
-        bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "STT")
-        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "TTS & Voice")
+        bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "Transcription")
+        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "Spoken replies")
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
@@ -477,7 +474,7 @@ class SettingsActivity : AppCompatActivity() {
 
         refreshFlowVals()
         refreshGrpVals()   // #115: populate the Settings-home row subtitles
-        bindMicAdvanced()  // #118: collapse/expand the Speech & Mic timing-tuner panel
+        bindMicAdvanced()  // #118: collapse/expand the Mic & Barge-in timing-tuner panel
     }
 
     private fun refreshFlowVals() {
@@ -487,22 +484,62 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
-        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER))
-        syncSpeakerRow()
+        syncSpeakerRow()   // title + value follow the selected engine
         findViewById<TextView>(R.id.set_voice_val).text = deliveryLabel()
         refreshSttRemotePanel()
     }
 
-    /** #114-badge: the install-progress caption for the Models row (Settings-home
-     *  group row + the sub-view row above "Voice models"). Counts ONLY the RECOMMENDED
+    /** #114-badge/#116: the install-progress caption for the Models row (Settings-home
+     *  group row + the store row inside "Voice models"). Counts ONLY the REQUIRED
      *  subset of the blessed set so the home badge agrees with the Models screen's
      *  required set (the optional extras don't inflate the denominator). */
     private fun refreshModelsVal() {
-        val denom = ModelCatalog.blessed.count { it.recommended }
-        val installed = ModelCatalog.blessed.count { it.recommended && ModelCatalog.isInstalled(this, it.id) }
-        val text = "$installed/$denom installed · needed for your voice"
-        findViewById<TextView>(R.id.set_models_val)?.text = text
-        findViewById<TextView>(R.id.set_models_grpval)?.text = text
+        // #116: the required set is a first-run blocker, not a stat. When any of
+        // it is missing the line carries the same ⚠ + warning colour as the main
+        // screen's modelsMissingPill, names what is absent, and taps through to
+        // the Voice-models store. The neutral line is kept only when complete.
+        val required = ModelCatalog.required
+        val missing = ModelCatalog.missingRequired(this)
+        val installed = required.size - missing.size
+        val complete = missing.isEmpty()
+        val text = if (complete) {
+            "$installed/${required.size} installed · needed for your voice"
+        } else {
+            val names = missing.joinToString(", ") { shortModelName(it) }
+            if (missing.size == required.size) "⚠ No voice models installed — $names"
+            else "⚠ ${missing.size} of ${required.size} voice model${if (missing.size == 1) "" else "s"} missing — $names"
+        }
+        val color = ContextCompat.getColor(this,
+            if (complete) R.color.hv_text_dim else R.color.hv_warn)
+        listOf(R.id.set_models_val, R.id.set_models_grpval).forEach { id ->
+            findViewById<TextView>(id)?.let { v ->
+                v.text = text
+                v.setTextColor(color)
+                // The row itself still opens the Voice models sub-view (source +
+                // reset). The warning line is the direct shortcut to the store.
+                v.isClickable = !complete
+                v.isFocusable = !complete
+                v.contentDescription = if (complete) null else "$text. Opens Voice models."
+                v.setOnClickListener(if (complete) null else android.view.View.OnClickListener { openModelsStore() })
+            }
+        }
+    }
+
+    /** Short catalogue name for a one-line "what is missing": drops the voice /
+     *  speaker suffix that would make the Settings row unreadable. */
+    private fun shortModelName(spec: ModelSpec): String =
+        spec.name.substringBefore(" ·").substringBefore(" (")
+
+    private fun openModelsStore() {
+        startActivity(android.content.Intent(this, ModelsActivity::class.java))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // A download may have finished while the store was open; the Settings
+        // warning must clear (or appear) the moment we come back.
+        refreshModelsVal()
+        refreshGrpVals()
     }
 
     // #115: the Settings-home rows each carry a live-value subtitle so a user can see
@@ -513,12 +550,15 @@ class SettingsActivity : AppCompatActivity() {
         try {
             findViewById<TextView>(R.id.set_entity_grpval)?.text =
                 connectionLine(prefs.getString("url", "").orEmpty())
+            // "Mic & Barge-in" owns the input side only — voice mode has its own
+            // top-level row, and echoing it here made the sub-title unpredictable.
             findViewById<TextView>(R.id.set_speech_grpval)?.text =
-                modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
+                "Barge-in ${onOff(prefs.getBoolean("duplex", true))} · AEC ${onOff(prefs.getBoolean("mic_aec", true))}"
             findViewById<TextView>(R.id.set_stt_grpval)?.text =
                 sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
             findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
-            findViewById<TextView>(R.id.set_appearance_grpval)?.text = label("theme", "system")
+            findViewById<TextView>(R.id.set_appearance_grpval)?.text =
+                label("theme", "system") + " · " + label("layout_mode", "presence")
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
                 VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
             findViewById<TextView>(R.id.set_about_grpval)?.text =
@@ -531,6 +571,8 @@ class SettingsActivity : AppCompatActivity() {
     private fun connectionLine(url: String): String =
         if (url.isBlank()) "not configured" else "connected"
 
+    private fun onOff(on: Boolean): String = if (on) "on" else "off"
+
     // The About row's version subtitle. Uses PackageManager (no BuildConfig dependency —
     // the C0 release guard rejects buildConfigField key injection, and BuildConfig is
     // not reliably generated). Falls back to the label on any failure.
@@ -538,7 +580,7 @@ class SettingsActivity : AppCompatActivity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: ""
     } catch (_: Throwable) { "" }
 
-    // #118: the Speech & Mic "Advanced — timing tuning" chip collapses/expands the
+    // #118: the Mic & Barge-in "Advanced — timing tuning" chip collapses/expands the
     // panel of VAD/barge-timing sliders (collapsed by default, progressive disclosure).
     private fun bindMicAdvanced() {
         try {
@@ -655,7 +697,10 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.set_theme_val).text = label("theme", "system")
         findViewById<LinearLayout>(R.id.row_layout).setOnClickListener {
-            pick("Layout", arrayOf("Presence", "Conversation"),
+            // "Presence" already names the being's visual body (Visuals). This
+            // setting names the SCREEN arrangement, so its choices are Being
+            // (the avatar fills the surface) and Transcript (readable log).
+            pick("Screen layout", arrayOf("Being", "Transcript"),
                 arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
@@ -778,7 +823,40 @@ class SettingsActivity : AppCompatActivity() {
         } catch (_: Throwable) { cur }
     }
 
-    // ---- Mic / Speech tuning (exact-range SeekBars reading + writing the SAME
+    // ---- #120 jargon help: a small "?" beside each abbreviation, opening the
+    // same kind of dialog as every other explanation in Settings. The words stay
+    // where the control is; nothing moves to a new screen. -------------------
+    private fun bindJargonHelp() {
+        bindHelp(R.id.help_bargein, "Barge-in",
+            "Talking over the entity while it is replying. It stops at once and listens to " +
+            "you — no button to press. With this off, a reply keeps going until you tap the " +
+            "being or end the call.")
+        bindHelp(R.id.help_aec, "AEC (echo cancellation)",
+            "Acoustic echo cancellation. The phone listens to its own speaker and subtracts " +
+            "that sound from the mic, so the entity does not hear itself and mistake its own " +
+            "voice for yours. Leave it on unless a headset works better with it off.")
+        bindHelp(R.id.help_vad, "VAD (voice activity detection)",
+            "A tiny on-device model decides when audio is speech and when it is silence, so " +
+            "the app knows when you started and stopped talking. The threshold below is how " +
+            "sure it must be before a sound counts as speech.")
+        bindHelp(R.id.help_semantic_barge, "Semantic barge-in",
+            "In Enhanced Realtime, some interruptions are not meant to cancel the work — " +
+            "\"take your time\" or \"go on\" means keep going. This lets the entity tell those " +
+            "apart from a real interruption. Off: every interruption cancels its work.")
+    }
+
+    /** Wire one inline `?` chip to the dialog it explains. */
+    private fun bindHelp(id: Int, title: String, body: String) {
+        findViewById<TextView>(id)?.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(body)
+                .setPositiveButton("Got it", null)
+                .show()
+        }
+    }
+
+    // ---- Mic / barge-in tuning (exact-range SeekBars reading + writing the SAME
     // prefs the pipeline reads; defaults = shipped values; a restore-defaults
     // button resets all eight) -------------------------------------------
     private fun bindMicSettings() {
@@ -806,7 +884,7 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
             restoreDefaults(GROUP_MIC)
-            Toast.makeText(this, "Mic / Speech defaults restored", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Mic & Barge-in defaults restored", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1001,22 +1079,143 @@ class SettingsActivity : AppCompatActivity() {
         "bright" -> "Bright"; "deep" -> "Deep"; else -> "Natural"
     }
 
-    /** The Speaker row exists only for the engine it controls. Piper's model has hundreds of
-     *  unlabelled audiobook speakers (not a picker anyone can use), and the system voice is the
-     *  OS's own — so the row shows for Supertonic and hides otherwise, never offering a choice
-     *  that changes nothing. */
-    private fun syncSpeakerRow() {
-        val engine = prefs.getString("tts", null) ?: ModelCatalog.defaultTts(this)
-        findViewById<LinearLayout>(R.id.row_tts_speaker)?.visibility =
-            if (engine == "supertonic") android.view.View.VISIBLE else android.view.View.GONE
+    /** The engine token the Speaker row follows. */
+    private fun ttsEngine(): String = prefs.getString("tts", null) ?: ModelCatalog.defaultTts(this)
+
+    /** The on-device engine the row controls, or null for the system voice (which
+     *  has no speaker choice — the row hides rather than offering a no-op). */
+    private fun ttsVoiceEngine(): SherpaVoice? = when (ttsEngine()) {
+        "supertonic" -> SherpaVoice.SUPERTONIC
+        "piper" -> SherpaVoice.PIPER
+        else -> null
     }
 
-    private fun speakerLabel(i: Int): String = if (i < 5) "F${i + 1} · female" else "M${i - 4} · male"
+    private fun speakerStore(): SpeakerPrefs = AndroidSpeakerPrefs(prefs)
+
+    private fun engineInstalled(engine: SherpaVoice): Boolean =
+        ModelCatalog.isInstalled(this, engine.modelId)
+
+    /** The Speaker row exists only for the engine it controls, and says so honestly
+     *  when that engine's model is missing: an uninstalled voice cannot be previewed,
+     *  so no choice is offered. */
+    private fun syncSpeakerRow() {
+        val row = findViewById<LinearLayout>(R.id.row_tts_speaker) ?: return
+        val engine = ttsVoiceEngine()
+        if (engine == null) { row.visibility = android.view.View.GONE; return }
+        row.visibility = android.view.View.VISIBLE
+        findViewById<TextView>(R.id.set_tts_speaker_title).text = when (engine) {
+            SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
+            SherpaVoice.PIPER -> "Speaker (Piper)"
+        }
+        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerValue(engine)
+    }
+
+    private fun speakerValue(engine: SherpaVoice): String {
+        if (!engineInstalled(engine)) return "model not installed"
+        val id = VoiceSpeakers.resolve(speakerStore(), engine, VoiceSpeakers.speakerCount(speakerStore(), engine))
+        return speakerLabel(engine, id)
+    }
+
+    private fun saveSpeaker(engine: SherpaVoice, id: Int) {
+        VoiceSpeakers.save(speakerStore(), engine, id)
+        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(engine, id)
+        previewVoice()
+    }
+
+    /** The Speaker row's picker for the selected engine. */
+    private fun pickSpeaker() {
+        val engine = ttsVoiceEngine() ?: return
+        if (!engineInstalled(engine)) {
+            Toast.makeText(this,
+                "${engine.displayName} model is not installed — install it in Voice models to choose a voice.",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        when (engine) {
+            SherpaVoice.SUPERTONIC -> pickSupertonicSpeaker()
+            SherpaVoice.PIPER -> pickPiperSpeaker()
+        }
+    }
+
+    private fun pickSupertonicSpeaker() {
+        val labels = (0 until 10).map { speakerLabel(SherpaVoice.SUPERTONIC, it) }.toTypedArray()
+        val cur = VoiceSpeakers.resolve(speakerStore(), SherpaVoice.SUPERTONIC, 10)
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (Supertonic)")
+            .setSingleChoiceItems(labels, cur) { d, which ->
+                d.dismiss()
+                saveSpeaker(SherpaVoice.SUPERTONIC, which)
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Piper has hundreds of audiobook speakers, so the dialog offers eight curated
+     *  ids (verified distinct in the shipped model — see VoiceSpeakers.PIPER_CURATED)
+     *  plus "Voice id…" for any other id in range. Each pick previews on selection. */
+    private fun pickPiperSpeaker() {
+        val count = VoiceSpeakers.speakerCount(speakerStore(), SherpaVoice.PIPER)
+        val curId = VoiceSpeakers.resolve(speakerStore(), SherpaVoice.PIPER, count)
+        val labels = VoiceSpeakers.PIPER_CURATED.map { "Voice ${it.second}" } +
+            "Voice id… (0–${count - 1})"
+        val checked = VoiceSpeakers.PIPER_CURATED.indexOfFirst { it.first == curId }
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (Piper)")
+            .setSingleChoiceItems(labels.toTypedArray(), checked) { d, which ->
+                d.dismiss()
+                if (which < VoiceSpeakers.PIPER_CURATED.size) {
+                    saveSpeaker(SherpaVoice.PIPER, VoiceSpeakers.PIPER_CURATED[which].first)
+                } else {
+                    askPiperVoiceId(count, curId)
+                }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Numeric entry for a Piper id outside the curated eight. Out-of-range values
+     *  stay in the dialog with the real range — never stored and never previewed. */
+    private fun askPiperVoiceId(count: Int, curId: Int) {
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(curId.toString())
+            setSelection(text.length)
+            hint = "0–${count - 1}"
+        }
+        val dlg = AlertDialog.Builder(this)
+            .setTitle("Voice id (Piper)")
+            .setMessage("Piper has $count voices. Enter an id from 0 to ${count - 1}.")
+            .setView(input)
+            .setPositiveButton("Use", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dlg.setOnShowListener {
+            dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val id = input.text.toString().trim().toIntOrNull()
+                when {
+                    id == null -> Toast.makeText(this, "Enter a number from 0 to ${count - 1}.", Toast.LENGTH_SHORT).show()
+                    id !in 0 until count ->
+                        Toast.makeText(this, "Out of range — Piper has ids 0 to ${count - 1}.", Toast.LENGTH_SHORT).show()
+                    else -> { dlg.dismiss(); saveSpeaker(SherpaVoice.PIPER, id) }
+                }
+            }
+        }
+        dlg.show()
+    }
+
+    /** The label for a built-in voice, per engine. Piper's curated ids carry their
+     *  measured relative pitch; any other id is shown plainly ("Voice id 500"). */
+    private fun speakerLabel(engine: SherpaVoice, id: Int): String = when (engine) {
+        SherpaVoice.SUPERTONIC -> if (id < 5) "F${id + 1} · female" else "M${id - 4} · male"
+        SherpaVoice.PIPER -> {
+            val curated = VoiceSpeakers.PIPER_CURATED.firstOrNull { it.first == id }
+            if (curated != null) "Voice ${curated.second}" else "Voice id $id"
+        }
+    }
 
     private fun label(prefKey: String, default: String): String {
         val tok = prefs.getString(prefKey, default) ?: default
         return when (tok) {
             "on-device" -> "On-device"
+            "presence" -> "Being"; "conversation" -> "Transcript"
             "system" -> "System"; "kokoro" -> "System"; "piper" -> "Piper"; "supertonic" -> "Supertonic"
             "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
             "dark" -> "Dark"; "light" -> "Light"
@@ -1049,11 +1248,14 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(KEY_STT_REMOTE_URL, "")
                 .putString(KEY_STT_REMOTE_MODEL, "")
                 .putString(KEY_STT_REMOTE_KEY, "")
-            GROUP_TTS -> e
-                .remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
-                .remove(SherpaTts.KEY_SPEAKER)
-                .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
-                .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
+            GROUP_TTS -> {
+                // The speaker choice is per engine (VoiceSpeakers): clear BOTH engines'
+                // ids + observed counts + the pre-#59 shared key.
+                VoiceSpeakers.allKeys().forEach { e.remove(it) }
+                e.remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
+                    .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
+                    .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
+            }
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
                 .putString("provider", "")      // clear the per-request provider override

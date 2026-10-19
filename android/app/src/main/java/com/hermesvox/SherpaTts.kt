@@ -40,10 +40,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
     companion object {
         /** Playback RMS that drives the presence motion to full amplitude (previewB). */
         const val RMS_FULL = 0.22f
-        /** The built-in voice the multi-speaker engines use (Settings → TTS & Voice). */
-        const val KEY_SPEAKER = "tts_speaker"
-        /** Supertonic F2: clean in the bake-off's intelligibility check. */
-        const val DEFAULT_SPEAKER = 1
+        /** The pre-#59 shared speaker key. Selection is now per engine — see
+         *  [VoiceSpeakers] (this is only the Supertonic migration source). */
+        const val KEY_SPEAKER = VoiceSpeakers.LEGACY_KEY
     }
     private var tts: OfflineTts? = null
     private var streamTrack: AudioTrack? = null
@@ -122,17 +121,21 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  engines that expose them. WARM = the untouched delivery. Set per turn by the controller. */
     @Volatile var mood: VoiceMood = VoiceMood.WARM
 
-    /** Which of the engine's built-in voices speaks (Supertonic: 0-4 F1-F5, 5-9 M1-M5). */
-    private val speaker: Int get() =
-        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(KEY_SPEAKER, DEFAULT_SPEAKER)
+    /** Which of the engine's built-in voices speaks. Stored PER ENGINE (ids are not
+     *  comparable across Piper/Supertonic) and clamped to the engine's real range on
+     *  every read — see [VoiceSpeakers]. */
+    private val speakers by lazy { AndroidSpeakerPrefs(context.getSharedPreferences("hv", Context.MODE_PRIVATE)) }
+
+    private fun speakerFor(eng: OfflineTts): Int =
+        VoiceSpeakers.resolve(speakers, voice, eng.numSpeakers())
 
     /** One phrase through the engine, with the voice's own controls. */
     private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when (voice) {
-        SherpaVoice.PIPER -> eng.generate(text, 0, voiceSpeed)
+        SherpaVoice.PIPER -> eng.generate(text, speakerFor(eng), voiceSpeed)
         SherpaVoice.SUPERTONIC -> {
             val m = mood
             eng.generateWithConfig(text, GenerationConfig().apply {
-                sid = speaker.coerceIn(0, (eng.numSpeakers() - 1).coerceAtLeast(0))
+                sid = speakerFor(eng)
                 speed = voiceSpeed * m.speed
                 silenceScale = m.silenceScale
             })
@@ -187,7 +190,8 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val eng = OfflineTts(null, cfg)
                 val warmMs = warm(eng)
                 tts = eng
-                VoxLog.d("SherpaTts loaded: piper model threads=$ttsThreads cores=${Runtime.getRuntime().availableProcessors()} warmMs=$warmMs")
+                VoiceSpeakers.noteCount(speakers, voice, eng.numSpeakers())
+                VoxLog.d("SherpaTts loaded: piper model speakers=${eng.numSpeakers()} threads=$ttsThreads cores=${Runtime.getRuntime().availableProcessors()} warmMs=$warmMs")
                 onReady(true)
             } catch (e: Throwable) {
                 VoxLog.e("SherpaTts init failed: ${e.message}")
@@ -224,6 +228,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val eng = OfflineTts(null, OfflineTtsConfig(modelCfg, "", "", 256, 1.0f))   // assetManager=null: absolute path (#2562)
                 val warmMs = warm(eng)
                 tts = eng
+                VoiceSpeakers.noteCount(speakers, voice, eng.numSpeakers())
                 VoxLog.d("SherpaTts loaded: supertonic speakers=${eng.numSpeakers()} threads=$ttsThreads warmMs=$warmMs")
                 onReady(true)
             } catch (e: Throwable) {

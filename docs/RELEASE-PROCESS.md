@@ -18,7 +18,7 @@ we're not publishing to Play yet.
    `testing` was brought forward to 141 to repair it.
 2. **Gate the full tree** — the authoritative build is on the Thelio (`c@sasquatch`):
    - Go: `go test ./voice/...` (+ `go vet ./voice/...`)
-   - Bind + stage: `gomobile bind` → `mobile.aar` → copy into `android/app/libs/`
+   - Bind + stage: `scripts/bind-aar.sh` → `mobile.aar` → copy into `android/app/libs/`
      (the AAR staging is load-bearing — Gradle consumes the copy, not the build output).
    - Android: `gradle assembleRelease testReleaseUnitTest`.
    - Confirms the **AAR exports only `HermesSession`** (no Ebitengine — 0.5.7+).
@@ -65,8 +65,13 @@ release is also destined for Play:
   baked-in `API_SERVER_KEY`, so users only ever enter their own.
 
 ## Known landmines
-- **AAR staging:** `mobile.aar` is produced by gomobile bind; Gradle links a *copy* in
-  `android/app/libs/`. Never skip the copy — it silently builds against a stale bind.
+- **AAR staging:** `mobile.aar` is produced by `scripts/bind-aar.sh`; Gradle links a
+  *copy* in `android/app/libs/`. Never skip the copy — it silently builds against a
+  stale bind.
+- **Never call raw `gomobile bind`.** Without `-trimpath` + the canonical build path
+  the temp work dir and the checkout path land in `libgojni.so` and every build
+  differs (hermes-vox #138, `docs/REPRODUCIBLE.md`). `scripts/repro-check.sh` is the
+  check.
 - **Gradle wrapper:** the checked-in wrapper can be stale; the Thelio uses
   `~/gradle-8.12.1/bin/gradle`.
 - **Go toolchain:** `GOTOOLCHAIN=go1.26.4` + the cached GOMODCACHE/GOCACHE must be set (the

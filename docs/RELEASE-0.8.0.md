@@ -1,13 +1,18 @@
-# Hermes Vox 0.8.0 — "the accelerator release" (staged notes — NOT RELEASED)
+# Hermes Vox 0.8.0 — "the accelerator release"
 
 > These notes were filed as `docs/RELEASE-0.7.3.md` while `0.7.3` was still the planned home
 > of the accelerator work. That version number went instead to the **first-run fix** release
 > (`docs/RELEASE-0.7.3.md`, version code 115), which contains none of the content below. The
-> accelerator work lives on `testing` and ships as **0.8.0** when the `0.8` series closes
-> (`ROADMAP.md`); its headline gate — G1, the GPU actually initialising on a Tensor G4 — is
-> still **UNPROVEN** (`PLAN-0.8-accelerator.md`). Do not publish these notes until it passes.
+> accelerator work shipped as **0.8.0**, merged from `testing` into `main` on 2026-09-30.
+>
+> **The headline gate, G1 — the GPU actually initialising on a Tensor G4 — was not run.**
+> We have no Tensor G4 device to test on, so the gate is *untestable* rather than passed or
+> failed (`PLAN-0.8-accelerator.md`). This release proceeds without it, deliberately. The
+> evidence standing in its place is a series of nightlies run on real hardware, in daily use,
+> including the GPU-rendered being and Enhanced Realtime. If a Tensor G4 device ever becomes
+> available, run G1 against this version and record the result here.
 
-Version code **TBD** · `versionName` 0.8.0 · cut from `main` when the series closes.
+Version code **141** · `versionName` 0.8.0 · cut from `main` on 2026-09-30.
 
 ## Enhanced Realtime, complete (vc133)
 

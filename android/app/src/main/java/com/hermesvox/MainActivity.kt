@@ -32,6 +32,9 @@ class MainActivity : AppCompatActivity() {
     private var modelsWarnShown = false
     // #120-C: the one-time first-run coach overlay (dismissed -> seen pref).
     private var coachOverlay: android.view.View? = null
+    // The mic-state pill is hidden while Connected (the quiet steady state); the
+    // tour reveals it so its mark has a real control to point at, then restores.
+    private var coachStatusWasVisible = false
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
     private lateinit var reply: CrawlView
@@ -670,22 +673,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     // -----------------------------------------------------------------------
-    // #120-C: one-time coach marks. The main screen is chrome-less, so the
-    // first launch overlays what the being's body means, what barge-in is, and
-    // where the controls live. Dismissing sets the "seen" pref — it never
-    // shows again (a Settings replay could reuse PREF_COACH_SEEN later).
-    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT
-    // path was stripped in C2 (0.4.0) — so the overlay says there is no
-    // push-to-talk button instead of pointing at one.
+    // #120-C: one-time coach marks. They are anchored to the two controls a new
+    // caller actually has to find — the mic-state pill and the voice control —
+    // rather than covering the screen with prose. Dismissing (the button or the
+    // scrim) sets the "seen" pref, so they never show twice.
+    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT path
+    // was stripped in C2 (0.4.0) — so the copy says there is no push-to-talk
+    // button and names the real switch (Settings → Voice mode).
     // -----------------------------------------------------------------------
     private fun maybeShowCoachMarks() {
         if (coachOverlay != null) return
         if (prefs.getBoolean(PREF_COACH_SEEN, false)) return
         if (callLive) return
         if (!endpointSet() || GatewayKey.isMissing(storedKey())) return
-        // The models empty state is the first-run CTA when nothing is
-        // installed (#6/#12) — coach marks wait until it isn't blocking.
+        // The models empty state is the first-run CTA when nothing is installed
+        // (#6/#12) — coach marks wait until the voice can actually work and the
+        // warning pill is not the thing that needs attention.
         if (modelsGate?.visibility == View.VISIBLE) return
+        if (ModelCatalog.missingRequired(this).isNotEmpty()) return
         val overlay = buildCoachOverlay()
         coachOverlay = overlay
         (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
@@ -696,73 +701,127 @@ class MainActivity : AppCompatActivity() {
     private fun dismissCoachMarks() {
         coachOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
         coachOverlay = null
+        // Restore the quiet Connected state the pill is normally hidden in.
+        if (::status.isInitialized && !coachStatusWasVisible) status.visibility = View.GONE
         prefs.edit().putBoolean(PREF_COACH_SEEN, true).apply()
     }
 
+    /** Full-screen scrim + two anchored callouts. Built after layout so the
+     *  rings and bubbles land on the real view bounds (no hardcoded y values). */
     private fun buildCoachOverlay(): android.view.View {
-        val d = resources.displayMetrics.density
-        val body = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            setPadding((30 * d).toInt(), (34 * d).toInt(), (30 * d).toInt(), (30 * d).toInt())
-        }
-        body.addView(android.widget.TextView(this).apply {
-            text = "Say hello to Hermes"
-            textSize = 23f
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setTextColor(0xFFD6F4FF.toInt())
-            gravity = android.view.Gravity.CENTER
-        })
-        body.addView(coachRow("THE BEING",
-            "Hermes is your agent, given a body. Watch its motion: it breathes while it listens, gathers (draws inward, brightens) while it thinks or works, and lights up as it speaks."))
-        body.addView(coachRow("BARGE-IN",
-            "Interrupt hands-free: just start talking over a reply and it stops to listen — no button needed. Tap the being to hush it any time."))
-        body.addView(coachRow("THE CONTROLS",
-            "✆ starts and ends your hands-free call. There is no push-to-talk button in Vox — every voice mode is hands-free, so you just talk. ⚙ is Settings, / is the command menu."))
-        body.addView(Button(this).apply {
-            text = "Got it"
-            isAllCaps = false
-            textSize = 16f
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
-            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_primary)
-            setOnClickListener { dismissCoachMarks() }
-            val pad = (26 * d).toInt()
-            setPadding(pad, (10 * d).toInt(), pad, (10 * d).toInt())
-            layoutParams = android.view.ViewGroup.MarginLayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (22 * d).toInt() }
-        })
-        return android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            // Near-opaque scrim: the being stays faintly visible underneath.
-            setBackgroundColor(0xF206070B.toInt())
-            // Swallow taps on the scrim so they never reach the avatar/call
-            // buttons underneath; dismissal is the explicit "Got it" button.
+        val root = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xE606070B.toInt())
+            // A tap anywhere dismisses; it never reaches the controls underneath.
             isClickable = true
-            setOnClickListener { }
+            setOnClickListener { dismissCoachMarks() }
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-            addView(body)
         }
+        val statusTarget = findViewById<android.view.View>(R.id.status)
+        val callTarget = findViewById<android.view.View>(R.id.call)
+        coachStatusWasVisible = statusTarget.visibility == View.VISIBLE
+        if (!coachStatusWasVisible) {
+            if (statusTarget is TextView && statusTarget.text.isBlank()) {
+                statusTarget.text = getString(R.string.hv_connected)
+            }
+            statusTarget.visibility = View.VISIBLE
+        }
+        root.post {
+            if (coachOverlay !== root || isFinishing) return@post
+            addCoachRing(root, statusTarget)
+            addCoachRing(root, callTarget)
+            addCoachBubble(root, statusTarget, above = false, lead = "MIC STATE",
+                body = "The pill under the name says what your mic is doing: Listening…, " +
+                    "The entity is working…, or Speaking…. It updates during a call — " +
+                    "tap ✆ to open the line.", withButton = false)
+            addCoachBubble(root, callTarget, above = true, lead = "VOICE MODE",
+                body = "✆ opens and closes the hands-free voice line (green = closed, " +
+                    "red = on a call). There is no push-to-talk. Both modes listen hands-free — " +
+                    "switch Realtime ↔ Enhanced Realtime in ⚙ Settings → Voice mode. " +
+                    "Talk over a reply to interrupt.", withButton = true)
+        }
+        return root
     }
 
-    /** One coach-mark row: bold colored lead, then the plain-language body. */
-    private fun coachRow(lead: String, body: String): android.widget.TextView {
+    /** A theme-aware halo around [target], drawn on the scrim. */
+    private fun addCoachRing(root: android.widget.FrameLayout, target: View) {
         val d = resources.displayMetrics.density
-        val s = android.text.SpannableString("$lead — $body")
-        s.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, lead.length,
-            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        s.setSpan(android.text.style.ForegroundColorSpan(0xFF8FD8F5.toInt()), 0, lead.length,
-            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return android.widget.TextView(this).apply {
-            text = s
-            textSize = 15f
-            setTextColor(0xFFC7D6E6.toInt())
-            setLineSpacing(3f, 1f)
-            setPadding(0, (14 * d).toInt(), 0, 0)
+        val rootLoc = IntArray(2); root.getLocationOnScreen(rootLoc)
+        val loc = IntArray(2); target.getLocationOnScreen(loc)
+        val pad = (6 * d).toInt()
+        val lp = android.widget.FrameLayout.LayoutParams(
+            target.width + pad * 2, target.height + pad * 2)
+        lp.leftMargin = loc[0] - rootLoc[0] - pad
+        lp.topMargin = loc[1] - rootLoc[1] - pad
+        root.addView(View(this).apply {
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_coach_ring)
+        }, lp)
+    }
+
+    /** One callout card beside [target], with a lead label and plain-language body. */
+    private fun addCoachBubble(root: android.widget.FrameLayout, target: View, above: Boolean,
+                               lead: String, body: String, withButton: Boolean) {
+        val d = resources.displayMetrics.density
+        val gap = (12 * d).toInt()
+        val card = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_surface)
+            setPadding((18 * d).toInt(), (14 * d).toInt(), (18 * d).toInt(), (14 * d).toInt())
+            // Tapping a callout also dismisses; it never reaches the controls
+            // underneath. The button below is the explicit affordance.
+            isClickable = true
+            setOnClickListener { dismissCoachMarks() }
         }
+        card.addView(android.widget.TextView(this).apply {
+            text = lead
+            textSize = 12f
+            letterSpacing = 0.14f
+            isAllCaps = true
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_cyan))
+        })
+        card.addView(android.widget.TextView(this).apply {
+            text = body
+            textSize = 14f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_text))
+            setLineSpacing(3f, 1f)
+            setPadding(0, (8 * d).toInt(), 0, 0)
+        })
+        if (withButton) {
+            card.addView(Button(this).apply {
+                text = "Got it"
+                isAllCaps = false
+                textSize = 15f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_primary)
+                setOnClickListener { dismissCoachMarks() }
+                val pad = (22 * d).toInt()
+                setPadding(pad, (8 * d).toInt(), pad, (8 * d).toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = (12 * d).toInt()
+                    gravity = android.view.Gravity.END
+                }
+            })
+        }
+        val rootLoc = IntArray(2); root.getLocationOnScreen(rootLoc)
+        val loc = IntArray(2); target.getLocationOnScreen(loc)
+        val top = loc[1] - rootLoc[1]
+        val bottom = top + target.height
+        val lp = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT)
+        lp.leftMargin = (18 * d).toInt()
+        lp.rightMargin = (18 * d).toInt()
+        if (above) {
+            lp.gravity = android.view.Gravity.BOTTOM
+            lp.bottomMargin = root.height - top + gap
+        } else {
+            lp.topMargin = bottom + gap
+        }
+        root.addView(card, lp)
     }
 
     // ---- 0.5.1 Part B: the status pill reports the REAL phase ------------------

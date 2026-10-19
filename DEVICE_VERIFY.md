@@ -18,15 +18,32 @@ optional Enhanced Realtime (alpha) layer.
 
 ## First run (onboarding)
 
+A true first run opens on a **HOW THIS WORKS** step, not a form: it says what the
+being is, compares the voice modes (Realtime hands-free vs Enhanced Realtime
+alpha), and notes that Vox is hands-free everywhere — there is no push-to-talk
+button to hold. **GOT IT — CONNECT** continues. **SKIP FOR NOW** explains what it
+skips and drops to the main screen with nothing configured, which is the state the
+"voice model not installed" banner exists for. A returning install with an endpoint
+already stored goes straight to the form below.
+
+The form has four fields:
+
 1. **Entity endpoint** — your gateway, e.g. `https://<machine>.<tailnet>.ts.net`.
-2. **API key** — the gateway's `API_SERVER_KEY` (Keystore-encrypted, never committed).
-   The connector does a real ping (never a fake success).
-3. **Model** — `hermes-agent`, or your Hermes profile name on a non-default profile.
-   The agent's name shows centre-top once connected.
+2. **API key** — the gateway's `API_SERVER_KEY` (Keystore-encrypted, never sent
+   anywhere but the gateway). The connector does a real ping, never a fake success.
+3. **Agent name** — `hermes-agent`, or your Hermes profile name on a non-default
+   profile. The agent's name shows centre-top once connected.
+4. **Entity scope** *(optional)* — the `X-Hermes-Session-Key`, shaped
+   `agent:vox:tablet:name` (validated before connect). Blank is a valid answer and
+   leaves the gateway's per-transcript default; setting it gives this install its
+   own memory, which is what keeps two people on one gateway apart.
+
+Then **CONNECT & VERIFY**. **I ALREADY HAVE A SESSION** is the path for a device
+that has connected before.
 
 ## Download the models (on-device)
 
-**Settings → Models → Voice models.** Downloads run in the background with a progress
+**Settings → Voice models → Open the model store.** Downloads run in the background with a progress
 notification, pause and resume, wait out network loss, and are sha256-verified before
 install. Required (about 290 MB):
 
@@ -62,19 +79,19 @@ Optional: Whisper tiny/small, **Parakeet-TDT 0.6B** (most accurate, 482 MB), **P
    compiled for it), and the x86_64 emulator cannot load the model at all.
 5. **The soul's numbers** — `express-probe … warm=`, `soul(beat= … mind-skip=)`,
    `hears=true`, `event=soul-heard ms=`.
-6. **Voice CPU threads** — Settings → STT → "Voice CPU threads". `Auto` derives Whisper
+6. **Voice CPU threads** — Settings → Transcription (STT) → "Voice CPU threads". `Auto` derives Whisper
    = half the cores (2–4) and the voice = 2. The load logs prove what ran:
    `OfflineWhisperStt loaded: … threads=N cores=M` and `SherpaTts loaded: … threads=N`.
    The change lands on the next voice-model load.
 7. **Keep-awake** — the screen stays on during a call and times out normally after it
-   (Settings → Appearance & Presence).
+   (Settings → Appearance & Layout).
 8. **A headset becomes the route (#149)** — pair a Bluetooth headset, open a call, and read
    the log: `event=comm-route action=set ok=true type=BT_SCO` (or `BLE_HEADSET`) listing the
    devices it could see, and `event=comm-route action=cleared` when you hang up. Talk with
    the phone's own mic covered — what Hermes reports has to come from the headset. A USB or
    wired headset should take the same route.
    Two honest limits, both field-visible rather than hidden: the route follows the
-   `VOICE_COMMUNICATION` capture source, so with Settings → Mic → hardware AEC/NS **off** the
+   `VOICE_COMMUNICATION` capture source, so with Settings → Mic & Barge-in → hardware AEC/NS **off** the
    app records a raw phone mic and stays on the phone; and that path is the platform's
    communication route, which **Android 12+** selects via `setCommunicationDevice()`. Below
    Android 12 the app starts the legacy SCO link, which the platform confirms later — the
@@ -85,7 +102,7 @@ Optional: Whisper tiny/small, **Parakeet-TDT 0.6B** (most accurate, 482 MB), **P
 - **"Can't reach the gateway"** — check the network/tailnet and the endpoint;
   `/v1/models` must answer. Plain `http://` is refused except for `*.ts.net` names.
 - **"Preparing your voice…" stays up** — a required model is missing or still
-  downloading (Settings → Models).
+  downloading (Settings → Voice models).
 - **A model download stalls** — it resumes by itself when the network returns; the
   notification has Pause and Resume.
 - **No natural voice** — Supertonic isn't installed, so the system TTS is speaking.
