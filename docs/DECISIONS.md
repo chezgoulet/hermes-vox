@@ -56,7 +56,7 @@ not shipped. It can be reconsidered only if the runtime resets recurrent state
 and engine init becomes cheap, and only on devices whose GPU can hold the fp32
 engine. Measurements: `docs/PRESENCE-BENCH.md`.
 
-## D5 — Streaming STT is decided by A/B
+## D5 — Streaming STT: Nemotron 0.6B, measured (amended 2026-10-19)
 
 Arms: sherpa streaming Zipformer 20M (43.6 MB, Apache-2.0), Zipformer 06-26
 (72.7 MB, Apache-2.0), Nemotron 0.6B (631 MB, NVIDIA licence), and Vosk (40 MB
@@ -66,6 +66,36 @@ because it is a second runtime, not a config swap.
 **Metrics:** partial latency (median/p90/p95), finalisation latency, WER on a
 frozen corpus plus partial stability, RTF and RSS, battery per audio-hour, cold
 start. Measured on the Pixel 7, in quiet, TV and kitchen noise.
+
+**Outcome — Nemotron 0.6B at the 160 ms chunk wins, and the accent result decides it.**
+On the same corpus, chunking, feed and endpoint rule: WER **1.4 / 2.6 / 1.7 %**
+(quiet / TV / kitchen) against the 06-26 Zipformer's 2.0 / 4.5 / 2.8 %;
+**11.9 % on accented speech against 38.8 %**; words visible at a **707 ms**
+median against 956 ms. The 20M arm remains unusable (20–24 % WER, majority of
+words never surfacing in a partial). Full tables, method and committed raw
+results: `docs/STT-AB.md`.
+
+**Cost, stated because it is the constraint:** RTF 0.68–0.76 against 0.19,
+**903 MB RSS** against 291 MB, a **464 MB** download against 310 MB. That is
+3.1× the CPU and memory for the accuracy, and it leaves little headroom beside
+VAD, TTS and the presence model on one phone.
+
+**Decision:** adopt Nemotron on 8 GB-class devices, with the Apache-2.0
+Zipformer as the low-end fallback. **Gated on one in-app co-residency run** —
+VAD + STT + TTS + presence together in a live call — because a 0.68–0.76 RTF
+measured alone is not evidence that it holds when the rest of the pipeline is
+running. Until that run passes, the shipped STT path does not change.
+
+**Licence:** NVIDIA Open Model License, revocable, and the upstream export ships
+no licence file. The weights are **never bundled** — downloaded at runtime, with
+the agreement, the attribution string and the model-card link shown and accepted
+on the download screen.
+
+**Residual, recorded rather than assumed:** the **Vosk control arm was not run**.
+It does not affect the default (the sherpa arms are already separated by ~3× in
+both cost and accent WER), but it leaves the low-end fallback comparison —
+Zipformer against Vosk — unmeasured. Anyone proposing Vosk as the fallback is
+proposing an unmeasured arm.
 
 ## D6 — Wake word: ship "Hey Hermes", personalise, then arbitrary phrases
 
