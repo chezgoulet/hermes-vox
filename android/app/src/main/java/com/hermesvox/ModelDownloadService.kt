@@ -72,21 +72,32 @@ class ModelDownloadService : Service() {
                 Intent(this, ModelsActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
         if (r == null) return b.setContentTitle("Hermes Vox").setContentText("Preparing downloads…").build()
         val (spec, st) = r
-        b.setContentTitle("Downloading ${spec.name}")
-            .addAction(0, "Pause", PendingIntent.getService(this, 1,
+        // #120: the notification says WHAT the phone is doing (fetching / verifying /
+        // unpacking), not just a percentage. The action is only useful while bytes can
+        // still be paused — verifying and unpacking are already complete transfers.
+        b.setContentTitle("Hermes Vox · ${spec.name}")
+        val pausable = st is ModelDownloads.State.Running &&
+            (st.phase == ModelDownloader.Phase.DOWNLOAD || st.phase == ModelDownloader.Phase.WAITING_NETWORK)
+        if (pausable) {
+            b.addAction(0, "Pause", PendingIntent.getService(this, 1,
                 Intent(this, ModelDownloadService::class.java).setAction(ACTION_PAUSE), PendingIntent.FLAG_IMMUTABLE))
+        }
         when (st) {
             is ModelDownloads.State.Running -> when (st.phase) {
                 ModelDownloader.Phase.DOWNLOAD -> {
                     val pct = if (st.total > 0) (st.done * 100 / st.total).toInt() else 0
                     b.setProgress(100, pct, st.total <= 0)
-                        .setContentText("$pct% · ${st.done / 1048576} / ${st.total / 1048576} MB")
+                        .setContentText(ModelProgress.fetching(st.done, st.total))
                 }
                 ModelDownloader.Phase.WAITING_NETWORK -> b.setProgress(0, 0, true)
-                    .setContentText("Waiting for network — ${st.done / 1048576} MB kept")
-                ModelDownloader.Phase.VERIFY -> b.setProgress(0, 0, true).setContentText("Verifying…")
-                ModelDownloader.Phase.UNPACK -> b.setProgress(0, 0, true).setContentText("Installing…")
+                    .setContentText(ModelProgress.waiting(st.done))
+                ModelDownloader.Phase.VERIFY -> b.setProgress(0, 0, true)
+                    .setContentText(ModelProgress.verifying())
+                ModelDownloader.Phase.UNPACK -> b.setProgress(0, 0, true)
+                    .setContentText(ModelProgress.unpacking())
             }
+            is ModelDownloads.State.Paused -> b.setProgress(0, 0, true)
+                .setContentText(ModelProgress.paused(st.done, st.reason))
             else -> b.setProgress(0, 0, true).setContentText("Starting…")
         }
         return b.build()

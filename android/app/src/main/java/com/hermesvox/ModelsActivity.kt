@@ -133,8 +133,6 @@ class ModelsActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    private fun mb(b: Long) = "%.1f".format(b / 1048576.0)
-
     /** One card, drawn from the download state. Every state says what tapping will do. */
     private fun render(spec: ModelSpec, st: ModelDownloads.State) {
         val c = cards[spec.id] ?: return
@@ -167,31 +165,30 @@ class ModelsActivity : AppCompatActivity() {
                         // KB so a >2 GB download doesn't overflow Int (Gemma is 2.6 GB).
                         c.progress.max = (st.total / 1024).toInt().coerceAtLeast(1)
                         c.progress.progress = (st.done / 1024).toInt().coerceIn(0, c.progress.max)
-                        val pct = if (st.total > 0) st.done * 100 / st.total else 0L
-                        c.state.text = "Downloading… $pct% (${mb(st.done)} / ${mb(st.total)} MB)"
+                        c.state.text = ModelProgress.fetching(st.done, st.total)
                     }
                     ModelDownloader.Phase.WAITING_NETWORK -> {
                         c.progress.isIndeterminate = true
-                        c.state.text = "Waiting for network… (${mb(st.done)} MB kept, resumes automatically)"
+                        c.state.text = ModelProgress.waiting(st.done)
                     }
                     // Verifying and unpacking are short and not pausable (the bytes are all
                     // here): the button says what is happening instead of offering a no-op.
                     ModelDownloader.Phase.VERIFY -> {
-                        c.progress.isIndeterminate = true; c.state.text = "Verifying…"
+                        c.progress.isIndeterminate = true; c.state.text = ModelProgress.verifying()
                         c.action.text = "Verifying…"; c.action.isEnabled = false
                     }
                     ModelDownloader.Phase.UNPACK -> {
-                        c.progress.isIndeterminate = true; c.state.text = "Installing…"
-                        c.action.text = "Installing…"; c.action.isEnabled = false
+                        c.progress.isIndeterminate = true; c.state.text = ModelProgress.unpacking()
+                        c.action.text = "Unpacking…"; c.action.isEnabled = false
                     }
                 }
             }
             is ModelDownloads.State.Paused -> {
-                val pct = if (st.total > 0) (st.done * 100 / st.total).coerceIn(0, 99) else 0L
                 c.progress.visibility = android.view.View.VISIBLE
                 c.progress.isIndeterminate = false
-                c.progress.max = 100; c.progress.progress = pct.toInt()
-                c.state.text = if (st.reason != null) "Stopped at $pct%: ${st.reason}" else "Paused at $pct% (${mb(st.done)} MB kept)"
+                c.progress.max = 100
+                c.progress.progress = if (st.total > 0) (st.done * 100 / st.total).coerceIn(0, 99).toInt() else 0
+                c.state.text = ModelProgress.paused(st.done, st.reason)
                 c.state.setTextColor(ContextCompat.getColor(this, if (st.reason != null) R.color.hv_danger else R.color.hv_warn))
                 c.action.text = "Resume"
                 c.action.setOnClickListener { ModelDownloads.enqueue(this, spec) }
