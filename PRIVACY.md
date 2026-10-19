@@ -42,6 +42,20 @@ under your control:
   `RemoteStt.kt` and `VoiceController.kt`). An optional "Log spoken transcript" setting
   exists and is **off by default** (`VoiceController.kt`).
 
+**Wake-word enrolment recordings (preview).** If you open **Settings → Wake word
+(preview)** and agree to its consent text, the app records your takes of "Hey Hermes",
+about 15 seconds of you talking freely, and about 15 seconds of your room. These are
+recordings of your voice — **voice biometric data** — and are treated as such. They are
+kept only after you consent, encrypted with AES-256-GCM under an Android Keystore key
+reserved for them, and stored in the app's `noBackupFilesDir`, which Android never backs
+up (`EnrolmentStore.kt`, `KeystoreTakeCipher.kt`). They are **never uploaded** — not to
+your gateway, not to any cloud, not to us — and are **never shared**. They exist for one
+purpose only: so a future wake-word detector can learn to recognise your voice saying the
+phrase. In this version **nothing is trained from them**, on your device or anywhere else,
+and nothing listens for the wake word. **Delete all my recordings** on the same screen
+removes every recording and your consent and destroys their key, so any copy left behind
+is unreadable; uninstalling or clearing the app's storage (§6) does the same.
+
 **What we do NOT collect:** no name, email, phone number, contacts, location, device
 identifier, or advertising identifier is collected by the app. There is no account system.
 No personal data is sent to the app's maintainers — there is no server of ours to send it
@@ -190,6 +204,7 @@ The code files behind each claim (all in the repository at the link above):
 | No default/baked key; empty-key rule; build guard | `android/app/src/main/java/com/hermesvox/GatewayKey.kt`, `android/app/build.gradle` |
 | Local-only logs, rotation, privacy logging rule | `android/app/src/main/java/com/hermesvox/VoxLog.kt`, `CrashLog.kt` |
 | Gateway connectivity to user-entered endpoint (Go connector) | `mobile/session.go`, `voice/` (Go) |
+| Wake-word enrolment: consent, Keystore encryption, `noBackupFilesDir`, delete-all | `android/app/src/main/java/com/hermesvox/wake/EnrolmentStore.kt`, `wake/KeystoreTakeCipher.kt`, `WakeEnrolActivity.kt` |
 | No third-party analytics/ad SDKs (dependency list) | `android/app/build.gradle` |
 | No Android auto-backup | `android/app/src/main/AndroidManifest.xml` (`allowBackup="false"`) |
 | Cleartext/TLS network config; private-network warning | `android/app/src/main/res/xml/network_security_config.xml`, `res/values/strings.xml` |
