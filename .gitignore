@@ -43,3 +43,6 @@ keystore/*
 # compiled Python bytecode (never commit these)
 __pycache__/
 *.pyc
+
+# Presence-bench host output (docs/PRESENCE-BENCH.md); the numbers live in the doc.
+presence-bench-results/

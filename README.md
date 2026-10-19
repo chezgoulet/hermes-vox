@@ -270,9 +270,10 @@ The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.
 - **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
   GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
   added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
-- **0.9 — the last series before 1.0:** streaming speech recognition, Qwen as the
-  default presence model with Gemma kept selectable, a wake word, procedural audio
-  cues, F-Droid inclusion, and reproducible builds. Every 1.0 feature ships during
+- **0.9 — the last series before 1.0:** streaming speech recognition, a measured
+  presence model (Gemma 4 E2B stays the default; Qwen was rejected on Mali —
+  see `docs/PRESENCE-BENCH.md`), a wake word, procedural audio cues, F-Droid
+  inclusion, and reproducible builds. Every 1.0 feature ships during
   0.9.x first; 1.0 is cut when the set, the polish and the measured performance are
   all acceptable. The decisions are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 - **Distribution:** GitHub Releases and Obtainium today; F-Droid in preparation.
