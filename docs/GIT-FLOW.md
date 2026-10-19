@@ -8,7 +8,7 @@ Christopher's flow, verbatim in intent:
   build (below).
 - **Releases** — when `testing` is satisfied and known good, it merges into
   `main` and a versioned release is cut per `docs/RELEASE-PROCESS.md`
-  (APK + AAB, `gh release create`, notes doc).
+  (signed APK + `SHA256SUMS`, `gh release create`, notes doc).
 
 ## Nightlies (the new piece)
 

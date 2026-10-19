@@ -7,6 +7,18 @@ with the items below still open.
 
 **Status keys:** `[x]` shipped · `[ ]` in progress / planned · `[?]` open question · `[-]` deferred.
 
+## Direction (set 2026-10-19)
+
+- **Android only.** Desktop and iOS are out of scope; the Go core that a desktop
+  client would have reused was removed in #126.
+- **No Google Play.** Distribution is GitHub Releases, Obtainium and F-Droid.
+  F-Droid is the store, and we always ship our own signature — so reproducible
+  builds are a release requirement, not polish.
+- **0.9 is the last series before 1.0.** Every 1.0 feature ships during 0.9.x
+  first, behind a setting where it needs one, and 1.0 is cut only when the feature
+  set, the polish and the measured performance are all acceptable.
+- The full records are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
+
 ---
 
 ## Shipped (`[x]`)
@@ -166,6 +178,10 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
 
 ## Next — `0.9`, voice and the arrangement
 
+0.9 also carries the Kotlin core (#126, merged to `testing`): the Go voice core,
+gomobile and the NDK pin are gone, and streaming behaviour is pinned by the
+fixture corpus in `testdata/stream/`. The work below sits on top of that.
+
 Charter set by Christopher: **voice choice and different soul LLMs.** Research and candidate
 rationale in `.hermes/reviews/vox-er-on-device-stack-review-2026-09-10.md`.
 
@@ -206,17 +222,17 @@ taught us that a change which should obviously help can be inert.
 - `[x]` **GitHub releases + Obtainium.** Signed APKs on every release; nightly pre-releases from
   `testing`. Obtainium tracks the repo directly.
 - `[x]` **Project site** — [hermesvox.org](https://hermesvox.org).
-- `[ ]` **Google Play** — coming soon. AAB + Play App Signing (`docs/PLAY-APP-SIGNING.md`), the
-  data-safety form, beta framing. It stays a bring-your-own-gateway client.
+- `[ ]` **F-Droid** — the store rail. sherpa-onnx and onnxruntime built from
+  source in the recipe (path B in `docs/DECISIONS.md`), with `Binaries:` +
+  `AllowedAPKSigningKeys` so users get our signature. Google Play is dropped.
 
 ---
 
 ## Open questions (`[?]`)
 
-- **Desktop / cross-platform.** The portable `voice/` Go core + `mobile/session.go` are the
-  reusable surface. A desktop frontend would be a NEW renderer (Compose Desktop, web/Electron, or
-  a native window) — the current Ebitengine `game/` shell is boilerplate coupled to the OLD
-  VoiceBackend architecture and is NOT the desktop path.
+- **Desktop / cross-platform — answered, out of scope (2026-10-19).** The Go core
+  was removed in #126, and a desktop renderer would be a new product rather than a
+  port. Android only.
 - **In-app model downloads vs bundling** for the 0.9 model set — the APK-size tradeoff returns
   when Kokoro and a streaming ASR join Whisper and Piper in the catalog.
 

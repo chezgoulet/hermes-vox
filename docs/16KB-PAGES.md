@@ -1,8 +1,9 @@
 # 16 KB page sizes
 
 Android 15 and newer can run with 16 KB memory pages instead of 4 KB. A native
-library built for 4 KB pages cannot be loaded on such a device, and Google Play
-requires 16 KB support for apps targeting Android 15+.
+library built for 4 KB pages cannot be loaded on such a device. Google Play
+requires 16 KB support for apps targeting Android 15+ as well; Play is not a rail
+for us, but the devices are.
 
 > **Since #126 the Go binding is gone**, and with it `libgojni.so` and
 > `scripts/bind-aar.sh`. Every native library left in the APK comes from an upstream

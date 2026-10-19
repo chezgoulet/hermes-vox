@@ -33,16 +33,15 @@ reasoning, tooling, memory, and context.
 ## Architecture
 
 ```
-[mic/avatar + UI] -> VoiceBackend -> (Local | SelfHosted | Cloud) -> Hermes (background)
-      ^                                                                    |
-      +---------------------- TTS + avatar <------------------------------+
+[mic -> VAD -> sherpa STT] -> core.HermesSession -> Hermes gateway (the mind)
+        ^                                   |
+        +---- [TTS + avatar/being] <--------+   presence: LiteRT-LM (local)
 ```
 
-- `VoiceBackend` — the mode abstraction: `Stream()` (mic in), `Reply()` /
-  `OnTurn()` (inference), `Play()` (TTS), `Avatar()` (the visual). Each backend
-  wires to its own on-device / self-hosted / cloud stack. (Not yet code: the Go
-  stub backends were deleted as dead in #47/#126.)
-- Hermes is the background: the app talks to it through
+- **Speech stays on the device**: Silero VAD and sherpa-onnx for recognition and
+  synthesis. There is no cloud voice path and no backend abstraction — the Go
+  `VoiceBackend` layer was dead code and was deleted in #47/#126.
+- **The mind is on the gateway**: the app talks to it through
   `com.hermesvox.core.HermesSession` — the Hermes API server's `/v1/responses`
   (streamed, chained by `previous_response_id`), `/v1/models`, `/v1/health`,
   `/api/model/options` (`oxproxion :8642`, or the termux Hermes). Plain Kotlin on
