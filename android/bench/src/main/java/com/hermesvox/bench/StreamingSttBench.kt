@@ -72,9 +72,13 @@ class StreamingSttBench(private val cfg: JSONObject) {
             OnlineCtcFstDecoderConfig("", 0),
             HomophoneReplacerConfig("", "", ""),
             EndpointConfig(
+                // sherpa's own defaults, with the trailing-silence threshold made a
+                // parameter so both arms share one endpointing rule:
+                //   rule1 after speech + tail, rule2 any silence + tail,
+                //   rule3 a pause after 20 s of utterance (sherpa's default).
                 EndpointRule(true, tailSilenceMs / 1000f, 0f),
                 EndpointRule(false, tailSilenceMs / 1000f, 0f),
-                EndpointRule(false, tailSilenceMs / 1000f, 0f),
+                EndpointRule(false, 0f, 20f),
             ),
             true,                            // enableEndpoint
             "greedy_search",

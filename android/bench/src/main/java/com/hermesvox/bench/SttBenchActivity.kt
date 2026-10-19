@@ -63,7 +63,9 @@ class SttBenchActivity : Activity() {
             try {
                 val cfg = JSONObject(cfgFile.readText())
                 val runId = cfg.getString("run_id")
-                val outDir = File(cfgFile.parentFile, "results").apply { mkdirs() }
+                // Results always land in the app's files/results, independent of where
+                // the config was pushed from (the host polls <files>/results/<id>.done).
+                val outDir = File(getExternalFilesDir(null), "results").apply { mkdirs() }
                 val bench = StreamingSttBench(cfg)
                 val energy = EnergyProbe(this)
                 interrupted = false
@@ -80,7 +82,7 @@ class SttBenchActivity : Activity() {
                 runOnUiThread { status.text = "done: ${out.absolutePath}" }
             } catch (t: Throwable) {
                 val runId = runCatching { JSONObject(cfgFile.readText()).getString("run_id") }.getOrNull() ?: "error"
-                val outDir = File(cfgFile.parentFile, "results").apply { mkdirs() }
+                val outDir = File(getExternalFilesDir(null), "results").apply { mkdirs() }
                 File(outDir, "$runId.error").writeText(t.stackTraceToString())
                 runOnUiThread { status.text = "failed: ${t.message}" }
             } finally {
