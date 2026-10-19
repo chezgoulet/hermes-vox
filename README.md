@@ -168,8 +168,10 @@ the signed APK from each GitHub release and keeps it updated.
 [Releases](https://github.com/chezgoulet/hermes-vox/releases/latest) and install it
 (allow installs from that source). Nightly pre-releases are published from `testing`.
 
-**Google Play — coming soon.** A Play Store listing is planned but not yet live. It
-will stay a bring-your-own-gateway client.
+**F-Droid — in preparation.** Hermes Vox is being readied for the F-Droid main
+repository; its speech stack has to be built from source in their recipe, so the
+listing follows that work. Until it is listed, GitHub Releases and Obtainium are
+the rails, and both carry the same signed APK.
 
 ### First run
 
@@ -268,10 +270,13 @@ The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.
 - **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
   GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
   added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
-- **0.9 — voice and the arrangement:** streaming speech recognition (to unlock semantic
-  turn-taking and backchannels), a presence-sized soul model, and more voice choice.
-- **Google Play:** coming soon.
-- **Longer horizon:** full-duplex conversation, and a desktop client.
+- **0.9 — the last series before 1.0:** streaming speech recognition, Qwen as the
+  default presence model with Gemma kept selectable, a wake word, procedural audio
+  cues, F-Droid inclusion, and reproducible builds. Every 1.0 feature ships during
+  0.9.x first; 1.0 is cut when the set, the polish and the measured performance are
+  all acceptable. The decisions are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
+- **Distribution:** GitHub Releases and Obtainium today; F-Droid in preparation.
+- **Longer horizon:** full-duplex conversation.
 
 The details are in [ROADMAP.md](ROADMAP.md).
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hermes Vox — release build helper (from any checkout).
 # Builds the signed release APK into android/app/build/outputs/apk/release/.
-# Needs keystore/keystore.properties (see docs/PLAY-APP-SIGNING.md) and the same
+# Needs keystore/keystore.properties (see docs/RELEASE-PROCESS.md) and the same
 # inputs as scripts/gate.sh (run the gate first: it fetches the verified
 # sherpa-onnx runtime). Toolchain paths come from the environment.
 set -euo pipefail
