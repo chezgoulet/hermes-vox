@@ -1,0 +1,112 @@
+# Draft fdroiddata recipe — Hermes Vox (F-Droid path B, #165).
+#
+# This file is a draft for review; it has NOT been run on F-Droid's buildserver.
+# Every field marked PLACEHOLDER or UNVERIFIED must be settled in the merge
+# request. The local proof and the exact reviewer commands are in docs/FDROID.md.
+#
+# What is deliberately different from a normal Gradle recipe:
+#   * the sherpa-onnx Android runtime is compiled from source in `build:` (per
+#     F-Droid's metadata reference, `prebuild:` must not build anything);
+#   * onnxruntime is the Maven Central artifact
+#     com.microsoft.onnxruntime:onnxruntime-android (allowed by the inclusion
+#     policy: trusted Maven repositories), so there is exactly one
+#     libonnxruntime.so in the APK;
+#   * the release APK is built unsigned because F-Droid re-signs it.
+#
+# Licensing note (BLOCKER, see docs/FDROID.md): the TTS code links espeak-ng
+# (GPL-3.0) into libsherpa-onnx-jni.so. The app declares Apache-2.0. The
+# combined binary needs a licensing decision before submission. This is not
+# new to the source build — the upstream release AAR already bundles espeak-ng.
+
+Categories:
+  - Internet
+
+License: Apache-2.0
+
+AuthorName: ChezGoulet
+WebSite: https://github.com/chezgoulet/hermes-vox
+SourceCode: https://github.com/chezgoulet/hermes-vox
+IssueTracker: https://github.com/chezgoulet/hermes-vox/issues
+
+Summary: A thin voice client whose mind is your Hermes agent
+Description: |-
+  Hermes Vox is a hands-free voice front end for a self-hosted Hermes
+  agent. Speech recognition, voice-activity detection and speech synthesis
+  run on the device with sherpa-onnx; the reasoning, tools and memory stay
+  in your Hermes gateway. All inference goes through that gateway — the
+  app ships no model weights and no API keys.
+
+  You need a running Hermes gateway and must download the on-device voice
+  models from Settings after installing. No account is created.
+
+RepoType: git
+Repo: https://github.com/chezgoulet/hermes-vox
+
+# PLACEHOLDER: fill at submission. Binaries: is only used to verify a build
+# against an upstream APK. Our GitHub release APK is signed with our release
+# key, not F-Droid's, so byte-for-byte verification cannot succeed unless the
+# build is made reproducible AND compared unsigned. Set this to the release
+# asset URL (with %v = versionName, %c = versionCode) only if that is true.
+Binaries: "https://github.com/chezgoulet/hermes-vox/releases/download/v%v/hermes-vox-%v.apk"
+
+# PLACEHOLDER: fill at submission with the SHA-256 signing-certificate
+# fingerprint of the key used for the binaries above:
+#   apksigner verify --print-certs hermes-vox-<ver>.apk | grep SHA-256
+# Lower-case hex, no colons. Required for a binary repo; the main F-Droid repo
+# signs with its own key, so this is not what F-Droid uses for its own APK.
+AllowedAPKSigningKeys: "0000000000000000000000000000000000000000000000000000000000000000"
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.8.1
+CurrentVersionCode: 142
+
+Builds:
+  - versionName: '0.8.1'
+    versionCode: 142
+    # PLACEHOLDER: full 40-character commit of the merged release, not a tag
+    # or branch (F-Droid metadata reference: "The full commit hash should be
+    # used"). The source build pins sherpa-onnx itself at
+    # 1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911 (v1.13.6).
+    commit: "0000000000000000000000000000000000000000"
+
+    # third_party/sherpa-onnx is a git submodule pinned to
+    # 1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911 (v1.13.6); this flag makes
+    # F-Droid check it out. UNVERIFIED on their buildserver (the local proof
+    # used a normal checkout of the same commit).
+    submodules: true
+
+    # UNVERIFIED: 25.2.9519653 is the NDK used for the local proof. Confirm the
+    # F-Droid buildserver offers it (or switch to one it does and rebuild).
+    ndk: 25.2.9519653
+
+    # The Gradle project, the AAR script's output and the APK all live under
+    # android/; `build:` and `prebuild:` run in this subdir.
+    subdir: android
+
+    # Nothing is built here on purpose (metadata reference: prebuild runs before
+    # scanning and must not produce binaries). Only clear the upstream AAR path
+    # so the source build cannot be confused with the release artifact.
+    prebuild:
+      - rm -f app/libs/sherpa-onnx-1.13.6.aar
+
+    # The AAR is built in `build:`, before Gradle, as the metadata reference
+    # requires. The script fetches: sherpa-onnx v1.13.6 (source), the
+    # onnxruntime-android AAR from Maven Central (headers + libonnxruntime.so),
+    # kotlinc 2.2.21, and seven pinned FetchContent source archives. See
+    # docs/FDROID.md for the full list, hashes and vendoring options.
+    build:
+      - export ANDROID_NDK_HOME="$$NDK$$" && bash ../scripts/build-sherpa-aar.sh
+
+    # F-Droid signs the APK itself. This property skips the repo's release
+    # signingConfig so Gradle emits an unsigned release APK.
+    gradleprops: hermesVoxUnsigned
+    gradle:
+      - yes
+
+    # Verified locally: with this property Gradle emits
+    # app/build/outputs/apk/release/hermes-vox-0.8.1.apk, unsigned (apksigner:
+    # DOES NOT VERIFY), arm64-v8a + armeabi-v7a only. The exact path on the
+    # F-Droid buildserver is still unverified; the glob covers the
+    # "-unsigned" variant too.
+    output: app/build/outputs/apk/release/hermes-vox-*.apk
