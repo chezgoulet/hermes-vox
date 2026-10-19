@@ -133,6 +133,9 @@ a second or two while the models warm, then the line opens and it goes.
    communication route, which **Android 12+** selects via `setCommunicationDevice()`. Below
    Android 12 the app starts the legacy SCO link, which the platform confirms later — the
    line rebuilds when the SCO device appears, so the first turn there is the one to doubt.
+   **Field-confirmed on 0.8.1** with a Bluetooth headset (Christopher, 2026-10-19): the
+   headset became the route and carried the call. Keep the check in the pass — the 0.9
+   core changed underneath it — but it is no longer an unproven claim.
 
 ## Troubleshooting
 

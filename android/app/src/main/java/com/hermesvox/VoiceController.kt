@@ -2115,6 +2115,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         lastProbeDebug = listOfNotNull(
             if (pingRe.isNotBlank()) "ping: $pingRe" else if (pingCode != 200) "ping: HTTP $pingCode" else null,
             if (streamRe.isNotBlank()) "stream: $streamRe"
+            // A 400-class answer from the stream leg is the expected reply to a probe
+            // that sends no input, and it reads as a fault unless it says so.
+            else if (streamCode in 400..499 && streamCode != 404) "stream: HTTP $streamCode (expected — the probe sends no input)"
             else if (streamCode != ConnectionPhase.NOT_RUN && (streamCode < 200 || streamCode >= 400)) "stream: HTTP $streamCode"
             else null
         ).joinToString(" · ")
