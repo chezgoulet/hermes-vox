@@ -32,6 +32,49 @@
             android:text="@string/hv_not_connected" />
     </LinearLayout>
 
+    <!-- What's new: shown once on the first launch after an upgrade (#0.9) -->
+    <LinearLayout
+        android:id="@+id/update_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_chip"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/update_title"
+            style="@style/TextVox.Tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WHAT'S NEW" />
+
+        <TextView
+            android:id="@+id/update_body"
+            style="@style/TextVox.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" />
+
+        <LinearLayout
+            android:id="@+id/update_actions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:id="@+id/update_dismiss"
+            style="@style/TextVox.Tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="8dp"
+            android:padding="6dp"
+            android:text="GOT IT" />
+    </LinearLayout>
+
     <!-- Presence hero (the being occupies the upper field) -->
     <com.hermesvox.AvatarView
         android:id="@+id/avatar"

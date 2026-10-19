@@ -249,6 +249,14 @@ class MainActivity : AppCompatActivity() {
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
     }
 
+    /** The installed version code, from the manifest (BuildConfig is not generated). */
+    private fun currentVersionCode(): Int = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode.toInt() else @Suppress("DEPRECATION") info.versionCode
+    } catch (_: Throwable) {
+        0
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
@@ -268,6 +276,24 @@ class MainActivity : AppCompatActivity() {
         avatar = findViewById(R.id.avatar)
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
+
+        // What's new, once per upgrade, with any breaking-change action attached.
+        UpdateBannerView.maybeShow(this, window.decorView, prefs, currentVersionCode()) { alert ->
+            when (alert.action) {
+                AlertAction.ENTITY -> startActivity(
+                    android.content.Intent(this, SettingsActivity::class.java)
+                        .putExtra("section", "entity")   // SettingsActivity.SECTION_ENTITY
+                )
+                AlertAction.MODELS -> startActivity(
+                    android.content.Intent(this, SettingsActivity::class.java)
+                        .putExtra("section", "models")   // SettingsActivity.SECTION_MODELS
+                )
+                AlertAction.URL -> startActivity(
+                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(alert.url))
+                )
+                AlertAction.NONE -> Unit
+            }
+        }
         convoText = findViewById(R.id.convo_text)
         heardLine = findViewById(R.id.heard_line)
         handleModeUi()

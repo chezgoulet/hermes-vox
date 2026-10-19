@@ -44,9 +44,15 @@ class SettingsActivity : AppCompatActivity() {
         bindGroups()
         bindSectionRestoreRows()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
+        openSectionFromIntent()
     }
 
     /** WS1: open a nested sub-view (hide the group list, show the section container). */
+    /** A banner action may name the section it wants opened. */
+    private fun openSectionFromIntent() {
+        intent?.getStringExtra("section")?.let { showSection(it) }
+    }
+
     private fun showSection(section: String) {
         currentSection = section
         findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.GONE
