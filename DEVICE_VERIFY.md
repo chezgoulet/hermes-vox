@@ -18,11 +18,28 @@ optional Enhanced Realtime (alpha) layer.
 
 ## First run (onboarding)
 
+A true first run opens on a **HOW THIS WORKS** step, not a form: it says what the
+being is, compares the voice modes (Realtime hands-free vs Enhanced Realtime
+alpha), and notes that Vox is hands-free everywhere — there is no push-to-talk
+button to hold. **GOT IT — CONNECT** continues. **SKIP FOR NOW** explains what it
+skips and drops to the main screen with nothing configured, which is the state the
+"voice model not installed" banner exists for. A returning install with an endpoint
+already stored goes straight to the form below.
+
+The form has four fields:
+
 1. **Entity endpoint** — your gateway, e.g. `https://<machine>.<tailnet>.ts.net`.
-2. **API key** — the gateway's `API_SERVER_KEY` (Keystore-encrypted, never committed).
-   The connector does a real ping (never a fake success).
-3. **Model** — `hermes-agent`, or your Hermes profile name on a non-default profile.
-   The agent's name shows centre-top once connected.
+2. **API key** — the gateway's `API_SERVER_KEY` (Keystore-encrypted, never sent
+   anywhere but the gateway). The connector does a real ping, never a fake success.
+3. **Agent name** — `hermes-agent`, or your Hermes profile name on a non-default
+   profile. The agent's name shows centre-top once connected.
+4. **Entity scope** *(optional)* — the `X-Hermes-Session-Key`, shaped
+   `agent:vox:tablet:name` (validated before connect). Blank is a valid answer and
+   leaves the gateway's per-transcript default; setting it gives this install its
+   own memory, which is what keeps two people on one gateway apart.
+
+Then **CONNECT & VERIFY**. **I ALREADY HAVE A SESSION** is the path for a device
+that has connected before.
 
 ## Download the models (on-device)
 

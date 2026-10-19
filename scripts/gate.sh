@@ -12,9 +12,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17.0.12+7}"
+export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/25.2.9519653}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/${ANDROID_NDK_VERSION:-25.2.9519653}}"
+
+# A gate that silently substitutes a different toolchain is not a gate: the
+# release build is pinned to JDK 17 and the NDK the app was measured on, so a
+# missing default must stop the run and name what is installed.
+gate_die() { echo "gate: $*" >&2; exit 2; }
+[ -x "$JAVA_HOME/bin/java" ] || gate_die "JAVA_HOME=$JAVA_HOME has no bin/java. Set JAVA_HOME to a JDK 17."
+java_major="$("$JAVA_HOME/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -n1)"
+[ "$java_major" = "17" ] || gate_die "JAVA_HOME=$JAVA_HOME is Java ${java_major:-unknown}; this gate is pinned to 17."
+[ -d "$ANDROID_HOME" ] || gate_die "ANDROID_HOME=$ANDROID_HOME does not exist."
+[ -d "$ANDROID_NDK_HOME" ] || gate_die "ANDROID_NDK_HOME=$ANDROID_NDK_HOME does not exist. Installed: $(ls "$ANDROID_HOME/ndk" 2>/dev/null | tr '\n' ' '). Set ANDROID_NDK_VERSION or ANDROID_NDK_HOME."
+echo "gate: JAVA_HOME=$JAVA_HOME"
+echo "gate: ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+
 export GOBIN="${GOBIN:-$HOME/.local/bin}"
 export GOMODCACHE="${GOMODCACHE:-$ROOT/.tools/cache/go-mod}"
 export GOCACHE="${GOCACHE:-$ROOT/.tools/cache/go-build}"
