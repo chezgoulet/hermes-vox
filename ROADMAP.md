@@ -39,6 +39,12 @@ with the items below still open.
   keep-screen-on during calls; an icon rendered from the being's own shaders. The series log
   is below.
 
+- **0.8.1 — the headset release** (released 2026-10-19, `docs/RELEASE-0.8.1.md`). An attached
+  Bluetooth, wired or USB headset becomes the call's route (#149); the README, roadmap, device
+  guide and policies that had only reached `testing` land on `main`; and the nightlies are
+  tagged at the commit they were built from and carry a version code that installs over the
+  release.
+
 ---
 
 ## `0.8` — the accelerator series (released as 0.8.0; field verification open)
