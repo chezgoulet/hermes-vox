@@ -427,21 +427,12 @@ class SettingsActivity : AppCompatActivity() {
         // option was removed — WarmTts is a no-op stub, so it never produced
         // audio (never offer an option that doesn't work). The engines now honor
         // this pref (see voiceRegister), so the picker really affects output.
-        // The engine's built-in voice (Supertonic: 0-4 female F1-F5, 5-9 male M1-M5 —
-        // measured by pitch in the bake-off). Applies from the next reply.
-        findViewById<LinearLayout>(R.id.row_tts_speaker).setOnClickListener {
-            val labels = (0 until 10).map { speakerLabel(it) }.toTypedArray()
-            val cur = prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER)
-            AlertDialog.Builder(this)
-                .setTitle("Speaker (Supertonic)")
-                .setSingleChoiceItems(labels, cur.coerceIn(0, 9)) { d, which ->
-                    prefs.edit().putInt(SherpaTts.KEY_SPEAKER, which).apply()
-                    findViewById<TextView>(R.id.set_tts_speaker_val).text = labels[which]
-                    d.dismiss()
-                    previewVoice()
-                }
-                .setNegativeButton("Cancel", null).show()
-        }
+        // The engine's built-in voice. The row follows the ENGINE selected by the
+        // `tts` pref: Supertonic's ten measured voices (0-4 female F1-F5, 5-9 male
+        // M1-M5) or Piper's curated eight plus a numeric id for the rest (LibriTTS-R
+        // medium has hundreds — not a list anyone scrolls). Either way a choice
+        // previews immediately and is stored per engine (VoiceSpeakers).
+        findViewById<LinearLayout>(R.id.row_tts_speaker).setOnClickListener { pickSpeaker() }
         findViewById<LinearLayout>(R.id.row_voice).setOnClickListener {
             pick("Delivery", arrayOf("Natural", "Bright", "Deep"),
                 arrayOf("system", "bright", "deep"), "voice", R.id.set_voice_val) { previewVoice() }
@@ -487,8 +478,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
-        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(prefs.getInt(SherpaTts.KEY_SPEAKER, SherpaTts.DEFAULT_SPEAKER))
-        syncSpeakerRow()
+        syncSpeakerRow()   // title + value follow the selected engine
         findViewById<TextView>(R.id.set_voice_val).text = deliveryLabel()
         refreshSttRemotePanel()
     }
@@ -1001,17 +991,137 @@ class SettingsActivity : AppCompatActivity() {
         "bright" -> "Bright"; "deep" -> "Deep"; else -> "Natural"
     }
 
-    /** The Speaker row exists only for the engine it controls. Piper's model has hundreds of
-     *  unlabelled audiobook speakers (not a picker anyone can use), and the system voice is the
-     *  OS's own — so the row shows for Supertonic and hides otherwise, never offering a choice
-     *  that changes nothing. */
-    private fun syncSpeakerRow() {
-        val engine = prefs.getString("tts", null) ?: ModelCatalog.defaultTts(this)
-        findViewById<LinearLayout>(R.id.row_tts_speaker)?.visibility =
-            if (engine == "supertonic") android.view.View.VISIBLE else android.view.View.GONE
+    /** The engine token the Speaker row follows. */
+    private fun ttsEngine(): String = prefs.getString("tts", null) ?: ModelCatalog.defaultTts(this)
+
+    /** The on-device engine the row controls, or null for the system voice (which
+     *  has no speaker choice — the row hides rather than offering a no-op). */
+    private fun ttsVoiceEngine(): SherpaVoice? = when (ttsEngine()) {
+        "supertonic" -> SherpaVoice.SUPERTONIC
+        "piper" -> SherpaVoice.PIPER
+        else -> null
     }
 
-    private fun speakerLabel(i: Int): String = if (i < 5) "F${i + 1} · female" else "M${i - 4} · male"
+    private fun speakerStore(): SpeakerPrefs = AndroidSpeakerPrefs(prefs)
+
+    private fun engineInstalled(engine: SherpaVoice): Boolean =
+        ModelCatalog.isInstalled(this, engine.modelId)
+
+    /** The Speaker row exists only for the engine it controls, and says so honestly
+     *  when that engine's model is missing: an uninstalled voice cannot be previewed,
+     *  so no choice is offered. */
+    private fun syncSpeakerRow() {
+        val row = findViewById<LinearLayout>(R.id.row_tts_speaker) ?: return
+        val engine = ttsVoiceEngine()
+        if (engine == null) { row.visibility = android.view.View.GONE; return }
+        row.visibility = android.view.View.VISIBLE
+        findViewById<TextView>(R.id.set_tts_speaker_title).text = when (engine) {
+            SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
+            SherpaVoice.PIPER -> "Speaker (Piper)"
+        }
+        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerValue(engine)
+    }
+
+    private fun speakerValue(engine: SherpaVoice): String {
+        if (!engineInstalled(engine)) return "model not installed"
+        val id = VoiceSpeakers.resolve(speakerStore(), engine, VoiceSpeakers.speakerCount(speakerStore(), engine))
+        return speakerLabel(engine, id)
+    }
+
+    private fun saveSpeaker(engine: SherpaVoice, id: Int) {
+        VoiceSpeakers.save(speakerStore(), engine, id)
+        findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerLabel(engine, id)
+        previewVoice()
+    }
+
+    /** The Speaker row's picker for the selected engine. */
+    private fun pickSpeaker() {
+        val engine = ttsVoiceEngine() ?: return
+        if (!engineInstalled(engine)) {
+            Toast.makeText(this,
+                "${engine.displayName} model is not installed — install it in Voice models to choose a voice.",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        when (engine) {
+            SherpaVoice.SUPERTONIC -> pickSupertonicSpeaker()
+            SherpaVoice.PIPER -> pickPiperSpeaker()
+        }
+    }
+
+    private fun pickSupertonicSpeaker() {
+        val labels = (0 until 10).map { speakerLabel(SherpaVoice.SUPERTONIC, it) }.toTypedArray()
+        val cur = VoiceSpeakers.resolve(speakerStore(), SherpaVoice.SUPERTONIC, 10)
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (Supertonic)")
+            .setSingleChoiceItems(labels, cur) { d, which ->
+                d.dismiss()
+                saveSpeaker(SherpaVoice.SUPERTONIC, which)
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Piper has hundreds of audiobook speakers, so the dialog offers eight curated
+     *  ids (verified distinct in the shipped model — see VoiceSpeakers.PIPER_CURATED)
+     *  plus "Voice id…" for any other id in range. Each pick previews on selection. */
+    private fun pickPiperSpeaker() {
+        val count = VoiceSpeakers.speakerCount(speakerStore(), SherpaVoice.PIPER)
+        val curId = VoiceSpeakers.resolve(speakerStore(), SherpaVoice.PIPER, count)
+        val labels = VoiceSpeakers.PIPER_CURATED.map { "Voice ${it.second}" } +
+            "Voice id… (0–${count - 1})"
+        val checked = VoiceSpeakers.PIPER_CURATED.indexOfFirst { it.first == curId }
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (Piper)")
+            .setSingleChoiceItems(labels.toTypedArray(), checked) { d, which ->
+                d.dismiss()
+                if (which < VoiceSpeakers.PIPER_CURATED.size) {
+                    saveSpeaker(SherpaVoice.PIPER, VoiceSpeakers.PIPER_CURATED[which].first)
+                } else {
+                    askPiperVoiceId(count, curId)
+                }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Numeric entry for a Piper id outside the curated eight. Out-of-range values
+     *  stay in the dialog with the real range — never stored and never previewed. */
+    private fun askPiperVoiceId(count: Int, curId: Int) {
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(curId.toString())
+            setSelection(text.length)
+            hint = "0–${count - 1}"
+        }
+        val dlg = AlertDialog.Builder(this)
+            .setTitle("Voice id (Piper)")
+            .setMessage("Piper has $count voices. Enter an id from 0 to ${count - 1}.")
+            .setView(input)
+            .setPositiveButton("Use", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dlg.setOnShowListener {
+            dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val id = input.text.toString().trim().toIntOrNull()
+                when {
+                    id == null -> Toast.makeText(this, "Enter a number from 0 to ${count - 1}.", Toast.LENGTH_SHORT).show()
+                    id !in 0 until count ->
+                        Toast.makeText(this, "Out of range — Piper has ids 0 to ${count - 1}.", Toast.LENGTH_SHORT).show()
+                    else -> { dlg.dismiss(); saveSpeaker(SherpaVoice.PIPER, id) }
+                }
+            }
+        }
+        dlg.show()
+    }
+
+    /** The label for a built-in voice, per engine. Piper's curated ids carry their
+     *  measured relative pitch; any other id is shown plainly ("Voice id 500"). */
+    private fun speakerLabel(engine: SherpaVoice, id: Int): String = when (engine) {
+        SherpaVoice.SUPERTONIC -> if (id < 5) "F${id + 1} · female" else "M${id - 4} · male"
+        SherpaVoice.PIPER -> {
+            val curated = VoiceSpeakers.PIPER_CURATED.firstOrNull { it.first == id }
+            if (curated != null) "Voice ${curated.second}" else "Voice id $id"
+        }
+    }
 
     private fun label(prefKey: String, default: String): String {
         val tok = prefs.getString(prefKey, default) ?: default
@@ -1049,11 +1159,14 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(KEY_STT_REMOTE_URL, "")
                 .putString(KEY_STT_REMOTE_MODEL, "")
                 .putString(KEY_STT_REMOTE_KEY, "")
-            GROUP_TTS -> e
-                .remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
-                .remove(SherpaTts.KEY_SPEAKER)
-                .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
-                .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
+            GROUP_TTS -> {
+                // The speaker choice is per engine (VoiceSpeakers): clear BOTH engines'
+                // ids + observed counts + the pre-#59 shared key.
+                VoiceSpeakers.allKeys().forEach { e.remove(it) }
+                e.remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
+                    .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
+                    .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
+            }
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
                 .putString("provider", "")      // clear the per-request provider override
