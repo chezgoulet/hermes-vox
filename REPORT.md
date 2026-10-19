@@ -1,5 +1,10 @@
 # REPORT — streaming STT A/B (D5), Pixel 7
 
+> **Update (feat/stt-nemotron):** the Nemotron 0.6B arm has since been measured —
+> see `REPORT-nemotron.md` and the four-arm tables in `docs/STT-AB.md`. The
+> artifact-drift item below (§4) was a documentation error, not upstream drift;
+> `run_bench.py`'s `639e25b5…` pin was and is correct.
+
 Branch `feat/stt`. Gate: `scripts/gate.sh` → **GATE-GREEN** (parity over 10
 fixtures, with `:bench` in the build). Nothing pushed.
 

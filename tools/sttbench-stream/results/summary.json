@@ -1,4 +1,212 @@
 {
+ "nemotron160": {
+  "accent": {
+   "clips": 4,
+   "audio_s": 21.2,
+   "wer": 0.1194,
+   "wer_words": 67,
+   "latency_median": 900.0,
+   "latency_p90": 1093.8,
+   "latency_p95": 1154.7,
+   "latency_mean": 802.8,
+   "post_word_median": 622.4,
+   "post_word_p95": 904.0,
+   "finalisation_median": 699.3,
+   "finalisation_p95": 783.3,
+   "tail_decode_median": 493.6,
+   "revisions_per_word": 0.99,
+   "rtf": 0.738,
+   "rss_peak_mb": 898.3,
+   "words_observed": 59,
+   "word_coverage": 0.887,
+   "feed_lag_mean_ms": 29.0,
+   "feed_lag_max_ms": 111.1,
+   "hallucinations": 0
+  },
+  "kitchen": {
+   "clips": 17,
+   "audio_s": 156.1,
+   "wer": 0.0668,
+   "wer_words": 419,
+   "latency_median": 792.7,
+   "latency_p90": 1236.8,
+   "latency_p95": 1777.3,
+   "latency_mean": 237.4,
+   "post_word_median": 481.5,
+   "post_word_p95": 1478.0,
+   "finalisation_median": 322.7,
+   "finalisation_p95": 939.4,
+   "tail_decode_median": 233.1,
+   "revisions_per_word": 1.13,
+   "rtf": 0.764,
+   "rss_peak_mb": 904.8,
+   "words_observed": 394,
+   "word_coverage": 0.922,
+   "feed_lag_mean_ms": 85.79,
+   "feed_lag_max_ms": 1443.9,
+   "hallucinations": 0
+  },
+  "quiet": {
+   "clips": 19,
+   "audio_s": 164.1,
+   "wer": 0.031,
+   "wer_words": 419,
+   "latency_median": 718.7,
+   "latency_p90": 1064.7,
+   "latency_p95": 1170.1,
+   "latency_mean": 158.8,
+   "post_word_median": 412.8,
+   "post_word_p95": 890.8,
+   "finalisation_median": 145.5,
+   "finalisation_p95": 790.2,
+   "tail_decode_median": 113.1,
+   "revisions_per_word": 1.16,
+   "rtf": 0.689,
+   "rss_peak_mb": 903.1,
+   "words_observed": 407,
+   "word_coverage": 0.968,
+   "feed_lag_mean_ms": 30.16,
+   "feed_lag_max_ms": 177.8,
+   "hallucinations": 0
+  },
+  "tv": {
+   "clips": 17,
+   "audio_s": 156.1,
+   "wer": 0.0883,
+   "wer_words": 419,
+   "latency_median": 811.4,
+   "latency_p90": 1209.8,
+   "latency_p95": 1427.3,
+   "latency_mean": 268.8,
+   "post_word_median": 522.9,
+   "post_word_p95": 1167.9,
+   "finalisation_median": 150.1,
+   "finalisation_p95": 799.4,
+   "tail_decode_median": 121.4,
+   "revisions_per_word": 1.1,
+   "rtf": 0.729,
+   "rss_peak_mb": 903.9,
+   "words_observed": 383,
+   "word_coverage": 0.89,
+   "feed_lag_mean_ms": 79.79,
+   "feed_lag_max_ms": 1715.9,
+   "hallucinations": 0
+  },
+  "_meta": {
+   "runs": 4,
+   "cold_start_ms": 2969.0,
+   "rss_peak_mb": 925.2,
+   "energy_mwh_total": 0.0,
+   "audio_s": 497.5,
+   "battery_mwh_per_audio_hour": 0.0,
+   "energy_charge_uah": -132000,
+   "cpu_s_per_audio_hour": 13237.6
+  }
+ },
+ "nemotron560": {
+  "accent": {
+   "clips": 4,
+   "audio_s": 21.2,
+   "wer": 0.1642,
+   "wer_words": 67,
+   "latency_median": 1087.5,
+   "latency_p90": 1377.4,
+   "latency_p95": 1438.9,
+   "latency_mean": 1025.4,
+   "post_word_median": 840.1,
+   "post_word_p95": 1233.3,
+   "finalisation_median": 926.5,
+   "finalisation_p95": 1083.0,
+   "tail_decode_median": 350.3,
+   "revisions_per_word": 0.92,
+   "rtf": 0.34,
+   "rss_peak_mb": 896.9,
+   "words_observed": 56,
+   "word_coverage": 0.849,
+   "feed_lag_mean_ms": 26.84,
+   "feed_lag_max_ms": 448.0,
+   "hallucinations": 0
+  },
+  "kitchen": {
+   "clips": 17,
+   "audio_s": 156.1,
+   "wer": 0.0644,
+   "wer_words": 419,
+   "latency_median": 1003.1,
+   "latency_p90": 1407.4,
+   "latency_p95": 1513.9,
+   "latency_mean": 647.4,
+   "post_word_median": 708.1,
+   "post_word_p95": 1213.9,
+   "finalisation_median": 453.6,
+   "finalisation_p95": 1172.5,
+   "tail_decode_median": 239.4,
+   "revisions_per_word": 1.02,
+   "rtf": 0.362,
+   "rss_peak_mb": 901.1,
+   "words_observed": 393,
+   "word_coverage": 0.929,
+   "feed_lag_mean_ms": 32.43,
+   "feed_lag_max_ms": 323.7,
+   "hallucinations": 0
+  },
+  "quiet": {
+   "clips": 19,
+   "audio_s": 164.1,
+   "wer": 0.0501,
+   "wer_words": 419,
+   "latency_median": 924.8,
+   "latency_p90": 1323.5,
+   "latency_p95": 1417.9,
+   "latency_mean": 575.1,
+   "post_word_median": 628.0,
+   "post_word_p95": 1072.6,
+   "finalisation_median": 256.5,
+   "finalisation_p95": 990.0,
+   "tail_decode_median": 142.3,
+   "revisions_per_word": 0.98,
+   "rtf": 0.301,
+   "rss_peak_mb": 902.4,
+   "words_observed": 398,
+   "word_coverage": 0.923,
+   "feed_lag_mean_ms": 23.01,
+   "feed_lag_max_ms": 261.1,
+   "hallucinations": 0
+  },
+  "tv": {
+   "clips": 17,
+   "audio_s": 156.1,
+   "wer": 0.1074,
+   "wer_words": 419,
+   "latency_median": 962.6,
+   "latency_p90": 1383.3,
+   "latency_p95": 1525.4,
+   "latency_mean": 552.5,
+   "post_word_median": 685.4,
+   "post_word_p95": 1159.9,
+   "finalisation_median": 298.3,
+   "finalisation_p95": 940.8,
+   "tail_decode_median": 158.8,
+   "revisions_per_word": 0.93,
+   "rtf": 0.301,
+   "rss_peak_mb": 903.8,
+   "words_observed": 375,
+   "word_coverage": 0.853,
+   "feed_lag_mean_ms": 22.64,
+   "feed_lag_max_ms": 263.5,
+   "hallucinations": 0
+  },
+  "_meta": {
+   "runs": 4,
+   "cold_start_ms": 2939.7,
+   "rss_peak_mb": 906.4,
+   "energy_mwh_total": 0.0,
+   "audio_s": 497.5,
+   "battery_mwh_per_audio_hour": 0.0,
+   "energy_charge_uah": -64000,
+   "cpu_s_per_audio_hour": 5449.2
+  }
+ },
  "zip0626": {
   "accent": {
    "clips": 4,
@@ -209,55 +417,89 @@
  },
  "_paired": {
   "accent": {
-   "words": 30,
+   "words": 29,
+   "nemotron160": {
+    "median": 678.0,
+    "p95": 1100.6
+   },
+   "nemotron560": {
+    "median": 975.6,
+    "p95": 1338.1
+   },
    "zip0626": {
-    "median": 896.3,
-    "p95": 1414.8
+    "median": 905.5,
+    "p95": 1426.5
    },
    "zip20m": {
-    "median": 761.7,
-    "p95": 1106.2
+    "median": 765.5,
+    "p95": 1116.7
    },
-   "median_diff_ms": -77.9
+   "median_diff_ms": null
   },
   "kitchen": {
-   "words": 267,
+   "words": 264,
+   "nemotron160": {
+    "median": 742.6,
+    "p95": 1532.3
+   },
+   "nemotron560": {
+    "median": 969.4,
+    "p95": 1502.5
+   },
    "zip0626": {
-    "median": 943.5,
-    "p95": 1483.7
+    "median": 941.4,
+    "p95": 1487.9
    },
    "zip20m": {
-    "median": 871.1,
-    "p95": 1409.3
+    "median": 868.5,
+    "p95": 1411.7
    },
-   "median_diff_ms": -73.1
+   "median_diff_ms": null
   },
   "quiet": {
-   "words": 278,
+   "words": 273,
+   "nemotron160": {
+    "median": 698.6,
+    "p95": 1159.7
+   },
+   "nemotron560": {
+    "median": 904.8,
+    "p95": 1412.9
+   },
    "zip0626": {
-    "median": 965.0,
-    "p95": 1478.5
+    "median": 966.5,
+    "p95": 1487.9
    },
    "zip20m": {
-    "median": 856.0,
-    "p95": 1379.7
+    "median": 856.2,
+    "p95": 1384.2
    },
-   "median_diff_ms": -75.6
+   "median_diff_ms": null
   },
   "tv": {
-   "words": 282,
+   "words": 276,
+   "nemotron160": {
+    "median": 770.8,
+    "p95": 1761.5
+   },
+   "nemotron560": {
+    "median": 943.7,
+    "p95": 1474.6
+   },
    "zip0626": {
-    "median": 943.4,
-    "p95": 1508.1
+    "median": 945.8,
+    "p95": 1510.0
    },
    "zip20m": {
-    "median": 877.3,
-    "p95": 1495.7
+    "median": 878.6,
+    "p95": 1505.4
    },
-   "median_diff_ms": -75.1
+   "median_diff_ms": null
   }
  },
  "_arms": [
+  "nemotron160",
+  "nemotron560",
   "zip0626",
   "zip20m"
  ],

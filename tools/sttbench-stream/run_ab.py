@@ -48,11 +48,74 @@ ARMS = {
     # arm id -> model dir name, as extracted from the upstream tarball
     "zip20m": "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17",
     "zip0626": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+    # Nemotron 0.6B: one checkpoint, one ONNX export per chunk size. The chunk
+    # size is baked into the encoder, so each export is a separate directory.
+    "nemotron160": "sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25",
+    "nemotron560": "sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25",
 }
 ARM_LABEL = {
     "zip20m": "Zipformer streaming 20M (2023-02-17, int8)",
     "zip0626": "Zipformer streaming en (2023-06-26, int8)",
+    "nemotron160": "Nemotron 0.6B streaming 160ms (2026-04-25, int8)",
+    "nemotron560": "Nemotron 0.6B streaming 560ms (2026-04-25, int8)",
 }
+
+# arm id -> (tarball, sha256, bytes). Pins are of the tarballs actually measured;
+# `--fetch` refuses anything that does not match both the hash and the size.
+RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+ARTIFACTS = {
+    "zip20m": ("sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2",
+               "9c559283e8498d3fe95913c79ca1cb454bb26281ac2b102b41306c7d752765d9",
+               127887156),
+    # Verified 2026-10-19 against a fresh download: 310,414,022 bytes. The
+    # "74685102…" once quoted in docs/STT-AB.md is not this artifact.
+    "zip0626": ("sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2",
+                "639e25b578e9e997131402199419c13a941f8e4e198e2da1ce57dbf5cf401282",
+                310414022),
+    "nemotron160": ("sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25.tar.bz2",
+                    "0ae73a41cd51599dc7cac9ac083d9d35de53d762ca45923505fde47a3751814b",
+                    463945198),
+    "nemotron560": ("sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25.tar.bz2",
+                    "78e2b79fcf7271553a74402a76b771b09ea40117a39566a79f52235b23db6358",
+                    463945051),
+}
+
+
+def sha256_file(p: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def fetch(arms, models_dir: Path):
+    """Download, verify and extract each arm's tarball into --models."""
+    import tarfile
+    import urllib.request
+    models_dir.mkdir(parents=True, exist_ok=True)
+    for arm in arms:
+        tarball, pin, nbytes = ARTIFACTS[arm]
+        dst = models_dir / tarball
+        if dst.exists() and sha256_file(dst) != pin:
+            print(f"[{arm}] existing {tarball} does not match the pin — replacing")
+            dst.unlink()
+        if not dst.exists():
+            print(f"[{arm}] fetching {tarball} ({nbytes / 1e6:.1f} MB)…", flush=True)
+            tmp = dst.with_suffix(dst.suffix + ".part")
+            urllib.request.urlretrieve(RELEASE + tarball, tmp)
+            tmp.rename(dst)
+        got = sha256_file(dst)
+        if got != pin:
+            raise SystemExit(f"[{arm}] sha256 mismatch for {tarball}: {got}")
+        if dst.stat().st_size != nbytes:
+            raise SystemExit(f"[{arm}] size mismatch for {tarball}: "
+                             f"{dst.stat().st_size} != {nbytes}")
+        if not (models_dir / tarball.replace(".tar.bz2", "")).exists():
+            with tarfile.open(dst) as t:
+                t.extractall(models_dir, filter="data")
+        print(f"[{arm}] ok (sha256 + size verified)")
 
 
 # ------------------------------------------------------------------ adb helpers
@@ -86,14 +149,18 @@ def model_files(arm: str, models_dir: Path):
     if not d.exists():
         raise SystemExit(f"{d} missing — extract the arm tarball first")
     def pick(prefix):
-        cands = sorted(d.glob(f"{prefix}*int8.onnx")) or sorted(d.glob(f"{prefix}*.onnx"))
-        if not cands:
-            raise SystemExit(f"{d}: no {prefix}*.onnx")
-        return cands[0]
+        # Zipformer exports name files "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx";
+        # NeMo/Nemotron exports name them "encoder.int8.onnx" (no dash, no epoch suffix).
+        for pat in (f"{prefix}-*int8.onnx", f"{prefix}.*int8.onnx",
+                    f"{prefix}-*.onnx", f"{prefix}.*.onnx"):
+            cands = sorted(d.glob(pat))
+            if cands:
+                return cands[0]
+        raise SystemExit(f"{d}: no {prefix}*.onnx")
     return {
-        "encoder": pick("encoder-").name,
-        "decoder": pick("decoder-").name,
-        "joiner": pick("joiner-").name,
+        "encoder": pick("encoder"),
+        "decoder": pick("decoder"),
+        "joiner": pick("joiner"),
         "tokens": "tokens.txt",
     }
 
@@ -450,6 +517,8 @@ def main():
                     help="retries when the bench loses the foreground (shared phone)")
     ap.add_argument("--tag", default="", help="suffix for run ids (keeps raw files apart)")
     ap.add_argument("--prepare", action="store_true", help="push corpus + models")
+    ap.add_argument("--fetch", action="store_true",
+                    help="download + verify + extract the arm tarballs into --models")
     ap.add_argument("--score-only", action="store_true")
     args = ap.parse_args()
 
@@ -459,6 +528,8 @@ def main():
     RESULTS.mkdir(parents=True, exist_ok=True)
 
     if not args.score_only:
+        if args.fetch:
+            fetch(arms, args.models)
         if args.prepare:
             prepare(arms, args.models, conds)
         results = []
