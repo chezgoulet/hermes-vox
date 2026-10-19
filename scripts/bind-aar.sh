@@ -57,6 +57,13 @@ fi
 ln -sfn "$ROOT" "$BIND_ROOT"
 cd -L "$BIND_ROOT"
 
+# 16 KB page size (#158). NDK r25 links LOAD segments at 4 KB, and a library built
+# that way cannot be loaded on a device running 16 KB pages (Android 15+). The NDK's
+# clang honours -z max-page-size on the external link gomobile performs; the sherpa
+# AAR's own libraries already report 0x4000, so this closes the last gap.
+# Verified on the 16 KB emulator image and by llvm-readelf on all four ABIs.
+export CGO_LDFLAGS="${CGO_LDFLAGS:-} -Wl,-z,max-page-size=16384"
+
 gomobile bind -trimpath \
   -target android -androidapi 23 -javapkg com.hermesvox \
   "$@" -o "$OUT" github.com/chezgoulet/hermes-vox/mobile
