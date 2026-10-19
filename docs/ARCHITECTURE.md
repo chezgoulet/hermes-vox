@@ -31,7 +31,7 @@ beyond Sesame:
   detection, a priority audio arbiter and a presence ladder are explicit, tested code.
 - **Sovereign by construction.** Speech processing is on-device; the only network
   peer is your own gateway. No accounts, no vendor cloud, no baked keys.
-- **Open.** Apache-2.0, reproducible build, secret-free CI.
+- **Open.** GPL-3.0, reproducible build, secret-free CI.
 
 ## The shape
 

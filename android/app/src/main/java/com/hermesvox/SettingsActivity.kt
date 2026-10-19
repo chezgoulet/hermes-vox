@@ -41,6 +41,7 @@ class SettingsActivity : AppCompatActivity() {
         bindMicSettings()
         bindJargonHelp()
         bindVisuals()
+        bindSoundCues()
         bindGroups()
         bindSectionRestoreRows()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
@@ -105,6 +106,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
         findViewById<android.view.View>(R.id.row_grp_stt)?.setOnClickListener { showSection(SECTION_STT) }
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
+        findViewById<android.view.View>(R.id.row_grp_wake)?.setOnClickListener {
+            startActivity(android.content.Intent(this, WakeEnrolActivity::class.java))
+        }
         findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
@@ -563,6 +567,10 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.set_stt_grpval)?.text =
                 sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
             findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
+            // Counting files only — no decryption on the Settings home.
+            findViewById<TextView>(R.id.set_wake_grpval)?.text =
+                "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
+                "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
             findViewById<TextView>(R.id.set_appearance_grpval)?.text =
                 label("theme", "system") + " · " + label("layout_mode", "presence")
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
@@ -908,6 +916,48 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    // ---- #156 (D7): the being's sound cues ------------------------------------------
+    // One toggle, one level, and ONE opt-in. The policy itself (ringer mode, DND, media
+    // volume, system haptics, TTS suppression) is CuePolicy's, not this screen's: the
+    // preview button just reports what that policy decided, because on a vibrate-only,
+    // DND or muted phone the honest answer may be a tap or nothing at all.
+    private var cuePlayer: SoundCuePlayer? = null
+
+    private fun bindSoundCues() {
+        findViewById<SwitchCompat>(R.id.set_sound_cues).apply {
+            isChecked = prefs.getBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
+            setOnCheckedChangeListener { _, on ->
+                prefs.edit().putBoolean(CuePolicy.PREF_ENABLED, on).apply()
+            }
+        }
+        findViewById<SwitchCompat>(R.id.set_sound_cues_silent).apply {
+            isChecked = prefs.getBoolean(CuePolicy.PREF_SILENT, CuePolicy.DEFAULT_SILENT)
+            setOnCheckedChangeListener { _, on ->
+                prefs.edit().putBoolean(CuePolicy.PREF_SILENT, on).apply()
+            }
+        }
+        bindIntSeekBar(R.id.set_seek_cue_level, R.id.set_cue_level_val, CuePolicy.PREF_LEVEL,
+            0, 100, 10, CuePolicy.DEFAULT_LEVEL) { "$it%" }
+
+        findViewById<TextView>(R.id.set_cue_preview).setOnClickListener {
+            val d = cuePlayerOrCreate().play(CueSynth.Cue.REPLY_READY, preview = true)
+            Toast.makeText(this, cuePreviewNote(d), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun cuePlayerOrCreate(): SoundCuePlayer =
+        cuePlayer ?: SoundCuePlayer(this).also { cuePlayer = it }
+
+    private fun cuePreviewNote(d: CuePolicy.Decision): String = when {
+        d.action == CuePolicy.Action.AUDIO -> "Previewing the reply-ready cue"
+        d.action == CuePolicy.Action.HAPTIC -> "Felt the cue (ringer on vibrate, or media volume is zero)"
+        d.reason == "tts" -> "Silent while the entity is speaking"
+        d.reason == "dnd" -> "Silent — Do Not Disturb is on"
+        d.reason == "silent" -> "Silent ringer — enable the opt-in below to hear cues"
+        d.reason == "off" -> "Silent — sound cues are off"
+        else -> "Silent — no media volume and no haptics"
+    }
+
     /** An int SeekBar snapped to [step] between [min]..[max]; writes the pref 1:1. */
     private fun bindIntSeekBar(seekId: Int, valId: Int, key: String,
                                min: Int, max: Int, step: Int, def: Int, fmt: (Int) -> String) {
@@ -1076,6 +1126,9 @@ class SettingsActivity : AppCompatActivity() {
     override fun onDestroy() {
         preview?.let { try { it.stop(); it.shutdown() } catch (_: Throwable) {} }
         preview = null
+        // #156: a Settings cue preview owns an AudioTrack; free it with the screen.
+        cuePlayer?.release()
+        cuePlayer = null
         super.onDestroy()
     }
 
@@ -1261,6 +1314,10 @@ class SettingsActivity : AppCompatActivity() {
                 e.remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
                     .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
                     .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
+                    // #156: the cue scope is the being's spoken presence too.
+                    .putBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
+                    .putBoolean(CuePolicy.PREF_SILENT, CuePolicy.DEFAULT_SILENT)
+                    .putInt(CuePolicy.PREF_LEVEL, CuePolicy.DEFAULT_LEVEL)
             }
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
@@ -1305,7 +1362,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
             GROUP_APPEARANCE -> bindKeepScreenOn()
             GROUP_VISUALS -> bindVisuals()
-            GROUP_TTS -> bindFlows()   // 0.6.5: re-read the speak toggle after restore
+            GROUP_TTS -> { bindFlows(); bindSoundCues() }   // 0.6.5: re-read the speak toggle after restore; #156: and the cue rows
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()

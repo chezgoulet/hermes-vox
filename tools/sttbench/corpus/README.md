@@ -29,7 +29,7 @@ source, licence, and a note on any processing. Every clip is reproducible:
   the speaker id and L1 are in `manifest.jsonl`. EdAcc references keep the
   corpus's conversational transcription (fillers such as UM/UH included).
 - **Generated** clips (`silence_*`, the noise beds, the inserted gap) —
-  produced by `build_corpus.py`, Apache-2.0 like the rest of this repo.
+  produced by `build_corpus.py`, GPL-3.0 like the rest of this repo.
 
 Attribution for the CC BY clips: LibriSpeech ASR corpus, Vassil Panayotov,
 Guoguo Chen, Daniel Povey, Sanjeev Khudanpur; EdAcc, Ramon Sanabria, Nikolay

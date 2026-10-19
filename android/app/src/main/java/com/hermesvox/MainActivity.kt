@@ -128,11 +128,29 @@ class MainActivity : AppCompatActivity() {
     private var lastSignalAt = 0L                       // last real stream/voice activity
     private var lastVoiceAt = 0L                        // last tick with audible audio
     private var motionStalled = false
+
+    // ---- #156: the sound cues ---------------------------------------------------
+    // Cues follow the SAME state transitions as the motion, one cue per real
+    // transition (a repeated ambient "listening" is not a new event). The voice
+    // suppression flag is fed from motionTick's `voicing` witness below — the real
+    // audio-on-the-track signal with the inter-phrase hold — so a cue can never
+    // land under the being's speech.
+    private var cues: SoundCuePlayer? = null
+    private var lastCueState = ""
     private var motionTool: String? = null
     // A signal that arrived DURING the flinch. bargeIn() posts onState("listening")
     // within a few ms of the cut — well inside the 350ms window — so dropping it
     // would strand the being in the motion it was interrupted out of.
     private var recoilPending: MotionState.Signal? = null
+
+    private fun cueFor(state: String) {
+        if (state == lastCueState) return   // ambient signals repeat; an edge does not
+        lastCueState = state
+        when (state) {
+            "listening" -> cues?.play(CueSynth.Cue.LISTENING)
+            "thinking" -> cues?.play(CueSynth.Cue.THINKING)
+        }
+    }
 
     /** Run one signal through the pure table and render the result. The RECOIL window
      *  is held HERE, not in the table: a pure rule has no clock, so the caller owns the
@@ -191,6 +209,12 @@ class MainActivity : AppCompatActivity() {
     private fun motionTick() {
         val now = android.os.SystemClock.uptimeMillis()
         val level = liveController?.speechLevel() ?: 0f
+        // #156: the voice witness is read FIRST, so the cue suppression flag stays
+        // live even on a recoil frame (a barge over TTS is exactly when a cue must
+        // stay quiet). `voicing` is the same real-audio witness the motion uses.
+        if (level > 0f) lastVoiceAt = now
+        val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
+        SoundCuePlayer.setVoiceActive(voicing)
         if (motion == MotionState.Motion.RECOIL) {
             if (now < recoilUntil) { avatar.driveMotion(level, motionWorkload()); return }
             motion = recoilPrior              // the one-shot is spent: back to the work
@@ -201,8 +225,7 @@ class MainActivity : AppCompatActivity() {
         // The streamed path never emits state "speaking" (only the one-shot speak()
         // does), so the voice is detected the way the 0.5.0-A reveal detects it: real
         // audio on the track. A short hold bridges the synth gaps between phrases.
-        if (level > 0f) { lastVoiceAt = now; markActivity() }
-        val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
+        if (level > 0f) markActivity()
         if (voicing && motion != MotionState.Motion.SPEAKING) feed(MotionState.Signal.SPEAK)
         val idle = now - lastSignalAt
         // Presence-level stall watch. Deliberately NOT armed while the voice is
@@ -247,6 +270,31 @@ class MainActivity : AppCompatActivity() {
         // would reject, nor one silently rewritten into a different identity.
         if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
+        // #156: the device matrix needs to PUT the phone into each state and then fire
+        // a cue. There is no shell command for the ringer mode on this build, so the
+        // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
+        // SETTINGS + DND access for SILENT). Order matters and is deliberate: state
+        // first, the TTS-suppression witness next, and the cue LAST, all on the main
+        // thread, so one intent is one deterministic test. Debug-only by the
+        // FLAG_DEBUGGABLE guard above; inert in a release build.
+        intent.getStringExtra("ringer")?.let { mode ->
+            val am = getSystemService(android.media.AudioManager::class.java)
+            runCatching {
+                am?.ringerMode = when (mode.lowercase()) {
+                    "silent" -> android.media.AudioManager.RINGER_MODE_SILENT
+                    "vibrate" -> android.media.AudioManager.RINGER_MODE_VIBRATE
+                    else -> android.media.AudioManager.RINGER_MODE_NORMAL
+                }
+            }
+            VoxLog.d("event=harness ringer=$mode now=${am?.ringerMode}")
+        }
+        if (intent.hasExtra("cue_voice")) {
+            SoundCuePlayer.setVoiceActive(intent.getBooleanExtra("cue_voice", false))
+        }
+        intent.getStringExtra("cue")?.let { name ->
+            val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
+            if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
+        }
     }
 
     /** The installed version code, from the manifest (BuildConfig is not generated). */
@@ -276,6 +324,9 @@ class MainActivity : AppCompatActivity() {
         avatar = findViewById(R.id.avatar)
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
+        // #156 (D7): the being's procedural sound cues. On by default; CuePolicy owns
+        // every judgement about whether a cue may be heard or felt right now.
+        cues = SoundCuePlayer(this)
 
         // What's new, once per upgrade, with any breaking-change action attached.
         UpdateBannerView.maybeShow(this, window.decorView, prefs, currentVersionCode()) { alert ->
@@ -1347,6 +1398,7 @@ class MainActivity : AppCompatActivity() {
                     "speaking" -> MotionState.Signal.SPEAK
                     else -> MotionState.Signal.REST
                 })
+                cueFor(state)
                 // The reveal owns the crawl for the whole turn. NOTE: the streamed path
                 // (the one that raced ahead) never emits "speaking" — only the one-shot
                 // speak() does — so the loop is armed from "thinking" and the controller's
@@ -1420,12 +1472,17 @@ class MainActivity : AppCompatActivity() {
             replyBuf = finalText
             markActivity()
             feed(MotionState.Signal.RETIRE)   // previewB: a natural end settles, never recoils
+            // #156: "reply ready" is a cue only when no speech will follow — otherwise
+            // the voice IS the signal, and a cue must never run into TTS (D7).
+            if (liveController?.voiceWillSpeak() != true) cues?.play(CueSynth.Cue.REPLY_READY)
             if (!revealActive) reply.setText(replyBuf)
             appendConvo("Agent: $finalText")
         } }
         override fun onError(msg: String) { runOnUiThread {
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             feed(MotionState.Signal.REST); appendStream("// $msg")
+            // A barge/stop is not a failure: the being was interrupted, it did not err.
+            if (!msg.contains("interrupt")) cues?.play(CueSynth.Cue.ERROR)
         } }
         override fun onHeard(text: String) { runOnUiThread {
             // Conversation mode already IS a transcript: the words go there, in memory
@@ -1833,6 +1890,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)   // the loop reposts itself — never outlive the view
+        cues?.release()                           // #156: free the cue AudioTrack with the surface
+        cues = null
         if (active === this) active = null
         super.onDestroy()
     }

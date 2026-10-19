@@ -16,12 +16,22 @@ if (keystorePropFile.exists()) {
 
 android {
     compileSdk 34
+    // Reproducible artifacts (#166): do not embed a dependency-info blob or VCS
+    // metadata in the APK/bundle. Both carry build-environment data that is not
+    // part of the source.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
     defaultConfig {
         applicationId "com.hermesvox"
         minSdkVersion 24
         targetSdkVersion 34
         versionCode 142
         versionName "0.8.1"
+        // Instrumented tests are the on-device measurement path (docs/PRESENCE-BENCH.md):
+        // they need a device, so gate.sh never runs them, and they never ship in an APK.
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // C0 (0.4.0): no gateway key is injected or baked here. The Hermes gateway
         // API key is USER-ENTERED in the app (onboarding + Settings → Entity,
         // SecureStore-encrypted). The release guard below fails the build if a
@@ -40,7 +50,17 @@ android {
         release {
             minifyEnabled true
             shrinkResources false
-            signingConfig signingConfigs.release
+            // Reproducible artifacts (#166): no VCS metadata in the release APK.
+            vcsInfo {
+                include = false
+            }
+            // scripts/repro-check.sh builds an UNSIGNED release APK by passing
+            // -Phermesvox.unsigned. Normal release/nightly builds never set it,
+            // so a missing keystore still fails loudly instead of silently
+            // producing an unsigned artifact.
+            if (!project.hasProperty('hermesvox.unsigned')) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
         }
@@ -61,6 +81,17 @@ android {
     }
 }
 
+// Reproducible artifacts (#166): no baseline/ART profile generation. This app
+// does not apply androidx.baselineprofile and ships no baseline-prof.txt; this
+// rule also neutralises a profile task if a future plugin adds one. Profiles
+// carry timestamps/tool versions and are not part of the source.
+tasks.configureEach { task ->
+    def n = task.name.toLowerCase(Locale.ROOT)
+    if (n.contains('baselineprofile') || n.contains('artprofile')) {
+        task.enabled = false
+    }
+}
+
 dependencies {
     implementation 'org.apache.commons:commons-compress:1.26.2'
     // Only the pinned sherpa-onnx runtime (scripts/fetch-runtime.sh). Named rather than
@@ -72,6 +103,9 @@ dependencies {
     implementation('com.google.ai.edge.litertlm:litertlm-android:0.16.1') { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-reflect' }
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
     testImplementation 'junit:junit:4.13.2'
+    // Presence bench (docs/PRESENCE-BENCH.md): on-device only, instrumented.
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
 }
 
 // ---------------------------------------------------------------------------

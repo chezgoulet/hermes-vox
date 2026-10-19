@@ -94,7 +94,7 @@ and a face without adding a second brain:
   keys in the app.
 - **One agent, many doors.** Vox is one more frontend to the same Hermes instance that
   already serves you on Telegram, desktop or the CLI. It never forks the agent.
-- **Open.** Apache-2.0, reproducible build, secret-free CI.
+- **Open.** GPL-3.0, reproducible build, secret-free CI.
 
 ## What it does
 
@@ -270,9 +270,10 @@ The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.
 - **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
   GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
   added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
-- **0.9 — the last series before 1.0:** streaming speech recognition, Qwen as the
-  default presence model with Gemma kept selectable, a wake word, procedural audio
-  cues, F-Droid inclusion, and reproducible builds. Every 1.0 feature ships during
+- **0.9 — the last series before 1.0:** streaming speech recognition, a measured
+  presence model (Gemma 4 E2B stays the default; Qwen was rejected on Mali —
+  see `docs/PRESENCE-BENCH.md`), a wake word, procedural audio cues, F-Droid
+  inclusion, and reproducible builds. Every 1.0 feature ships during
   0.9.x first; 1.0 is cut when the set, the polish and the measured performance are
   all acceptable. The decisions are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 - **Distribution:** GitHub Releases and Obtainium today; F-Droid in preparation.
@@ -320,4 +321,6 @@ Nous Research.
 
 ## License
 
-[Apache-2.0](LICENSE).
+[GPL-3.0](LICENSE).
+
+The app is GPL-3.0 because the on-device speech runtime statically links espeak-ng, which is GPL-3.0; see [NOTICE](NOTICE) for the component list and the source-offer. On-device models are downloaded separately and keep their own terms.

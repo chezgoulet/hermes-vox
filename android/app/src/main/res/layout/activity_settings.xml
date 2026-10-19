@@ -169,6 +169,27 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- #45: wake-word enrolment (preview). Opens WakeEnrolActivity; nothing
+                     listens in the background yet. Value set by refreshGrpVals(). -->
+                <LinearLayout
+                    android:id="@+id/row_grp_wake"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Wake word (preview)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_wake_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/row_grp_appearance"
                     style="@style/HvRow"
@@ -1178,6 +1199,84 @@
                         style="@style/HvRowTitle" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/set_speak"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- #156 (D7): the being's sound cues. Procedurally generated from its own
+                     motion vocabulary (no samples), one toggle + a level that rides the
+                     media stream, and a preview so the user can hear one without a turn.
+                     The policy (ringer/DND/volume/haptics/TTS) lives in CuePolicy. -->
+                <LinearLayout
+                    android:id="@+id/row_sound_cues"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Sound cues"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_preview"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="16dp"
+                        android:paddingRight="16dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="Hear a sound cue"
+                        android:focusable="true"
+                        android:text="preview"
+                        style="@style/HvRowAction" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_sound_cues"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_sound_cue_level"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Cue level (relative to media volume)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_level_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="70%"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_cue_level"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="10" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_sound_cues_silent"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Cues when the ringer is silent (opt-in)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_sound_cues_silent"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>

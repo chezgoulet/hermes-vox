@@ -51,3 +51,6 @@ __pycache__/
 # raw device results ARE committed (they are the evidence for docs/STT-AB.md);
 # logs and the regenerated summary are not.
 /tools/sttbench-stream/results/*.log
+
+# Presence-bench host output (docs/PRESENCE-BENCH.md); the numbers live in the doc.
+presence-bench-results/

@@ -26,17 +26,35 @@ F-Droid accepted; reproducible builds proven and enforced in CI; live-gateway
 suite green; behaviour matrix on at least two devices; no open severe bugs;
 performance within the measured baseline.
 
-## D4 — Presence model: Qwen 3.5 0.8B by default
+## D4 — Presence model: Gemma 4 E2B stays the default (amended 2026-10-19)
 
-`Qwen3.5-0.8B_int8.litertlm` (920 MB) becomes the default presence model on the
-runtime we already use. Gemma 4 E2B (2.6 GB) stays selectable, and an existing
-install is never migrated or deleted automatically. One runtime, not two: we
-accept the disk cost over adding llama.cpp. Gemma 3 270M and SmolLM2 360M remain
-candidates for a lighter option.
+Originally Qwen 3.5 0.8B (920 MB LiteRT) was to become the default on the
+existing runtime. It was measured on the Pixel 7 first, as this decision
+required, and **rejected**:
 
-**Committed to:** a presence-model picker; no automatic download; no purge path
-for installed models; measure load time and resident memory on the Pixel before
-calling it done.
+- **The GPU engine does not fit on Mali.** `initialize()` never returned: process
+  PSS reached 6.86 GB against 4.30 GB available, `MemAvailable` fell to 35 MB,
+  and the 180 s watchdog fired — twice, both prompt shapes. The vendor's card
+  documents the same on a Pixel 8a (Mali, OpenCL) and verifies Android GPU only
+  on Adreno; the fp32 activations it requires are the cause.
+- **On CPU it is ~5× slower than the model it would replace**: 1.42–1.69 s to
+  first token, ~6 tok/s, 1.6–1.9 s per short line, against Gemma 4 E2B on GPU at
+  **289 ms** to first token and **756 ms** per line.
+- **Its output is corrupted under our conversation shape.** LiteRT-LM does not
+  reset Qwen's GatedDeltaNet recurrent state for a new `Conversation` on an
+  existing `Engine` (upstream issue #3165): the third render returned the system
+  prompt verbatim. The vendor requires one Engine per conversation, and engine
+  init measured 35–94 s — impossible for a sub-second presence layer.
+- **It saves disk, not memory**: 2.28 GB resident against Gemma's 2.41 GB,
+  despite 965 MB on disk against 2.6 GB.
+
+SmolLM2 360M was measured too and is also slower (1.45 s to first token on GPU,
+1.92 s per line) at 1.5 GB resident.
+
+**Decision:** Gemma 4 E2B (LiteRT-LM, GPU) remains the presence default. Qwen is
+not shipped. It can be reconsidered only if the runtime resets recurrent state
+and engine init becomes cheap, and only on devices whose GPU can hold the fp32
+engine. Measurements: `docs/PRESENCE-BENCH.md`.
 
 ## D5 — Streaming STT is decided by A/B
 
@@ -61,6 +79,8 @@ start. Measured on the Pixel 7, in quiet, TV and kitchen noise.
 
 Enrolment audio is voice biometric data: device-local, encrypted, deletable, and
 sent to a gateway only with explicit consent.
+
+Design, evidence and open questions: `docs/WAKE-WORD.md`.
 
 ## D7 — Audio cues are part of the product
 
@@ -93,3 +113,15 @@ Shown once on the first launch after an upgrade — never on a fresh install, ne
 twice for the same version, never on a downgrade. Release notes ship inside the
 APK. Breaking changes carry one action the app routes itself (for 0.9: HTTPS →
 Entity & Connection).
+
+## D11 — Licence: GPL-3.0
+
+The app is GPL-3.0. sherpa-onnx's TTS support statically links espeak-ng
+(GPL-3.0) for Piper phonemes; Apache-2.0 and GPL-3.0 combine only under GPL-3.0,
+so the whole app is GPL-3.0 rather than Apache-2.0 with an undeclared GPL
+component inside it. This was already true of every release we shipped with the
+upstream AAR; compiling sherpa from source made it visible.
+
+**Committed to:** `LICENSE` GPL-3.0, a `NOTICE` naming each component and the
+source offer, README/architecture/site saying GPL-3.0, and the F-Droid metadata
+field `License: GPL-3.0-only`. Models downloaded at runtime keep their own terms.

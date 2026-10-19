@@ -40,3 +40,50 @@ jobs:
         with:
           name: unit-test-reports
           path: android/app/build/reports/tests/
+
+  # Reproducibility is part of the PR contract for app changes (#166): build the
+  # same source twice from two different absolute paths and require byte-identical
+  # unsigned release APKs. This job is slow (two clean release builds), so it is
+  # gated on the diff touching the app/build inputs.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          changed="$(git diff --name-only "origin/$BASE_REF...HEAD")"
+          if printf '%s\n' "$changed" | grep -Eq '^(android/|scripts/(repro-check|fetch-runtime)\.sh$|libs/)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  repro:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build twice from two paths and compare unsigned release APKs
+        run: bash scripts/repro-check.sh
+      - name: Upload the two APKs' hashes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repro-hashes
+          path: /tmp/opencode/vox-repro/hashes.txt
+          if-no-files-found: warn
