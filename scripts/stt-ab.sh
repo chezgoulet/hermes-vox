@@ -21,7 +21,8 @@ cd "$ROOT"
 export JAVA_HOME="${JAVA_HOME:-$HOME/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$HOME/.local/bin:$PATH"
-export SERIAL="${SERIAL:-2A091FDH200AJ1}"
+export SERIAL="${SERIAL:-}"
+[ -n "$SERIAL" ] || { echo "stt-ab: set SERIAL to the device serial (see: adb devices)" >&2; exit 2; }
 PHONE_LOCK="${PHONE_LOCK:-$HOME/phone.lock}"
 BUILD_LOCK="${BUILD_LOCK:-$HOME/build.lock}"
 
