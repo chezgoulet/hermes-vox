@@ -93,7 +93,7 @@ the agreement, the attribution string and the model-card link shown and accepted
 on the download screen.
 
 **Residual, recorded rather than assumed:** the **Vosk control arm was never run**,
-and is now **dropped rather than outstanding** (Christopher, 2026-10-19). Vosk needs
+and is now **dropped rather than outstanding** (maintainer, 2026-10-19). Vosk needs
 a second ASR runtime — its own Maven AAR and model format, not a config swap — and
 F-Droid path B already builds sherpa-onnx and onnxruntime from source, so a third
 native dependency costs twice: in the recipe and in review. Nothing measured suggests

@@ -1,7 +1,7 @@
 # Hermes Vox 0.9.0 — "the HTTPS release"
 
 Version code **143** · `versionName` 0.9.0 · prepared on `testing`; the tag is cut from
-`main` by Christopher, and only after the device pass in `docs/TEST-PLAN-0.9.md`.
+`main` by the maintainer, and only after the device pass in `docs/TEST-PLAN-0.9.md`.
 
 0.9 is the last series before 1.0 (D3). This first release carries the one breaking
 change of the series, the Kotlin voice core, and the barge-in work that came out of

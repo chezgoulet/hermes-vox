@@ -5,7 +5,7 @@
 Animation praised ("great app", "really, really good", "so many more possibilities",
 "make it really, really interactive"). Two concrete asks, verbatim:
 1. "I would like the visuals to be very diverse and expose categories of visuals in
-   the user settings." (Christopher, 13:54:41)
+   the user settings." (maintainer, 13:54:41)
 2. "The warming up pill should say 'Dialing' separately. The connection test does
    not [report correctly]." — field shows `conn-test: ping=false(unknown)
    stream=false(unknown)` firing at pipe startup (13:49:21) BEFORE the gateway is

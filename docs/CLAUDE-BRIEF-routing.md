@@ -18,7 +18,7 @@ spiral), so the 13 designed archetypes mostly never reach the screen. The being 
 5. `mapTool` (MainActivity.kt:967) maps only 5 tool names; `thinking` with no
    matching tool → `A_GYRE` spiral (the fallback you saw).
 
-## Design intent (confirmed with Christopher)
+## Design intent (confirmed with the maintainer)
 - Both idle controls are ALREADY user settings: hold-one (`particles_theme`) and
   auto-cycle (`particles_cycle`). **Do not invent new settings or change behavior.**
 - The fix is purely to **widen the vocabulary** both dials draw from, so a chosen or

@@ -2,7 +2,7 @@
 
 ## Why (directive 2026-09-06)
 Vox speaks HTTP+bearer to a gateway address. Safe ONLY over a user-managed private
-network. Today the README states it but the APP never tells the user. Christopher:
+network. Today the README states it but the APP never tells the user. The maintainer:
 "must make it explicit that it is assumed this will be used over a VPN which the
 user is responsible for setting up. We can recommend tailscale and nebula."
 

@@ -1,6 +1,6 @@
 # PLAN 0.4.0 — the polish series: no baked secrets, VPN explicit, walkie out, harden in
 
-**Directive (Christopher, 2026-09-06):** 0.3.32.4 is the LAST .3 release. 0.4.0 is
+**Directive (maintainer, 2026-09-06):** 0.3.32.4 is the LAST .3 release. 0.4.0 is
 entirely about polishing what exists, and only after it ships do we open Enhanced
 Realtime. Non-negotiables: (1) NO keys baked into the APK whatsoever — the user
 enters their own API key during app bootstrap; (2) it is EXPLICIT that a user-managed

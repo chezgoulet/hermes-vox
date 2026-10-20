@@ -1,7 +1,7 @@
 # SPEC — C2: strip walkie-talkie (PTT) mode (0.4.0 polish, batch 3)
 
 ## Directive
-Christopher 2026-09-06: "This is also where we will strip out the walkie-talkie
+the maintainer 2026-09-06: "This is also where we will strip out the walkie-talkie
 mode." Hands-free realtime is the ONLY loop shape. Delete every PTT branch so the
 controller stops carrying two-mode state (most historical half-duplex bugs lived
 at that fork).

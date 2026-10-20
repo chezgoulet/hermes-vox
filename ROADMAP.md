@@ -167,7 +167,7 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
   makes this safe), then a thirty-minute soak watching RSS.
 - `[ ]` **F6a — narration into the presence loop.** The directive already takes the tool context;
   route the tool event through the loop so the line is topical and density-governed.
-- `[ ]` **F4 — GPU contention.** Per-frame timing idle versus during a render. Christopher's
+- `[ ]` **F4 — GPU contention.** Per-frame timing idle versus during a render. The maintainer's
   inclination, to be confirmed by measurement: sacrifice frame rate, not the soul.
 - `[ ]` **F8 — a verdict mechanism.** A fixed ten-utterance script run per candidate build, so
   "this build is better" stops being an impression. Adopt the benchmark's scenario taxonomy:
@@ -186,7 +186,7 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
 gomobile and the NDK pin are gone, and streaming behaviour is pinned by the
 fixture corpus in `testdata/stream/`. The work below sits on top of that.
 
-Charter set by Christopher: **voice choice and different soul LLMs.** Research and candidate
+Charter set by the maintainer: **voice choice and different soul LLMs.** Research and candidate
 rationale in `.hermes/reviews/vox-er-on-device-stack-review-2026-09-10.md`.
 
 **The finding that shapes the series: a batch model choice has foreclosed a logic upgrade.**

@@ -6,7 +6,7 @@ Two items from the 2026-09-07 device pass on 0.5.1.
 > very next turns streamed perfectly, over the same gateway, with the same key.
 
 > "We need to expose a compress command to the user through this app and/or have
-> [the entity do it]." — Christopher, end of the 15-turn session
+> [the entity do it]." — the maintainer, end of the 15-turn session
 
 ---
 

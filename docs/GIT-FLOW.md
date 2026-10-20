@@ -1,6 +1,6 @@
 # Hermes Vox — Git Flow (adopted 2026-09-08)
 
-Christopher's flow, verbatim in intent:
+the maintainer's flow, verbatim in intent:
 
 - **`main`** — always deployable/buildable. Releases are cut from `main` ONLY.
 - **`testing`** — the integration branch. Features branch OFF `testing` and

@@ -2,7 +2,7 @@
 
 ## The animation facelift
 `AvatarView.kt` was rewritten from a parametric-curve-of-dots into an **emergent luminous
-swarm**. Christopher's vision, verbatim: "the AI agent exists within the forms and likes
+swarm**. The maintainer's vision, verbatim: "the AI agent exists within the forms and likes
 to play with them and use them to express its state, its feelings, its ideas." Plus — the
 designer owns the whole attribute space, and the static↔energetic spectrum is a tool.
 
@@ -32,13 +32,13 @@ was the whole point.
   full public API (applyMotion/driveMotion/setStall/onTool/pulseTool/setStateLevel/
   preview/setIdleTheme), and all audio/voice logic are byte-identical.
 - Independent gate: assembleRelease exit 0 on a fresh clone. Unit tests green.
-- Renderer redesign by qwen3.8-max (Christopher's pick — a designer-owner pass, not
+- Renderer redesign by qwen3.8-max (the maintainer's pick — a designer-owner pass, not
   a mechanical one). The model benchmarked its own physics before committing.
 
 ## The one gate not yet proven
 Does it LOOK alive on the device? Only the human can judge "the being feels inhabited
 vs. it's a glowing blob." Device pass is the remaining test; drive-params (speed/bright)
-are sweepable if the rich end is too busy, per Christopher's ready-to-tune note.
+are sweepable if the rich end is too busy, per the maintainer's ready-to-tune note.
 
 ## Notes
 - 0.5.0.2 is the animation-only jump from 0.5.0.1 (crash guard). The ER architecture

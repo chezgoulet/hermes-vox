@@ -1,6 +1,6 @@
 # REPORT — Nemotron 0.6B streaming arm (D5, third arm)
 
-Branch `feat/stt-nemotron` (from `feat/stt`). Pixel 7 `2A091FDH200AJ1`, sequential
+Branch `feat/stt-nemotron` (from `feat/stt`). Pixel 7 (the test device), sequential
 single-arm run under `phone.lock`. Nothing pushed. Gate: `scripts/gate.sh` →
 **GATE-GREEN**. Numbers side by side with 0626 and 20M are in `docs/STT-AB.md`.
 

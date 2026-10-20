@@ -6,7 +6,7 @@ as USAGE_VOICE_COMMUNICATION. On Pixel 9 this dropped output to the incall-volum
 (field report: "extremely quiet, even at max volume"). The field log also shows barge-in
 NEVER fired in the new session (`event=barge-in` zero; user resorted to the hush button):
 `barge_rms_min` default 0.15 is calibrated against echo levels (0.153–0.172) which are
-also the user's own speech levels — the gate is too tight. Christopher must be able to
+also the user's own speech levels — the gate is too tight. The maintainer must be able to
 A/B both from Settings. The August lesson (hardcoded settings are invisible) applies.
 
 ## Commits (single PR, three commits; gate: `cd android && $GR :app:testDebugUnitTest` exit 0)

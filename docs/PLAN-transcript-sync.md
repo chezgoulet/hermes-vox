@@ -1,6 +1,6 @@
 # SPEC — Speech-locked transcript (0.5.0-preview A)
 
-## Symptom (Christopher, 2026-09-07)
+## Symptom (maintainer, 2026-09-07)
 "The text that appears as the agent is speaking disappears faster than the agent
 can say it. I wish it was synced."
 

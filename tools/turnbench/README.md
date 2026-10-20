@@ -3,7 +3,7 @@
 A TurnBench submission predictor that simulates the **deployed Hermes Vox**
 turn-end (EOT) and barge-in (interruption) rules on the benchmark's two-channel
 audio, using the same Silero VAD v4 model the Vox capture loop feeds
-(`silero_vad.onnx`, scp'd from `sasquatch:<repo>/models-store/silero-vad.zip`,
+(`silero_vad.onnx`, scp'd from `the build host:<repo>/models-store/silero-vad.zip`,
 v4 ONNX signature `x[1,512] / h[2,1,64] / c[2,1,64] -> prob`).
 
 Reference source for all operating points: the `/tmp/vox-work` checkout
@@ -96,7 +96,7 @@ sub-window peeking.
 | file | purpose |
 |---|---|
 | `predict.py` | the predictor (CLI below); self-contained, mirrors `baselines/rms_vad/predict.py` in shape |
-| `models/silero_vad.onnx` | Silero VAD v4 model (scp'd from sasquatch) |
+| `models/silero_vad.onnx` | Silero VAD v4 model (scp'd from the build host) |
 | `make_synthetic.py` | builds the SMOKE-ONLY synthetic dataset (`synthetic/`) from a public-domain JFK speech sample (`jfk.flac`) with a scripted pause/barge-in layout |
 | `synthetic/` | local-parquet dataset: 2 conversations (9001, 9002), **no gold annotations** |
 | `predictions.json` | `--mode final` output on the synthetic dataset |

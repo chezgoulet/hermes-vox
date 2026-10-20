@@ -1,7 +1,7 @@
 # Hermes Vox 0.5.6.2 — ER-alpha labeling + docs accuracy
 
 Bundles the Enhanced Realtime (alpha) labeling and the docs-accuracy fixes (the P0s from
-Christopher's documentation audit).
+the maintainer's documentation audit).
 
 ## Enhanced Realtime is now honestly alpha
 All six in-app "Enhanced Realtime" surfaces now carry "(alpha)":
@@ -28,4 +28,4 @@ Label strings + README/docs only; no logic/behavior changed. Gated green on fres
 - Version 0.5.6.2 (versionCode 102).
 - The docs audit also flagged ROADMAP.md/TODO.md (describe the original boilerplate project),
   the TTS-default framing, and the vestigial game//cmd/app + stray WASM binary — those are
-  Christopher's product/repo-hygiene calls, tracked separately.
+  the maintainer's product/repo-hygiene calls, tracked separately.

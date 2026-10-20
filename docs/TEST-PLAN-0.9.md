@@ -46,7 +46,7 @@ the line that proves it.
       either way, record what you actually see.
 - [ ] **1.4 The documented fix.** On the gateway: `tailscale serve --bg 8080`, enter
       `https://<machine>.<tailnet>.ts.net`. *Pass:* a turn succeeds.
-- [ ] **1.5 The exemption is narrow.** `http://mikoa.leopard-vibes.ts.net:8642` is
+- [ ] **1.5 The exemption is narrow.** `http://<machine>.<tailnet>.ts.net:8642` is
       allowed by the network security config. *Pass:* it works — proving the break hits
       LAN IPs and public hosts only, and the tailnet fallback survived.
 - [ ] **1.6 Session continuity.** The conversation from before the upgrade still

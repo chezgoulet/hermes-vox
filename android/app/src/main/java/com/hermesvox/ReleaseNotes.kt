@@ -63,9 +63,10 @@ internal object ReleaseNotes {
             title = "The HTTPS release",
             bullets = listOf(
                 "Entity endpoints must use HTTPS. A plain-http gateway — including a bare 192.168.x.x address — is refused, with an error that says how to fix it. A tailnet MagicDNS name still works over plain HTTP.",
+                "Barge-in works again: talking over the reply stops it in a fraction of a second, and the threshold is measured from your phone's own speaker instead of assumed.",
+                "The entity no longer mistakes its own greeting for you, and the spoken text keeps pace with the voice instead of jumping to the end.",
                 "Sound cues: the being's states now have a voice of their own, generated from its motion. Settings → Sound cues.",
-                "The turn engine is Kotlin end to end — the Go core, gomobile and the NDK are gone from the build.",
-                "Wake word is here as a preview: you can record your takes and see the training data it would use. Nothing listens in the background yet.",
+                "The connection test stops calling a working gateway failed. Wake word is here as a preview — you can record your takes; nothing listens yet.",
             ),
             alerts = listOf(
                 ReleaseAlert(

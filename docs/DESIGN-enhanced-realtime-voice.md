@@ -1,6 +1,6 @@
 # DESIGN — Enhanced Realtime voice: bridging a bespoke Hermes agent to the on-phone voice
 
-## Problem (Christopher, 2026-09-07)
+## Problem (maintainer, 2026-09-07)
 A user constructs an agent with its own soul + personality on their Hermes instance
 (the "mind"). The on-phone Gemma 4 **2B** is meant to be an extension of that
 personality, producing the Sesame experience. How do we bridge the two — what does
@@ -31,7 +31,7 @@ slot #1, scanned for injection. VOX.md lives beside it — same directory, sibli
 file — so the agent's identity (SOUL) and its voice-export (VOX) are co-located and
 versioned together by the same entity.
 
-### VOX.md lifecycle & onboarding (Christopher's refined flow, 2026-09-07)
+### VOX.md lifecycle & onboarding (the maintainer's refined flow, 2026-09-07)
 Direction of truth is UNAMBIGUOUS and one-way: **gateway is authoritative; device is
 a read-only mirror. Never the other way.** Codified as an invariant.
 
@@ -91,7 +91,7 @@ at runtime, since relying on a 2B to *remember* a rule is how it drifts.
 > or it emits `<<ESCALATE>>` (see "DECISION — the soul decides; the lists stop routing" below).
 > Kept for provenance; do not implement from this section.
 
-Soft path chosen (Christopher agreed) — the 2B may converse on smalltalk/emotional
+Soft path chosen (the maintainer agreed) — the 2B may converse on smalltalk/emotional
 content directly and escalate on real work. The safety rule: escalation is
 **initiated by the 2B** (recognizes "beyond me") but **honored/gated by the controller
 in code**, not by the 2B's discretion. The 2B's prompt makes it want + able to
@@ -168,7 +168,7 @@ ONE coherent persona despite cognition and expression living in different places
   to keep a 2B from over-talking or drifting. The vibe-vector state sync is the piece
   that keeps the two layers from feeling out of phase.
 
-## ER barge-in scope — the semantic gate (Christopher's "take your time" question)
+## ER barge-in scope — the semantic gate (the maintainer's "take your time" question)
 In ER there are TWO outputs (soul P3 fillers + mind generation) and one listener. Barge-in
 grows a SCOPE: the physical trigger (audio-level) always cuts the P3 filler (user can
 always interrupt the soul's presence layer), but whether it cancels the MIND is a
@@ -295,7 +295,7 @@ research behind it.
 
 # DECISION (2026-09-10) — the beat: the floor is taken in beats, not owned by a model
 
-Christopher approved A′ after the field research (`vox-er-turn-taking-field-research-2026-09-10.md`).
+the maintainer approved A′ after the field research (`vox-er-turn-taking-field-research-2026-09-10.md`).
 
 **The finding.** Nobody in this field settles who owns a turn by routing it to one of two generators.
 Sesame's CSM models content and prosody but explicitly *not* conversation structure — "turn taking,

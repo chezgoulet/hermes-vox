@@ -1,7 +1,7 @@
-# SPEC — 0.5.0-previewB: state-driven presence motion (Christopher-approved vocabulary)
+# SPEC — 0.5.0-previewB: state-driven presence motion (the maintainer-approved vocabulary)
 
 ## Why
-Christopher (2026-09-07, APPROVED): "way more animations and they should be way more
+the maintainer (2026-09-07, APPROVED): "way more animations and they should be way more
 interesting and they should be way more dynamic depending on the work being done."
 The being must *show its state through its motion*, not loop a screensaver.
 Vocabulary blessed as written. Motion feel = rich/energetic default, sweepable via

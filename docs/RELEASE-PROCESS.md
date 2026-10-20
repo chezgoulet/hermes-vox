@@ -23,7 +23,7 @@ is the same one a rebuild produces.
    user must act on is not finished until that entry exists — the banner is the only
    place the app can say so before the user hits it.
 
-3. **Gate the full tree** — the authoritative build is on the Thelio (`c@sasquatch`):
+3. **Gate the full tree** — the authoritative build is on the Thelio (`the build host`):
    - `bash scripts/gate.sh` (debug build, every unit test, the stream parity harness).
    - Android: `gradle assembleRelease testReleaseUnitTest`.
 

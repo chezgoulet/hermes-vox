@@ -22,7 +22,7 @@ shapes render:
 - **A_BORE "water"** — an all-over liquid ripple field.
 - **A_RADAR** — a weather-radar panel: range rings + rotating sweep + storm cells.
 - **A_TAKU "octopus"** — a limbed, self-propelling being with a WANDER→FIXATE→MOVE-ON
-  transport state machine + cooldown (Christopher's exact spec: it swims, occasionally
+  transport state machine + cooldown (the maintainer's exact spec: it swims, occasionally
   fixates on something interesting, then moves on — tentacles coupled to the heading).
 
 ## State-wiring (new shapes fire in their named states, configurable)

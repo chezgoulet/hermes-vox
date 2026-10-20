@@ -39,7 +39,7 @@ undefined behavior; a headset switch mid-call likely keeps audio on the dead rou
 ## H3 — Session hygiene (measurement only, per plan)
 - event=turn gains session_turns=N (count since resetConversation/new call), so
   gateway context creep is visible in field logs. NO truncation/summarization
-  behavior yet — we measure before we act (Christopher's rule: no defensive limit
+  behavior yet — we measure before we act (the maintainer's rule: no defensive limit
   without data).
 
 ## Hard rules

@@ -7,7 +7,7 @@ server, etc.). Zero new native dependencies; the existing partial/early-start lo
 reuses it unchanged because partials already call `stt.transcribe(snapshot, sr)`
 (VoiceController.kt:257) on a worker thread.
 
-## Naming (hard rule — Christopher)
+## Naming (hard rule — the maintainer)
 Public app: no house-specific names. Backend value = `remote`. No "House GPU".
 Defaults are empty; the user supplies the URL (the app already does this for the
 entity URL — same pattern, Settings → custom backend).
@@ -75,7 +75,7 @@ partials; multi-server failover; TLS pinning. All follow-ups on the same seam.
 
 ## Verification
 1. `cd android && <GRADLE 8.12.1, JDK17> :app:testDebugUnitTest` exit 0 after each commit.
-2. Post-merge device test (Christopher): Settings → STT backend → remote; URL =
+2. Post-merge device test (the maintainer): Settings → STT backend → remote; URL =
    Thelio lemonade (after bind flip), model `Whisper-Base`; take 8+ turns; export
    log; expect `event=stt-remote ms≈<200` and `event=turn … stt=<~200>` lines with
    outcome=ok, fallback chain verified by turning Thelio off mid-session (expect
