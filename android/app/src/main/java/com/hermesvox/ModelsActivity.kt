@@ -7,6 +7,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
@@ -133,6 +134,31 @@ class ModelsActivity : AppCompatActivity() {
         super.onStop()
     }
 
+    /** Start (or resume) [spec]. A model under a non-OSS licence first shows the licence —
+     *  its name, the licensor's attribution, a link to the model card — and starts only once
+     *  the user accepts; the acceptance is kept per model (ModelLicences), and ModelDownloader
+     *  refuses to fetch without it. */
+    private fun download(spec: ModelSpec) {
+        val licence = spec.licence
+        if (licence == null || ModelLicences.isAccepted(this, spec.id)) { ModelDownloads.enqueue(this, spec); return }
+        AlertDialog.Builder(this)
+            .setTitle("${spec.name} — licence")
+            .setMessage("This model is not open source. It is offered under the ${licence.name}, " +
+                "which its licensor can revoke. It is downloaded straight from the upstream release " +
+                "to this phone; Hermes Vox does not ship it.\n\n${licence.attribution}.\n\n" +
+                "Read the model card (it links the full licence) before accepting:\n${licence.modelCardUrl}")
+            .setPositiveButton("Accept & download") { _, _ ->
+                ModelLicences.accept(this, spec)
+                ModelDownloads.enqueue(this, spec)
+            }
+            .setNeutralButton("Model card") { _, _ ->
+                try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(licence.modelCardUrl))) }
+                catch (_: Throwable) { android.widget.Toast.makeText(this, licence.modelCardUrl, android.widget.Toast.LENGTH_LONG).show() }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** One card, drawn from the download state. Every state says what tapping will do. */
     private fun render(spec: ModelSpec, st: ModelDownloads.State) {
         val c = cards[spec.id] ?: return
@@ -191,7 +217,7 @@ class ModelsActivity : AppCompatActivity() {
                 c.state.text = ModelProgress.paused(st.done, st.reason)
                 c.state.setTextColor(ContextCompat.getColor(this, if (st.reason != null) R.color.hv_danger else R.color.hv_warn))
                 c.action.text = "Resume"
-                c.action.setOnClickListener { ModelDownloads.enqueue(this, spec) }
+                c.action.setOnClickListener { download(spec) }
             }
             ModelDownloads.State.Idle -> {
                 c.progress.visibility = android.view.View.GONE
@@ -200,7 +226,7 @@ class ModelsActivity : AppCompatActivity() {
                 c.state.text = if (spec.recommended) "⚠ Required — not installed" else "Not installed"
                 c.state.setTextColor(ContextCompat.getColor(this, if (spec.recommended) R.color.hv_warn else R.color.hv_text_dim))
                 c.action.text = "Download"
-                c.action.setOnClickListener { ModelDownloads.enqueue(this, spec) }
+                c.action.setOnClickListener { download(spec) }
             }
         }
     }

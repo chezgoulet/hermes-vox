@@ -423,11 +423,7 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf(ModelCatalog.BACKEND_ONDEVICE, ModelCatalog.BACKEND_PLATFORM, ModelCatalog.BACKEND_REMOTE),
                 ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val) { refreshSttRemotePanel() }
         }
-        findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener {
-            val labels = ModelCatalog.sttModels.map { it.second }.toTypedArray()
-            val tokens = ModelCatalog.sttModels.map { it.first }.toTypedArray()
-            pick("STT model (on-device)", labels, tokens, ModelCatalog.KEY_STT_MODEL, R.id.set_stt_model_val)
-        }
+        findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener { pickSttModel() }
         // 0.7.3: the speech-pipeline CPU budget. Stored as an INT (0 = Auto), so it
         // cannot ride the String-based pick() helper. Applies on the next voice-model
         // load — numThreads is baked into the recognizer/synth session at build.
@@ -498,11 +494,50 @@ class SettingsActivity : AppCompatActivity() {
         bindMicAdvanced()  // #118: collapse/expand the Mic & Barge-in timing-tuner panel
     }
 
+    /** The STT model chooser: the shipped models, then the streaming arm. Picking the
+     *  streaming arm sets [ModelCatalog.KEY_STT_STREAM_MODEL] and leaves the shipped
+     *  [ModelCatalog.KEY_STT_MODEL] alone — it is the fallback while the streaming model is
+     *  absent, downloading or will not load. Picking a shipped model clears the streaming one. */
+    private fun pickSttModel() {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val choices = ModelCatalog.sttModels + ModelCatalog.streamingSttModels.map { (id, label) ->
+            id to ModelCatalog.streamingSttLabel(label, am.memoryClass, am.isLowRamDevice)
+        }
+        val stream = prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, "").orEmpty()
+        val cur = if (ModelCatalog.isStreamingStt(stream)) stream
+            else prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
+        AlertDialog.Builder(this)
+            .setTitle("STT model (on-device)")
+            .setSingleChoiceItems(choices.map { it.second }.toTypedArray(), choices.indexOfFirst { it.first == cur }.coerceAtLeast(0)) { d, which ->
+                val id = choices[which].first
+                if (ModelCatalog.isStreamingStt(id)) {
+                    prefs.edit().putString(ModelCatalog.KEY_STT_STREAM_MODEL, id).apply()
+                    if (!ModelCatalog.isInstalled(this, id)) Toast.makeText(this,
+                        "Download it in Voice models — until then ${sttModelLabel(prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL))} is used.",
+                        Toast.LENGTH_LONG).show()
+                } else {
+                    prefs.edit().putString(ModelCatalog.KEY_STT_MODEL, id).remove(ModelCatalog.KEY_STT_STREAM_MODEL).apply()
+                }
+                findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+                d.dismiss()
+            }
+            .show()
+    }
+
+    private fun sttModelLabel(id: String?): String =
+        (ModelCatalog.sttModels + ModelCatalog.streamingSttModels).firstOrNull { it.first == id }?.second ?: id.orEmpty()
+
+    /** The STT row's value: the streaming arm when selected, else the shipped model. */
+    private fun currentSttModelLabel(): String {
+        val stream = prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, "").orEmpty()
+        return if (ModelCatalog.isStreamingStt(stream)) sttModelLabel(stream)
+            else sttModelLabel(prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL)
+    }
+
     private fun refreshFlowVals() {
         findViewById<TextView>(R.id.set_mode_val).text = modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
         findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
-        val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
-        findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
+        findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
         syncSpeakerRow()   // title + value follow the selected engine
@@ -1314,6 +1349,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+                .remove(ModelCatalog.KEY_STT_STREAM_MODEL)   // the default: no streaming arm
                 .putInt(VoxThreads.PREF, VoxThreads.AUTO)   // 0.7.3: the thread override folds into the STT scope
                 .putString(KEY_STT_REMOTE_URL, "")
                 .putString(KEY_STT_REMOTE_MODEL, "")
