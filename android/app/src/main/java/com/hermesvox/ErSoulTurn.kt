@@ -159,6 +159,29 @@ object ErSoulTurn {
         return if (saidThisRun.any { norm(it) == n }) null else line
     }
 
+    /**
+     * Why [workingLine] would refuse this render, or null when it would speak. Diagnostics only —
+     * the refusal is correct either way, but a log that says `reason=silent` cannot distinguish
+     * "the soul chose silence" from "the guard threw away a good line". The owner asked to see
+     * what was discarded, and the answer decides whether the bounds are wrong.
+     *
+     * Reasons, in the order the guard applies them: `not-spoken` (escalate or empty render),
+     * `empty`, `too-long` (> [MAX_OPENER_CHARS]), `digits-or-markup`, `too-many-words`
+     * (> [MAX_OPENER_WORDS]), `repeat` (same line already said this run).
+     */
+    fun workingReject(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
+        val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
+        val firstLine = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+            ?: return "empty"
+        val t = firstLine.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
+        if (t.isEmpty()) return "empty"
+        if (t.length > MAX_OPENER_CHARS) return "too-long"
+        if (t.any { it.isDigit() || it == '<' || it == '>' || it == '[' || it == ']' }) return "digits-or-markup"
+        if (t.split(Regex("\\s+")).count { it.isNotEmpty() } > MAX_OPENER_WORDS) return "too-many-words"
+        val line = opener(text) ?: return "empty"
+        return if (saidThisRun.any { norm(it) == norm(line) }) "repeat" else null
+    }
+
     /** Bounds for a beat: long enough to sound human, short enough to be cut cleanly. */
     const val MAX_OPENER_WORDS = 7
     const val MAX_OPENER_CHARS = 60
