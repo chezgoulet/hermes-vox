@@ -25,7 +25,19 @@ data class ModelSpec(
     val sha256: String,
     val recommended: Boolean,
     val url: String = "",  // optional full canonical URL override (else <source>/<file>)
-    val purpose: String = ""  // one-line plain-language "what this model is for" (model card, #16)
+    val purpose: String = "",  // one-line plain-language "what this model is for" (model card, #16)
+    val licence: ModelLicence? = null  // non-null = the download requires accepting this licence first
+)
+
+/**
+ * A model licence that is not a permissive open-source one, so the user has to accept it
+ * before the weights are fetched (ModelLicences holds the acceptance, ModelDownloader
+ * refuses without it). The weights are only ever downloaded at runtime, never bundled.
+ */
+data class ModelLicence(
+    val name: String,         // the licence's own title, shown on the download screen
+    val attribution: String,  // the notice the licensor asks for, shown verbatim
+    val modelCardUrl: String  // upstream model card (it links the licence text)
 )
 
 object ModelCatalog {
@@ -75,6 +87,21 @@ object ModelCatalog {
             "Offline STT · most accurate + fastest, largest download (English)", true, 6,
             "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad", false, "",
             "Turns your speech into text on-device — most accurate, larger download"),
+        // Nemotron Speech Streaming 0.6B (NVIDIA), the k2-fsa int8 ONNX export with a 160 ms
+        // chunk baked into the encoder. The streaming A/B (docs/STT-AB.md) measured it at
+        // 11.9% WER on accented speech against 38.8% for the streaming zipformer, at ~900 MB
+        // peak RSS and RTF ~0.7 on the test phone. Opt-in, never the default. Size and sha256
+        // are those of the release artifact as fetched by tools/sttbench-stream/run_ab.py
+        // (463,945,198 bytes). The NVIDIA Open Model License is revocable and the tarball
+        // ships no licence file, so the download is gated on accepting it.
+        ModelSpec(NEMOTRON_STREAM_ID, "Nemotron Speech Streaming 0.6B (160 ms, int8)", "stt",
+            "sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25.tar.bz2", 463.9,
+            "Streaming STT · best on accented speech, heaviest (English, NVIDIA licence)", true, 8,
+            "0ae73a41cd51599dc7cac9ac083d9d35de53d762ca45923505fde47a3751814b", false, "",
+            "Turns your speech into text on-device — best with accents; needs a lot of memory",
+            ModelLicence("NVIDIA Open Model License Agreement",
+                "Licensed by NVIDIA Corporation under the NVIDIA Open Model License",
+                "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b")),
         ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,
             "On-device expression layer (Enhanced Realtime, alpha)", true, 7,
             "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", false,
@@ -108,6 +135,30 @@ object ModelCatalog {
     )
     /** Blessed default STT model id. */
     const val DEFAULT_STT_MODEL = "whisper-base"
+
+    /** The streaming (OnlineRecognizer) STT arm. */
+    const val NEMOTRON_STREAM_ID = "nemotron-stream-160ms"
+
+    /** Streaming STT models -> label. Kept apart from [sttModels]: choosing one is stored
+     *  under [KEY_STT_STREAM_MODEL] and leaves [KEY_STT_MODEL] alone, so the shipped model
+     *  stays selected underneath as the fallback. */
+    val streamingSttModels = listOf(NEMOTRON_STREAM_ID to "Nemotron streaming 0.6B")
+
+    /** The selected streaming STT model id; "" (the default) = none, use [KEY_STT_MODEL]. */
+    const val KEY_STT_STREAM_MODEL = "stt_stream_model"
+
+    fun isStreamingStt(modelId: String?): Boolean = streamingSttModels.any { it.first == modelId }
+
+    /** Below this ActivityManager.memoryClass (MB) the streaming arm's ~900 MB resident
+     *  model is a real risk, so the chooser says so instead of hiding the option. */
+    const val SMALL_MEMORY_CLASS_MB = 256
+
+    /** The chooser label for a streaming model: plain, or with the memory trade-off spelled
+     *  out on a device that reports a small heap class (or is a low-RAM device). */
+    fun streamingSttLabel(label: String, memoryClassMb: Int, lowRam: Boolean): String =
+        if (lowRam || memoryClassMb in 1 until SMALL_MEMORY_CLASS_MB)
+            "$label — needs ~900 MB RAM; may be slow or close other apps on this phone"
+        else label
 
     /** Decode language for a MULTILINGUAL Whisper model ("" = auto-detect). The
      *  shipped .en models ignore it (they only transcribe English). */
@@ -170,6 +221,7 @@ object ModelCatalog {
                         d.listFiles()?.any { it.name.endsWith("-$p.int8.onnx") } == true
                 }
             "parakeet-v2" -> listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
+            NEMOTRON_STREAM_ID -> STREAMING_TRANSDUCER_FILES
             "silero-vad" -> listOf("silero_vad.onnx")
             "piper-lessac" -> listOf("model.onnx", "tokens.txt")
             "supertonic" -> listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx",

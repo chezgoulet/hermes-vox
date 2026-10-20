@@ -60,6 +60,9 @@ class ModelDownloader(context: Context) {
      * message. [cancelled] is polled between reads; [progress] reports (phase, done, total).
      */
     fun run(spec: ModelSpec, cancelled: () -> Boolean, progress: (Phase, Long, Long) -> Unit): String? {
+        // A licensed model is fetched only after the user accepted its licence (ModelsActivity
+        // asks); this is the hard gate, so no other path can start the transfer without it.
+        ModelLicences.refusal(spec) { ModelLicences.isAccepted(context, it) }?.let { return it }
         if (spec.sha256.isBlank()) return "model has no pinned sha256"
         val url = urlFor(spec)
         val part = partFile(spec.id)
@@ -237,6 +240,8 @@ class ModelDownloader(context: Context) {
             "piper-lessac" -> {
                 rename(".*\\.onnx", "model.onnx")
             }
+            // Already canonical (STREAMING_TRANSDUCER_FILES) once hoisted: nothing to rename.
+            ModelCatalog.NEMOTRON_STREAM_ID -> Unit
         }
     }
 
