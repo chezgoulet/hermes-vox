@@ -226,6 +226,14 @@ directly with the GPU-contention and thermal findings above.
 Every swap is a claim until it is A/B'd on the device with everything else running. The visual arc
 taught us that a change which should obviously help can be inert.
 
+### Also landing in 0.9.x
+
+- `[ ]` **Multiple profiles** (#174). The app binds one entity today: endpoint, key, agent name
+  and session scope. This adds a registry of saved connections with a switcher, so more than one
+  Hermes profile can be reached without re-entering them. Client-side only — `GET /v1/models`
+  returns a single entity name, not a profile list, so *discovery* from the gateway is a separate
+  Hermes-side contract. Switching ends any live call: one line at a time is an invariant.
+
 ---
 
 ## Distribution
