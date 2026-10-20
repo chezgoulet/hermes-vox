@@ -65,6 +65,15 @@ package com.hermesvox
  *     speech peaking at just 0.16 stays unreliable — a 32ms leak would catch it but
  *     lets 0.17 crest echo through.
  *
+ *  5. THE FLOOR WAS BUILT FOR AN ECHO THAT IS GONE. The 0.081-0.095 residual echo
+ *     every constant above clears was measured while Piper spoke. Since 0.8.0 the
+ *     default voice is Supertonic (~6.5 dB quieter), and the 0.9.0 `barge-stat` lines
+ *     read 0.000-0.008 at the mic during playback. A voice ducked by the AEC to
+ *     0.04-0.17 now has to clear 0.10 alone, where in 0.7.x it only had to lift the
+ *     echo bed over it. During playback the floor now comes from [EchoFloor], which
+ *     predicts the echo from the reply's own audio and can only LOWER the floor; the
+ *     constants here stay the ceiling and the fallback. docs/BARGE-WHY-0.7-WORKED.md.
+ *
  * The caller tracks [sustainedMs]: net time the RMS has held above the active floor
  * (rmsMin when VAD is available, rmsMin * [NO_VAD_RMS_BOOST] without). The caller
  * ALSO tracks [sustainedLevelMs] against the raised bar activeFloor *
@@ -162,13 +171,16 @@ object BargeGate {
      *   if the current read has dipped — the sustain still requires
      *   [levelOnlyMs] of net occupancy, so residual echo (which peaks in the
      *   0.081-0.095 band, under the bar) still cannot pass.
+     * @param floor the active floor; defaults to rmsMin (VAD) / rmsMin * 1.4 (no VAD).
+     *   0.9.1: during playback [EchoFloor] passes one derived from the reply's own audio.
+     * @param levelBar the level-only escape's bar; defaults to floor * [LEVEL_ONLY_BOOST].
      */
     fun decide(rms: Float, vadSpeech: Boolean?, sustainedMs: Long, rmsMin: Float, vadAvailable: Boolean,
                levelOnlyMs: Long = DEFAULT_LEVEL_ONLY_MS, sustainedLevelMs: Long = 0L,
-               msSinceVadSpeech: Long = Long.MAX_VALUE, peakLevel: Float = 0f): Boolean {
+               msSinceVadSpeech: Long = Long.MAX_VALUE, peakLevel: Float = 0f,
+               floor: Float = if (vadAvailable) rmsMin else rmsMin * NO_VAD_RMS_BOOST,
+               levelBar: Float = floor * LEVEL_ONLY_BOOST): Boolean {
         if (rmsMin <= 0f) return false
-        val floor = if (vadAvailable) rmsMin else rmsMin * NO_VAD_RMS_BOOST
-        val levelBar = floor * LEVEL_ONLY_BOOST
         // Level-only escape: ignore VAD (echo can hold the frame-level VAD false)
         // once the raised bar has held levelOnlyMs of NET occupancy. 0.6.8: the
         // bar may be met by the RUN PEAK (a crest in a single frame) instead of
@@ -178,9 +190,9 @@ object BargeGate {
             // double gate: sustained RMS above rmsMin for >=200ms AND VAD speech on
             // this read or within VAD_RECENT_MS of it
             val vadAgrees = vadSpeech == true || msSinceVadSpeech <= VAD_RECENT_MS
-            return sustainedMs >= VAD_SUSTAIN_MS && vadAgrees && rms > rmsMin
+            return sustainedMs >= VAD_SUSTAIN_MS && vadAgrees && rms > floor
         }
         // no-VAD fallback: higher floor (rmsMin*1.4), longer sustain (350ms)
-        return sustainedMs >= NO_VAD_SUSTAIN_MS && rms > rmsMin * NO_VAD_RMS_BOOST
+        return sustainedMs >= NO_VAD_SUSTAIN_MS && rms > floor
     }
 }
