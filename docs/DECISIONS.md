@@ -189,3 +189,25 @@ that is not running the app cannot be woken without either Google or a push serv
 somewhere. Policy only earns its place once there is more than one transport to
 choose between, which is why the routing table lands with the endpoint rather than
 with the armed session.
+
+## D13 — Realtime is frozen after the basics; all polish goes to Enhanced Realtime
+
+Set 2026-10-20, after a field session spent in the wrong mode.
+
+Realtime is the default and the floor: a hands-free line that hears you, answers, and
+stops when you speak. That has to work, and the barge fixes in flight land there because
+they are shared code — the barge gate, the capture drain and the endpoint clock are the
+same path in both modes.
+
+**Beyond that, Realtime gets no polish.** Every improvement from here — length and
+register, turn-taking, backchannels, presence, delivery — lands in Enhanced Realtime. ER
+is where the product is going; Realtime is what it has to keep working.
+
+**Committed to:** no new behaviour in Realtime that is not a fix; no duplicated polish
+written twice for both modes; and ER stops being described as the side door once its
+basics hold (which is a 1.0 question, not a 0.9 one).
+
+Consequence worth naming: ER carries the on-device Gemma presence model and the GPU
+path, so it is the heavier mode and it is not the default. Freezing Realtime means the
+default experience stays plain until ER is promoted — the promotion is a decision
+someone has to make, not something that happens by drift.
