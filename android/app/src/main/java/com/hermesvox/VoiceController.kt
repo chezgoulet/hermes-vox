@@ -359,19 +359,47 @@ class VoiceController(private val context: Context, private val session: HermesS
         VoxLog.d("pipeline: stt=${stt?.name} sttReady=$sttReady vad=${vad?.isAvailable}")
     }
 
-    /** On-device Whisper leg when its model is installed, else platform (null). */
-    private fun onDeviceStt(): VoxStt? {
+    /** Set when the streaming STT arm failed to load in this controller; the shipped model
+     *  is used for the rest of its life (a new session tries the streaming arm again). */
+    @Volatile private var streamInitFailed = false
+
+    /** The on-device model to load (pickOnDeviceStt): the streaming arm when selected and
+     *  usable, else the selected shipped model when installed, else none (platform). */
+    private fun onDevicePick(): OnDeviceSttPick {
         val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
-        return if (ModelCatalog.isInstalled(context, model)) onDeviceSttFor(context, model) else null
+        val stream = prefString(ModelCatalog.KEY_STT_STREAM_MODEL, "")
+        val status = when {
+            !ModelCatalog.isStreamingStt(stream) -> StreamSttStatus.ABSENT
+            streamInitFailed -> StreamSttStatus.INIT_FAILED
+            ModelCatalog.isInstalled(context, stream) -> StreamSttStatus.READY
+            ModelCatalog.blessed.firstOrNull { it.id == stream }?.let { ModelDownloads.state(context, it) }
+                .let { it is ModelDownloads.State.Queued || it is ModelDownloads.State.Running } -> StreamSttStatus.DOWNLOADING
+            else -> StreamSttStatus.ABSENT
+        }
+        return pickOnDeviceStt(stream, status, model, ModelCatalog.isInstalled(context, model))
+    }
+
+    private fun logFallback(pick: OnDeviceSttPick) {
+        val reason = pick.fallbackReason ?: return
+        VoxLog.w("event=stt-fallback reason=$reason from=${prefString(ModelCatalog.KEY_STT_STREAM_MODEL, "")} to=${pick.modelId ?: "platform"}")
+    }
+
+    /** The on-device leg (streaming arm or the selected shipped model), else platform (null). */
+    private fun onDeviceStt(): VoxStt? {
+        val pick = onDevicePick()
+        logFallback(pick)
+        return pick.modelId?.let { onDeviceSttFor(context, it) }
     }
 
     private fun buildStt(): VoxStt? {
         val backend = prefString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
-        val model = prefString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
-        return when (resolveSttLeg(backend, prefString(KEY_STT_REMOTE_URL, ""),
-            ModelCatalog.isInstalled(context, model))) {
+        val pick = onDevicePick()
+        val leg = resolveSttLeg(backend, prefString(KEY_STT_REMOTE_URL, ""), pick.modelId != null)
+        // An explicit Platform or a working Remote never consults the on-device pick.
+        if (leg != ModelCatalog.BACKEND_REMOTE && backend != ModelCatalog.BACKEND_PLATFORM) logFallback(pick)
+        return when (leg) {
             ModelCatalog.BACKEND_REMOTE -> RemoteStt(context).also { remoteLeg = it }
-            ModelCatalog.BACKEND_ONDEVICE -> onDeviceSttFor(context, model)
+            ModelCatalog.BACKEND_ONDEVICE -> pick.modelId?.let { onDeviceSttFor(context, it) }
             else -> null   // platform SpeechRecognizer (Settings -> Platform)
         }
     }
@@ -383,7 +411,19 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  leg so the loop keeps hearing the user instead of a dead RemoteStt. */
     private fun onSttReady(ok: Boolean) {
         sttReady = ok
-        if (ok || remoteLeg == null) return
+        if (ok) return
+        // The streaming arm would not load (memory, a damaged file): swap in the selected
+        // shipped model — the existing path — and say so (event=stt-fallback reason=init-failed).
+        val failed = stt
+        if (failed is OnlineNemotronStt && !streamInitFailed) {
+            streamInitFailed = true
+            failed.shutdown()
+            val fallback = onDeviceStt()
+            stt = fallback
+            if (fallback != null) fallback.init { onSttReady(it) }
+            return
+        }
+        if (remoteLeg == null) return
         remoteLeg = null
         val fallback = onDeviceStt()
         VoxLog.w("event=stt-fallback from=remote to=${if (fallback != null) "on-device" else "platform"}")
@@ -2407,6 +2447,24 @@ internal fun resolveSttLeg(backend: String?, remoteUrlPref: String?, onDeviceIns
             else ModelCatalog.BACKEND_PLATFORM
         else -> if (onDeviceInstalled) ModelCatalog.BACKEND_ONDEVICE else ModelCatalog.BACKEND_PLATFORM
     }
+}
+
+/** What the selected streaming STT model is doing, for [pickOnDeviceStt]. */
+internal enum class StreamSttStatus { READY, ABSENT, DOWNLOADING, INIT_FAILED }
+
+/** The on-device STT model to load ([modelId], null = none: platform) and, when the
+ *  selected streaming arm could not be used, why ([fallbackReason], for event=stt-fallback). */
+internal data class OnDeviceSttPick(val modelId: String?, val fallbackReason: String?)
+
+/** Pure: the streaming arm when it is selected and ready; otherwise the selected SHIPPED
+ *  model (Whisper or Parakeet, the existing path) when installed, else none. Never another
+ *  recogniser: the fallback is what the user had before choosing the streaming arm. */
+internal fun pickOnDeviceStt(streamPref: String?, streamStatus: StreamSttStatus,
+                             shippedModel: String, shippedInstalled: Boolean): OnDeviceSttPick {
+    val shipped = shippedModel.takeIf { shippedInstalled }
+    if (!ModelCatalog.isStreamingStt(streamPref)) return OnDeviceSttPick(shipped, null)
+    if (streamStatus == StreamSttStatus.READY) return OnDeviceSttPick(streamPref, null)
+    return OnDeviceSttPick(shipped, streamStatus.name.lowercase().replace('_', '-'))
 }
 
 /** #30/#44: chunk-seam helper (pure, unit-testable). Returns the index of the

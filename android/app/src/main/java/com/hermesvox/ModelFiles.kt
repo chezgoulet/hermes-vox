@@ -27,3 +27,8 @@ internal fun hoist(dir: File) {
     }
     sub.deleteRecursively()
 }
+
+/** The files a streaming transducer export (Nemotron) must have at its model root after
+ *  [hoist]: the upstream tarball's own names, kept as-is (no renaming needed). */
+internal val STREAMING_TRANSDUCER_FILES =
+    listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")

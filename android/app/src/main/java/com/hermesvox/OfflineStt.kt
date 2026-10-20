@@ -42,11 +42,13 @@ fun VoxStt.transcribeWhole(samples: FloatArray, sampleRate: Int): String? {
     return SttWindows.join(parts)
 }
 
-/** The on-device recognizer for a catalog STT model id: Parakeet (NeMo TDT
- *  transducer) or Whisper. */
-fun onDeviceSttFor(context: Context, modelId: String): VoxStt =
-    if (ModelCatalog.isTransducerStt(modelId)) OfflineParakeetStt(context, modelId)
-    else OfflineWhisperStt(context, modelId)
+/** The on-device recognizer for a catalog STT model id: the streaming arm (Nemotron),
+ *  Parakeet (NeMo TDT transducer) or Whisper. */
+fun onDeviceSttFor(context: Context, modelId: String): VoxStt = when {
+    ModelCatalog.isStreamingStt(modelId) -> OnlineNemotronStt(context, modelId)
+    ModelCatalog.isTransducerStt(modelId) -> OfflineParakeetStt(context, modelId)
+    else -> OfflineWhisperStt(context, modelId)
+}
 
 /**
  * SherpaOfflineStt — the shared load/decode shell for the sherpa-onnx offline
