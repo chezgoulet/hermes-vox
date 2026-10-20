@@ -20,9 +20,10 @@
   line/skip/stop` summarised per session), its bar, and its levers are in `PLAN-0.9.1.md` §3,
   and they carry forward.
 
-**Homeless by decision, not by accident:** F-Droid (its own rail, switching on whenever it
-is accepted — draft #154), multi-profile (#174), wake-word training (no ML compute), and
-#191 (a bug with no reproduction belongs in neither list).
+**Homeless by decision, not by accident:** F-Droid (its own rail — submitted at the 1.0
+release, and the 1.0 gate is *submission*, not acceptance: D14/D15, draft #154),
+multi-profile (#174, now 1.1), wake-word training (now 1.2, and no ML compute), and #191
+(a bug with no reproduction belongs in neither list).
 
 The sprint detail below was the first pass. It is kept for the evidence it accumulated —
 what already exists, and why the ordering was wrong — but the release plans supersede its

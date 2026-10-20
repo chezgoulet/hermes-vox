@@ -232,3 +232,21 @@ Hermes in our own pipeline") needs rented compute or a decision to drop it.
 is external and slow. Either the gate is amended to *"submission made, and a rebuild of the
 released tag proven to match our APK"*, or the submission moves earlier — 0.9.2. This is a
 decision for the 1.0 cut and should be settled before it, not during it.
+
+## D15 — The 1.0 gate for F-Droid is submission, not acceptance
+
+Set 2026-10-20. **Amends D3's gate "F-Droid accepted".**
+
+D14 submits with the 1.0 release, and F-Droid's review is external and slow — so acceptance
+would land *after* 1.0. A gate that cannot be closed on the day it is judged is not a gate;
+it is a wish with a reviewer attached.
+
+**The 1.0 gate becomes:** the submission is made against the released tag, the recipe builds
+sherpa-onnx and onnxruntime from source rather than consuming prebuilt binaries,
+`Binaries:` and `AllowedAPKSigningKeys` name our signature, and **a rebuild of the released
+tag reproduces our APK** — which is the part of their flow that actually turns on our work.
+
+**Acceptance remains tracked, and its failure is still a defect.** When it lands, the rail
+goes live and the app is installable from F-Droid. If F-Droid skips a version because their
+rebuild did not match ours, that is not their problem: it falsifies our reproducibility
+claim and is treated as a severe bug.
