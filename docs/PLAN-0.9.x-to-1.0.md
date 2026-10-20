@@ -7,8 +7,13 @@
 - **0.9.1 — the arm.** Wire the streaming recogniser behind a setting, run co-residency,
   decide the default, and give presence tuning an instrument and a bar. Detail:
   `PLAN-0.9.1.md`.
-- **0.9.2 — the listening half.** Continuous capture *and* semantic endpointing together,
-  behind separate switches, because they share one field test and one battery budget.
+- **0.9.2 — the listening half.** Continuous capture, the three-frame endpointing contract and
+  the constant tail, behind separate switches — plus the model and settings screens that expose
+  them. This is the substrate, and it is measured on its own (D18).
+- **0.9.3 — the conversation half.** What the substrate makes possible: classifying an overlap
+  (interruption, backchannel, third party, background), resuming after an interruption without
+  repeating, backchannels — plus the commands UI, the animation grammar and onboarding, which
+  are how those behaviours become visible.
 - **1.0 — the declaration.** No features. The six gates, re-run, and a cut.
 
 **Two things are standing requirements, not release content:**
