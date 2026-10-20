@@ -79,6 +79,19 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         return (rms / RMS_FULL).coerceIn(0f, 1f)
     }
 
+    /** 0.9.1: raw RMS of the last [windowMs] of reply audio the track has played up to
+     *  the head — the barge drain's echo reference ([EchoFloor]). Unscaled, unlike
+     *  [speechLevel], and it reaches back into the previous phrase, whose tail is still
+     *  in the track buffer when the next one is handed over (reading that as silence
+     *  would drop the floor under a live echo). 0 when nothing is playing. */
+    fun playbackRms(windowMs: Int = 64): Float {
+        val t = streamTrack ?: return 0f
+        val sr = streamSR
+        if (sr <= 0) return 0f
+        val head = try { t.playbackHeadPosition } catch (_: Throwable) { return 0f }
+        return EchoFloor.windowRms(head, sr * windowMs / 1000, liveBuf, liveBase, prevBuf, prevBase)
+    }
+
     /** The voice model's ACTUAL sample rate for the current stream (0 until the first chunk). */
     val streamSampleRate: Int get() = streamSR
     /** Per-phrase audio accounting: (text, samples) reported in the ORDER the audio is
@@ -93,6 +106,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
     // Read-only accounting — nothing in the audio path depends on them.
     @Volatile private var liveBuf: FloatArray? = null
     @Volatile private var liveBase = 0
+    // 0.9.1: the phrase before liveBuf, for playbackRms() (its tail is still buffered).
+    @Volatile private var prevBuf: FloatArray? = null
+    @Volatile private var prevBase = 0
     // #7: serialize stream-track writes vs teardown so release() never races a
     // WRITE_BLOCKING write (the SIGSEGV). The writer sets writing under the lock;
     // teardown never flushes/releases while writing==true.
@@ -297,6 +313,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 streamTrack = built          // stop()/hush/call-end can now reach it
                 streamWritten = 0
                 streamSR = sr
+                prevBuf = null
                 liveBuf = samples; liveBase = 0   // previewB: RMS source for this utterance
                 writing = true               // the async teardown waits for this to clear (#7)
                 t = built
@@ -352,6 +369,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 streamTrack = null
                 streamWritten = 0
                 streamSR = 0
+                liveBuf = null; prevBuf = null   // a new track counts from 0: old offsets are lies
             }
         } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
     }
@@ -400,6 +418,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // previewB: this chunk starts where the track has been written to so far
                 // (streamWritten only advances AFTER the whole chunk lands), so the head
                 // maps straight into it.
+                prevBuf = liveBuf; prevBase = liveBase
                 liveBuf = samples; liveBase = streamWritten
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
@@ -448,6 +467,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             t = streamTrack                      // no chunk may start (or rebuild) after this point
             streamTrack = null                   // fence: no new write may start
             liveBuf = null                       // previewB: silence reports level 0, not the last RMS
+            prevBuf = null
             // F1: no wait for writing here — that belongs to the async teardown.
         }
         try { t?.pause() } catch (_: Throwable) {}   // the user-audible silence, NOW

@@ -416,6 +416,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // EchoTailRule: when the previous reply's audio ended + its plausible tail. 0 = no
                 // reply just played (first segment, or after a barge-seeded turn).
                 var echoGuardUntil = 0L
+                // 0.9.1: the playback barge floor, measured from the reply's own echo. It
+                // spans turns (the echo belongs to this line, not to one reply) and a
+                // rebuilt line relearns. See EchoFloor and docs/BARGE-WHY-0.7-WORKED.md.
+                val echoFloor = EchoFloor()
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
@@ -647,7 +651,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // sustains + decision, and BargeCarry's history/onset/fire. Extracted
                     // so a synthetic 16 kHz signal can be pushed through this exact code
                     // off-device (BargeAudioPathTest), with no mic, VAD or wall clock.
-                    val bargeAudio = BargeAudioPath(sr, bargeRmsMin, vadAvailable, levelOnlyMs, bargeCarry)
+                    val bargeAudio = BargeAudioPath(sr, bargeRmsMin, vadAvailable, levelOnlyMs, bargeCarry, echo = echoFloor)
                     // Second accumulator (0.4.0.2 level-only escape): net time the RMS held
                     // above the RAISED bar (floor * LEVEL_ONLY_BOOST), its own bar, tracked
                     // with the same readAt clock discipline + the same O(1) float math as
@@ -745,8 +749,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
                             }
                         } else skipStateSinceMs = 0L
+                        // 0.9.1: the reply's level at the playback head — the echo reference.
+                        // Only the on-device voice has one; System TTS keeps the fixed floor.
+                        val ref = if (spk) (tts as? SherpaTts)?.playbackRms() else null
                         if (inGrace || stateSkip) {
-                            bargeAudio.hold(frames)   // reset sustains, history only (pre-roll)
+                            bargeAudio.hold(frames, ref)   // reset sustains, history only (pre-roll)
                             bargeStat.reset()
                             continue
                         }
@@ -769,15 +776,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // #42: RMS + leaky sustains + the double-gate decision + the carry
                         // (history/onset/fire) live in the production BargeAudioPath; the
                         // deterministic test drives this same call with a synthetic signal.
-                        val bf = bargeAudio.process(frames, vadSpeech, readAt)
+                        val bf = bargeAudio.process(frames, vadSpeech, readAt, ref)
                         if (spk) {
-                            bargeStat.add(bf.level, bargeAudio.floor, bargeAudio.levelFloor, vadSpeech, readAt)?.let {
+                            bargeStat.add(bf.level, bargeAudio.floor, bargeAudio.levelFloor, vadSpeech, readAt, ref ?: 0f)?.let {
                                 // d(), not dd(): this line exists to be read in an
                                 // EXPORTED log. dd() reaches the file only with the
                                 // debug-file toggle on — the 0.6.4 field bug (the ER
                                 // verdict lines were invisible in the export for
                                 // exactly this reason). One line a second is cheap.
-                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs}")
+                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs} echo=${if (echoFloor.calibrated) "%.3f".format(echoFloor.echoLevel) else "-"}")
                             }
                         } else bargeStat.reset()
                         // 0.6.2 echo guard: track glue playback end so the capture skip

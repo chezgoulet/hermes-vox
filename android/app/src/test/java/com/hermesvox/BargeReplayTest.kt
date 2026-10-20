@@ -7,6 +7,7 @@ import org.junit.Test
 import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 /**
@@ -211,5 +212,216 @@ class BargeReplayTest {
         val crestDuty = acos(2 * (0.13 - 0.02) / 0.19 - 1) / PI
         assertEquals(0.45, crestDuty, 0.005)
         assertTrue(crestDuty < 0.6 && crestDuty > duty)
+    }
+
+    // ---- 4. 0.9.1: the floor measured from the reply's own echo (EchoFloor) ----
+    //
+    // docs/BARGE-WHY-0.7-WORKED.md. The fixed 0.10 floor was derived from a 0.081-0.095
+    // echo measured under Piper; under Supertonic the 0.9.0 field barge-stat lines read
+    // 0.000-0.008 at the mic during playback, and the owner's voice, ducked by the AEC,
+    // 0.04-0.17. These cases add the third input the production drain now passes: the
+    // reply's level at the playback head (SherpaTts.playbackRms).
+    //
+    // MODEL. The reply (ref): 6 s phrases with 0.7 s gaps, syllables at 4.3 Hz, a
+    // 128 ms word pause every 0.9 s; active peak 0.10 (Supertonic) or 0.18 (Piper),
+    // the levels the two voices synthesize at with the app's settings. The echo: the
+    // reply delayed by [delay] reads (negative = the echo arrives BEFORE the head says
+    // the audio played), scaled to [echoPeak], optionally compressive/expansive
+    // ([expo]). A 0.004 noise bed throughout — the gap level the field shows between
+    // chunks. The voice: the envelopes above, VAD true while it is over 0.04 (Silero
+    // follows the voice) or never (Silero deaf). The first 8 reads are the playback
+    // grace window (hold), as in the drain.
+
+    private fun replyRef(t: Double, peak: Double): Double {
+        val c = t % 6.7
+        if (c >= 6.0) return 0.0                       // the gap between phrases
+        if ((c % 0.9) < 0.128) return 0.0              // a word pause
+        return cosEnv(c, 4.3, peak, 0.2 * peak)
+    }
+
+    private class Reply(val refPeak: Double, val echoPeak: Double, val delay: Int = 2, val expo: Double = 1.0,
+                        val stall: IntRange = IntRange.EMPTY)
+
+    private val supertonic = Reply(0.10, 0.008)            // today: L2's 0.000-0.008
+    private val headset = Reply(0.10, 0.0)                 // no acoustic path at all
+    private fun piper(echoPeak: Double = 0.095, delay: Int = 2, expo: Double = 1.0) = Reply(0.18, echoPeak, delay, expo)
+
+    private class EchoOutcome(val fireRead: Int?, val leadMs: Long, val floor: Float)
+
+    private fun replayReply(reply: Reply, reads: Int, withEcho: Boolean = true, phase: Double = 0.0,
+                            echoVad: (Int, Double) -> Boolean = { _, _ -> false },
+                            voice: ((Double) -> Double)? = null, voiceFrom: Int = 0, voiceVad: Boolean = true,
+                            voiceUntil: Int = Int.MAX_VALUE, echoModel: EchoFloor = EchoFloor(),
+                            leakMs: Long = BargeGate.SUSTAIN_LEAK_MS): EchoOutcome {
+        val carry = BargeCarry(sr)
+        val path = BargeAudioPath(sr, BargeGate.DEFAULT_RMS_MIN, vadAvailable = true,
+            levelOnlyMs = BargeGate.DEFAULT_LEVEL_ONLY_MS, carry = carry, leakMs = leakMs,
+            echo = if (withEcho) echoModel else null)
+        for (i in 0 until reads) {
+            val t = i * frameMs / 1000.0 + phase
+            val stalled = i in reply.stall
+            val ref = if (stalled) 0.0 else replyRef(t, reply.refPeak)
+            val heard = if (i - reply.delay in reply.stall) 0.0 else replyRef(t - reply.delay * frameMs / 1000.0, reply.refPeak)
+            val e = reply.echoPeak * (heard / reply.refPeak).pow(reply.expo)
+            val v = if (voice != null && i >= voiceFrom && i < voiceUntil) voice(t) else 0.0
+            val mic = sqrt(e * e + 0.004 * 0.004 + v * v)
+            val vad = echoVad(i, e) || (voiceVad && v >= 0.04)
+            if (i < 8) { path.hold(frameAt(mic), ref.toFloat()); continue }
+            if (path.process(frameAt(mic), vad, 1 + i * frameMs, ref.toFloat()).fired) return EchoOutcome(i, carry.leadMs, path.floor)
+        }
+        return EchoOutcome(null, 0L, path.floor)
+    }
+
+    private val voiceAt = 40                                // 2.56 s of reply before the user talks
+    private val voiceReads = (3000 / frameMs).toInt()
+
+    private fun voiceEnv(shape: Shape, rate: Double, peak: Double): (Double) -> Double = when (shape) {
+        Shape.COS -> { t -> cosEnv(t, rate, peak, 0.02) }
+        Shape.PLATEAU -> { t -> plateauEnv(t, rate, peak, 0.02) }
+    }
+
+    /** Fires/40 (4 rates x 10 phases), mean and worst ms from the voice onset. */
+    private fun voiceSweep(reply: Reply, shape: Shape, peak: Double, withEcho: Boolean = true,
+                           voiceVad: Boolean = true, leakMs: Long = BargeGate.SUSTAIN_LEAK_MS,
+                           checkCarry: Boolean = true,
+                           echoVad: (Int, Double) -> Boolean = { _, _ -> false }): Triple<Int, Long, Long> {
+        var fired = 0; var sum = 0L; var worst = 0L
+        for (rate in rates) for (p in 0 until 10) {
+            val o = replayReply(reply, voiceAt + voiceReads, withEcho, p / 10.0, echoVad = echoVad,
+                voice = voiceEnv(shape, rate, peak), voiceFrom = voiceAt, voiceVad = voiceVad, leakMs = leakMs)
+            val at = o.fireRead ?: continue
+            assertTrue("fired on the reply before the user spoke ($shape $peak, read $at)", at >= voiceAt)
+            val ttf = (at - voiceAt + 1) * frameMs
+            if (checkCarry) assertTrue("carry lost the onset ($shape $peak: ttf=$ttf leadMs=${o.leadMs})", o.leadMs >= ttf)
+            fired++; sum += ttf; worst = maxOf(worst, ttf)
+        }
+        return Triple(fired, if (fired > 0) sum / fired else 0L, worst)
+    }
+
+    private val ownerBand = listOf(0.07, 0.08, 0.12, 0.17)
+
+    @Test fun the_owners_voice_over_todays_reply_fires_every_time() {
+        // His voice under playback, 0.07-0.17 peaks, VAD following it (and not the echo —
+        // L2's pure-playback seconds read vadPct=0): every rate, every phase, both shapes,
+        // on the speaker (Supertonic) and on a headset. Measured: mean 302-404 ms from the
+        // onset, worst 832 ms.
+        for (reply in listOf(supertonic, headset)) for (shape in Shape.values()) for (peak in ownerBand) {
+            val (fired, mean, worst) = voiceSweep(reply, shape, peak)
+            assertEquals("echo ${reply.echoPeak} $shape $peak fired $fired/40", 40, fired)
+            assertTrue("echo ${reply.echoPeak} $shape $peak mean ttf $mean ms", mean <= 420L)
+            assertTrue("echo ${reply.echoPeak} $shape $peak worst ttf $worst ms", worst <= 900L)
+        }
+    }
+
+    @Test fun the_fixed_floor_misses_the_same_voice() {
+        // The regression record: the identical inputs without the echo model.
+        for (shape in Shape.values()) for (peak in listOf(0.07, 0.08))
+            assertEquals("fixed floor $shape $peak", 0, voiceSweep(supertonic, shape, peak, withEcho = false).first)
+        assertEquals(0, voiceSweep(supertonic, Shape.COS, 0.12, withEcho = false).first)
+    }
+
+    @Test fun the_same_voice_fired_over_the_piper_echo_bed() {
+        // Why 0.7.x worked with the same gate: through the FIXED floor, a voice cresting at
+        // 0.12 fires on top of the Piper-era echo (the echo lifts it over 0.10) and never on
+        // top of today's. The voice did not change; the bed it stood on did.
+        val overPiper = voiceSweep(piper(), Shape.COS, 0.12, withEcho = false).first
+        val overToday = voiceSweep(supertonic, Shape.COS, 0.12, withEcho = false).first
+        assertTrue("over the Piper bed $overPiper/40", overPiper >= 35)
+        assertEquals("over today's echo", 0, overToday)
+        // 0.7.3's own constants (the 96 ms leak): the same split. 0.7.3's gate, fed today's
+        // voice, would miss this speaker exactly as 0.8.1 and 0.9.0 do.
+        val v073 = { r: Reply, sh: Shape, pk: Double -> voiceSweep(r, sh, pk, withEcho = false, leakMs = oldLeak, checkCarry = false).first }
+        // Measured: crest speech at 0.12/0.14 fires 6 and 18 of 40 over the Piper bed, 0 over
+        // today's; plateau speech at 0.10-0.14 fires 17/30/37 against 5/20/24.
+        var piperSum = 0; var todaySum = 0
+        for (sh in Shape.values()) for (pk in listOf(0.10, 0.12, 0.14)) {
+            val p = v073(piper(), sh, pk); val t = v073(supertonic, sh, pk)
+            assertTrue("0.7.3 gate $sh $pk: over Piper $p, over today $t", p >= t)
+            piperSum += p; todaySum += t
+        }
+        assertTrue("0.7.3 gate: $piperSum fires over the Piper bed vs $todaySum over today's", piperSum >= 2 * todaySum)
+    }
+
+    @Test fun silero_deaf_the_level_escape_still_catches_a_clear_voice() {
+        // VAD false throughout: only the level-only escape (bar >= 0.080) can fire. Measured
+        // on today's reply: plateau 0.12 / 0.17 and crest 0.17 fire 40/40, crest 0.12 20/40,
+        // plateau 0.08 35/40 — where the fixed floor fires 0, 40, 8, 0 and 0.
+        for (reply in listOf(supertonic, headset)) {
+            assertEquals(40, voiceSweep(reply, Shape.PLATEAU, 0.12, voiceVad = false).first)
+            assertEquals(40, voiceSweep(reply, Shape.PLATEAU, 0.17, voiceVad = false).first)
+            assertEquals(40, voiceSweep(reply, Shape.COS, 0.17, voiceVad = false).first)
+            assertTrue(voiceSweep(reply, Shape.COS, 0.12, voiceVad = false).first >= 15)
+        }
+        assertEquals(0, voiceSweep(supertonic, Shape.PLATEAU, 0.12, withEcho = false, voiceVad = false).first)
+    }
+
+    @Test fun never_worse_than_the_fixed_floor_over_a_loud_echo() {
+        // Piper-era echo: the measured floor stays at barge_rms_min, so the voice fares
+        // exactly as it did through the fixed floor.
+        for (shape in Shape.values()) for (peak in ownerBand)
+            assertEquals("$shape $peak", voiceSweep(piper(), shape, peak, withEcho = false).first,
+                voiceSweep(piper(), shape, peak).first)
+    }
+
+    private val echoVadModes: List<(Int, Double) -> Boolean> = listOf(
+        { _, _ -> false },                       // Silero hears no speech in the echo
+        { i, _ -> i % 3 == 0 },                  // ... on a third of the reads
+        { _, e -> e > 0.05 },                    // ... on every loud echo read (the crests)
+    )
+
+    @Test fun the_replys_own_echo_never_fires_in_two_minutes() {
+        val reads = (120_000 / frameMs).toInt()
+        val replies = listOf(supertonic, headset) +
+            listOf(0.067, 0.081, 0.095).flatMap { pk -> listOf(-2, 0, 2, 4).flatMap { d -> listOf(0.7, 1.0, 1.4).map { piper(pk, d, it) } } }
+        for (reply in replies) for (vad in echoVadModes) for (p in 0 until 3) {
+            val o = replayReply(reply, reads, phase = p / 3.0, echoVad = vad)
+            assertNull("echo ${reply.echoPeak} delay ${reply.delay} expo ${reply.expo} fired at read ${o.fireRead}", o.fireRead)
+        }
+    }
+
+    @Test fun the_floor_is_measured_not_assumed() {
+        val reads = (20_000 / frameMs).toInt()
+        // Today's echo: the floor goes to its minimum, 0.030.
+        assertEquals(0.030f, replayReply(supertonic, reads).floor, 1e-4f)
+        assertEquals(0.030f, replayReply(headset, reads).floor, 1e-4f)
+        // Piper-era echo: 1.5x its measured level is over barge_rms_min — the floor stays there.
+        assertEquals(BargeGate.DEFAULT_RMS_MIN, replayReply(piper(0.081), reads).floor, 1e-6f)
+        // An echo of 0.04: in between, 1.5x the block-p90 level.
+        val mid = replayReply(Reply(0.10, 0.04), reads).floor
+        assertTrue("floor over a 0.04 echo = $mid", mid > 0.055f && mid < 0.065f)
+    }
+
+    @Test fun a_reply_stall_does_not_lower_the_floor() {
+        // 15 s of silence mid-reply (the mind is slow, the track idles), then the reply
+        // resumes with its echo 128 ms AHEAD of the head: nothing learnt during the stall,
+        // so the floor that resumes is the one measured over the echo.
+        val stall = 200 until 200 + (15_000 / frameMs).toInt()
+        for (vad in echoVadModes) {
+            val o = replayReply(Reply(0.18, 0.095, delay = -2, stall = stall), stall.last + 600, echoVad = vad)
+            assertNull("fired at ${o.fireRead} after the stall", o.fireRead)
+        }
+    }
+
+    @Test fun vad_on_the_echo_does_not_hide_it_from_the_measurement() {
+        // Silero calling the loud echo reads (or every read) speech must not lower the
+        // floor under a Piper-era echo: the measurement does not consult the VAD.
+        for (vad in listOf<(Int, Double) -> Boolean>({ _, _ -> true }, { _, e -> e > 0.05 })) {
+            val o = replayReply(piper(), (30_000 / frameMs).toInt(), echoVad = vad)
+            assertNull(o.fireRead)
+            assertEquals(BargeGate.DEFAULT_RMS_MIN, o.floor, 1e-6f)
+        }
+    }
+
+    @Test fun talking_through_the_learning_cannot_lock_the_floor_high() {
+        // Worst case for the measurement: the user talks from the reply's first read with
+        // Silero deaf (every read is learnt), crest 0.12 so nothing fires, for 3 s. The
+        // floor that results is barge_rms_min at most — and it relaxes to the minimum once
+        // the reply has played on its own for a few seconds.
+        val model = EchoFloor()
+        val talk = replayReply(supertonic, (3000 / frameMs).toInt(), voice = voiceEnv(Shape.COS, 4.0, 0.09),
+            voiceFrom = 0, voiceVad = false, echoModel = model)
+        assertTrue(talk.floor <= BargeGate.DEFAULT_RMS_MIN)
+        val after = replayReply(supertonic, (6000 / frameMs).toInt(), echoModel = model)
+        assertEquals(0.030f, after.floor, 1e-4f)
     }
 }
