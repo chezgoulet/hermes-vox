@@ -23,6 +23,12 @@ working harder on it:
 Nothing new is built in this sprint. It exists because five of the six gates are
 *evidence* gates, and because the next sprint depends on a measurement, not on code.
 
+**Already in hand, and not to be rebuilt:** `LiveGatewayTest.kt` is a real gated live
+suite that has simply never run in CI; `StreamParityTest` plus the fence, poll-gate and
+retirement tests already pin the parser; and the STT A/B harness (`android/bench`,
+`tools/sttbench-stream`) is the instrument Sprint 2 needs. The work here is **wiring and
+recording**, not writing test frameworks from scratch.
+
 - [ ] **Live-gateway suite** (#167). Scripted protocol tests over a fake gateway
       (ordering, keepalive, mid-stream failure, cancel, compress chaining, auth), plus a
       nightly run against a real gateway with a small local model. The repo already has a
@@ -91,6 +97,11 @@ interrupting mid-sentence no longer waits for a turn boundary.
 ---
 
 ## Sprint 5 — The store
+
+**Already in hand:** draft PR #154 carries the store metadata (title, short and full
+description, an F-Droid readiness doc) and the unsigned-build config. It targets `main`,
+has never been rebased onto 0.9, and its changelog still says 142 — so it is a starting
+point, not a submission. What is genuinely missing is the recipe itself.
 
 - [ ] **F-Droid path B** (#165): sherpa-onnx and onnxruntime built from source in the
       recipe; `Binaries:` + `AllowedAPKSigningKeys`; submission, then review cycles.
