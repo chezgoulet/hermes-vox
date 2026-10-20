@@ -772,7 +772,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val bf = bargeAudio.process(frames, vadSpeech, readAt)
                         if (spk) {
                             bargeStat.add(bf.level, bargeAudio.floor, bargeAudio.levelFloor, vadSpeech, readAt)?.let {
-                                VoxLog.dd("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs}")
+                                // d(), not dd(): this line exists to be read in an
+                                // EXPORTED log. dd() reaches the file only with the
+                                // debug-file toggle on — the 0.6.4 field bug (the ER
+                                // verdict lines were invisible in the export for
+                                // exactly this reason). One line a second is cheap.
+                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs}")
                             }
                         } else bargeStat.reset()
                         // 0.6.2 echo guard: track glue playback end so the capture skip
