@@ -36,6 +36,9 @@ SOUL = re.compile(
     r"er-soul kind=(\w+) decision=(\w+) chars=(\d+) heard=(true|false) mood=(\S+)(?: ms=(\d+))?"
 )
 SOUL_DROP = re.compile(r"er-soul-drop reason=(\w+)")
+# The guard's own verdict on a line it refused: emitted only on the working path, and only
+# when a slot was actually offered. `why` decides whether the bounds are wrong (#217).
+DETAIL = re.compile(r"er-presence detail line=(\d+) why=([\w-]+)")
 RENDER = re.compile(r"event=er-render-(skip|drop|preempt)(?: reason=(\w+))?(?: intent=(\w+))?")
 
 BAR_RATE = 2.0 / 3.0
@@ -68,6 +71,7 @@ class Session:
     renders: list[int] = field(default_factory=list)
     render_events: dict[str, int] = field(default_factory=dict)
     decisions: dict[str, int] = field(default_factory=dict)
+    guard_refusals: dict[str, int] = field(default_factory=dict)
     missing_ms: int = 0
 
     def run(self) -> Run:
@@ -118,6 +122,9 @@ def parse(text: str) -> Session:
                 s.renders.append(int(m.group(6)))
             else:
                 s.missing_ms += 1
+            continue
+        if m := DETAIL.search(raw):
+            s.guard_refusals[m.group(2)] = s.guard_refusals.get(m.group(2), 0) + 1
             continue
         if m := RENDER.search(raw):
             k = m.group(1) + (":" + m.group(2) if m.group(2) else "")
@@ -181,6 +188,7 @@ def summarise(s: Session) -> dict:
         "kinds": {k: sum(1 for r in runs for x in r.kinds if x == k) for k in {x for r in runs for x in r.kinds}},
         "soul_renders": s.soul,
         "late_drops": s.late,
+        "guard_refusals": s.guard_refusals,
         "render_ms_p50": pct(s.renders, 0.5),
         "render_ms_p95": p95,
         "render_samples": len(s.renders),
@@ -216,6 +224,10 @@ def report(s: Session) -> str:
     out.append(f"  soul renders         {d['soul_renders']}   decisions " +
                ", ".join(f"{k} {v}" for k, v in sorted(d["decisions"].items())))
     out.append(f"  late drops           {d['late_drops']}   (a line that arrived after the reply)")
+    if d["guard_refusals"]:
+        out.append("  guard refusals       " + ", ".join(f"{k} {v}" for k, v in sorted(d["guard_refusals"].items())))
+    else:
+        out.append("  guard refusals       none logged (the guard only runs when a working slot is offered)")
     if d["render_samples"]:
         out.append(f"  render latency       p50 {fmt(d['render_ms_p50'], ' ms')}   p95 {fmt(d['render_ms_p95'], ' ms')}   n={d['render_samples']}")
     else:
