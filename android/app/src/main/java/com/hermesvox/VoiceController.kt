@@ -682,8 +682,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val dn = try { r.read(shortBuf, 0, shortBuf.size, AudioRecord.READ_NON_BLOCKING) } catch (_: Throwable) { 0 }
                         if (dn <= 0) break
                     }
-                    while (listening && !gateReleased &&
-                        android.os.SystemClock.uptimeMillis() - gateClosedAt < TURN_GATE_TIMEOUT_MS) {
+                    // 0.9.1 TurnGateCeiling: the ceiling counts from the turn's last sign of
+                    // life, not from gate close — a long reply is not a wedged gate.
+                    var lastAliveAt = gateClosedAt
+                    var ceilingHit = false
+                    while (listening && !gateReleased) {
+                        val tickAt = android.os.SystemClock.uptimeMillis()
+                        if (turnInFlight || speaking || sRunning) lastAliveAt = tickAt
+                        if (TurnGateCeiling.expired(tickAt, gateClosedAt, lastAliveAt)) { ceilingHit = true; break }
                         if (latch.count == 0L) { gateReleased = true; break }   // gate open -> stop draining
                         val n = try { r.read(shortBuf, 0, shortBuf.size) } catch (_: Throwable) { 0 }
                         if (n <= 0) {
@@ -785,6 +791,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                     }
                     val gateLockedNow = android.os.SystemClock.uptimeMillis()
+                    // 0.9.1: every ceiling exit is logged — 0.9.0's flat 60 s exit was silent
+                    // whenever the drain itself was reading (always), so the field log shows
+                    // only the mic reopening mid-reply (event=cue cue=listening).
+                    if (ceilingHit)
+                        VoxLog.w("event=gate-ceiling gen=$myGen afterClose=${gateLockedNow - gateClosedAt}ms sinceAlive=${gateLockedNow - lastAliveAt}ms speaking=$speaking turnInFlight=$turnInFlight sRunning=$sRunning")
                     if (!gateReleased && gateLockedNow - gateClosedAt >= TURN_GATE_TIMEOUT_MS && gateLockedNow - lastActivityAt > GATE_STALL_IDLE_MS)
                         VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms sinceActivity=${gateLockedNow - lastActivityAt}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
                     vad?.reset()   // clear barge-window VAD state before the next turn's segmentation
