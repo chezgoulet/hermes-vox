@@ -114,6 +114,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     // firstAudioPushed arms the first-REAL-AUDIO push (see the streamChunk seam in
     // the streaming worker). Both reset at the top of every runStreamedTurn.
     @Volatile private var firstTextLatch = false     // #40/C4: one first-text push per turn
+    // When that first text landed, for the working lane's `late` witness (milliseconds since).
+    // 0 until it lands; reset with the latch at every turn.
+    @Volatile private var firstTextAtMs = 0L
     @Volatile private var firstAudioPushed = false  // C4: one first-audio push per turn (real audio)
     // C4: wall-clock launch (t0) of the current streamed turn — the streaming worker
     // reads this so time-to-first-AUDIO is measured from the same origin as stt/Byte/Text.
@@ -214,13 +217,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var workingAsk: String? = null
     @Volatile private var mindTool: String? = null
     private val workingSaid = ArrayList<String>()
+    /** The run's mid-run line, rendered early by [prewarmWorkingLine]; one attempt per turn. */
+    @Volatile private var workingWarm: WorkingRender? = null
 
     /**
-     * A mid-run line slot opened ([PresenceCadence], on the presence tick): ask the soul for ONE
-     * short line about what the mind is doing, or silence. It renders in the narration class —
-     * dropped while another render runs, never preempting a turn decision — so the GPU cost is at
-     * most one render per interval. The line plays as glue (as a beat does) and is refused if the
-     * run ended while it rendered: the reply landed, a barge, or the call ended.
+     * A mid-run line slot opened ([PresenceCadence], on the presence tick): speak the line the
+     * run already rendered ([prewarmWorkingLine]) so it lands the instant the slot opens, or —
+     * when that render never happened — ask the soul for one now, as before. The line plays as
+     * glue (as a beat does) and is refused if the run ended while it rendered: the reply landed,
+     * a barge, or the call ended.
      */
     private fun requestWorkingLine(slot: ErPresence.Slot) {
         val decide = soulDecide
@@ -230,34 +235,90 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         val gen = turnGen
         val said = synchronized(workingSaid) { workingSaid.toList() }
+        // A render started while the run was still working is already in hand, so speaking it
+        // leaves no window for the mind's first text to land in (docs/PRESENCE-LATE-DIAGNOSIS.md).
+        val warm = workingWarm?.takeIf { it.gen == gen && it.usable() }?.let {
+            workingWarm = null   // one warm line per run; a later slot renders for itself
+            it.take()
+        }
+        if (warm != null) {
+            deliverWorkingLine(slot, gen, warm, said)
+            return
+        }
+        // No usable warm line (the run was short, or the render rails dropped it): render now.
         val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said)
         decide(ErSoulTurn.KIND_WORKING, directive, null, null) { o, _ ->
-            val line = ErSoulTurn.workingLine(o, said)
-            main.post {
-                val skip = when {
-                    line == null -> "silent"
-                    gen != turnGen || firstTextLatch || !erPresence.cadenceLive(slot.runId) -> "late"
-                    glueSpeaking -> "glue-playing"   // one line at a time, never two at once
-                    !canDeliverSoulLine(line) -> "undeliverable"
-                    else -> null
-                }
-                if (skip != null) {
-                    // Diagnostics: `reason=silent` cannot tell "the soul chose silence" from "the
-                    // guard refused a good line". The owner asked to see what was thrown away, so
-                    // the refusal records its cause and the text (hidden unless transcripts are on,
-                    // exactly as the er-glue lines do).
-                    val why = ErSoulTurn.workingReject(o, said)
-                    val raw = (o as? ErSoulTurn.Outcome.Spoken)?.text
-                    VoxLog.er(
-                        "event=er-presence detail line=${slot.line} why=${why ?: "-"} " +
-                            "text=${if (logTranscripts()) (raw ?: "-").replace("\n", " ").take(90) else "<hidden>"}"
-                    )
-                    erPresence.noteWorkingSkip(slot, skip); return@post
-                }
-                synchronized(workingSaid) { workingSaid.add(line!!) }
-                erPresence.noteWorkingLine(slot, "soul")
-                speakGlue(line!!, source = SOURCE_WORKING)
+            deliverWorkingLine(slot, gen, o, said)
+        }
+    }
+
+    /**
+     * Render the run's mid-run line while the mind is still working, instead of when the
+     * cadence's slot comes due — that ordering is what let a ~2.5 s render sit between "due"
+     * and "delivered", so the mind's first text could land inside it and the line died `late`.
+     *
+     * [ErFillers.LAG_AFTER_MS] is the earliest admissible point: no working line can be spoken
+     * before it, the turn's own render has finished by then, and the render spacing floor has
+     * passed, so the narration is neither dropped nor blanked. One render per run; a render that
+     * never lands simply leaves the slot to render on demand.
+     */
+    private fun prewarmWorkingLine(gen: Long) {
+        if (gen != turnGen || !turnInFlight || !erMindLive) return
+        val decide = soulDecide ?: return
+        if (workingWarm?.gen == gen) return          // already attempted this run
+        val said = synchronized(workingSaid) { workingSaid.toList() }
+        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said)
+        val warm = WorkingRender(gen, android.os.SystemClock.uptimeMillis())
+        workingWarm = warm
+        decide(ErSoulTurn.KIND_WORKING, directive, null, null) { o, _ ->
+            warm.settle(o, android.os.SystemClock.uptimeMillis())
+        }
+    }
+
+    /** Speak a working line, or record why the slot passed in silence. */
+    private fun deliverWorkingLine(
+        slot: ErPresence.Slot,
+        gen: Long,
+        outcome: ErSoulTurn.Outcome,
+        said: List<String>,
+    ) {
+        val line = ErSoulTurn.workingLine(outcome, said)
+        main.post {
+            val now = android.os.SystemClock.uptimeMillis()
+            val skip = when {
+                line == null -> "silent"
+                // Unchanged rule: a line that lands once the mind's first text is in is late.
+                // The timestamp is the same edge the latch marked; it also gives the witness.
+                gen != turnGen || WorkingRender.late(firstTextAtMs, now) ||
+                    !erPresence.cadenceLive(slot.runId) -> "late"
+                glueSpeaking -> "glue-playing"   // one line at a time, never two at once
+                !canDeliverSoulLine(line) -> "undeliverable"
+                else -> null
             }
+            if (skip != null) {
+                // Diagnostics: `reason=silent` cannot tell "the soul chose silence" from "the
+                // guard refused a good line". The owner asked to see what was thrown away, so
+                // the refusal records its cause and the text (hidden unless transcripts are on,
+                // exactly as the er-glue lines do). `deltaMs` is the late witness: how far past
+                // the mind's first text the line came back (-1 = there was no first text).
+                val why = ErSoulTurn.workingReject(outcome, said)
+                val raw = (outcome as? ErSoulTurn.Outcome.Spoken)?.text
+                val delta = if (skip == "late") {
+                    // -1: the skip was not the first-text rule (a new turn, or a dead cadence),
+                    // so "milliseconds since the first text" has no meaning.
+                    val since = if (gen == turnGen && firstTextAtMs > 0L) (now - firstTextAtMs).toString() else "-1"
+                    " deltaMs=$since"
+                } else ""
+                VoxLog.er(
+                    "event=er-presence detail line=${slot.line} why=${why ?: "-"} " +
+                        "text=${if (logTranscripts()) (raw ?: "-").replace("\n", " ").take(90) else "<hidden>"}" +
+                        delta
+                )
+                erPresence.noteWorkingSkip(slot, skip); return@post
+            }
+            synchronized(workingSaid) { workingSaid.add(line!!) }
+            erPresence.noteWorkingLine(slot, "soul")
+            speakGlue(line!!, source = SOURCE_WORKING)
         }
     }
 
@@ -1134,6 +1195,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // may only speak a beat — the mind was not told about a late answer.
         soulSpokeThisTurn = false
         workingAsk = text; mindTool = null
+        workingWarm = null
         synchronized(workingSaid) { workingSaid.clear() }
         (tts as? SherpaTts)?.mood = VoiceMood.WARM   // a heard mood applies to the turn it was heard in
         val soulTurn = SoulTurnState()
@@ -1185,11 +1247,17 @@ class VoiceController(private val context: Context, private val session: HermesS
         // streaming worker). turnStartedAt gives the worker the SAME t0 origin every
         // other metric is measured from, so firstAudio is comparable to firstByte/Text.
         firstTextLatch = false
+        firstTextAtMs = 0L
         firstAudioPushed = false
         genCancelled = false
         armTranscript()         // 0.5.0-A: a fresh reveal cursor for this turn
         val t0 = android.os.SystemClock.uptimeMillis()
         turnStartedAt = t0
+        // The mid-run line's render starts with the run, not when the cadence's slot comes due:
+        // the slot cannot open before LAG_AFTER_MS, and waiting until it does puts the whole
+        // render between "due" and "delivered" (docs/PRESENCE-LATE-DIAGNOSIS.md). A turn that
+        // ends before then makes the prewarm bail on its gen check.
+        main.postDelayed({ prewarmWorkingLine(gen) }, ErFillers.LAG_AFTER_MS)
         listener?.onState("thinking")
         // ER Phase 7: the mind sees what the soul already said this turn (the
         // drift-sync epilogue rides the user text — cache-safe per-turn channel).
@@ -1435,7 +1503,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // text delta) — the OLD firstAudio site was a lie (it measured text).
                         // firstAudio now lives at the real-audio seam in the streaming worker.
                         if (!firstTextLatch) {
-                            firstTextLatch = true; LatencyStats.pushFirstText(android.os.SystemClock.uptimeMillis() - t0)
+                            firstTextAtMs = android.os.SystemClock.uptimeMillis()
+                            firstTextLatch = true; LatencyStats.pushFirstText(firstTextAtMs - t0)
                             erPresence.endCadence("reply")   // the reply is the voice now: no more mid-run lines
                         }
                         streamFeed(d)   // start speaking as it streams
