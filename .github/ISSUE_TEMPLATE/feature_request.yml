@@ -1,0 +1,35 @@
+name: Feature request
+description: A concrete change you want. For open-ended ideas, Discussions is a better fit.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Say what you are trying to do, not only the feature you have in mind —
+        the problem usually changes the design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      placeholder: I want Vox to …
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like it to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried or considered?
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you test it on a device?
+      options:
+        - "Yes"
+        - "Maybe"
+        - "No"

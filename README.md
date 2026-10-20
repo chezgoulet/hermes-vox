@@ -261,6 +261,15 @@ Give two devices the same scope only when you *want* them to share one memory.
 
 The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.md).
 
+## Community
+
+Questions, open-ended ideas and setups live in
+[Discussions](https://github.com/chezgoulet/hermes-vox/discussions) — start with
+the pinned [Start here](https://github.com/chezgoulet/hermes-vox/discussions/187).
+Bugs and concrete feature requests belong in
+[Issues](https://github.com/chezgoulet/hermes-vox/issues).
+[CONTRIBUTING.md](CONTRIBUTING.md) says what a change needs to be reviewable.
+
 ## Status
 
 **0.8.1 — "the headset release"** is the current release

@@ -1,0 +1,83 @@
+name: Bug report
+description: Something is broken. The details below are what makes it actionable.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before pasting a log, remove API keys, gateway addresses you would rather
+        not share, and anything personal. Logs can contain what you said and
+        where you said it to.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: Pixel 7 (GrapheneOS)
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      placeholder: "15 (API 35)"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Vox version
+      description: Shown in Settings.
+      placeholder: 0.8.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options:
+        - Obtainium
+        - GitHub release APK
+        - F-Droid
+        - Built from source
+    validations:
+      required: true
+  - type: dropdown
+    id: gateway
+    attributes:
+      label: Gateway
+      options:
+        - Local network
+        - Tailscale / tailnet
+        - Public HTTPS
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Optional. Redact keys and personal content.
+      render: text
