@@ -15,6 +15,12 @@ package com.hermesvox
  * The window is: true while glue is playing, and true for [skipMs] after it stops (the
  * tail of the audio still in the room). [skipMs] <= 0 disables the tail, which is the
  * user's `er_echo_skip_ms` = 0 setting.
+ *
+ * The tail is measured from the first read that OBSERVES glue stopped, not from the
+ * instant it stopped — the capture loop calls this on every read (~64 ms), so in use
+ * that is within one frame. If the loop is not calling (a filler during a turn), no
+ * window is opened at all, which is correct: the loop resumes after the turn with an
+ * empty pre-roll.
  */
 internal class GlueWindow {
 
