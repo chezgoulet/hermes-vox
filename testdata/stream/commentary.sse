@@ -1,0 +1,15 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_c"}}
+
+data: {"type":"response.output_item.added","item":{"id":"c1","type":"message","phase":"commentary","content":[]}}
+
+data: {"type":"response.output_text.delta","item_id":"c1","delta":"Checking the repo first."}
+
+data: {"type":"response.output_item.done","item":{"id":"c1","type":"message","phase":"commentary","content":[{"type":"output_text","text":"Checking the repo first."}]}}
+
+data: {"type":"response.output_item.added","item":{"id":"m1","type":"message","content":[]}}
+
+data: {"type":"response.output_text.delta","item_id":"m1","delta":"All tests pass."}
+
+data: {"type":"response.completed","response":{"id":"resp_c","status":"completed"}}
+

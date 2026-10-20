@@ -8,7 +8,7 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.hermesvox.mobile.HermesSession
+import com.hermesvox.core.HermesSession
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 

@@ -1,0 +1,45 @@
+{
+  "fixture": "timeout",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "m1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "hel",
+          "commentary": "",
+          "text": "hel",
+          "done": false
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "hermes stream: connection lost (no data from the gateway)",
+          "response_id": "",
+          "text": "hel",
+          "transcript": "hel"
+        }
+      ]
+    }
+  ],
+  "held_connection_closed": true,
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "hi",
+      "stream": true,
+      "previous_response_id": ""
+    }
+  ]
+}

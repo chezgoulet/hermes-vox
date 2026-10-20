@@ -1,0 +1,29 @@
+data: {"type":"response.created","response":{"id":"resp_m"}}
+
+data: {"type":5,"delta":"dropped: type is not a string"}
+
+data: {a:1}
+
+event: response.output_text.delta
+data: null
+
+data: {"TYPE":"response.output_text.delta","Item_ID":"m1","delta":"case ","delta":"folded "}
+
+data: {"type":"response.output_item.added","item":{"id":"fc1","type":"function_call","name":"probe","arguments":null}}
+
+data: {"type":"response.output_item.added","item":{"id":"fc2","type":"function_call","name":"probe","arguments":{"q":"x"}}}
+
+data: {"type":"response.output_item.added","item":{"id":"fo1","type":"function_call_output","output":{"rows":2}}}
+
+data: {"type":"response.output_item.added","item":{"id":"fo2","type":"function_call_output","output":[{"type":"input_text","text":7}]}}
+
+data: {"type":"response.output_item.added","item":{"id":"r1","type":"reasoning"}}
+
+data: {"type":"response.output_text.delta","item_id":"m1","delta":"😀 \ud83d"}
+
+data: {"type":"response.output_item.done","item":{"id":"m2","type":"message","content":[{"type":"output_text","text":"a"},null,{"type":"output_text","text":"b"}]}}
+
+data: {"type":"response.completed","response":{"id":"resp_m","status":7}}
+
+data: {"type":"response.completed","response":{"id":"resp_m"}}
+

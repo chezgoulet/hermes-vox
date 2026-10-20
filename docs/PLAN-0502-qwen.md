@@ -1,7 +1,7 @@
 # SPEC — 0.5.2-QWEN: massively expand the visualizations; expose every style as a
 # Settings category; add "cycle all animations across all categories"
 
-## Christopher's direction (verbatim, 2026-09-07)
+## The maintainer's direction (verbatim, 2026-09-07)
 "Massively expanding the visualizations. Make sure that Qwen exposes all of the styles
 as categories inside the settings UI as well as an option for all of the animations
 across all of the categories." Designer owns the palette; the being "exists within the
@@ -26,7 +26,7 @@ The designer owns this. The spec sets the bar, not the taste:
   e.g. a dozen+ distinct painterly families: Ember, Nebula, Ripple, Aura, Lumen,
   Aurora, Ink, Prism, Raven, Tide, Sculpt, Static... you author the palette). Each must
   be a DISTINCT character — different color logic, different flow/energy signature,
-  different feel — not a hue-shift of the same thing. Christopher's test: toggling
+  different feel — not a hue-shift of the same thing. The maintainer's test: toggling
   between two categories mid-call must feel like a DIFFERENT being, not a recolour.
 - Categories must transform the whole being (every state: listening/thinking/speaking/
   stall/recoil/tool modes), orthogonally to the idle theme — preserve the 0.5.1 design
@@ -63,7 +63,7 @@ ONLY AvatarView rendering internals + VisualStyle + the Settings visual surface
 ## Frame-cost gate (REQUIRED, prove it)
 Re-measure the swarm under the new categories. State the per-frame cost (µs/frame,
 % of 33.3ms budget) and confirm 0 alloc/frame in the hot loop. If a category is heavier,
-gate it behind a setting (default light). Christopher's frame-budget standard stands.
+gate it behind a setting (default light). The maintainer's frame-budget standard stands.
 
 ## Gate
 cd android && JAVA_HOME=~/jdk-17.0.12+7 ~/gradle-8.12.1/bin/gradle

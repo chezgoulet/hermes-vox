@@ -22,7 +22,7 @@ with **zero Ebitengine**.
 - `go test ./voice/...` ok; `assembleRelease` + `testReleaseUnitTest` — BUILD SUCCESSFUL.
 
 ## Why this is the right call (settled during the pass)
-Christopher asked whether keeping Ebitengine enabled a desktop version. It did not — the
+the maintainer asked whether keeping Ebitengine enabled a desktop version. It did not — the
 real being renders via Android Canvas; `game/` is boilerplate coupled to the old architecture;
 a future desktop frontend would reuse `voice/`+`session.go` and write a new renderer. So
 removing it loses nothing of value and removes dead native surface + the build hazard.

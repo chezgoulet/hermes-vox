@@ -1,0 +1,4 @@
+data: {"type":"response.output_text.delta","item_id":"m1","delta":"Partial answer"}
+
+data: {"type":"response.incomplete","response":{"id":"resp_i","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}
+

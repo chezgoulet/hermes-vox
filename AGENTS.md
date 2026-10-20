@@ -1,7 +1,7 @@
 # AGENTS.md — Hermes Vox
 
 Hermes Vox is the voice of Hermes: a thin, mode-selectable conversational-voice
-client (Android + desktop, Go/Ebitengine) where **the entity IS the Hermes agent**.
+client (Android, Kotlin) where **the entity IS the Hermes agent**.
 The client only carries the conversation UX + an avatar; Hermes owns the
 reasoning, tooling, memory, and context.
 
@@ -22,29 +22,37 @@ reasoning, tooling, memory, and context.
    already serving Telegram/desktop/relay — it does not fork the agent.
 5. **Secrets never in the repo.** API keys, relay tokens, and the Hermes
    `API_SERVER_KEY` live in the Android Keystore / env, never committed.
-6. **Build pipeline is no-flag + verifies.** `scripts/build.py` (or `make build`)
-   is the canonical one-command build; it inspects the toolchain, lists targets
-   with feasibility + reason, builds what's possible, and verifies artifacts.
-   Never hand-run a partial build and claim done.
+6. **Build pipeline is no-flag + verifies.** `bash scripts/gate.sh` (or
+   `make test`) is the canonical one-command gate: it checks the toolchain
+   (JDK 17, Android SDK), fetches the pinned runtime, builds the APK, runs every
+   unit test, and confirms the stream parity harness ran. Never hand-run a
+   partial build and claim done. (`scripts/build.py` / `make build` is the
+   Ebitengine-boilerplate target-matrix driver; it builds no target of this app
+   — it already built 0/10 before #126 — and awaits a keep-or-replace decision.)
 
 ## Architecture
 
 ```
-[mic/avatar + UI] -> VoiceBackend -> (Local | SelfHosted | Cloud) -> Hermes (background)
-      ^                                                                    |
-      +---------------------- TTS + avatar <------------------------------+
+[mic -> VAD -> sherpa STT] -> core.HermesSession -> Hermes gateway (the mind)
+        ^                                   |
+        +---- [TTS + avatar/being] <--------+   presence: LiteRT-LM (local)
 ```
 
-- `VoiceBackend` — the mode abstraction: `Stream()` (mic in), `Reply()` /
-  `OnTurn()` (inference), `Play()` (TTS), `Avatar()` (the visual). Each backend
-  wires to its own on-device / self-hosted / cloud stack.
-- Hermes is the background: the app talks to it over the Hermes Relay / Runs API
-  (`hermes-relay :9119`, `oxproxion :8642`, or the termux Hermes).
+- **Speech stays on the device**: Silero VAD and sherpa-onnx for recognition and
+  synthesis. There is no cloud voice path and no backend abstraction — the Go
+  `VoiceBackend` layer was dead code and was deleted in #47/#126.
+- **The mind is on the gateway**: the app talks to it through
+  `com.hermesvox.core.HermesSession` — the Hermes API server's `/v1/responses`
+  (streamed, chained by `previous_response_id`), `/v1/models`, `/v1/health`,
+  `/api/model/options` (`oxproxion :8642`, or the termux Hermes). Plain Kotlin on
+  `HttpURLConnection`; see `docs/KOTLIN-CORE.md`.
 
 ## Conventions
 
 - Commits: imperative, one concern per commit, never commit secrets.
-- Keep the build pipeline (`scripts/build.py`, `Makefile`) working — it's the
-  boilerplate's core promise.
+- Keep the gate (`scripts/gate.sh`, `make test`) green — it is the build's core
+  promise.
+- The streamed turn's behaviour is pinned by `testdata/stream/` (fixtures +
+  goldens, replayed by `StreamParityTest`). Change a golden only on purpose.
 - On-device models + numbers + LiteRT-LM path are documented in the House skill
   `hermes-voice-frontends` → `references/on-device-voice-models-2026-08-24.md`.

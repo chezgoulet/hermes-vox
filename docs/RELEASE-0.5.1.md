@@ -4,7 +4,7 @@ Two field asks from the 2026-09-07 device pass, both from the same session that 
 the animation "great app / really, really good / so many more possibilities":
 
 > "I would like the visuals to be very diverse and expose categories of visuals in the
-> user settings." — Christopher, 13:54:41
+> user settings." — the maintainer, 13:54:41
 
 > "The warming up pill should say 'Dialing' separately. The connection test does not
 > [report correctly]."

@@ -7,6 +7,22 @@ with the items below still open.
 
 **Status keys:** `[x]` shipped · `[ ]` in progress / planned · `[?]` open question · `[-]` deferred.
 
+## Direction (set 2026-10-19)
+
+- **Android only.** Desktop and iOS are out of scope; the Go core that a desktop
+  client would have reused was removed in #126.
+- **No Google Play.** Distribution is GitHub Releases, Obtainium and F-Droid.
+  F-Droid is the store, and we always ship our own signature — so reproducible
+  builds are a release requirement, not polish.
+- **0.9 is the last series before 1.0.** Every 1.0 feature ships during 0.9.x
+  first, behind a setting where it needs one, and 1.0 is cut only when the feature
+  set, the polish and the measured performance are all acceptable.
+- **Realtime is frozen after the basics; polish goes to Enhanced Realtime** (D13).
+  Realtime is the default and has to keep working — the barge, capture and endpoint
+  fixes land there because they are shared code — but every new behaviour from here
+  is ER's. ER is not the default, so promoting it is a decision, not drift.
+- The full records are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
+
 ---
 
 ## Shipped (`[x]`)
@@ -151,7 +167,7 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
   makes this safe), then a thirty-minute soak watching RSS.
 - `[ ]` **F6a — narration into the presence loop.** The directive already takes the tool context;
   route the tool event through the loop so the line is topical and density-governed.
-- `[ ]` **F4 — GPU contention.** Per-frame timing idle versus during a render. Christopher's
+- `[ ]` **F4 — GPU contention.** Per-frame timing idle versus during a render. The maintainer's
   inclination, to be confirmed by measurement: sacrifice frame rate, not the soul.
 - `[ ]` **F8 — a verdict mechanism.** A fixed ten-utterance script run per candidate build, so
   "this build is better" stops being an impression. Adopt the benchmark's scenario taxonomy:
@@ -166,7 +182,11 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
 
 ## Next — `0.9`, voice and the arrangement
 
-Charter set by Christopher: **voice choice and different soul LLMs.** Research and candidate
+0.9 also carries the Kotlin core (#126, merged to `testing`): the Go voice core,
+gomobile and the NDK pin are gone, and streaming behaviour is pinned by the
+fixture corpus in `testdata/stream/`. The work below sits on top of that.
+
+Charter set by the maintainer: **voice choice and different soul LLMs.** Research and candidate
 rationale in `.hermes/reviews/vox-er-on-device-stack-review-2026-09-10.md`.
 
 **The finding that shapes the series: a batch model choice has foreclosed a logic upgrade.**
@@ -177,16 +197,23 @@ are *unreachable* in the current arrangement, not under-tuned.
 - `[x]` **A better voice — decided by bake-off.** Kokoro was the candidate here; the measured
   bake-off (`docs/VOICE-BAKEOFF.md`) found its int8 build slower than real time on the target
   and chose **Supertonic** instead, which shipped in 0.8.0. More voice choice stays in scope.
-- `[ ]` **Streaming STT** — Moonshine (edge-first, streaming v2 encoder) or SenseVoiceSmall
-  (non-autoregressive, ~70 ms per 10 s, and in the same forward pass returns **emotion and
-  audio-event detection**: laughter, coughing, applause, background music). If its English holds
-  up against `whisper-base` in an on-device A/B, the affect and event tags give the presence layer
-  *measured* inputs and retire the last of the keyword machinery. This swap is what unblocks
-  semantic endpointing and mid-speech beats.
-- `[ ]` **A presence-sized soul model** — LFM2-0.7–1.2B class rather than the current 2.6 GB /
-  ~2.2 s-per-render Gemma 4 E2B, which is roughly 20–30× the size its job implies. Chosen
-  **together with the voice**, because the entity has one throat: if the presence voice and the
-  reply voice come from different models, the entity splits in the ear.
+- `[x]` **Streaming STT — measured, D5 amended.** The A/B ran on the Pixel 7 with four
+  sherpa streaming arms; **Nemotron 0.6B at the 160 ms chunk won on accuracy and accent**
+  (1.4 / 2.6 / 1.7 % WER against the 06-26 Zipformer's 2.0 / 4.5 / 2.8 %, and 11.9 % against
+  38.8 % on accented speech) at 3.1× the CPU and memory. The 20M arm is unusable. Moonshine and
+  SenseVoiceSmall were not part of this A/B — they are second runtimes, not config swaps, and
+  stay a separate decision. Numbers, method and raw results: `docs/STT-AB.md`; the decision and
+  its cost are D5 in `docs/DECISIONS.md`.
+- `[ ]` **Adopt the streaming arm in the app** — gated on one in-app co-residency run (VAD +
+  STT + TTS + presence in a live call). The RTF 0.68–0.76 was measured alone and is not
+  evidence that it holds beside the rest of the pipeline; until that run passes, the shipped
+  STT path does not change.
+- `[-]` **A presence-sized soul model — answered, not built.** D4 was amended on measurement:
+  Qwen 3.5 0.8B is rejected (the fp32 GPU engine does not fit Mali; CPU is ~5× slower; its
+  recurrent state is not reset per conversation), SmolLM2 360M measured slower still, and
+  **Gemma 4 E2B stays** the presence default. The 2.6 GB / ~2.2 s-per-render cost is accepted
+  until a smaller model can be shown to be faster *and* correct in the app's conversation
+  shape. Numbers: `docs/PRESENCE-BENCH.md`.
 - `[ ]` **Then** the semantic endpointer and intent-dependent re-entry delay — both of which need
   the partials to exist before they can be built at all.
 
@@ -199,6 +226,14 @@ directly with the GPU-contention and thermal findings above.
 Every swap is a claim until it is A/B'd on the device with everything else running. The visual arc
 taught us that a change which should obviously help can be inert.
 
+### Also landing in 0.9.x
+
+- `[ ]` **Multiple profiles** (#174). The app binds one entity today: endpoint, key, agent name
+  and session scope. This adds a registry of saved connections with a switcher, so more than one
+  Hermes profile can be reached without re-entering them. Client-side only — `GET /v1/models`
+  returns a single entity name, not a profile list, so *discovery* from the gateway is a separate
+  Hermes-side contract. Switching ends any live call: one line at a time is an invariant.
+
 ---
 
 ## Distribution
@@ -206,17 +241,17 @@ taught us that a change which should obviously help can be inert.
 - `[x]` **GitHub releases + Obtainium.** Signed APKs on every release; nightly pre-releases from
   `testing`. Obtainium tracks the repo directly.
 - `[x]` **Project site** — [hermesvox.org](https://hermesvox.org).
-- `[ ]` **Google Play** — coming soon. AAB + Play App Signing (`docs/PLAY-APP-SIGNING.md`), the
-  data-safety form, beta framing. It stays a bring-your-own-gateway client.
+- `[ ]` **F-Droid** — the store rail. sherpa-onnx and onnxruntime built from
+  source in the recipe (path B in `docs/DECISIONS.md`), with `Binaries:` +
+  `AllowedAPKSigningKeys` so users get our signature. Google Play is dropped.
 
 ---
 
 ## Open questions (`[?]`)
 
-- **Desktop / cross-platform.** The portable `voice/` Go core + `mobile/session.go` are the
-  reusable surface. A desktop frontend would be a NEW renderer (Compose Desktop, web/Electron, or
-  a native window) — the current Ebitengine `game/` shell is boilerplate coupled to the OLD
-  VoiceBackend architecture and is NOT the desktop path.
+- **Desktop / cross-platform — answered, out of scope (2026-10-19).** The Go core
+  was removed in #126, and a desktop renderer would be a new product rather than a
+  port. Android only.
 - **In-app model downloads vs bundling** for the 0.9 model set — the APK-size tradeoff returns
   when Kokoro and a streaming ASR join Whisper and Piper in the catalog.
 

@@ -220,17 +220,6 @@ class ModelDownloader(context: Context) {
     }
 
     // Lift a single wrapping directory's contents to the model root (canonical tarball layout).
-    private fun hoist(dir: File) {
-        val sub = dir.listFiles()?.filter { it.isDirectory }?.firstOrNull() ?: return
-        // Only hoist when there is exactly one top-level dir (a wrapping folder), not a flat layout.
-        if (dir.listFiles()?.count() ?: 0 != 1) return
-        sub.listFiles()?.forEach { f ->
-            val dest = File(dir, f.name)
-            if (f.isDirectory) f.copyRecursively(dest, true) else f.copyTo(dest, true)
-        }
-        sub.deleteRecursively()
-    }
-
     private fun normalizeNames(dir: File, specId: String) {
         val files = dir.listFiles() ?: return
         fun rename(pat: String, to: String) {

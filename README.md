@@ -94,7 +94,7 @@ and a face without adding a second brain:
   keys in the app.
 - **One agent, many doors.** Vox is one more frontend to the same Hermes instance that
   already serves you on Telegram, desktop or the CLI. It never forks the agent.
-- **Open.** Apache-2.0, reproducible build, secret-free CI.
+- **Open.** GPL-3.0, reproducible build, secret-free CI.
 
 ## What it does
 
@@ -168,15 +168,17 @@ the signed APK from each GitHub release and keeps it updated.
 [Releases](https://github.com/chezgoulet/hermes-vox/releases/latest) and install it
 (allow installs from that source). Nightly pre-releases are published from `testing`.
 
-**Google Play — coming soon.** A Play Store listing is planned but not yet live. It
-will stay a bring-your-own-gateway client.
+**F-Droid — in preparation.** Hermes Vox is being readied for the F-Droid main
+repository; its speech stack has to be built from source in their recipe, so the
+listing follows that work. Until it is listed, GitHub Releases and Obtainium are
+the rails, and both carry the same signed APK.
 
 ### First run
 
 1. Enter your gateway **endpoint** (for example `https://<machine>.<tailnet>.ts.net`)
    **and** its `API_SERVER_KEY`. Both are required; the gateway answers an
    unauthenticated request with `401`.
-2. Download the three required models in **Settings → Models**: Silero VAD, Supertonic
+2. Download the three required models in **Settings → Voice models**: Silero VAD, Supertonic
    and Whisper base.en (about 290 MB in total). Parakeet (482 MB) and Gemma 4 E2B
    (2.6 GB, for Enhanced Realtime) are optional.
 3. Tap the call button and talk.
@@ -192,10 +194,9 @@ Notes on the fields:
 ### Build from source
 
 ```bash
-# Go 1.26, JDK 17, Android SDK + NDK 25.2 (JAVA_HOME / ANDROID_HOME /
-# ANDROID_NDK_HOME exported). One command fetches the verified sherpa-onnx
-# runtime, binds the Go connector (mobile.aar), builds the APK and runs every
-# test — see CONTRIBUTING.md:
+# JDK 17 and the Android SDK (JAVA_HOME / ANDROID_HOME exported). One command
+# fetches the verified sherpa-onnx runtime, builds the APK and runs every test —
+# see CONTRIBUTING.md:
 bash scripts/gate.sh
 # -> android/app/build/outputs/apk/debug/hermes-vox-<version>.apk
 adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
@@ -208,10 +209,10 @@ adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
 - **Speech.** [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runs Silero VAD,
   Whisper or Parakeet STT, and Supertonic or Piper TTS, all on the CPU with tuned
   thread counts.
-- **The entity.** The Hermes gateway (`/v1/responses` streaming, `/v1/runs`), reached
+- **The entity.** The Hermes gateway (`/v1/responses` streaming), reached
   over your private network. Hermes does all the reasoning, tools and memory.
-- **The connector.** Go, bound with gomobile (`voice/`, `mobile/`): the SSE stream, tool
-  events, and stream cancellation for barge-in.
+- **The connector.** Kotlin (`com.hermesvox.core`, no extra dependencies): the SSE
+  stream, tool events, and stream cancellation for barge-in.
 - **The soul.** Gemma 4 E2B on LiteRT-LM, GPU-first with a CPU fallback (Enhanced
   Realtime only).
 - **The being.** OpenGL ES 3 on its own thread: 6,000 stateless particles placed by
@@ -278,10 +279,14 @@ Bugs and concrete feature requests belong in
 - **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
   GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
   added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
-- **0.9 — voice and the arrangement:** streaming speech recognition (to unlock semantic
-  turn-taking and backchannels), a presence-sized soul model, and more voice choice.
-- **Google Play:** coming soon.
-- **Longer horizon:** full-duplex conversation, and a desktop client on the same Go core.
+- **0.9 — the last series before 1.0:** streaming speech recognition, a measured
+  presence model (Gemma 4 E2B stays the default; Qwen was rejected on Mali —
+  see `docs/PRESENCE-BENCH.md`), a wake word, procedural audio cues, F-Droid
+  inclusion, and reproducible builds. Every 1.0 feature ships during
+  0.9.x first; 1.0 is cut when the set, the polish and the measured performance are
+  all acceptable. The decisions are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
+- **Distribution:** GitHub Releases and Obtainium today; F-Droid in preparation.
+- **Longer horizon:** full-duplex conversation.
 
 The details are in [ROADMAP.md](ROADMAP.md).
 
@@ -304,7 +309,7 @@ a `/p/<profile>` prefix, make sure the forwarded path matches exactly (`/v1/resp
 not `/hermes/v1/responses`).
 
 ### "Preparing your voice…" stays up
-The required models are not all installed yet. Open **Settings → Models**; downloads
+The required models are not all installed yet. Open **Settings → Voice models**; downloads
 continue in the background and resume after network loss.
 
 ## Credits
@@ -325,4 +330,6 @@ Nous Research.
 
 ## License
 
-[Apache-2.0](LICENSE).
+[GPL-3.0](LICENSE).
+
+The app is GPL-3.0 because the on-device speech runtime statically links espeak-ng, which is GPL-3.0; see [NOTICE](NOTICE) for the component list and the source-offer. On-device models are downloaded separately and keep their own terms.

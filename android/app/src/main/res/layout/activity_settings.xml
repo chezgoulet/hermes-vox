@@ -83,7 +83,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Models — voice engines (needed, offline)"
+                        android:text="Voice models"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_models_grpval"
@@ -121,7 +121,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Speech &amp; Mic"
+                        android:text="Mic &amp; Barge-in"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_speech_grpval"
@@ -140,7 +140,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="STT &amp; Transcription"
+                        android:text="Transcription (STT)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_stt_grpval"
@@ -159,10 +159,31 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="TTS &amp; Voice"
+                        android:text="Spoken replies"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_tts_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- #45: wake-word enrolment (preview). Opens WakeEnrolActivity; nothing
+                     listens in the background yet. Value set by refreshGrpVals(). -->
+                <LinearLayout
+                    android:id="@+id/row_grp_wake"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Wake word (preview)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_wake_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="—"
@@ -178,7 +199,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Appearance &amp; Presence"
+                        android:text="Appearance &amp; Layout"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_appearance_grpval"
@@ -330,7 +351,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Soul presence (narration + fillers)"
+                        android:text="Soul narration (mm + fillers)"
                         style="@style/HvRowTitle" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/sw_er_presence"
@@ -351,6 +372,19 @@
                         android:layout_weight="1"
                         android:text="Semantic barge-in — “take your time” keeps the mind working"
                         style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/help_semantic_barge"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="What is semantic barge-in?"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="?"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/sw_er_semantic_barge"
                         android:layout_width="wrap_content"
@@ -387,7 +421,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Presence voice"
+                        android:text="Narration voice"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_er_voice_val"
@@ -397,8 +431,9 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- How often the entity speaks while the mind works (PresenceCadence). -->
                 <LinearLayout
-                    android:id="@+id/row_er_filler_cap"
+                    android:id="@+id/row_er_density"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -406,19 +441,13 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Filler density (max per 3s while the entity works)"
+                        android:text="Presence while working (how often the entity speaks while it works)"
                         style="@style/HvRowTitle" />
-                    <SeekBar
-                        android:id="@+id/sb_er_filler_cap"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="4"
-                        android:progress="2" />
                     <TextView
-                        android:id="@+id/set_er_filler_val"
+                        android:id="@+id/set_er_density_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="2"
+                        android:text="Conversational"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
@@ -514,7 +543,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_speech: Speech & Mic ══ -->
+            <!-- ══ sec_speech: Mic & Barge-in ══ -->
             <LinearLayout
                 android:id="@+id/sec_speech"
                 android:layout_width="match_parent"
@@ -527,7 +556,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
-                    android:text="Basic" />
+                    android:text="Everyday controls" />
 <LinearLayout
                     android:id="@+id/row_bargein"
                     style="@style/HvRow"
@@ -540,6 +569,19 @@
                         android:layout_weight="1"
                         android:text="Barge-in (interrupt)"
                         style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/help_bargein"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="What is barge-in?"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="?"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/set_bargein"
                         android:layout_width="wrap_content"
@@ -557,6 +599,19 @@
                         android:layout_weight="1"
                         android:text="Noise &amp; echo cancel (AEC)"
                         style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/help_aec"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="What is AEC?"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="?"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/set_mic_aec"
                         android:layout_width="wrap_content"
@@ -655,11 +710,30 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
-                        <TextView
-                            android:layout_width="wrap_content"
+                        <LinearLayout
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Mic sensitivity (VAD threshold)"
-                            style="@style/HvRowTitle" />
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Mic sensitivity (VAD threshold)"
+                                style="@style/HvRowTitle" />
+                            <TextView
+                                android:id="@+id/help_vad"
+                                android:layout_width="36dp"
+                                android:layout_height="36dp"
+                                android:background="@drawable/bg_chip"
+                                android:clickable="true"
+                                android:contentDescription="What is VAD?"
+                                android:focusable="true"
+                                android:gravity="center"
+                                android:text="?"
+                                android:textColor="@color/hv_cyan"
+                                android:textSize="14sp" />
+                        </LinearLayout>
                         <TextView
                             android:id="@+id/set_mic_vad_val"
                             android:layout_width="wrap_content"
@@ -852,7 +926,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Mic &amp; Speech)"
+                        android:text="Restore defaults (Mic &amp; Barge-in)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -861,7 +935,7 @@
                         style="@style/HvRowAction" />
                 </LinearLayout>
             </LinearLayout>
-<!-- ══ sec_stt: STT & Transcription ══ -->
+<!-- ══ sec_stt: Transcription (STT) ══ -->
             <LinearLayout
                 android:id="@+id/sec_stt"
                 android:layout_width="match_parent"
@@ -1027,7 +1101,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (STT)"
+                        android:text="Restore defaults (Transcription)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1037,7 +1111,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_tts: TTS & Voice ══ -->
+            <!-- ══ sec_tts: Spoken replies ══ -->
             <LinearLayout
                 android:id="@+id/sec_tts"
                 android:layout_width="match_parent"
@@ -1083,8 +1157,9 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- Which of the on-device engine's built-in voices speaks (Supertonic:
-                     five female, five male). -->
+                <!-- Which of the on-device engine's built-in voices speaks. The title
+                     and contents follow the engine selected by the `tts` pref
+                     (Supertonic: ten named voices; Piper: curated + numeric id). -->
                 <LinearLayout
                     android:id="@+id/row_tts_speaker"
                     style="@style/HvRow"
@@ -1092,6 +1167,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
                     <TextView
+                        android:id="@+id/set_tts_speaker_title"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Speaker"
@@ -1122,6 +1198,84 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                <!-- #156 (D7): the being's sound cues. Procedurally generated from its own
+                     motion vocabulary (no samples), one toggle + a level that rides the
+                     media stream, and a preview so the user can hear one without a turn.
+                     The policy (ringer/DND/volume/haptics/TTS) lives in CuePolicy. -->
+                <LinearLayout
+                    android:id="@+id/row_sound_cues"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Sound cues"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_preview"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="16dp"
+                        android:paddingRight="16dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="Hear a sound cue"
+                        android:focusable="true"
+                        android:text="preview"
+                        style="@style/HvRowAction" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_sound_cues"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_sound_cue_level"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Cue level (relative to media volume)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_level_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="70%"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_cue_level"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="10" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_sound_cues_silent"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Cues when the ringer is silent (opt-in)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_sound_cues_silent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
                 <!-- #112: ONE reset scope for this section — TTS engine AND voice
                      register fold into GROUP_TTS (the old separate row_voice_reset
                      "Restore defaults (Voice)" duplicated it). -->
@@ -1135,7 +1289,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (TTS &amp; Voice)"
+                        android:text="Restore defaults (Spoken replies)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1145,7 +1299,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_models: Models ══ -->
+            <!-- ══ sec_models: Voice models ══ -->
             <LinearLayout
                 android:id="@+id/sec_models"
                 android:layout_width="match_parent"
@@ -1162,7 +1316,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Voice models"
+                        android:text="Open the model store"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_models_val"
@@ -1182,7 +1336,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Models)"
+                        android:text="Restore defaults (Voice models)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1192,7 +1346,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_appearance: Appearance & Presence ══ -->
+            <!-- ══ sec_appearance: Appearance & Layout ══ -->
             <LinearLayout
                 android:id="@+id/sec_appearance"
                 android:layout_width="match_parent"
@@ -1230,13 +1384,13 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Layout mode"
+                        android:text="Screen layout"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_layout_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Presence"
+                        android:text="Being"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
@@ -1278,7 +1432,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Appearance)"
+                        android:text="Restore defaults (Appearance &amp; Layout)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"

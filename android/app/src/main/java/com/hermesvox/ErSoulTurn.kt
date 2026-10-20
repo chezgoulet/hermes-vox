@@ -53,6 +53,12 @@ object ErSoulTurn {
     /** What the client is asking the soul for. */
     const val KIND_TURN = "turn"
     const val KIND_GREETING = "greeting"
+    /**
+     * The mind is still working, mid-run: one short line about what it is doing, or silence.
+     * The caller passes the complete [workingDirective] as the text — the lines already said
+     * this run ride in it, which the host cannot know.
+     */
+    const val KIND_WORKING = "working"
 
     /**
      * The call has just connected and the caller has not spoken. Ask the soul to OPEN it.
@@ -114,6 +120,72 @@ object ErSoulTurn {
             "If a few words about what you are doing for them would feel natural on a call right now, " +
             "say ONE short line in your own voice, under twelve words — what you are doing, never a " +
             "result, a fact or a number. Otherwise reply with exactly $ESCALATE."
+    }
+
+    /**
+     * The mind is still working on the caller's request, past the beat and the lag line. Offer the
+     * soul ONE short line about what it is doing — or silence, which is often right on a phone.
+     *
+     * The lines already said this run are listed so the soul does not say them again; the code
+     * guard ([workingLine]) enforces it regardless. The bounds are the beat's: a few words, no
+     * fact, no result, no number, no promise.
+     */
+    fun workingDirective(callerText: String, toolContext: String? = null, said: List<String> = emptyList()): String {
+        val ctx = if (toolContext.isNullOrBlank()) "" else " Right now it is using: $toolContext."
+        val already = if (said.isEmpty()) "" else
+            " You have already said: " + said.joinToString(", ") { "\"$it\"" } +
+                ". Do not say any of those again, or anything close to them."
+        return "You are still on the call. The caller asked: \"$callerText\", and the mind is still " +
+            "working on it.$ctx$already " +
+            "If a few words would keep them company, say ONE short line in your own voice, under " +
+            "$MAX_OPENER_WORDS words, about what you are doing for them — never a result, a fact, a " +
+            "number or a promise. Otherwise reply with exactly $ESCALATE."
+    }
+
+    /**
+     * The mid-run line to speak, or null for silence. Only a plain line speaks (the escalate token
+     * in any form is silence), it must pass the beat's bounds ([opener]: short, no digits, no
+     * markup), and it must not repeat a line already said this run — across the whole run, not the
+     * [REPEAT_WINDOW_MS] the glue ring keeps, because two lines 40 s apart are still a stuck record.
+     */
+    fun workingLine(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
+        workingLine(parse(rendered), saidThisRun)
+
+    /** [workingLine] for an already-parsed decision (the host's soul hook parses). */
+    fun workingLine(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
+        val text = (decision as? Outcome.Spoken)?.text ?: return null
+        val line = opener(text) ?: return null
+        val n = norm(line)
+        return if (saidThisRun.any { norm(it) == n }) null else line
+    }
+
+    /**
+     * Why [workingLine] would refuse this render, or null when it would speak. Diagnostics only —
+     * the refusal is correct either way, but a log that says `reason=silent` cannot distinguish
+     * "the soul chose silence" from "the guard threw away a good line". The owner asked to see
+     * what was discarded, and the answer decides whether the bounds are wrong.
+     *
+     * Reasons, in the order the guard applies them: `not-spoken` (escalate or empty render),
+     * `empty`, `too-long` (> [MAX_OPENER_CHARS]), `digits-or-markup`, `too-many-words`
+     * (> [MAX_OPENER_WORDS]), `repeat` (same line already said this run).
+     */
+    /** [workingReject] for raw model output (the same parse the caller uses). */
+    fun workingReject(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
+        // A blank render is "empty", not "not-spoken": parse() turns both into Nothing, and the
+        // difference is the diagnosis the log needs.
+        if (rendered.isNullOrBlank()) "empty" else workingReject(parse(rendered), saidThisRun)
+
+    fun workingReject(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
+        val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
+        val firstLine = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+            ?: return "empty"
+        val t = firstLine.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
+        if (t.isEmpty()) return "empty"
+        if (t.length > MAX_OPENER_CHARS) return "too-long"
+        if (t.any { it.isDigit() || it == '<' || it == '>' || it == '[' || it == ']' }) return "digits-or-markup"
+        if (t.split(Regex("\\s+")).count { it.isNotEmpty() } > MAX_OPENER_WORDS) return "too-many-words"
+        val line = opener(text) ?: return "empty"
+        return if (saidThisRun.any { norm(it) == norm(line) }) "repeat" else null
     }
 
     /** Bounds for a beat: long enough to sound human, short enough to be cut cleanly. */

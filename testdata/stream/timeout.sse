@@ -1,0 +1,4 @@
+#! hold
+#! idle_timeout_ms 150
+data: {"type":"response.output_text.delta","item_id":"m1","delta":"hel"}
+

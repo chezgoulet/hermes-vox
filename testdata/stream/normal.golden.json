@@ -1,0 +1,96 @@
+{
+  "fixture": "normal",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "resp_r",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "i1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "Hello ",
+          "commentary": "",
+          "text": "Hello ",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "i1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "world",
+          "commentary": "",
+          "text": "Hello world",
+          "done": false
+        },
+        {
+          "type": "response.output_text.done",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "Hello world",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "resp_r",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "Hello world",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "resp_r",
+          "text": "Hello world",
+          "transcript": "Hello world"
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "[Voice input — the app adds its own spoken acknowledgments like \"let me think\" while you work, so do NOT re-state that you are thinking or working. Greet the caller naturally first if they greet you. Then respond conversationally, 2-4 sentences. Speak plainly, no code or markdown. Answer from what you know; do NOT do exhaustive tool work or re-audit your own docs/state unless the caller explicitly asks.] hi",
+      "stream": true,
+      "previous_response_id": ""
+    }
+  ]
+}

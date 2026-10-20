@@ -36,22 +36,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Go (gomobile bind)
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-
-      - name: Install gomobile + build the mobile.aar
-        run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
-          go install github.com/ebitengine/gomobile/cmd/gomobile@v0.0.0-20260820040257-d11f821a26a6
-          go install github.com/ebitengine/gomobile/cmd/gobind@v0.0.0-20260820040257-d11f821a26a6
-          export GOMOBILE=$(go env GOPATH)/bin/gomobile
-          $GOMOBILE init > /dev/null 2>&1 || true
-          mkdir -p android/app/libs
-          $GOMOBILE bind -target android -androidapi 23 -javapkg com.hermesvox \
-            -o android/app/libs/mobile.aar github.com/chezgoulet/hermes-vox/mobile
-
       # The release keystore is repository-encrypted (age, key = repo secret).
       # Nightlies are signed with the SAME release key AND carry a versionCode at or
       # above the release's (see the pre-merge bump in docs/RELEASE-PROCESS.md), so an

@@ -10,7 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import com.hermesvox.mobile.HermesSession
+import com.hermesvox.core.HermesSession
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -161,14 +161,23 @@ class VoiceController(private val context: Context, private val session: HermesS
     // T1 probe thresholds (dd-only near-miss / mic-gap / skip telemetry — zero behavior).
     // ER Phase 4: the presence loop — lives only when the voice mode is enhanced.
     // It feeds speakGlue (the P3 path) only; never speaks over the mind's reply.
-    // 0.6.2: the filler cap is the user's Settings slider (read live per tick).
+    // The filler cap and the mid-run line cadence follow the "Presence while working"
+    // register (read live per tick).
     // 0.6.7: the presence-voice mode (silent/sounds/spoken) + the clip Context.
     val erPresence = ErPresence(
         { glue, source -> if (erPresenceOn) speakGlue(glue, source = source) },
-        { prefsGetInt("er_filler_cap", 2) },
+        { presenceDensity().fillerCap },
+        { presenceDensity() },
     ).also { p ->
         p.clipContext = context
         p.voiceMode = prefString("er_presence_voice", "sounds")
+        p.onWorkingSlot = { slot -> requestWorkingLine(slot) }
+    }
+    /** The "Presence while working" register, migrating the old filler-cap slider when unset. */
+    private fun presenceDensity(): PresenceCadence.Density {
+        val sp = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val legacy = if (sp.contains(PresenceCadence.LEGACY_PREF)) sp.getInt(PresenceCadence.LEGACY_PREF, 2) else null
+        return PresenceCadence.resolve(sp.getString(PresenceCadence.PREF, null), legacy)
     }
     /** 0.8/M3c: the soul's decision path, wired by the host (it owns the express layer).
      *  Given the caller's utterance and what the mind is doing, it returns the line the soul
@@ -200,6 +209,58 @@ class VoiceController(private val context: Context, private val session: HermesS
             }
         }
     }
+    /** The caller's words that started the current mind run, what the mind is using right now
+     *  (the latest tool call), and the mid-run lines said this run — the working directive's input. */
+    @Volatile private var workingAsk: String? = null
+    @Volatile private var mindTool: String? = null
+    private val workingSaid = ArrayList<String>()
+
+    /**
+     * A mid-run line slot opened ([PresenceCadence], on the presence tick): ask the soul for ONE
+     * short line about what the mind is doing, or silence. It renders in the narration class —
+     * dropped while another render runs, never preempting a turn decision — so the GPU cost is at
+     * most one render per interval. The line plays as glue (as a beat does) and is refused if the
+     * run ended while it rendered: the reply landed, a barge, or the call ended.
+     */
+    private fun requestWorkingLine(slot: ErPresence.Slot) {
+        val decide = soulDecide
+        if (decide == null || !erMindLive || glueBlocked()) {
+            erPresence.noteWorkingSkip(slot, if (decide == null) "no-soul" else "blocked")
+            return
+        }
+        val gen = turnGen
+        val said = synchronized(workingSaid) { workingSaid.toList() }
+        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said)
+        decide(ErSoulTurn.KIND_WORKING, directive, null, null) { o, _ ->
+            val line = ErSoulTurn.workingLine(o, said)
+            main.post {
+                val skip = when {
+                    line == null -> "silent"
+                    gen != turnGen || firstTextLatch || !erPresence.cadenceLive(slot.runId) -> "late"
+                    glueSpeaking -> "glue-playing"   // one line at a time, never two at once
+                    !canDeliverSoulLine(line) -> "undeliverable"
+                    else -> null
+                }
+                if (skip != null) {
+                    // Diagnostics: `reason=silent` cannot tell "the soul chose silence" from "the
+                    // guard refused a good line". The owner asked to see what was thrown away, so
+                    // the refusal records its cause and the text (hidden unless transcripts are on,
+                    // exactly as the er-glue lines do).
+                    val why = ErSoulTurn.workingReject(o, said)
+                    val raw = (o as? ErSoulTurn.Outcome.Spoken)?.text
+                    VoxLog.er(
+                        "event=er-presence detail line=${slot.line} why=${why ?: "-"} " +
+                            "text=${if (logTranscripts()) (raw ?: "-").replace("\n", " ").take(90) else "<hidden>"}"
+                    )
+                    erPresence.noteWorkingSkip(slot, skip); return@post
+                }
+                synchronized(workingSaid) { workingSaid.add(line!!) }
+                erPresence.noteWorkingLine(slot, "soul")
+                speakGlue(line!!, source = SOURCE_WORKING)
+            }
+        }
+    }
+
     /** One greeting per call. Reset in [stop] so the next call opens the same way. */
     @Volatile private var soulGreeted = false
     @Volatile private var soulSpokeThisTurn = false
@@ -416,6 +477,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // EchoTailRule: when the previous reply's audio ended + its plausible tail. 0 = no
                 // reply just played (first segment, or after a barge-seeded turn).
                 var echoGuardUntil = 0L
+                // 0.9.1: the playback barge floor, measured from the reply's own echo. It
+                // spans turns (the echo belongs to this line, not to one reply) and a
+                // rebuilt line relearns. See EchoFloor and docs/BARGE-WHY-0.7-WORKED.md.
+                val echoFloor = EchoFloor()
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
@@ -448,6 +513,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var lastSpeechEnd = 0
                     val seeded = seed
                     seed = null
+                    // EndpointRule.utteranceMs: when this segment's SPEECH began (0 = not yet).
+                    var speechStartAt = 0L
                     if (seeded != null) {
                         // #12: the barge's words open this segment — in speech, with their
                         // onset pre-roll, so the utterance is transcribed whole as the turn.
@@ -457,6 +524,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         lastSpeechEnd = seg.size
                     }
                     val segStart = android.os.SystemClock.uptimeMillis() - seg.size * 1000L / sr
+                    if (seeded != null) speechStartAt = segStart   // the carry opens in speech
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
                     val partialEnabled = micBool("partial_stt", true)
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
@@ -465,6 +533,22 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (n <= 0) continue
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
+                        // 0.9.1 FIELD (Pixel 9, speaker at 22/25): the ER soul opens the call
+                        // with its own greeting, which plays BEFORE any turn exists — so the
+                        // half-duplex gate (turnDone, awaited between turns) has not closed
+                        // yet, this loop is live, and it transcribed the being's own greeting
+                        // as the caller's first utterance (12:22:28 greet -> 12:22:33 turn).
+                        // Glue is presence, not speech from the caller: drop it here, before
+                        // the VAD sees it, and keep the tail quiet for the same window the
+                        // barge drain already uses (erEchoSkipMs). A caller who talks over
+                        // the greeting is ignored for its length — that is the same
+                        // half-duplex contract the reply already has, and the greeting is
+                        // the being opening the call.
+                        if (glueWindow.inWindow(glueSpeaking, android.os.SystemClock.uptimeMillis(), erEchoSkipMs)) {
+                            inSpeech = false; silentMs = 0; speechStartAt = 0L
+                            preBuf.clear()
+                            continue
+                        }
                         val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
                         // Pre-roll ONLY the frames BEFORE the VAD fires. If we add the
                         // speech-detected batch here AND again in the seg-accumulator below,
@@ -479,6 +563,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // silence accrue faster than wall-clock and cut the user off
                         // mid-sentence when the pause threshold fired early.
                         if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
                             for (f in frames) seg.add(f)
@@ -493,7 +578,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 800ms pause rule owns normal turn ends. The partial early-start
                         // worker keeps running inside an extended segment (a 6 s tail
                         // snapshot past 8 s — a trigger only; the text is the whole segment).
-                        val elapsedMs = android.os.SystemClock.uptimeMillis() - segStart
+                        // 0.9.1: from the speech onset, not the mic open (EndpointRule.utteranceMs).
+                        val elapsedMs = EndpointRule.utteranceMs(android.os.SystemClock.uptimeMillis(), speechStartAt)
                         if (EndpointRule.shouldStop(elapsedMs, silentMs.toLong(), maxMs.toLong(), hardMs)) break
                         if (inSpeech && elapsedMs >= maxMs && !extendedLogged) {
                             extendedLogged = true
@@ -638,8 +724,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val gateClosedAt = android.os.SystemClock.uptimeMillis()
                     lastActivityAt = gateClosedAt   // T2: this turn's activity clock starts at its gate close
                     var gateReleased = false
-                    var bargeFired = false
-                    var sustainedMs = 0L
+                    // #42: THE production barge/carry audio path — RMS, BargeGate's leaky
+                    // sustains + decision, and BargeCarry's history/onset/fire. Extracted
+                    // so a synthetic 16 kHz signal can be pushed through this exact code
+                    // off-device (BargeAudioPathTest), with no mic, VAD or wall clock.
+                    val bargeAudio = BargeAudioPath(sr, bargeRmsMin, vadAvailable, levelOnlyMs, bargeCarry, echo = echoFloor)
                     // Second accumulator (0.4.0.2 level-only escape): net time the RMS held
                     // above the RAISED bar (floor * LEVEL_ONLY_BOOST), its own bar, tracked
                     // with the same readAt clock discipline + the same O(1) float math as
@@ -652,13 +741,6 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // one frame and the escape's 400ms/7-frame requirement was arithmetically
                     // dead. Leaking makes the discriminator DUTY CYCLE at the bar (break-even
                     // 0.6) instead of perfect contiguity.
-                    var sustainedLevelMs = 0L
-                    // 0.4.0.3: wall-clock of the last read the VAD called speech. The VAD path
-                    // used to need vad==true on the CURRENT read; the log shows agreement
-                    // landing on neighbouring frames instead (turn 10: vad=true at peak 0.135
-                    // between vad=false peaks of 0.172/0.182), so BargeGate.VAD_RECENT_MS now
-                    // accepts agreement from the recent past. 0 = the VAD has not agreed yet.
-                    var lastVadSpeechAt = 0L
                     var sawPlayback = false
                     var playbackSince = 0L
                     // T1 probe state (dd-only, per turn, no allocation): lastReadAtMs is the
@@ -669,7 +751,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // `!spk && !turnInFlight` skip state held >3s (a reply tail playing with the
                     // speaking flag already false = the deaf window) — once per turn.
                     var lastReadAtMs = 0L
-                    var peakRms = 0f
+                    // 0.9.1: per-second duty-cycle witness (event=barge-stat) for every
+                    // checked PLAYBACK read — the near-miss probe prints only a run's
+                    // first read, which cannot show the duty cycle the gate decides on.
+                    val bargeStat = BargeStat()
                     var nearMissLoggedAtMs = 0L
                     var skipStateSinceMs = 0L
                     var skipStateLogged = false
@@ -683,8 +768,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val dn = try { r.read(shortBuf, 0, shortBuf.size, AudioRecord.READ_NON_BLOCKING) } catch (_: Throwable) { 0 }
                         if (dn <= 0) break
                     }
-                    while (listening && !gateReleased &&
-                        android.os.SystemClock.uptimeMillis() - gateClosedAt < TURN_GATE_TIMEOUT_MS) {
+                    // 0.9.1 TurnGateCeiling: the ceiling counts from the turn's last sign of
+                    // life, not from gate close — a long reply is not a wedged gate.
+                    var lastAliveAt = gateClosedAt
+                    var ceilingHit = false
+                    while (listening && !gateReleased) {
+                        val tickAt = android.os.SystemClock.uptimeMillis()
+                        if (turnInFlight || speaking || sRunning) lastAliveAt = tickAt
+                        if (TurnGateCeiling.expired(tickAt, gateClosedAt, lastAliveAt)) { ceilingHit = true; break }
                         if (latch.count == 0L) { gateReleased = true; break }   // gate open -> stop draining
                         val n = try { r.read(shortBuf, 0, shortBuf.size) } catch (_: Throwable) { 0 }
                         if (n <= 0) {
@@ -696,7 +787,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                         val readAt = android.os.SystemClock.uptimeMillis()
                         lastActivityAt = readAt   // T2: a drain read is genuine turn activity
-                        if (lastReadAtMs != 0L && bargeInEnabled && !bargeFired) {
+                        if (lastReadAtMs != 0L && bargeInEnabled && !bargeAudio.fired) {
                             val readGap = readAt - lastReadAtMs
                             // T1 CAUSE A probe: a >500ms gap between read RETURNS means the mic
                             // drain was starved (synth/write burst) so barge detection couldn't run.
@@ -710,10 +801,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (!bargeInEnabled) continue                          // drain-only (no buffer flood)
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
-                        if (bargeFired) {
+                        if (bargeAudio.fired) {
                             // #12: the barge already fired — keep every word the user is
                             // still saying; it becomes the next turn (BargeCarry).
-                            bargeCarry.push(frames, true)
+                            bargeAudio.keep(frames)
                             continue
                         }
                         // Playback grace: skip checks for barge_grace_ms after `speaking`
@@ -735,14 +826,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 VoxLog.dd("event=barge-skipcheck gen=$myGen why=state")
                             }
                         } else skipStateSinceMs = 0L
+                        // 0.9.1: the reply's level at the playback head — the echo reference.
+                        // Only the on-device voice has one; System TTS keeps the fixed floor.
+                        val ref = if (spk) (tts as? SherpaTts)?.playbackRms() else null
                         if (inGrace || stateSkip) {
-                            sustainedMs = 0L; sustainedLevelMs = 0L; lastVadSpeechAt = 0L
-                            bargeCarry.push(frames, false)   // history only (pre-roll), never an onset
+                            bargeAudio.hold(frames, ref)   // reset sustains, history only (pre-roll)
+                            bargeStat.reset()
                             continue
                         }
-                        var acc = 0.0
-                        for (f in frames) acc += f * f
-                        val level = Math.sqrt(acc / n)
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
                         // ER Phase 5: capture the interrupting speech while it plays —
                         // the two-stage design reads the utterance BEFORE deciding
@@ -759,62 +850,46 @@ class VoiceController(private val context: Context, private val session: HermesS
                             (erEchoSkipMs <= 0L || readAt - erEchoSkipSinceMs > erEchoSkipMs)) {
                             for (f in frames) erBargeSeg.add(f)
                         }
-                        // active RMS floor: rmsMin with VAD, rmsMin*1.4 without
-                        val floor = if (vadAvailable) bargeRmsMin else bargeRmsMin * BargeGate.NO_VAD_RMS_BOOST
-                        // #12: onset tracking for the carry — speech-like = the VAD agrees or
-                        // the level clears the barge floor (the measured residual echo on this
-                        // AEC path sits below it; see BargeGate).
-                        bargeCarry.push(frames, vadSpeech || level > floor)
+                        // #42: RMS + leaky sustains + the double-gate decision + the carry
+                        // (history/onset/fire) live in the production BargeAudioPath; the
+                        // deterministic test drives this same call with a synthetic signal.
+                        val bf = bargeAudio.process(frames, vadSpeech, readAt, ref)
+                        if (spk) {
+                            bargeStat.add(bf.level, bargeAudio.floor, bargeAudio.levelFloor, vadSpeech, readAt, ref ?: 0f)?.let {
+                                // d(), not dd(): this line exists to be read in an
+                                // EXPORTED log. dd() reaches the file only with the
+                                // debug-file toggle on — the 0.6.4 field bug (the ER
+                                // verdict lines were invisible in the export for
+                                // exactly this reason). One line a second is cheap.
+                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs} echo=${if (echoFloor.calibrated) "%.3f".format(echoFloor.echoLevel) else "-"}")
+                            }
+                        } else bargeStat.reset()
                         // 0.6.2 echo guard: track glue playback end so the capture skip
                         // window (erEchoSkipMs) starts when the filler's tail is dying.
                         if (glueSpeaking) erEchoSkipSinceMs = readAt
-                        // Same per-read clock discipline as before (n * 1000 / sr = 64ms for the
-                        // 1024-short buffer at 16kHz); only the accumulate rule changed.
-                        val frameMs = n * 1000L / sr
-                        sustainedMs = BargeGate.accumulate(sustainedMs, level > floor, frameMs)
-                        // level-only escape accumulator: its OWN raised bar (floor * 1.3), leaked
-                        // (not zeroed) by a read below it. Its cap admits a levelOnlyMs slider
-                        // set above the default ceiling.
-                        val levelFloor = floor * BargeGate.LEVEL_ONLY_BOOST
-                        sustainedLevelMs = BargeGate.accumulate(sustainedLevelMs, level > levelFloor, frameMs,
-                            maxOf(BargeGate.SUSTAIN_CAP_MS, levelOnlyMs))
-                        if (vadSpeech) lastVadSpeechAt = readAt
-                        val msSinceVadSpeech = if (lastVadSpeechAt == 0L) Long.MAX_VALUE else readAt - lastVadSpeechAt
-                        if (BargeGate.decide(level.toFloat(), if (vadAvailable) vadSpeech else null, sustainedMs,
-                                bargeRmsMin, vadAvailable, levelOnlyMs, sustainedLevelMs, msSinceVadSpeech, peakLevel = peakRms)) {
-                            VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(level)} vad=$vadSpeech gen=$myGen speaking=$spk")
+                        if (bf.fired) {
+                            VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(bf.level)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
-                            bargeCarry.fire()   // #12: freeze onset-minus-pre-roll .. now; keep the rest
                             main.post { bargeIn() }
-                            bargeFired = true
-                            sustainedMs = 0L
-                            sustainedLevelMs = 0L
-                        } else {
+                        } else if (spk && bf.nearMiss &&
+                            readAt - nearMissLoggedAtMs >= BARGE_NEARMISS_WINDOW_MS) {
                             // T1 CAUSE C probe (decide false): the user is audibly there but the
                             // double gate didn't fire — either level is ABOVE the floor and the
                             // sustain is still accumulating / VAD disagrees (sustainedMs>0), or
-                            // level is approaching it (>=0.7x floor) with VAD agreeing. Reuses the
-                            // per-frame level/sustainedMs math; peakRms is a running max of the
-                            // current near-floor run, so the calibration shows how close we got.
-                            // 0.6.9: peak tracking moved OUT of the spk-only probe — the
-                            // level-only escape needs the run PEAK in PLAYBACK too (the
-                            // 0.6.7 field failure: a soft "hey" peaked 0.110 in one frame
-                            // during playback; the probe only ran when speaking was false,
-                            // so decide() never saw the peak).
-                            val nearFloor = floor * 0.7f
-                            if (level >= nearFloor) { if (level > peakRms) peakRms = level.toFloat() }
-                            else peakRms = 0f
-                            if (spk && (sustainedMs > 0L || sustainedLevelMs > 0L || (vadSpeech && level >= nearFloor)) &&
-                                readAt - nearMissLoggedAtMs >= BARGE_NEARMISS_WINDOW_MS) {
-                                nearMissLoggedAtMs = readAt
-                                // 0.4.0.3 blind spot closed: levelSustain= is the ESCAPE's own
-                                // accumulator (levelBar= its bar), which 0.4.0.2 never printed —
-                                // sustainedMs= alone could not show why the escape stayed silent.
-                                VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${"%.3f".format(peakRms)} vad=$vadSpeech sustainedMs=$sustainedMs floor=${"%.3f".format(floor)} levelSustain=$sustainedLevelMs levelBar=${"%.3f".format(levelFloor)} need=$levelOnlyMs")
-                            }
+                            // level is approaching it (>=0.7x floor) with VAD agreeing.
+                            // 0.4.0.3 blind spot closed: levelSustain= is the ESCAPE's own
+                            // accumulator (levelBar= its bar), which 0.4.0.2 never printed —
+                            // sustainedMs= alone could not show why the escape stayed silent.
+                            nearMissLoggedAtMs = readAt
+                            VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${"%.3f".format(bf.peakRms)} vad=$vadSpeech sustainedMs=${bf.sustainedMs} floor=${"%.3f".format(bargeAudio.floor)} levelSustain=${bf.sustainedLevelMs} levelBar=${"%.3f".format(bargeAudio.levelFloor)} need=$levelOnlyMs")
                         }
                     }
                     val gateLockedNow = android.os.SystemClock.uptimeMillis()
+                    // 0.9.1: every ceiling exit is logged — 0.9.0's flat 60 s exit was silent
+                    // whenever the drain itself was reading (always), so the field log shows
+                    // only the mic reopening mid-reply (event=cue cue=listening).
+                    if (ceilingHit)
+                        VoxLog.w("event=gate-ceiling gen=$myGen afterClose=${gateLockedNow - gateClosedAt}ms sinceAlive=${gateLockedNow - lastAliveAt}ms speaking=$speaking turnInFlight=$turnInFlight sRunning=$sRunning")
                     if (!gateReleased && gateLockedNow - gateClosedAt >= TURN_GATE_TIMEOUT_MS && gateLockedNow - lastActivityAt > GATE_STALL_IDLE_MS)
                         VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms sinceActivity=${gateLockedNow - lastActivityAt}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
                     vad?.reset()   // clear barge-window VAD state before the next turn's segmentation
@@ -864,7 +939,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         recognizer?.destroy(); recognizer = null
         // ER Phase 4: controller teardown kills the presence loop first — its
         // handler callbacks must never outlive the executor they feed.
-        erActive = false; erPresence.stop()
+        erActive = false; erPresence.stop("call-end")
         soulGreeted = false   // 0.8/M3c: the next call opens with a greeting too
         // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
         // case; this one guarantees a hangup always closes the measurement out).
@@ -874,6 +949,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         // (closes the SherpaTts fence -> streamChunk returns false -> no track
         // resurrection), close the streaming worker, cancel the SSE stream, then
         // release the turn gate, all synchronously on this thread.
+        // 0.9.0 FIELD: the gate release alone does NOT stop the poll loop. Barge-in
+        // sets genCancelled before silencing; stop() did not, so a hang-up mid-turn
+        // left the poller asking the gateway for a stream the app had just cancelled.
+        // It answered "no such stream" ~1,900 times a second until the 200-error cap
+        // aborted the turn and reported it as `err=timeout` — a deliberate hang-up
+        // logged as a failure, 200 lines at a time (field log 2026-10-20,
+        // 00:16:39 and 00:23:06). Same flag as the barge path, same effect: the loop
+        // sees it at the top of its next iteration and retires.
+        genCancelled = true
         silenceAll("stop")
         // #8: wait (bounded) for the capture loop + partial worker to exit their
         // native calls (vad.feed / stt.transcribe / record.read) before releasing
@@ -1009,6 +1093,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // wait is not dead air: the beat plays through it. A decision that lands after the submit
         // may only speak a beat — the mind was not told about a late answer.
         soulSpokeThisTurn = false
+        workingAsk = text; mindTool = null
+        synchronized(workingSaid) { workingSaid.clear() }
         (tts as? SherpaTts)?.mood = VoiceMood.WARM   // a heard mood applies to the turn it was heard in
         val soulTurn = SoulTurnState()
         val decide = soulDecide
@@ -1078,6 +1164,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         // separate pre-check is folded into that branch — one place, no gap between the
         // check and the submit for a shutdown to slip through.
         if (!execSubmit {
+                // #6: ONE terminal state for this turn. The first transition out of
+                // RUNNING (complete / fail / cancel) wins; every later chunk, error or
+                // completion is a no-op. Declared OUTSIDE the try so the catch can resolve
+                // a fallback for a failure thrown mid-flight.
+                val terminal = StreamTurnTerminal()
                 try {
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
@@ -1124,13 +1215,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // D2: a barge-in during generation (before startStream returned) sets
                     // genCancelled; break so the turn's worker retires without settling a
                     // ghost reply (the gate was already released by bargeIn()).
-                    if (genCancelled) break
-                    // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The Go
-                    // side (WaitStream) signals the app the instant an SSE event lands, so
+                    if (genCancelled) { terminal.cancel(); break }
+                    // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The
+                    // session (waitStream) signals the app the instant an SSE event lands, so
                     // deltas render as they arrive; the 100ms budget is only the idle floor
                     // (no data yet -> check again). End-of-stream completion wakes too, so
                     // `done` is observed promptly and never padded by a poll-tick.
-                    try { session.waitStream(sid, 100) } catch (e: Exception) { if (!genCancelled) VoxLog.w("event=stream-wait err=${e.message?.take(120)} gen=$gen tries=$tries") } // gomobile raises on a retired stream
+                    try { session.waitStream(sid, 100) } catch (e: Exception) { if (!genCancelled) VoxLog.w("event=stream-wait err=${e.message?.take(120)} gen=$gen tries=$tries") } // raises on a retired stream
                     var payload: String? = null
                     try { payload = session.pollStreamJSON(sid) } catch (e: Exception) {
                         // 0.6.8 (the field poll-storm): a stream orphaned by process death
@@ -1143,10 +1234,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                             pollErrors++
                             if (pollErrors >= POLL_ERROR_MAX) {
                                 VoxLog.e("event=stream-poll-abort gen=$gen pollErrors=$pollErrors — the stream is unrecoverable; aborting the turn")
-                                main.post {
-                                    listener?.onError("hermes: the voice stream was lost (connection or gateway restart). Try again.")
-                                    listener?.onState("idle")
-                                    releaseTurnGate(gen, "stream-lost")
+                                when (val action = terminal.fail("poll-abort")) {
+                                    is StreamAction.Fallback -> deliverFallback(action, gen)
+                                    is StreamAction.Failure -> main.post {
+                                        listener?.onError("hermes: the voice stream was lost (connection or gateway restart). Try again.")
+                                        listener?.onState("idle")
+                                        releaseTurnGate(gen, "stream-lost")
+                                    }
+                                    else -> {}   // None: already terminal; Completed: unreachable
                                 }
                                 break
                             }
@@ -1160,6 +1255,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val doneNow = obj.optBoolean("done")
                         val pollErr = obj.optString("error", "")
                         val textLen = obj.optString("text", "").length
+                        // #6: keep the terminal's assembled text in step with the gateway's
+                        // authoritative snapshot, so a failure at ANY later point falls back
+                        // to everything the entity actually wrote. Ignored once terminal.
+                        terminal.assembled(MindSkip.strip(obj.optString("text", "")))
                         // K1: real events off the wire = the LIVE channel is authorized.
                         // The conn-test probe defers to this (liveAuthState).
                         if ((evts?.length() ?: 0) > 0) noteLiveAuthorized()
@@ -1196,16 +1295,27 @@ class VoiceController(private val context: Context, private val session: HermesS
                             VoxLog.d("turn done: gen=" + gen + " resp=" + obj.optString("response_id", "") + " len=" + finalText.length + " err=" + err.take(40) + (if (replyEvidence.isNotBlank()) " text=$replyEvidence" else ""))
                             if (err.isBlank()) noteLiveAuthorized() else noteLiveFailure(err)
                             if (err.isNotBlank()) {
-                                stopStreaming()   // abort: close the streaming worker + release the track
-                                main.post {
-                                    listener?.onError("hermes: $err")
-                                    listener?.onState("idle")
-                                    releaseTurnGate(gen, "reply-error")
+                                // #6: a terminal gateway error is a FAILURE. It falls back
+                                // when any text was assembled — through the SAME settle path
+                                // a completed reply uses, exactly once.
+                                when (val action = terminal.fail("reply-error")) {
+                                    is StreamAction.Fallback -> deliverFallback(action, gen)
+                                    is StreamAction.Failure -> {
+                                        stopStreaming()   // abort: close the streaming worker + release the track
+                                        main.post {
+                                            listener?.onError("hermes: $err")
+                                            listener?.onState("idle")
+                                            releaseTurnGate(gen, "reply-error")
+                                        }
+                                    }
+                                    else -> {}                // None (already terminal) / Completed (unreachable)
                                 }
                             } else if (finalText.isNotBlank()) {
+                                terminal.complete()
                                 LatencyStats.pushFullReply(android.os.SystemClock.uptimeMillis() - t0)   // #40 full reply
                                 main.post { settleReply(finalText, gen) }
                             } else {
+                                terminal.fail("empty-reply")   // nothing assembled: still an error
                                 stopStreaming()   // empty reply: still close the streaming worker
                                 main.post { listener?.onState("idle"); releaseTurnGate(gen, "empty-reply") }
                             }
@@ -1214,16 +1324,24 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (done) break
                     tries++
                 }
-                if (genCancelled) { VoxLog.d("turn interrupted during generation") }
+                if (genCancelled) { terminal.cancel(); VoxLog.d("turn interrupted during generation") }
                 else if (!done) throw Exception("timeout")
             } catch (e: Throwable) {
-                stopStreaming()
                 noteLiveFailure(e.message)   // K1: only a real auth rejection moves the live verdict
                 VoxLog.e("event=stream-turn-failed gen=$gen err=${e.message}")
-                main.post {
-                    listener?.onError("hermes: ${e.message}")
-                    listener?.onState("idle")
-                    releaseTurnGate(gen, if (e.message == "timeout") "turn-timeout" else "stream-error")
+                val reason = if (e.message == "timeout") "turn-timeout" else "stream-error"
+                when (val action = terminal.fail(reason)) {
+                    is StreamAction.Fallback -> deliverFallback(action, gen)
+                    is StreamAction.Failure -> {
+                        stopStreaming()
+                        main.post {
+                            listener?.onError("hermes: ${e.message}")
+                            listener?.onState("idle")
+                            releaseTurnGate(gen, reason)
+                        }
+                    }
+                    StreamAction.None -> {}   // cancelled, or the fallback already delivered
+                    else -> {}                // Completed: unreachable from fail()
                 }
             } finally {
                 currentStream = null
@@ -1260,6 +1378,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     "function_call" -> {
                         val name = e.optString("name")
                         val args = e.optString("arguments")
+                        mindTool = if (args.isBlank()) name else "$name (${args.take(60)})"
                         main.post { listener?.onLog("◆ tool: $name ${args.take(80)}") }
                     }
                     "function_call_output" -> {
@@ -1275,7 +1394,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // C4 K1: push firstTEXT once per turn (time from launch to the first
                         // text delta) — the OLD firstAudio site was a lie (it measured text).
                         // firstAudio now lives at the real-audio seam in the streaming worker.
-                        if (!firstTextLatch) { firstTextLatch = true; LatencyStats.pushFirstText(android.os.SystemClock.uptimeMillis() - t0) }
+                        if (!firstTextLatch) {
+                            firstTextLatch = true; LatencyStats.pushFirstText(android.os.SystemClock.uptimeMillis() - t0)
+                            erPresence.endCadence("reply")   // the reply is the voice now: no more mid-run lines
+                        }
                         streamFeed(d)   // start speaking as it streams
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
@@ -1335,6 +1457,24 @@ class VoiceController(private val context: Context, private val session: HermesS
             ReplySettle.DROP -> VoxLog.d(
                 "event=settle-drop gen=$gen reason=${if (cancelled) "cancelled" else "already-spoken"} chars=${finalText.length}")
         }
+    }
+
+    /**
+     * #6: deliver a failed stream's assembled text through the SAME path a completed
+     * reply uses — listener.onReply (transcript) + settleReply (TTS + turn settlement).
+     * Called at most once per turn: [StreamTurnTerminal] has already latched FALLBACK,
+     * so a late chunk or a second failure cannot reach here again.
+     *
+     * A failure can land while MindSkip.Filter is still holding the reply's opening
+     * characters (it holds the start until it can rule out the skip token). Release
+     * that hold first, exactly as the done branch does, or a short fallback reply
+     * would settle with nothing queued for the streaming voice.
+     */
+    private fun deliverFallback(action: StreamAction.Fallback, gen: Long) {
+        val held = mindSkip.finish()
+        if (held.isNotBlank()) { streamFeed(held); main.post { listener?.onDelta(held) } }
+        VoxLog.w("event=stream-fallback gen=$gen reason=${action.reason} chars=${action.chars}")
+        main.post { settleReply(action.text, gen) }
     }
 
     // ---- Streaming TTS engine ----
@@ -1398,10 +1538,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // so a chunk written while a beat plays used to be LOST — and with the
                             // beat on every turn that would be the first words of most answers. A
                             // beat is a few trailing words: let it land (bounded), cut it if it
-                            // runs long, then re-open the stream so this chunk plays whole.
+                            // runs long, then re-open the stream so this chunk plays whole. A
+                            // mid-run line is filler about the wait that just ended: cut at once.
                             if (glueSpeaking) {
                                 val t0h = android.os.SystemClock.uptimeMillis()
-                                while (glueSpeaking && !genCancelled && !sClosed &&
+                                while (glueSpeaking && !glueCutAtHandoff && !genCancelled && !sClosed &&
                                     android.os.SystemClock.uptimeMillis() - t0h < HANDOFF_WAIT_MS) {
                                     try { Thread.sleep(20) } catch (_: InterruptedException) { break }
                                 }
@@ -1520,7 +1661,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             sLock.notifyAll()
         }
     }
-    private fun speakingEnabledByUser() = speakEnabled()
     private fun stopStreaming() {
         streamed = false
         synchronized(sLock) { sQueue.clear(); sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
@@ -1539,6 +1679,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var audioStartedAt = 0L              // uptime of the first phrase handed over
     @Volatile private var headEverMoved = false            // has playbackHeadPosition ever advanced
     @Volatile private var revealedChars = 0                // monotonic within a turn
+    @Volatile private var gapHoldLogged = false            // one reveal-hold line per gap
 
     /** New turn: a fresh cursor (and an un-frozen one). */
     private fun armTranscript() {
@@ -1589,8 +1730,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         frozenChars?.let { return it }
         // Nothing has reached the voice yet (still thinking / tool-calling, or a
         // text-only settle that never speaks): no lock, so the display keeps painting
-        // plainly exactly as it always has.
-        if (audioStartedAt == 0L) return -1
+        // plainly exactly as it always has. Once the voice HAS said something this
+        // turn, hold that position instead of handing the surface back — a momentary
+        // "no active utterance" is not permission to reveal the whole reply.
+        if (audioStartedAt == 0L) return if (revealedChars > 0) revealedChars else -1
         return liveCursor()
     }
 
@@ -1603,7 +1746,20 @@ class VoiceController(private val context: Context, private val session: HermesS
         // PlaybackClock: trust the head; only a head that has NEVER advanced falls back
         // to the wall clock (some HALs report 0 for the life of a short track).
         val samples = PlaybackClock.samples(head, headEverMoved, since, engine.streamSampleRate)
-        val chars = synchronized(cursorLock) { SpeechCursor.of(chunkStats).charsSpoken(samples) }
+        val cursor = synchronized(cursorLock) { SpeechCursor.of(chunkStats) }
+        // 0.9.0 FIELD: a synthesis gap is not speech. Between chunks the head keeps
+        // advancing while nothing new is registered, so `charsSpoken` answers "past the
+        // end = everything registered" — and because revealedChars is monotonic, one
+        // such tick pinned the reveal to the end of the reply for the rest of it: the
+        // text jumped, the tracer had nothing left to trace, and the audio carried on
+        // correctly underneath (field 2026-10-20). Hold the last honest position and
+        // wait for the next chunk to be registered.
+        if (cursor.isOverrun(samples)) {
+            if (!gapHoldLogged) { gapHoldLogged = true; VoxLog.d("event=reveal-hold reason=synthesis-gap samples=$samples of=${cursor.totalSamples}") }
+            return revealedChars
+        }
+        gapHoldLogged = false
+        val chars = cursor.charsSpoken(samples)
         if (chars > revealedChars) revealedChars = chars   // monotonic: the reveal never rewinds
         return revealedChars
     }
@@ -1638,8 +1794,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var speakerPulse = 0f
 
     @Volatile private var glueSpeaking = false
+    // 0.9.1: the capture loop drops frames while glue plays and for [erEchoSkipMs] after
+    // it ends. The ER greeting plays before any turn exists, so the half-duplex gate is
+    // not yet closed and the loop would otherwise transcribe the being's own greeting.
+    private val glueWindow = GlueWindow()
     /** Set once this turn's reply has begun writing to the stream track (reset per turn). */
     @Volatile private var replyOwnsTrack = false
+    /** The glue playing is a mid-run line: the reply's first audio cuts it without waiting. */
+    @Volatile private var glueCutAtHandoff = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
     private val HANDOFF_WAIT_MS = 1200L
     // Streaming TTS: speak the reply as it streams (sync with the crawl), not after the
@@ -1695,6 +1857,13 @@ class VoiceController(private val context: Context, private val session: HermesS
      * Mirrors [speakGlue]'s guards exactly — one condition, not a second copy.
      */
     fun glueBlocked(): Boolean = !shouldSpeak() || speaking || streamingReplyLive()
+
+    /**
+     * #156: will this turn be voiced? The cue layer asks before playing the
+     * "reply ready" cue — when speech follows, the voice IS the signal, and a cue must
+     * never run into TTS (D7). Read-only; it changes no turn behaviour.
+     */
+    fun voiceWillSpeak(): Boolean = shouldSpeak()
 
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
@@ -1756,6 +1925,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             stopTts()
         }
         glueSpeaking = true
+        glueCutAtHandoff = source == SOURCE_WORKING
         main.post {
             tts?.speak(text) {
                 glueSpeaking = false
@@ -1818,7 +1988,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onState("listening")
         // ER Phase 4: a barge cuts the presence loop with everything else —
         // the user's voice outranks the soul's fillers too.
-        if (erActive) { erActive = false; erPresence.stop() }
+        if (erActive) { erActive = false; erPresence.stop("barge") }
         if (!erMindLive) {
             // Realtime (or a non-voice turn): today's behavior, unchanged.
             genCancelled = true
@@ -1939,7 +2109,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         speaking = false
         // ER Phase 4: hush cuts the presence loop with everything else (tap = STOP
         // outranks the soul's fillers, exactly like a barge does).
-        if (erActive) { erActive = false; erPresence.stop() }
+        if (erActive) { erActive = false; erPresence.stop("hush") }
         // #D1: the same single silence path as barge/endCall (fence + worker break
         // + synchronous gate release).
         silenceAll("hush")
@@ -1979,7 +2149,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      * The gateway key is stored ENCRYPTED at rest (SecureStore, AES/GCM: the pref
      * value is "ivB64:ctB64"), and every LIVE path resolves it before use —
      * MainActivity.storedKey(), the Settings test, onboarding, all of them go
-     * through GatewayKey.resolve(stored, SecureStore::decrypt) and hand the Go
+     * through GatewayKey.resolve(stored, SecureStore::decrypt) and hand the
      * session the PLAINTEXT key.
      *
      * The conn-test probe did not. It read the raw pref and sent
@@ -2099,6 +2269,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         lastProbeDebug = listOfNotNull(
             if (pingRe.isNotBlank()) "ping: $pingRe" else if (pingCode != 200) "ping: HTTP $pingCode" else null,
             if (streamRe.isNotBlank()) "stream: $streamRe"
+            // A 400-class answer from the stream leg is the expected reply to a probe
+            // that sends no input, and it reads as a fault unless it says so.
+            else if (streamCode in 400..499 && streamCode != 404) "stream: HTTP $streamCode (expected — the probe sends no input)"
             else if (streamCode != ConnectionPhase.NOT_RUN && (streamCode < 200 || streamCode >= 400)) "stream: HTTP $streamCode"
             else null
         ).joinToString(" · ")
@@ -2198,6 +2371,9 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     companion object {
         const val RMS_THRESHOLD = 0.09f
+        /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
+         *  the mark that lets the reply's first audio cut it without the beat's wait. */
+        const val SOURCE_WORKING = "soul-working"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */

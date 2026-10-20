@@ -1,0 +1,328 @@
+{
+ "run_id": "nemotron560-accent-p0",
+ "model_id": "nemotron560",
+ "threads": 4,
+ "chunk_ms": 20,
+ "realtime": true,
+ "trailing_silence_ms": 500,
+ "reps": 1,
+ "load_ms": 3189.79765,
+ "rss_base_kb": 111484,
+ "rss_after_load_kb": 901932,
+ "clips": [
+  {
+   "id": "accent_01",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S DEGREE CAN JUST GIVE ME A BETTER PAY JOB LATER",
+   "seconds": 6.97,
+   "partials": [
+    {
+     "a": 1240,
+     "w": 1404.688558,
+     "t": "Yes, I",
+     "d": 365.162069
+    },
+    {
+     "a": 1800,
+     "w": 1970.167074,
+     "t": "Yes, I do",
+     "d": 552.959595
+    },
+    {
+     "a": 2360,
+     "w": 2484.505657,
+     "t": "Yes, I do because",
+     "d": 696.974772
+    },
+    {
+     "a": 2920,
+     "w": 3038.438437,
+     "t": "Yes, I do because as you know",
+     "d": 834.892944
+    },
+    {
+     "a": 3480,
+     "w": 3597.357749,
+     "t": "Yes, I do because as you know, having",
+     "d": 971.754639
+    },
+    {
+     "a": 4040,
+     "w": 4206.599448,
+     "t": "Yes, I do because as you know, having a master's",
+     "d": 1157.361694
+    },
+    {
+     "a": 4600,
+     "w": 4766.702028,
+     "t": "Yes, I do because as you know, having a master's degree",
+     "d": 1343.0333249999999
+    },
+    {
+     "a": 5160,
+     "w": 5326.877891,
+     "t": "Yes, I do because as you know, having a master's degree can just",
+     "d": 1528.906941
+    },
+    {
+     "a": 5720,
+     "w": 5882.907188,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better",
+     "d": 1710.769531
+    },
+    {
+     "a": 6840,
+     "w": 7001.404544,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better paid job",
+     "d": 2053.844726
+    },
+    {
+     "a": 7390,
+     "w": 7547.174767,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better paid job later",
+     "d": 2230.067301
+    }
+   ],
+   "final_text": "Yes, I do because as you know, having a master's degree can just give me a better paid job later",
+   "clip_end_wall_ms": 7001.972496,
+   "endpoint_wall_ms": 8103.965132,
+   "endpoints": [
+    8103.965132
+   ],
+   "final_wall_ms": 8104.028609,
+   "tail_ms": 980,
+   "decode_ms": 2403.337606,
+   "tail_decode_ms": 349.49288000000024,
+   "rtf": 0.3448117081779053,
+   "feed_lag_mean_ms": 22.944327160458464,
+   "feed_lag_max_ms": 170.228353,
+   "first_partial_wall_ms": 1404.688558,
+   "cpu_ticks": 1092,
+   "rss_before_kb": 916252,
+   "rss_kb": 917152,
+   "rep": 0
+  },
+  {
+   "id": "accent_02",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "INTERESTING INTERESTING BECAUSE YOU'VE ALWAYS SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED ABOUT",
+   "seconds": 5.47,
+   "partials": [
+    {
+     "a": 1240,
+     "w": 1363.241863,
+     "t": "Interesting",
+     "d": 318.024537
+    },
+    {
+     "a": 1800,
+     "w": 1969.121664,
+     "t": "Interesting because you",
+     "d": 506.178997
+    },
+    {
+     "a": 2360,
+     "w": 2484.559856,
+     "t": "Interesting because you've always said",
+     "d": 650.231691
+    },
+    {
+     "a": 2920,
+     "w": 3084.094606,
+     "t": "Interesting because you've always said it was",
+     "d": 833.346356
+    },
+    {
+     "a": 3480,
+     "w": 3646.014203,
+     "t": "Interesting because you've always said it was something",
+     "d": 1018.7063410000001
+    },
+    {
+     "a": 4040,
+     "w": 4156.108441,
+     "t": "Interesting because you've always said it was something that you",
+     "d": 1154.3442400000001
+    },
+    {
+     "a": 4600,
+     "w": 4757.939659,
+     "t": "Interesting because you've always said it was something that you were not even",
+     "d": 1331.680096
+    },
+    {
+     "a": 5160,
+     "w": 5318.722862,
+     "t": "Interesting because you've always said it was something that you were not even interest",
+     "d": 1509.734905
+    },
+    {
+     "a": 5710,
+     "w": 5873.182864,
+     "t": "Interesting because you've always said it was something that you were not even interested about",
+     "d": 1692.026734
+    }
+   ],
+   "final_text": "Interesting because you've always said it was something that you were not even interested about",
+   "clip_end_wall_ms": 5460.350222,
+   "endpoint_wall_ms": 6435.847456,
+   "endpoints": [
+    6435.847456
+   ],
+   "final_wall_ms": 6435.886844,
+   "tail_ms": 800,
+   "decode_ms": 1876.886394,
+   "tail_decode_ms": 367.1514890000001,
+   "rtf": 0.3431236552102377,
+   "feed_lag_mean_ms": 21.013056273722647,
+   "feed_lag_max_ms": 169.146119,
+   "first_partial_wall_ms": 1363.241863,
+   "cpu_ticks": 854,
+   "rss_before_kb": 917672,
+   "rss_kb": 918404,
+   "rep": 0
+  },
+  {
+   "id": "accent_03",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "I THINK EVEN IF YOU DON'T LIVE ON THE GROUND FLOOR YOU MIGHT HAVE RATS THEY GO THROUGH THE WALLS",
+   "seconds": 3.79,
+   "partials": [
+    {
+     "a": 1240,
+     "w": 1390.037639,
+     "t": "Even if",
+     "d": 344.38383
+    },
+    {
+     "a": 1800,
+     "w": 1968.358969,
+     "t": "Even if you don't",
+     "d": 531.932373
+    },
+    {
+     "a": 2360,
+     "w": 2492.63969,
+     "t": "Even if you don't live on the ground",
+     "d": 682.734416
+    },
+    {
+     "a": 2920,
+     "w": 3367.936485,
+     "t": "Even if you don't live on the ground floor, you might",
+     "d": 1150.017822
+    },
+    {
+     "a": 3480,
+     "w": 3594.417116,
+     "t": "Even if you don't live on the ground floor, you might have",
+     "d": 1284.215779
+    }
+   ],
+   "final_text": "Even if you don't live on the ground floor, you might have",
+   "clip_end_wall_ms": 3780.713259,
+   "endpoint_wall_ms": 3790.80945,
+   "endpoints": [
+    3790.80945
+   ],
+   "final_wall_ms": 3790.916384,
+   "tail_ms": 20,
+   "decode_ms": 1284.215779,
+   "tail_decode_ms": 0,
+   "rtf": 0.3388432134564644,
+   "feed_lag_mean_ms": 43.636308626315795,
+   "feed_lag_max_ms": 447.964642,
+   "first_partial_wall_ms": 1390.037639,
+   "cpu_ticks": 590,
+   "rss_before_kb": 918924,
+   "rss_kb": 915352,
+   "rep": 0
+  },
+  {
+   "id": "accent_04",
+   "condition": "accent",
+   "category": "accent",
+   "reference": "HI YOU LOOK TIRED TODAY DID YOU HAD A BIG DAY",
+   "seconds": 5.02,
+   "partials": [
+    {
+     "a": 1800,
+     "w": 1962.347617,
+     "t": "I you look",
+     "d": 516.4250079999999
+    },
+    {
+     "a": 2360,
+     "w": 2538.694134,
+     "t": "I you look tired today",
+     "d": 713.6441649999999
+    },
+    {
+     "a": 4040,
+     "w": 4166.070966,
+     "t": "I you look tired today. Did you",
+     "d": 1181.4684659999998
+    },
+    {
+     "a": 4600,
+     "w": 4718.607425,
+     "t": "I you look tired today. Did you had a",
+     "d": 1319.1086429999998
+    },
+    {
+     "a": 5160,
+     "w": 5315.624108,
+     "t": "I you look tired today. Did you had a big day",
+     "d": 1493.8524989999999
+    }
+   ],
+   "final_text": "I you look tired today. Did you had a big day",
+   "clip_end_wall_ms": 5000.251671,
+   "endpoint_wall_ms": 5877.740726,
+   "endpoints": [
+    5877.740726
+   ],
+   "final_wall_ms": 5877.770308,
+   "tail_ms": 700,
+   "decode_ms": 1670.268881,
+   "tail_decode_ms": 351.16023800000016,
+   "rtf": 0.3327228846613546,
+   "feed_lag_mean_ms": 19.75244338247012,
+   "feed_lag_max_ms": 178.723187,
+   "first_partial_wall_ms": 1962.347617,
+   "cpu_ticks": 748,
+   "rss_before_kb": 915872,
+   "rss_kb": 916260,
+   "rep": 0
+  }
+ ],
+ "cpu_ticks_total": 5003,
+ "rss_peak_kb": 923300,
+ "rss_end_kb": 916512,
+ "energy": {
+  "before": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3786000,
+   "current_ua": -28125,
+   "pct": 100
+  },
+  "after": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3780000,
+   "current_ua": -92812,
+   "pct": 100
+  },
+  "energy_nwh_delta": 0,
+  "charge_uah_delta": -6000
+ },
+ "interrupted": false,
+ "device": "Google Pixel 7",
+ "sdk": 37,
+ "started_at": 1792439052480,
+ "_arm": "nemotron560",
+ "_condition": "accent",
+ "_run": "nemotron560-accent-p0"
+}

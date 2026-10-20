@@ -47,4 +47,31 @@ class EndpointRuleTest {
         assertTrue(EndpointRule.shouldStop(61000, 0, maxMs, hardMs))
         assertFalse(EndpointRule.shouldStop(15100, 0, maxMs, hardMs))  // extended: no pause
     }
+
+    // ---- 0.9.1: the clock runs from the speech onset, not the mic open ----
+
+    @Test fun utterance_clock_is_zero_before_speech_and_counts_from_its_onset() {
+        assertTrue(EndpointRule.utteranceMs(50_000L, speechStartAtMs = 0L) == 0L)
+        assertTrue(EndpointRule.utteranceMs(50_000L, speechStartAtMs = 49_000L) == 1_000L)
+    }
+
+    @Test fun field_fragment_and_not_is_no_longer_closed_at_its_first_pause() {
+        // 0.9.0 field: `endpoint-extended ms=31798`, then `ms=1274 speechMs=896
+        // text=and not` — the mic had been open ~31 s; the user had spoken < 1 s and
+        // paused ~128 ms (two reads). On the mic-open clock that pause ended the turn:
+        val micOpen = 0L
+        val speechStart = 30_650L
+        val pauseAt = speechStart + 896L + 128L
+        assertTrue("the 0.9.0 clock closed it",
+            EndpointRule.shouldStop(pauseAt - micOpen, 128L, maxMs, 0L))
+        // On the onset clock it is a 1 s utterance: the pause rule (800 ms) owns it.
+        assertFalse(EndpointRule.shouldStop(EndpointRule.utteranceMs(pauseAt, speechStart), 128L, maxMs, 0L))
+    }
+
+    @Test fun a_genuinely_long_utterance_still_extends_and_closes_on_a_breath() {
+        val speechStart = 10_000L
+        val t = speechStart + 15_100L
+        assertFalse(EndpointRule.shouldStop(EndpointRule.utteranceMs(t, speechStart), 100L, maxMs, 0L))
+        assertTrue(EndpointRule.shouldStop(EndpointRule.utteranceMs(t, speechStart), 101L, maxMs, 0L))
+    }
 }

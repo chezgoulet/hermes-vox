@@ -1,0 +1,147 @@
+{
+  "fixture": "compress",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "resp_voice_1",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "i1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "hello there",
+          "commentary": "",
+          "text": "hello there",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "resp_voice_1",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "hello there",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "resp_voice_1",
+          "text": "hello there",
+          "transcript": "hello there"
+        }
+      ]
+    },
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "resp_voice_1",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "i1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "hello there",
+          "commentary": "",
+          "text": "hello there",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "resp_voice_1",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "hello there",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "resp_voice_1",
+          "text": "hello there",
+          "transcript": "hello there"
+        }
+      ]
+    }
+  ],
+  "stored": {
+    "reply": "compacted",
+    "error": ""
+  },
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "hi",
+      "stream": true,
+      "previous_response_id": ""
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "model": "hermes-agent",
+      "input": "/compress",
+      "stream": false,
+      "previous_response_id": "resp_voice_1"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "after",
+      "stream": true,
+      "previous_response_id": "resp_compress"
+    }
+  ]
+}

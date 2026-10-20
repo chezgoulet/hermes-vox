@@ -12,8 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.hermesvox.mobile.HermesSession
-import go.Seq
+import com.hermesvox.core.HermesSession
 
 /**
  * MainActivity — the front-of-house surface. Hosts the avatar, the live reply,
@@ -32,6 +31,9 @@ class MainActivity : AppCompatActivity() {
     private var modelsWarnShown = false
     // #120-C: the one-time first-run coach overlay (dismissed -> seen pref).
     private var coachOverlay: android.view.View? = null
+    // The mic-state pill is hidden while Connected (the quiet steady state); the
+    // tour reveals it so its mark has a real control to point at, then restores.
+    private var coachStatusWasVisible = false
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
     private lateinit var reply: CrawlView
@@ -62,6 +64,8 @@ class MainActivity : AppCompatActivity() {
     // speech cursor — the AudioTrack playback head — so the bright/dim boundary is the
     // word the entity is actually saying, and the tail you can see is visibly unsaid.
     private var revealActive = false
+    private var revealBufLoggedFor = -1   // last reply length we logged a fallback for
+    private var revealHadCursor = false   // has this reply ever had a real cursor?
     private var revealStartedAt = 0L
     private var revealEpoch = 0
     private val revealTask = object : Runnable {
@@ -71,11 +75,23 @@ class MainActivity : AppCompatActivity() {
             if (c != null) {
                 val spoken = c.speechCursor()
                 if (spoken >= 0) {
+                    revealHadCursor = true
                     val txt = c.transcriptText()
                     // Blank = nothing has reached the engine yet (one-shot synth in
                     // flight): leave whatever is on screen rather than flashing empty.
                     if (txt.isNotBlank()) reply.setText(txt, spoken)
                 } else {
+                    // 0.9.0 FIELD: this fallback is silent, and it is why a broken
+                    // speech lock is invisible in a log while being obvious in the
+                    // hand — the crawl paints the whole reply at once and the tracer
+                    // disappears. 0.9.1: only a LOST lock is news. Before the first
+                    // phrase reaches the engine there is no cursor by design (the text
+                    // streams plainly while the mind works), and logging that made
+                    // every reply open with a false alarm — 19 lines in one field log.
+                    if (revealHadCursor && revealBufLoggedFor != replyBuf.length) {
+                        revealBufLoggedFor = replyBuf.length
+                        com.hermesvox.VoxLog.d("event=reveal-fallback reason=lost-cursor chars=${replyBuf.length}")
+                    }
                     reply.setText(replyBuf)   // system TTS: no sample accounting, no lock
                 }
             }
@@ -126,11 +142,29 @@ class MainActivity : AppCompatActivity() {
     private var lastSignalAt = 0L                       // last real stream/voice activity
     private var lastVoiceAt = 0L                        // last tick with audible audio
     private var motionStalled = false
+
+    // ---- #156: the sound cues ---------------------------------------------------
+    // Cues follow the SAME state transitions as the motion, one cue per real
+    // transition (a repeated ambient "listening" is not a new event). The voice
+    // suppression flag is fed from motionTick's `voicing` witness below — the real
+    // audio-on-the-track signal with the inter-phrase hold — so a cue can never
+    // land under the being's speech.
+    private var cues: SoundCuePlayer? = null
+    private var lastCueState = ""
     private var motionTool: String? = null
     // A signal that arrived DURING the flinch. bargeIn() posts onState("listening")
     // within a few ms of the cut — well inside the 350ms window — so dropping it
     // would strand the being in the motion it was interrupted out of.
     private var recoilPending: MotionState.Signal? = null
+
+    private fun cueFor(state: String) {
+        if (state == lastCueState) return   // ambient signals repeat; an edge does not
+        lastCueState = state
+        when (state) {
+            "listening" -> cues?.play(CueSynth.Cue.LISTENING)
+            "thinking" -> cues?.play(CueSynth.Cue.THINKING)
+        }
+    }
 
     /** Run one signal through the pure table and render the result. The RECOIL window
      *  is held HERE, not in the table: a pure rule has no clock, so the caller owns the
@@ -189,6 +223,12 @@ class MainActivity : AppCompatActivity() {
     private fun motionTick() {
         val now = android.os.SystemClock.uptimeMillis()
         val level = liveController?.speechLevel() ?: 0f
+        // #156: the voice witness is read FIRST, so the cue suppression flag stays
+        // live even on a recoil frame (a barge over TTS is exactly when a cue must
+        // stay quiet). `voicing` is the same real-audio witness the motion uses.
+        if (level > 0f) lastVoiceAt = now
+        val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
+        SoundCuePlayer.setVoiceActive(voicing)
         if (motion == MotionState.Motion.RECOIL) {
             if (now < recoilUntil) { avatar.driveMotion(level, motionWorkload()); return }
             motion = recoilPrior              // the one-shot is spent: back to the work
@@ -199,8 +239,7 @@ class MainActivity : AppCompatActivity() {
         // The streamed path never emits state "speaking" (only the one-shot speak()
         // does), so the voice is detected the way the 0.5.0-A reveal detects it: real
         // audio on the track. A short hold bridges the synth gaps between phrases.
-        if (level > 0f) { lastVoiceAt = now; markActivity() }
-        val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
+        if (level > 0f) markActivity()
         if (voicing && motion != MotionState.Motion.SPEAKING) feed(MotionState.Signal.SPEAK)
         val idle = now - lastSignalAt
         // Presence-level stall watch. Deliberately NOT armed while the voice is
@@ -245,6 +284,39 @@ class MainActivity : AppCompatActivity() {
         // would reject, nor one silently rewritten into a different identity.
         if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
+        // #156: the device matrix needs to PUT the phone into each state and then fire
+        // a cue. There is no shell command for the ringer mode on this build, so the
+        // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
+        // SETTINGS + DND access for SILENT). Order matters and is deliberate: state
+        // first, the TTS-suppression witness next, and the cue LAST, all on the main
+        // thread, so one intent is one deterministic test. Debug-only by the
+        // FLAG_DEBUGGABLE guard above; inert in a release build.
+        intent.getStringExtra("ringer")?.let { mode ->
+            val am = getSystemService(android.media.AudioManager::class.java)
+            runCatching {
+                am?.ringerMode = when (mode.lowercase()) {
+                    "silent" -> android.media.AudioManager.RINGER_MODE_SILENT
+                    "vibrate" -> android.media.AudioManager.RINGER_MODE_VIBRATE
+                    else -> android.media.AudioManager.RINGER_MODE_NORMAL
+                }
+            }
+            VoxLog.d("event=harness ringer=$mode now=${am?.ringerMode}")
+        }
+        if (intent.hasExtra("cue_voice")) {
+            SoundCuePlayer.setVoiceActive(intent.getBooleanExtra("cue_voice", false))
+        }
+        intent.getStringExtra("cue")?.let { name ->
+            val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
+            if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
+        }
+    }
+
+    /** The installed version code, from the manifest (BuildConfig is not generated). */
+    private fun currentVersionCode(): Int = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode.toInt() else @Suppress("DEPRECATION") info.versionCode
+    } catch (_: Throwable) {
+        0
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -254,7 +326,6 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({ handleDebugHarness(intent) }, 800L)
         active = this
         setContentView(R.layout.activity_main)
-        Seq.setContext(applicationContext)
         VoxLog.init(applicationContext)
         CrashLog.init(applicationContext)
         maybeRunWhisperProbe()
@@ -267,6 +338,27 @@ class MainActivity : AppCompatActivity() {
         avatar = findViewById(R.id.avatar)
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         conversation = findViewById(R.id.conversation)
+        // #156 (D7): the being's procedural sound cues. On by default; CuePolicy owns
+        // every judgement about whether a cue may be heard or felt right now.
+        cues = SoundCuePlayer(this)
+
+        // What's new, once per upgrade, with any breaking-change action attached.
+        UpdateBannerView.maybeShow(this, window.decorView, prefs, currentVersionCode()) { alert ->
+            when (alert.action) {
+                AlertAction.ENTITY -> startActivity(
+                    android.content.Intent(this, SettingsActivity::class.java)
+                        .putExtra("section", "entity")   // SettingsActivity.SECTION_ENTITY
+                )
+                AlertAction.MODELS -> startActivity(
+                    android.content.Intent(this, SettingsActivity::class.java)
+                        .putExtra("section", "models")   // SettingsActivity.SECTION_MODELS
+                )
+                AlertAction.URL -> startActivity(
+                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(alert.url))
+                )
+                AlertAction.NONE -> Unit
+            }
+        }
         convoText = findViewById(R.id.convo_text)
         heardLine = findViewById(R.id.heard_line)
         handleModeUi()
@@ -290,11 +382,13 @@ class MainActivity : AppCompatActivity() {
         // baked fallback). connectFromPrefs/send/talk/startCall re-surface it.
         if (GatewayKey.isMissing(storedKey())) setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
 
-        // Warming splash: created BEFORE the connection flow so autoOpenLine can
-        // toggle it. (Originally created after connectFromPrefs, so on a device where
-        // the mic permission + models are present autoOpenLine read warming.visibility
-        // before it was initialized -> UninitializedPropertyAccessException -> the app
-        // would not open at all. Cold-launch regression was 0.3.8.)
+        // Warming splash: created BEFORE the connection flow (0.3.8: reading it before
+        // init crashed the cold launch) and GONE until a voice line actually opens.
+        // Nothing opens a line on launch any more — openVoiceLine has exactly two
+        // callers, the start-call path and the audio-route rebuild — so a splash created
+        // VISIBLE is never dismissed: the app parked on "Preparing your voice…" and hid
+        // the endpoint error underneath it. Visibility is owned by openVoiceLine alone;
+        // this is its only starting state.
         warming = android.widget.TextView(this).apply {
             text = "Preparing your voice\u2026"
             textSize = 18f
@@ -302,6 +396,7 @@ class MainActivity : AppCompatActivity() {
             gravity = android.view.Gravity.CENTER
             setBackgroundColor(0xFF06070B.toInt())
             typeface = android.graphics.Typeface.MONOSPACE
+            visibility = android.view.View.GONE
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
@@ -670,22 +765,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     // -----------------------------------------------------------------------
-    // #120-C: one-time coach marks. The main screen is chrome-less, so the
-    // first launch overlays what the being's body means, what barge-in is, and
-    // where the controls live. Dismissing sets the "seen" pref — it never
-    // shows again (a Settings replay could reuse PREF_COACH_SEEN later).
-    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT
-    // path was stripped in C2 (0.4.0) — so the overlay says there is no
-    // push-to-talk button instead of pointing at one.
+    // #120-C: one-time coach marks. They are anchored to the two controls a new
+    // caller actually has to find — the mic-state pill and the voice control —
+    // rather than covering the screen with prose. Dismissing (the button or the
+    // scrim) sets the "seen" pref, so they never show twice.
+    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT path
+    // was stripped in C2 (0.4.0) — so the copy says there is no push-to-talk
+    // button and names the real switch (Settings → Voice mode).
     // -----------------------------------------------------------------------
     private fun maybeShowCoachMarks() {
         if (coachOverlay != null) return
         if (prefs.getBoolean(PREF_COACH_SEEN, false)) return
         if (callLive) return
         if (!endpointSet() || GatewayKey.isMissing(storedKey())) return
-        // The models empty state is the first-run CTA when nothing is
-        // installed (#6/#12) — coach marks wait until it isn't blocking.
+        // The models empty state is the first-run CTA when nothing is installed
+        // (#6/#12) — coach marks wait until the voice can actually work and the
+        // warning pill is not the thing that needs attention.
         if (modelsGate?.visibility == View.VISIBLE) return
+        if (ModelCatalog.missingRequired(this).isNotEmpty()) return
         val overlay = buildCoachOverlay()
         coachOverlay = overlay
         (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
@@ -696,73 +793,127 @@ class MainActivity : AppCompatActivity() {
     private fun dismissCoachMarks() {
         coachOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
         coachOverlay = null
+        // Restore the quiet Connected state the pill is normally hidden in.
+        if (::status.isInitialized && !coachStatusWasVisible) status.visibility = View.GONE
         prefs.edit().putBoolean(PREF_COACH_SEEN, true).apply()
     }
 
+    /** Full-screen scrim + two anchored callouts. Built after layout so the
+     *  rings and bubbles land on the real view bounds (no hardcoded y values). */
     private fun buildCoachOverlay(): android.view.View {
-        val d = resources.displayMetrics.density
-        val body = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            setPadding((30 * d).toInt(), (34 * d).toInt(), (30 * d).toInt(), (30 * d).toInt())
-        }
-        body.addView(android.widget.TextView(this).apply {
-            text = "Say hello to Hermes"
-            textSize = 23f
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setTextColor(0xFFD6F4FF.toInt())
-            gravity = android.view.Gravity.CENTER
-        })
-        body.addView(coachRow("THE BEING",
-            "Hermes is your agent, given a body. Watch its motion: it breathes while it listens, gathers (draws inward, brightens) while it thinks or works, and lights up as it speaks."))
-        body.addView(coachRow("BARGE-IN",
-            "Interrupt hands-free: just start talking over a reply and it stops to listen — no button needed. Tap the being to hush it any time."))
-        body.addView(coachRow("THE CONTROLS",
-            "✆ starts and ends your hands-free call. There is no push-to-talk button in Vox — every voice mode is hands-free, so you just talk. ⚙ is Settings, / is the command menu."))
-        body.addView(Button(this).apply {
-            text = "Got it"
-            isAllCaps = false
-            textSize = 16f
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
-            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_primary)
-            setOnClickListener { dismissCoachMarks() }
-            val pad = (26 * d).toInt()
-            setPadding(pad, (10 * d).toInt(), pad, (10 * d).toInt())
-            layoutParams = android.view.ViewGroup.MarginLayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (22 * d).toInt() }
-        })
-        return android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            // Near-opaque scrim: the being stays faintly visible underneath.
-            setBackgroundColor(0xF206070B.toInt())
-            // Swallow taps on the scrim so they never reach the avatar/call
-            // buttons underneath; dismissal is the explicit "Got it" button.
+        val root = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xE606070B.toInt())
+            // A tap anywhere dismisses; it never reaches the controls underneath.
             isClickable = true
-            setOnClickListener { }
+            setOnClickListener { dismissCoachMarks() }
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-            addView(body)
         }
+        val statusTarget = findViewById<android.view.View>(R.id.status)
+        val callTarget = findViewById<android.view.View>(R.id.call)
+        coachStatusWasVisible = statusTarget.visibility == View.VISIBLE
+        if (!coachStatusWasVisible) {
+            if (statusTarget is TextView && statusTarget.text.isBlank()) {
+                statusTarget.text = getString(R.string.hv_connected)
+            }
+            statusTarget.visibility = View.VISIBLE
+        }
+        root.post {
+            if (coachOverlay !== root || isFinishing) return@post
+            addCoachRing(root, statusTarget)
+            addCoachRing(root, callTarget)
+            addCoachBubble(root, statusTarget, above = false, lead = "MIC STATE",
+                body = "The pill under the name says what your mic is doing: Listening…, " +
+                    "The entity is working…, or Speaking…. It updates during a call — " +
+                    "tap ✆ to open the line.", withButton = false)
+            addCoachBubble(root, callTarget, above = true, lead = "VOICE MODE",
+                body = "✆ opens and closes the hands-free voice line (green = closed, " +
+                    "red = on a call). There is no push-to-talk. Both modes listen hands-free — " +
+                    "switch Realtime ↔ Enhanced Realtime in ⚙ Settings → Voice mode. " +
+                    "Talk over a reply to interrupt.", withButton = true)
+        }
+        return root
     }
 
-    /** One coach-mark row: bold colored lead, then the plain-language body. */
-    private fun coachRow(lead: String, body: String): android.widget.TextView {
+    /** A theme-aware halo around [target], drawn on the scrim. */
+    private fun addCoachRing(root: android.widget.FrameLayout, target: View) {
         val d = resources.displayMetrics.density
-        val s = android.text.SpannableString("$lead — $body")
-        s.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, lead.length,
-            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        s.setSpan(android.text.style.ForegroundColorSpan(0xFF8FD8F5.toInt()), 0, lead.length,
-            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return android.widget.TextView(this).apply {
-            text = s
-            textSize = 15f
-            setTextColor(0xFFC7D6E6.toInt())
-            setLineSpacing(3f, 1f)
-            setPadding(0, (14 * d).toInt(), 0, 0)
+        val rootLoc = IntArray(2); root.getLocationOnScreen(rootLoc)
+        val loc = IntArray(2); target.getLocationOnScreen(loc)
+        val pad = (6 * d).toInt()
+        val lp = android.widget.FrameLayout.LayoutParams(
+            target.width + pad * 2, target.height + pad * 2)
+        lp.leftMargin = loc[0] - rootLoc[0] - pad
+        lp.topMargin = loc[1] - rootLoc[1] - pad
+        root.addView(View(this).apply {
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_coach_ring)
+        }, lp)
+    }
+
+    /** One callout card beside [target], with a lead label and plain-language body. */
+    private fun addCoachBubble(root: android.widget.FrameLayout, target: View, above: Boolean,
+                               lead: String, body: String, withButton: Boolean) {
+        val d = resources.displayMetrics.density
+        val gap = (12 * d).toInt()
+        val card = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_surface)
+            setPadding((18 * d).toInt(), (14 * d).toInt(), (18 * d).toInt(), (14 * d).toInt())
+            // Tapping a callout also dismisses; it never reaches the controls
+            // underneath. The button below is the explicit affordance.
+            isClickable = true
+            setOnClickListener { dismissCoachMarks() }
         }
+        card.addView(android.widget.TextView(this).apply {
+            text = lead
+            textSize = 12f
+            letterSpacing = 0.14f
+            isAllCaps = true
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_cyan))
+        })
+        card.addView(android.widget.TextView(this).apply {
+            text = body
+            textSize = 14f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_text))
+            setLineSpacing(3f, 1f)
+            setPadding(0, (8 * d).toInt(), 0, 0)
+        })
+        if (withButton) {
+            card.addView(Button(this).apply {
+                text = "Got it"
+                isAllCaps = false
+                textSize = 15f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_primary)
+                setOnClickListener { dismissCoachMarks() }
+                val pad = (22 * d).toInt()
+                setPadding(pad, (8 * d).toInt(), pad, (8 * d).toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = (12 * d).toInt()
+                    gravity = android.view.Gravity.END
+                }
+            })
+        }
+        val rootLoc = IntArray(2); root.getLocationOnScreen(rootLoc)
+        val loc = IntArray(2); target.getLocationOnScreen(loc)
+        val top = loc[1] - rootLoc[1]
+        val bottom = top + target.height
+        val lp = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT)
+        lp.leftMargin = (18 * d).toInt()
+        lp.rightMargin = (18 * d).toInt()
+        if (above) {
+            lp.gravity = android.view.Gravity.BOTTOM
+            lp.bottomMargin = root.height - top + gap
+        } else {
+            lp.topMargin = bottom + gap
+        }
+        root.addView(card, lp)
     }
 
     // ---- 0.5.1 Part B: the status pill reports the REAL phase ------------------
@@ -826,9 +977,16 @@ class MainActivity : AppCompatActivity() {
         c.soulDecide = { kind, text, toolContext, audio, cb ->
             val wav = SoulAudio.wav(audio)
             val heard = wav != null && (express as? GemmaExpress)?.hears == true
-            val directive = if (kind == ErSoulTurn.KIND_GREETING) ErSoulTurn.greetingDirective()
-            else ErSoulTurn.directive(text, toolContext, heard)
-            orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_TURN, directive, "warm", if (heard) wav else null) { glue ->
+            val directive = when (kind) {
+                ErSoulTurn.KIND_GREETING -> ErSoulTurn.greetingDirective()
+                ErSoulTurn.KIND_WORKING -> text   // the controller built it: it knows the run's lines
+                else -> ErSoulTurn.directive(text, toolContext, heard)
+            }
+            // A mid-run line renders in the narration class: it never preempts a turn decision,
+            // and it is dropped (silence) while another render runs.
+            val intent = if (kind == ErSoulTurn.KIND_WORKING) VoiceOrchestrator.INTENT_SOUL_NARRATE
+                else VoiceOrchestrator.INTENT_SOUL_TURN
+            orch.expressAsync(intent, directive, "warm", if (heard) wav else null) { glue ->
                 // The tone tag leads (when the soul heard the caller); the decision follows.
                 val (mood, rest) = VoiceMood.split(glue)
                 val o = ErSoulTurn.parse(rest)
@@ -838,7 +996,7 @@ class MainActivity : AppCompatActivity() {
                     ErSoulTurn.Outcome.Escalate -> "escalate"
                     ErSoulTurn.Outcome.Nothing -> "nothing"
                 }
-                ErTelemetry.soulDecision(decision)
+                if (kind != ErSoulTurn.KIND_WORKING) ErTelemetry.soulDecision(decision)   // turn routing only
                 val chars = when (o) {
                     is ErSoulTurn.Outcome.Spoken -> o.text.length
                     is ErSoulTurn.Outcome.Beat -> o.opener.length
@@ -1183,13 +1341,12 @@ class MainActivity : AppCompatActivity() {
         if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
             session = HermesSession(u, k, m)
-            // The provider is a per-request override the Go /v1/responses client sends
-            // (the blessed LIGHT PATH) — set it after construction so every connector
-            // (stream/chat/runs) forwards the chosen gateway backend.
+            // The provider is a per-request override the /v1/responses client sends
+            // (the blessed LIGHT PATH) — set it after construction so streamed and
+            // stored turns both forward the chosen gateway backend.
             session?.setProvider(p)
-            // Same shape for the declared scope: the gomobile constructor keeps its
-            // signature and the Go session forwards the value to every connector
-            // (/v1/responses, /v1/chat/completions, /v1/runs).
+            // Same shape for the declared scope: the session stamps it on every
+            // entity request (/v1/models, /v1/responses).
             session?.setSessionKey(sc)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
@@ -1243,7 +1400,7 @@ class MainActivity : AppCompatActivity() {
                 // flag: "the app pushes the last message text to the screen when the
                 // upstream is slow." The fallback now shows only THIS turn's composed
                 // text (the arguably-correct "you see what it'll say" case, unchanged).
-                if (state == "thinking") replyBuf = ""
+                if (state == "thinking") { replyBuf = ""; revealHadCursor = false; revealBufLoggedFor = -1 }
                 // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
@@ -1265,6 +1422,7 @@ class MainActivity : AppCompatActivity() {
                     "speaking" -> MotionState.Signal.SPEAK
                     else -> MotionState.Signal.REST
                 })
+                cueFor(state)
                 // The reveal owns the crawl for the whole turn. NOTE: the streamed path
                 // (the one that raced ahead) never emits "speaking" — only the one-shot
                 // speak() does — so the loop is armed from "thinking" and the controller's
@@ -1338,12 +1496,17 @@ class MainActivity : AppCompatActivity() {
             replyBuf = finalText
             markActivity()
             feed(MotionState.Signal.RETIRE)   // previewB: a natural end settles, never recoils
+            // #156: "reply ready" is a cue only when no speech will follow — otherwise
+            // the voice IS the signal, and a cue must never run into TTS (D7).
+            if (liveController?.voiceWillSpeak() != true) cues?.play(CueSynth.Cue.REPLY_READY)
             if (!revealActive) reply.setText(replyBuf)
             appendConvo("Agent: $finalText")
         } }
         override fun onError(msg: String) { runOnUiThread {
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             feed(MotionState.Signal.REST); appendStream("// $msg")
+            // A barge/stop is not a failure: the being was interrupted, it did not err.
+            if (!msg.contains("interrupt")) cues?.play(CueSynth.Cue.ERROR)
         } }
         override fun onHeard(text: String) { runOnUiThread {
             // Conversation mode already IS a transcript: the words go there, in memory
@@ -1420,7 +1583,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** /models — native chooser from the REAL gateway catalog (GET /api/model/options).
-     *  Selecting a model sets the app model+provider prefs that the Go /v1/responses
+     *  Selecting a model sets the app model+provider prefs that the /v1/responses
      *  client sends per request (the blessed LIGHT PATH) — the gateway overrides the
      *  entity's inference backend, while the entity's memory/skills/context stay. */
     private fun showModelChooser() {
@@ -1569,7 +1732,7 @@ class MainActivity : AppCompatActivity() {
             val u = prefs.getString("url", "").orEmpty()
             val k = storedKey()
             val m = prefs.getString("model", "hermes-agent").orEmpty()
-            val ok = try { com.hermesvox.mobile.HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
+            val ok = try { HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
             runOnUiThread {
                 resetActiveConversation()
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)
@@ -1751,6 +1914,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)   // the loop reposts itself — never outlive the view
+        cues?.release()                           // #156: free the cue AudioTrack with the surface
+        cues = null
         if (active === this) active = null
         super.onDestroy()
     }

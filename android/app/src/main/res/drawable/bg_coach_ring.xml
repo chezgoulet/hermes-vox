@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- #120 coach mark: a theme-aware halo around the control being explained. -->
+    <corners android:radius="14dp" />
+    <solid android:color="#00000000" />
+    <stroke
+        android:width="2dp"
+        android:color="@color/hv_cyan" />
+</shape>

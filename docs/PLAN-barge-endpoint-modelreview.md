@@ -42,7 +42,7 @@ and each watch opens a second recorder. Replace with a drain loop:
    `tts_voice_usage` (default true; false = current attributes). This gives the platform AEC a
    proper echo reference for the VOICE_COMMUNICATION capture. NOTE the old handoff lesson warned
    a MODE_IN_COMMUNICATION *global toggle* broke playback — usage attributes are NOT that
-   toggle; the device test (Christopher) decides; kill-switch bounds the risk.
+   toggle; the device test (the maintainer) decides; kill-switch bounds the risk.
 
 ## B2 — VAD-extended endpointing (VoiceController.kt:268 + pure rule)
 New pure object `EndpointRule.shouldStop(elapsedMs, silentMs, maxMs, hardMs): Boolean`:
@@ -65,7 +65,7 @@ field in the body — a cleared-provider "model-only" request would be silently 
 gateway. FIX: mirror responses.go — add provider to HermesClient, include in body when set,
 wire from Kotlin session (same plumbing as setProvider on responses). Add Go unit test asserting
 body includes provider when set, omits when empty (both connectors).
-Acceptance (Christopher, next call, 0.3.32.0): /models → deepseek-v4-flash → label updates →
+Acceptance (maintainer, next call, 0.3.32.0): /models → deepseek-v4-flash → label updates →
 next turn `event=turn firstByte` small AND total turn latency ~2s class (vs mimo's 5s+); no 400.
 
 ## B4 — Version bump 0.3.32.0 (versionCode 73) + docs/RELEASE-0.3.32.md

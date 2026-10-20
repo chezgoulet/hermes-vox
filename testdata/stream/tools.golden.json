@@ -1,0 +1,96 @@
+{
+  "fixture": "tools",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "resp_t",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "function_call",
+          "item_id": "fc1",
+          "name": "terminal",
+          "arguments": "{\\\"command\\\":\\\"date\\\"}",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "\n[tool:terminal]",
+          "done": false
+        },
+        {
+          "type": "response.output_item.added",
+          "response_id": "",
+          "item_type": "function_call_output",
+          "item_id": "fo1",
+          "name": "",
+          "arguments": "",
+          "output": "Mon Aug 25 10:00:00 UTC 2026",
+          "delta": "",
+          "commentary": "",
+          "text": "\n[tool:terminal]\n[tool-done]\n",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "m1",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "It is ten.",
+          "commentary": "",
+          "text": "\n[tool:terminal]\n[tool-done]\nIt is ten.",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "resp_t",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "\n[tool:terminal]\n[tool-done]\nIt is ten.",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "resp_t",
+          "text": "It is ten.",
+          "transcript": "\n[tool:terminal]\n[tool-done]\nIt is ten."
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream",
+      "model": "hermes-agent",
+      "input": "hi",
+      "stream": true,
+      "previous_response_id": ""
+    }
+  ]
+}

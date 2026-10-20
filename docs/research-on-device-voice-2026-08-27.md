@@ -81,7 +81,7 @@ Two rules fall out:
   **VAD:** Silero (we use), WebRTC VAD.
 - **Implication (full ambience):** a wake-word-gated continuous foreground service — capture → wake
   word → STT partials → speaker-ID gate → agent → streaming TTS — is the build. Speaker ID is a
-  nice privacy/security gate (only respond to the owner), which matches Christopher's sovereignty +
+  nice privacy/security gate (only respond to the owner), which matches the maintainer's sovereignty +
   privacy instincts.
 
 ### On-device model sizing / noise (from our own State Street test + these projects)

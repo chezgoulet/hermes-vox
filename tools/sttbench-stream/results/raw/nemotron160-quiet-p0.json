@@ -1,0 +1,3263 @@
+{
+ "run_id": "nemotron160-quiet-p0",
+ "model_id": "nemotron160",
+ "threads": 4,
+ "chunk_ms": 20,
+ "realtime": true,
+ "trailing_silence_ms": 500,
+ "reps": 1,
+ "load_ms": 2966.064699,
+ "rss_base_kb": 112368,
+ "rss_after_load_kb": 902408,
+ "clips": [
+  {
+   "id": "short_01",
+   "condition": "quiet",
+   "category": "short",
+   "reference": "YOU WILL BE FRANK WITH ME I ALWAYS AM",
+   "seconds": 3.315,
+   "partials": [
+    {
+     "a": 760,
+     "w": 934.263225,
+     "t": "You",
+     "d": 519.0238049999999
+    },
+    {
+     "a": 920,
+     "w": 1053.936036,
+     "t": "You will",
+     "d": 638.1661799999999
+    },
+    {
+     "a": 1080,
+     "w": 1168.847901,
+     "t": "You will be",
+     "d": 746.862347
+    },
+    {
+     "a": 1560,
+     "w": 1651.219483,
+     "t": "You will be frank",
+     "d": 1057.421837
+    },
+    {
+     "a": 1720,
+     "w": 1812.726197,
+     "t": "You will be frank with me",
+     "d": 1169.938601
+    },
+    {
+     "a": 2520,
+     "w": 2610.261476,
+     "t": "You will be frank with me. I",
+     "d": 1714.9818960000002
+    },
+    {
+     "a": 2680,
+     "w": 2771.718914,
+     "t": "You will be frank with me. I always",
+     "d": 1826.4956080000002
+    },
+    {
+     "a": 2840,
+     "w": 2926.823528,
+     "t": "You will be frank with me. I always am",
+     "d": 1933.109703
+    }
+   ],
+   "final_text": "You will be frank with me. I always am",
+   "clip_end_wall_ms": 3404.129111,
+   "endpoint_wall_ms": 3404.240521,
+   "endpoints": [
+    3404.240521
+   ],
+   "final_wall_ms": 3404.263023,
+   "tail_ms": 20,
+   "decode_ms": 2255.196414,
+   "tail_decode_ms": 0,
+   "rtf": 0.6803005773755656,
+   "feed_lag_mean_ms": 33.09369444578314,
+   "feed_lag_max_ms": 174.293417,
+   "first_partial_wall_ms": 934.263225,
+   "cpu_ticks": 1063,
+   "rss_before_kb": 917160,
+   "rss_kb": 917536,
+   "rep": 0
+  },
+  {
+   "id": "short_02",
+   "condition": "quiet",
+   "category": "short",
+   "reference": "WHO TOUCHES ME AM I IN BED",
+   "seconds": 2.215,
+   "partials": [
+    {
+     "a": 1080,
+     "w": 1245.902019,
+     "t": "Who",
+     "d": 758.733358
+    },
+    {
+     "a": 1240,
+     "w": 1361.869142,
+     "t": "Who touch",
+     "d": 874.316976
+    },
+    {
+     "a": 1560,
+     "w": 1650.70984,
+     "t": "Who touches",
+     "d": 1083.958537
+    },
+    {
+     "a": 1720,
+     "w": 1816.428672,
+     "t": "Who touches me",
+     "d": 1200.199586
+    },
+    {
+     "a": 2040,
+     "w": 2129.996421,
+     "t": "Who touches me? Am",
+     "d": 1418.104697
+    },
+    {
+     "a": 2200,
+     "w": 2292.428997,
+     "t": "Who touches me? Am I",
+     "d": 1530.333375
+    },
+    {
+     "a": 2355,
+     "w": 2453.219647,
+     "t": "Who touches me? Am I in",
+     "d": 1648.3613289999998
+    },
+    {
+     "a": 2515,
+     "w": 2621.545208,
+     "t": "Who touches me? Am I in bed",
+     "d": 1774.6922209999998
+    }
+   ],
+   "final_text": "Who touches me? Am I in bed",
+   "clip_end_wall_ms": 2292.555788,
+   "endpoint_wall_ms": 3081.885825,
+   "endpoints": [
+    3081.885825
+   ],
+   "final_wall_ms": 3081.912274,
+   "tail_ms": 780,
+   "decode_ms": 2086.730632,
+   "tail_decode_ms": 556.3972569999999,
+   "rtf": 0.9420905787810383,
+   "feed_lag_mean_ms": 35.24606687387387,
+   "feed_lag_max_ms": 165.928671,
+   "first_partial_wall_ms": 1245.902019,
+   "cpu_ticks": 963,
+   "rss_before_kb": 917908,
+   "rss_kb": 918164,
+   "rep": 0
+  },
+  {
+   "id": "short_03",
+   "condition": "quiet",
+   "category": "short",
+   "reference": "I WONDER IF I'VE BEEN CHANGED IN THE NIGHT",
+   "seconds": 2.715,
+   "partials": [
+    {
+     "a": 920,
+     "w": 1003.657837,
+     "t": "I wonder",
+     "d": 537.856282
+    },
+    {
+     "a": 1080,
+     "w": 1174.911214,
+     "t": "I wonder if",
+     "d": 652.574625
+    },
+    {
+     "a": 1240,
+     "w": 1329.312663,
+     "t": "I wonder if I",
+     "d": 761.7146809999999
+    },
+    {
+     "a": 1400,
+     "w": 1489.141968,
+     "t": "I wonder if I've been",
+     "d": 870.650147
+    },
+    {
+     "a": 1880,
+     "w": 1972.91622,
+     "t": "I wonder if I've been changed",
+     "d": 1201.313802
+    },
+    {
+     "a": 2360,
+     "w": 2449.775392,
+     "t": "I wonder if I've been changed in the",
+     "d": 1515.049398
+    },
+    {
+     "a": 2835,
+     "w": 2922.379192,
+     "t": "I wonder if I've been changed in the night",
+     "d": 1837.178182
+    }
+   ],
+   "final_text": "I wonder if I've been changed in the night",
+   "clip_end_wall_ms": 2762.903281,
+   "endpoint_wall_ms": 3400.040285,
+   "endpoints": [
+    3400.040285
+   ],
+   "final_wall_ms": 3400.067384,
+   "tail_ms": 600,
+   "decode_ms": 2174.453206,
+   "tail_decode_ms": 444.4328210000001,
+   "rtf": 0.8009035749539596,
+   "feed_lag_mean_ms": 28.13528358088233,
+   "feed_lag_max_ms": 95.925172,
+   "first_partial_wall_ms": 1003.657837,
+   "cpu_ticks": 1005,
+   "rss_before_kb": 918420,
+   "rss_kb": 918704,
+   "rep": 0
+  },
+  {
+   "id": "short_04",
+   "condition": "quiet",
+   "category": "short",
+   "reference": "THIS WAS AT THE MARCH ELECTION EIGHTEEN FIFTY FIVE",
+   "seconds": 3.45,
+   "partials": [
+    {
+     "a": 600,
+     "w": 687.155477,
+     "t": "This was",
+     "d": 324.478637
+    },
+    {
+     "a": 920,
+     "w": 1001.238689,
+     "t": "This was at",
+     "d": 530.359862
+    },
+    {
+     "a": 1080,
+     "w": 1166.646648,
+     "t": "This was at the",
+     "d": 636.827392
+    },
+    {
+     "a": 1720,
+     "w": 1812.053549,
+     "t": "This was at the March",
+     "d": 1088.288858
+    },
+    {
+     "a": 1880,
+     "w": 1966.608847,
+     "t": "This was at the March elect",
+     "d": 1194.719766
+    },
+    {
+     "a": 2040,
+     "w": 2126.246949,
+     "t": "This was at the March election",
+     "d": 1300.76477
+    },
+    {
+     "a": 2360,
+     "w": 2450.328248,
+     "t": "This was at the March election eight",
+     "d": 1517.136555
+    },
+    {
+     "a": 2520,
+     "w": 2610.685548,
+     "t": "This was at the March election eighteen",
+     "d": 1627.643716
+    },
+    {
+     "a": 2680,
+     "w": 2774.996787,
+     "t": "This was at the March election eighteen fif",
+     "d": 1742.430581
+    },
+    {
+     "a": 2840,
+     "w": 2930.770021,
+     "t": "This was at the March election eighteen fifty",
+     "d": 1852.9818910000001
+    },
+    {
+     "a": 3000,
+     "w": 3087.219281,
+     "t": "This was at the March election eighteen fifty five",
+     "d": 1959.977008
+    }
+   ],
+   "final_text": "This was at the March election eighteen fifty five",
+   "clip_end_wall_ms": 3440.134808,
+   "endpoint_wall_ms": 3565.838422,
+   "endpoints": [
+    3565.838422
+   ],
+   "final_wall_ms": 3565.867963,
+   "tail_ms": 20,
+   "decode_ms": 2271.958372,
+   "tail_decode_ms": 115.64766499999996,
+   "rtf": 0.6585386585507247,
+   "feed_lag_mean_ms": 27.902586144508664,
+   "feed_lag_max_ms": 98.17977,
+   "first_partial_wall_ms": 687.155477,
+   "cpu_ticks": 1078,
+   "rss_before_kb": 918960,
+   "rss_kb": 919480,
+   "rep": 0
+  },
+  {
+   "id": "short_05",
+   "condition": "quiet",
+   "category": "short",
+   "reference": "AND WHAT THROUGH THE LEFT HAND WINDOW",
+   "seconds": 2.64,
+   "partials": [
+    {
+     "a": 1080,
+     "w": 1183.44104,
+     "t": "And",
+     "d": 659.6602780000001
+    },
+    {
+     "a": 1240,
+     "w": 1332.438599,
+     "t": "And what",
+     "d": 771.9014080000001
+    },
+    {
+     "a": 1560,
+     "w": 1648.05949,
+     "t": "And what through the",
+     "d": 1006.201946
+    },
+    {
+     "a": 1720,
+     "w": 1808.63737,
+     "t": "And what through the left",
+     "d": 1114.6512870000001
+    },
+    {
+     "a": 1880,
+     "w": 1956.517945,
+     "t": "And what through the left hand",
+     "d": 1210.9785580000002
+    },
+    {
+     "a": 2040,
+     "w": 2141.612631,
+     "t": "And what through the left hand wind",
+     "d": 1332.4075950000001
+    },
+    {
+     "a": 2200,
+     "w": 2290.779461,
+     "t": "And what through the left hand window",
+     "d": 1442.9699730000002
+    }
+   ],
+   "final_text": "And what through the left hand window",
+   "clip_end_wall_ms": 2620.102296,
+   "endpoint_wall_ms": 2765.571127,
+   "endpoints": [
+    2765.571127
+   ],
+   "final_wall_ms": 2765.597779,
+   "tail_ms": 40,
+   "decode_ms": 1760.5431750000002,
+   "tail_decode_ms": 105.362304,
+   "rtf": 0.6668724147727274,
+   "feed_lag_mean_ms": 28.94825436363633,
+   "feed_lag_max_ms": 106.665324,
+   "first_partial_wall_ms": 1183.44104,
+   "cpu_ticks": 818,
+   "rss_before_kb": 919736,
+   "rss_kb": 920052,
+   "rep": 0
+  },
+  {
+   "id": "short_06",
+   "condition": "quiet",
+   "category": "short",
+   "reference": "WILL THE HURONS HEAR HIS GROANS",
+   "seconds": 2.24,
+   "partials": [
+    {
+     "a": 920,
+     "w": 1013.250733,
+     "t": "Will the",
+     "d": 539.449097
+    },
+    {
+     "a": 1240,
+     "w": 1341.487753,
+     "t": "Will the Hur",
+     "d": 782.7549240000001
+    },
+    {
+     "a": 1400,
+     "w": 1474.45988,
+     "t": "Will the Hurons",
+     "d": 877.045737
+    },
+    {
+     "a": 1560,
+     "w": 1651.790284,
+     "t": "Will the Hurons hear",
+     "d": 988.6299250000001
+    },
+    {
+     "a": 1720,
+     "w": 1808.900514,
+     "t": "Will the Hurons hear his",
+     "d": 1097.315309
+    },
+    {
+     "a": 1880,
+     "w": 1995.576417,
+     "t": "Will the Hurons hear his groans",
+     "d": 1232.677369
+    }
+   ],
+   "final_text": "Will the Hurons hear his groans",
+   "clip_end_wall_ms": 2316.17977,
+   "endpoint_wall_ms": 2453.259238,
+   "endpoints": [
+    2453.259238
+   ],
+   "final_wall_ms": 2453.303183,
+   "tail_ms": 120,
+   "decode_ms": 1580.704224,
+   "tail_decode_ms": 113.05757599999993,
+   "rtf": 0.7056715285714286,
+   "feed_lag_mean_ms": 29.715096214285705,
+   "feed_lag_max_ms": 116.008506,
+   "first_partial_wall_ms": 1013.250733,
+   "cpu_ticks": 723,
+   "rss_before_kb": 920896,
+   "rss_kb": 920792,
+   "rep": 0
+  },
+  {
+   "id": "long_01",
+   "condition": "quiet",
+   "category": "long",
+   "reference": "SHE TAUGHT HER DAUGHTER THEN BY HER OWN AFFECTION FOR IT THAT LOVE FOR A COUNTRY WHERE THEY HAD BOTH BEEN HOSPITABLY RECEIVED AND WHERE A BRILLIANT FUTURE OPENED BEFORE THEM",
+   "seconds": 11.065,
+   "partials": [
+    {
+     "a": 760,
+     "w": 850.440063,
+     "t": "She",
+     "d": 514.01469
+    },
+    {
+     "a": 1400,
+     "w": 1504.643514,
+     "t": "She taught her",
+     "d": 954.552125
+    },
+    {
+     "a": 1560,
+     "w": 1662.43864,
+     "t": "She taught her daught",
+     "d": 1076.751751
+    },
+    {
+     "a": 1720,
+     "w": 1807.388143,
+     "t": "She taught her daughter",
+     "d": 1183.953452
+    },
+    {
+     "a": 2520,
+     "w": 2603.51115,
+     "t": "She taught her daughter then",
+     "d": 1714.305137
+    },
+    {
+     "a": 2840,
+     "w": 2925.196616,
+     "t": "She taught her daughter then by",
+     "d": 1924.0051700000001
+    },
+    {
+     "a": 3000,
+     "w": 3087.840252,
+     "t": "She taught her daughter then by her",
+     "d": 2031.6272000000001
+    },
+    {
+     "a": 3160,
+     "w": 3261.625815,
+     "t": "She taught her daughter then by her own",
+     "d": 2153.061079
+    },
+    {
+     "a": 3640,
+     "w": 3736.72754,
+     "t": "She taught her daughter then by her own affect",
+     "d": 2481.1605260000006
+    },
+    {
+     "a": 3960,
+     "w": 4061.390627,
+     "t": "She taught her daughter then by her own affection",
+     "d": 2715.8432650000004
+    },
+    {
+     "a": 4120,
+     "w": 4209.048545,
+     "t": "She taught her daughter then by her own affection for it",
+     "d": 2824.6418490000005
+    },
+    {
+     "a": 4760,
+     "w": 4855.59245,
+     "t": "She taught her daughter then by her own affection for it that",
+     "d": 3270.5908640000002
+    },
+    {
+     "a": 4920,
+     "w": 5007.388796,
+     "t": "She taught her daughter then by her own affection for it that love",
+     "d": 3377.764489
+    },
+    {
+     "a": 5240,
+     "w": 5327.424319,
+     "t": "She taught her daughter then by her own affection for it that love for",
+     "d": 3595.0310900000004
+    },
+    {
+     "a": 5400,
+     "w": 5491.050621,
+     "t": "She taught her daughter then by her own affection for it that love for a count",
+     "d": 3705.8826120000003
+    },
+    {
+     "a": 5560,
+     "w": 5647.765627,
+     "t": "She taught her daughter then by her own affection for it that love for a country",
+     "d": 3813.4108910000004
+    },
+    {
+     "a": 6040,
+     "w": 6130.581017,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they",
+     "d": 4146.286094000001
+    },
+    {
+     "a": 6200,
+     "w": 6276.353478,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had",
+     "d": 4242.401695000001
+    },
+    {
+     "a": 6520,
+     "w": 6613.72152,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both",
+     "d": 4467.599530000001
+    },
+    {
+     "a": 6680,
+     "w": 6785.745446,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been",
+     "d": 4593.127199000001
+    },
+    {
+     "a": 7160,
+     "w": 7255.226362,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospit",
+     "d": 4917.3942080000015
+    },
+    {
+     "a": 7320,
+     "w": 7411.956017,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably",
+     "d": 5029.120283000001
+    },
+    {
+     "a": 7800,
+     "w": 7884.296268,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably rece",
+     "d": 5372.411137000001
+    },
+    {
+     "a": 7960,
+     "w": 8052.028446,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received",
+     "d": 5484.218429000001
+    },
+    {
+     "a": 8600,
+     "w": 8690.431848,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and",
+     "d": 5907.7563930000015
+    },
+    {
+     "a": 9080,
+     "w": 9179.569991,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where",
+     "d": 6257.236129000002
+    },
+    {
+     "a": 9240,
+     "w": 9331.793339,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a",
+     "d": 6368.565068000002
+    },
+    {
+     "a": 9400,
+     "w": 9487.596196,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a brilliant",
+     "d": 6475.939865000002
+    },
+    {
+     "a": 9880,
+     "w": 9973.925704,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a brilliant future",
+     "d": 6805.018560000001
+    },
+    {
+     "a": 10360,
+     "w": 10453.255294,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a brilliant future op",
+     "d": 7134.4814910000005
+    },
+    {
+     "a": 10520,
+     "w": 10614.472213,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a brilliant future opened",
+     "d": 7248.689784
+    },
+    {
+     "a": 10680,
+     "w": 10755.517664,
+     "t": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a brilliant future opened for them",
+     "d": 7343.990402
+    }
+   ],
+   "final_text": "She taught her daughter then by her own affection for it that love for a country where they had both been hospitably received and where a brilliant future opened for them",
+   "clip_end_wall_ms": 11086.256882,
+   "endpoint_wall_ms": 11259.437871,
+   "endpoints": [
+    11259.437871
+   ],
+   "final_wall_ms": 11259.488734,
+   "tail_ms": 100,
+   "decode_ms": 7668.485439,
+   "tail_decode_ms": 114.14978100000008,
+   "rtf": 0.693039804699503,
+   "feed_lag_mean_ms": 31.803111274368238,
+   "feed_lag_max_ms": 132.095377,
+   "first_partial_wall_ms": 850.440063,
+   "cpu_ticks": 3588,
+   "rss_before_kb": 921836,
+   "rss_kb": 919704,
+   "rep": 0
+  },
+  {
+   "id": "long_02",
+   "condition": "quiet",
+   "category": "long",
+   "reference": "DELIVERED IN A STRONG TONE OF ASSENT ANNOUNCED THE GRATIFICATION THE SAVAGE WOULD RECEIVE IN WITNESSING SUCH AN EXHIBITION OF WEAKNESS IN AN ENEMY SO LONG HATED AND SO MUCH FEARED",
+   "seconds": 10.755,
+   "partials": [
+    {
+     "a": 760,
+     "w": 876.730388,
+     "t": "Delivered",
+     "d": 463.99800500000003
+    },
+    {
+     "a": 1240,
+     "w": 1332.126628,
+     "t": "Delivered in a",
+     "d": 773.8266990000001
+    },
+    {
+     "a": 1400,
+     "w": 1490.850017,
+     "t": "Delivered in a strong",
+     "d": 884.4591050000001
+    },
+    {
+     "a": 1720,
+     "w": 1822.248251,
+     "t": "Delivered in a strong tone",
+     "d": 1120.5238430000002
+    },
+    {
+     "a": 1880,
+     "w": 1958.258953,
+     "t": "Delivered in a strong tone of",
+     "d": 1218.601317
+    },
+    {
+     "a": 2200,
+     "w": 2287.302572,
+     "t": "Delivered in a strong tone of ass",
+     "d": 1446.266315
+    },
+    {
+     "a": 2360,
+     "w": 2451.263673,
+     "t": "Delivered in a strong tone of assent",
+     "d": 1557.3141660000001
+    },
+    {
+     "a": 3000,
+     "w": 3089.849204,
+     "t": "Delivered in a strong tone of assent, ann",
+     "d": 1994.0585100000003
+    },
+    {
+     "a": 3160,
+     "w": 3285.53414,
+     "t": "Delivered in a strong tone of assent, announced",
+     "d": 2139.3586000000005
+    },
+    {
+     "a": 3320,
+     "w": 3402.065472,
+     "t": "Delivered in a strong tone of assent, announced the",
+     "d": 2241.2363270000005
+    },
+    {
+     "a": 3480,
+     "w": 3588.643841,
+     "t": "Delivered in a strong tone of assent, announced the grat",
+     "d": 2369.6561270000007
+    },
+    {
+     "a": 3640,
+     "w": 3714.182822,
+     "t": "Delivered in a strong tone of assent, announced the gratificat",
+     "d": 2463.6355380000005
+    },
+    {
+     "a": 3960,
+     "w": 4044.12549,
+     "t": "Delivered in a strong tone of assent, announced the gratification",
+     "d": 2662.5793460000004
+    },
+    {
+     "a": 4440,
+     "w": 4521.533205,
+     "t": "Delivered in a strong tone of assent, announced the gratification the sav",
+     "d": 2983.6680910000005
+    },
+    {
+     "a": 4600,
+     "w": 4687.863365,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage",
+     "d": 3091.2683110000003
+    },
+    {
+     "a": 4760,
+     "w": 4849.928713,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would",
+     "d": 3200.968588
+    },
+    {
+     "a": 4920,
+     "w": 5000.038373,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive",
+     "d": 3300.777873
+    },
+    {
+     "a": 5560,
+     "w": 5634.274335,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in",
+     "d": 3781.935101
+    },
+    {
+     "a": 5720,
+     "w": 5836.946902,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witness",
+     "d": 3918.599204
+    },
+    {
+     "a": 5880,
+     "w": 5961.556236,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing",
+     "d": 4019.925335
+    },
+    {
+     "a": 6040,
+     "w": 6132.218305,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such",
+     "d": 4131.863445
+    },
+    {
+     "a": 6360,
+     "w": 6448.497643,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an",
+     "d": 4357.564617
+    },
+    {
+     "a": 6520,
+     "w": 6596.668175,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition",
+     "d": 4454.02881
+    },
+    {
+     "a": 6680,
+     "w": 6770.031782,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of",
+     "d": 4563.810915
+    },
+    {
+     "a": 7000,
+     "w": 7075.710615,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weak",
+     "d": 4795.122236
+    },
+    {
+     "a": 7160,
+     "w": 7259.760298,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness",
+     "d": 4914.639325
+    },
+    {
+     "a": 7800,
+     "w": 7880.973881,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an",
+     "d": 5361.239259
+    },
+    {
+     "a": 7960,
+     "w": 8050.015832,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy",
+     "d": 5470.982627
+    },
+    {
+     "a": 8760,
+     "w": 8862.073124,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy so long",
+     "d": 6027.937745
+    },
+    {
+     "a": 9080,
+     "w": 9174.418746,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy so long hated",
+     "d": 6234.212769
+    },
+    {
+     "a": 9720,
+     "w": 9816.100428,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy so long hated and",
+     "d": 6677.814047
+    },
+    {
+     "a": 9880,
+     "w": 9990.486292,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy so long hated and so much",
+     "d": 6808.049968
+    },
+    {
+     "a": 10200,
+     "w": 10291.388636,
+     "t": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy so long hated and so much feared",
+     "d": 7012.61666
+    }
+   ],
+   "final_text": "Delivered in a strong tone of assent, announced the gratification the savage would receive in witnessing such an exhibition of weakness and an enemy so long hated and so much feared",
+   "clip_end_wall_ms": 10764.766362,
+   "endpoint_wall_ms": 10764.857305,
+   "endpoints": [
+    10764.857305
+   ],
+   "final_wall_ms": 10764.906336,
+   "tail_ms": 20,
+   "decode_ms": 7341.289145,
+   "tail_decode_ms": 0,
+   "rtf": 0.6825931329614132,
+   "feed_lag_mean_ms": 32.41408025836433,
+   "feed_lag_max_ms": 161.123009,
+   "first_partial_wall_ms": 876.730388,
+   "cpu_ticks": 3449,
+   "rss_before_kb": 920752,
+   "rss_kb": 922320,
+   "rep": 0
+  },
+  {
+   "id": "long_03",
+   "condition": "quiet",
+   "category": "long",
+   "reference": "SECURE AS HE THOUGHT IN THE CAREFUL ADMINISTRATION OF JUSTICE IN THAT CITY AND THE CHARACTER OF ITS WELL DISPOSED INHABITANTS THE GOOD HIDALGO WAS FAR FROM THINKING THAT ANY DISASTER COULD BEFAL HIS FAMILY",
+   "seconds": 12.44,
+   "partials": [
+    {
+     "a": 920,
+     "w": 1020.697347,
+     "t": "Sec",
+     "d": 576.624838
+    },
+    {
+     "a": 1240,
+     "w": 1321.829468,
+     "t": "Secure",
+     "d": 831.539917
+    },
+    {
+     "a": 1560,
+     "w": 1644.078085,
+     "t": "Secure as",
+     "d": 1041.975667
+    },
+    {
+     "a": 1720,
+     "w": 1806.247397,
+     "t": "Secure as he",
+     "d": 1148.0108229999998
+    },
+    {
+     "a": 1880,
+     "w": 1978.402792,
+     "t": "Secure as he thought",
+     "d": 1266.2212719999998
+    },
+    {
+     "a": 2680,
+     "w": 2770.521323,
+     "t": "Secure as he thought in the",
+     "d": 1799.2080069999995
+    },
+    {
+     "a": 2840,
+     "w": 2932.737265,
+     "t": "Secure as he thought in the care",
+     "d": 1911.7596429999994
+    },
+    {
+     "a": 3000,
+     "w": 3077.534344,
+     "t": "Secure as he thought in the careful",
+     "d": 2009.1492099999994
+    },
+    {
+     "a": 3160,
+     "w": 3337.771282,
+     "t": "Secure as he thought in the careful administrat",
+     "d": 2206.6962479999993
+    },
+    {
+     "a": 3480,
+     "w": 3561.104697,
+     "t": "Secure as he thought in the careful administration",
+     "d": 2416.1011969999995
+    },
+    {
+     "a": 3800,
+     "w": 3873.542889,
+     "t": "Secure as he thought in the careful administration of",
+     "d": 2626.3038739999997
+    },
+    {
+     "a": 3960,
+     "w": 4055.538902,
+     "t": "Secure as he thought in the careful administration of justice",
+     "d": 2741.5405269999997
+    },
+    {
+     "a": 4440,
+     "w": 4538.122113,
+     "t": "Secure as he thought in the careful administration of justice in",
+     "d": 3068.8146979999997
+    },
+    {
+     "a": 4600,
+     "w": 4674.429079,
+     "t": "Secure as he thought in the careful administration of justice in that",
+     "d": 3163.0375579999995
+    },
+    {
+     "a": 4760,
+     "w": 4858.586916,
+     "t": "Secure as he thought in the careful administration of justice in that city",
+     "d": 3281.3616139999995
+    },
+    {
+     "a": 5560,
+     "w": 5657.756513,
+     "t": "Secure as he thought in the careful administration of justice in that city and the",
+     "d": 3824.0506629999995
+    },
+    {
+     "a": 5720,
+     "w": 5814.563764,
+     "t": "Secure as he thought in the careful administration of justice in that city and the charact",
+     "d": 3938.4000279999996
+    },
+    {
+     "a": 5880,
+     "w": 5972.808393,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of",
+     "d": 4050.9881629999995
+    },
+    {
+     "a": 6200,
+     "w": 6288.921715,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its",
+     "d": 4273.0835
+    },
+    {
+     "a": 6520,
+     "w": 6610.936974,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well",
+     "d": 4500.936446
+    },
+    {
+     "a": 6680,
+     "w": 6754.071496,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well dis",
+     "d": 4594.808231
+    },
+    {
+     "a": 6840,
+     "w": 6943.547611,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed",
+     "d": 4718.145267
+    },
+    {
+     "a": 7320,
+     "w": 7407.817427,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabit",
+     "d": 5025.277633
+    },
+    {
+     "a": 7480,
+     "w": 7554.021813,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants",
+     "d": 5119.084436
+    },
+    {
+     "a": 8440,
+     "w": 8533.333744,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the",
+     "d": 5756.0868359999995
+    },
+    {
+     "a": 8600,
+     "w": 8675.86121,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good",
+     "d": 5851.725549
+    },
+    {
+     "a": 8920,
+     "w": 9009.833093,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidal",
+     "d": 6074.328942
+    },
+    {
+     "a": 9080,
+     "w": 9176.758549,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalg",
+     "d": 6190.853559
+    },
+    {
+     "a": 9240,
+     "w": 9332.951136,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo",
+     "d": 6303.581464
+    },
+    {
+     "a": 9400,
+     "w": 9475.659998,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far",
+     "d": 6398.992679
+    },
+    {
+     "a": 9560,
+     "w": 9653.073979,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from",
+     "d": 6511.794437
+    },
+    {
+     "a": 9880,
+     "w": 9972.540613,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from think",
+     "d": 6717.7380809999995
+    },
+    {
+     "a": 10040,
+     "w": 10118.723475,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking",
+     "d": 6816.216270999999
+    },
+    {
+     "a": 10200,
+     "w": 10286.095627,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that",
+     "d": 6922.039797999999
+    },
+    {
+     "a": 10360,
+     "w": 10448.070968,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any",
+     "d": 7029.862225999999
+    },
+    {
+     "a": 10680,
+     "w": 10768.814906,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any dis",
+     "d": 7246.821414
+    },
+    {
+     "a": 10840,
+     "w": 10918.019211,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disas",
+     "d": 7344.587894
+    },
+    {
+     "a": 11000,
+     "w": 11092.289597,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster",
+     "d": 7456.614953
+    },
+    {
+     "a": 11160,
+     "w": 11255.56218,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could",
+     "d": 7571.909672000001
+    },
+    {
+     "a": 11320,
+     "w": 11397.347865,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could be",
+     "d": 7669.005579000001
+    },
+    {
+     "a": 11480,
+     "w": 11555.854335,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could bef",
+     "d": 7764.594406
+    },
+    {
+     "a": 11640,
+     "w": 11732.280889,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could befall",
+     "d": 7876.594284
+    },
+    {
+     "a": 11960,
+     "w": 12049.739345,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could befall his fam",
+     "d": 8079.3587689999995
+    },
+    {
+     "a": 12120,
+     "w": 12209.602341,
+     "t": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could befall his family",
+     "d": 8188.7117149999995
+    }
+   ],
+   "final_text": "Secure as he thought in the careful administration of justice in that city and the character of its well disposed inhabitants, the good Hidalgo was far from thinking that any disaster could befall his family",
+   "clip_end_wall_ms": 12527.611009,
+   "endpoint_wall_ms": 12688.235032,
+   "endpoints": [
+    12688.235032
+   ],
+   "final_wall_ms": 12688.296311,
+   "tail_ms": 160,
+   "decode_ms": 8499.362797,
+   "tail_decode_ms": 107.95577000000048,
+   "rtf": 0.683228520659164,
+   "feed_lag_mean_ms": 31.095724824758822,
+   "feed_lag_max_ms": 177.799114,
+   "first_partial_wall_ms": 1020.697347,
+   "cpu_ticks": 4070,
+   "rss_before_kb": 923628,
+   "rss_kb": 920768,
+   "rep": 0
+  },
+  {
+   "id": "long_04",
+   "condition": "quiet",
+   "category": "long",
+   "reference": "THE FREE STATE MEN HAD ONLY THEIR CONVICTIONS THEIR INTELLIGENCE THEIR COURAGE AND THE MORAL SUPPORT OF THE NORTH THE CONSPIRACY HAD ITS SECRET COMBINATION THE TERRITORIAL OFFICIALS THE LEGISLATURE THE BOGUS LAWS THE COURTS THE MILITIA OFFICERS THE PRESIDENT AND THE ARMY",
+   "seconds": 20.155,
+   "partials": [
+    {
+     "a": 600,
+     "w": 710.957235,
+     "t": "The",
+     "d": 366.2146
+    },
+    {
+     "a": 1240,
+     "w": 1327.385255,
+     "t": "The Free",
+     "d": 777.241944
+    },
+    {
+     "a": 1400,
+     "w": 1477.676637,
+     "t": "The Free State",
+     "d": 874.7041839999999
+    },
+    {
+     "a": 1720,
+     "w": 1818.467164,
+     "t": "The Free State men",
+     "d": 1089.2201759999998
+    },
+    {
+     "a": 1880,
+     "w": 1971.655152,
+     "t": "The Free State men had",
+     "d": 1200.6677679999998
+    },
+    {
+     "a": 2040,
+     "w": 2115.328859,
+     "t": "The Free State men had only",
+     "d": 1295.7693719999997
+    },
+    {
+     "a": 2360,
+     "w": 2450.65499,
+     "t": "The Free State men had only their",
+     "d": 1518.1063679999997
+    },
+    {
+     "a": 2680,
+     "w": 2767.921917,
+     "t": "The Free State men had only their convict",
+     "d": 1719.0698279999997
+    },
+    {
+     "a": 3160,
+     "w": 3234.776328,
+     "t": "The Free State men had only their convictions",
+     "d": 2034.503219
+    },
+    {
+     "a": 4120,
+     "w": 4210.59363,
+     "t": "The Free State men had only their convictions, their",
+     "d": 2709.132899
+    },
+    {
+     "a": 4440,
+     "w": 4530.194989,
+     "t": "The Free State men had only their convictions, their intellig",
+     "d": 2925.2812150000004
+    },
+    {
+     "a": 4760,
+     "w": 4851.751427,
+     "t": "The Free State men had only their convictions, their intelligence",
+     "d": 3154.2675430000004
+    },
+    {
+     "a": 4920,
+     "w": 5006.708092,
+     "t": "The Free State men had only their convictions, their intelligence,",
+     "d": 3260.758388
+    },
+    {
+     "a": 5080,
+     "w": 5167.164757,
+     "t": "The Free State men had only their convictions, their intelligence, their",
+     "d": 3367.6815650000003
+    },
+    {
+     "a": 5240,
+     "w": 5317.605919,
+     "t": "The Free State men had only their convictions, their intelligence, their coura",
+     "d": 3465.0506250000003
+    },
+    {
+     "a": 5400,
+     "w": 5495.270511,
+     "t": "The Free State men had only their convictions, their intelligence, their courage",
+     "d": 3580.1076730000004
+    },
+    {
+     "a": 6360,
+     "w": 6449.560143,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the",
+     "d": 4224.397794000001
+    },
+    {
+     "a": 6520,
+     "w": 6630.128828,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral",
+     "d": 4354.310921000001
+    },
+    {
+     "a": 6840,
+     "w": 6934.15959,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral supp",
+     "d": 4562.044035000002
+    },
+    {
+     "a": 7000,
+     "w": 7092.191328,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of",
+     "d": 4674.026294000002
+    },
+    {
+     "a": 7160,
+     "w": 7248.590621,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the",
+     "d": 4782.371428000002
+    },
+    {
+     "a": 7480,
+     "w": 7579.264042,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North",
+     "d": 4996.519540000002
+    },
+    {
+     "a": 8600,
+     "w": 8696.691533,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The",
+     "d": 5753.517628000001
+    },
+    {
+     "a": 8760,
+     "w": 8836.502283,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspir",
+     "d": 5849.778411000001
+    },
+    {
+     "a": 8920,
+     "w": 9012.51034,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspirac",
+     "d": 5962.042002000001
+    },
+    {
+     "a": 9080,
+     "w": 9165.147099,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy",
+     "d": 6066.937957000001
+    },
+    {
+     "a": 10040,
+     "w": 10123.323288,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had",
+     "d": 6711.606617
+    },
+    {
+     "a": 10200,
+     "w": 10320.770472,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its",
+     "d": 6852.128305
+    },
+    {
+     "a": 10360,
+     "w": 10441.167648,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its sec",
+     "d": 6953.061574
+    },
+    {
+     "a": 10520,
+     "w": 10596.84225,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret",
+     "d": 7049.645152
+    },
+    {
+     "a": 10680,
+     "w": 10770.63709,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combinat",
+     "d": 7159.963715
+    },
+    {
+     "a": 11000,
+     "w": 11092.671433,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination",
+     "d": 7369.222626
+    },
+    {
+     "a": 11960,
+     "w": 12059.38583,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the",
+     "d": 8023.096527999999
+    },
+    {
+     "a": 12120,
+     "w": 12215.489752,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territ",
+     "d": 8138.375905999999
+    },
+    {
+     "a": 12440,
+     "w": 12519.234056,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial",
+     "d": 8359.727385999999
+    },
+    {
+     "a": 12920,
+     "w": 13011.131232,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial offic",
+     "d": 8694.517181
+    },
+    {
+     "a": 13080,
+     "w": 13168.169196,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial official",
+     "d": 8802.411224
+    },
+    {
+     "a": 13240,
+     "w": 13316.004686,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials",
+     "d": 8898.154185
+    },
+    {
+     "a": 13720,
+     "w": 13808.887214,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the",
+     "d": 9234.730521
+    },
+    {
+     "a": 14040,
+     "w": 14133.947639,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislat",
+     "d": 9442.226127
+    },
+    {
+     "a": 14360,
+     "w": 14453.910041,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature",
+     "d": 9670.376965000001
+    },
+    {
+     "a": 14840,
+     "w": 14935.56088,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the",
+     "d": 9996.520032000002
+    },
+    {
+     "a": 15160,
+     "w": 15248.302376,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bog",
+     "d": 10197.596814000002
+    },
+    {
+     "a": 15320,
+     "w": 15408.19943,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus",
+     "d": 10305.481662000002
+    },
+    {
+     "a": 15480,
+     "w": 15586.91875,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus law",
+     "d": 10432.135959000001
+    },
+    {
+     "a": 15640,
+     "w": 15715.114184,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws",
+     "d": 10526.996758000001
+    },
+    {
+     "a": 15960,
+     "w": 16057.075285,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the",
+     "d": 10756.749485
+    },
+    {
+     "a": 16280,
+     "w": 16367.947355,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts",
+     "d": 10958.170017
+    },
+    {
+     "a": 17080,
+     "w": 17164.684945,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the",
+     "d": 11486.893771
+    },
+    {
+     "a": 17400,
+     "w": 17484.405486,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the milit",
+     "d": 11724.167737999998
+    },
+    {
+     "a": 17560,
+     "w": 17651.180795,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia",
+     "d": 11833.318982999997
+    },
+    {
+     "a": 17880,
+     "w": 17967.740813,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia off",
+     "d": 12054.613294999997
+    },
+    {
+     "a": 18040,
+     "w": 18144.508717,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia offic",
+     "d": 12178.858208999998
+    },
+    {
+     "a": 18200,
+     "w": 18279.314381,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia officers",
+     "d": 12277.907769999998
+    },
+    {
+     "a": 18680,
+     "w": 18803.049692,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia officers, the",
+     "d": 12636.627051
+    },
+    {
+     "a": 19160,
+     "w": 19238.692392,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia officers, the president",
+     "d": 12950.282162
+    },
+    {
+     "a": 19480,
+     "w": 19574.900034,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia officers, the president, and the",
+     "d": 13170.265397
+    },
+    {
+     "a": 19960,
+     "w": 20049.379282,
+     "t": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia officers, the president, and the army.",
+     "d": 13479.682429
+    }
+   ],
+   "final_text": "The Free State men had only their convictions, their intelligence, their courage, and the moral support of the North. The conspiracy had its secret combination, the territorial officials, the legislature, the bogus laws, the courts, the militia officers, the president, and the army.",
+   "clip_end_wall_ms": 20212.734466,
+   "endpoint_wall_ms": 20212.853566,
+   "endpoints": [
+    20212.853566
+   ],
+   "final_wall_ms": 20212.937144,
+   "tail_ms": 20,
+   "decode_ms": 13591.856175,
+   "tail_decode_ms": 0,
+   "rtf": 0.6743664686182089,
+   "feed_lag_mean_ms": 30.649566826388853,
+   "feed_lag_max_ms": 123.077849,
+   "first_partial_wall_ms": 710.957235,
+   "cpu_ticks": 6413,
+   "rss_before_kb": 922604,
+   "rss_kb": 922876,
+   "rep": 0
+  },
+  {
+   "id": "verylong_01",
+   "condition": "quiet",
+   "category": "verylong",
+   "reference": "BUT THERE IS ALWAYS A STRONGER SENSE OF LIFE WHEN THE SUN IS BRILLIANT AFTER RAIN AND NOW HE IS POURING DOWN HIS BEAMS AND MAKING SPARKLES AMONG THE WET STRAW AND LIGHTING UP EVERY PATCH OF VIVID GREEN MOSS ON THE RED TILES OF THE COW SHED AND TURNING EVEN THE MUDDY WATER THAT IS HURRYING ALONG THE CHANNEL TO THE DRAIN INTO A MIRROR FOR THE YELLOW BILLED DUCKS WHO ARE SEIZING THE OPPORTUNITY OF GETTING A DRINK WITH AS MUCH BODY IN IT AS POSSIBLE",
+   "seconds": 31.65,
+   "partials": [
+    {
+     "a": 760,
+     "w": 852.54065,
+     "t": "But",
+     "d": 453.996785
+    },
+    {
+     "a": 1240,
+     "w": 1327.612102,
+     "t": "But there",
+     "d": 768.4366859999999
+    },
+    {
+     "a": 1400,
+     "w": 1493.274496,
+     "t": "But there is",
+     "d": 881.4757479999998
+    },
+    {
+     "a": 1560,
+     "w": 1647.81596,
+     "t": "But there is always",
+     "d": 989.1022129999999
+    },
+    {
+     "a": 2200,
+     "w": 2276.840008,
+     "t": "But there is always a strong",
+     "d": 1409.0919599999997
+    },
+    {
+     "a": 2360,
+     "w": 2450.332684,
+     "t": "But there is always a stronger",
+     "d": 1519.2199299999997
+    },
+    {
+     "a": 2680,
+     "w": 2769.082155,
+     "t": "But there is always a stronger sense",
+     "d": 1720.9399409999996
+    },
+    {
+     "a": 2840,
+     "w": 2934.838381,
+     "t": "But there is always a stronger sense of",
+     "d": 1835.5732829999997
+    },
+    {
+     "a": 3160,
+     "w": 3259.511476,
+     "t": "But there is always a stronger sense of life",
+     "d": 2065.2204189999998
+    },
+    {
+     "a": 3960,
+     "w": 4048.778648,
+     "t": "But there is always a stronger sense of life when the",
+     "d": 2615.1300459999998
+    },
+    {
+     "a": 4120,
+     "w": 4209.514691,
+     "t": "But there is always a stronger sense of life when the sun",
+     "d": 2724.423829
+    },
+    {
+     "a": 4280,
+     "w": 4353.717532,
+     "t": "But there is always a stronger sense of life when the sun is",
+     "d": 2817.939251
+    },
+    {
+     "a": 4440,
+     "w": 4529.213544,
+     "t": "But there is always a stronger sense of life when the sun is brill",
+     "d": 2926.90971
+    },
+    {
+     "a": 4600,
+     "w": 4678.6178,
+     "t": "But there is always a stronger sense of life when the sun is brilliant",
+     "d": 3025.335735
+    },
+    {
+     "a": 5080,
+     "w": 5174.717776,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after",
+     "d": 3371.368206
+    },
+    {
+     "a": 5400,
+     "w": 5488.540612,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain",
+     "d": 3576.329632
+    },
+    {
+     "a": 6840,
+     "w": 6938.744185,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now",
+     "d": 4580.433271000001
+    },
+    {
+     "a": 7160,
+     "w": 7260.484745,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he",
+     "d": 4797.902631000001
+    },
+    {
+     "a": 7480,
+     "w": 7567.094079,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is",
+     "d": 4998.043256000001
+    },
+    {
+     "a": 7640,
+     "w": 7735.995284,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring",
+     "d": 5113.824343000001
+    },
+    {
+     "a": 7800,
+     "w": 7875.811365,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down",
+     "d": 5209.386843000001
+    },
+    {
+     "a": 8120,
+     "w": 8207.555424,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his",
+     "d": 5413.461469000002
+    },
+    {
+     "a": 8440,
+     "w": 8526.693038,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beam",
+     "d": 5621.749187000001
+    },
+    {
+     "a": 8600,
+     "w": 8679.520024,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams",
+     "d": 5721.022990000001
+    },
+    {
+     "a": 9240,
+     "w": 9334.367558,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and",
+     "d": 6160.104127000001
+    },
+    {
+     "a": 9400,
+     "w": 9479.376266,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making",
+     "d": 6259.218995000001
+    },
+    {
+     "a": 10040,
+     "w": 10150.853602,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making spark",
+     "d": 6723.965333000001
+    },
+    {
+     "a": 10360,
+     "w": 10451.075038,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles",
+     "d": 6928.508994000002
+    },
+    {
+     "a": 10680,
+     "w": 10771.490606,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among",
+     "d": 7169.4489760000015
+    },
+    {
+     "a": 10840,
+     "w": 10914.515956,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the",
+     "d": 7263.759198000002
+    },
+    {
+     "a": 11160,
+     "w": 11249.442226,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet",
+     "d": 7480.742800000002
+    },
+    {
+     "a": 11640,
+     "w": 11733.235358,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw",
+     "d": 7808.395143000002
+    },
+    {
+     "a": 12920,
+     "w": 13013.986701,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and",
+     "d": 8675.177167000002
+    },
+    {
+     "a": 13080,
+     "w": 13159.898566,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and light",
+     "d": 8774.821861000002
+    },
+    {
+     "a": 13240,
+     "w": 13335.561164,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting",
+     "d": 8890.103965000002
+    },
+    {
+     "a": 13400,
+     "w": 13482.440965,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up",
+     "d": 8992.328005000001
+    },
+    {
+     "a": 13720,
+     "w": 13811.822273,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every",
+     "d": 9204.361738000001
+    },
+    {
+     "a": 14360,
+     "w": 14452.403246,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch",
+     "d": 9637.937503000003
+    },
+    {
+     "a": 14520,
+     "w": 14597.406705,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of",
+     "d": 9735.111657000003
+    },
+    {
+     "a": 14680,
+     "w": 14772.051236,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of viv",
+     "d": 9846.907678000003
+    },
+    {
+     "a": 14840,
+     "w": 14917.999723,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid",
+     "d": 9944.669641000004
+    },
+    {
+     "a": 15160,
+     "w": 15259.73304,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green",
+     "d": 10162.236902000004
+    },
+    {
+     "a": 15480,
+     "w": 15573.06438,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green mos",
+     "d": 10370.610275000005
+    },
+    {
+     "a": 15640,
+     "w": 15720.27255,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss",
+     "d": 10470.640548000005
+    },
+    {
+     "a": 16280,
+     "w": 16371.878182,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the",
+     "d": 10903.418665000007
+    },
+    {
+     "a": 16440,
+     "w": 16516.996387,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red",
+     "d": 11000.159021000007
+    },
+    {
+     "a": 16760,
+     "w": 16856.125659,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red til",
+     "d": 11230.633265000006
+    },
+    {
+     "a": 16920,
+     "w": 17000.155445,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of",
+     "d": 11330.509690000006
+    },
+    {
+     "a": 17080,
+     "w": 17158.91871,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the",
+     "d": 11429.186203000007
+    },
+    {
+     "a": 17560,
+     "w": 17650.696705,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cows",
+     "d": 11760.821661000007
+    },
+    {
+     "a": 17720,
+     "w": 17806.907032,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed",
+     "d": 11867.391567000008
+    },
+    {
+     "a": 19000,
+     "w": 19089.855763,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning",
+     "d": 12742.726082000006
+    },
+    {
+     "a": 19320,
+     "w": 19420.206878,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even",
+     "d": 12970.830818000006
+    },
+    {
+     "a": 19480,
+     "w": 19554.58847,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the",
+     "d": 13065.175056000005
+    },
+    {
+     "a": 19640,
+     "w": 19729.898651,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the mud",
+     "d": 13174.773404000005
+    },
+    {
+     "a": 19800,
+     "w": 19885.336965,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy",
+     "d": 13279.817105000006
+    },
+    {
+     "a": 19960,
+     "w": 20043.936656,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water",
+     "d": 13383.483283000005
+    },
+    {
+     "a": 20600,
+     "w": 20685.210012,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that",
+     "d": 13812.170254000004
+    },
+    {
+     "a": 20760,
+     "w": 20845.441295,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is",
+     "d": 13917.341763000004
+    },
+    {
+     "a": 20920,
+     "w": 21012.788503,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurry",
+     "d": 14029.816535000004
+    },
+    {
+     "a": 21080,
+     "w": 21163.525686,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying",
+     "d": 14133.069505000003
+    },
+    {
+     "a": 21240,
+     "w": 21329.111054,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along",
+     "d": 14241.855475000004
+    },
+    {
+     "a": 21400,
+     "w": 21481.717947,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the",
+     "d": 14343.266527000003
+    },
+    {
+     "a": 21720,
+     "w": 21810.221975,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the chann",
+     "d": 14549.440152000003
+    },
+    {
+     "a": 21880,
+     "w": 21964.757457,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to",
+     "d": 14653.926561000002
+    },
+    {
+     "a": 22040,
+     "w": 22118.180024,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the",
+     "d": 14751.794237000002
+    },
+    {
+     "a": 22360,
+     "w": 22446.506725,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain",
+     "d": 14968.474372000002
+    },
+    {
+     "a": 23320,
+     "w": 23408.292126,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into",
+     "d": 15636.147630000001
+    },
+    {
+     "a": 23480,
+     "w": 23560.852836,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a",
+     "d": 15736.707608
+    },
+    {
+     "a": 23800,
+     "w": 23890.763033,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror",
+     "d": 15954.327318
+    },
+    {
+     "a": 24920,
+     "w": 25018.650444,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for",
+     "d": 16720.661831000005
+    },
+    {
+     "a": 25080,
+     "w": 25156.422905,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the",
+     "d": 16816.774055000005
+    },
+    {
+     "a": 25240,
+     "w": 25345.277845,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow",
+     "d": 16941.731208000005
+    },
+    {
+     "a": 25720,
+     "w": 25799.96213,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow bill",
+     "d": 17256.787971000005
+    },
+    {
+     "a": 25880,
+     "w": 25959.078952,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed",
+     "d": 17355.509244000004
+    },
+    {
+     "a": 26040,
+     "w": 26120.440239,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed duck",
+     "d": 17455.674527000003
+    },
+    {
+     "a": 26200,
+     "w": 26279.00396,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks",
+     "d": 17554.335497000004
+    },
+    {
+     "a": 26680,
+     "w": 26773.685601,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who",
+     "d": 17888.159635000004
+    },
+    {
+     "a": 26840,
+     "w": 26916.679416,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are",
+     "d": 17984.544686000005
+    },
+    {
+     "a": 27160,
+     "w": 27270.553155,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seiz",
+     "d": 18230.502001000004
+    },
+    {
+     "a": 27320,
+     "w": 27398.195082,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the",
+     "d": 18328.370491000005
+    },
+    {
+     "a": 27480,
+     "w": 27559.447483,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportun",
+     "d": 18427.494026000004
+    },
+    {
+     "a": 27960,
+     "w": 28053.379897,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity",
+     "d": 18736.424284
+    },
+    {
+     "a": 28120,
+     "w": 28194.598036,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of",
+     "d": 18830.72714
+    },
+    {
+     "a": 28280,
+     "w": 28373.482884,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting",
+     "d": 18943.859749
+    },
+    {
+     "a": 28600,
+     "w": 28684.94138,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a",
+     "d": 19143.197272999998
+    },
+    {
+     "a": 28760,
+     "w": 28866.611871,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink",
+     "d": 19269.483486999998
+    },
+    {
+     "a": 29720,
+     "w": 29839.771621,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as",
+     "d": 19946.731008
+    },
+    {
+     "a": 29880,
+     "w": 29966.623062,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much",
+     "d": 20053.043346
+    },
+    {
+     "a": 30200,
+     "w": 30299.167536,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body",
+     "d": 20266.203421
+    },
+    {
+     "a": 30360,
+     "w": 30449.071996,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body in",
+     "d": 20374.902801999997
+    },
+    {
+     "a": 30520,
+     "w": 30595.12412,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body in it",
+     "d": 20469.669647999996
+    },
+    {
+     "a": 30840,
+     "w": 30925.597021,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body in it as pos",
+     "d": 20671.558807999994
+    },
+    {
+     "a": 31000,
+     "w": 31080.253108,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body in it as poss",
+     "d": 20771.503062999993
+    },
+    {
+     "a": 31160,
+     "w": 31256.807389,
+     "t": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body in it as possible.",
+     "d": 20887.98410199999
+    }
+   ],
+   "final_text": "But there is always a stronger sense of life when the sun is brilliant after rain. And now he is pouring down his beams and making sparkles among the wet straw and lighting up every patch of vivid green moss on the red tiles of the cowshed and turning even the muddy water that is hurrying along the channel to the drain into a mirror for the yellow billed ducks who are seizing the opportunity of getting a drink with as much body in it as possible.",
+   "clip_end_wall_ms": 31715.230729,
+   "endpoint_wall_ms": 31715.351741,
+   "endpoints": [
+    31715.351741
+   ],
+   "final_wall_ms": 31715.427791,
+   "tail_ms": 20,
+   "decode_ms": 21198.691743999996,
+   "tail_decode_ms": 0,
+   "rtf": 0.6697848892259083,
+   "feed_lag_mean_ms": 30.04232671004441,
+   "feed_lag_max_ms": 119.797215,
+   "first_partial_wall_ms": 852.54065,
+   "cpu_ticks": 10068,
+   "rss_before_kb": 926036,
+   "rss_kb": 924756,
+   "rep": 0
+  },
+  {
+   "id": "pause_01",
+   "condition": "quiet",
+   "category": "pause",
+   "reference": "IT WAS THE WHITE RABBIT RETURNING SPLENDIDLY DRESSED WITH A PAIR OF WHITE KID GLOVES IN ONE HAND AND A LARGE FAN IN THE OTHER HE CAME TROTTING ALONG IN A GREAT HURRY MUTTERING TO HIMSELF AS HE CAME OH THE DUCHESS THE DUCHESS",
+   "seconds": 16.115,
+   "partials": [
+    {
+     "a": 760,
+     "w": 850.88322,
+     "t": "It was",
+     "d": 449.302735
+    },
+    {
+     "a": 920,
+     "w": 998.041667,
+     "t": "It was the",
+     "d": 547.1796879999999
+    },
+    {
+     "a": 1560,
+     "w": 1654.382203,
+     "t": "It was the white rab",
+     "d": 986.9647629999998
+    },
+    {
+     "a": 1720,
+     "w": 1810.343873,
+     "t": "It was the white rabbit",
+     "d": 1097.1000989999998
+    },
+    {
+     "a": 2040,
+     "w": 2130.572796,
+     "t": "It was the white rabbit ret",
+     "d": 1302.4053969999998
+    },
+    {
+     "a": 2200,
+     "w": 2277.378785,
+     "t": "It was the white rabbit returning",
+     "d": 1399.6016449999997
+    },
+    {
+     "a": 2840,
+     "w": 2929.452475,
+     "t": "It was the white rabbit returning splend",
+     "d": 1816.965456
+    },
+    {
+     "a": 3000,
+     "w": 3082.686566,
+     "t": "It was the white rabbit returning splendidly",
+     "d": 1919.436851
+    },
+    {
+     "a": 3160,
+     "w": 3240.894207,
+     "t": "It was the white rabbit returning splendidly dress",
+     "d": 2020.174644
+    },
+    {
+     "a": 3320,
+     "w": 3415.517092,
+     "t": "It was the white rabbit returning splendidly dressed",
+     "d": 2135.471641
+    },
+    {
+     "a": 3800,
+     "w": 3902.361167,
+     "t": "It was the white rabbit returning splendidly dressed with",
+     "d": 2467.789269
+    },
+    {
+     "a": 3960,
+     "w": 4039.933921,
+     "t": "It was the white rabbit returning splendidly dressed with a",
+     "d": 2567.4809999999998
+    },
+    {
+     "a": 4120,
+     "w": 4200.565188,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of",
+     "d": 2667.8427349999997
+    },
+    {
+     "a": 4280,
+     "w": 4371.333864,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white",
+     "d": 2778.9711529999995
+    },
+    {
+     "a": 4600,
+     "w": 4693.435102,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid",
+     "d": 2997.9856789999994
+    },
+    {
+     "a": 4920,
+     "w": 5012.326744,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves",
+     "d": 3219.3303239999996
+    },
+    {
+     "a": 5400,
+     "w": 5496.737307,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one",
+     "d": 3537.708781
+    },
+    {
+     "a": 5560,
+     "w": 5635.508629,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand",
+     "d": 3633.045044
+    },
+    {
+     "a": 6200,
+     "w": 6309.060713,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and",
+     "d": 4094.9491799999996
+    },
+    {
+     "a": 6360,
+     "w": 6435.76221,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a",
+     "d": 4190.515546
+    },
+    {
+     "a": 6520,
+     "w": 6605.175703,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large",
+     "d": 4295.464438999999
+    },
+    {
+     "a": 6840,
+     "w": 6929.38599,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan",
+     "d": 4516.957522
+    },
+    {
+     "a": 7000,
+     "w": 7080.515384,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the",
+     "d": 4617.2554549999995
+    },
+    {
+     "a": 7160,
+     "w": 7241.493005,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other",
+     "d": 4718.507124
+    },
+    {
+     "a": 9560,
+     "w": 9650.28512,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other.",
+     "d": 6343.347335
+    },
+    {
+     "a": 9720,
+     "w": 9798.797449,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came",
+     "d": 6441.894088
+    },
+    {
+     "a": 10040,
+     "w": 10117.141932,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trot",
+     "d": 6671.691411
+    },
+    {
+     "a": 10360,
+     "w": 10450.350713,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting",
+     "d": 6886.483607
+    },
+    {
+     "a": 10520,
+     "w": 10598.040614,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along",
+     "d": 6984.318812
+    },
+    {
+     "a": 11160,
+     "w": 11253.888067,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a",
+     "d": 7416.910282999999
+    },
+    {
+     "a": 11320,
+     "w": 11401.005743,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry",
+     "d": 7517.642582999999
+    },
+    {
+     "a": 12120,
+     "w": 12211.295294,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, mut",
+     "d": 8068.515183999998
+    },
+    {
+     "a": 12280,
+     "w": 12357.575608,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering",
+     "d": 8165.868210999998
+    },
+    {
+     "a": 12440,
+     "w": 12531.479865,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to",
+     "d": 8277.068284999998
+    },
+    {
+     "a": 12600,
+     "w": 12695.3416,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself",
+     "d": 8392.179206999997
+    },
+    {
+     "a": 13080,
+     "w": 13160.267178,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as",
+     "d": 8719.661749999996
+    },
+    {
+     "a": 13240,
+     "w": 13317.328457,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he",
+     "d": 8816.732590999996
+    },
+    {
+     "a": 13400,
+     "w": 13502.469448,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came",
+     "d": 8938.879969999996
+    },
+    {
+     "a": 14680,
+     "w": 14777.958625,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh",
+     "d": 9801.053268999998
+    },
+    {
+     "a": 15000,
+     "w": 15086.865771,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the",
+     "d": 10003.989140999998
+    },
+    {
+     "a": 15160,
+     "w": 15235.770963,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the Duch",
+     "d": 10099.499679999999
+    },
+    {
+     "a": 15320,
+     "w": 15411.106168,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the Duchess",
+     "d": 10210.324835
+    },
+    {
+     "a": 15800,
+     "w": 15878.736946,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the Duchess, the",
+     "d": 10533.344813999998
+    },
+    {
+     "a": 15960,
+     "w": 16054.204476,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the Duchess, the Duch",
+     "d": 10647.262701999998
+    },
+    {
+     "a": 16115,
+     "w": 16200.806811,
+     "t": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the Duchess, the Duchess",
+     "d": 10747.834559999998
+    }
+   ],
+   "final_text": "It was the white rabbit returning splendidly dressed with a pair of white kid gloves in one hand and a large fan in the other. He came trotting along in a great hurry, muttering to himself as he came, Oh the Duchess, the Duchess",
+   "clip_end_wall_ms": 16200.851611,
+   "endpoint_wall_ms": 16686.698657,
+   "endpoints": [
+    16686.698657
+   ],
+   "final_wall_ms": 16686.767668,
+   "tail_ms": 480,
+   "decode_ms": 11065.955816999998,
+   "tail_decode_ms": 318.1212570000007,
+   "rtf": 0.6866866780639155,
+   "feed_lag_mean_ms": 29.666832048387093,
+   "feed_lag_max_ms": 115.991496,
+   "first_partial_wall_ms": 850.88322,
+   "cpu_ticks": 5246,
+   "rss_before_kb": 926332,
+   "rss_kb": 924376,
+   "rep": 0
+  },
+  {
+   "id": "pause_02",
+   "condition": "quiet",
+   "category": "pause",
+   "reference": "A LARGE OPEN FIREPLACE WITH RUSTY DOGS IN IT AND A BARE BOARDED FLOOR AT THE FAR END FLEECES OF WOOL STACKED UP IN THE MIDDLE OF THE FLOOR SOME EMPTY CORN BAGS",
+   "seconds": 16.075,
+   "partials": [
+    {
+     "a": 1080,
+     "w": 1178.770712,
+     "t": "A",
+     "d": 669.3764239999999
+    },
+    {
+     "a": 1240,
+     "w": 1340.90381,
+     "t": "A large",
+     "d": 790.0960689999999
+    },
+    {
+     "a": 1720,
+     "w": 1808.634808,
+     "t": "A large open",
+     "d": 1097.536132
+    },
+    {
+     "a": 2040,
+     "w": 2133.686647,
+     "t": "A large open fire",
+     "d": 1307.043334
+    },
+    {
+     "a": 2200,
+     "w": 2288.750042,
+     "t": "A large open fireplace",
+     "d": 1415.5755199999999
+    },
+    {
+     "a": 2520,
+     "w": 2607.597292,
+     "t": "A large open fireplace with",
+     "d": 1615.98409
+    },
+    {
+     "a": 2840,
+     "w": 2939.926312,
+     "t": "A large open fireplace with rust",
+     "d": 1831.663533
+    },
+    {
+     "a": 3160,
+     "w": 3242.933758,
+     "t": "A large open fireplace with rusty",
+     "d": 2030.0160309999999
+    },
+    {
+     "a": 3320,
+     "w": 3414.524701,
+     "t": "A large open fireplace with rusty dog",
+     "d": 2144.329264
+    },
+    {
+     "a": 3480,
+     "w": 3557.68974,
+     "t": "A large open fireplace with rusty dogs in",
+     "d": 2241.834391
+    },
+    {
+     "a": 3640,
+     "w": 3719.651085,
+     "t": "A large open fireplace with rusty dogs in it",
+     "d": 2341.27124
+    },
+    {
+     "a": 4440,
+     "w": 4531.627363,
+     "t": "A large open fireplace with rusty dogs in it and",
+     "d": 2882.578248
+    },
+    {
+     "a": 4600,
+     "w": 4692.061485,
+     "t": "A large open fireplace with rusty dogs in it and a",
+     "d": 2994.3848479999997
+    },
+    {
+     "a": 5080,
+     "w": 5168.615807,
+     "t": "A large open fireplace with rusty dogs in it and a bare",
+     "d": 3326.7017429999996
+    },
+    {
+     "a": 5240,
+     "w": 5315.315962,
+     "t": "A large open fireplace with rusty dogs in it and a bare board",
+     "d": 3421.7757179999994
+    },
+    {
+     "a": 5400,
+     "w": 5500.862918,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded",
+     "d": 3542.4035669999994
+    },
+    {
+     "a": 5560,
+     "w": 5638.413903,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor",
+     "d": 3640.633791999999
+    },
+    {
+     "a": 8920,
+     "w": 9008.217331,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the",
+     "d": 5927.441937999998
+    },
+    {
+     "a": 9240,
+     "w": 9347.285772,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far",
+     "d": 6148.724897999998
+    },
+    {
+     "a": 9400,
+     "w": 9478.680791,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end",
+     "d": 6247.192874999998
+    },
+    {
+     "a": 10200,
+     "w": 10289.860805,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end.",
+     "d": 6764.782230999999
+    },
+    {
+     "a": 10360,
+     "w": 10462.129929,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Flee",
+     "d": 6886.652510999999
+    },
+    {
+     "a": 10520,
+     "w": 10598.469203,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces",
+     "d": 6984.8938849999995
+    },
+    {
+     "a": 10680,
+     "w": 10772.00025,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of",
+     "d": 7096.635259
+    },
+    {
+     "a": 11000,
+     "w": 11092.46843,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool",
+     "d": 7302.035081
+    },
+    {
+     "a": 11320,
+     "w": 11421.788621,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stack",
+     "d": 7519.991664
+    },
+    {
+     "a": 11480,
+     "w": 11563.185716,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up",
+     "d": 7621.603195
+    },
+    {
+     "a": 13080,
+     "w": 13177.689623,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the",
+     "d": 8713.725429
+    },
+    {
+     "a": 13240,
+     "w": 13323.827399,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle",
+     "d": 8816.006068
+    },
+    {
+     "a": 13400,
+     "w": 13479.239102,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the",
+     "d": 8914.904547
+    },
+    {
+     "a": 13720,
+     "w": 13812.649177,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the fl",
+     "d": 9140.227017000001
+    },
+    {
+     "a": 13880,
+     "w": 13979.624682,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor",
+     "d": 9259.568447000001
+    },
+    {
+     "a": 14520,
+     "w": 14606.215095,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some",
+     "d": 9682.232794000001
+    },
+    {
+     "a": 14680,
+     "w": 14778.825325,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some empt",
+     "d": 9800.792161000001
+    },
+    {
+     "a": 14840,
+     "w": 14914.990201,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some empty",
+     "d": 9895.551927
+    },
+    {
+     "a": 15160,
+     "w": 15252.05144,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some empty corn",
+     "d": 10121.53976
+    },
+    {
+     "a": 15480,
+     "w": 15572.076017,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some empty corn bag",
+     "d": 10332.177373999999
+    },
+    {
+     "a": 15640,
+     "w": 15737.184741,
+     "t": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some empty corn bags",
+     "d": 10449.038132
+    }
+   ],
+   "final_text": "A large open fireplace with rusty dogs in it and a bare boarded floor at the far end. Fleeces of wool stacked up in the middle of the floor some empty corn bags",
+   "clip_end_wall_ms": 16060.126799,
+   "endpoint_wall_ms": 16204.286873,
+   "endpoints": [
+    16204.286873
+   ],
+   "final_wall_ms": 16204.33973,
+   "tail_ms": 40,
+   "decode_ms": 10750.722703000001,
+   "tail_decode_ms": 109.00057000000015,
+   "rtf": 0.6687852381337481,
+   "feed_lag_mean_ms": 29.73433257462687,
+   "feed_lag_max_ms": 109.299401,
+   "first_partial_wall_ms": 1178.770712,
+   "cpu_ticks": 5054,
+   "rss_before_kb": 925692,
+   "rss_kb": 920424,
+   "rep": 0
+  },
+  {
+   "id": "accent_01",
+   "condition": "quiet",
+   "category": "accent",
+   "reference": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S DEGREE CAN JUST GIVE ME A BETTER PAY JOB LATER",
+   "seconds": 6.97,
+   "partials": [
+    {
+     "a": 1080,
+     "w": 1172.325115,
+     "t": "Yes",
+     "d": 660.171834
+    },
+    {
+     "a": 1240,
+     "w": 1315.329225,
+     "t": "Yes, I",
+     "d": 755.327922
+    },
+    {
+     "a": 1560,
+     "w": 1655.658448,
+     "t": "Yes, I do",
+     "d": 977.792278
+    },
+    {
+     "a": 2040,
+     "w": 2137.175742,
+     "t": "Yes, I do because",
+     "d": 1297.570353
+    },
+    {
+     "a": 2680,
+     "w": 2765.425457,
+     "t": "Yes, I do because as",
+     "d": 1718.286866
+    },
+    {
+     "a": 2840,
+     "w": 2937.669964,
+     "t": "Yes, I do because as you know",
+     "d": 1835.764853
+    },
+    {
+     "a": 3320,
+     "w": 3414.645388,
+     "t": "Yes, I do because as you know,",
+     "d": 2154.795208
+    },
+    {
+     "a": 3480,
+     "w": 3570.802289,
+     "t": "Yes, I do because as you know, having",
+     "d": 2265.386924
+    },
+    {
+     "a": 3800,
+     "w": 3892.312136,
+     "t": "Yes, I do because as you know, having a",
+     "d": 2485.246991
+    },
+    {
+     "a": 3960,
+     "w": 4051.037559,
+     "t": "Yes, I do because as you know, having a mas",
+     "d": 2596.064293
+    },
+    {
+     "a": 4120,
+     "w": 4199.815391,
+     "t": "Yes, I do because as you know, having a master's",
+     "d": 2695.639814
+    },
+    {
+     "a": 4440,
+     "w": 4559.74752,
+     "t": "Yes, I do because as you know, having a master's degree",
+     "d": 2942.7646919999997
+    },
+    {
+     "a": 4760,
+     "w": 4852.953738,
+     "t": "Yes, I do because as you know, having a master's degree can",
+     "d": 3152.4905219999996
+    },
+    {
+     "a": 4920,
+     "w": 4999.028445,
+     "t": "Yes, I do because as you know, having a master's degree can just",
+     "d": 3251.3336209999998
+    },
+    {
+     "a": 5400,
+     "w": 5491.552534,
+     "t": "Yes, I do because as you know, having a master's degree can just give me",
+     "d": 3567.067997
+    },
+    {
+     "a": 5560,
+     "w": 5643.375613,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a",
+     "d": 3670.258019
+    },
+    {
+     "a": 5720,
+     "w": 5813.450565,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better",
+     "d": 3783.432051
+    },
+    {
+     "a": 6520,
+     "w": 6613.973474,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better paid",
+     "d": 4322.560797
+    },
+    {
+     "a": 6680,
+     "w": 6759.663049,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better paid job",
+     "d": 4422.031541
+    },
+    {
+     "a": 7150,
+     "w": 7229.566125,
+     "t": "Yes, I do because as you know, having a master's degree can just give me a better paid job later",
+     "d": 4747.351122
+    }
+   ],
+   "final_text": "Yes, I do because as you know, having a master's degree can just give me a better paid job later",
+   "clip_end_wall_ms": 6960.13066,
+   "endpoint_wall_ms": 7713.853967,
+   "endpoints": [
+    7713.853967
+   ],
+   "final_wall_ms": 7713.895837,
+   "tail_ms": 660,
+   "decode_ms": 5058.017992,
+   "tail_decode_ms": 527.8209230000002,
+   "rtf": 0.7256840734576757,
+   "feed_lag_mean_ms": 29.1968571661891,
+   "feed_lag_max_ms": 119.822024,
+   "first_partial_wall_ms": 1172.325115,
+   "cpu_ticks": 2390,
+   "rss_before_kb": 920944,
+   "rss_kb": 921616,
+   "rep": 0
+  },
+  {
+   "id": "accent_02",
+   "condition": "quiet",
+   "category": "accent",
+   "reference": "INTERESTING INTERESTING BECAUSE YOU'VE ALWAYS SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED ABOUT",
+   "seconds": 5.47,
+   "partials": [
+    {
+     "a": 1240,
+     "w": 1330.810832,
+     "t": "Interesting",
+     "d": 762.7492269999999
+    },
+    {
+     "a": 1880,
+     "w": 1959.079631,
+     "t": "Interesting because",
+     "d": 1191.4281
+    },
+    {
+     "a": 2040,
+     "w": 2135.010743,
+     "t": "Interesting because you've",
+     "d": 1306.227701
+    },
+    {
+     "a": 2200,
+     "w": 2283.844849,
+     "t": "Interesting because you've always",
+     "d": 1409.855468
+    },
+    {
+     "a": 2360,
+     "w": 2462.24996,
+     "t": "Interesting because you've always said",
+     "d": 1531.824869
+    },
+    {
+     "a": 2520,
+     "w": 2602.650595,
+     "t": "Interesting because you've always said it",
+     "d": 1634.2855220000001
+    },
+    {
+     "a": 2680,
+     "w": 2761.276734,
+     "t": "Interesting because you've always said it was",
+     "d": 1735.3474110000002
+    },
+    {
+     "a": 3640,
+     "w": 3739.670737,
+     "t": "Interesting because you've always said it was something",
+     "d": 2373.2837310000004
+    },
+    {
+     "a": 3800,
+     "w": 3880.33484,
+     "t": "Interesting because you've always said it was something that",
+     "d": 2473.4200830000004
+    },
+    {
+     "a": 3960,
+     "w": 4052.951011,
+     "t": "Interesting because you've always said it was something that you",
+     "d": 2586.1297590000004
+    },
+    {
+     "a": 4280,
+     "w": 4375.142539,
+     "t": "Interesting because you've always said it was something that you were",
+     "d": 2813.5063870000004
+    },
+    {
+     "a": 4440,
+     "w": 4519.484377,
+     "t": "Interesting because you've always said it was something that you were not",
+     "d": 2912.7460520000004
+    },
+    {
+     "a": 4600,
+     "w": 4687.485028,
+     "t": "Interesting because you've always said it was something that you were not even",
+     "d": 3019.9848210000005
+    },
+    {
+     "a": 4920,
+     "w": 5011.057416,
+     "t": "Interesting because you've always said it was something that you were not even interest",
+     "d": 3228.1534820000006
+    },
+    {
+     "a": 5240,
+     "w": 5331.801272,
+     "t": "Interesting because you've always said it was something that you were not even interested",
+     "d": 3437.1046530000003
+    },
+    {
+     "a": 5400,
+     "w": 5478.066002,
+     "t": "Interesting because you've always said it was something that you were not even interested about",
+     "d": 3534.945473
+    }
+   ],
+   "final_text": "Interesting because you've always said it was something that you were not even interested about",
+   "clip_end_wall_ms": 5478.404014,
+   "endpoint_wall_ms": 5955.663617,
+   "endpoints": [
+    5955.663617
+   ],
+   "final_wall_ms": 5955.699628,
+   "tail_ms": 400,
+   "decode_ms": 3841.765786,
+   "tail_decode_ms": 306.8203129999997,
+   "rtf": 0.7023337817184644,
+   "feed_lag_mean_ms": 28.732576259124105,
+   "feed_lag_max_ms": 103.538656,
+   "first_partial_wall_ms": 1330.810832,
+   "cpu_ticks": 1832,
+   "rss_before_kb": 922132,
+   "rss_kb": 922652,
+   "rep": 0
+  },
+  {
+   "id": "accent_03",
+   "condition": "quiet",
+   "category": "accent",
+   "reference": "I THINK EVEN IF YOU DON'T LIVE ON THE GROUND FLOOR YOU MIGHT HAVE RATS THEY GO THROUGH THE WALLS",
+   "seconds": 3.79,
+   "partials": [
+    {
+     "a": 1240,
+     "w": 1333.906413,
+     "t": "Even",
+     "d": 770.117514
+    },
+    {
+     "a": 1400,
+     "w": 1479.373576,
+     "t": "Even if",
+     "d": 869.25293
+    },
+    {
+     "a": 1560,
+     "w": 1655.138713,
+     "t": "Even if you don't",
+     "d": 984.200643
+    },
+    {
+     "a": 2040,
+     "w": 2140.470622,
+     "t": "Even if you don't live",
+     "d": 1315.0610350000002
+    },
+    {
+     "a": 2200,
+     "w": 2302.341431,
+     "t": "Even if you don't live on",
+     "d": 1437.1826990000002
+    },
+    {
+     "a": 2360,
+     "w": 2439.60075,
+     "t": "Even if you don't live on the ground",
+     "d": 1536.5771900000002
+    },
+    {
+     "a": 2680,
+     "w": 2761.549399,
+     "t": "Even if you don't live on the ground floor",
+     "d": 1756.3962000000001
+    },
+    {
+     "a": 2840,
+     "w": 2919.4174,
+     "t": "Even if you don't live on the ground floor, you",
+     "d": 1855.6000170000002
+    },
+    {
+     "a": 3000,
+     "w": 3079.776002,
+     "t": "Even if you don't live on the ground floor, you might",
+     "d": 1955.1746020000003
+    },
+    {
+     "a": 3160,
+     "w": 3252.946738,
+     "t": "Even if you don't live on the ground floor, you might have",
+     "d": 2067.9184170000003
+    },
+    {
+     "a": 3640,
+     "w": 3728.580812,
+     "t": "Even if you don't live on the ground floor, you might have to",
+     "d": 2388.9956880000004
+    },
+    {
+     "a": 3790,
+     "w": 3878.214072,
+     "t": "Even if you don't live on the ground floor, you might have to go",
+     "d": 2487.0137540000005
+    },
+    {
+     "a": 3950,
+     "w": 4031.988893,
+     "t": "Even if you don't live on the ground floor, you might have to go through",
+     "d": 2588.8243820000007
+    },
+    {
+     "a": 4110,
+     "w": 4186.395021,
+     "t": "Even if you don't live on the ground floor, you might have to go through the",
+     "d": 2684.9764820000005
+    }
+   ],
+   "final_text": "Even if you don't live on the ground floor, you might have to go through the",
+   "clip_end_wall_ms": 3878.235516,
+   "endpoint_wall_ms": 4675.917076,
+   "endpoints": [
+    4675.917076
+   ],
+   "final_wall_ms": 4675.954104,
+   "tail_ms": 800,
+   "decode_ms": 3003.3113200000007,
+   "tail_decode_ms": 516.2975660000002,
+   "rtf": 0.7924304274406334,
+   "feed_lag_mean_ms": 28.46055505263157,
+   "feed_lag_max_ms": 102.369589,
+   "first_partial_wall_ms": 1333.906413,
+   "cpu_ticks": 1440,
+   "rss_before_kb": 923168,
+   "rss_kb": 923428,
+   "rep": 0
+  },
+  {
+   "id": "accent_04",
+   "condition": "quiet",
+   "category": "accent",
+   "reference": "HI YOU LOOK TIRED TODAY DID YOU HAD A BIG DAY",
+   "seconds": 5.02,
+   "partials": [
+    {
+     "a": 1560,
+     "w": 1643.330607,
+     "t": "I",
+     "d": 963.185834
+    },
+    {
+     "a": 1720,
+     "w": 1808.466838,
+     "t": "I you",
+     "d": 1071.461387
+    },
+    {
+     "a": 1880,
+     "w": 1981.92566,
+     "t": "I you look",
+     "d": 1193.204755
+    },
+    {
+     "a": 2040,
+     "w": 2123.370606,
+     "t": "I you look tired",
+     "d": 1296.394086
+    },
+    {
+     "a": 2360,
+     "w": 2458.728476,
+     "t": "I you look tired to",
+     "d": 1523.329998
+    },
+    {
+     "a": 2680,
+     "w": 2764.847779,
+     "t": "I you look tired today",
+     "d": 1730.36548
+    },
+    {
+     "a": 4120,
+     "w": 4210.75932,
+     "t": "I you look tired today. Did you",
+     "d": 2727.86491
+    },
+    {
+     "a": 4600,
+     "w": 4685.215049,
+     "t": "I you look tired today. Did you had a",
+     "d": 3023.9236259999993
+    },
+    {
+     "a": 4920,
+     "w": 5026.903282,
+     "t": "I you look tired today. Did you had a big",
+     "d": 3258.8423269999994
+    },
+    {
+     "a": 5080,
+     "w": 5157.054527,
+     "t": "I you look tired today. Did you had a big day",
+     "d": 3355.7076419999994
+    }
+   ],
+   "final_text": "I you look tired today. Did you had a big day",
+   "clip_end_wall_ms": 5027.316083,
+   "endpoint_wall_ms": 5639.135785,
+   "endpoints": [
+    5639.135785
+   ],
+   "final_wall_ms": 5639.164553,
+   "tail_ms": 540,
+   "decode_ms": 3687.7156589999995,
+   "tail_decode_ms": 428.8733320000001,
+   "rtf": 0.7346047129482071,
+   "feed_lag_mean_ms": 29.328363776892427,
+   "feed_lag_max_ms": 106.932497,
+   "first_partial_wall_ms": 1643.330607,
+   "cpu_ticks": 1720,
+   "rss_before_kb": 923948,
+   "rss_kb": 924468,
+   "rep": 0
+  },
+  {
+   "id": "silence_roomtone",
+   "condition": "quiet",
+   "category": "silence",
+   "reference": "",
+   "seconds": 4,
+   "partials": [],
+   "final_text": "",
+   "clip_end_wall_ms": 4063.034344,
+   "endpoint_wall_ms": 4063.091758,
+   "endpoints": [
+    4063.091758
+   ],
+   "final_wall_ms": 4063.10368,
+   "tail_ms": 20,
+   "decode_ms": 2647.0942390000005,
+   "tail_decode_ms": 0,
+   "rtf": 0.6617735597500001,
+   "feed_lag_mean_ms": 29.89073744999999,
+   "feed_lag_max_ms": 110.02417,
+   "first_partial_wall_ms": -1,
+   "cpu_ticks": 1188,
+   "rss_before_kb": 924724,
+   "rss_kb": 920312,
+   "rep": 0
+  },
+  {
+   "id": "silence_fan",
+   "condition": "quiet",
+   "category": "silence",
+   "reference": "",
+   "seconds": 4,
+   "partials": [],
+   "final_text": "",
+   "clip_end_wall_ms": 4051.923545,
+   "endpoint_wall_ms": 4052.006187,
+   "endpoints": [
+    4052.006187
+   ],
+   "final_wall_ms": 4052.020469,
+   "tail_ms": 20,
+   "decode_ms": 2602.610883,
+   "tail_decode_ms": 0,
+   "rtf": 0.6506527207499999,
+   "feed_lag_mean_ms": 28.893430735000003,
+   "feed_lag_max_ms": 102.215861,
+   "first_partial_wall_ms": -1,
+   "cpu_ticks": 1176,
+   "rss_before_kb": 920568,
+   "rss_kb": 921084,
+   "rep": 0
+  }
+ ],
+ "cpu_ticks_total": 54788,
+ "rss_peak_kb": 947336,
+ "rss_end_kb": 921084,
+ "energy": {
+  "before": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3976000,
+   "current_ua": -740000,
+   "pct": 100
+  },
+  "after": {
+   "energy_nwh": -9223372036854775808,
+   "charge_uah": 3924000,
+   "current_ua": -974062,
+   "pct": 100
+  },
+  "energy_nwh_delta": 0,
+  "charge_uah_delta": -52000
+ },
+ "interrupted": false,
+ "device": "Google Pixel 7",
+ "sdk": 37,
+ "started_at": 1792437966991,
+ "_arm": "nemotron160",
+ "_condition": "quiet",
+ "_run": "nemotron160-quiet-p0"
+}

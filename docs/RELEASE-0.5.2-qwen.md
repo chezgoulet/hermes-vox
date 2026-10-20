@@ -1,6 +1,6 @@
 # Hermes Vox 0.5.2-qwen — massively expanded visual categories + cycle-all
 
-One field ask from Christopher, 2026-09-07:
+One field ask from the maintainer, 2026-09-07:
 
 > "Massively expanding the visualizations. Make sure that Qwen exposes all of the styles
 > as categories inside the settings UI as well as an option for all of the animations
@@ -18,7 +18,7 @@ adds a clean crossfading rotation through all of them.
 
 ## A1_PALETTE — 20 families, each a distinct being (not a recolour)
 
-The bar is Christopher's test: *toggling between two categories mid-call must feel like a
+The bar is the maintainer's test: *toggling between two categories mid-call must feel like a
 DIFFERENT being, not a recolour.* So no two entries differ on hue alone. Each owns a
 distinct combination of all four axes the 0.5.1 design established — **palette** (tint +
 saturation + an accent hue-turn), **light** (`coreHeat` white-hot centre + `edge` falloff

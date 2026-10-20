@@ -3,7 +3,7 @@
 ## Field evidence (2026-09-07 13:00 log, 0.5.0.2)
 ANIMATION IS GREAT ("holy smokes they look good", "jellyfish animation", "most
 productive session"). Barge-in, transcript-freeze, no-phantom-turn all proven.
-Christopher's verbatim in-log feedback (the only two changes + one flag):
+The maintainer's verbatim in-log feedback (the only two changes + one flag):
 1. "we should simply eliminate the Star Wars scroll and have the text render in."
 2. Toggle exposed in Settings to keep the screen alive through a call.
 3. Flag: "the app pushes the last message text to the screen when the upstream is
@@ -35,7 +35,7 @@ Christopher's verbatim in-log feedback (the only two changes + one flag):
 - Flag #3: "app pushes the last message text when the upstream is slow." Read where
   onReply sets the full text (the reply.setText that runs on done) and whether it
   races the reveal-loop. If it's the text-only settle showing full text during a
-  slow stall, that's arguably correct (you see what it'll say) — but Christopher may
+  slow stall, that's arguably correct (you see what it'll say) — but the maintainer may
   mean the OPPOSITE (text appears that shouldn't, or the full text surfaces over the
   frozen reveal). Read it; report the mechanism; do NOT change behavior unless the
   read shows it's wrong. This is measure-before-fix — no behavior change without a

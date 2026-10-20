@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Presence bench test APK manifest (docs/PRESENCE-BENCH.md).
+  The GPU backend of LiteRT-LM opens the vendor OpenCL loader; a package that does not
+  grant libOpenCL.so cannot, and the runtime then falls back to CPU. The app's own
+  manifest carries the same two grants (app/src/main/AndroidManifest.xml) — repeated
+  here so a GPU measurement is never silently a CPU measurement.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+    </application>
+</manifest>

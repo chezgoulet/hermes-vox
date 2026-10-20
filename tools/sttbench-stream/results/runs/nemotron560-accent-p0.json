@@ -1,0 +1,47 @@
+{
+ "run_id": "nemotron560-accent-p0",
+ "model": {
+  "id": "nemotron560",
+  "encoder": "/sdcard/Android/data/com.hermesvox.bench/files/models/nemotron560//home/c/stt-ab-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25/encoder.int8.onnx",
+  "decoder": "/sdcard/Android/data/com.hermesvox.bench/files/models/nemotron560//home/c/stt-ab-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25/decoder.int8.onnx",
+  "joiner": "/sdcard/Android/data/com.hermesvox.bench/files/models/nemotron560//home/c/stt-ab-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25/joiner.int8.onnx",
+  "tokens": "/sdcard/Android/data/com.hermesvox.bench/files/models/nemotron560/tokens.txt"
+ },
+ "threads": 4,
+ "chunk_ms": 20,
+ "trailing_silence_ms": 500,
+ "max_tail_ms": 3000,
+ "realtime": true,
+ "warmup": true,
+ "reps": 1,
+ "clips": [
+  {
+   "id": "accent_01",
+   "condition": "accent",
+   "category": "accent",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/accent/accent_01.wav",
+   "reference": "YES I DO BECAUSE AS YOU KNOW HAVING A MASTER'S DEGREE CAN JUST GIVE ME A BETTER PAY JOB LATER"
+  },
+  {
+   "id": "accent_02",
+   "condition": "accent",
+   "category": "accent",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/accent/accent_02.wav",
+   "reference": "INTERESTING INTERESTING BECAUSE YOU'VE ALWAYS SAID IT WAS SOMETHING THAT YOU WERE NOT EVEN INTERESTED ABOUT"
+  },
+  {
+   "id": "accent_03",
+   "condition": "accent",
+   "category": "accent",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/accent/accent_03.wav",
+   "reference": "I THINK EVEN IF YOU DON'T LIVE ON THE GROUND FLOOR YOU MIGHT HAVE RATS THEY GO THROUGH THE WALLS"
+  },
+  {
+   "id": "accent_04",
+   "condition": "accent",
+   "category": "accent",
+   "wav": "/sdcard/Android/data/com.hermesvox.bench/files/corpus/accent/accent_04.wav",
+   "reference": "HI YOU LOOK TIRED TODAY DID YOU HAD A BIG DAY"
+  }
+ ]
+}

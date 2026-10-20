@@ -2,7 +2,7 @@
 
 Patch on 0.5.5.1. The previous eye-fix narrowed the dart range but the iris still chased a
 new target every ~1.15s forever, so it never rested at center and never read as an eye.
-Christopher: "a real iris sits centered and only moves a small margin."
+The maintainer: "a real iris sits centered and only moves a small margin."
 
 ## The fix — A_SEEKER (the eye), behavioral
 The iris now behaves like a real iris:

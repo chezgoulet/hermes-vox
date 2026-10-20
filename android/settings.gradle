@@ -1,2 +1,7 @@
+// Deliberately no org.gradle.toolchains.foojay-resolver-convention: the build is
+// pinned to a local JDK 17 (scripts/gate.sh checks the major version), and a
+// toolchain resolver may silently download a different JDK, hurting
+// reproducibility (#166).
 include ':app'
+include ':bench'
 rootProject.name = "hermes-vox-android"

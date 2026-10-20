@@ -1,6 +1,6 @@
 # M1 Demo Note — Completeness Test (GREEN)
 
-Date: 2026-08-25 · Host: Thelio (c@sasquatch) · Emulator-5554 (Android 15)
+Date: 2026-08-25 · Host: Thelio (the build host) · Emulator-5554 (Android 15)
 
 ## What was proven
 

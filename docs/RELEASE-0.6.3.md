@@ -1,6 +1,6 @@
 # Hermes Vox 0.6.3 — the field-log fix
 
-A same-day showstopper fix from Christopher's field log, plus the Gemma
+A same-day showstopper fix from the maintainer's field log, plus the Gemma
 render rails.
 
 ## Fixed

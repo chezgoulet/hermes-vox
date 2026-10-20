@@ -1,7 +1,7 @@
 # Contributing to Hermes Vox
 
 Hermes Vox is **the voice of Hermes** — a thin, local-first Android voice client
-(plus a thin Go voice core) where *the entity IS the Hermes agent*: same identity,
+where *the entity IS the Hermes agent*: same identity,
 memory, tools, and context. The phone carries the conversation UX, the voice
 pipeline, and the particle-being avatar; Hermes owns the reasoning. The repo is
 `chezgoulet/hermes-vox`. The current release is the latest one on GitHub Releases.
@@ -45,32 +45,26 @@ contribute code you have the right to license this way.
 
 | Path | What lives there |
 |---|---|
-| `voice/` | Go module `voice` — the entity connectors: `HermesClient` (`/v1/chat/completions`), `HermesResponsesClient` (`/v1/responses`, `previous_response_id`), `HermesRunClient` (start/poll/cancel — the barge-in abort), `Conversation`, `Config` (secret-safe env). Source of truth for the entity connection. |
-| `mobile/` | The `gomobile bind` package → `mobile.aar`. `mobile/session.go` (`HermesSession`: SSE stream + run cancel + `/compress`) is the only surface the Kotlin app uses (`docs/RELEASE-0.5.7.md`). |
-| `android/` | The Gradle project — the actual product. `android/app` (Kotlin, `com.hermesvox`), Kotlin tests under `android/app/src/test/`. Gradle 8.12.1 + AGP 8.7.3 + Kotlin 2.2.21, JVM 17, compileSdk 34, minSdk 24 (`android/build.gradle:8-9`, `android/app/build.gradle:17-29`). |
+| `android/` | The Gradle project — the actual product. `android/app` (Kotlin, `com.hermesvox`), Kotlin tests under `android/app/src/test/`. The entity connection is `android/app/src/main/java/com/hermesvox/core/` — `HermesSession` (ping, the streamed and stored turns, the chain head, barge-in) — see `docs/KOTLIN-CORE.md`. Gradle 8.12.1 + AGP 8.7.3 + Kotlin 2.2.21, JVM 17, compileSdk 34, minSdk 24 (`android/build.gradle:8-9`, `android/app/build.gradle:17-29`). |
 | `docs/` | The working memory: `docs/RELEASE-<version>.md` release notes, `docs/SPRINT-*.md` / `docs/PLAN-*.md` / `docs/BUILD-DIRECTIVE-*.md` scoped work briefs, `docs/milestones/`, evidence logs. |
 | `scripts/` | The build plumbing: `scripts/gate.sh` (the canonical gate), `scripts/fetch-runtime.sh`, `scripts/build.py` (no-flag build driver behind `make build`). |
+| `testdata/stream/` | The stream parity fixtures and goldens (`testdata/stream/README.md`). |
 | `journal/`, `plans/` | Day logs and plan state. |
 | `tools/turnbench/` | Turn-taking benchmark tooling (research, not shipped). |
 
-The repo root is the Go module (`module github.com/chezgoulet/hermes-vox`,
-`go.mod`); the Gradle root is `android/`. Do not confuse the two.
+The Gradle root is `android/`; the repo root holds docs, scripts and fixtures.
 
 ---
 
 ## Development prerequisites
 
 The canonical gate (`scripts/gate.sh`) encodes the full toolchain and runs
-from any checkout. It reads `JAVA_HOME`, `ANDROID_HOME` and `ANDROID_NDK_HOME`
-from the environment (falling back to the maintainer's build-host paths only
-when unset), so export those for your machine:
+from any checkout. It reads `JAVA_HOME` and `ANDROID_HOME` from the environment
+(falling back to the maintainer's build-host paths only when unset), so export
+those for your machine:
 
-- **Go 1.26.4** pinned via `GOTOOLCHAIN=go1.26.4` (env, not `go.mod` — a
-  `toolchain` directive is stripped by `go mod tidy`).
-- **gomobile** — the `github.com/ebitengine/gomobile` fork, pinned; the gate
-  installs it if it is not on `PATH`.
-- **JDK 17**, **Android SDK** (compileSdk 34), **NDK 25.2** (not 30 — the
-  gomobile link breaks on NDK 30).
+- **JDK 17**, **Android SDK** (compileSdk 34). No NDK and no Go: the app builds
+  no native code of its own (#126).
 - **Gradle** — use the checked-in wrapper (`android/gradlew`). It pins Gradle
   8.12.1 with a verified distribution checksum; no system Gradle is needed.
 
@@ -82,32 +76,25 @@ no secrets required, so fork PRs are gated too.
 ## The build/test contract (the gate)
 
 **One command, from a clean checkout:** `bash scripts/gate.sh` → prints
-`GATE-GREEN` on success. It runs five stages in order:
+`GATE-GREEN` on success. It runs three stages in order:
 
 1. `scripts/fetch-runtime.sh` — the sherpa-onnx runtime AAR, SHA-256 verified.
-2. `go vet ./voice/... ./mobile/...`
-3. `go test -race ./voice/... ./mobile/...` (offline)
-4. `gomobile bind -target android -androidapi 23 -javapkg com.hermesvox -o mobile.aar github.com/chezgoulet/hermes-vox/mobile`
-5. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`)
+2. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`)
+3. A check that `StreamParityTest` (the stream parity harness) ran and passed —
+   a gate that goes green because the harness stopped running is not a gate.
 
-### The AAR staging step is load-bearing
-
-Step 4 produces `mobile.aar`; step 5 **copies** it into `android/app/libs/`
-(stage 4 in `scripts/gate.sh`). Gradle consumes that copy, and Gradle's
-"up-to-date" check lies if you bind into the same path without re-staging —
-the last build can silently consume a *stale* AAR. Never skip the staging
-step, and never hand-commit `mobile.aar` (it is gitignored by design).
+Gradle links only `android/app/libs/sherpa-onnx-*.aar`; a leftover `mobile.aar`
+from a pre-#126 checkout is ignored.
 
 ### Running the tests by hand
 
 ```bash
-# Go — the offline connector suite (gate runs it with -race)
-go vet ./voice/...
-go test -race ./voice/...        # the gate command
-go test ./mobile/...             # the bind/session suite
+# The entity connection (com.hermesvox.core) — offline, against a local fake gateway
+./gradlew :app:testDebugUnitTest --tests 'com.hermesvox.core.*' --no-daemon   # from android/
 
-# Go — live integration (requires a REAL gateway; see below)
-HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> go test ./voice/ -run Live -v
+# Live integration (requires a REAL gateway; see below)
+HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> \
+  ./gradlew :app:testDebugUnitTest --tests '*LiveGatewayTest' --no-daemon
 
 # Android — pure-JVM unit tests, no emulator or device needed
 # (from android/)
@@ -120,15 +107,16 @@ HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> go test ./voice/ -run Live 
 ```
 
 The documented verification pair used across release notes is
-`assembleRelease + testReleaseUnitTest` (Kotlin) + `go test ./voice/...` (Go) —
-e.g. `docs/RELEASE-0.5.4.md:40-44`. A change is not done until that whole tree
-is green **on a fresh clone** (a dirty local tree proves nothing).
+`assembleRelease + testReleaseUnitTest` (until #126 it also named
+`go test ./voice/...` — e.g. `docs/RELEASE-0.5.4.md:40-44`). A change is not done
+until that whole tree is green **on a fresh clone** (a dirty local tree proves nothing).
 
 ### The live integration test
 
-`voice/integration_live_test.go` runs a real turn against a live Hermes gateway
-and is skipped unless `HERMES_VOX_LIVE=1` **and** `HERMES_VOX_HERMES_API_KEY`
-are set (`voice/integration_live_test.go:24-29`). That key is the bearer
+`android/app/src/test/java/com/hermesvox/core/LiveGatewayTest.kt` runs real turns
+against a live Hermes gateway and is skipped unless `HERMES_VOX_LIVE=1` **and**
+`HERMES_VOX_HERMES_API_KEY` are set (optional: `HERMES_VOX_HERMES_URL`,
+`HERMES_VOX_HERMES_MODEL`, `HERMES_VOX_HERMES_SESSION_KEY`). That key is the bearer
 credential of a live agent with tools — it is a House secret (env store only).
 **Never** commit it, log it, or paste it into an issue/PR. If you cannot get the
 key, say so and leave the test skipped — a green offline suite still gates.
@@ -144,7 +132,7 @@ there is no silent fallback to the public debug key
 `apksigner verify --print-certs` (cert must be `hermes-vox`, never
 `androiddebugkey`). Release builds also run R8 shrink
 (`android/app/build.gradle:39-47`); the JNI keep rules in
-`android/app/proguard-rules.pro` are load-bearing — stripping the gomobile /
+`android/app/proguard-rules.pro` are load-bearing — stripping the
 sherpa-onnx / litertlm bindings crashes at runtime, so any dependency change
 must be re-verified on a shrunk build.
 
@@ -171,12 +159,12 @@ re-verifies them under a "KEEP-list — verified" section. Current list:
    reasons, runs tools, owns memory and context.
 2. **Per-conversation prompt caching is sacred.** Never invalidate a
    conversation's cache mid-conversation; never rebuild/resend the message
-   history (no O(n²) uploads — `voice/conversation.go:58-72` caps the legacy
-   history for exactly this reason). The response chain head
+   history (no O(n²) uploads — the app sends only the new turn and chains it with
+   `previous_response_id`). The response chain head
    (`previous_response_id`) is owned by **one** caller
    (`HermesSession.lastID`) and shared by the streaming voice turns and
    `/compress` — a second, unsynced id orphaning the chain is the exact bug H2
-   killed (`voice/conversation.go:17-27,74-87`).
+   killed (`core/HermesSession.kt`, `lastID`).
 3. **The narrow-waist core — behavior over snapshots.** The voice pipeline's
    behavior contracts: **barge-in** (cut the reply + cancel the run;
    `BargeGate.kt`, echo-cancelled source), **reveal-freeze** (the reply crawl
@@ -215,9 +203,9 @@ re-verifies them under a "KEEP-list — verified" section. Current list:
 - **Honest logging.** Log through `VoxLog`; a silent `catch` that hides a
   degraded-but-alive path is a defect (see the logging audit in
   `docs/LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md`). Never log the key or tokens.
-- **Go.** `gofmt` clean, `go vet` clean, errors carry context. The Kotlin side
-  often swallows Go errors — echo them at the call boundary instead of dropping
-  them (`docs/LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md:35`).
+- **Errors carry context.** The UI side often swallows connector errors — echo
+  them at the call boundary instead of dropping them
+  (`docs/LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md:35`).
 - **Kotlin.** JVM 17, `-Xskip-metadata-version-check`; follow the existing file
   header convention (the change history + the invariant it touches lives in a
   comment above the code — `ReplySettleRule.kt:3-26` is the model).
@@ -254,7 +242,7 @@ re-verifies them under a "KEEP-list — verified" section. Current list:
 3. **Open a PR to `main`.** The PR body states: what changed, the KEEP-list
    items it touches and why they survive, and the verification evidence
    (commands + output — run, don't guess).
-4. **The gate must pass on a fresh clone**: `go test ./voice/...` +
+4. **The gate must pass on a fresh clone**: `bash scripts/gate.sh` +
    `:app:testReleaseUnitTest` + `assembleRelease` (+ emulator/device smoke when
    the change touches the runtime). A PR that cannot demonstrate this is not
    reviewable.

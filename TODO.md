@@ -8,10 +8,9 @@ removed.)
 
 - [ ] **Enhanced Realtime: wire Gemma presence into the immersive view.** The Gemma 4 E2B
       expression layer loads (LiteRT-LM) but is Main-only. Issue #52.
-- [ ] **Strip the dead Ebitengine bind** (`game/`, `mobile/mobile.go` `Start()`), `go mod
-      tidy` away Ebitengine, rebuild `mobile.aar`, and re-gate the whole app. Keeps the
-      portable `voice/` + `mobile/session.go`; drops dead native surface + the X11 build
-      hazard.
+- [x] **Remove the Go core** — done in #126. `voice/`, `mobile/`, `go.mod`, gomobile,
+      the NDK pin and `mobile.aar` are gone; the gate is Gradle-only and the stream
+      parity fixtures pin the behaviour the Go core had.
 - [ ] **Settings-UX remaining polish** — status subtitles, Basic/Advanced split,
       Appearance/Visuals reconcile, onboarding/learnability already landed in 0.5.6.x;
       the remaining polish items are the Settings-home subtitle live-updates on pref change
@@ -23,5 +22,8 @@ removed.)
       re-download / cancel edge cases across the blessed set.
 - [ ] The Opus-review findings still open (pre-roll quadratic buffer, AudioRecord leak,
       Listener main-thread contract) — reliability backlog.
-- [ ] Play store readiness: AAB build + App Signing, privacy/data-safety form, BETA
-      framing, discovery-friendly description/topics (the 0.6 gates).
+- [ ] **F-Droid inclusion** — path B: sherpa-onnx and onnxruntime built from source
+      in the recipe, then the metadata and the `Binaries:`/`AllowedAPKSigningKeys`
+      submission (#165).
+- [ ] **Reproducible APK** — prove byte-identity with two clean builds and enforce it
+      in CI; it is the gate for publishing our own signature through F-Droid (#166).

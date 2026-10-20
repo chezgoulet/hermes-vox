@@ -31,14 +31,14 @@ beyond Sesame:
   detection, a priority audio arbiter and a presence ladder are explicit, tested code.
 - **Sovereign by construction.** Speech processing is on-device; the only network
   peer is your own gateway. No accounts, no vendor cloud, no baked keys.
-- **Open.** Apache-2.0, reproducible build, secret-free CI.
+- **Open.** GPL-3.0, reproducible build, secret-free CI.
 
 ## The shape
 
 ```
  mic ─► Silero VAD ─► Whisper STT ─┬─────────────────────────► Hermes gateway (the MIND)
   ▲    (BargeGate)   (OfflineStt / │   /v1/responses stream:true, previous_response_id,
-  │                   RemoteStt)   │   X-Hermes-Session-Key  (voice/, mobile/ — Go)
+  │                   RemoteStt)   │   X-Hermes-Session-Key  (core/HermesSession)
   │                                │                 │ SSE: text deltas, tool calls,
   │                                ▼                 │ commentary, completion
   │                     ER presence (the SOUL)       │
@@ -60,20 +60,21 @@ It talks to the Hermes API server:
 
 - **Turns:** `POST /v1/responses` with `stream: true`, chained by
   `previous_response_id` so the server keeps the full context, tool calls included.
-  `voice/stream.go` consumes the SSE stream: text deltas become speech, `function_call` /
+  `core/Stream.kt` consumes the SSE stream: text deltas become speech, `function_call` /
   `function_call_output` items drive the being's tool motifs, and `phase: commentary`
   items are shown as progress but never spoken as the answer. It honours the gateway's
   10s keepalive with an idle watchdog.
-- **Barge-in:** closing the stream aborts the generation (`CancelStream`); the
-  `/v1/runs/{id}/stop` path exists for run-based turns.
+- **Barge-in:** closing the stream aborts the generation (`cancelStream`).
 - **Identity scoping:** an optional `X-Hermes-Session-Key` keeps each person's
-  long-term memory apart on a shared gateway (`voice/entity.go`).
+  long-term memory apart on a shared gateway (`core/Entity.kt`).
 - **Voice register:** voice turns carry a short per-turn prefix ("spoken, 2–4
   sentences, no markdown") — the mechanism Hermes' own CLI voice mode uses. It rides the
   user text, so it works on a stock gateway and never persists as an instruction.
 
-The Go connector is bound into the app with gomobile (`mobile/session.go`); it is the
-single source of truth for the wire protocol.
+The connector is plain Kotlin in `com.hermesvox.core` (`HermesSession`), the single
+source of truth for the wire protocol. It replaced a Go core bound with gomobile in
+#126; `testdata/stream/` holds the fixtures that pin its streaming behaviour to what
+the Go core did (`docs/KOTLIN-CORE.md`).
 
 ### 2. Hearing and turn-taking — on-device
 - **VAD:** Silero via sherpa-onnx gates the open line; `BargeGate` decides when speech
