@@ -45,7 +45,7 @@ per-category halo sizing; only the invisible tail died.
 
 ## Verification
 
-Field-confirmed by Christopher on both phones under **both** Natural and
+Field-confirmed by the maintainer on both phones under **both** Natural and
 Adaptive colour profiles, on the hardware-layer-free nightly
 (`nightly-20260910-000519-70bdeac`). Promotion gate on a clean Thelio clone of
 `testing`: go vet/test → gomobile bind → `assembleRelease` +

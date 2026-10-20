@@ -88,7 +88,7 @@ strong two-beat / two heavier beats).
 - `android/app/src/main/java/com/hermesvox/MainActivity.kt` — wiring to the state edges
 - `android/app/src/main/java/com/hermesvox/VoiceController.kt` — `voiceWillSpeak()`
 
-## Device matrix (Pixel 7 `2A091FDH200AJ1`, Android 17, debug build 0.8.1)
+## Device matrix (Pixel 7 (the test device), Android 17, debug build 0.8.1)
 
 Method: `adb shell am start -n com.hermesvox/.MainActivity --es cue <family>`, with the
 phone's state set beforehand (ringer through the debug `--es ringer` harness, DND through

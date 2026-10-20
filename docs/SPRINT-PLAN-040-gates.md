@@ -5,7 +5,7 @@
 **Review gate:** Torc adversarial read + compile + emulator (`emulator-5554` via adb/uiautomator/screencap) BEFORE shipping, + on-device for audio paths.
 
 ## Sprint theme
-**"Stabilize + make it feel alive — close the deferred items before the 0.4.0 gates."** Per Christopher (2026-08-28): **punt Enhanced Realtime (Gemma) — it has never been run once and is a first-ever experiment** — until the deferred items are fixed. This sprint takes the deferred voice-quality + hardening + polish items (streaming/partial STT, latency instrumentation, speech enhancement, crash-hardening #7/#8, voice-loop polish) as the core, plus the first-run blocker **#61**. Google Play is explicitly out (external passport/identity blocker).
+**"Stabilize + make it feel alive — close the deferred items before the 0.4.0 gates."** Per the maintainer (2026-08-28): **punt Enhanced Realtime (Gemma) — it has never been run once and is a first-ever experiment** — until the deferred items are fixed. This sprint takes the deferred voice-quality + hardening + polish items (streaming/partial STT, latency instrumentation, speech enhancement, crash-hardening #7/#8, voice-loop polish) as the core, plus the first-run blocker **#61**. Google Play is explicitly out (external passport/identity blocker).
 
 ## Context / anchor points (verified, not assumed)
 - **Phone-call flow is green** (0.3.24.3, on-device): silero VAD + Piper + whisper-base load + run; multi-turn + barge-in work.

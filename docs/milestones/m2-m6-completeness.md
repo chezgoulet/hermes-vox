@@ -1,6 +1,6 @@
 # M2–M6 Demo Note — UI Overhaul, SSE, Voice, Service, Realtime (GREEN)
 
-Date: 2026-08-25 · Host: Thelio (c@sasquatch) · Emulator-5554 (Android 15)
+Date: 2026-08-25 · Host: Thelio (the build host) · Emulator-5554 (Android 15)
 
 ## M2 — Modern sci-fi UI overhaul (GREEN)
 A redesigned, designed interface (not a skeleton) on true OLED black with the

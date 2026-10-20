@@ -31,4 +31,4 @@ were all fixed; the last uses `setLineSpacing(float,float)` verified against the
 ## Notes
 - Version 0.5.6.1 (versionCode 101). Sprint complete: settings + bootstrapping.
 - The comprehensive docs report (walkie-talkie staleness + broader docs refresh) is
-  Christopher's; the app copy now reflects the true 2-mode set.
+  the maintainer's; the app copy now reflects the true 2-mode set.

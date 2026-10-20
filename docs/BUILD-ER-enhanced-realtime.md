@@ -95,7 +95,7 @@ api_server channel Vox uses.
    entity is working, not frozen.
 
 ## PHASE 5 — App: ER barge-in scope (the semantic gate — the "take your time" answer)
-**This is already designed (Miles + Christopher agreed).** In ER, barge-in grows a scope:
+**This is already designed (Miles + the maintainer agreed).** In ER, barge-in grows a scope:
 the physical trigger ALWAYS cuts the P3 filler (user may always interrupt the soul's
 presence), but whether it cancels the MIND is semantic.
 1. Two-stage "fire-and-hold": audio barge fires (3ms, unchanged) → P3 filler cuts instantly

@@ -6,7 +6,7 @@
    verdict to "auth" (better than the old `ping=false(unknown)`), but it's a FALSE 401:
    the probe hits the endpoint with a state the live voice channel doesn't. Root cause
    needed, not a reword.
-2. Christopher, verbatim (end of the long 15-turn session): "We need to expose a compress
+2. The maintainer, verbatim (end of the long 15-turn session): "We need to expose a compress
    command to the user through this app and/or have [the entity do it]." — a user-facing
    /compress (context compaction), so long conversations keep going.
 

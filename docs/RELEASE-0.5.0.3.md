@@ -2,7 +2,7 @@
 
 Post-facelift pass from the 2026-09-07 13:00 field log (0.5.0.2). The animation was
 the verdict ("holy smokes they look good") — this release is the only two changes
-Christopher asked for, plus the investigated flag. Spec: `PLAN-0503-static-transcript.md`.
+the maintainer asked for, plus the investigated flag. Spec: `PLAN-0503-static-transcript.md`.
 
 ## K1 — the Star-Wars drift is dead; the text renders IN
 `CrawlView.kt` dropped the `drift` field, its `rate*dt` increment, and the frame-delta

@@ -20,7 +20,7 @@ per-frame hue; alpha eases. `MainActivity` (under the same `android/app/src/main
 path) feeds state/tool/stall/amp signals. Read the file and its callers under that one
 `android/app/src/main/java/com/hermesvox/` path — and ONLY there.
 
-## Christopher's vision (verbatim, 2026-09-07)
+## The maintainer's vision (verbatim, 2026-09-07)
 "The AI agent exists within the forms and likes to play with them and use them to
 express its state, its feelings, its ideas." ---- "I'd like to let the designer have
 access and ability to all of those attributes to define and portray workloads and states
@@ -52,13 +52,13 @@ static↔energetic spectrum is a tool, not a mandate.
 - **Micro-detail** — per-particle size/brightness variance, a second harmonic, a subtle
   flicker so a still "listening" state is never a frozen blob.
 
-## Palette ownership (Christopher #1)
+## Palette ownership (maintainer note 1)
 Every state/workload/motion-signal is yours (MotMotionState enum + stall/tool/recoil).
 Make each one itself, not a house style. DON'T drop any state; every MotionState.Motion
 must still render. The MainActivity wiring (feed/applyMotion/driveMotion/setStall/onTool/
 pulseTool) MUST keep working with your new rendering.
 
-## Static↔energetic spectrum (Christopher #2)
+## Static↔energetic spectrum (maintainer note 2)
 Use the whole range. Some states near-still (idle/listening/long drift) — a being that's
 always moving is exhausting and reads as busyness. Others explosive (recoil, idea,
 tool-result). The static moments are what make the energetic ones land. Deliberate per

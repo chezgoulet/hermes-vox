@@ -203,7 +203,7 @@ Two corrections and one check:
 
 ## 4. Results
 
-Pixel 7 (`2A091FDH200AJ1`), Android as shipped, 4 decode threads, 20 ms chunks,
+Pixel 7 (the test device), Android as shipped, 4 decode threads, 20 ms chunks,
 one pass per cell. Every number below comes from
 `tools/sttbench-stream/results/raw/*.json`, scored by `run_ab.py --score-only`
 (restricted to the common clip set as described in §3).

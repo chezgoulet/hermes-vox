@@ -1,6 +1,6 @@
 # Hermes Vox 0.6.5 — the silent-reply fix
 
-From Christopher's field test (both Realtime and ER): fillers repeated the
+From the maintainer's field test (both Realtime and ER): fillers repeated the
 same few phrases, then the reply rendered as text but was **silent**.
 
 ## Root cause — the fillers racing the reply's audio

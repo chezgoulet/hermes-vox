@@ -53,7 +53,7 @@ pass, and a clean release pipeline.
 
 ## Notes
 - Version 0.6.0 (versionCode 104). Built from main at the 0.5.7→0.6 arc.
-- Play upload is on hold (Christopher) — the build + docs are ready.
+- Play upload is on hold (the maintainer) — the build + docs are ready.
 - The Go voice core is kept deliberately (future native-Kotlin replacement = milestone #126).
 - Enhanced Realtime is the next engineering focus (wire Gemma presence into the immersive
   view; issue #52).

@@ -1,4 +1,4 @@
-# Shape-Expansion — Christopher's Shapes (addendum to design menu)
+# Shape-Expansion — the maintainer's Shapes (addendum to design menu)
 
 Nine new concepts, each with the one-line "reason" (what the being is DOING that's
 worth showing), the state it serves, the geometry approach, and an honest difficulty
@@ -59,7 +59,7 @@ Medium — needs a track/dart/blink state machine, but the shape is simple.
 **Reason:** a creature that *propels itself by its own limbs*. A bell-head carried by
 tentacles that undulate AND push — it MOVES across the screen, not stationary like the
 jellyfish. The most "inhabited" shape: it travels, it's not a fixed figure.
-**Serves:** SPEAKING / a state that should feel alive and on the move. (Christopher
+**Serves:** SPEAKING / a state that should feel alive and on the move. (the maintainer
 confirmed: keep BOTH the jellyfish A_VOICE and this octopus as siblings — the jellyfish
 is anchored, the octopus roams.)
 **Geometry:** a head (dense bell) + 5-8 tentacles, each a chain of points carrying a
@@ -75,7 +75,7 @@ moving, self-propelled octopus. Sibling pair, both kept.
 irregular storm cells (nebulous bright blobs) that pulse and drift. The being *scans a
 situation*; the storm cells are the things it's watching. Reads as "assessing the field,
 reading conditions" — unlike A_SWEEP (one rotating line = a simple radar) this is the
-FULL weather-radar panel (confidence rings + cells). Christopher's clarifications:
+FULL weather-radar panel (confidence rings + cells). The maintainer's clarifications:
 *genuinely a new shape*, not an A_SWEEP variant.
 **Serves:** THINKING / TOOL-scan / a moment of assessment ("holding the field and reading
 it").
@@ -98,15 +98,15 @@ traveling band, this = an all-over liquid field. Keep both as siblings (differen
 
 ---
 
-## Consolidated vocabulary — DECISIONS RESOLVED (per Christopher)
+## Consolidated vocabulary — DECISIONS RESOLVED (per the maintainer)
 **Existing (13):** orb, breath, flame, gyre, voice, held, burst, sweep, forge, nodes,
 ribbon, infall, bloom.
 **My added (design menu):** wave* (→ water sibling), core, prism, pendulum, storm*,
 halo, knot, ascend, lattice.
-**Christopher's added (this doc):** waveform, arc, nucleus, invader, eye, octopus,
+**the maintainer's added (this doc):** waveform, arc, nucleus, invader, eye, octopus,
 radar (was "storm"), water*.
 
-**Christopher's decisions (locked):**
+**the maintainer's decisions (locked):**
 1. **Build all of them** — the full set, both mine and his.
 2. **Jellyfish A_VOICE AND octopus A_TAKU both kept as siblings** — jellyfish anchored,
    octopus self-propels across the screen via its tentacles (arms push, body glides).
@@ -130,7 +130,7 @@ strongest/cleanest new ones (waveform, arc, nucleus, eye, water, radar, octopus)
 Invader stays last and opt-in (it breaks the swarm aesthetic — a delightful surprise, not
 a work state).
 
-## Decisions — LOCKED (Christopher confirmed)
+## Decisions — LOCKED (the maintainer confirmed)
 1. Build ALL of them (the full set).
 2. Jellyfish A_VOICE + octopus A_TAKU both kept (jellyfish anchored, octopus self-propels
    via tentacles).

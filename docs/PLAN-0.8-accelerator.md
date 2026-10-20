@@ -5,7 +5,7 @@ Series thesis: **the accelerator work made the hardware path *possible*; 0.8 mak
 work rides on it: the whole point of moving the express model off the CPU is to buy the
 soul a sub-second beat, and a beat nobody can hear is not a feature.
 
-Scope, as set by Christopher (2026-09-10):
+Scope, as set by the maintainer (2026-09-10):
 1. GPU support — the hallmark of the 0.8 series.
 2. Fixes/improvements for every problem identified in the ER code review.
 3. Every refinement/improvement identified for Enhanced Realtime.
@@ -185,7 +185,7 @@ loop, GPU contention, truncation-after-barge, and the verdict mechanism.
 before the next lands), then release from `main` when the series is coherent. Decisions 1–3 below
 shape this.
 
-## Decisions LOCKED (Christopher, 2026-09-10)
+## Decisions LOCKED (maintainer, 2026-09-10)
 
 **1. ER owns smalltalk — the mind may override.** The soul answers greetings, identity,
 emotion and smalltalk directly; the Hermes agent keeps the right to override. M3 therefore has

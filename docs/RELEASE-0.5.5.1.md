@@ -1,6 +1,6 @@
 # Hermes Vox 0.5.5.1 — eye-fix patch
 
-Contained patch on 0.5.5. Fixes the one visual defect Christopher flagged: the eye's
+Contained patch on 0.5.5. Fixes the one visual defect the maintainer flagged: the eye's
 iris was rendered off-center (rolled toward the lens rim), breaking the eye illusion.
 
 ## The fix — A_SEEKER (the eye)
@@ -21,5 +21,5 @@ BUILD SUCCESSFUL.
 
 ## Notes
 - Version 0.5.5.1 (versionCode 95). Patch on 0.5.5 (versionCode 94).
-- The other Wave 1 shapes were confirmed delightful by Christopher — no class-wide
+- The other Wave 1 shapes were confirmed delightful by the maintainer — no class-wide
   "never settles" fix needed.
