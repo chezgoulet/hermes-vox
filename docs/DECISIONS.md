@@ -250,3 +250,30 @@ tag reproduces our APK** — which is the part of their flow that actually turns
 goes live and the app is installable from F-Droid. If F-Droid skips a version because their
 rebuild did not match ours, that is not their problem: it falsifies our reproducibility
 claim and is treated as a severe bug.
+
+## D16 — There is one product, and presence is a layer on it
+
+Set 2026-10-20. **Retires the two-mode framing of D13.**
+
+"Enhanced Realtime" is not a mode. It is **Presence** — the layer made of the on-device
+being, its asides, its cadence, its visual and its voice. Realtime is what the app does;
+Presence is what it does *with the layer on*, and **that is the default state**.
+
+**One boolean, not a mode.** `presence_enabled`, default **on**. `voice_mode` is migrated
+rather than dropped: a stored `realtime` becomes off, a stored `enhanced` becomes on. An
+existing install never has its choice silently reversed, and an install that has never
+touched the setting arrives with presence on, which is the point.
+
+**Presence runs only when it can.** The layer needs its model downloaded and that model
+able to start. When either is false the app is simply normal operation: no mode label, no
+warning pill announcing a degraded mode, no half-state in the UI. The presence row in
+Settings says what is missing and why — that is the only place the absence is reported,
+because it is the only place a user can act on it.
+
+**Two visible facts replace three states.** Presence is on or off (the user's choice), and
+the model is ready or not ready (a fact). The old mode selector asked the user to reason
+about both at once, which is why it read as a switch that did nothing.
+
+**Naming inside the layer.** The being's spoken interruptions are currently called
+"presence lines", which now reads as "presence's presence". In docs they are **asides**:
+Presence is the layer, an aside is a thing it says.
