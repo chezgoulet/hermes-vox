@@ -98,6 +98,25 @@ class Soul(unittest.TestCase):
         self.assertEqual(pr.summarise(s)["decisions"], {"answer": 1, "beat": 1})
 
 
+class Guard(unittest.TestCase):
+    def test_a_refused_line_records_why_the_guard_refused_it(self):
+        s = pr.parse(log(
+            "event=er-presence skip line=3 reason=silent density=conversational",
+            "event=er-presence detail line=3 why=too-many-words text=<hidden>",
+        ))
+        d = pr.summarise(s)
+        self.assertEqual(d["guard_refusals"], {"too-many-words": 1})
+        self.assertEqual(d["skips"], {"silent": 1})   # the skip still counts as a slot
+
+    def test_each_guard_reason_is_counted_separately(self):
+        s = pr.parse(log(
+            "event=er-presence detail line=3 why=too-long text=<hidden>",
+            "event=er-presence detail line=4 why=digits-or-markup text=<hidden>",
+            "event=er-presence detail line=5 why=too-long text=<hidden>",
+        ))
+        self.assertEqual(pr.summarise(s)["guard_refusals"], {"too-long": 2, "digits-or-markup": 1})
+
+
 class Bar(unittest.TestCase):
     def test_a_third_of_slots_speaking_fails_the_rate(self):
         s = pr.parse(log(
