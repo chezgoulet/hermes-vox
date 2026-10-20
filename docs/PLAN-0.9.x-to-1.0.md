@@ -1,13 +1,32 @@
 # Plan — from 0.9.0 to 1.0
 
-1.0 is a declaration, not a feature drop (D3). Six gates decide it, and this plan is
-ordered by **dependency**, not by date: every sprint lists its scope and the evidence
-that closes it. Nothing here carries a duration, because a duration is a wish with a
-number attached.
+1.0 is a declaration, not a feature drop (D3). Six gates decide it.
 
-Current state: 0.9.0 shipped. Reusable-build gate closed (byte-identical across two
-clean builds). Open: F-Droid, the live-gateway suite, the behaviour matrix, no open
-severe bugs, performance baseline.
+**Structure, agreed 2026-10-20: two point releases and the declaration, not four.**
+
+- **0.9.1 — the arm.** Wire the streaming recogniser behind a setting, run co-residency,
+  decide the default, and give presence tuning an instrument and a bar. Detail:
+  `PLAN-0.9.1.md`.
+- **0.9.2 — the listening half.** Continuous capture *and* semantic endpointing together,
+  behind separate switches, because they share one field test and one battery budget.
+- **1.0 — the declaration.** No features. The six gates, re-run, and a cut.
+
+**Two things are standing requirements, not release content:**
+
+- **The cut checklist** — live-gateway suite green, behaviour matrix on two devices,
+  performance baseline recorded, no open severe bug without a written reason. Applied to
+  *every* release; the 0.9.0 cut already had the reproducible half of it.
+- **Presence tuning** — the part users actually hear. Its instrument (`er-presence
+  line/skip/stop` summarised per session), its bar, and its levers are in `PLAN-0.9.1.md` §3,
+  and they carry forward.
+
+**Homeless by decision, not by accident:** F-Droid (its own rail, switching on whenever it
+is accepted — draft #154), multi-profile (#174), wake-word training (no ML compute), and
+#191 (a bug with no reproduction belongs in neither list).
+
+The sprint detail below was the first pass. It is kept for the evidence it accumulated —
+what already exists, and why the ordering was wrong — but the release plans supersede its
+grouping.
 
 Two tracks run in parallel for the whole plan, because neither can be compressed by
 working harder on it:
