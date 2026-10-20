@@ -24,14 +24,17 @@ java_major="$("$JAVA_HOME/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]
 echo "gate: JAVA_HOME=$JAVA_HOME"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-echo "== [0/2] fetch pinned runtime deps =="
+echo "== [0/3] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
-echo "== [1/2] gradle assembleDebug + unit tests =="
+echo "== [1/3] presence report self-test =="
+python3 scripts/test_presence_session_report.py 2>&1 | tail -3
+
+echo "== [2/3] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
 
-echo "== [2/2] stream parity harness ran =="
+echo "== [3/3] stream parity harness ran =="
 # StreamParityTest replays testdata/stream/*.sse against the committed goldens.
 # A gate that passes because the harness silently stopped running is not a gate.
 parity=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.StreamParityTest.xml
