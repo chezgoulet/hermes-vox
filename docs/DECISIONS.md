@@ -277,3 +277,31 @@ about both at once, which is why it read as a switch that did nothing.
 **Naming inside the layer.** The being's spoken interruptions are currently called
 "presence lines", which now reads as "presence's presence". In docs they are **asides**:
 Presence is the layer, an aside is a thing it says.
+
+## D17 — Latency is judged against conversational cadence, and the budget is constant
+
+Set 2026-10-20.
+
+Speed is not a goal. Being **within cadence** is the goal, and no faster: a voice that answers
+in 300 ms buys nothing over one that answers in 900 ms, and paying accuracy for it would be a
+bad trade. This decides where measurement effort goes and, more usefully, where it does not.
+
+**The budget, as the target to hold 0.9.2 to** (to be confirmed against real calls, not
+asserted): speech-end to first audio **p50 ≤ 1.5 s, p95 ≤ 2.5 s**. The working assumption is
+that a gap under about a second reads as immediate and one over about two and a half seconds
+reads as broken — people repeat themselves or stop trusting the turn. If the field disagrees,
+the numbers move; the principle does not.
+
+**The property that matters more than the number: the wait must not grow with how long you
+spoke.** Today it does. The capture loop transcribes after the turn ends, so with the
+streaming arm at RTF ≈ 0.70 the decode tail is roughly 0.7 × the utterance: about 2.1 s after
+a 3-second question, 7 s after a ten-second one, 21 s after half a minute. That is not a tuning
+problem, it is the wrong shape — and it is why the arm is opt-in.
+
+The fix is not a faster model. It is **overlap**: decode while the user is still talking, so
+the remainder after they stop is one chunk and a flush. A 60-second utterance should then cost
+the same tail as a 3-second one, differing by a few hundred milliseconds rather than by a
+factor of twenty.
+
+**Therefore 0.9.2's gate is a constant tail, not a lower RTF.** Any change that makes the
+product faster without making the tail constant has not addressed this.
