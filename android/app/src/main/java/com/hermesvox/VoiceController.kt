@@ -472,6 +472,22 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (n <= 0) continue
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
+                        // 0.9.1 FIELD (Pixel 9, speaker at 22/25): the ER soul opens the call
+                        // with its own greeting, which plays BEFORE any turn exists — so the
+                        // half-duplex gate (turnDone, awaited between turns) has not closed
+                        // yet, this loop is live, and it transcribed the being's own greeting
+                        // as the caller's first utterance (12:22:28 greet -> 12:22:33 turn).
+                        // Glue is presence, not speech from the caller: drop it here, before
+                        // the VAD sees it, and keep the tail quiet for the same window the
+                        // barge drain already uses (erEchoSkipMs). A caller who talks over
+                        // the greeting is ignored for its length — that is the same
+                        // half-duplex contract the reply already has, and the greeting is
+                        // the being opening the call.
+                        if (glueSpeaking || inGlueWindow(android.os.SystemClock.uptimeMillis())) {
+                            inSpeech = false; silentMs = 0; speechStartAt = 0L
+                            preBuf.clear()
+                            continue
+                        }
                         val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
                         // Pre-roll ONLY the frames BEFORE the VAD fires. If we add the
                         // speech-detected batch here AND again in the seg-accumulator below,
@@ -1710,6 +1726,18 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var speakerPulse = 0f
 
     @Volatile private var glueSpeaking = false
+    // 0.9.1: the capture loop drops frames while glue plays and for [erEchoSkipMs] after
+    // it ends. The ER greeting plays before any turn exists, so the half-duplex gate is
+    // not yet closed and the loop would otherwise transcribe the being's own greeting.
+    @Volatile private var glueWasSpeaking = false
+    @Volatile private var glueEndedAt = 0L
+
+    /** True while presence glue (greeting, fillers) is playing or inside its echo tail. */
+    private fun inGlueWindow(nowMs: Long): Boolean {
+        if (glueSpeaking) { glueWasSpeaking = true; glueEndedAt = 0L; return true }
+        if (glueWasSpeaking) { glueWasSpeaking = false; glueEndedAt = nowMs }
+        return erEchoSkipMs > 0L && glueEndedAt != 0L && nowMs - glueEndedAt <= erEchoSkipMs
+    }
     /** Set once this turn's reply has begun writing to the stream track (reset per turn). */
     @Volatile private var replyOwnsTrack = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
