@@ -17,6 +17,10 @@ with the items below still open.
 - **0.9 is the last series before 1.0.** Every 1.0 feature ships during 0.9.x
   first, behind a setting where it needs one, and 1.0 is cut only when the feature
   set, the polish and the measured performance are all acceptable.
+- **Realtime is frozen after the basics; polish goes to Enhanced Realtime** (D13).
+  Realtime is the default and has to keep working — the barge, capture and endpoint
+  fixes land there because they are shared code — but every new behaviour from here
+  is ER's. ER is not the default, so promoting it is a decision, not drift.
 - The full records are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ---

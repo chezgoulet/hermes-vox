@@ -8,6 +8,12 @@ within a minute of installing.
 unit suite and the reproducible APK (two clean builds, byte-compared). Do not re-test
 those by hand. F-Droid (#165) is its own track and does not block the APK.
 
+**Which mode you are testing (D13).** Realtime is the floor: it has to hear you, answer,
+stop when you speak, and survive an upgrade. Test it for those and nothing more.
+Enhanced Realtime is where the product is going — length, register, turn-taking,
+presence, delivery — so spend the polish checks there. If a *basic* fails in Realtime,
+that is a blocker; if a *polish* feels rough in Realtime, it is out of scope by decision.
+
 ---
 
 ## 0. Before you start
