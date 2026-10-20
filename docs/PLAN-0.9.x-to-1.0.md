@@ -54,6 +54,19 @@ diagnosed or reduced to a single candidate.
 
 The whole listening half is queued behind one measurement.
 
+**What must come first, and why the order was wrong:** the arm is not in the app.
+`nemotron` appears nowhere under `android/app/src/main` — it lives only in the bench
+module (`android/bench`, merged with #177). Co-residency cannot be measured until the
+app can load the arm, so **the wiring half of Sprint 3 moves ahead of this run**: catalog
+entry, download, licence acceptance, a setting, and the Zipformer fallback. The run then
+answers the only question wiring cannot — whether it fits beside everything else.
+
+**What the owner's field logs already prove, and what they do not.** Every Enhanced
+Realtime session is VAD + STT + TTS + presence running together, so the *configuration*
+co-exists in daily use; that is not in doubt. Two things are still missing: the new arm
+inside that stack, and the **numbers** — the logs record per-turn timings, not RTF, peak
+RSS or memory headroom, which is what the decision turns on.
+
 - [ ] **Co-residency run** (#179): VAD + streaming STT + TTS + presence resident in one
       live call. Record RTF, peak RSS, `MemAvailable` at worst, presence first token,
       and whether playback stutters.
