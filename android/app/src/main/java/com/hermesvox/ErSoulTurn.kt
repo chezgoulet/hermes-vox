@@ -171,7 +171,9 @@ object ErSoulTurn {
      */
     /** [workingReject] for raw model output (the same parse the caller uses). */
     fun workingReject(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
-        workingReject(parse(rendered), saidThisRun)
+        // A blank render is "empty", not "not-spoken": parse() turns both into Nothing, and the
+        // difference is the diagnosis the log needs.
+        if (rendered.isNullOrBlank()) "empty" else workingReject(parse(rendered), saidThisRun)
 
     fun workingReject(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
