@@ -27,8 +27,8 @@ android {
         applicationId "com.hermesvox"
         minSdkVersion 24
         targetSdkVersion 34
-        versionCode 142
-        versionName "0.8.1"
+        versionCode 143
+        versionName "0.9.0"
         // Instrumented tests are the on-device measurement path (docs/PRESENCE-BENCH.md):
         // they need a device, so gate.sh never runs them, and they never ship in an APK.
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

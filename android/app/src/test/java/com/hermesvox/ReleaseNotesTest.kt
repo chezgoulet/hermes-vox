@@ -68,4 +68,14 @@ class ReleaseNotesTest {
     fun `the shipped 0_8_1 notes are retrievable`() {
         assertNotNull(ReleaseNotes.forVersion(142))
     }
+
+    @Test
+    fun `the shipped 0_9_0 notes carry the HTTPS alert`() {
+        // The one breaking change must arrive as an alert with an action, or the banner
+        // is a changelog and the user meets the break in a failed turn instead.
+        val note = ReleaseNotes.forVersion(143)
+        assertNotNull(note)
+        assertEquals("0.9.0", note!!.versionName)
+        assertTrue(note.alerts.any { it.id == "https-only" && it.action == AlertAction.ENTITY })
+    }
 }

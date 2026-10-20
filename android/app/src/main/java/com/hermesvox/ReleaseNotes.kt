@@ -57,13 +57,25 @@ internal object ReleaseNotes {
             ),
         ),
 
-        // 0.9 will add its breaking-change alert here, e.g.
-        // ReleaseAlert(
-        //     id = "https-only",
-        //     title = "Your gateway must use HTTPS",
-        //     body = "Android now blocks plain HTTP. Serve the gateway with `tailscale serve --bg 8080` and enter https://<machine>.<tailnet>.ts.net.",
-        //     action = AlertAction.ENTITY,
-        //     label = "Open connection settings",
-        // ),
+        ReleaseNote(
+            versionCode = 143,
+            versionName = "0.9.0",
+            title = "The HTTPS release",
+            bullets = listOf(
+                "Entity endpoints must use HTTPS. A plain-http gateway — including a bare 192.168.x.x address — is refused, with an error that says how to fix it. A tailnet MagicDNS name still works over plain HTTP.",
+                "Sound cues: the being's states now have a voice of their own, generated from its motion. Settings → Sound cues.",
+                "The turn engine is Kotlin end to end — the Go core, gomobile and the NDK are gone from the build.",
+                "Wake word is here as a preview: you can record your takes and see the training data it would use. Nothing listens in the background yet.",
+            ),
+            alerts = listOf(
+                ReleaseAlert(
+                    id = "https-only",
+                    title = "Your gateway must use HTTPS",
+                    body = "Android now blocks plain HTTP for anything but a *.ts.net name. On the gateway host run `tailscale serve --bg 8080`, then enter https://<machine>.<tailnet>.ts.net as the entity endpoint.",
+                    action = AlertAction.ENTITY,
+                    label = "Open connection settings",
+                ),
+            ),
+        ),
     )
 }
