@@ -62,6 +62,17 @@ class SpeechCursor(
         return totalChars   // past the end -> clamp, never over-reveal
     }
 
+    /**
+     * True when the playback head has run past every segment registered so far.
+     *
+     * That is a SYNTHESIS GAP, not evidence that the tail was spoken: between chunks
+     * the head keeps advancing while nothing new has been handed to the engine. Callers
+     * must hold their last position rather than take [charsSpoken]'s past-the-end
+     * answer (which is "all registered chars"), because the reveal is monotonic — one
+     * overrunning tick would pin it to the end of the reply permanently.
+     */
+    fun isOverrun(samplesPlayed: Int): Boolean = totalSamples > 0 && samplesPlayed > totalSamples
+
     companion object {
         /** Build from the controller's ordered (textLen, samples) accounting. */
         fun of(stats: List<Pair<Int, Int>>): SpeechCursor =

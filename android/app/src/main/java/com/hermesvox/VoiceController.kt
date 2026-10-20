@@ -834,6 +834,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         // (closes the SherpaTts fence -> streamChunk returns false -> no track
         // resurrection), close the streaming worker, cancel the SSE stream, then
         // release the turn gate, all synchronously on this thread.
+        // 0.9.0 FIELD: the gate release alone does NOT stop the poll loop. Barge-in
+        // sets genCancelled before silencing; stop() did not, so a hang-up mid-turn
+        // left the poller asking the gateway for a stream the app had just cancelled.
+        // It answered "no such stream" ~1,900 times a second until the 200-error cap
+        // aborted the turn and reported it as `err=timeout` — a deliberate hang-up
+        // logged as a failure, 200 lines at a time (field log 2026-10-20,
+        // 00:16:39 and 00:23:06). Same flag as the barge path, same effect: the loop
+        // sees it at the top of its next iteration and retires.
+        genCancelled = true
         silenceAll("stop")
         // #8: wait (bounded) for the capture loop + partial worker to exit their
         // native calls (vad.feed / stt.transcribe / record.read) before releasing
@@ -1548,6 +1557,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var audioStartedAt = 0L              // uptime of the first phrase handed over
     @Volatile private var headEverMoved = false            // has playbackHeadPosition ever advanced
     @Volatile private var revealedChars = 0                // monotonic within a turn
+    @Volatile private var gapHoldLogged = false            // one reveal-hold line per gap
 
     /** New turn: a fresh cursor (and an un-frozen one). */
     private fun armTranscript() {
@@ -1598,8 +1608,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         frozenChars?.let { return it }
         // Nothing has reached the voice yet (still thinking / tool-calling, or a
         // text-only settle that never speaks): no lock, so the display keeps painting
-        // plainly exactly as it always has.
-        if (audioStartedAt == 0L) return -1
+        // plainly exactly as it always has. Once the voice HAS said something this
+        // turn, hold that position instead of handing the surface back — a momentary
+        // "no active utterance" is not permission to reveal the whole reply.
+        if (audioStartedAt == 0L) return if (revealedChars > 0) revealedChars else -1
         return liveCursor()
     }
 
@@ -1612,7 +1624,20 @@ class VoiceController(private val context: Context, private val session: HermesS
         // PlaybackClock: trust the head; only a head that has NEVER advanced falls back
         // to the wall clock (some HALs report 0 for the life of a short track).
         val samples = PlaybackClock.samples(head, headEverMoved, since, engine.streamSampleRate)
-        val chars = synchronized(cursorLock) { SpeechCursor.of(chunkStats).charsSpoken(samples) }
+        val cursor = synchronized(cursorLock) { SpeechCursor.of(chunkStats) }
+        // 0.9.0 FIELD: a synthesis gap is not speech. Between chunks the head keeps
+        // advancing while nothing new is registered, so `charsSpoken` answers "past the
+        // end = everything registered" — and because revealedChars is monotonic, one
+        // such tick pinned the reveal to the end of the reply for the rest of it: the
+        // text jumped, the tracer had nothing left to trace, and the audio carried on
+        // correctly underneath (field 2026-10-20). Hold the last honest position and
+        // wait for the next chunk to be registered.
+        if (cursor.isOverrun(samples)) {
+            if (!gapHoldLogged) { gapHoldLogged = true; VoxLog.d("event=reveal-hold reason=synthesis-gap samples=$samples of=${cursor.totalSamples}") }
+            return revealedChars
+        }
+        gapHoldLogged = false
+        val chars = cursor.charsSpoken(samples)
         if (chars > revealedChars) revealedChars = chars   // monotonic: the reveal never rewinds
         return revealedChars
     }
