@@ -483,7 +483,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // the greeting is ignored for its length — that is the same
                         // half-duplex contract the reply already has, and the greeting is
                         // the being opening the call.
-                        if (glueSpeaking || inGlueWindow(android.os.SystemClock.uptimeMillis())) {
+                        if (glueWindow.inWindow(glueSpeaking, android.os.SystemClock.uptimeMillis(), erEchoSkipMs)) {
                             inSpeech = false; silentMs = 0; speechStartAt = 0L
                             preBuf.clear()
                             continue
@@ -1729,15 +1729,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     // 0.9.1: the capture loop drops frames while glue plays and for [erEchoSkipMs] after
     // it ends. The ER greeting plays before any turn exists, so the half-duplex gate is
     // not yet closed and the loop would otherwise transcribe the being's own greeting.
-    @Volatile private var glueWasSpeaking = false
-    @Volatile private var glueEndedAt = 0L
-
-    /** True while presence glue (greeting, fillers) is playing or inside its echo tail. */
-    private fun inGlueWindow(nowMs: Long): Boolean {
-        if (glueSpeaking) { glueWasSpeaking = true; glueEndedAt = 0L; return true }
-        if (glueWasSpeaking) { glueWasSpeaking = false; glueEndedAt = nowMs }
-        return erEchoSkipMs > 0L && glueEndedAt != 0L && nowMs - glueEndedAt <= erEchoSkipMs
-    }
+    private val glueWindow = GlueWindow()
     /** Set once this turn's reply has begun writing to the stream track (reset per turn). */
     @Volatile private var replyOwnsTrack = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
