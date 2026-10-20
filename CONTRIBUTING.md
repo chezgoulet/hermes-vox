@@ -4,7 +4,7 @@ Hermes Vox is **the voice of Hermes** — a thin, local-first Android voice clie
 where *the entity IS the Hermes agent*: same identity,
 memory, tools, and context. The phone carries the conversation UX, the voice
 pipeline, and the particle-being avatar; Hermes owns the reasoning. The repo is
-`chezgoulet/hermes-vox` (private). Current release line: **0.5.x** (HEAD 0.5.7).
+`chezgoulet/hermes-vox`. The current release is the latest one on GitHub Releases.
 
 This file is the contribution contract. If a change would break the build gate,
 the KEEP-list invariants, or the security model, it does not land. Everything
@@ -12,6 +12,34 @@ below is grounded in the repo — code and docs — so read the cited anchors
 instead of trusting a paraphrase.
 
 ---
+
+## Where things go
+
+- **Issues** — anything broken, and feature requests concrete enough to act on.
+  Say what you are trying to do, not only the feature you have in mind.
+- **Discussions** — questions, open-ended ideas, and setups worth showing.
+- **Security** — use private vulnerability reporting, not a public issue.
+
+## What "tested" means here
+
+CI proves the app compiles and the unit tests pass; it does not prove the phone
+works. A change that touches audio, the service lifecycle, networking or the UI
+needs a run on a device, with the device named in the pull request. A performance
+claim needs the number and the method. If something could not be tested, say so —
+an honest gap is reviewable, and a green tick that implies more than it earned is
+not.
+
+## Secrets
+
+Never paste API keys, tokens, gateway addresses you would rather not share, or
+personal logs into an issue, a commit or a test fixture. A report that contains
+them gets edited, and the credential gets rotated.
+
+## Licence
+
+The project is GPL-3.0. By opening a pull request you agree your contribution is
+licensed under the same terms; there is no CLA and no copyright assignment. Only
+contribute code you have the right to license this way.
 
 ## Repository layout
 

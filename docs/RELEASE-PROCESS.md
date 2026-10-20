@@ -24,6 +24,10 @@ is the same one a rebuild produces.
    place the app can say so before the user hits it.
 
 3. **Gate the full tree** — the authoritative build is on the Thelio (`the build host`):
+   - **A fresh checkout must fetch the runtime first:** `bash scripts/fetch-runtime.sh`.
+     `android/app/libs/sherpa-onnx-1.13.6.aar` is gitignored, so on a clean tree both
+     `:app` and `:bench` fail to compile with `Unresolved reference 'k2fsa'` — which
+     reads like a broken branch and is only a missing download. (Learned cutting 0.9.0.)
    - `bash scripts/gate.sh` (debug build, every unit test, the stream parity harness).
    - Android: `gradle assembleRelease testReleaseUnitTest`.
 
@@ -82,6 +86,10 @@ matches. That makes step 4 the gate for F-Droid as well as for us.
 
 - Release signing loads the **gitignored** `keystore/keystore.properties`
   (`storeFile`/`storePassword`/`keyAlias`/`keyPassword`). The keystore is NOT committed.
+  **`storeFile` must be relative to the repository root** (`keystore/release.keystore`).
+  An absolute path is resolved against the repo root like a relative one, and the build
+  fails on a doubled path (`<repo>/<absolute path>`) that looks like a missing file.
+  (Learned cutting 0.9.0.)
 - **Never** commit `keystore/release.keystore` or `keystore/keystore.properties` — they
   live on the Thelio and in the env store. Keep a backup off-repo.
 - The C0 guard fails any release build (`assembleRelease` or `bundleRelease`) that has a
