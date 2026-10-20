@@ -448,6 +448,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var lastSpeechEnd = 0
                     val seeded = seed
                     seed = null
+                    // EndpointRule.utteranceMs: when this segment's SPEECH began (0 = not yet).
+                    var speechStartAt = 0L
                     if (seeded != null) {
                         // #12: the barge's words open this segment — in speech, with their
                         // onset pre-roll, so the utterance is transcribed whole as the turn.
@@ -457,6 +459,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         lastSpeechEnd = seg.size
                     }
                     val segStart = android.os.SystemClock.uptimeMillis() - seg.size * 1000L / sr
+                    if (seeded != null) speechStartAt = segStart   // the carry opens in speech
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
                     val partialEnabled = micBool("partial_stt", true)
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
@@ -479,6 +482,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // silence accrue faster than wall-clock and cut the user off
                         // mid-sentence when the pause threshold fired early.
                         if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
                             for (f in frames) seg.add(f)
@@ -493,7 +497,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 800ms pause rule owns normal turn ends. The partial early-start
                         // worker keeps running inside an extended segment (a 6 s tail
                         // snapshot past 8 s — a trigger only; the text is the whole segment).
-                        val elapsedMs = android.os.SystemClock.uptimeMillis() - segStart
+                        // 0.9.1: from the speech onset, not the mic open (EndpointRule.utteranceMs).
+                        val elapsedMs = EndpointRule.utteranceMs(android.os.SystemClock.uptimeMillis(), speechStartAt)
                         if (EndpointRule.shouldStop(elapsedMs, silentMs.toLong(), maxMs.toLong(), hardMs)) break
                         if (inSpeech && elapsedMs >= maxMs && !extendedLogged) {
                             extendedLogged = true

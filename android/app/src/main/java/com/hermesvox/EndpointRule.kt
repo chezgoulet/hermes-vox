@@ -39,4 +39,20 @@ object EndpointRule {
      *  Below maxMs the existing silence rule owns endpointing. */
     fun shouldStop(elapsedMs: Long, silentMs: Long, maxMs: Long, hardMs: Long): Boolean =
         (hardMs > 0L && elapsedMs >= hardMs) || (elapsedMs >= maxMs && silentMs > EXTEND_PAUSE_MS)
+
+    /**
+     * 0.9.1: the clock [shouldStop]'s elapsedMs must run on — time since the SPEECH
+     * began (0 before it has), not since the mic opened.
+     *
+     * It ran from the segment's open. Silence before the user speaks counts against
+     * nothing else, so a mic left open past maxMs (15 s) — the caller thinking, or the
+     * capture loop reopened under a long reply (TurnGateCeiling) — closed the user's
+     * utterance at its FIRST >100 ms pause. The 0.9.0 field log's fragments are exactly
+     * that: `endpoint-extended ms=31798` then `ms=1274 speechMs=896 text=and not`, and
+     * `ms=33015` then `ms=4858 speechMs=4480 text=okay i just want to point out in
+     * the` — each clip is the 250 ms pre-roll + the speech + ~128 ms (two reads) of
+     * pause. The entity's reply: "that message cut off mid-sentence — 'in the'".
+     */
+    fun utteranceMs(nowMs: Long, speechStartAtMs: Long): Long =
+        if (speechStartAtMs <= 0L) 0L else nowMs - speechStartAtMs
 }
