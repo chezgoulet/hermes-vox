@@ -169,6 +169,10 @@ object ErSoulTurn {
      * `empty`, `too-long` (> [MAX_OPENER_CHARS]), `digits-or-markup`, `too-many-words`
      * (> [MAX_OPENER_WORDS]), `repeat` (same line already said this run).
      */
+    /** [workingReject] for raw model output (the same parse the caller uses). */
+    fun workingReject(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
+        workingReject(parse(rendered), saidThisRun)
+
     fun workingReject(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
         val firstLine = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
