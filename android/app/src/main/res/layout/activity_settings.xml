@@ -431,8 +431,9 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- How often the entity speaks while the mind works (PresenceCadence). -->
                 <LinearLayout
-                    android:id="@+id/row_er_filler_cap"
+                    android:id="@+id/row_er_density"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -440,19 +441,13 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Filler density (max per 3s while the entity works)"
+                        android:text="Presence while working (how often the entity speaks while it works)"
                         style="@style/HvRowTitle" />
-                    <SeekBar
-                        android:id="@+id/sb_er_filler_cap"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="4"
-                        android:progress="2" />
                     <TextView
-                        android:id="@+id/set_er_filler_val"
+                        android:id="@+id/set_er_density_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="2"
+                        android:text="Conversational"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 

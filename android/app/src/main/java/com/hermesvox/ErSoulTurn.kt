@@ -148,8 +148,12 @@ object ErSoulTurn {
      * markup), and it must not repeat a line already said this run — across the whole run, not the
      * [REPEAT_WINDOW_MS] the glue ring keeps, because two lines 40 s apart are still a stuck record.
      */
-    fun workingLine(rendered: String?, saidThisRun: List<String> = emptyList()): String? {
-        val text = (parse(rendered) as? Outcome.Spoken)?.text ?: return null
+    fun workingLine(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
+        workingLine(parse(rendered), saidThisRun)
+
+    /** [workingLine] for an already-parsed decision (the host's soul hook parses). */
+    fun workingLine(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
+        val text = (decision as? Outcome.Spoken)?.text ?: return null
         val line = opener(text) ?: return null
         val n = norm(line)
         return if (saidThisRun.any { norm(it) == n }) null else line

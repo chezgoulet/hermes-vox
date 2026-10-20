@@ -202,8 +202,6 @@ class SettingsActivity : AppCompatActivity() {
     private fun bindErControls() {
         val swPresence = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_presence)
         val swBarge = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_semantic_barge)
-        val sbFiller = findViewById<SeekBar>(R.id.sb_er_filler_cap)
-        val tvFiller = findViewById<TextView>(R.id.set_er_filler_val)
         val sbEcho = findViewById<SeekBar>(R.id.sb_er_echo)
         val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
 
@@ -257,18 +255,22 @@ class SettingsActivity : AppCompatActivity() {
             when (val m = prefs.getString("er_presence_voice", "sounds") ?: "sounds") {
                 "silent" -> "Silent"; "spoken" -> "Spoken"; else -> "Sounds"
             }
-        val fillerCap = prefs.getInt("er_filler_cap", 2)
-        sbFiller.progress = fillerCap.coerceIn(0, 4)
-        tvFiller.text = fillerCapLabel(fillerCap)
-        sbFiller.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                tvFiller.text = fillerCapLabel(p)
-            }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {
-                prefs.edit().putInt("er_filler_cap", sbFiller.progress).apply()
-            }
-        })
+        // "Presence while working": one register for how often the entity speaks while the mind
+        // works — the mid-run line interval and the filler cap (PresenceCadence). Replaces the raw
+        // filler-density slider, which it migrates from until a register is chosen.
+        val tvDensity = findViewById<TextView>(R.id.set_er_density_val)
+        tvDensity.text = densityLabel(currentDensity())
+        findViewById<LinearLayout>(R.id.row_er_density).setOnClickListener {
+            val all = PresenceCadence.Density.entries
+            AlertDialog.Builder(this)
+                .setTitle("Presence while working")
+                .setSingleChoiceItems(all.map { densityChoice(it) }.toTypedArray(), all.indexOf(currentDensity())) { d, which ->
+                    prefs.edit().putString(PresenceCadence.PREF, all[which].key).apply()
+                    tvDensity.text = densityLabel(all[which])
+                    d.dismiss()
+                }
+                .setNegativeButton("Cancel", null).show()
+        }
         // Echo guard slider: 0-6 steps -> 0,300,500,700,1000,1500,2500ms (0 = off).
         val echoSteps = intArrayOf(0, 300, 500, 700, 1000, 1500, 2500)
         val curEcho = prefs.getFloat("er_echo_skip_ms", 700f).toInt()
@@ -285,11 +287,20 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
-    private fun fillerCapLabel(n: Int): String = when (n) {
-        0 -> "silent (no fillers)"
-        1 -> "1 — sparse"
-        2 -> "2 — the Miles default"
-        else -> "$n — chatty"
+    private fun currentDensity(): PresenceCadence.Density = PresenceCadence.resolve(
+        prefs.getString(PresenceCadence.PREF, null),
+        if (prefs.contains(PresenceCadence.LEGACY_PREF)) prefs.getInt(PresenceCadence.LEGACY_PREF, 2) else null)
+
+    private fun densityLabel(d: PresenceCadence.Density): String = when (d) {
+        PresenceCadence.Density.QUIET -> "Quiet"
+        PresenceCadence.Density.CONVERSATIONAL -> "Conversational"
+        PresenceCadence.Density.CHATTY -> "Chatty"
+    }
+
+    private fun densityChoice(d: PresenceCadence.Density): String = densityLabel(d) + when (d) {
+        PresenceCadence.Density.QUIET -> " — a word now and then"
+        PresenceCadence.Density.CONVERSATIONAL -> " — checks in every so often"
+        PresenceCadence.Density.CHATTY -> " — keeps you company the whole time"
     }
 
     private fun echoLabel(ms: Int): String = if (ms == 0) "off" else "${ms}ms"
@@ -1330,7 +1341,7 @@ class SettingsActivity : AppCompatActivity() {
                 // which did not re-read the ER switches. Now it does (bindErControls).
                 .putBoolean("er_presence", true)
                 .putBoolean("er_semantic_barge", true)
-                .putInt("er_filler_cap", 2)
+                .putString(PresenceCadence.PREF, PresenceCadence.DEFAULT.key)
                 .putFloat("er_echo_skip_ms", 700f)
                 .putString("er_presence_voice", "sounds")
                 .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // #112: voice mode folds into Entity (GROUP_MODE branch removed); url/key untouched (identity)
