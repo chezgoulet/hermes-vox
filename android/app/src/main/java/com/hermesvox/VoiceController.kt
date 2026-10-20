@@ -161,14 +161,23 @@ class VoiceController(private val context: Context, private val session: HermesS
     // T1 probe thresholds (dd-only near-miss / mic-gap / skip telemetry — zero behavior).
     // ER Phase 4: the presence loop — lives only when the voice mode is enhanced.
     // It feeds speakGlue (the P3 path) only; never speaks over the mind's reply.
-    // 0.6.2: the filler cap is the user's Settings slider (read live per tick).
+    // The filler cap and the mid-run line cadence follow the "Presence while working"
+    // register (read live per tick).
     // 0.6.7: the presence-voice mode (silent/sounds/spoken) + the clip Context.
     val erPresence = ErPresence(
         { glue, source -> if (erPresenceOn) speakGlue(glue, source = source) },
-        { prefsGetInt("er_filler_cap", 2) },
+        { presenceDensity().fillerCap },
+        { presenceDensity() },
     ).also { p ->
         p.clipContext = context
         p.voiceMode = prefString("er_presence_voice", "sounds")
+        p.onWorkingSlot = { slot -> requestWorkingLine(slot) }
+    }
+    /** The "Presence while working" register, migrating the old filler-cap slider when unset. */
+    private fun presenceDensity(): PresenceCadence.Density {
+        val sp = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val legacy = if (sp.contains(PresenceCadence.LEGACY_PREF)) sp.getInt(PresenceCadence.LEGACY_PREF, 2) else null
+        return PresenceCadence.resolve(sp.getString(PresenceCadence.PREF, null), legacy)
     }
     /** 0.8/M3c: the soul's decision path, wired by the host (it owns the express layer).
      *  Given the caller's utterance and what the mind is doing, it returns the line the soul
@@ -200,6 +209,46 @@ class VoiceController(private val context: Context, private val session: HermesS
             }
         }
     }
+    /** The caller's words that started the current mind run, what the mind is using right now
+     *  (the latest tool call), and the mid-run lines said this run — the working directive's input. */
+    @Volatile private var workingAsk: String? = null
+    @Volatile private var mindTool: String? = null
+    private val workingSaid = ArrayList<String>()
+
+    /**
+     * A mid-run line slot opened ([PresenceCadence], on the presence tick): ask the soul for ONE
+     * short line about what the mind is doing, or silence. It renders in the narration class —
+     * dropped while another render runs, never preempting a turn decision — so the GPU cost is at
+     * most one render per interval. The line plays as glue (as a beat does) and is refused if the
+     * run ended while it rendered: the reply landed, a barge, or the call ended.
+     */
+    private fun requestWorkingLine(slot: ErPresence.Slot) {
+        val decide = soulDecide
+        if (decide == null || !erMindLive || glueBlocked()) {
+            erPresence.noteWorkingSkip(slot, if (decide == null) "no-soul" else "blocked")
+            return
+        }
+        val gen = turnGen
+        val said = synchronized(workingSaid) { workingSaid.toList() }
+        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said)
+        decide(ErSoulTurn.KIND_WORKING, directive, null, null) { o, _ ->
+            val line = ErSoulTurn.workingLine(o, said)
+            main.post {
+                val skip = when {
+                    line == null -> "silent"
+                    gen != turnGen || firstTextLatch || !erPresence.cadenceLive(slot.runId) -> "late"
+                    glueSpeaking -> "glue-playing"   // one line at a time, never two at once
+                    !canDeliverSoulLine(line) -> "undeliverable"
+                    else -> null
+                }
+                if (skip != null) { erPresence.noteWorkingSkip(slot, skip); return@post }
+                synchronized(workingSaid) { workingSaid.add(line!!) }
+                erPresence.noteWorkingLine(slot, "soul")
+                speakGlue(line!!, source = SOURCE_WORKING)
+            }
+        }
+    }
+
     /** One greeting per call. Reset in [stop] so the next call opens the same way. */
     @Volatile private var soulGreeted = false
     @Volatile private var soulSpokeThisTurn = false
@@ -878,7 +927,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         recognizer?.destroy(); recognizer = null
         // ER Phase 4: controller teardown kills the presence loop first — its
         // handler callbacks must never outlive the executor they feed.
-        erActive = false; erPresence.stop()
+        erActive = false; erPresence.stop("call-end")
         soulGreeted = false   // 0.8/M3c: the next call opens with a greeting too
         // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
         // case; this one guarantees a hangup always closes the measurement out).
@@ -1032,6 +1081,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // wait is not dead air: the beat plays through it. A decision that lands after the submit
         // may only speak a beat — the mind was not told about a late answer.
         soulSpokeThisTurn = false
+        workingAsk = text; mindTool = null
+        synchronized(workingSaid) { workingSaid.clear() }
         (tts as? SherpaTts)?.mood = VoiceMood.WARM   // a heard mood applies to the turn it was heard in
         val soulTurn = SoulTurnState()
         val decide = soulDecide
@@ -1315,6 +1366,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     "function_call" -> {
                         val name = e.optString("name")
                         val args = e.optString("arguments")
+                        mindTool = if (args.isBlank()) name else "$name (${args.take(60)})"
                         main.post { listener?.onLog("◆ tool: $name ${args.take(80)}") }
                     }
                     "function_call_output" -> {
@@ -1330,7 +1382,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // C4 K1: push firstTEXT once per turn (time from launch to the first
                         // text delta) — the OLD firstAudio site was a lie (it measured text).
                         // firstAudio now lives at the real-audio seam in the streaming worker.
-                        if (!firstTextLatch) { firstTextLatch = true; LatencyStats.pushFirstText(android.os.SystemClock.uptimeMillis() - t0) }
+                        if (!firstTextLatch) {
+                            firstTextLatch = true; LatencyStats.pushFirstText(android.os.SystemClock.uptimeMillis() - t0)
+                            erPresence.endCadence("reply")   // the reply is the voice now: no more mid-run lines
+                        }
                         streamFeed(d)   // start speaking as it streams
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
@@ -1471,10 +1526,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // so a chunk written while a beat plays used to be LOST — and with the
                             // beat on every turn that would be the first words of most answers. A
                             // beat is a few trailing words: let it land (bounded), cut it if it
-                            // runs long, then re-open the stream so this chunk plays whole.
+                            // runs long, then re-open the stream so this chunk plays whole. A
+                            // mid-run line is filler about the wait that just ended: cut at once.
                             if (glueSpeaking) {
                                 val t0h = android.os.SystemClock.uptimeMillis()
-                                while (glueSpeaking && !genCancelled && !sClosed &&
+                                while (glueSpeaking && !glueCutAtHandoff && !genCancelled && !sClosed &&
                                     android.os.SystemClock.uptimeMillis() - t0h < HANDOFF_WAIT_MS) {
                                     try { Thread.sleep(20) } catch (_: InterruptedException) { break }
                                 }
@@ -1732,6 +1788,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val glueWindow = GlueWindow()
     /** Set once this turn's reply has begun writing to the stream track (reset per turn). */
     @Volatile private var replyOwnsTrack = false
+    /** The glue playing is a mid-run line: the reply's first audio cuts it without waiting. */
+    @Volatile private var glueCutAtHandoff = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
     private val HANDOFF_WAIT_MS = 1200L
     // Streaming TTS: speak the reply as it streams (sync with the crawl), not after the
@@ -1855,6 +1913,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             stopTts()
         }
         glueSpeaking = true
+        glueCutAtHandoff = source == SOURCE_WORKING
         main.post {
             tts?.speak(text) {
                 glueSpeaking = false
@@ -1917,7 +1976,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         listener?.onState("listening")
         // ER Phase 4: a barge cuts the presence loop with everything else —
         // the user's voice outranks the soul's fillers too.
-        if (erActive) { erActive = false; erPresence.stop() }
+        if (erActive) { erActive = false; erPresence.stop("barge") }
         if (!erMindLive) {
             // Realtime (or a non-voice turn): today's behavior, unchanged.
             genCancelled = true
@@ -2038,7 +2097,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         speaking = false
         // ER Phase 4: hush cuts the presence loop with everything else (tap = STOP
         // outranks the soul's fillers, exactly like a barge does).
-        if (erActive) { erActive = false; erPresence.stop() }
+        if (erActive) { erActive = false; erPresence.stop("hush") }
         // #D1: the same single silence path as barge/endCall (fence + worker break
         // + synchronous gate release).
         silenceAll("hush")
@@ -2300,6 +2359,9 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     companion object {
         const val RMS_THRESHOLD = 0.09f
+        /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
+         *  the mark that lets the reply's first audio cut it without the beat's wait. */
+        const val SOURCE_WORKING = "soul-working"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */

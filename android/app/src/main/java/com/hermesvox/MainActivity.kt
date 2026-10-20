@@ -977,9 +977,16 @@ class MainActivity : AppCompatActivity() {
         c.soulDecide = { kind, text, toolContext, audio, cb ->
             val wav = SoulAudio.wav(audio)
             val heard = wav != null && (express as? GemmaExpress)?.hears == true
-            val directive = if (kind == ErSoulTurn.KIND_GREETING) ErSoulTurn.greetingDirective()
-            else ErSoulTurn.directive(text, toolContext, heard)
-            orch.expressAsync(VoiceOrchestrator.INTENT_SOUL_TURN, directive, "warm", if (heard) wav else null) { glue ->
+            val directive = when (kind) {
+                ErSoulTurn.KIND_GREETING -> ErSoulTurn.greetingDirective()
+                ErSoulTurn.KIND_WORKING -> text   // the controller built it: it knows the run's lines
+                else -> ErSoulTurn.directive(text, toolContext, heard)
+            }
+            // A mid-run line renders in the narration class: it never preempts a turn decision,
+            // and it is dropped (silence) while another render runs.
+            val intent = if (kind == ErSoulTurn.KIND_WORKING) VoiceOrchestrator.INTENT_SOUL_NARRATE
+                else VoiceOrchestrator.INTENT_SOUL_TURN
+            orch.expressAsync(intent, directive, "warm", if (heard) wav else null) { glue ->
                 // The tone tag leads (when the soul heard the caller); the decision follows.
                 val (mood, rest) = VoiceMood.split(glue)
                 val o = ErSoulTurn.parse(rest)
@@ -989,7 +996,7 @@ class MainActivity : AppCompatActivity() {
                     ErSoulTurn.Outcome.Escalate -> "escalate"
                     ErSoulTurn.Outcome.Nothing -> "nothing"
                 }
-                ErTelemetry.soulDecision(decision)
+                if (kind != ErSoulTurn.KIND_WORKING) ErTelemetry.soulDecision(decision)   // turn routing only
                 val chars = when (o) {
                     is ErSoulTurn.Outcome.Spoken -> o.text.length
                     is ErSoulTurn.Outcome.Beat -> o.opener.length
