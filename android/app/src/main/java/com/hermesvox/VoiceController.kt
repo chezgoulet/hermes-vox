@@ -665,6 +665,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // `!spk && !turnInFlight` skip state held >3s (a reply tail playing with the
                     // speaking flag already false = the deaf window) — once per turn.
                     var lastReadAtMs = 0L
+                    // 0.9.1: per-second duty-cycle witness (event=barge-stat) for every
+                    // checked PLAYBACK read — the near-miss probe prints only a run's
+                    // first read, which cannot show the duty cycle the gate decides on.
+                    val bargeStat = BargeStat()
                     var nearMissLoggedAtMs = 0L
                     var skipStateSinceMs = 0L
                     var skipStateLogged = false
@@ -732,6 +736,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         } else skipStateSinceMs = 0L
                         if (inGrace || stateSkip) {
                             bargeAudio.hold(frames)   // reset sustains, history only (pre-roll)
+                            bargeStat.reset()
                             continue
                         }
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
@@ -754,6 +759,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // (history/onset/fire) live in the production BargeAudioPath; the
                         // deterministic test drives this same call with a synthetic signal.
                         val bf = bargeAudio.process(frames, vadSpeech, readAt)
+                        if (spk) {
+                            bargeStat.add(bf.level, bargeAudio.floor, bargeAudio.levelFloor, vadSpeech, readAt)?.let {
+                                VoxLog.dd("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs}")
+                            }
+                        } else bargeStat.reset()
                         // 0.6.2 echo guard: track glue playback end so the capture skip
                         // window (erEchoSkipMs) starts when the filler's tail is dying.
                         if (glueSpeaking) erEchoSkipSinceMs = readAt
