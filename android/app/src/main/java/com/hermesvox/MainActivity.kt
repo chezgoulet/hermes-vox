@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
     // word the entity is actually saying, and the tail you can see is visibly unsaid.
     private var revealActive = false
     private var revealBufLoggedFor = -1   // last reply length we logged a fallback for
+    private var revealHadCursor = false   // has this reply ever had a real cursor?
     private var revealStartedAt = 0L
     private var revealEpoch = 0
     private val revealTask = object : Runnable {
@@ -74,6 +75,7 @@ class MainActivity : AppCompatActivity() {
             if (c != null) {
                 val spoken = c.speechCursor()
                 if (spoken >= 0) {
+                    revealHadCursor = true
                     val txt = c.transcriptText()
                     // Blank = nothing has reached the engine yet (one-shot synth in
                     // flight): leave whatever is on screen rather than flashing empty.
@@ -82,10 +84,13 @@ class MainActivity : AppCompatActivity() {
                     // 0.9.0 FIELD: this fallback is silent, and it is why a broken
                     // speech lock is invisible in a log while being obvious in the
                     // hand — the crawl paints the whole reply at once and the tracer
-                    // disappears. One line per reply is enough to see it happen.
-                    if (revealBufLoggedFor != replyBuf.length) {
+                    // disappears. 0.9.1: only a LOST lock is news. Before the first
+                    // phrase reaches the engine there is no cursor by design (the text
+                    // streams plainly while the mind works), and logging that made
+                    // every reply open with a false alarm — 19 lines in one field log.
+                    if (revealHadCursor && revealBufLoggedFor != replyBuf.length) {
                         revealBufLoggedFor = replyBuf.length
-                        com.hermesvox.VoxLog.d("event=reveal-fallback reason=no-cursor chars=${replyBuf.length}")
+                        com.hermesvox.VoxLog.d("event=reveal-fallback reason=lost-cursor chars=${replyBuf.length}")
                     }
                     reply.setText(replyBuf)   // system TTS: no sample accounting, no lock
                 }
@@ -1388,7 +1393,7 @@ class MainActivity : AppCompatActivity() {
                 // flag: "the app pushes the last message text to the screen when the
                 // upstream is slow." The fallback now shows only THIS turn's composed
                 // text (the arguably-correct "you see what it'll say" case, unchanged).
-                if (state == "thinking") replyBuf = ""
+                if (state == "thinking") { replyBuf = ""; revealHadCursor = false; revealBufLoggedFor = -1 }
                 // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
