@@ -42,7 +42,10 @@ DEFAULT_MODELS = Path("/home/c/stt-ab-models")
 
 PKG = "com.hermesvox.bench"
 ACT = "com.hermesvox.bench/.SttBenchActivity"
-SERIAL = "2A091FDH200AJ1"
+# The measurement phone is the operator's, not the project's: no serial is baked in.
+SERIAL = os.environ.get("SERIAL", "")
+if not SERIAL:
+    raise SystemExit("run_ab: set SERIAL to the device serial (see: adb devices)")
 
 ARMS = {
     # arm id -> model dir name, as extracted from the upstream tarball
