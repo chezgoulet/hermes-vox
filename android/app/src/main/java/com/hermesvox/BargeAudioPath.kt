@@ -29,6 +29,10 @@ internal class BargeAudioPath(
     private val vadAvailable: Boolean,
     private val levelOnlyMs: Long,
     private val carry: BargeCarry,
+    /** The sustain leak; production uses [BargeGate.SUSTAIN_LEAK_MS]. A parameter only
+     *  so the replay (BargeReplayTest) can run the shipped and the previous constant
+     *  through the same path side by side. */
+    private val leakMs: Long = BargeGate.SUSTAIN_LEAK_MS,
 ) {
 
     /** The active RMS floor: rmsMin with VAD, rmsMin * NO_VAD_RMS_BOOST without. */
@@ -81,8 +85,8 @@ internal class BargeAudioPath(
         carry.push(frames, vadSpeech || level > floor)
 
         val frameMs = frames.size * 1000L / sampleRate
-        sustainedMs = BargeGate.accumulate(sustainedMs, level > floor, frameMs)
-        sustainedLevelMs = BargeGate.accumulate(sustainedLevelMs, level > levelFloor, frameMs, levelOnlyCap)
+        sustainedMs = BargeGate.accumulate(sustainedMs, level > floor, frameMs, leakMs = leakMs)
+        sustainedLevelMs = BargeGate.accumulate(sustainedLevelMs, level > levelFloor, frameMs, levelOnlyCap, leakMs)
         if (vadSpeech) lastVadSpeechAt = nowMs
         val msSinceVadSpeech = if (lastVadSpeechAt == 0L) Long.MAX_VALUE else nowMs - lastVadSpeechAt
         val nearFloor = floor * 0.7f

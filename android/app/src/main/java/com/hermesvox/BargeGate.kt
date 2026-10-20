@@ -46,6 +46,25 @@ package com.hermesvox
  *     the last 250ms instead. The level requirement is unchanged, so this only
  *     widens the instant at which an already-qualifying level may fire.
  *
+ * 0.9.1 — why a person talking over the reply still did not fire (0.9.0 field log,
+ * 2026-10-20; proof in BargeReplayTest, the off-device replay of this exact path):
+ *
+ *  4. BREAK-EVEN ABOVE SPEECH'S DUTY. With Silero holding vad=false under echo (every
+ *     0.9.0 near-miss), only the level-only escape can fire, and it needs net
+ *     occupancy at the 0.130 bar. Syllabic speech does not sit over a bar 60% of the
+ *     time: a raised-cosine syllable peaking at 0.21 spends ~45% of its time over
+ *     0.130. At the 0.6 break-even the replay fires 0-1/10 for crest-shaped speech at
+ *     the very level the field's one playback barge fired at (0.208), at 3, 4 and
+ *     6 Hz, and misses 0.16-peak vowel-plateau speech at 3 Hz (1/10) and 6 Hz.
+ *     [SUSTAIN_LEAK_MS] 96 -> 48 puts break-even at 0.43: plateau speech peaking
+ *     0.13-0.21 then fires 10/10 at 3-6 Hz within 1.5 s, crest-shaped speech at 0.21
+ *     10/10 within 2 s. The echo side is held by AMPLITUDE, as before: the measured
+ *     residual echo (0.081-0.095) is under both the floor and the bar, so it cannot
+ *     charge either accumulator at any leak; crest-shaped echo up to 0.17 (1.8x the
+ *     measured top) still never fires in 120 s. Not fixed, on purpose: crest-only
+ *     speech peaking at just 0.16 stays unreliable — a 32ms leak would catch it but
+ *     lets 0.17 crest echo through.
+ *
  * The caller tracks [sustainedMs]: net time the RMS has held above the active floor
  * (rmsMin when VAD is available, rmsMin * [NO_VAD_RMS_BOOST] without). The caller
  * ALSO tracks [sustainedLevelMs] against the raised bar activeFloor *
@@ -99,9 +118,11 @@ object BargeGate {
     const val DEFAULT_LEVEL_ONLY_MS = 200L
 
     /** Leak subtracted from a sustain accumulator by a sub-bar read (ms). Against the
-     *  drain's 64ms frames this puts the break-even duty cycle at 96/(64+96) = 0.6:
-     *  above 60% of reads over the bar the accumulator charges, below it drains. */
-    const val SUSTAIN_LEAK_MS = 96L
+     *  drain's 64ms frames this puts the break-even duty cycle at 48/(64+48) = 0.43:
+     *  above 43% of reads over the bar the accumulator charges, below it drains.
+     *  0.9.1: 96 -> 48 (break-even 0.6 -> 0.43), from BargeReplayTest — see the class
+     *  doc's 0.9.1 entry. */
+    const val SUSTAIN_LEAK_MS = 48L
 
     /** Ceiling on a sustain accumulator so a long loud stretch cannot bank credit
      *  that outlives it (a full drain from the cap takes ~533ms of sub-bar reads). */
@@ -115,9 +136,10 @@ object BargeGate {
      * Above the bar: charge one frame, clamped to [capMs]. Below: leak
      * [SUSTAIN_LEAK_MS], clamped at 0. Pure; the caller owns the state.
      */
-    fun accumulate(prev: Long, above: Boolean, frameMs: Long, capMs: Long = SUSTAIN_CAP_MS): Long =
+    fun accumulate(prev: Long, above: Boolean, frameMs: Long, capMs: Long = SUSTAIN_CAP_MS,
+                   leakMs: Long = SUSTAIN_LEAK_MS): Long =
         if (above) minOf(prev + frameMs, maxOf(capMs, frameMs))
-        else maxOf(0L, prev - SUSTAIN_LEAK_MS)
+        else maxOf(0L, prev - leakMs)
 
     /**
      * @param rms the CURRENT read's level

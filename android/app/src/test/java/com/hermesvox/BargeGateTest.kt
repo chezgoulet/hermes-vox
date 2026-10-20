@@ -76,7 +76,7 @@ class BargeGateTest {
         // -> leaky net occupancy) and is aligned with VAD_SUSTAIN_MS.
         assertEquals(1.3f, BargeGate.LEVEL_ONLY_BOOST, 0.0f)
         assertEquals(200L, BargeGate.DEFAULT_LEVEL_ONLY_MS)
-        assertEquals(96L, BargeGate.SUSTAIN_LEAK_MS)
+        assertEquals(48L, BargeGate.SUSTAIN_LEAK_MS)   // 0.9.1: 96 -> 48, BargeReplayTest
         assertEquals(800L, BargeGate.SUSTAIN_CAP_MS)
         assertEquals(250L, BargeGate.VAD_RECENT_MS)
     }
@@ -87,9 +87,9 @@ class BargeGateTest {
         assertEquals(64L, BargeGate.accumulate(0L, above = true, frameMs = 64L))
         assertEquals(128L, BargeGate.accumulate(64L, above = true, frameMs = 64L))
         // a sub-bar read costs SUSTAIN_LEAK_MS, it no longer wipes the accumulator
-        assertEquals(104L, BargeGate.accumulate(200L, above = false, frameMs = 64L))
+        assertEquals(152L, BargeGate.accumulate(200L, above = false, frameMs = 64L))
         // ...and cannot drive it negative
-        assertEquals(0L, BargeGate.accumulate(64L, above = false, frameMs = 64L))
+        assertEquals(0L, BargeGate.accumulate(32L, above = false, frameMs = 64L))
         assertEquals(0L, BargeGate.accumulate(0L, above = false, frameMs = 64L))
     }
 
@@ -99,11 +99,12 @@ class BargeGateTest {
         assertEquals(1000L, BargeGate.accumulate(1000L, above = true, frameMs = 64L, capMs = 1000L))
     }
 
-    @Test fun leak_break_even_duty_is_sixty_percent() {
-        // the anti-self-cut invariant: 96ms leak vs 64ms frames. Below 60% duty at the
-        // bar the accumulator must trend to zero, above it must trend up.
-        assertEquals(0L, driftAfter(dutyAbove = 1, dutyBelow = 1, cycles = 12))   // 50% -> drains
-        assertTrue(driftAfter(dutyAbove = 3, dutyBelow = 1, cycles = 12) > 0L)    // 75% -> charges
+    @Test fun leak_break_even_duty_is_forty_three_percent() {
+        // 0.9.1: 48ms leak vs 64ms frames (was 96ms / 60%). Below 43% duty at the bar
+        // the accumulator must trend to zero, above it must trend up.
+        assertEquals(0L, driftAfter(dutyAbove = 1, dutyBelow = 2, cycles = 12))   // 33% -> drains
+        assertEquals(0L, driftAfter(dutyAbove = 2, dutyBelow = 3, cycles = 12))   // 40% -> drains
+        assertTrue(driftAfter(dutyAbove = 1, dutyBelow = 1, cycles = 12) > 0L)    // 50% -> charges
     }
 
     /** Net accumulator value after `cycles` of (dutyAbove above-bar, dutyBelow sub-bar) reads. */
@@ -265,23 +266,44 @@ class BargeGateTest {
             leaky.atMs < strict.atMs)
     }
 
-    @Test fun echo_shaped_series_never_fires_the_escape() {
-        // ~2s of amplitude-modulated echo at 0.15-0.17: the leak drains it every
-        // trough, so the accumulator never reaches levelOnlyMs. This is the duty-cycle
-        // guarantee that replaces the old amplitude margin.
-        assertFalse(drain(echoEnvelope).fired)
-        // still safe if the echo band shifts up: crests 0.17-0.19, same modulation
-        assertFalse(drain(FloatArray(echoEnvelope.size) { echoEnvelope[it] + 0.02f }).fired)
+    @Test fun echo_shaped_series_at_the_measured_level_never_fires() {
+        // 0.9.1 restatement (the 0.4.0.3 version asserted the 0.15-0.17 envelope below
+        // never fires; see the next test for why that is no longer claimed). The same
+        // modulation scaled so its crests sit at the MEASURED residual-echo top (0.095)
+        // is under the floor and the bar on every frame: amplitude holds it, any leak.
+        val measured = FloatArray(echoEnvelope.size) { echoEnvelope[it] * (0.095f / 0.17f) }
+        assertFalse(drain(measured).fired)
+        assertFalse(drain(FloatArray(300) { measured[it % measured.size] }).fired)
     }
 
-    @Test fun echo_shaped_series_never_fires_the_escape_even_with_shallow_troughs() {
-        // harder case: troughs only just under the bar (0.12) rather than down in the
-        // residual band, 50% duty. Must still drain.
+    @Test fun echo_crests_under_the_break_even_duty_never_fire_even_at_017() {
+        // The duty-cycle guarantee at the 0.9.1 break-even (0.43): crests far above the
+        // measured band, but over the bar on fewer than 43% of reads, drain every cycle.
+        val oneInThree = FloatArray(300) { if (it % 3 == 0) 0.17f else 0.07f }       // 33%
+        assertFalse(drain(oneInThree).fired)
+        val twoInFive = FloatArray(300) { if (it % 5 < 2) 0.17f else 0.09f }         // 40%
+        assertFalse(drain(twoInFive).fired)
+        val shallowTroughs = FloatArray(300) { if (it % 3 == 0) 0.17f else 0.12f }   // 33%, troughs just under the bar
+        assertFalse(drain(shallowTroughs).fired)
+    }
+
+    @Test fun the_0403_feared_echo_envelope_now_fires_at_the_default_floor_the_stated_trade() {
+        // THE TRADE, stated rather than hidden. 0.4.0.3 asserted that crests at 0.15-0.17
+        // over the bar on 50% of reads never fire. That band was feared from the
+        // AEC-less second-recorder era, never measured on this path (0.081-0.095 is), and
+        // it is the SAME band and duty as the user's own voice in the 0.9.0 field log
+        // (peaks 0.11-0.21, the one playback fire at 0.208). No duty-cycle rule can pass
+        // 50%-duty speech at 0.17 and reject 50%-duty echo at 0.17; 0.9.0 kept the second
+        // property and lost the first (BargeReplayTest). 0.9.1 keeps the first.
+        assertTrue(drain(echoEnvelope).fired)
         val shallow = FloatArray(30) { if (it % 2 == 0) 0.17f else 0.12f }
-        assertFalse(drain(shallow).fired)
-        // 3-on/3-off bursts are also 50% duty and must stay under the threshold
+        assertTrue(drain(shallow).fired)
+        // The mitigation for a device whose AEC really does leave echo there is the one
+        // already documented below: barge_rms_min 0.10 -> 0.14 puts the bar at 0.182.
+        assertFalse(drain(echoEnvelope, rmsMin = 0.14f).fired)
+        assertFalse(drain(shallow, rmsMin = 0.14f).fired)
         val bursty = FloatArray(30) { if ((it / 3) % 2 == 0) 0.17f else 0.09f }
-        assertFalse(drain(bursty).fired)
+        assertFalse(drain(bursty, rmsMin = 0.14f).fired)
     }
 
     @Test fun raising_the_rms_floor_restores_a_bar_above_the_self_cut_band() {
