@@ -24,7 +24,9 @@ class BargeStatTest {
         assertEquals(25, l.vadPct)
         assertEquals(0.16f, l.peak, 1e-6f)
         assertEquals((8 * 0.16 + 4 * 0.11 + 4 * 0.05) / 16, l.mean.toDouble(), 1e-6)
-        assertEquals("frames=16 floorPct=75 barPct=50 vadPct=25 peak=0.160 mean=0.120", l.render())
+        assertEquals(0.10f, l.floor, 1e-6f)
+        assertEquals(0f, l.refPeak, 0f)
+        assertEquals("frames=16 floorPct=75 barPct=50 vadPct=25 peak=0.160 mean=0.120 floor=0.100 refPeak=0.000", l.render())
     }
 
     @Test fun reset_drops_a_partial_window() {
