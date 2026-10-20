@@ -190,4 +190,17 @@ class ErSoulTurnTest {
         assertNull(ErSoulTurn.workingLine("still checking the system", said))
         assertEquals("Reading the logs now...", ErSoulTurn.workingLine("Reading the logs now", said))
     }
+    /** The guard refuses for reasons, and the field log has to be able to name them. */
+    @Test fun working_reject_names_the_reason() {
+        assertNull(ErSoulTurn.workingReject("Reading the logs now"))
+        assertEquals("not-spoken", ErSoulTurn.workingReject(ErSoulTurn.ESCALATE))
+        assertEquals("empty", ErSoulTurn.workingReject(""))
+        assertEquals("digits-or-markup", ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
+        assertEquals(
+            "too-many-words",
+            ErSoulTurn.workingReject("I am still reading through the logs for you right now")
+        )
+        assertEquals("repeat", ErSoulTurn.workingReject("Reading the logs now", listOf("reading the logs now")))
+    }
+
 }

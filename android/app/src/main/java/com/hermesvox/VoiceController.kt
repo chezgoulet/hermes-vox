@@ -241,7 +241,19 @@ class VoiceController(private val context: Context, private val session: HermesS
                     !canDeliverSoulLine(line) -> "undeliverable"
                     else -> null
                 }
-                if (skip != null) { erPresence.noteWorkingSkip(slot, skip); return@post }
+                if (skip != null) {
+                    // Diagnostics: `reason=silent` cannot tell "the soul chose silence" from "the
+                    // guard refused a good line". The owner asked to see what was thrown away, so
+                    // the refusal records its cause and the text (hidden unless transcripts are on,
+                    // exactly as the er-glue lines do).
+                    val why = ErSoulTurn.workingReject(o, said)
+                    val raw = (o as? ErSoulTurn.Outcome.Spoken)?.text
+                    VoxLog.er(
+                        "event=er-presence detail line=${slot.line} why=${why ?: "-"} " +
+                            "text=${if (logTranscripts()) (raw ?: "-").replace("\n", " ").take(90) else "<hidden>"}"
+                    )
+                    erPresence.noteWorkingSkip(slot, skip); return@post
+                }
                 synchronized(workingSaid) { workingSaid.add(line!!) }
                 erPresence.noteWorkingLine(slot, "soul")
                 speakGlue(line!!, source = SOURCE_WORKING)
