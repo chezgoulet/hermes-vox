@@ -116,6 +116,28 @@ class Guard(unittest.TestCase):
         ))
         self.assertEqual(pr.summarise(s)["guard_refusals"], {"too-long": 2, "digits-or-markup": 1})
 
+    def test_a_line_the_guard_would_have_spoken_is_not_a_refusal(self):
+        # `why=-` says the guard passed it and the slot was skipped for another reason.
+        s = pr.parse(log(
+            "event=er-presence detail line=2 why=- text=<hidden>",
+            "event=er-presence skip line=2 reason=late density=conversational",
+        ))
+        d = pr.summarise(s)
+        self.assertEqual(d["guard_refusals"], {})
+        self.assertEqual(d["skips"], {"late": 1})
+
+    def test_the_late_witness_rides_the_detail_line_without_hiding_why(self):
+        # The working lane's witness appends deltaMs= after the text, and a working `late` is a
+        # slot skip — it must never be counted as the turn lane's late_drops.
+        s = pr.parse(log(
+            "event=er-presence detail line=2 why=- text=<hidden> deltaMs=1840",
+            "event=er-presence skip line=2 reason=late density=conversational",
+            "event=er-soul-drop reason=late beat=false gen=1",
+        ))
+        d = pr.summarise(s)
+        self.assertEqual(d["skips"], {"late": 1})
+        self.assertEqual(d["late_drops"], 1)   # only the turn lane's line counts here
+
 
 class Bar(unittest.TestCase):
     def test_a_third_of_slots_speaking_fails_the_rate(self):

@@ -124,7 +124,11 @@ def parse(text: str) -> Session:
                 s.missing_ms += 1
             continue
         if m := DETAIL.search(raw):
-            s.guard_refusals[m.group(2)] = s.guard_refusals.get(m.group(2), 0) + 1
+            # `why=-` is the guard saying it would have spoken the line; the skip was for a
+            # different reason (late, glue-playing, undeliverable). Counting "-" as a refusal
+            # reason would pollute the one number this report exists to produce.
+            if m.group(2) != "-":
+                s.guard_refusals[m.group(2)] = s.guard_refusals.get(m.group(2), 0) + 1
             continue
         if m := RENDER.search(raw):
             k = m.group(1) + (":" + m.group(2) if m.group(2) else "")
