@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,6 +46,19 @@ class SpeechCursorTest {
         val c = twoPhrases()
         assertEquals(30, c.charsSpoken(3000))            // exactly done
         assertEquals(30, c.charsSpoken(9_000_000))       // never over-reveals
+    }
+
+    @Test fun a_head_past_the_registered_segments_is_an_overrun_not_a_finished_reply() {
+        // FIELD 2026-10-20: between TTS chunks the playback head keeps advancing while
+        // nothing new is registered. charsSpoken's past-the-end answer is "everything
+        // registered" — and because the reveal is monotonic, one such tick pinned the
+        // crawl to the end of the reply for the rest of it. The caller must be able to
+        // tell "finished" from "between chunks", which is what isOverrun is for.
+        val c = twoPhrases()
+        assertFalse(c.isOverrun(2999))
+        assertFalse("exactly at the end is finished, not a gap", c.isOverrun(3000))
+        assertTrue(c.isOverrun(3001))
+        assertFalse("nothing registered yet is not an overrun", SpeechCursor(emptyList(), emptyList()).isOverrun(100))
     }
 
     @Test fun empty_accounting_reveals_nothing() {

@@ -64,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     // speech cursor — the AudioTrack playback head — so the bright/dim boundary is the
     // word the entity is actually saying, and the tail you can see is visibly unsaid.
     private var revealActive = false
+    private var revealBufLoggedFor = -1   // last reply length we logged a fallback for
     private var revealStartedAt = 0L
     private var revealEpoch = 0
     private val revealTask = object : Runnable {
@@ -78,6 +79,14 @@ class MainActivity : AppCompatActivity() {
                     // flight): leave whatever is on screen rather than flashing empty.
                     if (txt.isNotBlank()) reply.setText(txt, spoken)
                 } else {
+                    // 0.9.0 FIELD: this fallback is silent, and it is why a broken
+                    // speech lock is invisible in a log while being obvious in the
+                    // hand — the crawl paints the whole reply at once and the tracer
+                    // disappears. One line per reply is enough to see it happen.
+                    if (revealBufLoggedFor != replyBuf.length) {
+                        revealBufLoggedFor = replyBuf.length
+                        com.hermesvox.VoxLog.d("event=reveal-fallback reason=no-cursor chars=${replyBuf.length}")
+                    }
                     reply.setText(replyBuf)   // system TTS: no sample accounting, no lock
                 }
             }
