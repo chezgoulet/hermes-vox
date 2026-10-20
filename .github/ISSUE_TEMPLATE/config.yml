@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question (Q&A)
+    url: https://github.com/chezgoulet/hermes-vox/discussions/categories/q-a
+    about: Setup help, "how do I…", and troubleshooting that isn't a bug.
+  - name: Open-ended idea
+    url: https://github.com/chezgoulet/hermes-vox/discussions/categories/ideas
+    about: Early ideas that aren't a task yet.
+  - name: Show and tell
+    url: https://github.com/chezgoulet/hermes-vox/discussions/categories/show-and-tell
+    about: Setups, automations, screenshots.
