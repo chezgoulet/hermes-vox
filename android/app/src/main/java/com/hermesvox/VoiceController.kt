@@ -448,6 +448,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     var lastSpeechEnd = 0
                     val seeded = seed
                     seed = null
+                    // EndpointRule.utteranceMs: when this segment's SPEECH began (0 = not yet).
+                    var speechStartAt = 0L
                     if (seeded != null) {
                         // #12: the barge's words open this segment — in speech, with their
                         // onset pre-roll, so the utterance is transcribed whole as the turn.
@@ -457,6 +459,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         lastSpeechEnd = seg.size
                     }
                     val segStart = android.os.SystemClock.uptimeMillis() - seg.size * 1000L / sr
+                    if (seeded != null) speechStartAt = segStart   // the carry opens in speech
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
                     val partialEnabled = micBool("partial_stt", true)
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
@@ -479,6 +482,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // silence accrue faster than wall-clock and cut the user off
                         // mid-sentence when the pause threshold fired early.
                         if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
                             for (f in frames) seg.add(f)
@@ -493,7 +497,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 800ms pause rule owns normal turn ends. The partial early-start
                         // worker keeps running inside an extended segment (a 6 s tail
                         // snapshot past 8 s — a trigger only; the text is the whole segment).
-                        val elapsedMs = android.os.SystemClock.uptimeMillis() - segStart
+                        // 0.9.1: from the speech onset, not the mic open (EndpointRule.utteranceMs).
+                        val elapsedMs = EndpointRule.utteranceMs(android.os.SystemClock.uptimeMillis(), speechStartAt)
                         if (EndpointRule.shouldStop(elapsedMs, silentMs.toLong(), maxMs.toLong(), hardMs)) break
                         if (inSpeech && elapsedMs >= maxMs && !extendedLogged) {
                             extendedLogged = true
@@ -665,6 +670,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // `!spk && !turnInFlight` skip state held >3s (a reply tail playing with the
                     // speaking flag already false = the deaf window) — once per turn.
                     var lastReadAtMs = 0L
+                    // 0.9.1: per-second duty-cycle witness (event=barge-stat) for every
+                    // checked PLAYBACK read — the near-miss probe prints only a run's
+                    // first read, which cannot show the duty cycle the gate decides on.
+                    val bargeStat = BargeStat()
                     var nearMissLoggedAtMs = 0L
                     var skipStateSinceMs = 0L
                     var skipStateLogged = false
@@ -678,8 +687,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val dn = try { r.read(shortBuf, 0, shortBuf.size, AudioRecord.READ_NON_BLOCKING) } catch (_: Throwable) { 0 }
                         if (dn <= 0) break
                     }
-                    while (listening && !gateReleased &&
-                        android.os.SystemClock.uptimeMillis() - gateClosedAt < TURN_GATE_TIMEOUT_MS) {
+                    // 0.9.1 TurnGateCeiling: the ceiling counts from the turn's last sign of
+                    // life, not from gate close — a long reply is not a wedged gate.
+                    var lastAliveAt = gateClosedAt
+                    var ceilingHit = false
+                    while (listening && !gateReleased) {
+                        val tickAt = android.os.SystemClock.uptimeMillis()
+                        if (turnInFlight || speaking || sRunning) lastAliveAt = tickAt
+                        if (TurnGateCeiling.expired(tickAt, gateClosedAt, lastAliveAt)) { ceilingHit = true; break }
                         if (latch.count == 0L) { gateReleased = true; break }   // gate open -> stop draining
                         val n = try { r.read(shortBuf, 0, shortBuf.size) } catch (_: Throwable) { 0 }
                         if (n <= 0) {
@@ -732,6 +747,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         } else skipStateSinceMs = 0L
                         if (inGrace || stateSkip) {
                             bargeAudio.hold(frames)   // reset sustains, history only (pre-roll)
+                            bargeStat.reset()
                             continue
                         }
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
@@ -754,6 +770,16 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // (history/onset/fire) live in the production BargeAudioPath; the
                         // deterministic test drives this same call with a synthetic signal.
                         val bf = bargeAudio.process(frames, vadSpeech, readAt)
+                        if (spk) {
+                            bargeStat.add(bf.level, bargeAudio.floor, bargeAudio.levelFloor, vadSpeech, readAt)?.let {
+                                // d(), not dd(): this line exists to be read in an
+                                // EXPORTED log. dd() reaches the file only with the
+                                // debug-file toggle on — the 0.6.4 field bug (the ER
+                                // verdict lines were invisible in the export for
+                                // exactly this reason). One line a second is cheap.
+                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs}")
+                            }
+                        } else bargeStat.reset()
                         // 0.6.2 echo guard: track glue playback end so the capture skip
                         // window (erEchoSkipMs) starts when the filler's tail is dying.
                         if (glueSpeaking) erEchoSkipSinceMs = readAt
@@ -775,6 +801,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                     }
                     val gateLockedNow = android.os.SystemClock.uptimeMillis()
+                    // 0.9.1: every ceiling exit is logged — 0.9.0's flat 60 s exit was silent
+                    // whenever the drain itself was reading (always), so the field log shows
+                    // only the mic reopening mid-reply (event=cue cue=listening).
+                    if (ceilingHit)
+                        VoxLog.w("event=gate-ceiling gen=$myGen afterClose=${gateLockedNow - gateClosedAt}ms sinceAlive=${gateLockedNow - lastAliveAt}ms speaking=$speaking turnInFlight=$turnInFlight sRunning=$sRunning")
                     if (!gateReleased && gateLockedNow - gateClosedAt >= TURN_GATE_TIMEOUT_MS && gateLockedNow - lastActivityAt > GATE_STALL_IDLE_MS)
                         VoxLog.w("event=gate-timeout await=turn-gate gen=$myGen after=${TURN_GATE_TIMEOUT_MS}ms sinceActivity=${gateLockedNow - lastActivityAt}ms still-locked speaking=$speaking streamed=$streamed sRunning=$sRunning turnInFlight=$turnInFlight")
                     vad?.reset()   // clear barge-window VAD state before the next turn's segmentation

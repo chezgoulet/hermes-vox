@@ -29,7 +29,7 @@ package com.hermesvox
 class BargeCarry(
     private val sampleRate: Int,
     private val preRollMs: Int = 300,
-    historyMs: Int = 2_000,
+    historyMs: Int = 4_000,
     maxMs: Int = 30_000,
     private val onsetQuietMs: Int = 400,
 ) {
@@ -60,6 +60,13 @@ class BargeCarry(
         }
         for (f in frames) { ring[(written % ring.size).toInt()] = f; written++ }
     }
+
+    // 0.9.1: the ring is 4 s (was 2 s). The onset is only kept while it is still in the
+    // ring, so a barge that fires more than historyMs - preRollMs after the user began
+    // carried the TAIL of their sentence — BargeReplayTest measured a 2,688 ms fire on
+    // the old leak whose carry started 2,000 ms back, mid-utterance. The pre-roll stays
+    // 300 ms: during playback everything before the onset is the reply's own echo, and
+    // a longer pre-roll would hand that to the recognizer as the user's words.
 
     /** The barge decision fired: freeze [onset - preRoll, now) as the carry head.
      *  With no tracked onset (the level-only escape can fire without one), keep
