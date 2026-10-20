@@ -305,3 +305,29 @@ factor of twenty.
 
 **Therefore 0.9.2's gate is a constant tail, not a lower RTF.** Any change that makes the
 product faster without making the tail constant has not addressed this.
+
+## D18 — Cadence, quantified: 700 ms and 1.4 s
+
+Set 2026-10-20. **Amends D17's numbers; the principle is unchanged.**
+
+D17 set p50 ≤ 1.5 s and p95 ≤ 2.5 s on the assumption that under a second reads as immediate
+and over two and a half reads as broken. The research checkpoint
+(`docs/RESEARCH-2026-10-voice-agents.md` §2) shows that assumption was calibrated to *not
+broken* rather than to *natural*: across 831 measured turn transitions with a voice agent, the
+agent's mean floor-transfer offset was **1366 ms**, and the authors' judgement is that this sits
+in the range of *meaningfully marked* gaps in human conversation — the thing that strips
+naturalness. Human turn gaps are commonly 200–300 ms; the ceiling for unmarked silence is about
+one second.
+
+**The target is now: speech-end to first audio, p50 ≤ 700 ms, p95 ≤ 1.4 s.** 1.4 s is a bar to
+beat, not to meet. The constant-tail property from D17 is unchanged and remains the more
+important half: the wait must not grow with how long the user spoke.
+
+**What this forces on the design.** At 700 ms you cannot wait out a silence threshold, then
+decode, then think, then synthesise. The endpointer must commit early and be wrong sometimes —
+which is what the provisional-endpoint frame is for — TTS must begin before the reply is
+complete, and nothing expensive (presence asides included) may compete for the CPU at the
+turn boundary.
+
+**If p95 cannot be met on-device, record the gap and the cause.** Widening the target silently
+is how a budget stops meaning anything.
