@@ -211,3 +211,24 @@ Consequence worth naming: ER carries the on-device Gemma presence model and the 
 path, so it is the heavier mode and it is not the default. Freezing Realtime means the
 default experience stays plain until ER is promoted — the promotion is a decision
 someone has to make, not something that happens by drift.
+
+## D14 — After 1.0: F-Droid at the 1.0 release, multi-profile in 1.1, wake word in 1.2
+
+Set 2026-10-20.
+
+**F-Droid is submitted with the 1.0 release.** Not before. The recipe and the metadata are
+prepared against the tag, and the submission rides the same cut — the app is already
+reproducible, which is the part their `Binaries:` flow turns on.
+
+**Multi-profile (#174) is 1.1.** The client-side registry and switcher; discovery from the
+gateway stays a separate contract, because `GET /v1/models` returns one entity name.
+
+**Wake word (D6) is 1.2.** Which makes 1.2 the point at which the training question is
+answered rather than deferred: the House has no ML-training GPU, so step one ("train Hey
+Hermes in our own pipeline") needs rented compute or a decision to drop it.
+
+**A consequence recorded rather than discovered later.** D3 lists *"F-Droid accepted"* as a
+1.0 gate. Submitting at the 1.0 release puts acceptance **after** 1.0, because the review
+is external and slow. Either the gate is amended to *"submission made, and a rebuild of the
+released tag proven to match our APK"*, or the submission moves earlier — 0.9.2. This is a
+decision for the 1.0 cut and should be settled before it, not during it.
