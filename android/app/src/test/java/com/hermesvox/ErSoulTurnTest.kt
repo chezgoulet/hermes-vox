@@ -2,6 +2,7 @@ package com.hermesvox
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -153,5 +154,40 @@ class ErSoulTurnTest {
 
     @Test fun silence_is_treated_as_a_repeat() {
         assertTrue(ErSoulTurn.isRepeat("   ", emptyList(), 0L))
+    }
+
+    // ---- the mid-run line: the mind is still working ----
+
+    @Test fun the_working_directive_offers_silence_and_lists_what_was_said() {
+        val d = ErSoulTurn.workingDirective("check the server", "terminal (sleep 70)", listOf("Checking on it now..."))
+        assertTrue(d.contains("\"check the server\""))
+        assertTrue(d.contains("terminal (sleep 70)"))
+        assertTrue("silence must be offered", d.contains(ErSoulTurn.ESCALATE))
+        assertTrue("the run's lines ride the directive", d.contains("\"Checking on it now...\""))
+        assertTrue(d.contains("never a result, a fact"))
+        assertFalse(ErSoulTurn.workingDirective("x").contains("already said"))
+    }
+
+    @Test fun a_working_line_speaks_only_a_plain_short_line() {
+        assertEquals("Still digging through it...", ErSoulTurn.workingLine("Still digging through it"))
+        assertEquals("Almost there.", ErSoulTurn.workingLine("\"Almost there.\""))
+        // Silence in every form the parse knows.
+        assertNull(ErSoulTurn.workingLine(ErSoulTurn.ESCALATE))
+        assertNull(ErSoulTurn.workingLine("escalate"))
+        assertNull(ErSoulTurn.workingLine("<<ESCALATE>> hmm, let me see"))
+        assertNull(ErSoulTurn.workingLine(""))
+        assertNull(ErSoulTurn.workingLine(null))
+    }
+
+    @Test fun a_working_line_obeys_the_contract_in_code() {
+        // A number is a fact; a long line is not one clause.
+        assertNull(ErSoulTurn.workingLine("Your server has 3 errors"))
+        assertNull(ErSoulTurn.workingLine("I am still checking the system status for you right now, hang on"))
+    }
+
+    @Test fun a_working_line_never_repeats_across_the_run() {
+        val said = listOf("Still checking the system...")
+        assertNull(ErSoulTurn.workingLine("still checking the system", said))
+        assertEquals("Reading the logs now...", ErSoulTurn.workingLine("Reading the logs now", said))
     }
 }
