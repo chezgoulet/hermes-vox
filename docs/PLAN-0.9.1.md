@@ -76,6 +76,9 @@ default; without it the skip line records `why=` and `text=<hidden>`.
 - the arm is selectable and co-resident, and the default decision is written with its numbers;
 - the presence bar above is met on one real long run, with the summary in the release notes;
 - one real-room night with the owner on the arm;
+- a **research checkpoint** recorded in `docs/RESEARCH-*.md` for the areas this release touches,
+  with every assumption it leans on either confirmed or amended — the first one is
+  `docs/RESEARCH-2026-10-voice-agents.md`;
 - the **standing cut checklist** passes — it is not release content, see
   `PLAN-0.9.x-to-1.0.md`: live gateway suite green, behaviour matrix on two devices,
   performance baseline recorded, no open severe bug without a written reason.
