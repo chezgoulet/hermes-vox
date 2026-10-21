@@ -69,6 +69,19 @@ jobs:
           key: gradle-${{ hashFiles('android/app/build.gradle') }}
           restore-keys: gradle-
 
+      # A nightly and a release can carry the SAME versionCode (they do right now: 144),
+      # so without this the phone cannot tell you which build it is actually running.
+      # The label changes and nothing else: versionCode is untouched, which is what
+      # installability depends on.
+      - name: Stamp the build identity
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          VERSION=$(grep -m1 'versionName' android/app/build.gradle | sed 's/.*"\(.*\)".*/\1/')
+          case "$VERSION" in *-nightly-*) echo "already stamped: $VERSION"; exit 1 ;; esac
+          sed -i "s/versionName \"$VERSION\"/versionName \"$VERSION-nightly-$SHORT\"/" android/app/build.gradle
+          grep -q "versionName \"$VERSION-nightly-$SHORT\"" android/app/build.gradle
+          echo "nightly label: $VERSION-nightly-$SHORT (versionCode untouched: $(grep -m1 versionCode android/app/build.gradle | awk '{print $2}'))"
+
       - name: Build release APK + unit tests
         working-directory: android
         run: ./gradlew --no-daemon -q assembleRelease testReleaseUnitTest
@@ -107,12 +120,14 @@ jobs:
       - name: Name the nightly APK
         working-directory: android
         run: |
+          # The stamp already carries the version and the commit, so the asset name is
+          # just the version: hermes-vox-0.9.0.1-nightly-e434435.apk
           VERSION=$(grep -m1 'versionName' app/build.gradle | sed 's/.*"\(.*\)".*/\1/')
           VC=$(grep -m1 'versionCode' app/build.gradle | awk '{print $2}')
           SHORT=$(git rev-parse --short HEAD)
           mkdir -p ../dist
-          cp app/build/outputs/apk/release/*.apk ../dist/hermes-vox-${VERSION}-nightly-${SHORT}.apk
-          echo "APK=hermes-vox-${VERSION}-nightly-${SHORT}.apk" >> $GITHUB_ENV
+          cp app/build/outputs/apk/release/*.apk ../dist/hermes-vox-${VERSION}.apk
+          echo "APK=hermes-vox-${VERSION}.apk" >> $GITHUB_ENV
           echo "TAG=nightly-$(date -u +%Y%m%d-%H%M%S)-${SHORT}" >> $GITHUB_ENV
 
       - name: Create the nightly prerelease + upload the APK
