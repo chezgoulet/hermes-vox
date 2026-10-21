@@ -410,3 +410,49 @@ that produced them, exported by an explicit "copy presence log" action — on th
 uploaded — and an issue template that asks for the line, the directive, and which of the five
 rules it broke. Selection bias is fine for discovering a *class* of failure and useless for a
 rate; rates come from the bench in #256.
+
+## D21 — Three releases, then a declaration: 0.9.1 mechanics, 0.9.2 Presence, 1.0 everything else
+
+Set 2026-10-21. **Supersedes the release shape in D14** (multi-profile in 1.1, wake word in 1.2) and
+the 0.9.1 / 0.9.2 / 0.9.3 split in `PLAN-0.9.x-to-1.0.md`. D13 is already retired by D16 and is not
+reinstated here.
+
+The series was shaped as three small releases and a declaration, each a slice of the same work.
+That optimised for shipping often and produced a plan whose shape had to be explained before it
+could be followed. The replacement is three releases, each with a claim.
+
+**0.9.1 — mechanics.** The app is fast, correct and navigable with Presence **off**, and every
+primitive Presence needs exists, is measured, and carries a bar: capture, recognition, endpointing,
+the reply lifecycle under interruption, profiles, the commands surface, first run, the look, and the
+instruments. Presence is not required to have a good call; that is the test of the primitives.
+
+**0.9.2 — Presence.** Presence is the product. The two-mode distinction goes, and D16 finishes here:
+`presence_enabled`, default on, no selector, no mode label. Asides, backchannels, resume after an
+interruption, overlap classification, the render budget, and a tuning bar with a per-session
+instrument.
+
+**1.0 — the general release.** Everything else plotted, including what was numbered 2.0: continuity,
+the household, the store rail, and the standing gates held at once. It has no date. It is cut when
+the features are complete and stable in the community's hands, and the community's answers decide
+what "complete" includes.
+
+**Future — unnumbered and community-led.** Entity calls, remote control of the app's interface, the
+wake word and the watch items are recorded, not scheduled. They move out of that list when the
+community asks for them (#268), not when the plan runs out of numbers.
+
+**The rule that places an issue**, so the next one does not need a conversation:
+
+- a defect that breaks a call or a screen, or a capability the app needs whether or not Presence is
+  on → **0.9.1**;
+- a behaviour that exists only because Presence is on → **0.9.2**;
+- a capability that needs a second surface or a second person → **1.0**;
+- something that needs the community to want it first → **future**.
+
+**Milestones are labels in this repo.** There are no GitHub milestones; `milestone/*` labels carry
+the release, and the roadmap and plan documents carry the reasoning. Retired labels are deleted
+rather than left to mean something else: `milestone/0.9`, `milestone/0.9.3`, `milestone/1.1`,
+`milestone/1.2`, `milestone/2.0`, `milestone/settings-ux`.
+
+**Two consequences worth recording.** Multi-profile moves from 1.1 into 0.9.1, because a profile
+switcher is plumbing and the app is not excellent without it. Wake word moves from 1.2 to unnumbered,
+because it needs training compute and a demonstrated want, in that order.
