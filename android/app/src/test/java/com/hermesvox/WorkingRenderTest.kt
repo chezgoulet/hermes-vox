@@ -83,4 +83,27 @@ class WorkingRenderTest {
         assertNull(warm.take())
         assertEquals(0L, warm.doneAtMs())
     }
+
+    @Test fun the_voucher_travels_with_the_render_so_delivery_cannot_re_measure_it() {
+        // #218: the line says the wait as it was when the line was WRITTEN, and delivery happens
+        // seconds later. The voucher is the render's, so an honest line is never refused for the
+        // drift between composing it and speaking it.
+        val warm = WorkingRender(gen = 1, requestedAtMs = lagMs, vouchedSeconds = 22L)
+        warm.settle(ErSoulTurn.Outcome.Spoken("We're about 22 seconds in"), slotOpensAt + renderMs)
+
+        assertEquals(22L, warm.vouchedSeconds)
+        assertEquals(
+            "We're about 22 seconds in...",
+            ErSoulTurn.workingLine(warm.take()!!, emptyList(), warm.vouchedSeconds),
+        )
+        // Re-measured at delivery (25 s) the same honest line would be refused — which is why the
+        // voucher is not recomputed here.
+        assertNull(ErSoulTurn.workingLine(warm.take()!!, emptyList(), 25L))
+    }
+
+    @Test fun a_render_with_no_wait_vouches_for_nothing() {
+        // Before a turn has started there is no wait to offer, and the guard keeps the old rule.
+        assertNull(WorkingRender(gen = 1, requestedAtMs = lagMs).vouchedSeconds)
+        assertNull(ErSoulTurn.workingLine("About 90 seconds in", emptyList(), WorkingRender(1, lagMs).vouchedSeconds))
+    }
 }

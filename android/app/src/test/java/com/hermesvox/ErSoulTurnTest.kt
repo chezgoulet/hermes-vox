@@ -195,7 +195,9 @@ class ErSoulTurnTest {
         assertNull(ErSoulTurn.workingReject("Reading the logs now"))
         assertEquals("not-spoken", ErSoulTurn.workingReject(ErSoulTurn.ESCALATE))
         assertEquals("empty", ErSoulTurn.workingReject(""))
-        assertEquals("digits-or-markup", ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
+        // Nothing is vouched for in this call, so the old rule applies — under the number's own
+        // reason, which is what tells a field log an invented number from markup (#218).
+        assertEquals("digits-unvouched", ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
         assertEquals(
             "too-many-words",
             ErSoulTurn.workingReject("I am still reading through the logs for you right now")

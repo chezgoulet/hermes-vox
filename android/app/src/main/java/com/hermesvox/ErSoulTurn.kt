@@ -129,17 +129,32 @@ object ErSoulTurn {
      * The lines already said this run are listed so the soul does not say them again; the code
      * guard ([workingLine]) enforces it regardless. The bounds are the beat's: a few words, no
      * fact, no result, no number, no promise.
+     *
+     * [waitedSeconds] is the one number the client can vouch for (#218): seconds since the turn
+     * started, on the same clock the latency stats use. The model cannot know how long the caller
+     * has waited — this is the client's fact, not the model's — so the directive offers exactly
+     * that value, written in digits, and the guard ([workingLine]) accepts that number once and
+     * no other. Null vouches for nothing and the allowance is not offered at all.
      */
-    fun workingDirective(callerText: String, toolContext: String? = null, said: List<String> = emptyList()): String {
+    fun workingDirective(
+        callerText: String,
+        toolContext: String? = null,
+        said: List<String> = emptyList(),
+        waitedSeconds: Long? = null,
+    ): String {
         val ctx = if (toolContext.isNullOrBlank()) "" else " Right now it is using: $toolContext."
         val already = if (said.isEmpty()) "" else
             " You have already said: " + said.joinToString(", ") { "\"$it\"" } +
                 ". Do not say any of those again, or anything close to them."
+        val wait = if (waitedSeconds == null) "" else
+            " The one number you may use is the wait: they have been waiting $waitedSeconds " +
+                "seconds, so you may say that — written exactly as \"$waitedSeconds seconds\", " +
+                "the number $waitedSeconds once, with no other number anywhere in the line."
         return "You are still on the call. The caller asked: \"$callerText\", and the mind is still " +
             "working on it.$ctx$already " +
             "If a few words would keep them company, say ONE short line in your own voice, under " +
             "$MAX_OPENER_WORDS words, about what you are doing for them — never a result, a fact, a " +
-            "number or a promise. Otherwise reply with exactly $ESCALATE."
+            "number or a promise.$wait Otherwise reply with exactly $ESCALATE."
     }
 
     /**
@@ -147,14 +162,25 @@ object ErSoulTurn {
      * in any form is silence), it must pass the beat's bounds ([opener]: short, no digits, no
      * markup), and it must not repeat a line already said this run — across the whole run, not the
      * [REPEAT_WINDOW_MS] the glue ring keeps, because two lines 40 s apart are still a stuck record.
+     *
+     * [vouchedSeconds] is the one number the client can vouch for (#218): how long the caller has
+     * been waiting, as the controller measured it. A line may carry that value, once, and no other
+     * number. Null vouches for nothing, so a number is refused exactly as it always was.
      */
-    fun workingLine(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
-        workingLine(parse(rendered), saidThisRun)
+    fun workingLine(
+        rendered: String?,
+        saidThisRun: List<String> = emptyList(),
+        vouchedSeconds: Long? = null,
+    ): String? = workingLine(parse(rendered), saidThisRun, vouchedSeconds)
 
     /** [workingLine] for an already-parsed decision (the host's soul hook parses). */
-    fun workingLine(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
+    fun workingLine(
+        decision: Outcome,
+        saidThisRun: List<String> = emptyList(),
+        vouchedSeconds: Long? = null,
+    ): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return null
-        val line = opener(text) ?: return null
+        val line = opener(text, vouchedSeconds) ?: return null
         val n = norm(line)
         return if (saidThisRun.any { norm(it) == n }) null else line
     }
@@ -166,25 +192,38 @@ object ErSoulTurn {
      * what was discarded, and the answer decides whether the bounds are wrong.
      *
      * Reasons, in the order the guard applies them: `not-spoken` (escalate or empty render),
-     * `empty`, `too-long` (> [MAX_OPENER_CHARS]), `digits-or-markup`, `too-many-words`
-     * (> [MAX_OPENER_WORDS]), `repeat` (same line already said this run).
+     * `empty`, `too-long` (> [MAX_OPENER_CHARS]), [REASON_UNVOUCHED_NUMBER] (a number the client
+     * did not vouch for: two of them, the wrong one, or any number when none was offered),
+     * `digits-or-markup` (markup characters — the name is unchanged for log continuity, and it is
+     * still true of the line), `too-many-words` (> [MAX_OPENER_WORDS]), `repeat` (same line
+     * already said this run).
      */
     /** [workingReject] for raw model output (the same parse the caller uses). */
-    fun workingReject(rendered: String?, saidThisRun: List<String> = emptyList()): String? =
+    fun workingReject(
+        rendered: String?,
+        saidThisRun: List<String> = emptyList(),
+        vouchedSeconds: Long? = null,
+    ): String? =
         // A blank render is "empty", not "not-spoken": parse() turns both into Nothing, and the
         // difference is the diagnosis the log needs.
-        if (rendered.isNullOrBlank()) "empty" else workingReject(parse(rendered), saidThisRun)
+        if (rendered.isNullOrBlank()) "empty"
+        else workingReject(parse(rendered), saidThisRun, vouchedSeconds)
 
-    fun workingReject(decision: Outcome, saidThisRun: List<String> = emptyList()): String? {
+    fun workingReject(
+        decision: Outcome,
+        saidThisRun: List<String> = emptyList(),
+        vouchedSeconds: Long? = null,
+    ): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
         val firstLine = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
             ?: return "empty"
         val t = firstLine.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
         if (t.isEmpty()) return "empty"
         if (t.length > MAX_OPENER_CHARS) return "too-long"
-        if (t.any { it.isDigit() || it == '<' || it == '>' || it == '[' || it == ']' }) return "digits-or-markup"
+        numberRefusal(t, vouchedSeconds)?.let { return it }
+        if (hasMarkup(t)) return "digits-or-markup"
         if (t.split(Regex("\\s+")).count { it.isNotEmpty() } > MAX_OPENER_WORDS) return "too-many-words"
-        val line = opener(text) ?: return "empty"
+        val line = opener(text, vouchedSeconds) ?: return "empty"
         return if (saidThisRun.any { norm(it) == norm(line) }) "repeat" else null
     }
 
@@ -193,20 +232,64 @@ object ErSoulTurn {
     const val MAX_OPENER_CHARS = 60
 
     /**
+     * #218: the refusal reason for a number the client did not vouch for — two of them, the wrong
+     * one, or any number when nothing was offered. Its own token so a field log can tell an
+     * invented number from a wrapped line; the number is the dangerous one.
+     */
+    const val REASON_UNVOUCHED_NUMBER = "digits-unvouched"
+
+    /**
      * Sanitise a candidate opener, or null if it cannot be spoken safely. The Contract is enforced
      * here in code, not trusted to a 2B: no digits (a number is a fact), no markup, bounded length.
      * A trailing ellipsis gives the voice a trailing-off prosody, so the cut into the mind's answer
      * sounds like a person continuing rather than being interrupted.
+     *
+     * [vouchedSeconds] is the working lane's one exception (#218): the caller's measured wait, and
+     * only that, may appear in the line. The beat path calls this with no voucher, so a number in a
+     * beat is still refused — the turn lane is untouched.
      */
-    fun opener(raw: String): String? {
+    fun opener(raw: String, vouchedSeconds: Long? = null): String? {
         val line = raw.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
         val t = line.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
         if (t.isEmpty() || t.length > MAX_OPENER_CHARS) return null
-        if (t.any { it.isDigit() || it == '<' || it == '>' || it == '[' || it == ']' }) return null
+        if (numberRefusal(t, vouchedSeconds) != null) return null
+        if (hasMarkup(t)) return null
         val words = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty() || words.size > MAX_OPENER_WORDS) return null
         return if (t.last() in ".!?…") t else "$t..."
     }
+
+    /**
+     * Why [t]'s numbers cannot be spoken, or null when they can: at most ONE digit run, and only
+     * the value the client vouched for. Two numbers are refused even when both are that value —
+     * a line with two numbers is a line doing arithmetic, which is the model's guess, not the
+     * client's measurement. A number with nothing vouched is refused exactly as it always was.
+     *
+     * The comparison is on the digit run as written: the value the client offers is the value the
+     * line must carry, so "090" is not "90" and "1:30" is two numbers.
+     */
+    private fun numberRefusal(t: String, vouchedSeconds: Long?): String? {
+        val runs = digitRuns(t)
+        if (runs.isEmpty()) return null
+        if (runs.size == 1 && vouchedSeconds != null && runs[0] == vouchedSeconds.toString()) return null
+        return REASON_UNVOUCHED_NUMBER
+    }
+
+    /** The digit runs in [t], left to right. A number is a run of digits. */
+    private fun digitRuns(t: String): List<String> {
+        val runs = ArrayList<String>()
+        val cur = StringBuilder()
+        for (c in t) {
+            if (c.isDigit()) cur.append(c)
+            else if (cur.isNotEmpty()) { runs.add(cur.toString()); cur.setLength(0) }
+        }
+        if (cur.isNotEmpty()) runs.add(cur.toString())
+        return runs
+    }
+
+    /** The markup the voice must never read aloud. Digits are bounded separately, by number. */
+    private fun hasMarkup(t: String): Boolean =
+        t.any { it == '<' || it == '>' || it == '[' || it == ']' }
 
     /**
      * Parse the model's output into the decision.
