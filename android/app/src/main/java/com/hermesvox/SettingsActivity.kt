@@ -358,8 +358,16 @@ class SettingsActivity : AppCompatActivity() {
             val reply = try { s.turnStored(directive) } catch (e: Throwable) {
                 VoxLog.w("event=vox-resync-failed err=${e.message?.take(120)}"); null
             }
-            val doc = VoxSoul.extract(reply)
-            val validated = VoxSoul.validate(doc)
+            // #220: one call does extract → repair → validate, so a document that arrives
+            // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
+            // instead of costing the user a second button press. The retry below stays as
+            // the fallback for a reply that really has no document in it.
+            val outcome = VoxSoul.resync(reply)
+            val document = when (outcome) {
+                is VoxSoul.Outcome.Accepted -> outcome.document
+                is VoxSoul.Outcome.Repaired -> outcome.document
+                is VoxSoul.Outcome.Rejected -> null
+            }
             // 0.6.7: capture WHAT the entity actually said (first ~240 chars,
             // sanitized for a dialog) so a failed sync is diagnosable from the
             // screenshot — "empty document" alone told us nothing.
@@ -368,34 +376,41 @@ class SettingsActivity : AppCompatActivity() {
                 ?.take(240)
                 ?.ifBlank { "(reply was blank)" }
                 ?: "(no reply)"
-            VoxLog.er("event=vox-resync doc=${doc?.length ?: 0} result=${validated.let { if (it is VoxSoul.Valid.Bad) it.reason else "ok" }} reply=$replyEvidence")
-            val result = when (validated) {
-                is VoxSoul.Valid.Ok -> {
-                    val wrote = VoxMirror.write(this, validated.document)
-                    if (wrote) "ok" else "mirror-write failed"
-                }
-                is VoxSoul.Valid.Bad -> "invalid: ${validated.reason}"
+            val verdict = when (outcome) {
+                is VoxSoul.Outcome.Accepted -> "ok"
+                is VoxSoul.Outcome.Repaired -> "ok repaired=${outcome.repairs.joinToString("; ")}"
+                is VoxSoul.Outcome.Rejected -> "invalid: ${outcome.reason}"
             }
+            VoxLog.er("event=vox-resync doc=${document?.length ?: 0} result=$verdict reply=$replyEvidence")
+            val wrote = document != null && VoxMirror.write(this, document)
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
-                when (result) {
-                    "ok" -> {
-                        refreshVoxVal()
-                        Toast.makeText(this, "VOX.md synced from the entity", Toast.LENGTH_SHORT).show()
-                    }
-                    else -> {
-                        refreshVoxVal()
-                        AlertDialog.Builder(this)
-                            .setTitle("VOX.md sync failed")
-                            .setMessage(
-                                when {
-                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). It said: \"$replyEvidence\". Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
-                                    reply.isNullOrBlank() -> "The entity didn't answer (connection?). Check /health and try again."
-                                    else -> result
-                                })
-                            .setPositiveButton("Try again") { _, _ -> resyncVox(retryNote = "Your last reply wasn't a valid VOX.md (reason: $result). Follow the format EXACTLY — byte-identical Contract lines, every Soul field filled.") }
-                            .setNegativeButton("Later", null).show()
-                    }
+                if (wrote) {
+                    refreshVoxVal()
+                    Toast.makeText(this, "VOX.md synced from the entity", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                refreshVoxVal()
+                if (document == null) {
+                    val reason = (outcome as VoxSoul.Outcome.Rejected).reason
+                    AlertDialog.Builder(this)
+                        .setTitle("VOX.md sync failed")
+                        .setMessage(
+                            if (reply.isNullOrBlank())
+                                "The entity didn't answer (connection?). Check /health and try again."
+                            else "The entity's reply wasn't a usable VOX.md: $reason. " +
+                                "It said: \"$replyEvidence\". Its next attempt rides the same " +
+                                "conversation, so it remembers the format — one more try usually " +
+                                "lands it.")
+                        .setPositiveButton("Try again") { _, _ -> resyncVox(retryNote = "Your last reply wasn't a usable VOX.md (reason: $reason). Reply with the VOX.md document itself and nothing else: start at '# Contract' and copy its six rules verbatim, then '# Soul' with every field filled in. No preamble, no commentary, no code fence.") }
+                        .setNegativeButton("Later", null).show()
+                } else {
+                    // Valid document, unwritable file: say so rather than claim a sync.
+                    AlertDialog.Builder(this)
+                        .setTitle("VOX.md sync failed")
+                        .setMessage("The entity's VOX.md was valid but could not be written to this phone (storage?). The mirror is unchanged — try again.")
+                        .setPositiveButton("Try again") { _, _ -> resyncVox() }
+                        .setNegativeButton("Later", null).show()
                 }
             }
         }
