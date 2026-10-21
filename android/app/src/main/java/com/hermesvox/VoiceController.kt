@@ -221,6 +221,18 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var workingWarm: WorkingRender? = null
 
     /**
+     * #218: seconds the caller has been waiting on the current run — measured from the same t0
+     * ([turnStartedAt]) the latency stats use, so "how long it has been" means the same thing in
+     * the stats and in the aside. Null before a turn has started: there is nothing to vouch for,
+     * and the guard then keeps refusing every number.
+     */
+    private fun waitedSeconds(): Long? {
+        val t0 = turnStartedAt
+        return if (t0 <= 0L) null
+        else ((android.os.SystemClock.uptimeMillis() - t0) / 1000L).coerceAtLeast(0L)
+    }
+
+    /**
      * A mid-run line slot opened ([PresenceCadence], on the presence tick): speak the line the
      * run already rendered ([prewarmWorkingLine]) so it lands the instant the slot opens, or —
      * when that render never happened — ask the soul for one now, as before. The line plays as
@@ -237,18 +249,22 @@ class VoiceController(private val context: Context, private val session: HermesS
         val said = synchronized(workingSaid) { workingSaid.toList() }
         // A render started while the run was still working is already in hand, so speaking it
         // leaves no window for the mind's first text to land in (docs/PRESENCE-LATE-DIAGNOSIS.md).
-        val warm = workingWarm?.takeIf { it.gen == gen && it.usable() }?.let {
-            workingWarm = null   // one warm line per run; a later slot renders for itself
-            it.take()
-        }
+        val warm = workingWarm?.takeIf { it.gen == gen && it.usable() }
         if (warm != null) {
-            deliverWorkingLine(slot, gen, warm, said)
-            return
+            workingWarm = null   // one warm line per run; a later slot renders for itself
+            val rendered = warm.take()
+            if (rendered != null) {
+                // The line was composed against the wait at render time, so the guard must vouch
+                // for THAT value — re-measuring now would refuse the line for being honest (#218).
+                deliverWorkingLine(slot, gen, rendered, said, warm.vouchedSeconds)
+                return
+            }
         }
         // No usable warm line (the run was short, or the render rails dropped it): render now.
-        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said)
+        val waited = waitedSeconds()
+        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said, waited)
         decide(ErSoulTurn.KIND_WORKING, directive, null, null) { o, _ ->
-            deliverWorkingLine(slot, gen, o, said)
+            deliverWorkingLine(slot, gen, o, said, waited)
         }
     }
 
@@ -267,22 +283,25 @@ class VoiceController(private val context: Context, private val session: HermesS
         val decide = soulDecide ?: return
         if (workingWarm?.gen == gen) return          // already attempted this run
         val said = synchronized(workingSaid) { workingSaid.toList() }
-        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said)
-        val warm = WorkingRender(gen, android.os.SystemClock.uptimeMillis())
+        val waited = waitedSeconds()
+        val directive = ErSoulTurn.workingDirective(workingAsk.orEmpty(), mindTool, said, waited)
+        val warm = WorkingRender(gen, android.os.SystemClock.uptimeMillis(), waited)
         workingWarm = warm
         decide(ErSoulTurn.KIND_WORKING, directive, null, null) { o, _ ->
             warm.settle(o, android.os.SystemClock.uptimeMillis())
         }
     }
 
-    /** Speak a working line, or record why the slot passed in silence. */
+    /** Speak a working line, or record why the slot passed in silence. [vouchedSeconds] is the
+     *  wait the render was composed against (#218) — the only number the guard may accept. */
     private fun deliverWorkingLine(
         slot: ErPresence.Slot,
         gen: Long,
         outcome: ErSoulTurn.Outcome,
         said: List<String>,
+        vouchedSeconds: Long?,
     ) {
-        val line = ErSoulTurn.workingLine(outcome, said)
+        val line = ErSoulTurn.workingLine(outcome, said, vouchedSeconds)
         main.post {
             val now = android.os.SystemClock.uptimeMillis()
             val skip = when {
@@ -301,7 +320,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // the refusal records its cause and the text (hidden unless transcripts are on,
                 // exactly as the er-glue lines do). `deltaMs` is the late witness: how far past
                 // the mind's first text the line came back (-1 = there was no first text).
-                val why = ErSoulTurn.workingReject(outcome, said)
+                val why = ErSoulTurn.workingReject(outcome, said, vouchedSeconds)
                 val raw = (outcome as? ErSoulTurn.Outcome.Spoken)?.text
                 val delta = if (skip == "late") {
                     // -1: the skip was not the first-text rule (a new turn, or a dead cadence),

@@ -58,7 +58,9 @@ class PresenceGuardBoundsTest {
         Line("chars", "Extraordinarily complicated authentication verification ongoing"),
         Line("chars", "Comprehensively re-verifying the configuration details"),
 
-        // A number is a fact, so a digit anywhere must be refused.
+        // A number is a fact, so a digit anywhere must be refused — and here nothing is vouched
+        // for (#218), so these are refused exactly as they always were, under the number's own
+        // reason. The reason is separate from markup's so a log can tell them apart.
         Line("digits", "It'll take 2 minutes"),
         Line("digits", "Checking 3 things now"),
         Line("digits", "Reading 12 messages"),
@@ -97,7 +99,11 @@ class PresenceGuardBoundsTest {
         assertEquals("spoke, i.e. passed every bound", 26, rows.count { it.second == null })
         assertEquals(10, counts["too-many-words"])
         assertEquals(1, counts["too-long"])
-        assertEquals(6, counts["digits-or-markup"])
+        // #218 split the old `digits-or-markup` in two: the four digit lines are now refused as
+        // unvouched numbers (nothing is vouched for in this corpus), the two markup lines keep
+        // the old reason. The total refusal count is unchanged.
+        assertEquals(4, counts["digits-unvouched"])
+        assertEquals(2, counts["digits-or-markup"])
         assertEquals(2, counts["repeat"])
         assertEquals(3, counts["not-spoken"])
         assertEquals(3, counts["empty"])
@@ -112,8 +118,9 @@ class PresenceGuardBoundsTest {
         // >60 chars AND >7 words AND a digit: length wins.
         assertEquals("too-long",
             ErSoulTurn.workingReject("I am still checking 3 extraordinarily complicated authentication details right now"))
-        // A digit AND >7 words: content wins over the word count.
-        assertEquals("digits-or-markup", ErSoulTurn.workingReject("I am still checking 3 things for you right now"))
+        // A digit AND >7 words: content wins over the word count. Nothing is vouched for here,
+        // so the number is refused under its own reason (#218).
+        assertEquals("digits-unvouched", ErSoulTurn.workingReject("I am still checking 3 things for you right now"))
         // >7 words alone: the word count.
         assertEquals("too-many-words", ErSoulTurn.workingReject("I am still checking things for you right now"))
     }
