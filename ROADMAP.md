@@ -22,6 +22,7 @@ with the items below still open.
 - **Presence is the product, not a mode (D16).** Realtime is what the app does; Presence is the
   layer that makes it a being. It is on by default, it is named Presence, and by the end of `0.9.2`
   no selector asks a user to choose between two names for the same call.
+- **What Presence is, where it came from, and what it is for:** [`docs/PRESENCE.md`](docs/PRESENCE.md).
 - **The unnumbered work is community-led.** Continuity, the household, entity calls, remote control
   of the interface, the wake word and the watch items are recorded, not scheduled. What moves out of
   that list moves because the community asked for it (#268) — and new proposals join it by the same

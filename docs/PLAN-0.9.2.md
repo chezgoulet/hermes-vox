@@ -6,6 +6,7 @@ while you speak, it yields when you interrupt, it resumes where it was, and it d
 nobody asked for.
 
 Milestone label: `milestone/0.9.2`. Roadmap: [`../ROADMAP.md`](../ROADMAP.md).
+Background: [`PRESENCE.md`](PRESENCE.md) — what the layer is, where it came from, and what it is for.
 
 **The dependency is deliberate.** Every behaviour here rests on 0.9.1's continuous listening:
 partials, semantic endpointing and an open mic. 0.9.1 answers whether the machine can afford it;
