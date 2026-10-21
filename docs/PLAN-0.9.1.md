@@ -67,15 +67,8 @@ an invariant, not a limitation to be engineered around.
   normal way to start a new session? The bug in #252 is fixed and released; what remains is the
   conversation, and it decides the shape of the two items above.
 
-## 6. First run (#230)
+## 6. The instruments (#209, #208, F4, F5, F8)
 
-Install to first call without help: model download, the one licence acknowledgement, permissions,
-gateway connection, and a successful call. Onboarding is not decoration — it is the difference
-between an install and a user.
-
-## 7. Look, and the instruments (#225, #209, #208, F4, F5, F8)
-
-- **#225** — fine-grained particle controls with a live preview.
 - **#209 / #208** — the performance baseline and the behaviour matrix, recorded per release on both
   devices; these are standing requirements, and 0.9.1 is where they get written down again.
 - **F4 / F5** — GPU contention measured idle versus during a render, and a thirty-minute soak
@@ -85,8 +78,8 @@ between an install and a user.
 
 ## Exit gates for the cut
 
-- a stranger installs, onboards, places a call, switches profile and reads the commands screen
-  without help;
+- a stranger installs, connects a gateway, places a call, switches profile and reads the commands
+  screen without help;
 - speech-end to first audio holds D17's budget on the release APK;
 - the streaming arm is co-resident, or the default is the fallback — with the numbers that decided
   it written into `DECISIONS.md`;
@@ -103,6 +96,9 @@ carries the process and its gotchas.
 
 - **Presence as the product**: the mode selector, the settings split, asides, backchannels, resume,
   overlap classification, the render budget, the tuning bar — **0.9.2**.
+- **First run (#230) and the Being's fine controls (#225)** — **0.9.2**, with the settings
+  reorganisation they depend on: onboarding cannot describe names the app has not adopted yet, and
+  the controls belong on the Being screen that reorganisation creates.
 - **Continuity, the household, the store rail** — **1.0**.
 - **Entity calls, remote control of the interface, wake word** — unnumbered and community-led
   (#268).
