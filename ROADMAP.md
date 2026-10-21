@@ -220,9 +220,10 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
   six-verb animation grammar instead of per-command art, and the open question in #252 settled: does
   the app keep full command parity in-app, or lean into the phone-call identity and make hanging up
   and calling back the normal way to start a new session?
-- `[ ]` **The settings and the look (#224, #225).** Split Visuals by what the user is changing —
+- `[ ]` **The settings and the look (#224, #225, #275).** Split Visuals by what the user is changing —
   Being, Hearing, Voice, Presence — and give the look real controls with a preview that runs in the
-  screen where the change is made. The Presence section carries today's controls until #222 trims it.
+  screen where the change is made. Light mode gets its own set of being animations; a black box on a
+  white screen is not a theme. The Presence section carries today's controls until #222 trims it.
 - `[ ]` **The regression that stops the product (#191).** Presence hangs on initialising after the
   Gemma download and the process dies. The load path is supposed to degrade gracefully, so the cause
   is below it — most likely memory. It cannot wait a release, and the co-residency run is where the
