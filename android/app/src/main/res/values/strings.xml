@@ -21,4 +21,6 @@
     <!-- What a voice turn sent Hermes (the dim "heard" line); read by TalkBack. -->
     <string name="hv_heard_cd">You said: %1$s</string>
     <string name="hv_not_connected">Not connected</string>
+    <string name="hv_models_advanced_show">Show advanced download source</string>
+    <string name="hv_models_advanced_hide">Hide advanced download source</string>
 </resources>
