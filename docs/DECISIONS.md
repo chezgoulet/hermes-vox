@@ -365,3 +365,48 @@ vouched for it — and may be spoken. Everything else stays refused. That turns 
 generalises the single vouched value in #218.
 
 **Until the measurement exists, no bound is removed on the grounds that it is probably fine.**
+
+## D20 — A minimal directive, and a guard that only blocks what has been seen
+
+Set 2026-10-21. Amends the philosophy behind D19's measurement; the measurement itself still
+stands.
+
+The presence guard is the wrong shape. It tries to enforce the whole Contract in code, which
+means **every unmeasured worry becomes silence** — and the measured refusals show where that
+lands: ten of twenty-five are `too-many-words`, i.e. the code is policing the model's
+*formatting*, not its honesty.
+
+So the split changes. **Content is what the code polices. Format is what the code repairs.**
+
+- An eleven-word line is not a lie: cut it at a clause boundary and speak it.
+- Markdown, a fence, a title line, a trailing courtesy: strip them. #220 already proved the
+  same lesson for VOX.md — repair the envelope, refuse only the content.
+- A number the client itself supplied is grounded and may be spoken. A number nobody supplied
+  stays refused **until a documented case says otherwise**.
+- Claiming a result that does not exist ("I've booked it") stays refused, always. That is the
+  one content rule with an asymmetric cost.
+
+**The directive gets minimal, and behavioural.** Five things, and no more:
+
+1. who you are, in your own voice (from VOX.md);
+2. what this moment is — a greeting, the caller just spoke, or the mind is working and here is
+   what it is doing;
+3. never state a result you do not have — nothing is done until the mind says it is done;
+4. one line, in your own voice, no longer than a breath;
+5. silence is a valid answer, and often the right one.
+
+Shape belongs to rule 4 and is enforced by repair, not by refusal. The old lexical contract
+does not survive as a list of rules the model must satisfy; it survives only as the small set
+of things that have actually been seen to go wrong.
+
+**Every bound in code must cite a documented failure.** A bound with no citation is a
+hypothesis: it is labelled as one in the code, with a note saying what would retire it. The
+guard's growth becomes archival — it accumulates only what reality demanded, and the field can
+retire what reality stopped demanding.
+
+**The field is the corpus.** Users are the only ones who see the failures this model produces
+in a real room. So: an opt-in ring buffer of the last N raw renders alongside the directive
+that produced them, exported by an explicit "copy presence log" action — on the device, never
+uploaded — and an issue template that asks for the line, the directive, and which of the five
+rules it broke. Selection bias is fine for discovering a *class* of failure and useless for a
+rate; rates come from the bench in #256.
