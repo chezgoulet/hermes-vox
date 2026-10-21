@@ -537,3 +537,26 @@ they are good; the roadmap shows one only after it ships.
 **1.0** is stable in strangers' hands and feature-complete enough for general release. No date.
 
 **The community** gives testers, contributors and direction. No promises to any of the three.
+
+## D25 — Three kinds of work: owned, upstream, surfaced
+
+Set 2026-10-21. Names the distinction that kept getting missed.
+
+- **App-owned.** The capability lives in Vox: voice, Presence, the being, the call UI. It is built,
+  tested and maintained here.
+- **Upstream-owned.** The capability lives in Hermes: memory, tools, the session chain, skills,
+  approvals. Vox must not build a parallel version. Conversation continuity is the example — it
+  already works because the agent keeps the session.
+- **Surfaced.** Upstream-owned, but invisible or clumsy in a voice-first interface. The app's work is
+  the affordance — what the user sees and says — plus a small upstream hook so the app can see or
+  trigger it. **Undo is the clearest case: Hermes can already undo the last action. Vox does not need
+  an undo store; it needs to show what was done and make "undo that" one word.**
+
+**The rule:** before planning a feature, ask which kind it is. Building a surfaced capability from
+scratch duplicates the agent, drifts from it, and breaks when the upstream changes. The hook is part
+of the work and is small by definition — if it is large, the capability is upstream-owned and belongs
+there.
+
+**Why the word matters:** it tells the roadmap where the work is. A surfaced feature is an interface
+problem with an upstream dependency, not a subsystem. Approvals and the app skill are the other two
+current examples; both are labelled `surfaced`.
