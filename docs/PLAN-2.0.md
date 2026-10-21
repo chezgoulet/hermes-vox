@@ -1,9 +1,8 @@
 # Plan — 2.0, "the presence that follows you"
 
-> **Superseded 2026-10-21 by D21.** The 2.0 number is retired. Continuity and the household move
-> into 1.0 ([`PLAN-1.0.md`](PLAN-1.0.md)); "it reaches you" and "it shows you" become unnumbered,
-> community-led items in [`../ROADMAP.md`](../ROADMAP.md). This page is kept for the constraints it
-> records, not as a plan.
+> **Superseded 2026-10-21 by D21 and D22.** The 2.0 number is retired and nothing replaced it.
+> Continuity and the household are unnumbered, alongside "it reaches you" and "it shows you":
+> [`PLAN-FUTURE.md`](PLAN-FUTURE.md). This page is kept for the constraints it records, not as a plan.
 
 1.x makes the entity good at being in one place: it hears you, it holds a long gap, it
 answers. 2.0 is the series where it stops being an app you open and becomes one you can

@@ -456,3 +456,32 @@ rather than left to mean something else: `milestone/0.9`, `milestone/0.9.3`, `mi
 **Two consequences worth recording.** Multi-profile moves from 1.1 into 0.9.1, because a profile
 switcher is plumbing and the app is not excellent without it. Wake word moves from 1.2 to unnumbered,
 because it needs training compute and a demonstrated want, in that order.
+
+
+## D22 — 1.0 moves to the end and carries nothing; the candidate set is unnumbered
+
+Set 2026-10-21. **Amends the placement half of D21.**
+
+D21 gave 1.0 a payload: continuity, the household, the store. That made 1.0 a bucket — the next
+number that anything unscheduled could be poured into — and a bucket with a version number reads as a
+promise. It also tied F-Droid to it, which is wrong on its own: a store listing is distribution, not
+evidence that the feature set is finished, and it can ship with whichever release has a ready recipe.
+
+**1.0 is the horizon, and it is last.** It carries no issues. It is cut when the feature set is
+complete and stable in the community's hands, and the only artifact that can tell us that is use —
+#268 — rather than a plan running out of items.
+
+**Everything that was tagged 1.0 moves:**
+
+- **#165, F-Droid path B → 0.9.1**, as a rail that runs alongside the release and does not gate its
+  cut. If the recipe is not ready, the release still ships.
+- **#231 (continuity), #234 (household), #46 (speaker ID) → unnumbered**, with the rest of the
+  candidate set, in `PLAN-FUTURE.md`.
+
+**The list is open in both directions.** New features and workflows proposed by people using the app
+join the unnumbered list. The task before 1.0 is to work out which of those make the app notably
+better, which can wait, and which were a bad idea — and that judgement is the community's evidence,
+not our enthusiasm.
+
+**Placement rule, extended.** Numbered work is only what we can justify before 1.0. Everything else
+waits for a demonstrated want.
