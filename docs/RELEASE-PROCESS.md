@@ -93,6 +93,10 @@ Two consequences worth stating plainly:
   side-by-side switching is ever wanted, the only clean answer is a separate `applicationId`
   for nightlies (two installable apps), not a cleverer version code.
 
+Nightlies carry a **label**, not a different version code: the workflow rewrites
+`versionName` to `<release>-nightly-<short sha>` before the build and leaves `versionCode`
+alone, so a phone can tell you which build it is running while installability is unchanged.
+
 **Nightlies are not releases.** Every merge into `testing` publishes a `nightly-*`
 prerelease built from that commit (`.github/workflows/nightly.yml`) and tagged at it:
 it is signed with the release key and carries a `versionCode` at or above the
