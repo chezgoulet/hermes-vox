@@ -22,19 +22,17 @@ operation.
 Two visible facts replace three states: Presence is on or off (the user's choice), and the model is
 ready or not ready (a fact).
 
-## 2. The settings IA, the transcript, and the screens it creates (#224, #223, #225, #230)
+## 2. The transcript and first run (#223, #230)
 
-- **#224** — split the Visuals section by what the user is changing, not by which subsystem owns
-  the preference: **Being** (look, motion, density, cues), **Hearing** (mic, AEC, noise
-  suppression, VAD, silence threshold), **Voice** (TTS model and voice), **Presence** (the layer's
-  own settings and its model state).
 - **#223** — the transcript layout is empty in Presence; it is the surface a user reads to know what
   the being heard and said, so it cannot be blank.
-- **#225** — fine-grained particle controls with a live preview, on the Being screen this section
-  creates. Building them into Visuals first and moving them later is work with no user in between.
 - **#230** — first run: gateway, microphone permission, the recommended models, Presence and its
   model, then a first call. Honest when a step cannot be completed, skippable for someone who knows
   the app — and written once, against the names that now exist.
+
+The settings reorganisation and the Being controls that this section used to carry (#224, #225) are
+0.9.1: the app's shape and its look are mechanics, and this release only has to trim the Presence
+section once the selector is gone.
 
 ## 3. The aside: a minimal directive and a guard that repairs (#257, #256)
 

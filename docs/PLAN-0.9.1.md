@@ -67,7 +67,19 @@ an invariant, not a limitation to be engineered around.
   normal way to start a new session? The bug in #252 is fixed and released; what remains is the
   conversation, and it decides the shape of the two items above.
 
-## 6. The instruments (#209, #208, F4, F5, F8)
+## 6. The settings and the look (#224, #225)
+
+- **#224** — split the Visuals section by what the user is changing, not by which subsystem owns the
+  preference: **Being** (look, motion, density, cues), **Hearing** (mic, AEC, noise suppression, VAD,
+  silence threshold), **Voice** (TTS model and voice), **Presence** (the layer's own settings and its
+  model state). The Presence section carries today's controls; #222 trims what the mode retirement
+  leaves behind.
+- **#225** — fine-grained particle controls with a live preview, in the Being section #224 creates.
+
+The app's shape is a mechanic: a setting that cannot be found, or a look that can only be judged by
+leaving the screen, is part of what makes a release feel unfinished — with Presence off as much as on.
+
+## 7. The instruments (#209, #208, F4, F5, F8)
 
 - **#209 / #208** — the performance baseline and the behaviour matrix, recorded per release on both
   devices; these are standing requirements, and 0.9.1 is where they get written down again.
@@ -76,7 +88,7 @@ an invariant, not a limitation to be engineered around.
 - **F8** — a fixed ten-utterance verdict script, so "this build is better" stops being an
   impression.
 
-## 7. The regression and the cues (#191, #251)
+## 8. The regression and the cues (#191, #251)
 
 - **#191** — Presence hangs on initialising after the Gemma download and the process dies. The code
   already has a path for a failed load (`loadFailed` excludes the soul from the warm gate), so the
@@ -109,9 +121,7 @@ carries the process and its gotchas.
 
 - **Presence as the product**: the mode selector, the settings split, asides, backchannels, resume,
   overlap classification, the render budget, the tuning bar — **0.9.2**.
-- **First run (#230) and the Being's fine controls (#225)** — **0.9.2**, with the settings
-  reorganisation they depend on: onboarding cannot describe names the app has not adopted yet, and
-  the controls belong on the Being screen that reorganisation creates.
+- **First run (#230)** — **0.9.2**: onboarding cannot describe names the app has not adopted yet.
 - **Continuity, the household, the store rail** — **1.0**.
 - **Entity calls, remote control of the interface, wake word** — unnumbered and community-led
   (#268).
