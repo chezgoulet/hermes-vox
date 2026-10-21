@@ -9,28 +9,6 @@ someone using it". The rule for leaving is a demonstrated want, not a plan runni
 
 ---
 
-## The call moves (#231)
-
-**Resuming the conversation already works.** The agent keeps the session on the server, so opening
-the same conversation in another Hermes front end continues the history and the memory. This item is
-not that, and it implies no gateway work.
-
-**What is missing is the call.** A second surface that speaks in the same entity voice, draws the
-being if it can, and takes over a live turn without restarting it.
-
-**What the app owes.** A per-surface renderer for the voice and the being. The gateway already
-supplies session keys (`X-Hermes-Session-Key` for a named conversation, `X-Hermes-Session-Id` for a
-thread), and the app uses them.
-
-**Handoff is an explicit transfer.** Two surfaces holding one live call race unless one is clearly
-the writer, so the second takes the call; it does not join it.
-
-**Two constraints recorded rather than discovered later.** Android Auto's Car App Library is
-template-only — the car gets voice plus the platform's own list and message templates, not the being.
-A satellite device brings its own audio path.
-
-**The first surface is a decision to make first** — car, a web/PWA surface, or a satellite device.
-
 ## The household (#234, #46)
 
 Speaker ID and per-person relationships: who is talking, and how the entity addresses a family rather
