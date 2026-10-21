@@ -485,3 +485,20 @@ not our enthusiasm.
 
 **Placement rule, extended.** Numbered work is only what we can justify before 1.0. Everything else
 waits for a demonstrated want.
+
+## D23 — Continuity of the call is cut
+
+Set 2026-10-21. **Removes #231 from the unnumbered list.**
+
+The idea was never specified beyond a sentence: start on the phone, finish at a desk. And that
+sentence is already true — the agent keeps the session on the server, so another Hermes front end
+resumes the conversation with the same history and memory. What remained was a *call* handoff between
+surfaces, which had no design: no chosen surface, no handoff protocol, and no answer to two surfaces
+racing one session.
+
+Cutting it is the honest outcome. A future list that keeps an underspecified idea keeps a promise
+nobody can evaluate.
+
+**Reopen only on a concrete proposal:** a named surface, what the handoff carries (voice, being,
+in-flight turn), and who is the writer. Until then, conversation-level resumption — which already
+works — is the answer, and it needs no work here.
