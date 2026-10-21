@@ -88,9 +88,128 @@
         android:paddingBottom="24dp">
 
         <LinearLayout
-            android:id="@+id/m_list"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/m_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- #219: advanced controls live here, collapsed. The source override
+                 (and anything destructive) must never be the first thing seen,
+                 but must stay reachable. Same row-into-panel reveal as Settings. -->
+            <LinearLayout
+                android:id="@+id/m_advanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Advanced — download source"
+                    style="@style/HvRowTitle" />
+
+                <TextView
+                    android:id="@+id/m_adv_state"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="show ›"
+                    style="@style/HvRowAction" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/m_adv_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="Where new model files are fetched from. The default is the upstream release; leave it alone unless you mirror the models yourself."
+                    android:textColor="@color/hv_text_dim"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/m_source"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_input"
+                    android:hint="https://…"
+                    android:inputType="textUri"
+                    android:padding="14dp"
+                    android:textColor="@color/hv_text"
+                    android:textColorHint="@color/hv_text_dim"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/m_source_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="2dp"
+                    android:textColor="@color/hv_text_dim"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <!-- Equal weights so the largest system font wraps each label
+                         instead of pushing the pair off-screen. -->
+                    <Button
+                        android:id="@+id/m_source_save"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_button_primary"
+                        android:minHeight="48dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="Save source"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hv_bg" />
+
+                    <Button
+                        android:id="@+id/m_source_reset"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:background="@drawable/bg_button_ghost"
+                        android:minHeight="48dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="Use default"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hv_text" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="Installed models are not affected by this address. Changing it only changes where a future download is fetched from."
+                    android:textColor="@color/hv_text_dim"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
     </ScrollView>
 </LinearLayout>
