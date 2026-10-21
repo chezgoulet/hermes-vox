@@ -9,24 +9,27 @@ someone using it". The rule for leaving is a demonstrated want, not a plan runni
 
 ---
 
-## Continuity (#231)
+## The call moves (#231)
 
-One conversation, moved between surfaces with the same session, memory and voice — done twice, on
-real hardware, without repeating a turn.
+**Resuming the conversation already works.** The agent keeps the session on the server, so opening
+the same conversation in another Hermes front end continues the history and the memory. This item is
+not that, and it implies no gateway work.
 
-**What it depends on, and what is not ours.** The gateway's session-key semantics
-(`X-Hermes-Session-Key` for a named conversation, `X-Hermes-Session-Id` for a thread), a resume token
-that means *this conversation, this far*, and a per-surface renderer. Two of those are a Hermes-side
-contract, not an app change.
+**What is missing is the call.** A second surface that speaks in the same entity voice, draws the
+being if it can, and takes over a live turn without restarting it.
+
+**What the app owes.** A per-surface renderer for the voice and the being. The gateway already
+supplies session keys (`X-Hermes-Session-Key` for a named conversation, `X-Hermes-Session-Id` for a
+thread), and the app uses them.
+
+**Handoff is an explicit transfer.** Two surfaces holding one live call race unless one is clearly
+the writer, so the second takes the call; it does not join it.
 
 **Two constraints recorded rather than discovered later.** Android Auto's Car App Library is
-template-only — the being cannot be drawn there, so the car gets voice plus the platform's own list
-and message templates. And two surfaces holding the same session race unless one is clearly the
-writer; handoff must be an explicit transfer, not two clients guessing.
+template-only — the car gets voice plus the platform's own list and message templates, not the being.
+A satellite device brings its own audio path.
 
-**The second surface is a decision to make first.** Desktop was ruled out as a client (D1), so the
-realistic candidates are a web or PWA text surface, the car, or a satellite device. Only one of them
-can draw the being.
+**The first surface is a decision to make first** — car, a web/PWA surface, or a satellite device.
 
 ## The household (#234, #46)
 
