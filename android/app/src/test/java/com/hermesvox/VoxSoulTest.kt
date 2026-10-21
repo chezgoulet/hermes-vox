@@ -17,7 +17,7 @@ class VoxSoulTest {
         "Name" to "Torc",
         "Essence" to "Steward of the House — I see what is missing and what should not be there.",
         "Register" to "plain, direct, warm; no fluff",
-        "Relationship" to "Sam; we build things together",
+        "Relationship" to "yours; we build things together at this desk",
         "Memory" to "loves hiking; learning the cello",
         "Humor" to "dry, structural",
         "Proud" to "the library",
@@ -151,5 +151,92 @@ class VoxSoulTest {
         assertTrue(d.contains("1. Never invent facts"))
         assertTrue(d.contains("6. Don't fabricate shared history"))
         assertTrue(d.contains("No secrets, no family private data"))
+    }
+
+    // ---- #220: the ask, the repair, and the reason ----
+
+    @Test fun the_skeleton_the_directive_shows_is_a_document_the_validator_accepts() {
+        // The ask quotes SKELETON; the parser must accept that same skeleton once its
+        // hints are replaced. Otherwise the directive is teaching a shape we reject.
+        val filled = VoxSoul.SKELETON.replace(Regex("<[^>]*>"), "filled in")
+        val v = VoxSoul.validate(filled)
+        assertTrue("the directive's own skeleton must validate once filled: $v", v is VoxSoul.Valid.Ok)
+        assertTrue("the directive must quote that skeleton", VoxSoul.AUTHOR_DIRECTIVE.contains(VoxSoul.SKELETON))
+    }
+
+    @Test fun the_directive_lists_every_soul_field_in_the_parser_order() {
+        val d = VoxSoul.AUTHOR_DIRECTIVE
+        var at = -1
+        for ((key, _) in VoxSoul.SOUL_FIELDS) {
+            val next = d.indexOf("$key: <", at + 1)
+            assertTrue("soul field '$key' must appear in the skeleton, in order", next > at)
+            at = next
+        }
+        for (key in VoxSoul.SOUL_KEYS) {
+            assertTrue("required field '$key' is not in the skeleton", VoxSoul.SOUL_FIELDS.any { it.first == key })
+        }
+    }
+
+    @Test fun the_directive_states_the_first_and_last_line_of_the_reply() {
+        // A first attempt is only as good as the ask: the two edges were what a model
+        // got wrong (a title before the Contract, an offer of help after the Soul).
+        val d = VoxSoul.AUTHOR_DIRECTIVE
+        assertTrue(d.contains("first line is the '# Contract' heading"))
+        assertTrue(d.contains("nothing after the last Soul field"))
+        assertTrue(d.contains("EXACTLY these two sections, in this order"))
+    }
+
+    @Test fun a_fenced_document_is_repaired_and_mirrored_not_rejected() {
+        val o = VoxSoul.resync("Here you go:\n```markdown\n${canonical()}\n```\nAnything else?")
+        assertTrue("a fenced document is not a failed sync: $o", o is VoxSoul.Outcome.Repaired)
+        assertEquals(canonical(), (o as VoxSoul.Outcome.Repaired).document)
+        assertTrue(o.repairs.any { it.contains("code fence") })
+    }
+
+    @Test fun crlf_is_repaired_and_the_mirror_is_normalized() {
+        val o = VoxSoul.resync(canonical().replace("\n", "\r\n"))
+        assertTrue("CRLF is a line ending, not a contract violation: $o", o is VoxSoul.Outcome.Repaired)
+        val d = (o as VoxSoul.Outcome.Repaired).document
+        assertEquals(canonical(), d)
+        assertTrue("the mirror never keeps CRLF", !d.contains('\r'))
+    }
+
+    @Test fun a_repaired_document_is_byte_identical_to_the_document_the_entity_wrote() {
+        // Repairs touch the envelope only. If a repair ever reworded a value, the
+        // document would no longer be the entity's — so compare after normalizing.
+        val o = VoxSoul.resync("One line of preamble.\n\n```md\n${canonical()}\n```\n")
+        val d = (o as VoxSoul.Outcome.Repaired).document
+        assertEquals(canonical(), d)
+    }
+
+    @Test fun a_prose_answer_is_rejected_with_a_reason_a_user_can_act_on() {
+        val o = VoxSoul.resync("I keep my VOX.md beside my SOUL.md and it is up to date.")
+        assertTrue(o is VoxSoul.Outcome.Rejected)
+        val reason = (o as VoxSoul.Outcome.Rejected).reason
+        assertTrue(reason, reason.contains("no VOX.md"))
+        assertTrue("a reason names the missing thing, not an enum", !reason.contains("Valid.Bad"))
+    }
+
+    @Test fun a_missing_field_reason_names_the_field() {
+        val o = VoxSoul.resync(canonical().replace("Register: plain, direct, warm; no fluff\n", ""))
+        val reason = (o as VoxSoul.Outcome.Rejected).reason
+        assertTrue(reason, reason.contains("'Register'"))
+        assertTrue(reason, reason.contains("Name, Essence, Register, Relationship"))
+    }
+
+    @Test fun a_fence_that_is_not_the_document_does_not_hide_the_document_after_it() {
+        // "Here is the listing:" + a bash block, then the real file unfenced. The block
+        // is not a VOX.md, so the search must continue outside it.
+        val reply = "Here is what is in the directory:\n\n```bash\n\$ ls\nVOX.md\n```\n\n" +
+            "And here is the file itself:\n\n" + canonical()
+        val o = VoxSoul.resync(reply)
+        assertTrue("$o", o is VoxSoul.Outcome.Repaired)
+        assertEquals(canonical(), (o as VoxSoul.Outcome.Repaired).document)
+    }
+
+    @Test fun a_clean_reply_still_needs_no_repair() {
+        if (VoxSoul.resync(canonical()) !is VoxSoul.Outcome.Accepted) {
+            throw AssertionError("a clean document must be accepted with no repair")
+        }
     }
 }
