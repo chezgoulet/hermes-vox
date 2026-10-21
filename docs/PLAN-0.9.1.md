@@ -67,7 +67,7 @@ an invariant, not a limitation to be engineered around.
   normal way to start a new session? The bug in #252 is fixed and released; what remains is the
   conversation, and it decides the shape of the two items above.
 
-## 6. The settings and the look (#224, #225)
+## 6. The settings and the look (#224, #225, #275)
 
 - **#224** — split the Visuals section by what the user is changing, not by which subsystem owns the
   preference: **Being** (look, motion, density, cues), **Hearing** (mic, AEC, noise suppression, VAD,
@@ -75,6 +75,8 @@ an invariant, not a limitation to be engineered around.
   model state). The Presence section carries today's controls; #222 trims what the mode retirement
   leaves behind.
 - **#225** — fine-grained particle controls with a live preview, in the Being section #224 creates.
+- **#275** — light mode: the being currently paints inside a black box on a white screen. It needs
+  animations drawn for that background. A theme that only half-works is a setting nobody can trust.
 
 The app's shape is a mechanic: a setting that cannot be found, or a look that can only be judged by
 leaving the screen, is part of what makes a release feel unfinished — with Presence off as much as on.
