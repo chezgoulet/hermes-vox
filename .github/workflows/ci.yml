@@ -41,6 +41,49 @@ jobs:
           name: unit-test-reports
           path: android/app/build/reports/tests/
 
+      # #167: the live gateway suite must RUN here, not skip. Its six cases always
+      # execute against the deterministic FakeGateway; the seventh case proves the
+      # harness can fail. A skipped case, a missing result file or a short count is
+      # an error, and the names land in the job summary.
+      - name: Live gateway suite summary (six cases, none skipped)
+        if: always()
+        working-directory: android
+        run: |
+          python3 - <<'PY'
+          import glob, os, sys, xml.etree.ElementTree as ET
+          path = "app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.LiveGatewayTest.xml"
+          if not os.path.isfile(path):
+              print("::error::LiveGatewayTest produced no result XML: the live cases did not run")
+              sys.exit(1)
+          root = ET.parse(path).getroot()
+          tests = int(root.get("tests", 0))
+          skipped = int(root.get("skipped", 0))
+          failures = int(root.get("failures", 0))
+          errors = int(root.get("errors", 0))
+          names = [c.get("name") for c in root.findall("testcase")]
+          selfcheck = [n for n in names if n.startswith("the harness fails")]
+          live = [n for n in names if n not in selfcheck]
+          lines = [
+              f"LiveGatewayTest: {tests} ran ({len(live)} live cases + {len(selfcheck)} self-check), "
+              f"{skipped} skipped, {failures} failed, {errors} errored",
+              "",
+          ] + [f"- {n}" for n in live]
+          if selfcheck:
+              lines += ["", "Harness self-check:"] + [f"- {n}" for n in selfcheck]
+          report = "\n".join(lines)
+          print(report)
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write("### Live gateway suite\n\n" + report + "\n")
+          if skipped or failures or errors:
+              print("::error::the live gateway suite must pass with nothing skipped")
+              sys.exit(1)
+          if len(live) < 6 or not selfcheck:
+              print("::error::expected the six live cases plus the harness self-check")
+              sys.exit(1)
+          PY
+
   # Reproducibility is part of the PR contract for app changes (#166): build the
   # same source twice from two different absolute paths and require byte-identical
   # unsigned release APKs. This job is slow (two clean release builds), so it is

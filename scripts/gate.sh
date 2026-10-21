@@ -24,17 +24,17 @@ java_major="$("$JAVA_HOME/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]
 echo "gate: JAVA_HOME=$JAVA_HOME"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-echo "== [0/3] fetch pinned runtime deps =="
+echo "== [0/4] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
-echo "== [1/3] presence report self-test =="
+echo "== [1/4] presence report self-test =="
 python3 scripts/test_presence_session_report.py 2>&1 | tail -3
 
-echo "== [2/3] gradle assembleDebug + unit tests =="
+echo "== [2/4] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
 
-echo "== [3/3] stream parity harness ran =="
+echo "== [3/4] stream parity harness ran =="
 # StreamParityTest replays testdata/stream/*.sse against the committed goldens.
 # A gate that passes because the harness silently stopped running is not a gate.
 parity=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.StreamParityTest.xml
@@ -42,5 +42,14 @@ parity=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.
 grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$parity" \
   || gate_die "StreamParityTest did not pass cleanly: $(grep -o 'tests="[^>]*' "$parity" | head -n1)"
 echo "gate: parity OK over $(ls testdata/stream/*.sse | wc -l) fixtures"
+
+echo "== [4/4] live gateway suite ran =="
+# #167: the six live cases run against the deterministic fake gateway on every
+# build, plus the case that proves the harness can fail. None may be skipped.
+live=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.LiveGatewayTest.xml
+[ -f "$live" ] || gate_die "LiveGatewayTest did not run ($live missing)."
+grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$live" \
+  || gate_die "LiveGatewayTest did not pass cleanly: $(grep -o 'tests="[^>]*' "$live" | head -n1)"
+echo "gate: live suite OK ($(grep -o 'tests="[0-9]*"' "$live" | head -n1) — six live cases + the harness self-check)"
 
 echo "GATE-GREEN"

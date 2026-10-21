@@ -86,6 +86,24 @@ jobs:
           sys.exit(1) if (f or e) else print("GATE GREEN")
           EOF
 
+      # #167: the same six cases, now pointed at the REAL gateway. Forks and PRs
+      # have no secrets, so this step must no-op cleanly without the key (the fake
+      # run above already covered the suite). HERMES_VOX_HERMES_URL must name a
+      # reachable gateway; the suite's own default is http://127.0.0.1:8642.
+      - name: Live gateway suite against the real gateway (optional)
+        working-directory: android
+        env:
+          HERMES_VOX_HERMES_API_KEY: ${{ secrets.HERMES_VOX_HERMES_API_KEY }}
+          # Optional repository variable; when unset the suite uses its own default.
+          HERMES_VOX_HERMES_URL: ${{ vars.HERMES_VOX_HERMES_URL }}
+          HERMES_VOX_LIVE: "1"
+        run: |
+          if [ -z "${HERMES_VOX_HERMES_API_KEY}" ]; then
+            echo "no HERMES_VOX_HERMES_API_KEY secret: real-gateway live run skipped (fake run already passed above)"
+            exit 0
+          fi
+          ./gradlew --no-daemon -q testReleaseUnitTest --tests '*LiveGatewayTest' --rerun
+
       - name: Name the nightly APK
         working-directory: android
         run: |

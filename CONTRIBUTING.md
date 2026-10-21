@@ -92,7 +92,8 @@ from a pre-#126 checkout is ignored.
 # The entity connection (com.hermesvox.core) — offline, against a local fake gateway
 ./gradlew :app:testDebugUnitTest --tests 'com.hermesvox.core.*' --no-daemon   # from android/
 
-# Live integration (requires a REAL gateway; see below)
+# The live gateway suite: six cases against the deterministic fake gateway by
+# default, or against a REAL gateway with the two variables set (see below)
 HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> \
   ./gradlew :app:testDebugUnitTest --tests '*LiveGatewayTest' --no-daemon
 
@@ -111,15 +112,25 @@ The documented verification pair used across release notes is
 `go test ./voice/...` — e.g. `docs/RELEASE-0.5.4.md:40-44`). A change is not done
 until that whole tree is green **on a fresh clone** (a dirty local tree proves nothing).
 
-### The live integration test
+### The live gateway suite
 
-`android/app/src/test/java/com/hermesvox/core/LiveGatewayTest.kt` runs real turns
-against a live Hermes gateway and is skipped unless `HERMES_VOX_LIVE=1` **and**
-`HERMES_VOX_HERMES_API_KEY` are set (optional: `HERMES_VOX_HERMES_URL`,
-`HERMES_VOX_HERMES_MODEL`, `HERMES_VOX_HERMES_SESSION_KEY`). That key is the bearer
-credential of a live agent with tools — it is a House secret (env store only).
-**Never** commit it, log it, or paste it into an issue/PR. If you cannot get the
-key, say so and leave the test skipped — a green offline suite still gates.
+`android/app/src/test/java/com/hermesvox/core/LiveGatewayTest.kt` runs six real
+cases — a stored turn, the server-side chain, the SSE stream, tool progress,
+barge-in and `/compress` on the streamed chain — on **every** build. With
+`HERMES_VOX_LIVE=1` **and** `HERMES_VOX_HERMES_API_KEY` set they go to a live
+Hermes gateway (optional: `HERMES_VOX_HERMES_URL`, `HERMES_VOX_HERMES_MODEL`,
+`HERMES_VOX_HERMES_SESSION_KEY`); without them the same assertions run against
+`FakeGateway`, a deterministic JDK `HttpServer` on an ephemeral loopback port.
+Nothing is skipped, and `HERMES_VOX_LIVE=1` without a key fails instead of quietly
+using the fake.
+
+A seventh case drives the streamed-turn assertions at a fake configured to
+truncate its SSE body and requires them to fail, so the suite cannot go green
+because its harness stopped detecting anything.
+
+That key is the bearer credential of a live agent with tools — it is a House
+secret (env store only). **Never** commit it, log it, or paste it into an
+issue/PR.
 
 ### Release builds and signing
 
