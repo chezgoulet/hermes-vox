@@ -19,9 +19,6 @@ What the loop needs:
 - **#280 — the state audit.** What states exist, and whether the being or explicit UI carries each.
   The being is not assumed to be able to carry them all.
 - **#281 — operations.** Which tool is running, and on what. Not a log viewer.
-- **#283 — feedback (surfaced, D25).** What the agent actually did when a command lands, and Hermes'
-  own undo surfaced as one word — "undo that". The app holds no undo store and cannot restore a
-  calendar it does not have; a sent email may be unrecoverable, and the interface says so.
 - **#282 — approvals.** The sign-off Hermes asks for, surfaced on the phone: what, why, and what yes
   and no do. Voice or touch; timeout is *no*.
 - **#284 — discovery.** The being suggests in context, the interface reveals, search teaches —
