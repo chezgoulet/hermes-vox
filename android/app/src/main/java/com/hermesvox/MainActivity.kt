@@ -1709,20 +1709,28 @@ class MainActivity : AppCompatActivity() {
      *  the reset run on the SAME thread, in order. */
     private fun newSession() {
         val s = session
+        // #252: /new tore the voice layer down by hand — four of the six lines of endCall(),
+        // minus the two that matter. `callLive` was never cleared and the call UI never
+        // exited, so startCall()'s `if (callLive) return` refused to re-arm and a live call
+        // went permanently deaf until the user hung up. One teardown now, and it re-arms
+        // through openVoiceLine(), the same path a route change uses.
+        val wasLive = callLive
+        if (wasLive) endCall()
         if (s != null) {
             kotlin.concurrent.thread {
                 try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
                 s.resetConversation()   // then drop the client chain + lastID
                 LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
+                // Re-arm only after the chain is actually reset, and only if a call was live.
+                if (wasLive) runOnUiThread { startCall() }
             }
         }
-        liveController?.setVoiceChannelOpen(false)
-        liveController?.stop(); liveController = null
+        VoxLog.d("event=session-reset callLive=$callLive rearm=$wasLive")
         stopVoiceWake()
         releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
         unregisterRouteCallback()  // C3: no line -> no route rebuilds
         clearConversationUi()
-        setStatus("New session started", true)
+        if (!wasLive) setStatus("New session started", true)
     }
 
     /** /reconnect — re-ping /v1/health (via gateway) + re-init the session. */

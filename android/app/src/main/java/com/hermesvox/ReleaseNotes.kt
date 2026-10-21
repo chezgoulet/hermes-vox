@@ -79,5 +79,14 @@ internal object ReleaseNotes {
                 ),
             ),
         ),
+
+        ReleaseNote(
+            versionCode = 144,
+            versionName = "0.9.0.1",
+            title = "The /new fix",
+            bullets = listOf(
+                "Starting a new session with /new during a call no longer leaves the call deaf. The call closes and re-opens its microphone itself, in about two seconds — no hang-up needed.",
+            ),
+        ),
     )
 }
