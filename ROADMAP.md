@@ -281,9 +281,10 @@ Recorded, not scheduled, and decided by want rather than by sequence. Every item
 none is promised. What moves out of this list moves because the community asked for it (#268), and
 new features or workflows proposed by people using the app join the same list.
 
-- `[ ]` **Continuity (#231).** One conversation moved between surfaces with the same session, memory
-  and voice. Needs the gateway's session-key semantics and a resume token; the second surface — web
-  text, car or satellite — is an open decision, and Android Auto cannot draw the being.
+- `[ ]` **The call moves (#231).** Resuming the conversation on another Hermes front end already
+  works — the agent keeps the session. What is missing is the call: the same voice and the being on a
+  second surface, and an explicit handoff of a live turn. The first surface is an open decision, and
+  Android Auto cannot draw the being.
 - `[ ]` **The household (#234, #46).** Per-person identity and relationships. Speaker ID stops being
   `sev/low` and becomes a security property, because any detected voice currently triggers the agent.
 - `[ ]` **Entity calls (#232).** Per-event-class routing and a bring-your-own push endpoint, with a
