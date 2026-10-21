@@ -101,6 +101,16 @@ leaving the screen, is part of what makes a release feel unfinished — with Pre
   owner's read is that a user wants one or the other, so the acceptance names cues off / on /
   presence-off-only, and which is the default.
 
+## 9. The store rail (#165) — alongside, not gating
+
+Replace the prebuilt AAR with sherpa-onnx built from source (pinned submodule or `srclibs`) and
+onnxruntime from Maven Central; add `Binaries:` and `AllowedAPKSigningKeys` naming our signature;
+submit against a released tag and confirm their rebuild reproduces our APK (D15).
+
+It is in this release because a store listing is distribution, not a statement about the feature set:
+it can ship with any release whose recipe is ready. **If the recipe is not ready at the cut, 0.9.1
+ships without it** — this rail never holds the release.
+
 ## Exit gates for the cut
 
 - a stranger installs, connects a gateway, places a call, switches profile and reads the commands

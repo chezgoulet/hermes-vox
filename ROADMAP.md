@@ -16,15 +16,16 @@ with the items below still open.
   builds are a release requirement, not polish.
 - **Three releases, then a declaration (D21).** `0.9.1` makes the mechanics excellent, judged with
   Presence off as readily as with it; `0.9.2` makes Presence the product — one mode, with the
-  two-mode distinction retired; `1.0` carries everything else plotted, including the work formerly
-  numbered 2.0. No dates: 1.0 is cut when the features are complete and stable in the community's
-  hands, not when a calendar says so.
+  two-mode distinction retired; `1.0` is the horizon, carrying nothing of its own, and it is cut
+  when the features are complete and stable in the community's hands, not when a calendar says so
+  (D22).
 - **Presence is the product, not a mode (D16).** Realtime is what the app does; Presence is the
   layer that makes it a being. It is on by default, it is named Presence, and by the end of `0.9.2`
   no selector asks a user to choose between two names for the same call.
-- **After 1.0, the backlog is community-led and unnumbered.** Entity calls, remote control of the
-  interface, the wake word and the watch items are recorded, not scheduled. What moves out of that
-  list moves because the community asked for it (#268).
+- **The unnumbered work is community-led.** Continuity, the household, entity calls, remote control
+  of the interface, the wake word and the watch items are recorded, not scheduled. What moves out of
+  that list moves because the community asked for it (#268) — and new proposals join it by the same
+  door.
 - The full records are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ---
@@ -231,6 +232,10 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
   recorded per release; GPU contention and the thirty-minute thermal soak measured; a fixed
   ten-utterance verdict script so "this build is better" stops being an impression.
 
+- `[ ]` **The store rail (#165).** F-Droid path B: sherpa-onnx and onnxruntime built from source,
+  `Binaries:` + `AllowedAPKSigningKeys`, submission against the released tag. It runs alongside this
+  release and **does not gate its cut** — if the recipe is not ready, 0.9.1 still ships.
+
 **The bar for the cut:** a stranger installs, connects a gateway, places a call, switches profile
 and reads the commands screen without help; speech-end to first audio holds D17's budget on the release APK;
 the streaming arm is co-resident or the default is the fallback, with the numbers that decided it;
@@ -269,41 +274,38 @@ Plan: [`docs/PLAN-0.9.2.md`](docs/PLAN-0.9.2.md). Milestone label: `milestone/0.
 
 ---
 
-## `1.0` — the general release
-
-1.0 is no longer a declaration release with no features. It carries everything still plotted,
-including what was numbered 2.0, and it is cut when the feature set is complete and stable in the
-community's hands (D21). There is no date: there is a bar and a conversation (#268).
-
-Plan: [`docs/PLAN-1.0.md`](docs/PLAN-1.0.md). Milestone label: `milestone/1.0`.
-
-- `[ ]` **Continuity (#231).** One conversation moved between surfaces with the same session,
-  memory and voice — done twice, on real hardware, without repeating a turn.
-- `[ ]` **The household (#234, #46).** Per-person identity and relationships. Speaker ID stops
-  being `sev/low` and becomes a security property, because any detected voice currently triggers
-  the agent.
-- `[ ]` **The store (#165).** F-Droid path B: sherpa-onnx and onnxruntime built from source,
-  `Binaries:` + `AllowedAPKSigningKeys`, submission against the released tag, and their rebuild
-  reproducing our APK (D15).
-- `[ ]` **The gates, re-run on the candidate.** Reproducible build, live suite, behaviour matrix,
-  performance baseline, no open severe bug without a written reason.
-
----
-
 ## Future — community-led and unnumbered
 
-Recorded, not scheduled. What moves out of here moves because the community asked for it — that ask
-is #268.
+Recorded, not scheduled, and decided by want rather than by sequence. Every item here is a real idea;
+none is promised. What moves out of this list moves because the community asked for it (#268), and
+new features or workflows proposed by people using the app join the same list.
 
-- **Entity calls (#232)** — per-event-class routing and a bring-your-own push endpoint, with a
-  per-class ceiling and a visible way to stop it.
-- **Remote control of the interface (#233)** — an MCP surface and a closed scene vocabulary, so the
-  agent can draw meaning rather than free-draw: per-tool grants, a visible control state, an audit
-  log, a dead-man switch.
-- **Wake word (#45)** — D6 step one needs training compute the House does not have.
-- **Watch items (#237, #238)** — prior art worth reading, not dependencies.
+- `[ ]` **Continuity (#231).** One conversation moved between surfaces with the same session, memory
+  and voice. Needs the gateway's session-key semantics and a resume token; the second surface — web
+  text, car or satellite — is an open decision, and Android Auto cannot draw the being.
+- `[ ]` **The household (#234, #46).** Per-person identity and relationships. Speaker ID stops being
+  `sev/low` and becomes a security property, because any detected voice currently triggers the agent.
+- `[ ]` **Entity calls (#232).** Per-event-class routing and a bring-your-own push endpoint, with a
+  ceiling and a visible stop. The entity may only initiate on an arm the user set.
+- `[ ]` **Remote control of the interface (#233).** An MCP surface and a closed scene vocabulary, with
+  per-tool grants, a visible control state, an audit log and a dead-man switch.
+- `[ ]` **Wake word (#45).** D6 step one needs training compute the House does not have, and the
+  always-on question is not settled either.
+- `[ ]` **Watch items (#237, #238).** Prior art worth reading, not dependencies.
+
+Detail and constraints: [`docs/PLAN-FUTURE.md`](docs/PLAN-FUTURE.md).
 
 ---
+
+## `1.0` — the horizon
+
+1.0 is the last thing in the sequence and carries nothing of its own. It is cut when the feature set
+is complete and stable in the community's hands (D22), not when a bucket empties — so no issue carries
+this label. F-Droid is not a 1.0 gate: the store rail runs alongside whichever release's recipe is
+ready (#165), because distribution is not a statement about completeness.
+
+Plan: [`docs/PLAN-1.0.md`](docs/PLAN-1.0.md). The candidate work lives in
+[`docs/PLAN-FUTURE.md`](docs/PLAN-FUTURE.md) and is decided in #268.
 
 ## Distribution
 
