@@ -209,8 +209,9 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
 
 - `[ ]` **States and surfaces (#280, #281, #283).** Audit what each state is — listening, thinking, a
   tool running, waiting, failed, done — and decide whether the being or explicit UI carries it.
-  Then show what is running and on what, and close each command with what changed and how to undo
-  it. No log viewer; one line of plain language and a state.
+  Then show what is running and on what, and close each command with what the agent actually did —
+  plus a way to ask it to undo, where it can. No fake undo button, no log viewer; one line of plain
+  language and a state.
 - `[ ]` **Approvals on the phone (#282).** When Hermes stops for a sign-off, surface what is being
   approved, why, and what yes and no do — answerable by voice or touch, timing out to *no*. The
   loop is not closed if the barricade is invisible.
