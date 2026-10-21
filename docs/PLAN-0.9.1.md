@@ -1,11 +1,34 @@
 # Plan — 0.9.1, the mechanics release
 
-0.9.1 is the release where the app stops being impressive and starts being reliable. It is judged
-with Presence **off**: a call has to be fast, correct and navigable without the layer. Every
-primitive the layer needs has to exist, be measured, and carry a bar — that is what makes 0.9.2's
-claim possible rather than hopeful (D21).
+0.9.1 is the release where the loop closes: a stranger gives a real command by voice, sees what the
+agent is doing, gets a clean result, and discovers the next thing without a tutorial. It must also be
+fast, correct and navigable with Presence **off** — a property, not the goal (D24).
 
 Milestone label: `milestone/0.9.1`. Roadmap: [`../ROADMAP.md`](../ROADMAP.md).
+
+## 0. The loop (#279–#285)
+
+**The gate (#279)** is one stranger completing this by voice with no tutorial: read today's calendar;
+decline a meeting; draft the email; edit a part by voice; send it and clear the time; check trail
+conditions. It exercises natural phrasing, a multi-tool run, edits, an approval if one is required,
+reading content back, and recovery when a step fails. Where it breaks, the break is recorded with its
+log line.
+
+What the loop needs:
+
+- **#280 — the state audit.** What states exist, and whether the being or explicit UI carries each.
+  The being is not assumed to be able to carry them all.
+- **#281 — operations.** Which tool is running, and on what. Not a log viewer.
+- **#283 — feedback.** What changed, and how to undo it, when a command lands.
+- **#282 — approvals.** The sign-off Hermes asks for, surfaced on the phone: what, why, and what yes
+  and no do. Voice or touch; timeout is *no*.
+- **#284 — discovery.** The being suggests in context, the interface reveals, search teaches —
+  designed as one system, not three features.
+- **#285 — the app skill.** Bundled and enabled for the agent the app talks to, so it can answer
+  "where is that setting" from the app's own record.
+
+**Failure is defined too:** a regression, or an interface that needs explaining, fails the release
+even if every issue closes.
 
 ## What is already in hand, not to be rebuilt
 
@@ -115,6 +138,8 @@ ships without it** — this rail never holds the release.
 
 ## Exit gates for the cut
 
+- the acceptance run passes on a device, by voice, with no tutorial (#279);
+- no regression and no screen that needs explaining;
 - a stranger installs, connects a gateway, places a call, switches profile and reads the commands
   screen without help;
 - speech-end to first audio holds D17's budget on the release APK;
