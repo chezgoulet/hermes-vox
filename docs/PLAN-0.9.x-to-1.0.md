@@ -1,5 +1,10 @@
 # Plan — from 0.9.0 to 1.0
 
+> **Superseded 2026-10-21 by D21.** The 0.9.1 / 0.9.2 / 0.9.3 shape below no longer holds:
+> 0.9.1 now carries the mechanics, 0.9.2 is Presence, and everything else belongs to 1.0. The sprint
+> detail is kept because the ordering argument and the measurements still stand. What is actually
+> planned is [`../ROADMAP.md`](../ROADMAP.md) and `PLAN-0.9.1.md` / `PLAN-0.9.2.md` / `PLAN-1.0.md`.
+
 1.0 is a declaration, not a feature drop (D3). Six gates decide it.
 
 **Structure, agreed 2026-10-20: two point releases and the declaration, not four.**

@@ -9,7 +9,7 @@ how many became lines, why the rest were refused, how far apart the lines landed
   python3 scripts/presence-session-report.py --json logcat.txt
   python3 scripts/presence-session-report.py --check logcat.txt   # exit 1 if the bar is missed
 
-The bar (docs/PLAN-0.9.1.md §3, issue #217), applied to Conversational runs only:
+The bar (docs/PLAN-0.9.2.md, "The instrument and the bar"; issue #217), applied to Conversational runs only:
 at least two thirds of offered slots speak, nothing lands after the reply, and render
 p95 stays under three seconds. Repeats need the line text, which only exists when
 Settings -> Log transcripts is on; the report says "unknown" rather than guessing.
