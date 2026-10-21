@@ -87,11 +87,21 @@ Two consequences worth stating plainly:
 
 - **A hotfix bumps on `testing` first**, then merges to `main`. Bumping on `main` alone costs a
   back-merge and a window in which nightlies are downgrades.
-- **Rolling back from a nightly to the release it forked from is a downgrade** and needs an
-  uninstall. The next release is always cut above any nightly, so returning to the release track
-  works at every cut — it just cannot work for the release you already had. If painless
-  side-by-side switching is ever wanted, the only clean answer is a separate `applicationId`
-  for nightlies (two installable apps), not a cleverer version code.
+- **Rolling back to the release a nightly forked from depends on the code, not the tag.** While
+  `testing` is level with the shipped release, a nightly carries the same `versionCode`, and
+  moving to that release is an equal-code reinstall — allowed, no uninstall. Once `testing` bumps
+  for the next release, its nightlies are ahead of the shipped code, and rolling back to that
+  release *is* a downgrade and needs an uninstall. The next release is always cut above any
+  nightly, so returning to the release track works at every cut — it just cannot work for a
+  release the branch has already passed. If painless side-by-side switching is ever wanted, the
+  only clean answer is a separate `applicationId` for nightlies (two installable apps), not a
+  cleverer version code.
+
+  Obtainium can also simply not offer that move: with "hide downgrades" on (the default) it
+  compares the version strings it extracted from the tags, and a `nightly-…` tag reads as newer
+  than `0.9.0.1` — so the release is suppressed even though the codes are equal. That is a display
+  decision, not an install restriction; a manual install of the release APK succeeds when the
+  codes match.
 
 Nightlies carry a **label**, not a different version code: the workflow rewrites
 `versionName` to `<release>-nightly-<short sha>` before the build and leaves `versionCode`
