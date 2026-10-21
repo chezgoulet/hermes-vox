@@ -560,3 +560,19 @@ there.
 **Why the word matters:** it tells the roadmap where the work is. A surfaced feature is an interface
 problem with an upstream dependency, not a subsystem. Approvals and the app skill are the other two
 current examples; both are labelled `surfaced`.
+
+## D26 — #283 is closed; the loop's feedback half is operations and approvals
+
+Set 2026-10-21. Corrects the list in D24.
+
+#283 asked the app to show "what changed in the world" and to offer an undo. The owner's judgement: it
+does not make sense, and it is closed as nonsense.
+
+- **Undo is upstream (D25).** Hermes can already undo the last action. There is no app subsystem to
+  build and no affordance to add beyond what a conversation already does.
+- **"What changed in the world" is not the app's to assert.** The app can show which tool ran and what
+  the agent reported — that is #281 — and it can show a failure. It cannot verify an external effect.
+- **The feedback half of the loop survives as #281 (operations) and #282 (approvals).** Nothing
+  replaces #283.
+
+Counted: 0.9.1 is **24 issues**.
