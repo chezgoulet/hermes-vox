@@ -24,6 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # #221: the app skill must agree with the code it describes. This is the same
+      # pair gate.sh runs first (presence report self-test + app skill claims); both
+      # are stdlib-only, so they run before the toolchain is even set up.
+      - name: Docs self-tests (presence report + app skill claims)
+        run: |
+          python3 scripts/test_presence_session_report.py
+          python3 scripts/check-skill-claims.py
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
