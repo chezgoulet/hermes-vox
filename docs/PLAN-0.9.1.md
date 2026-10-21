@@ -76,6 +76,19 @@ an invariant, not a limitation to be engineered around.
 - **F8** — a fixed ten-utterance verdict script, so "this build is better" stops being an
   impression.
 
+## 7. The regression and the cues (#191, #251)
+
+- **#191** — Presence hangs on initialising after the Gemma download and the process dies. The code
+  already has a path for a failed load (`loadFailed` excludes the soul from the warm gate), so the
+  failure is below that: memory is the leading hypothesis, at 2.41 GB resident for Gemma on an 8 GB
+  device that also holds the rest of the stack. One attempt to reproduce with logcat on a cold
+  device; if it will not reproduce, record that rather than leaving a sev/high open against the cut.
+  The co-residency run (#179) is where the memory numbers come from.
+- **#251** — ambient cues, with the split named before anything is built: while Presence is off,
+  cues are the channel; while it is on, asides occupy it and a thinking ping would double it. The
+  owner's read is that a user wants one or the other, so the acceptance names cues off / on /
+  presence-off-only, and which is the default.
+
 ## Exit gates for the cut
 
 - a stranger installs, connects a gateway, places a call, switches profile and reads the commands

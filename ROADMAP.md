@@ -218,6 +218,12 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
   six-verb animation grammar instead of per-command art, and the open question in #252 settled: does
   the app keep full command parity in-app, or lean into the phone-call identity and make hanging up
   and calling back the normal way to start a new session?
+- `[ ]` **The regression that stops the product (#191).** Presence hangs on initialising after the
+  Gemma download and the process dies. The load path is supposed to degrade gracefully, so the cause
+  is below it — most likely memory. It cannot wait a release, and the co-residency run is where the
+  memory picture becomes legible.
+- `[ ]` **Ambient cues (#251).** A thinking ping and an idle-timeout cue — the ambient channel while
+  Presence is off, and explicitly not layered on top of asides when it is on.
 - `[ ]` **The instruments (#209, #208, F4, F5, F8).** The performance baseline and behaviour matrix
   recorded per release; GPU contention and the thirty-minute thermal soak measured; a fixed
   ten-utterance verdict script so "this build is better" stops being an impression.
