@@ -92,6 +92,17 @@ tasks.configureEach { task ->
     }
 }
 
+// The live-gateway suite (#167) runs against a deterministic fake built on the JDK's
+// com.sun.net.httpserver. Android unit-test Kotlin compilation runs with -no-jdk
+// (android.jar has no httpserver package), so this ONE compile also sees the JDK the
+// tests already execute on. App sources and the APK are untouched: no dependency is
+// added, and com.sun.net.httpserver never reaches the shipped APK.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    if (name.toLowerCase(Locale.ROOT).contains('unittest')) {
+        compilerOptions.noJdk.set(false)
+    }
+}
+
 dependencies {
     implementation 'org.apache.commons:commons-compress:1.26.2'
     // Only the pinned sherpa-onnx runtime (scripts/fetch-runtime.sh). Named rather than

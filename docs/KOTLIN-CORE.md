@@ -17,7 +17,7 @@ changed (`com.hermesvox.mobile.HermesSession` → `com.hermesvox.core.HermesSess
 | `voice/entity.go` | `core/Entity.kt` | URL joining, bearer + `X-Hermes-Session-Key`, bounded error bodies, per-exchange deadline. |
 | `encoding/json` | `core/Json.kt` | A strict reader/writer; see below. |
 | `voice/*_test.go`, `mobile/session_test.go` | `core/HermesSessionTest.kt`, `StreamTest.kt`, `JsonTest.kt`, `StreamParityTest.kt` | Ported, plus the parity harness. |
-| `voice/integration_live_test.go` | `core/LiveGatewayTest.kt` | Same env gating (`HERMES_VOX_LIVE=1` + `HERMES_VOX_HERMES_API_KEY`). |
+| `voice/integration_live_test.go` | `core/LiveGatewayTest.kt` | Six cases run in CI against `FakeGateway` (a deterministic JDK HttpServer); `HERMES_VOX_LIVE=1` + `HERMES_VOX_HERMES_API_KEY` point the same cases at the real gateway. Never skipped. |
 
 ### The four fixes, and where they live now
 
