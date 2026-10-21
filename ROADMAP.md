@@ -218,14 +218,12 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
   six-verb animation grammar instead of per-command art, and the open question in #252 settled: does
   the app keep full command parity in-app, or lean into the phone-call identity and make hanging up
   and calling back the normal way to start a new session?
-- `[ ]` **First run (#230).** Install to first call without help.
-- `[ ]` **Look and instruments (#225, #209, #208, F4, F5, F8).** Fine-grained particle controls with
-  a live preview; the performance baseline and behaviour matrix recorded per release; GPU
-  contention and the thirty-minute thermal soak measured; a fixed ten-utterance verdict script so
-  "this build is better" stops being an impression.
+- `[ ]` **The instruments (#209, #208, F4, F5, F8).** The performance baseline and behaviour matrix
+  recorded per release; GPU contention and the thirty-minute thermal soak measured; a fixed
+  ten-utterance verdict script so "this build is better" stops being an impression.
 
-**The bar for the cut:** a stranger installs, onboards, places a call, switches profile and reads
-the commands screen without help; speech-end to first audio holds D17's budget on the release APK;
+**The bar for the cut:** a stranger installs, connects a gateway, places a call, switches profile
+and reads the commands screen without help; speech-end to first audio holds D17's budget on the release APK;
 the streaming arm is co-resident or the default is the fallback, with the numbers that decided it;
 no truncation report without a named cause; matrix and baseline recorded on both devices.
 
@@ -244,6 +242,9 @@ Plan: [`docs/PLAN-0.9.2.md`](docs/PLAN-0.9.2.md). Milestone label: `milestone/0.
   label, no degraded-mode pill; the Settings row reports the absence, and only when it is absent.
 - `[ ]` **The settings IA and the transcript (#224, #223).** Being, Hearing, Voice and Presence as
   four sections, split by what the user is changing; a Presence transcript that is not empty.
+- `[ ]` **First run and the Being's controls (#230, #225).** The onboarding path written against the
+  names the app keeps, and fine-grained particle controls with a live preview, on the Being screen
+  #224 creates.
 - `[ ]` **The aside: a minimal directive and a guard that repairs (#257, #256).** Content is what
   the code polices; format is what it repairs (D20). Every remaining bound cites a documented
   failure, and the measured ones retire.

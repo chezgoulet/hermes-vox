@@ -22,7 +22,7 @@ operation.
 Two visible facts replace three states: Presence is on or off (the user's choice), and the model is
 ready or not ready (a fact).
 
-## 2. The settings IA and the transcript (#224, #223)
+## 2. The settings IA, the transcript, and the screens it creates (#224, #223, #225, #230)
 
 - **#224** — split the Visuals section by what the user is changing, not by which subsystem owns
   the preference: **Being** (look, motion, density, cues), **Hearing** (mic, AEC, noise
@@ -30,6 +30,11 @@ ready or not ready (a fact).
   own settings and its model state).
 - **#223** — the transcript layout is empty in Presence; it is the surface a user reads to know what
   the being heard and said, so it cannot be blank.
+- **#225** — fine-grained particle controls with a live preview, on the Being screen this section
+  creates. Building them into Visuals first and moving them later is work with no user in between.
+- **#230** — first run: gateway, microphone permission, the recommended models, Presence and its
+  model, then a first call. Honest when a step cannot be completed, skippable for someone who knows
+  the app — and written once, against the names that now exist.
 
 ## 3. The aside: a minimal directive and a guard that repairs (#257, #256)
 
@@ -82,6 +87,7 @@ three seconds. Then one real-room night, by ear, against the same run's numbers.
 ## Exit gates for the cut
 
 - there is no mode selector, and an upgraded install keeps the behaviour it had chosen;
+- a stranger installs, is walked through the gateway, the models and a first call, and can skip it;
 - the bar above is met on one long run, with the summary in the release notes;
 - one real-room night with the owner;
 - the remaining bounds in the guard each cite a failure, and the measured ones are retired;
