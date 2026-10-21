@@ -331,3 +331,37 @@ turn boundary.
 
 **If p95 cannot be met on-device, record the gap and the cause.** Widening the target silently
 is how a budget stops meaning anything.
+
+## D19 — The guard's premise is an assumption, and it will be replaced by a measurement
+
+Set 2026-10-21.
+
+`ErSoulTurn.opener` says it in one line: *"The Contract is enforced here in code, not trusted to
+a 2B: no digits (a number is a fact), no markup, bounded length."* That is a defensible stance
+and it is **not a finding**. Nothing in this repo measures whether the presence model invents
+numbers or facts at this task. What the field has actually shown is narrower: lines **overshoot
+in shape** — ten of the twenty-five refusals in the measured corpus are `too-many-words` — and
+the model needed a written prohibition against service-desk phrasing when greeting.
+
+So the bounds stand on two different things, and only one of them is evidence:
+
+- **measured**: length, repetition and envelope are where real lines are lost;
+- **assumed**: numbers and world facts would be invented if allowed.
+
+**The assumption gets tested, not trusted, in either direction.** Opening the guard because the
+assumption is unproven would repeat the same error inverted. The rule for this project is the
+one that rejected Qwen: a bound that matters is set from a distribution, not from a hunch.
+
+**The measurement:** sample the same directive across a set of contexts, many times, and classify
+every render — a number not present in the input, a world fact not present in the input, a claim
+of an action that did not happen, a repeat, and the length distribution. Rate per class. The
+bounds are then set from those rates, and the classes with a rate of zero stop being policed by
+a lexical ban.
+
+**One relaxation is admissible without waiting, because it is a narrowing rather than a
+loosening:** a number that appears in the client's own directive is *grounded* — the client
+vouched for it — and may be spoken. Everything else stays refused. That turns the rule from
+"no numbers" into "**no new numbers**", which is the claim the Contract actually makes, and it
+generalises the single vouched value in #218.
+
+**Until the measurement exists, no bound is removed on the grounds that it is probably fine.**
