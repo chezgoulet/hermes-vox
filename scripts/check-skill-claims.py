@@ -134,9 +134,49 @@ def check_shape(text: str, fields: dict[str, str]) -> list[str]:
     return errors
 
 
+def relocate(skill_path: Path, text: str, refs) -> int:
+    """Rewrite line numbers whose token has moved inside the same file.
+
+    A line number is a hint; the token is the claim. Any edit above a cited line shifts
+    every number below it, so within one day of merges 55 of 192 references were stale
+    while the claims themselves were still true. This finds the token where it now lives
+    and rewrites the number; a token that is gone from the file is genuinely stale and is
+    left for the verifier to report.
+    """
+    out = text
+    moved = 0
+    for m in reversed(list(refs)):
+        rel, first_s, last_s, raw_token = m.groups()
+        first = int(first_s)
+        token = norm(raw_token.strip().strip("`").strip())
+        f = resolve(Path(__file__).resolve().parent.parent, rel)
+        if f is None:
+            continue
+        lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        lo = max(0, first - 1)
+        hi = min(len(lines), (int(last_s) if last_s else first))
+        if any(token in norm(l) for l in lines[lo:hi]):
+            continue
+        hits = [i + 1 for i, l in enumerate(lines) if token in norm(l)]
+        if not hits:
+            continue                      # genuinely stale: let the verifier fail it
+        new = min(hits, key=lambda n: abs(n - first))
+        old_ref = out[m.start():m.end()]
+        suffix = raw_token if raw_token.strip().startswith("`") else raw_token
+        new_ref = f"({rel}:{new} {suffix})"
+        out = out[:m.start()] + new_ref + out[m.end():]
+        moved += 1
+    if moved:
+        skill_path.write_text(out, encoding="utf-8")
+    return moved
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Verify the app skill's file:line claims.")
     ap.add_argument("--verbose", action="store_true", help="print every verified claim")
+    ap.add_argument("--fix", action="store_true",
+                    help="re-locate references whose line moved (the token is the anchor, the "
+                         "line number is a hint) and rewrite the skill in place")
     ap.add_argument("--skill", default=str(SKILL), help="path to the skill (default: %(default)s)")
     args = ap.parse_args()
 
@@ -156,6 +196,12 @@ def main() -> int:
     refs = list(REF_RE.finditer(text))
     if not refs:
         errors.append("no file:line references found — every claim must be checkable")
+
+    if args.fix:
+        moved = relocate(skill_path, text, refs)
+        print(f"check-skill-claims: relocated {moved} reference(s)")
+        text = skill_path.read_text(encoding="utf-8")
+        refs = list(REF_RE.finditer(text))
 
     verified = 0
     unique: set[tuple[str, int, int, str]] = set()
