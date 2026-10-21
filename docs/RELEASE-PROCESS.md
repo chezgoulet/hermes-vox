@@ -64,6 +64,35 @@ is the same one a rebuild produces.
 
 8. **Confirm** on a phone: install, connect to your gateway, one live call.
 
+## Version codes: nightlies and releases cannot both lead
+
+Android installs an APK only if its `versionCode` is **equal or higher** than the installed one.
+Equal is a reinstall, higher is an upgrade, lower is a downgrade and is refused.
+
+Nightlies carry the same `versionCode` as the release they follow, which gives one rule:
+
+- **`testing` must never be behind `main`'s latest release.** If it falls behind, every nightly
+  from that branch is a downgrade and cannot install over the release without an uninstall.
+  0.8.0 did exactly that (`33786fa`): the bump landed on `main` only, `testing` stayed at 140,
+  and phones on the release could not take a nightly.
+
+`scripts/check-version-code.sh` enforces it, and CI runs it before the build:
+
+```sh
+scripts/check-version-code.sh            # development: fails when this branch lags the release
+scripts/check-version-code.sh --release  # cut: fails unless this code is above every shipped code
+```
+
+Two consequences worth stating plainly:
+
+- **A hotfix bumps on `testing` first**, then merges to `main`. Bumping on `main` alone costs a
+  back-merge and a window in which nightlies are downgrades.
+- **Rolling back from a nightly to the release it forked from is a downgrade** and needs an
+  uninstall. The next release is always cut above any nightly, so returning to the release track
+  works at every cut — it just cannot work for the release you already had. If painless
+  side-by-side switching is ever wanted, the only clean answer is a separate `applicationId`
+  for nightlies (two installable apps), not a cleverer version code.
+
 **Nightlies are not releases.** Every merge into `testing` publishes a `nightly-*`
 prerelease built from that commit (`.github/workflows/nightly.yml`) and tagged at it:
 it is signed with the release key and carries a `versionCode` at or above the

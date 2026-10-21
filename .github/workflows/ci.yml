@@ -24,6 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # tags: the versionCode check compares against shipped releases
+          fetch-tags: true
+
+      # #262 fallout: versionCode discipline must be enforced, not remembered. Nightlies
+      # carry the release's code, so a branch that lags a shipped release produces
+      # downgrades that cannot install over it (the 0.8.0 failure, 33786fa).
+      - name: versionCode discipline
+        run: bash scripts/check-version-code.sh
 
       # #221: the app skill must agree with the code it describes. This is the same
       # pair gate.sh runs first (presence report self-test + app skill claims); both
