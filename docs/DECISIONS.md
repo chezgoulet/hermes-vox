@@ -502,3 +502,38 @@ nobody can evaluate.
 **Reopen only on a concrete proposal:** a named surface, what the handoff carries (voice, being,
 in-flight turn), and who is the writer. Until then, conversation-level resumption — which already
 works — is the answer, and it needs no work here.
+
+## D24 — 0.9.1's goal is a closed loop, and the loop is the gate
+
+Set 2026-10-21. Records the direction agreed in the founder interrogation. Supersedes the framing of
+0.9.1 as a list of fixes.
+
+Vox is a **voice-first tool set** for fully engaging a Hermes agent. The phone is the shell — ears,
+voice, the being, the controls — and the agent is the brain and the hands, on hardware its owner
+controls. Vox's own features stay on the device; the agent may use whatever model its owner chose.
+Within that slice the aim is the best version of it, and the product refuses to become a command
+centre, a dashboard aggregator, or a second desktop client.
+
+**The loop.** Command out, visible work, clean feedback, discovery — closed. 0.9.1's question is no
+longer "is the app good with Presence off?" That is a property the release must have, not its goal.
+
+**The gate** is one stranger completing a real multi-step task by voice with no tutorial: the
+calendar run (#279) — read the day, decline a meeting, draft, edit by voice, send, clear the time,
+check trail conditions. It is a gate, not a demo.
+
+**What the loop needs**, in issues: a state audit (#280), operations visibility (#281), approvals
+surfaced on the phone (#282), feedback that closes the command (#283), discovery designed as one
+system (#284), and the app skill bundled and enabled so the agent can teach (#285). Approvals are in
+0.9.1 because the loop is not closed without them.
+
+**What the release is judged on:** no regressions, and no confusing interface — even if every issue
+closes. Speed, reliability and a designed feel are entry requirements; the ergonomics and logical
+flow of every screen and setting are part of the work, not polish after it.
+
+**Presence** remains 0.9.2 and waits until 0.9.1 is genuinely good. Its benchmark is Sesame across the
+board: turn-taking, emotional attunement, naturalness and latency. 0.9.0.x may carry features when
+they are good; the roadmap shows one only after it ships.
+
+**1.0** is stable in strangers' hands and feature-complete enough for general release. No date.
+
+**The community** gives testers, contributors and direction. No promises to any of the three.

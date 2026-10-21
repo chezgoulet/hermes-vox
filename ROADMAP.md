@@ -188,9 +188,13 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
 
 ## `0.9.1` — mechanics
 
-**The claim:** the app is fast, correct and navigable with Presence **off** — and every primitive
-Presence needs exists, is measured, and carries a bar. A good call does not depend on the layer.
-When the layer is on, these same primitives are what make it good.
+**The claim:** the loop closes. A stranger gives a real command by voice, sees what the agent is
+doing, gets a clean result, and discovers the next thing without being taught. The app is also fast,
+correct and navigable with Presence **off** — a property this release must have, not its purpose.
+
+**The gate (#279):** one person who has never used the app completes the calendar run by voice, with
+no tutorial — read the day, decline a meeting, draft the email, edit a part by voice, send it, clear
+the time, then check trail conditions. A demo can be scripted; this cannot.
 
 Plan: [`docs/PLAN-0.9.1.md`](docs/PLAN-0.9.1.md). Milestone label: `milestone/0.9.1`.
 
@@ -203,6 +207,16 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
 
 **The work, in dependency order:**
 
+- `[ ]` **States and surfaces (#280, #281, #283).** Audit what each state is — listening, thinking, a
+  tool running, waiting, failed, done — and decide whether the being or explicit UI carries it.
+  Then show what is running and on what, and close each command with what changed and how to undo
+  it. No log viewer; one line of plain language and a state.
+- `[ ]` **Approvals on the phone (#282).** When Hermes stops for a sign-off, surface what is being
+  approved, why, and what yes and no do — answerable by voice or touch, timing out to *no*. The
+  loop is not closed if the barricade is invisible.
+- `[ ]` **Discovery (#284, #285).** Three mechanisms as one system — the being suggests in context,
+  the interface reveals what is relevant, a searchable surface teaches by use — plus the app skill
+  bundled and enabled, so the agent itself can answer "where is that setting".
 - `[ ]` **Co-residency (#179) — the gate.** One live call with VAD + the streaming arm + TTS +
   presence resident: RTF, peak RSS, worst `MemAvailable`, presence first token, stutter, thermal.
   Then the default arm is decided and written into `DECISIONS.md` with the numbers.
@@ -238,8 +252,9 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
   `Binaries:` + `AllowedAPKSigningKeys`, submission against the released tag. It runs alongside this
   release and **does not gate its cut** — if the recipe is not ready, 0.9.1 still ships.
 
-**The bar for the cut:** a stranger installs, connects a gateway, places a call, switches profile
-and reads the commands screen without help; speech-end to first audio holds D17's budget on the release APK;
+**The bar for the cut:** the acceptance run passes on a device, by voice, with no tutorial (#279);
+no regression and no screen that needs explaining; a stranger installs, connects a gateway, places a
+call and switches profile without help; speech-end to first audio holds D17's budget on the release APK;
 the streaming arm is co-resident or the default is the fallback, with the numbers that decided it;
 no truncation report without a named cause; matrix and baseline recorded on both devices.
 
