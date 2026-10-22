@@ -47,12 +47,18 @@ the House has no ML-training GPU — so this needs rented compute or a decision 
 The question to answer before the compute question: does an always-listening app fit what this
 product is? A phone call you place has a clear beginning; an always-on room does not.
 
-## Watch items (#237, #238)
+## Watch items (#237, #238, #292, #293)
 
-Two pieces of prior art, tracked so they survive:
+Prior art, tracked so it survives. None of it is a dependency.
 
-- **Ming-3.0-tts 0.5B** — MIT, 44.1 kHz, paralinguistic tags, but 2.96 GB of weights, PyTorch-only,
-  no ONNX graph for the backbone. Not adoptable now; worth following.
-- **VoiceManager** — one WebSocket carrying streaming STT and TTS, documented frame by frame. Its
-  frame set is the same set of races Vox has to solve. Read it before designing anything in the
-  continuous lane; the vocabulary already exists.
+- **Ming-3.0-tts 0.5B** (#237) — MIT, 44.1 kHz, paralinguistic tags, but 2.96 GB of weights,
+  PyTorch-only, no ONNX graph for the backbone. Not adoptable now; worth following, and its tag
+  vocabulary is worth taking without the weights.
+- **VoiceManager** (#238) — one WebSocket carrying streaming STT and TTS, documented frame by frame.
+  Its frame set is the same set of races Vox has to solve; the vocabulary already exists.
+- **KittenTTS** (#292) — Apache-2.0. A 1.7B cloner with 20 languages and expression tags, plus ONNX
+  minis at 40–80 MB. The minis are the right size class, but there is no Android path and Vox's
+  runtime is sherpa-onnx.
+- **Phonon, gradium** (#293) — 31M, 64.5 MB q8, 24 kHz, streaming in 80 ms frames, Apache-2.0 for the
+  English model, with an Android CPU/QNN path that is build-from-source. The multilingual 40M models
+  are CC BY-NC and cannot ship in a GPL-3 app. Unrelated to the House's Phonon.
