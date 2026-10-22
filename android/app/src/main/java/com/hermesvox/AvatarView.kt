@@ -371,6 +371,20 @@ class AvatarView @JvmOverloads constructor(
 
     fun setVisualEnergy(v: Float) { visEnergy = VisualStyle.energy(v) }
     fun setVisualGlow(v: Float) { visGlow = VisualStyle.glow(v) }
+
+    /** #275: on the light theme the being is drawn as ink on [paper] (the screen's own
+     *  background), so it sits on the page instead of in a black box. */
+    fun setLightSurface(light: Boolean, paper: Int) {
+        inkOn = if (light) 1f else 0f
+        paperR = android.graphics.Color.red(paper) / 255f
+        paperG = android.graphics.Color.green(paper) / 255f
+        paperB = android.graphics.Color.blue(paper) / 255f
+        // The rounded window was the light theme's frame for the black surface; on paper the
+        // being needs none.
+        if (light) clipToOutline = false
+    }
+    private var inkOn = 0f
+    private var paperR = 0f; private var paperG = 0f; private var paperB = 0f
     fun visualCategory(): String = vsty.token
     fun cyclingAllCategories(): Boolean = cycleAll
 
@@ -421,6 +435,7 @@ class AvatarView @JvmOverloads constructor(
         f.size = rSize
         f.core = rCoreHeat; f.edge = rEdge
         f.glow = rHalo * visGlow
+        f.ink = inkOn; f.paperR = paperR; f.paperG = paperG; f.paperB = paperB
         f.halo = (0.45f + sBright * 0.8f) * rHalo * visGlow
         f.trails = rTrails
         f.baseR = Color.red(curBase) / 255f; f.baseG = Color.green(curBase) / 255f; f.baseB = Color.blue(curBase) / 255f

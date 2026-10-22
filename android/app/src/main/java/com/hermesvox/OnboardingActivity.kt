@@ -119,7 +119,13 @@ class OnboardingActivity : AppCompatActivity() {
      * declaration itself is pinned to AVATAR_FULL_DP by OnboardingLayoutTest).
      */
     private fun applyAvatarSize() {
-        findViewById<AvatarView>(R.id.ob_avatar).setPortalShape(-1f)   // the being greets you through a portal
+        findViewById<AvatarView>(R.id.ob_avatar).apply {
+            setPortalShape(-1f)   // the being greets you through a portal
+            // #275: on the light theme, as ink on the page rather than light in a black hole.
+            val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            setLightSurface(night != android.content.res.Configuration.UI_MODE_NIGHT_YES,
+                androidx.core.content.ContextCompat.getColor(context, R.color.hv_bg))
+        }
         val cfg = resources.configuration
         val dp = OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp)
         if (dp == OnboardingLayout.AVATAR_FULL_DP) return
