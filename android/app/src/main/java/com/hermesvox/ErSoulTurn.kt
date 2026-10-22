@@ -124,17 +124,20 @@ object ErSoulTurn {
 
     /**
      * The mind is still working on the caller's request, past the beat and the lag line. Offer the
-     * soul ONE short line about what it is doing — or silence, which is often right on a phone.
+     * soul ONE line about what it is doing — or silence, which is often right on a phone.
      *
-     * The lines already said this run are listed so the soul does not say them again; the code
-     * guard ([workingLine]) enforces it regardless. The bounds are the beat's: a few words, no
-     * fact, no result, no number, no promise.
+     * D20: the directive is [presenceRules] and nothing else. The old lexical contract is gone —
+     * no "never a number", no word or character cap stated as a prohibition, no markup warning.
+     * Shape is rule four, and it is repaired in code ([repairLine], [fitToBound]) instead of
+     * threatened at the model.
      *
-     * [waitedSeconds] is the one number the client can vouch for (#218): seconds since the turn
-     * started, on the same clock the latency stats use. The model cannot know how long the caller
-     * has waited — this is the client's fact, not the model's — so the directive offers exactly
-     * that value, written in digits, and the guard ([workingLine]) accepts that number once and
-     * no other. Null vouches for nothing and the allowance is not offered at all.
+     * The lines already said this run are context for the moment, not a sixth rule: the repeat
+     * bound refuses them regardless ([workingLine]).
+     *
+     * [waitedSeconds] is the caller's measured wait (#218), on the same clock the latency stats
+     * use. It is written into the directive because that is what grounds it: D20 generalises #218
+     * from "the one wait" to "no new numbers" — every number the client wrote into the directive
+     * may be spoken ([vouchedNumbers]), and nothing else may.
      */
     fun workingDirective(
         callerText: String,
@@ -144,134 +147,193 @@ object ErSoulTurn {
     ): String {
         val ctx = if (toolContext.isNullOrBlank()) "" else " Right now it is using: $toolContext."
         val already = if (said.isEmpty()) "" else
-            " You have already said: " + said.joinToString(", ") { "\"$it\"" } +
-                ". Do not say any of those again, or anything close to them."
+            " You have already said: " + said.joinToString(", ") { "\"$it\"" } + "."
         val wait = if (waitedSeconds == null) "" else
-            " The one number you may use is the wait: they have been waiting $waitedSeconds " +
-                "seconds, so you may say that — written exactly as \"$waitedSeconds seconds\", " +
-                "the number $waitedSeconds once, with no other number anywhere in the line."
-        return "You are still on the call. The caller asked: \"$callerText\", and the mind is still " +
-            "working on it.$ctx$already " +
-            "If a few words would keep them company, say ONE short line in your own voice, under " +
-            "$MAX_OPENER_WORDS words, about what you are doing for them — never a result, a fact, a " +
-            "number or a promise.$wait Otherwise reply with exactly $ESCALATE."
+            " They have been waiting $waitedSeconds seconds, if that is worth saying."
+        return presenceRules(
+            "The caller asked: \"$callerText\", and the mind is still working on it.$ctx$already"
+        ) + wait
     }
 
     /**
-     * The mid-run line to speak, or null for silence. Only a plain line speaks (the escalate token
-     * in any form is silence), it must pass the beat's bounds ([opener]: short, no digits, no
-     * markup), and it must not repeat a line already said this run — across the whole run, not the
+     * D20's directive: five rules, and nothing else. Rule two is the moment and is supplied by the
+     * caller; the other four are fixed.
+     *
+     * The text deliberately carries no digits: every digit in a directive is a grounded number
+     * (D20), so numbering a rule would vouch for "1".
+     */
+    private fun presenceRules(moment: String): String = listOf(
+        "You are Hermes, in your own voice — who you are comes from VOX.md.",
+        moment,
+        "Never state a result you do not have: nothing is done until the mind says it is done.",
+        "One line, in your own voice, no longer than a breath.",
+        "Silence is a valid answer, and often the right one — if you have nothing worth saying, " +
+            "reply with exactly $ESCALATE.",
+    ).joinToString(" ")
+
+    /**
+     * The mid-run line to speak, or null for silence. Silence is an escalate token in any form or
+     * a blank render; a line is refused only for CONTENT, and [workingReject] names the reason.
+     *
+     * Shape is REPAIRED (D20): an over-long line is cut at a clause end inside the budget
+     * ([fitToBound]); markdown emphasis, bullets and backticks are stripped; a fence, a title line
+     * and a trailing courtesy are removed ([repairLine]). A line is never refused because it was
+     * formatted.
+     *
+     * It must not repeat a line already said this run — across the whole run, not the
      * [REPEAT_WINDOW_MS] the glue ring keeps, because two lines 40 s apart are still a stuck record.
      *
-     * [vouchedSeconds] is the one number the client can vouch for (#218): how long the caller has
-     * been waiting, as the controller measured it. A line may carry that value, once, and no other
-     * number. Null vouches for nothing, so a number is refused exactly as it always was.
+     * [vouched] is the set of digit runs the client wrote into the directive that produced this
+     * render ([vouchedNumbers]). A line may speak one of them, once; two numbers are still refused
+     * even when both are grounded, because a line doing arithmetic is the model guessing (#218).
      */
     fun workingLine(
         rendered: String?,
         saidThisRun: List<String> = emptyList(),
-        vouchedSeconds: Long? = null,
-    ): String? = workingLine(parse(rendered), saidThisRun, vouchedSeconds)
+        vouched: Set<String> = emptySet(),
+    ): String? = workingLine(parse(rendered), saidThisRun, vouched)
 
     /** [workingLine] for an already-parsed decision (the host's soul hook parses). */
     fun workingLine(
         decision: Outcome,
         saidThisRun: List<String> = emptyList(),
-        vouchedSeconds: Long? = null,
+        vouched: Set<String> = emptySet(),
     ): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return null
-        val line = opener(text, vouchedSeconds) ?: return null
-        val n = norm(line)
-        return if (saidThisRun.any { norm(it) == n }) null else line
+        return judge(text, vouched, saidThisRun).line
     }
 
     /**
-     * Why [workingLine] would refuse this render, or null when it would speak. Diagnostics only —
-     * the refusal is correct either way, but a log that says `reason=silent` cannot distinguish
-     * "the soul chose silence" from "the guard threw away a good line". The owner asked to see
-     * what was discarded, and the answer decides whether the bounds are wrong.
+     * Why [workingLine] would refuse this render, or null when it would speak. Diagnostics only:
+     * the refusal is the same either way, but `reason=silent` cannot tell "the soul chose
+     * silence" from "the guard threw away a good line", and the field log depends on the
+     * vocabulary.
      *
      * Reasons, in the order the guard applies them: `not-spoken` (escalate or empty render),
-     * `empty`, `too-long` (> [MAX_OPENER_CHARS]), [REASON_UNVOUCHED_NUMBER] (a number the client
-     * did not vouch for: two of them, the wrong one, or any number when none was offered),
-     * `digits-or-markup` (markup characters — the name is unchanged for log continuity, and it is
-     * still true of the line), `too-many-words` (> [MAX_OPENER_WORDS]), `repeat` (same line
+     * `empty` (nothing survived repair), [REASON_UNVOUCHED_NUMBER] (a number the directive did not
+     * carry: two of them, or any number when the directive carried none), `digits-or-markup`
+     * (bracket markup — the name is unchanged for log continuity), [REASON_UNBACKED_RESULT] (a
+     * claimed result the mind has not given), `too-many-words` (over [MAX_OPENER_WORDS] with no
+     * clause end to cut at), `too-long` (> [MAX_OPENER_CHARS] after the cut), `repeat` (same line
      * already said this run).
      */
     /** [workingReject] for raw model output (the same parse the caller uses). */
     fun workingReject(
         rendered: String?,
         saidThisRun: List<String> = emptyList(),
-        vouchedSeconds: Long? = null,
+        vouched: Set<String> = emptySet(),
     ): String? =
         // A blank render is "empty", not "not-spoken": parse() turns both into Nothing, and the
         // difference is the diagnosis the log needs.
         if (rendered.isNullOrBlank()) "empty"
-        else workingReject(parse(rendered), saidThisRun, vouchedSeconds)
+        else workingReject(parse(rendered), saidThisRun, vouched)
 
     fun workingReject(
         decision: Outcome,
         saidThisRun: List<String> = emptyList(),
-        vouchedSeconds: Long? = null,
+        vouched: Set<String> = emptySet(),
     ): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
-        val firstLine = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
-            ?: return "empty"
-        val t = firstLine.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
-        if (t.isEmpty()) return "empty"
-        if (t.length > MAX_OPENER_CHARS) return "too-long"
-        numberRefusal(t, vouchedSeconds)?.let { return it }
-        if (hasMarkup(t)) return "digits-or-markup"
-        if (t.split(Regex("\\s+")).count { it.isNotEmpty() } > MAX_OPENER_WORDS) return "too-many-words"
-        val line = opener(text, vouchedSeconds) ?: return "empty"
-        return if (saidThisRun.any { norm(it) == norm(line) }) "repeat" else null
+        return judge(text, vouched, saidThisRun).reason
     }
 
-    /** Bounds for a beat: long enough to sound human, short enough to be cut cleanly. */
+    /** The guard's one decision, so [workingLine] and [workingReject] cannot drift apart. */
+    private class Judged(val line: String?, val reason: String?)
+
+    /**
+     * Repair the shape, then refuse only content. Content is judged first, on the repaired line
+     * before any cut: a line that invents a number or claims a result is refused even if the cut
+     * would have dropped that clause — repair may remove formatting, never a claim. After content,
+     * the shape is fitted (`too-many-words` when there is no clause end), then the character
+     * backstop (`too-long`), then repeat.
+     */
+    private fun judge(text: String, vouched: Set<String>, said: List<String>): Judged {
+        val repaired = repairLine(text) ?: return Judged(null, "empty")
+        numberRefusal(repaired, vouched)?.let { return Judged(null, it) }
+        if (hasMarkup(repaired)) return Judged(null, "digits-or-markup")
+        if (claimsResult(repaired)) return Judged(null, REASON_UNBACKED_RESULT)
+        val fitted = fitToBound(repaired) ?: return Judged(null, "too-many-words")
+        if (fitted.length > MAX_OPENER_CHARS) return Judged(null, "too-long")
+        if (said.any { norm(it) == norm(fitted) }) return Judged(null, "repeat")
+        return Judged(speakable(fitted), null)
+    }
+
+    /**
+     * Rule four's budget, in words: the CUT point for an over-long line, not a refusal (D20). A
+     * line over it is cut at a clause end, or dropped when there is none.
+     *
+     * CITATION: none in the field. The value comes from the handover margin — a line must finish
+     * before the mind's first token — and docs/PRESENCE-GUARD-BOUNDS.md measured it only against a
+     * corpus, which that document calls a hypothesis. HYPOTHESIS: retire the exact value when a
+     * session shows a line cut at seven words colliding with the mind's first text, or when the
+     * bench (#256) measures a longer budget as safe.
+     */
     const val MAX_OPENER_WORDS = 7
+
+    /**
+     * Backstop for a line that is short in words but un-speakable in time. A line over it is
+     * refused `too-long` rather than cut, because a cut inside a long word is exactly the fragment
+     * D20 forbids.
+     *
+     * CITATION: none in the field — no `too-long` has been logged. docs/PRESENCE-GUARD-BOUNDS.md
+     * measured one corpus line, and calls that a hypothesis. HYPOTHESIS: retire when a field
+     * session set logs no `too-long`, or when the voice's duration rather than its characters is
+     * what gets bounded.
+     */
     const val MAX_OPENER_CHARS = 60
 
     /**
-     * #218: the refusal reason for a number the client did not vouch for — two of them, the wrong
-     * one, or any number when nothing was offered. Its own token so a field log can tell an
-     * invented number from a wrapped line; the number is the dangerous one.
+     * #218, generalised by D20: a number the directive did not carry. Its own token so a field log
+     * can tell an invented number from a wrapped line; the number is the dangerous one.
      */
     const val REASON_UNVOUCHED_NUMBER = "digits-unvouched"
 
     /**
-     * Sanitise a candidate opener, or null if it cannot be spoken safely. The Contract is enforced
-     * here in code, not trusted to a 2B: no digits (a number is a fact), no markup, bounded length.
+     * D20's one new reason: a claimed result the working lane cannot have — "I've booked it" before
+     * the mind has said so. Content, never shape; it is refused, not repaired. Named its own token
+     * so a field log separates a lie from a formatting defect.
+     */
+    const val REASON_UNBACKED_RESULT = "result-unbacked"
+
+    /**
+     * The BEAT's opener: strict on purpose and untouched by D20's repair. The beat plays while the
+     * mind is about to answer, so a number, bracket markup or an over-long line costs the beat
+     * rather than being spoken mid-thought (the turn/beat lane is frozen).
+     *
      * A trailing ellipsis gives the voice a trailing-off prosody, so the cut into the mind's answer
      * sounds like a person continuing rather than being interrupted.
-     *
-     * [vouchedSeconds] is the working lane's one exception (#218): the caller's measured wait, and
-     * only that, may appear in the line. The beat path calls this with no voucher, so a number in a
-     * beat is still refused — the turn lane is untouched.
      */
-    fun opener(raw: String, vouchedSeconds: Long? = null): String? {
+    fun opener(raw: String): String? {
         val line = raw.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
         val t = line.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
         if (t.isEmpty() || t.length > MAX_OPENER_CHARS) return null
-        if (numberRefusal(t, vouchedSeconds) != null) return null
+        if (numberRefusal(t, emptySet()) != null) return null
         if (hasMarkup(t)) return null
         val words = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty() || words.size > MAX_OPENER_WORDS) return null
-        return if (t.last() in ".!?…") t else "$t..."
+        return speakable(t)
     }
 
     /**
-     * Why [t]'s numbers cannot be spoken, or null when they can: at most ONE digit run, and only
-     * the value the client vouched for. Two numbers are refused even when both are that value —
-     * a line with two numbers is a line doing arithmetic, which is the model's guess, not the
-     * client's measurement. A number with nothing vouched is refused exactly as it always was.
+     * D20: the numbers the client wrote into [directive] this run. The client composed them, so
+     * they are grounded and a line may speak one. There is no other voucher list — #218's wait is
+     * simply the number the working directive happens to carry.
      *
-     * The comparison is on the digit run as written: the value the client offers is the value the
-     * line must carry, so "090" is not "90" and "1:30" is two numbers.
+     * The runs are compared as written ("090" is not "90"), because the value the client offers is
+     * the value the line must carry.
      */
-    private fun numberRefusal(t: String, vouchedSeconds: Long?): String? {
+    fun vouchedNumbers(directive: String): Set<String> = digitRuns(directive).toSet()
+
+    /**
+     * Why [t]'s numbers cannot be spoken, or null when they can: at most ONE digit run, and only
+     * one the directive carried. Two numbers are refused even when both are grounded — a line with
+     * two numbers is a line doing arithmetic, which is the model's guess, not the client's fact
+     * (#218).
+     */
+    private fun numberRefusal(t: String, vouched: Set<String>): String? {
         val runs = digitRuns(t)
         if (runs.isEmpty()) return null
-        if (runs.size == 1 && vouchedSeconds != null && runs[0] == vouchedSeconds.toString()) return null
+        if (runs.size == 1 && runs[0] in vouched) return null
         return REASON_UNVOUCHED_NUMBER
     }
 
@@ -287,7 +349,147 @@ object ErSoulTurn {
         return runs
     }
 
-    /** The markup the voice must never read aloud. Digits are bounded separately, by number. */
+    /**
+     * D20 shape repair, pure. Drop the envelope a small model wraps a line in, so the guard refuses
+     * content and never formatting.
+     *
+     * Removed: the markers of a code fence (not what is inside it), markdown headings, a bare title
+     * line when a real line follows, bullets, emphasis and backtick markers, and a trailing
+     * courtesy. One line is rule four, so the first surviving line is the line.
+     *
+     * Nothing here changes what the line CLAIMS: a claim that survives repair is still refused by
+     * [claimsResult].
+     */
+    fun repairLine(raw: String?): String? {
+        val lines = raw.orEmpty().lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .filterNot { FENCE_MARKER.matches(it) }
+        if (lines.isEmpty()) return null
+        // A title line is dropped only when something else can be the line; a render that is only
+        // a heading is repaired to its text rather than thrown away.
+        var line = lines.filterNot { isTitleLine(it) }.ifEmpty { lines }.first()
+        line = stripMarkers(line)
+        line = stripBullet(line)
+        line = stripCourtesy(line)
+        line = line.trim('"', '\'', ' ', '-', '—', ':')
+        return line.ifEmpty { null }
+    }
+
+    /** A fence line is the marker alone; backticks inside a line are inline code and are stripped. */
+    private val FENCE_MARKER = Regex("^(?:```|~~~)[A-Za-z0-9_+.-]*$")
+
+    /**
+     * D20 shape repair for rule four: cut an over-long line at the last clause end inside
+     * [MAX_OPENER_WORDS], or return null when there is none.
+     *
+     * A word-boundary truncation is NEVER spoken. A fragment — "I am still reading through the" —
+     * sounds like a fault in the phone, while silence sounds like a person thinking, so the line is
+     * dropped instead. The clause end is kept inside the text (a comma is dropped, a full stop
+     * kept) so the spoken line ends where a person would pause.
+     */
+    fun fitToBound(text: String): String? {
+        val tokens = Regex("\\S+").findAll(text).toList()
+        if (tokens.size <= MAX_OPENER_WORDS) return text
+        val limit = tokens[MAX_OPENER_WORDS - 1].range.last + 1
+        val cut = (0 until limit).lastOrNull { text[it] in CLAUSE_ENDS } ?: return null
+        val end = if (text[cut] in TERMINALS) cut + 1 else cut
+        val candidate = text.substring(0, end).trim().trimEnd(',', ';', ':', '—', '–').trim()
+        if (candidate.isEmpty()) return null
+        val words = candidate.split(Regex("\\s+")).count { it.isNotEmpty() }
+        return if (words in 1..MAX_OPENER_WORDS) candidate else null
+    }
+
+    /**
+     * The clause ends D20 names: `,` `;` `:` `—` and a full stop, plus the other sentence
+     * terminals — a question or an exclamation is a clause end too.
+     */
+    private val CLAUSE_ENDS = charArrayOf(',', ';', ':', '—', '.', '!', '?', '…')
+    private val TERMINALS = charArrayOf('.', '!', '?', '…')
+
+    /** True for a line that is a label rather than speech: a heading, a bold title, or "Update:". */
+    private fun isTitleLine(line: String): Boolean {
+        val t = line.trim()
+        if (Regex("^#{1,6}\\s").containsMatchIn(t)) return true
+        if (Regex("^\\*\\*[^*]+\\*\\*$").matches(t)) return true
+        if (Regex("^__[^_]+__$").matches(t)) return true
+        if (!t.endsWith(":")) return false
+        val words = t.dropLast(1).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        return words.isNotEmpty() && words.size <= 4 &&
+            words.none { w -> w.any { it in ".!?…" } }
+    }
+
+    /** Markdown emphasis and code markers are formatting, not speech. */
+    private fun stripMarkers(line: String): String {
+        var t = line
+        for (c in charArrayOf('*', '_', '`', '~')) t = t.replace(c.toString(), "")
+        return t.trim().replace(Regex("^#{1,6}\\s*"), "")
+    }
+
+    /** A leading bullet is formatting; the item after it is the line. */
+    private fun stripBullet(line: String): String =
+        line.trim().replace(Regex("^(?:[-•–]\\s+)+"), "").trim()
+
+    /**
+     * A trailing courtesy is packaging, not the line. The set is deliberately narrow: the closes
+     * this shape of model output appends ("Hope this helps", "Let me know if you need anything
+     * else", "Thanks", "Take care"). Everything else is speech and is left alone. This is a repair,
+     * not a bound, so D20's citation rule does not apply to it — the cost of being wrong is one
+     * spoken sentence, not a refused line.
+     */
+    private fun stripCourtesy(line: String): String {
+        var t = line.trim()
+        repeat(3) {
+            val next = t.replace(COURTESY_TAIL, "")
+                .trim().trimEnd(',', ';', ':', '—', '–').trim()
+            if (next == t) return t
+            t = next
+        }
+        return t
+    }
+
+    private val COURTESY_TAIL = Regex(
+        "(?i)[\\s.!—–-]*(?:" +
+            "hope (?:this|that) helps|hope that'?s (?:helpful|useful)|" +
+            "let me know if (?:you need|there'?s|i can)[^.!?]*|" +
+            "thanks(?: so much)?|thank you(?: so much)?|take care|" +
+            "have a (?:good|great) (?:day|one)|talk soon|cheers?" +
+            ")\\s*[.!]*\\s*$"
+    )
+
+    /**
+     * D20: a claimed result the working lane cannot have. The mind has not said anything is done
+     * (rule three), so a completed-action claim is unbacked and is refused — never repaired.
+     *
+     * Deliberately narrow: a first-person completed action, or "it is done/booked/…", or
+     * "you're all set". "I am checking", "still working", "almost there" and "I'll keep you posted"
+     * are not claims of a result and pass.
+     */
+    private fun claimsResult(t: String): Boolean = DONE_CLAIM.containsMatchIn(t)
+
+    private val DONE_CLAIM = Regex(
+        "(?i)\\b(?:" +
+            "i(?:['’]ve| have)(?: just| already| now)? (?:booked|sent|scheduled|ordered|reserved|" +
+            "bought|paid|cancelled|canceled|deleted|updated|finished|completed|confirmed|fixed|" +
+            "changed|added|removed|created|set up|turned (?:it )?(?:on|off))" +
+            "|(?:it|that|everything|your [a-z]+)(?:['’]s| is| are) (?:done|booked|sent|scheduled|" +
+            "finished|complete|completed|confirmed|updated|cancelled|canceled|ready)" +
+            "|(?:you(?:['’]re| are) )?(?:all set|good to go)" +
+            ")\\b"
+    )
+
+    /** A line is spoken as written when it already ends in a pause; otherwise it trails off. */
+    private fun speakable(t: String): String = if (t.last() in TERMINALS) t else "$t..."
+
+    /**
+     * The markup the voice must never read aloud: bracket forms only. Markdown emphasis, bullets
+     * and backticks are REPAIRED now (D20), so this refusal is the residue.
+     *
+     * CITATION: none in the field — no bracketed line has been logged. The corpus in
+     * docs/PRESENCE-GUARD-BOUNDS.md calls this a hypothesis. HYPOTHESIS: retire brackets from the
+     * refusal set when a field session set logs none, or once the render prompt stops producing
+     * them.
+     */
     private fun hasMarkup(t: String): Boolean =
         t.any { it == '<' || it == '>' || it == '[' || it == ']' }
 

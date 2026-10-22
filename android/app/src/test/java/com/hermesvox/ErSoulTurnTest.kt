@@ -164,7 +164,7 @@ class ErSoulTurnTest {
         assertTrue(d.contains("terminal (sleep 70)"))
         assertTrue("silence must be offered", d.contains(ErSoulTurn.ESCALATE))
         assertTrue("the run's lines ride the directive", d.contains("\"Checking on it now...\""))
-        assertTrue(d.contains("never a result, a fact"))
+        assertTrue(d.contains("nothing is done until the mind says it is done"))
         assertFalse(ErSoulTurn.workingDirective("x").contains("already said"))
     }
 

@@ -1,101 +1,91 @@
-# Presence guard bounds — measured
+# Presence guard bounds — measured, then split into content and shape
 
-The working lane's guard is [ErSoulTurn.workingReject][wr]. This is what it actually refuses,
-measured over a plausible corpus, not recalled from the bounds. Pinned by
-`PresenceGuardBoundsTest`. **No bound is changed here** — the field has logged 0 guard refusals,
-so there is nothing yet to fix. The one addition since this was measured is the client's vouch
-for the caller's wait (#218, last section): no constant moved, and the corpus below is still
-refused and spoken exactly as it was.
+The working lane's guard is [ErSoulTurn.workingLine][wl]/[workingReject][wr]. This document began as
+a measurement of what that guard refused over a plausible corpus; **D20** then changed the split.
+It is kept because D20 requires every remaining bound to name the failure it answers.
 
-## The corpus
+**Before D20 (measured 2026-10-20): the guard policed formatting.** 25 of 51 renders were refused,
+and 10 of those 25 (40%) were `too-many-words` — every 8-to-11-word line. An eleven-word line is
+not a lie, so D20 moved shape into repair: an over-long line is cut at a clause end and spoken,
+markdown is stripped, a fence/title/courtesy is removed, and a number the client wrote into the
+directive is grounded. What remains refused is content.
 
-51 renders a small model plausibly returns for the working directive: what it asks for (one
-short line, under seven words, no digits, no markup), plus the ways a model overshoots — a
-reassuring sentence one or two words too long, long words, a number, markup, markdown emphasis,
-a line already said, and silence in its forms. Full list in the test.
+## The corpus and what it measures now
 
-## Which bound refuses first
+The corpus is unchanged: 51 renders a small model plausibly returns for the working directive, plus
+the ways it overshoots. `PresenceGuardBoundsTest` pins the counts.
 
-| Verdict | Count |
-|---|---|
-| spoke (passed every bound) | 26 |
-| `too-many-words` | 10 |
-| `digits-unvouched` | 4 |
-| `digits-or-markup` | 2 |
-| `not-spoken` | 3 |
-| `empty` | 3 |
-| `repeat` | 2 |
-| `too-long` | 1 |
-| **total** | **51** |
+| Verdict | Before D20 | After D20 |
+|---|---|---|
+| spoke | 26 | **27** |
+| `too-many-words` | 10 | **9** |
+| `digits-unvouched` | 4 | 4 |
+| `digits-or-markup` | 2 | 2 |
+| `not-spoken` | 3 | 3 |
+| `empty` | 3 | 3 |
+| `repeat` | 2 | 2 |
+| `too-long` | 1 | 1 |
+| **total** | **51** | **51** |
 
-Refused: 25. Of those, **10 of 25 (40%) are `too-many-words`** — every 8-to-11-word line in
-the corpus. The four digit lines are `digits-unvouched` (nothing is vouched for when this corpus
-runs — #218 split the old reason in two), the two markup lines keep `digits-or-markup`; the rest
-are silence or the same line twice. The total is unchanged: 25 refused, 26 spoken.
+The one line that moved is *"Just a quick update, I'm still checking everything for you"*: its
+comma is inside the budget, so it is spoken as *"Just a quick update…"*. The other over-long corpus
+lines have no clause end inside the budget, so D20 drops them rather than speaking a fragment —
+that is the decision, and `PresenceRepairTest` pins both directions.
 
-Bound order (first match wins): `not-spoken`/`empty` → `too-long` (>60 chars) → `digits-unvouched`
-(a number) → `digits-or-markup` (markup) → `too-many-words` (>7) → `repeat`. A line that breaks
-several at once reports the earliest; that order is pinned by
-`the_order_of_the_bounds_is_length_then_content_then_count_then_repeat`.
+Bound order (first match wins), after D20: `not-spoken`/`empty` → `digits-unvouched` →
+`digits-or-markup` → `result-unbacked` → `too-many-words` (over budget, no clause end) → `too-long`
+(over the character backstop after the cut) → `repeat`. Content now precedes shape: a line that
+invents a number is refused for the invention even when it is also too long. One test pins it.
 
-## What looks wrong for the lines this feature wants
+## What D20 repairs, and what it still refuses
 
-1. **`MAX_OPENER_WORDS = 7`** (`ErSoulTurn.MAX_OPENER_WORDS`) is the one that refuses real lines. A calm
-   line about working is naturally 8–10 words — *"I'm just checking on that for you now"*,
-   *"I am still reading through the logs for you"*. The directive asks for *"under 7 words"*, so
-   the model is told to be terse and still overshoots by one or two. **Exact change I would
-   make: `MAX_OPENER_WORDS` 7 → 10.** Risk: the constant is shared with `opener()`, which also
-   bounds the *beat* on every mind turn (`ErSoulTurn.parse`), so widening it widens beats the
-   field already tuned; and a 10-word line is ~2.5–3 s of speech, which can collide with the
-   mind's first token and be cut mid-clause — exactly the handover the 7-word margin protects.
-   Not applied.
-2. **The markup set is incomplete, and this is the defect I would fix first if a line were
-   refused for it.** `opener` rejects only `< > [ ]` (digits are bounded by number, see below), so
-   markdown emphasis is *spoken with its markers*: `**Checking** on it` passes the guard and
-   reaches the voice as `Checking** on it`. That is a character-set gap, not a constant — the
-   fix is to add `*` and `_` (and backtick) to the markup test and to the trim set. Low risk,
-   but still a behaviour change, so it waits for evidence too.
-3. **`MAX_OPENER_CHARS = 60`** (`ErSoulTurn.MAX_OPENER_CHARS`) refused 1 of 51 and is nearly dead at a
-   7-word limit (7 words average well under 60 characters); it only bites on long words. I would
-   **not** change it: it is a backstop for the word bound, and lowering or raising it would not
-   move any line in this corpus except the one that is genuinely un-speakable.
-4. **The directive is stricter than the guard**, which is the wrong way round: it says *"under 7
-   words"* (≤ 6) while the guard accepts 7. If the margin is meant to be 7, the directive should
-   say so; if 6, the guard is one word too generous. Text/constant pair, not applied.
+| Render | Before | After |
+|---|---|---|
+| more words than the budget, with a clause end inside it | refused `too-many-words` | **cut there and spoken** |
+| more words, no clause end inside the budget | refused `too-many-words` | **dropped**, same reason (never a mid-phrase fragment) |
+| markdown emphasis / bullets / backticks | spoken **with markers** | **stripped**, then spoken |
+| a fence, a title line, a trailing courtesy | spoken with the wrapper | **removed**, then spoken |
+| a number the directive carried | refused (except #218's wait) | **spoken** |
+| a number nobody supplied | refused `digits-unvouched` | refused `digits-unvouched`, unchanged |
+| a claimed result ("I've booked it") | **spoken** — there was no check | **refused `result-unbacked`** |
 
-## Why nothing is applied
+`result-unbacked` is D20's one new token. Every other token keeps its name, including
+`digits-or-markup`, which now covers only bracket markup (`< > [ ]`) because emphasis is repaired.
 
-The field logged **0** guard refusals in six sessions. Either no working slot was ever refused
-by the guard, or the build behind those logs predated the `event=er-presence detail` line (it is
-the newest change in this tree). Either way there is no field evidence of a good line being
-discarded: the one working slot that did not speak was skipped as `silent`, which is the soul
-declining (or a blank render), not the guard refusing a line.
+## Every bound, and what it cites
 
-A corpus is a hypothesis. The numbers above say which bound *would* refuse, not that it ever
-did. The change waits on a field session with real `why=` values from `event=er-presence detail`.
+D20's rule: a bound names the recorded failure it answers, or it is labelled a hypothesis with the
+condition that would retire it. Where there is no field record, this says so instead of inventing
+one.
 
+| Bound | Citation | Status |
+|---|---|---|
+| `MAX_OPENER_WORDS = 7` | No field failure recorded. Value comes from the handover margin (a line must finish before the mind's first token); this corpus only shows what it *would* cut. | **Hypothesis.** Retire the exact value when a session shows a 7-word cut colliding with the mind's first text, or when the bench (#256) measures a longer budget as safe. |
+| `MAX_OPENER_CHARS = 60` | No field failure recorded. One corpus line (long words) is un-speakable with fewer than seven words. | **Hypothesis.** Retire when a field session set logs no `too-long`, or when the voice's duration rather than its characters is what gets bounded. |
+| bracket markup (`< > [ ]`) | No field failure recorded. Model output plausibly wraps lines in `[thinking]`/`<aside>`, and this corpus refuses both. | **Hypothesis.** Retire when a field session set logs none, or once the render prompt stops producing them. |
+| `digits-unvouched` | #218 and D20: a number the model invents is a fact it cannot know; a number the *client wrote into the directive* is grounded. Measured: the four digit corpus lines. | Kept, narrowed: "no new numbers". |
+| `result-unbacked` | D20: claiming a result that does not exist has an asymmetric cost. The old code had no check; the table above records that defect. | New. Content, never repaired. |
+| `repeat` | 09-10 field session: one sentence spoken seven times in thirty-nine seconds. | Kept, documented field failure. |
+
+The two earlier "what looks wrong" findings are now answered rather than carried: the markdown set
+gap is closed by stripping (`*`, `_`, backticks and bullets never reach the voice), and the
+directive/guard mismatch is gone because the directive states no word cap — the five rules ask for
+"one line, no longer than a breath", and rule four's bound is a cut in code.
+
+## #218 — the number the client can vouch for, generalised
+
+D20 turns #218's single voucher into a rule: **any number the client wrote into the directive this
+run is grounded** (`ErSoulTurn.vouchedNumbers(directive)`), and a number that appears nowhere in the
+directive is refused as `digits-unvouched`.
+
+- **Two numbers are still refused**, even when both are grounded: a line doing arithmetic is the
+  model guessing, not the client measuring (#218).
+- **The comparison is the digit run as written**: "090" is not "90", and "1:30" is two numbers.
+- **The beat is untouched.** `parse()` composes a beat through `opener` with no voucher, so a number
+  in a beat still costs the beat; the turn/beat lane is frozen.
+- **Spelled-out numbers are not policed** and never were: the rule is digit-shaped. A lexicon would
+  refuse legitimate lines the corpus pins ("One second", "Just a moment"). The honest limit is that
+  a spelled number is not checked against the directive.
+
+[wl]: ../android/app/src/main/java/com/hermesvox/ErSoulTurn.kt
 [wr]: ../android/app/src/main/java/com/hermesvox/ErSoulTurn.kt
-
-## #218 — the one number the client can vouch for
-
-The rule "no digits" is right for every number the *model* could invent. It was also refusing the
-one number the *client* knows: how long the caller has been waiting. So the working lane now
-carries a voucher.
-
-- **The directive** (`workingDirective(..., waitedSeconds)`) offers exactly that value, in digits,
-  once, and no other number.
-- **The guard** (`workingLine` / `workingReject` / `opener`, all taking `vouchedSeconds`) accepts a
-  line containing **at most one digit run, and only when it equals the vouched value**. Two
-  numbers, the wrong number, or any number with nothing vouched is still refused — the last is the
-  old rule, unchanged.
-- **The reason** for a number is `digits-unvouched`, its own token so a field log can tell an
-  invented number from a wrapped line. Markup keeps the name `digits-or-markup`; the name is
-  unchanged for log continuity and is still true of a markup line.
-- **The beat is untouched.** `parse()` composes a beat through `opener` with no voucher, so a
-  number in a beat still costs the beat. The turn lane, the cadence, `late` and the barge path are
-  unchanged.
-- **Spelled-out numbers are not policed** and never were: the rule is digit-shaped. A lexicon
-  would refuse legitimate lines the corpus already pins ("One second", "Just a moment") and would
-  move a bound this change may not move. The honest limit is that a spelled wait is not checked
-  against the voucher; the directive asks for the digits, which is the only form the guard can
-  verify.

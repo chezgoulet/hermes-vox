@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
@@ -95,43 +96,54 @@ class PresenceGuardBoundsTest {
         println("  spoke        ${rows.count { it.second == null }}")
         for ((reason, n) in counts.toSortedMap()) println("  ${reason.padEnd(12)} $n")
 
-        // Pinned measurements (2026-10-20). A bound change must move these numbers on purpose.
-        assertEquals("spoke, i.e. passed every bound", 26, rows.count { it.second == null })
-        assertEquals(10, counts["too-many-words"])
+        // Pinned measurements. 2026-10-20 for the corpus; D20 (2026-10-21) moved one line from
+        // `too-many-words` to spoken: "Just a quick update, I'm still checking everything for you"
+        // now cuts at its comma and speaks. Nothing else in the corpus moved — the other over-long
+        // lines have no clause end inside the budget, so D20 drops them exactly as before.
+        assertEquals("spoke, i.e. passed every bound", 27, rows.count { it.second == null })
+        assertEquals(9, counts["too-many-words"])
         assertEquals(1, counts["too-long"])
-        // #218 split the old `digits-or-markup` in two: the four digit lines are now refused as
-        // unvouched numbers (nothing is vouched for in this corpus), the two markup lines keep
-        // the old reason. The total refusal count is unchanged.
+        // #218 split the old `digits-or-markup` in two: the four digit lines are refused as
+        // unvouched numbers (nothing is vouched for in this corpus), the two bracket lines keep the
+        // old reason. The total refusal count is unchanged.
         assertEquals(4, counts["digits-unvouched"])
         assertEquals(2, counts["digits-or-markup"])
         assertEquals(2, counts["repeat"])
         assertEquals(3, counts["not-spoken"])
         assertEquals(3, counts["empty"])
         assertEquals(51, corpus.size)
-        // The markdown lines are the finding, not a passing case: the guard does not carry * or _
-        // inside a line, so both are spoken with their markers intact.
-        assertEquals(null, rows.first { it.first.what == "markdown" }.second)
+        // D20's finding: markdown was spoken WITH its markers before; the repair now strips them,
+        // so the model's formatting no longer reaches the voice and no longer costs the line.
+        assertEquals("Checking on it...", ErSoulTurn.workingLine("**Checking** on it"))
+        assertEquals("Still working on it...", ErSoulTurn.workingLine("_Still working_ on it"))
     }
 
-    @Test fun the_order_of_the_bounds_is_length_then_content_then_count_then_repeat() {
-        // A line that breaks several bounds at once reports the first one the guard applies.
-        // >60 chars AND >7 words AND a digit: length wins.
-        assertEquals("too-long",
-            ErSoulTurn.workingReject("I am still checking 3 extraordinarily complicated authentication details right now"))
-        // A digit AND >7 words: content wins over the word count. Nothing is vouched for here,
-        // so the number is refused under its own reason (#218).
+    @Test fun content_is_refused_before_shape_is_fitted() {
+        // Content first: a line that invents a number is refused for the number even when it is
+        // also over the shape budget — the fabrication is the thing the log must show.
         assertEquals("digits-unvouched", ErSoulTurn.workingReject("I am still checking 3 things for you right now"))
-        // >7 words alone: the word count.
+        assertEquals(
+            "result-unbacked",
+            ErSoulTurn.workingReject("I've booked it for you, and I am still checking the details"),
+        )
+        // Shape alone: over the word budget with no clause end is `too-many-words`; long words are
+        // the character backstop's `too-long`; a clause end inside the budget is spoken shorter.
         assertEquals("too-many-words", ErSoulTurn.workingReject("I am still checking things for you right now"))
+        assertEquals("too-long", ErSoulTurn.workingReject("Extraordinarily complicated authentication verification ongoing"))
+        assertEquals(null, ErSoulTurn.workingReject("I am still checking things, for you right now"))
     }
 
-    @Test fun the_directive_is_stricter_than_the_guard() {
-        // workingDirective asks for "under MAX_OPENER_WORDS words" (so <= 6), while the guard
-        // accepts MAX_OPENER_WORDS (so <= 7). A seven-word line is legal for the guard and
-        // illegal for the instruction the model was given.
-        val seven = "One moment while I pull that up"
-        assertEquals(7, seven.split(Regex("\\s+")).size)
-        assertEquals(null, ErSoulTurn.workingReject(seven))
-        assert(ErSoulTurn.workingDirective("x").contains("under 7 words"))
+    @Test fun the_directive_states_no_cap_and_the_guard_still_bounds_the_shape() {
+        // D20: the directive asks for "one line ... no longer than a breath", not "under N words".
+        // The bound lives in code as a CUT, not as a threat the model has to satisfy: a line over
+        // it with a clause end is spoken shorter, and one without is dropped.
+        val d = ErSoulTurn.workingDirective("x")
+        assertFalse("no word cap as a prohibition", d.contains("under 7 words"))
+        assertFalse("no character cap", d.contains("characters"))
+        assertEquals("One moment while I pull that up...", ErSoulTurn.workingLine("One moment while I pull that up"))
+        assertEquals(
+            "I'm just checking on that...",
+            ErSoulTurn.workingLine("I'm just checking on that, for you right now"),
+        )
     }
 }

@@ -7,19 +7,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #218 — an aside may say how long the wait has been.
+ * #218 generalised by D20 — a line may speak a number the client wrote into the directive, and no
+ * other.
  *
- * The working guard refuses any digit, because a number the model invents is a fact it cannot
- * know. There is exactly one number the CLIENT knows and the model does not: how long the caller
- * has been waiting. The directive offers that value; the guard accepts that value, once.
- *
- * Every test here passes its voucher explicitly, except the one that pins the no-voucher case —
- * which is the whole old rule, still in force.
+ * The old rule refused every digit, because a number the model invents is a fact it cannot know.
+ * The client already knows some of them (how long the caller has waited, the timer the caller
+ * asked for), and it writes those into the directive. Those are grounded; a number that appears
+ * nowhere in the directive is the model's invention and is still refused as `digits-unvouched`.
+ * Two numbers are refused even when both are grounded — a line doing arithmetic is a guess (#218).
  */
 class ErSoulTurnVouchedNumberTest {
 
-    /** The controller's snapshot: the caller has been waiting ninety seconds. */
-    private val vouched = 90L
+    /** The controller's directive: the caller has been waiting ninety seconds. */
+    private val directive = ErSoulTurn.workingDirective("check the logs", null, emptyList(), 90L)
+    private val vouched = ErSoulTurn.vouchedNumbers(directive)
 
     // ---- the voucher ----
 
@@ -32,9 +33,9 @@ class ErSoulTurnVouchedNumberTest {
     }
 
     @Test fun a_different_number_is_refused_and_the_reason_says_so() {
-        // 45 is a fact the model invented; the wait was 90. The token is the number's own, not
-        // the generic markup one: a field log has to separate "invented a number" from "wrapped
-        // the line in brackets".
+        // 45 is a fact the model invented; the directive carried 90. The token is the number's own,
+        // not the generic markup one: a field log has to separate "invented a number" from
+        // "wrapped the line in brackets".
         assertEquals(
             "digits-unvouched",
             ErSoulTurn.workingReject("We're about 45 seconds in", emptyList(), vouched),
@@ -44,7 +45,7 @@ class ErSoulTurnVouchedNumberTest {
     }
 
     @Test fun two_numbers_are_refused_even_when_both_are_the_vouched_value() {
-        // One number is the client's measurement. Two is the model doing arithmetic.
+        // One number is the client's fact. Two is the model doing arithmetic.
         assertEquals(
             "digits-unvouched",
             ErSoulTurn.workingReject("90 seconds in, 90 to go", emptyList(), vouched),
@@ -52,8 +53,8 @@ class ErSoulTurnVouchedNumberTest {
     }
 
     @Test fun the_wait_written_the_way_a_person_would_is_two_numbers_and_is_refused() {
-        // "a minute and a half" cannot be vouched: the client vouches a value, so the wait is
-        // written in seconds — one number — and the directive asks for exactly that.
+        // "a minute and a half" cannot be one grounded run: the directive carries 90, so
+        // "1 minute 30 seconds" is two numbers and neither is the vouched one.
         assertEquals(
             "digits-unvouched",
             ErSoulTurn.workingReject("About 1 minute 30 seconds in", emptyList(), vouched),
@@ -61,12 +62,12 @@ class ErSoulTurnVouchedNumberTest {
     }
 
     @Test fun a_number_with_nothing_vouched_is_refused_as_before() {
-        // The whole old rule, unchanged: no voucher, no number.
+        // The whole old rule, unchanged: no grounded number in the directive, no number in the line.
         assertEquals("digits-unvouched", ErSoulTurn.workingReject("We're about 90 seconds in"))
         assertNull(ErSoulTurn.workingLine("We're about 90 seconds in"))
         assertEquals(
             "digits-unvouched",
-            ErSoulTurn.workingReject("It'll take 2 minutes", emptyList(), null),
+            ErSoulTurn.workingReject("It'll take 2 minutes", emptyList(), emptySet()),
         )
     }
 
@@ -78,19 +79,33 @@ class ErSoulTurnVouchedNumberTest {
         )
     }
 
+    @Test fun every_number_the_directive_carries_is_grounded_not_only_the_wait() {
+        // D20 generalises #218: the grounds are the directive's digit runs, whatever wrote them. A
+        // timer the caller named is the client's fact just as the wait is.
+        val timer = ErSoulTurn.workingDirective("set a timer for 5 minutes")
+        assertEquals(setOf("5"), ErSoulTurn.vouchedNumbers(timer))
+        assertEquals(
+            "Five minutes on the clock...",
+            ErSoulTurn.workingLine("Five minutes on the clock", emptyList(), ErSoulTurn.vouchedNumbers(timer)),
+        )
+        assertEquals(
+            "I'll give it 5 minutes...",
+            ErSoulTurn.workingLine("I'll give it 5 minutes", emptyList(), ErSoulTurn.vouchedNumbers(timer)),
+        )
+    }
+
     @Test fun a_spelled_number_is_prose_the_guard_does_not_police() {
         // DECIDED, and pinned: the number rule stays digit-shaped, so a spelled wait is ordinary
-        // prose and passes as it always did. See the class note in the report: a word-number
-        // lexicon would refuse "One second" / "Just a moment" / "one more thing", which are
-        // legitimate working lines already pinned in PresenceGuardBoundsTest, and would move
-        // bounds this change is not allowed to move.
+        // prose and passes as it always did. A word-number lexicon would refuse "One second" /
+        // "Just a moment" / "one more thing", which are legitimate working lines already pinned in
+        // PresenceGuardBoundsTest.
         assertEquals(
             "About ninety seconds in...",
             ErSoulTurn.workingLine("About ninety seconds in", emptyList(), vouched),
         )
-        // The honest limit of that choice: a spelled wait is not checked against the voucher, so
-        // "ten" is not refused where 10 is. The directive asks for the digits, the only form the
-        // guard can verify.
+        // The honest limit of that choice: a spelled wait is not checked against the directive, so
+        // "ten" is not refused where 10 is. The directive writes the wait in digits, the only form
+        // the guard can verify.
         assertNull(ErSoulTurn.workingReject("About ten seconds in", emptyList(), vouched))
         assertEquals(
             "digits-unvouched",
@@ -99,10 +114,8 @@ class ErSoulTurnVouchedNumberTest {
     }
 
     @Test fun the_directive_offers_the_wait_it_can_vouch_for() {
-        val d = ErSoulTurn.workingDirective("check the logs", null, emptyList(), vouched)
-        assertTrue("the value is named, in the digits the guard can check", d.contains("\"90 seconds\""))
-        assertTrue("it is offered once, and nothing else is", d.contains("once, with no other number"))
-        assertTrue("the old prohibition still stands", d.contains("never a result, a fact"))
+        assertTrue("the value is named, in the digits the guard can check", directive.contains("waiting 90 seconds"))
+        assertFalse("the old prohibition is gone", directive.contains("no other number"))
     }
 
     @Test fun the_directive_offers_no_wait_when_none_is_known() {
@@ -114,16 +127,20 @@ class ErSoulTurnVouchedNumberTest {
     // ---- the seam: the voucher widens nothing else ----
 
     @Test fun the_voucher_does_not_widen_the_length_bound() {
-        val long = "We are 90 seconds into this and still checking every single one of the details"
+        // Six long words with a grounded number: the voucher buys the number, not the duration.
+        val long = "Extraordinarily complicated authentication verification ongoing 90"
         assertTrue(long.length > ErSoulTurn.MAX_OPENER_CHARS)
+        assertEquals(6, long.split(Regex("\\s+")).size)
         assertEquals("too-long", ErSoulTurn.workingReject(long, emptyList(), vouched))
     }
 
     @Test fun the_voucher_does_not_widen_the_word_bound() {
+        // D20 repairs the shape: an over-long line is cut at a clause end, or dropped when there is
+        // none. This one has no clause end inside the budget, so it is still absent from the voice.
         val eight = "We are about 90 seconds into this check"
         assertEquals(8, eight.split(Regex("\\s+")).size)
         assertEquals("too-many-words", ErSoulTurn.workingReject(eight, emptyList(), vouched))
-        // The same line one word shorter speaks: the count is still the bound.
+        // The same line one word shorter speaks: the count is still the budget.
         assertNull(ErSoulTurn.workingReject("We are about 90 seconds in", emptyList(), vouched))
     }
 
@@ -138,7 +155,8 @@ class ErSoulTurnVouchedNumberTest {
     }
 
     @Test fun the_voucher_does_not_admit_markup() {
-        // A vouched number buys the line nothing: markup is refused on its own.
+        // A grounded number buys the line nothing: bracket markup is refused on its own. Markdown
+        // emphasis is a different case — D20 strips it rather than refusing.
         assertEquals(
             "digits-or-markup",
             ErSoulTurn.workingReject("[thinking] about 90 seconds in", emptyList(), vouched),
