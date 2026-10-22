@@ -340,6 +340,20 @@
                     android:textColor="@color/hv_text_dim"
                     android:textSize="12sp" />
 
+                <!-- #285: teach the agent this app — its own description, installed on the gateway. -->
+                <LinearLayout
+                    android:id="@+id/row_app_skill"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Teach your agent this app"
+                        style="@style/HvRowTitle" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/row_reset"
                     style="@style/HvRow"
