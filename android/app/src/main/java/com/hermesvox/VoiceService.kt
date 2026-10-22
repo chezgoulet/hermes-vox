@@ -57,10 +57,12 @@ class VoiceService : Service() {
         @Volatile private var running = false
         /** The state line the notification shows (#281) — the one surface left when the call is pocketed. */
         @Volatile private var line: String? = null
+        /** #174: the notification names the active profile once there is more than one. */
+        @Volatile var title: String = "Hermes Vox"
 
         private fun build(context: Context, text: String): Notification =
             NotificationCompat.Builder(context, CHANNEL)
-                .setContentTitle("Hermes Vox")
+                .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setOngoing(true)
