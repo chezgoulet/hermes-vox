@@ -24,6 +24,8 @@ import androidx.core.content.ContextCompat
  */
 class CommandsSheet(
     private val act: AppCompatActivity,
+    /** #284: what the app knows about the moment — the screen leads with what fits it. */
+    private val situation: () -> CommandCatalog.Situation,
     private val run: (CommandCatalog.Command, (Boolean) -> Unit) -> Unit,
 ) {
     private var dialog: Dialog? = null
@@ -54,14 +56,24 @@ class CommandsSheet(
             setOnClickListener { d.dismiss() }
         })
         root.addView(header)
-        val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        for ((group, cmds) in CommandCatalog.grouped()) {
-            list.addView(TextView(act, null, 0, R.style.TextVox_Tag).apply {
-                text = group.label.uppercase()
-                setPadding(0, dp(18), 0, dp(6))
-            })
-            for (c in cmds) list.addView(row(c, d))
+        // #284: a search that teaches — find a command by what you want to do.
+        val search = android.widget.EditText(act).apply {
+            hint = "What do you want to do?"
+            setSingleLine()
+            background = ContextCompat.getDrawable(act, R.drawable.bg_input)
+            setTextColor(color(R.color.hv_text)); setHintTextColor(color(R.color.hv_text_dim))
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            contentDescription = "Search commands by what you want to do"
         }
+        root.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(12) })
+        val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        render(list, d, "")
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { render(list, d, s?.toString().orEmpty()) }
+        })
         root.addView(ScrollView(act).apply { addView(list) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         d.setContentView(root)
@@ -71,7 +83,32 @@ class CommandsSheet(
         d.show()
     }
 
-    private fun row(c: CommandCatalog.Command, d: Dialog): View {
+    private fun header(text: String) = TextView(act, null, 0, R.style.TextVox_Tag).apply {
+        this.text = text.uppercase()
+        setPadding(0, dp(18), 0, dp(6))
+    }
+
+    /** The list: what fits now, then every group — or, while searching, the matches best first. */
+    private fun render(list: LinearLayout, d: Dialog, query: String) {
+        list.removeAllViews(); chips.clear()
+        if (query.isBlank()) {
+            val now = CommandCatalog.suggest(situation())
+            if (now.isNotEmpty()) {
+                list.addView(header("Fits now"))
+                for (c in now) list.addView(row(c, d, chipKey = "now:" + c.name))
+            }
+            for ((group, cmds) in CommandCatalog.grouped()) {
+                list.addView(header(group.label))
+                for (c in cmds) list.addView(row(c, d))
+            }
+            return
+        }
+        val hits = CommandCatalog.search(query)
+        list.addView(header(if (hits.isEmpty()) "No command for that — try asking the agent" else "Matches"))
+        for (c in hits) list.addView(row(c, d))
+    }
+
+    private fun row(c: CommandCatalog.Command, d: Dialog, chipKey: String = c.name): View {
         val r = LinearLayout(act, null, 0, R.style.HvRow).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             isClickable = true; isFocusable = true
@@ -89,8 +126,8 @@ class CommandsSheet(
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        chips[c.name] = chip
-        paint(c.name)
+        chips[chipKey] = chip
+        paint(chipKey)
         r.addView(chip)
         r.contentDescription = "${c.name}. ${c.effect}"
         r.setOnClickListener { tap(c, d) }
@@ -122,11 +159,13 @@ class CommandsSheet(
         }
     }
 
-    private fun set(name: String, s: CommandCatalog.RunState) { state[name] = s; paint(name) }
+    private fun set(name: String, s: CommandCatalog.RunState) {
+        state[name] = s; paint(name); paint("now:$name")
+    }
 
-    private fun paint(name: String) {
-        val chip = chips[name] ?: return
-        val s = state[name] ?: CommandCatalog.RunState.IDLE
+    private fun paint(key: String) {
+        val chip = chips[key] ?: return
+        val s = state[key.removePrefix("now:")] ?: CommandCatalog.RunState.IDLE
         chip.text = s.label
         chip.visibility = if (s == CommandCatalog.RunState.IDLE) View.INVISIBLE else View.VISIBLE
         chip.setTextColor(when (s) {

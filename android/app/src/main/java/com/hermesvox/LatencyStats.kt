@@ -42,6 +42,9 @@ object LatencyStats {
      *  session.resetConversation() (a new call / new conversation). */
     fun resetSessionTurns() { synchronized(lock) { sessionTurns = 0L } }
 
+    /** #284: turns since the last reset — when a conversation is long enough to offer /compress. */
+    fun sessionTurns(): Long = synchronized(lock) { sessionTurns }
+
     fun log(label: String, outcome: String, gen: Long) {
         summaryLines(label, outcome, gen).forEach { VoxLog.d(it) }
     }

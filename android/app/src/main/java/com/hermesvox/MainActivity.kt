@@ -216,11 +216,22 @@ class MainActivity : AppCompatActivity() {
                 VoxLog.d("event=cue-idle silentS=${(now - lastHeardFromAt) / 1000} working=$ambientWorking")
                 cues?.play(CueSynth.Cue.IDLE)
             }
+            // #284: the being suggests in context — a caller who has said nothing yet, on one of
+            // their first calls, is told the line is open and what to try.
+            if (callLive && Discovery.stuckHint(android.os.SystemClock.elapsedRealtime() - callStartedAt, callTurns,
+                    prefs.getInt(Discovery.PREF_CALLS, 0), stuckShownThisCall)) {
+                stuckShownThisCall = true
+                VoxLog.d("event=discovery-hint kind=stuck")
+                setStatus(Discovery.STUCK_HINT, true)
+            }
             if (callLive) mainHandler.postDelayed(this, 1000)
         }
     }
     private fun startAmbient() {
         lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false
+        // #284: a new call — count it, and let the stuck hint be offered once more if still early days.
+        callTurns = 0L; stuckShownThisCall = false
+        prefs.edit().putInt(Discovery.PREF_CALLS, prefs.getInt(Discovery.PREF_CALLS, 0) + 1).apply()
         mainHandler.removeCallbacks(ambientTick); mainHandler.postDelayed(ambientTick, 1000)
     }
     private fun stopAmbient() { mainHandler.removeCallbacks(ambientTick); ambientWorking = false }
@@ -669,7 +680,9 @@ class MainActivity : AppCompatActivity() {
         mainHandler.removeCallbacks(opTicker); opStep = null; opHeld = null
     }
 
+    private var statusOfferShown = false
     private fun setStatus(text: String, show: Boolean) {
+        if (statusOfferShown) { statusOfferShown = false; status.setOnClickListener(null) }   // #284: the offer goes with its line
         status.text = text
         status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
         // A real phase/status replaces the models-warning pill: drop its tap
@@ -1616,6 +1629,7 @@ class MainActivity : AppCompatActivity() {
             // finished with the surface (the stream completes seconds before the audio
             // does — setting it here is the clobber that erased the reveal mid-sentence).
             replyBuf = finalText
+            lastTurnFailed = false   // #284: a reply landed; nothing to fix
             markActivity()
             feed(MotionState.Signal.RETIRE)   // previewB: a natural end settles, never recoils
             // #156: "reply ready" is a cue only when no speech will follow — otherwise
@@ -1626,7 +1640,13 @@ class MainActivity : AppCompatActivity() {
         } }
         override fun onError(msg: String) { runOnUiThread {
             mainHandler.removeCallbacks(opTicker); opStep = null   // a cut or failed turn ends its step
-            setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
+            // #284: a failed turn's line offers the command that usually fixes it, in place.
+            val (line, offer) = Discovery.errorLine(msg)
+            setStatus(line, offer)
+            if (offer) {
+                lastTurnFailed = true; statusOfferShown = true
+                status.setOnClickListener { reconnect() }
+            }
             feed(MotionState.Signal.REST); appendStream("// $msg")
             // A barge/stop is not a failure: the being was interrupted, it did not err.
             if (!msg.contains("interrupt")) cues?.play(CueSynth.Cue.ERROR)
@@ -1647,6 +1667,7 @@ class MainActivity : AppCompatActivity() {
         } }
         override fun onHeard(text: String) { runOnUiThread {
             lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false   // #251: input
+            callTurns++   // #284: the caller has spoken; no stuck hint this call
             // Conversation mode already IS a transcript: the words go there, in memory
             // only (convoBuf is never persisted). Presence mode gets the fading line.
             appendConvo("You: $text")
@@ -1693,7 +1714,16 @@ class MainActivity : AppCompatActivity() {
      *  data — the agent only does conversation, never command-UI strings. */
     /** #226: the commands screen — grouped, each row saying what it does, with its running
      *  state on the row. The command names keep their meaning for anyone who types them. */
-    private val commandsSheet by lazy { CommandsSheet(this) { c, done -> runCommand(c, done) } }
+    private val commandsSheet by lazy {
+        CommandsSheet(this, situation = {
+            CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
+                lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
+        }) { c, done -> runCommand(c, done) }
+    }
+    // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
+    private var lastTurnFailed = false
+    private var stuckShownThisCall = false
+    private var callTurns = 0L
     private fun showCommands() = commandsSheet.show()
 
     private fun runCommand(c: CommandCatalog.Command, done: (Boolean) -> Unit) {
