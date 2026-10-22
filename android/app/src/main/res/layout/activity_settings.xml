@@ -1420,6 +1420,22 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
+                <!-- #225: the look is judged where it is made — a live being, drawn by the
+                     same code as the main screen, cycling through its states. -->
+                <com.hermesvox.AvatarView
+                    android:id="@+id/set_being_preview"
+                    android:layout_width="match_parent"
+                    android:layout_height="190dp"
+                    android:layout_marginBottom="6dp"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/set_being_preview_state"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:text="resting"
+                    style="@style/HvRowValue" />
+
                 <LinearLayout
                     android:id="@+id/row_visual_category"
                     style="@style/HvRow"
@@ -1513,6 +1529,102 @@
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_glow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="12" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_density"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Density"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_density_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="100%"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_density"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="12" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_speed"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Speed"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_speed_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="1.0×"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_speed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="12" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_trail"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Trail"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_trail_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="the category's"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_trail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="12" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_hue"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Hue"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visual_hue_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0°"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_hue"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:max="12" />

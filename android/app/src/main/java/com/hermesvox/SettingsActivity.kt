@@ -1136,6 +1136,38 @@ class SettingsActivity : AppCompatActivity() {
     // truncated list to drift. A3 adds "cycle all categories" so the whole breadth can be
     // seen animating. The pre-existing shape/theme + cycle controls are preserved verbatim
     // into this group (same prefs, same wording).
+    // ---- #225: the live preview ---------------------------------------------------------
+    // The same AvatarView the main screen draws, fed by the same applyLookPrefs(), so a change
+    // is judged where it is made. It walks through the states a call shows, so a look is seen
+    // listening, working and speaking — not only at rest.
+    private val previewStates = arrayOf("idle" to "resting", "listening" to "listening",
+        "thinking" to "working", "speaking" to "speaking")
+    private var previewAt = 0
+    private val previewHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val previewTick = object : Runnable {
+        override fun run() {
+            val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+            val (st, label) = previewStates[previewAt % previewStates.size]
+            previewAt++
+            v.setPresent(st, null, if (st == "thinking") 0.7f else 0.15f, if (st == "speaking") 0.55f else 0.2f)
+            findViewById<TextView>(R.id.set_being_preview_state)?.text = label
+            previewHandler.postDelayed(this, PREVIEW_STATE_MS)
+        }
+    }
+    private val lookListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, _ ->
+        findViewById<AvatarView>(R.id.set_being_preview)?.applyLookPrefs(p)
+    }
+    private var previewBound = false
+    private fun bindBeingPreview() {
+        val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+        v.applyLookPrefs(prefs)
+        if (!previewBound) {
+            previewBound = true
+            prefs.registerOnSharedPreferenceChangeListener(lookListener)
+            previewHandler.post(previewTick)
+        }
+    }
+
     private fun bindVisuals() {
         val catVals = VisualStyle.TOKENS
         val catLabels = VisualStyle.LABELS
@@ -1163,6 +1195,20 @@ class SettingsActivity : AppCompatActivity() {
         bindFloatSeekBar(R.id.set_seek_visual_glow, R.id.set_visual_glow_val, VisualStyle.KEY_GLOW,
             VisualStyle.GLOW_MIN, VisualStyle.GLOW_MAX, VisualStyle.GLOW_STEP,
             VisualStyle.DEFAULT_GLOW) { "%.1f×".format(it) }
+        // #225: the fine-grained look, each a scalar over the category.
+        bindFloatSeekBar(R.id.set_seek_visual_density, R.id.set_visual_density_val, VisualStyle.KEY_DENSITY,
+            VisualStyle.DENSITY_MIN, VisualStyle.DENSITY_MAX, VisualStyle.DENSITY_STEP,
+            VisualStyle.DEFAULT_DENSITY) { "${(it * 100).toInt()}%" }
+        bindFloatSeekBar(R.id.set_seek_visual_speed, R.id.set_visual_speed_val, VisualStyle.KEY_SPEED,
+            VisualStyle.SPEED_MIN, VisualStyle.SPEED_MAX, VisualStyle.SPEED_STEP,
+            VisualStyle.DEFAULT_SPEED) { "%.1f×".format(it) }
+        bindFloatSeekBar(R.id.set_seek_visual_trail, R.id.set_visual_trail_val, VisualStyle.KEY_TRAIL,
+            VisualStyle.TRAIL_MIN, VisualStyle.TRAIL_MAX, VisualStyle.TRAIL_STEP,
+            VisualStyle.DEFAULT_TRAIL) { if (it <= 0f) "the category's" else "${(it * 100).toInt()}%" }
+        bindFloatSeekBar(R.id.set_seek_visual_hue, R.id.set_visual_hue_val, VisualStyle.KEY_HUE,
+            VisualStyle.HUE_MIN, VisualStyle.HUE_MAX, VisualStyle.HUE_STEP,
+            VisualStyle.DEFAULT_HUE) { "${it.toInt()}°" }
+        bindBeingPreview()
 
         // video-statewire: WHICH SHAPE FIRES IN EACH ACTIVE STATE. Three pickers over the
         // SAME SHAPE vocabulary as the presence-shape picker below — so the user can put
@@ -1249,6 +1295,8 @@ class SettingsActivity : AppCompatActivity() {
     override fun onDestroy() {
         preview?.let { try { it.stop(); it.shutdown() } catch (_: Throwable) {} }
         preview = null
+        previewHandler.removeCallbacksAndMessages(null)   // #225
+        prefs.unregisterOnSharedPreferenceChangeListener(lookListener)
         // #156: a Settings cue preview owns an AudioTrack; free it with the screen.
         cuePlayer?.release()
         cuePlayer = null
@@ -1465,6 +1513,10 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling
                 .putFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY)
                 .putFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW)
+                .putFloat(VisualStyle.KEY_DENSITY, VisualStyle.DEFAULT_DENSITY)   // #225
+                .putFloat(VisualStyle.KEY_SPEED, VisualStyle.DEFAULT_SPEED)
+                .putFloat(VisualStyle.KEY_TRAIL, VisualStyle.DEFAULT_TRAIL)
+                .putFloat(VisualStyle.KEY_HUE, VisualStyle.DEFAULT_HUE)
                 .putString("particles_theme", "aura")
                 .putBoolean("particles_cycle", true)
                 // video-statewire: remove the state-shape picks so they fall back to the
@@ -1517,6 +1569,8 @@ class SettingsActivity : AppCompatActivity() {
         const val GROUP_APPEARANCE = "appearance"
         const val GROUP_VISUALS = "visuals"
         const val GROUP_PRESENCE = "presence"
+        /** #225: how long the preview holds each state before the next. */
+        const val PREVIEW_STATE_MS = 2800L
         const val GROUP_ABOUT = "about"
         const val GROUP_MODELS = "models"
 
