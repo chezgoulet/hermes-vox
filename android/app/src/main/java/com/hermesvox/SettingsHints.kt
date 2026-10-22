@@ -36,6 +36,8 @@ object SettingsHints {
         "row_mic_aec" to "Removes the phone's own voice from what the mic hears",
         "row_mic_ns" to "Filters steady background noise; can dull quiet speech",
         "row_mic_partial" to "May start the agent at a pause that sounds final",
+        "row_mic_continuous" to "Keeps the mic and the recogniser running for the whole call",
+        "row_mic_semantic" to "Ends your turn on a judgement, not a fixed pause",
         "row_mic_voicecall" to "Routes audio like a phone call, so echo cancelling works better",
         "row_mic_vad" to "How loud speech must be to count; raise it in a noisy room",
         "row_mic_silence" to "How long a pause ends your turn",
