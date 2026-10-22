@@ -89,6 +89,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     // Set when a barge-in lands before startStream returned (currentStream was
     // still null), so the stream loop breaks instead of settling a ghost reply.
     @Volatile private var genCancelled = false
+    // #240: the cancel lifecycle per reply id. genCancelled is one flag, reset by the next
+    // turn, so it cannot say whether audio belongs to a reply that was cut once the next turn
+    // runs; the ledger can. replyGen is the turn whose reply is streaming now (an ER hold's
+    // suppressed turn does not replace it).
+    private val replies = ReplyLedger()
+    @Volatile private var replyGen = -1L
     // #D1: wall-clock of the LAST barge decision (the event=barge-in line), so
     // silenceAll() can log msSinceBarge — the gate-release latency after the
     // decision (the field 878ms lag was main-thread queueing behind TTS callbacks).
@@ -1273,6 +1279,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         firstTextAtMs = 0L
         firstAudioPushed = false
         genCancelled = false
+        replyGen = gen; replies.begin(gen)   // #240
         armTranscript()         // 0.5.0-A: a fresh reveal cursor for this turn
         val t0 = android.os.SystemClock.uptimeMillis()
         turnStartedAt = t0
@@ -1346,7 +1353,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // D2: a barge-in during generation (before startStream returned) sets
                     // genCancelled; break so the turn's worker retires without settling a
                     // ghost reply (the gate was already released by bargeIn()).
-                    if (genCancelled) { terminal.cancel(); break }
+                    // #240: a cut reply is dead for good, even after the next turn resets genCancelled.
+                    if (genCancelled || replies.isDead(gen)) { terminal.cancel(); break }
                     // #39: wake on NEW data instead of sleeping a fixed 240ms tick. The
                     // session (waitStream) signals the app the instant an SSE event lands, so
                     // deltas render as they arrive; the 100ms budget is only the idle floor
@@ -1657,6 +1665,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                             c
                         }
                         if (chunk == null) break            // final+drained (RETIRE) or closed (ABORT)
+                        // #240: a sentence of a reply that already ended (cut, or done) never plays.
+                        if (!replies.accepts(chunk.gen)) { VoxLog.d("event=tts-drop reason=reply-ended gen=${chunk.gen} current=$replyGen"); continue }
                         // Race rule: a barge/hush/stop that landed while the previous chunk
                         // was synthesizing still wins BEFORE the next chunk starts.
                         if (genCancelled || sClosed) { VoxLog.d("event=tts-stop gen=$turnGen worker-break chunkIdx=$chunkIdx"); break }
@@ -1700,7 +1710,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // firstAudioPushed (reset per turn in runStreamedTurn) makes the push
                             // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
                             // as firstByte/firstText, keeping the fields comparable within a version.
-                            val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk) ?: false } catch (_: Throwable) { false }
+                            val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true
                                 LatencyStats.pushFirstAudio(android.os.SystemClock.uptimeMillis() - turnStartedAt)
@@ -1727,6 +1737,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                 sDone.countDown()
                 if (retiring) {
                     VoxLog.d("event=tts-retire gen=$turnGen chunks=$chunkIdx ms=${android.os.SystemClock.uptimeMillis() - start}")
+                    val rg = replyGen
+                    if (replies.end(rg, ReplyLedger.End.DONE)) VoxLog.d("event=reply-end gen=$rg reason=done")
                     // Re-check sClosed AFTER finishStreaming so a late barge that landed
                     // during the tail drain still wins: it already called stopStreaming +
                     // released the gate on the cancel path. The releaseTurnGate
@@ -1757,7 +1769,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             while (b >= 0) {
                 val sent = sAccum.substring(0, b + 1).trim()
                 sAccum.replace(0, b + 1, "")
-                if (sent.isNotBlank()) { sQueue.add(sent); emitted = true }
+                if (sent.isNotBlank()) { sQueue.add(Chunk(replyGen, sent)); emitted = true }
                 b = indexOfSentenceEnd(sAccum.toString())
             }
             // #44: a punctuation-light open phrase that hasn't hit a terminator in the
@@ -1770,7 +1782,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 if (lastSpace > 0 && lastSpace < cut.length) {
                     val rest = cut.substring(0, lastSpace).trim()
                     if (rest.isNotBlank()) {
-                        sQueue.add(rest)
+                        sQueue.add(Chunk(replyGen, rest))
                         sAccum.setLength(0); sAccum.append(cut.substring(lastSpace))
                         emitted = true
                     }
@@ -1788,7 +1800,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         streamed = false
         synchronized(sLock) {
             val rest = sAccum.toString().trim()
-            if (rest.isNotBlank()) sQueue.add(rest)
+            if (rest.isNotBlank()) sQueue.add(Chunk(replyGen, rest))
             sAccum.setLength(0)
             sFinal = true
             sLock.notifyAll()
@@ -1940,7 +1952,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     // Streaming TTS: speak the reply as it streams (sync with the crawl), not after the
     // whole response lands. A worker plays sentence-chunks sequentially.
     private val sAccum = StringBuilder()
-    private val sQueue = java.util.ArrayDeque<String>()
+    /** #240: a queued sentence, stamped with the reply it belongs to. */
+    private class Chunk(val gen: Long, val text: String)
+    private val sQueue = java.util.ArrayDeque<Chunk>()
     private val sLock = Object()
     @Volatile private var sClosed = false
     // R1 single-owner retirement: done=true with ok text marks the queue FINAL (no
@@ -2201,11 +2215,17 @@ class VoiceController(private val context: Context, private val session: HermesS
         // down). The unspoken tail is never revealed: you don't show words the entity
         // was interrupted before saying.
         freezeCursor(reason)
+        val cutAt = android.os.SystemClock.uptimeMillis()
         stopTts()
+        // #240: playback stops HERE, at the cancel — the track is paused inside stopTts — not
+        // at any later acknowledgement; this is the cancel-to-silence figure.
+        val silentMs = android.os.SystemClock.uptimeMillis() - cutAt
         stopStreaming()
         currentStream?.let { try { session.cancelStream(it) } catch (_: Exception) {} }
         currentStream = null
-        VoxLog.d("event=tts-stop reason=$reason msSinceBarge=${if (bargeAt > 0L) android.os.SystemClock.uptimeMillis() - bargeAt else 0L}")
+        val rg = replyGen
+        if (replies.end(rg, ReplyLedger.End.CANCELLED)) VoxLog.d("event=reply-end gen=$rg reason=cancelled cause=$reason")
+        VoxLog.d("event=tts-stop reason=$reason msSinceBarge=${if (bargeAt > 0L) android.os.SystemClock.uptimeMillis() - bargeAt else 0L} cancelToSilenceMs=$silentMs")
         releaseTurnGate(turnGen, reason)
     }
 

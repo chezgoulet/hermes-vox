@@ -28,6 +28,12 @@ internal class StreamFence {
      *  unplayed. Monotonic, so a repeat stop still invalidates old tokens. */
     val stopEpoch: Long get() = stops
 
+    /** #240: may a chunk that began synthesizing at [epoch] still play? Only if no stop has
+     *  landed since — even when the next turn has re-opened the fence meanwhile. [allowed]
+     *  alone is level-triggered: a stop and a start inside one chunk's synthesis left it
+     *  true, and that chunk played into the next turn (the 1.77 s field carry-over). */
+    fun allows(epoch: Long): Boolean = allowed && stops == epoch
+
     /** startStreaming(): open the fence — chunks may play until the next stop. */
     fun start() { started = true; stopped = false }
 

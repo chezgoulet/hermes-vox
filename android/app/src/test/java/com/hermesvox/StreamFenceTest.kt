@@ -71,4 +71,17 @@ class StreamFenceTest {
         f.stop()                                 // barge/hush/endCall lands
         for (i in 0 until 5) assertFalse(f.allowed)   // queued chunks N+1.. are all refused
     }
+
+    // #240: a chunk that started synthesizing before a stop must not play after the next
+    // turn re-opens the fence — the level-triggered `allowed` said yes to exactly that.
+    @Test fun a_chunk_from_before_a_stop_stays_dead_after_the_next_start() {
+        val f = StreamFence()
+        f.start()
+        val epoch = f.stopEpoch          // the chunk begins synthesizing
+        f.stop()                         // barge
+        f.start()                        // the next turn opens the stream again
+        assertTrue(f.allowed)
+        assertFalse(f.allows(epoch))
+        assertTrue(f.allows(f.stopEpoch))
+    }
 }
