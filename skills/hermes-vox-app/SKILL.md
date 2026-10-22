@@ -82,7 +82,7 @@ Presence is a **layer on that**, not a second mode (docs/DECISIONS.md:254 `prese
 What the build actually does, as opposed to the direction D16 records:
 
 - The layer is gated on the `voice_mode` pref being `enhanced`
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1952 `ModelCatalog.MODE_ENHANCED`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1944 `ModelCatalog.MODE_ENHANCED`).
 - That pref defaults to `realtime`
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:124 `ModelCatalog.MODE_REALTIME`), and the
   Settings picker still calls the two values "Realtime" and "Enhanced Realtime (alpha)"
@@ -214,6 +214,22 @@ The row's subtitle is computed from the take count and the words "not listening"
 | Log spoken transcript | `log_transcripts` | false | Prints what was heard/decided into logs — privacy sensitive | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:525 `"log_transcripts", false`) |
 | Verbose file log | `debug_log` | false | `dd()` probes reach the log file; also disables log rotation | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:528 `"debug_log", false`) |
 
+### Commands (the `/` button on the main screen)
+
+Grouped by what they do — Conversation, Connection, The agent, Help — each row stating its effect;
+a command that runs in place shows *queued / running… / done / failed* on its row instead of a toast
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:66 `RunState`).
+
+| Command | What it does | Reference |
+|---|---|---|
+| `/new` | A fresh conversation; the agent forgets this one's thread. Ends and re-dials a live call | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:40 `Start a fresh conversation`) |
+| `/clear` | (also `/reset`) Clears the screen and starts over; the agent keeps its copy. Re-dials a live call | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:42 `Clear the screen and start over`) |
+| `/compress` | (also `/compact`) Asks the agent to compact a long conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:44 `compact a long conversation`) |
+| `/reconnect` | Reaches the gateway again and re-dials a live call if it answered | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:46 `Reach the gateway again`) |
+| `/health` | (also `/status`) Whether the agent is up, and its version | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:48 `Show whether the agent is up`) |
+| `/models` | Choose which model the agent thinks with | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:50 `Choose which model the agent thinks with`) |
+| `/help` | The list, with these same lines | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:52 `What each command does`) |
+
 ### Voice models
 
 | UI | Key | Default | What it changes | Reference |
@@ -239,7 +255,7 @@ Do not send a user hunting for these.
   ignore it and always decode English (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:165 `stt_language`).
   This tree never writes it either, so multilingual models always auto-detect.
 - `provider` — the per-request provider override, written when a model is picked from the
-  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:1768 `putString("provider"`).
+  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:1763 `putString("provider"`).
 - `agent_name` — the label above the being; read with the model id as its fallback
   (android/app/src/main/java/com/hermesvox/MainActivity.kt:1400 `agent_name`). This tree never
   writes it, so in practice the label is always the model id.
@@ -281,7 +297,7 @@ that is not here, this list is stale: add it with a reference.
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
 | `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:599 `call-end`) |
-| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2046 `activity-stop`) |
+| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2038 `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:33 `fg-service start`) |
 | `event=fg-service-start` | The mic foreground service was requested | `event=fg-service-start-failed err=` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:87 `fg-service-start ok`) |
 | `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1099 `wake acquired`) |
@@ -323,7 +339,8 @@ that is not here, this list is stale: add it with a reference.
 | `event=turn-dropped` | A completed turn was dropped because the generation was stopped | `reason=stopped` after a hangup is expected | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1511 `turn-dropped`) |
 | `event=settle-drop` | A settled reply was not spoken because it was cancelled or already voiced | Both reasons are protective; a drop with no cut means a double-settle bug | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1608 `settle-drop`) |
 | `event=stream-fallback` | The stream failed **after** assembling text; the text is spoken non-streamed instead of lost | Any — the reply is degraded | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1626 `stream-fallback`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1823 `compress-failed`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1818 `compress-failed`) |
+| `event=command` | A command from the commands screen changed state: `name=`, `state=running / done / failed` | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:114 `event=command name=`) |
 | `event=turn` | One line per settled turn with latency fields and `outcome=` | Cut outcomes: `reply-error`, `stream-lost`, `empty-reply`, `stopped`, `hush`, `barge-in`, `focus-loss`, `suppressed-inflight`; healthy: `stream-done`, `speak-done`, `text-only` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1759 `stream-done`) |
 | `event=turn-skip` † | A second settle for the same epoch was suppressed | Repeats = a double-settle path | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2270 `turn-skip`) |
 | `event=lat` | Rolling p50/p95 per metric every 8 turns | Compare `first-audio` against the cadence target, p50 700 ms / p95 1.4 s (docs/DECISIONS.md:322 `p50 ≤ 700 ms`) | (android/app/src/main/java/com/hermesvox/LatencyStats.kt:58 `event=lat`) |
@@ -603,7 +620,7 @@ Debug / crash log → Share full log).
 
 - **Signature:** the main screen pill reads "⚠ The presence model could not start on this
   device — Enhanced Realtime is running as Realtime"
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1958 `could not start on this device`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1950 `could not start on this device`).
 - **Cause:** the LiteRT-LM engine could not initialise on this GPU, and the CPU path is the
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:68 `1.8s`); there is also a recorded
@@ -697,6 +714,6 @@ These prevent confident wrong advice. None of them is a bug report; they are the
 3. Read one `event=turn`: `outcome=` says how the turn ended, and the latency fields say which
    leg was slow (android/app/src/main/java/com/hermesvox/LatencyStats.kt:53 `outcome=`).
 4. Check the version and the mode: `voice_mode` decides whether Presence exists at all
-   (android/app/src/main/java/com/hermesvox/MainActivity.kt:1952 `MODE_ENHANCED`).
+   (android/app/src/main/java/com/hermesvox/MainActivity.kt:1944 `MODE_ENHANCED`).
 5. If the log has no `dd()` lines, the user's "Verbose file log" is off — ask them to turn it
    on and reproduce (android/app/src/main/java/com/hermesvox/VoxLog.kt:71 `fun dd`).

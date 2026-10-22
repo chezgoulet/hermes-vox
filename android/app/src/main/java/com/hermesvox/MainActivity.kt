@@ -1691,26 +1691,21 @@ class MainActivity : AppCompatActivity() {
      *  live command list is a follow-up (query the gateway). WS4b: the /models,
      *  /health, /new, /reconnect commands open NATIVE mini-UIs fed by real gateway
      *  data — the agent only does conversation, never command-UI strings. */
-    private fun showCommands() {
-        val cmds = arrayOf(
-            "/models", "/health", "/compress", "/new", "/reconnect", "/clear", "/reset", "/status", "/help")
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Commands")
-            .setItems(cmds) { _, w ->
-                when (cmds[w]) {
-                    "/models"    -> showModelChooser()
-                    "/health",
-                    "/status"    -> showHealthCard()
-                    CompressCommand.NAME,
-                    CompressCommand.ALIAS -> compressContext()
-                    "/new"       -> newSession()
-                    "/reconnect" -> reconnect()
-                    "/clear",
-                    "/reset" -> newSession(ConversationReset.Trigger.CLEAR)
-                    else         -> showHelpCard()   // /help
-                }
-            }
-            .show()
+    /** #226: the commands screen — grouped, each row saying what it does, with its running
+     *  state on the row. The command names keep their meaning for anyone who types them. */
+    private val commandsSheet by lazy { CommandsSheet(this) { c, done -> runCommand(c, done) } }
+    private fun showCommands() = commandsSheet.show()
+
+    private fun runCommand(c: CommandCatalog.Command, done: (Boolean) -> Unit) {
+        when (c.name) {
+            "/models" -> showModelChooser()
+            "/health" -> showHealthCard()
+            CompressCommand.NAME -> compressContext(done)
+            "/new" -> newSession(onDone = done)
+            "/reconnect" -> reconnect(done)
+            "/clear" -> newSession(ConversationReset.Trigger.CLEAR, done)
+            else -> showHelpCard()   // /help
+        }
     }
 
     /** /models — native chooser from the REAL gateway catalog (GET /api/model/options).
@@ -1814,9 +1809,9 @@ class MainActivity : AppCompatActivity() {
      * Same shape as the other native commands: status pill while it runs, native card
      * with the gateway's answer, off the UI thread (turnStored blocks up to 120s).
      */
-    private fun compressContext() {
-        if (missingKeyPrompt()) return   // C0: empty key -> the clear Settings prompt
-        val s = session ?: run { setStatus("Connect first", true); return }
+    private fun compressContext(onDone: (Boolean) -> Unit = {}) {
+        if (missingKeyPrompt()) { onDone(false); return }   // C0: empty key -> the clear Settings prompt
+        val s = session ?: run { setStatus("Connect first", true); onDone(false); return }
         setStatus(CompressCommand.RUNNING, true)
         kotlin.concurrent.thread {
             val reply = try { s.turnStored(CompressCommand.DIRECTIVE) } catch (e: Throwable) {
@@ -1826,6 +1821,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 setStatus(if (ok) CompressCommand.DONE else CompressCommand.FAILED, true)
+                onDone(ok)
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle(CompressCommand.TITLE)
                     .setMessage(CompressCommand.card(reply))
@@ -1838,7 +1834,7 @@ class MainActivity : AppCompatActivity() {
      *  The server-side response id must be captured on the bg thread BEFORE the
      *  client chain is dropped (resetConversation clears lastID), so the delete and
      *  the reset run on the SAME thread, in order. */
-    private fun newSession(trigger: ConversationReset.Trigger = ConversationReset.Trigger.NEW) {
+    private fun newSession(trigger: ConversationReset.Trigger = ConversationReset.Trigger.NEW, onDone: (Boolean) -> Unit = {}) {
         val s = session
         val plan = ConversationReset.plan(trigger, callLive)
         // #252: /new tore the voice layer down by hand — four of the six lines of endCall(),
@@ -1856,8 +1852,9 @@ class MainActivity : AppCompatActivity() {
                 LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
                 // Re-arm only after the chain is actually reset, and only if a call was live.
                 if (plan.rearm) runOnUiThread { startCall() }
+                runOnUiThread { onDone(true) }
             }
-        }
+        } else onDone(true)
         VoxLog.d("event=session-reset trigger=${trigger.name.lowercase()} callLive=$callLive rearm=${plan.rearm}")
         stopVoiceWake()
         releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
@@ -1867,7 +1864,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** /reconnect — re-ping /v1/health (via gateway) + re-init the session. */
-    private fun reconnect() {
+    private fun reconnect(onDone: (Boolean) -> Unit = {}) {
         setStatus("Reconnecting…", true)
         kotlin.concurrent.thread {
             val u = prefs.getString("url", "").orEmpty()
@@ -1880,6 +1877,7 @@ class MainActivity : AppCompatActivity() {
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)
                 if (ConversationReset.plan(ConversationReset.Trigger.RECONNECT, wasLive, ok).rearm) startCall()   // and re-arms it, as /new does
                 setStatus(if (ok) "Reconnected" else "Reconnect failed — check network + address", true)
+                onDone(ok)
             }
         }
     }
@@ -1887,13 +1885,7 @@ class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage("/models - choose the gateway model (provider + model)\n" +
-                "/health - agent health (status + version)\n" +
-                "/new - reset the conversation + server chain\n" +
-                "/reconnect - re-ping the gateway\n" +
-                CompressCommand.HELP_LINE + "\n" +
-                "/clear /reset - clear the local conversation\n" +
-                "/status - agent health")
+            .setMessage(CommandCatalog.helpText())   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 
