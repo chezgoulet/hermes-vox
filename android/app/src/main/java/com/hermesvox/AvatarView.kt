@@ -413,6 +413,34 @@ class AvatarView @JvmOverloads constructor(
         setVisualTrail(p.getFloat(VisualStyle.KEY_TRAIL, VisualStyle.DEFAULT_TRAIL))
         setVisualHue(p.getFloat(VisualStyle.KEY_HUE, VisualStyle.DEFAULT_HUE))
     }
+
+    // ---- #227: a command's verb ---------------------------------------------------------
+    // While a command runs the being holds the verb's shape (CommandMotion); its ending —
+    // the bloom for done, the hourglass in the waiting colour for failed — then plays for a
+    // beat and the being returns to whatever the call is doing. Wall-clock timed, so the
+    // look's own speed setting cannot stretch an outcome.
+    private var verbArch: Int? = null
+    private var verbTheme: String? = null
+    private var verbUntilMs = -1L
+
+    /** Hold [shape] (a SHAPE_TOKENS token) until [endVerb], or for [ms] when given. */
+    fun holdVerb(shape: String, ms: Long = -1L) {
+        verbArch = themeArch(shape); verbTheme = null; seed++
+        verbUntilMs = if (ms < 0) -1L else android.os.SystemClock.uptimeMillis() + ms
+    }
+
+    /** Play the ending [shape] in [state]'s colour for [ms], then let the being go. */
+    fun endVerb(shape: String, state: String, ms: Long) {
+        verbArch = themeArch(shape)
+        verbTheme = when (state) { "waiting" -> "wait"; else -> "presence" }
+        verbUntilMs = android.os.SystemClock.uptimeMillis() + ms
+    }
+
+    private fun verbTick() {
+        if (verbArch != null && verbUntilMs >= 0 && android.os.SystemClock.uptimeMillis() >= verbUntilMs) {
+            verbArch = null; verbTheme = null; verbUntilMs = -1L
+        }
+    }
     fun visualCategory(): String = vsty.token
     fun cyclingAllCategories(): Boolean = cycleAll
 
@@ -442,7 +470,8 @@ class AvatarView @JvmOverloads constructor(
         if (archTo == A_SEEKER || archFrom == A_SEEKER) eyeTick(dt)
         if (archTo == A_TAKU || archFrom == A_TAKU) takuTick(dt)
 
-        resolvePalette(eTheme)
+        verbTick()
+        resolvePalette(verbTheme ?: eTheme)
         val ck = (dt * 2.6f).coerceIn(0f, 1f)
         curBase = lerpColor(curBase, tBase, ck)
         curAcc = lerpColor(curAcc, tAcc, ck)
@@ -528,6 +557,7 @@ class AvatarView @JvmOverloads constructor(
 
     /** Which shape the being forms right now. */
     private fun resolveArch(): Int {
+        verbArch?.let { return it }   // #227: a running command's verb outranks the state's shape
         val st = state
         if (st == "idle" || st == "settle" || st == "bloom" || st == "drift") {
             val th = if (cycleThemes) cyclingTheme(time) else idleTheme

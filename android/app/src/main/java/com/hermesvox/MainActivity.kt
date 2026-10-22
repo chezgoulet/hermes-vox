@@ -1726,7 +1726,18 @@ class MainActivity : AppCompatActivity() {
     private var callTurns = 0L
     private fun showCommands() = commandsSheet.show()
 
-    private fun runCommand(c: CommandCatalog.Command, done: (Boolean) -> Unit) {
+    private fun runCommand(c: CommandCatalog.Command, finished: (Boolean) -> Unit) {
+        // #227: the being shows the command in its own language — the verb its category maps
+        // to, held while it runs, ended by the outcome.
+        val verb = CommandMotion.verbFor(c.category)
+        if (c.kind == CommandCatalog.Kind.CARD) avatar.holdVerb(verb.shape, CommandMotion.CARD_MS)
+        else avatar.holdVerb(verb.shape)
+        val done: (Boolean) -> Unit = { ok ->
+            val e = CommandMotion.ending(ok)
+            avatar.endVerb(e.shape, e.state, e.ms)
+            VoxLog.d("event=command-motion name=${c.name} verb=${verb.name.lowercase()} ending=${e.name.lowercase()}")
+            finished(ok)
+        }
         when (c.name) {
             "/models" -> showModelChooser()
             "/health" -> showHealthCard()
