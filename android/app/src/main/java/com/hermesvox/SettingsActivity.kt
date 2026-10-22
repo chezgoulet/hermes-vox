@@ -156,7 +156,7 @@ class SettingsActivity : AppCompatActivity() {
      *  app asks the agent to do it, or hands over the exact command. */
     private fun bindAppSkill() {
         findViewById<LinearLayout>(R.id.row_app_skill)?.setOnClickListener {
-            val cmd = AppSkill.command(AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
+            val cmd = AppSkill.command(versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
             AlertDialog.Builder(this)
                 .setTitle("Teach your agent this app")
                 .setMessage("Your agent can answer \"where is that setting?\" from this app's own description, " +
@@ -180,7 +180,7 @@ class SettingsActivity : AppCompatActivity() {
         val wait = AlertDialog.Builder(this).setTitle("Asking your agent…")
             .setMessage("It will run the install and say whether it worked.").setCancelable(true).show()
         kotlin.concurrent.thread {
-            val reply = try { s.turnStored(AppSkill.installTurn()) } catch (e: Throwable) {
+            val reply = try { s.turnStored(AppSkill.installTurn(versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))) } catch (e: Throwable) {
                 VoxLog.w("event=app-skill-install result=failed err=${e.message?.take(80)}"); null
             }
             VoxLog.d("event=app-skill-install result=${if (reply.isNullOrBlank()) "no-reply" else "replied"}")

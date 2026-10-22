@@ -16,19 +16,31 @@ object AppSkill {
 
     const val NAME = "hermes-vox-app"
 
-    /** The released skill: it describes the released app, so it is read from `main`. */
-    const val URL = "https://raw.githubusercontent.com/chezgoulet/hermes-vox/main/skills/hermes-vox-app/SKILL.md"
+    private const val RAW = "https://raw.githubusercontent.com/chezgoulet/hermes-vox"
+    private const val PATH = "skills/hermes-vox-app/SKILL.md"
+
+    /**
+     * The skill that describes **this build**: a release reads it from its own tag, a nightly
+     * from `testing`. Not `main`: on the Pixel the agent found `main` 404 — the skill arrived
+     * on `testing` after 0.9.0.1 was cut, so `main` has none until the next release, and a
+     * release's skill must describe that release, not whatever `main` holds later.
+     */
+    fun url(versionName: String): String {
+        val v = versionName.trim()
+        val ref = if (v.isEmpty() || v.contains("nightly") || v.contains("-")) "testing" else "v$v"
+        return "$RAW/$ref/$PATH"
+    }
 
     /** The command to paste on the machine running Hermes. `--yes` because the install is
      *  asked for by its owner; a named profile goes first (`hermes -p work skills …`). */
-    fun command(profile: String = ""): String =
-        (if (profile.isBlank()) "hermes" else "hermes -p ${profile.trim()}") + " skills install $URL --yes"
+    fun command(versionName: String, profile: String = ""): String =
+        (if (profile.isBlank()) "hermes" else "hermes -p ${profile.trim()}") + " skills install ${url(versionName)} --yes"
 
     /** The turn that asks the agent to install it itself. Plain about what it runs and asks for
      *  a one-line answer, so the outcome can be read on the phone. */
-    fun installTurn(): String =
+    fun installTurn(versionName: String, profile: String = ""): String =
         "Please install the Hermes Vox app skill so you can answer questions about the app I'm " +
-            "talking to you through. Run: ${command()} — then tell me in one sentence whether it is installed."
+            "talking to you through. Run: ${command(versionName, profile)} — then tell me in one sentence whether it is installed."
 
     /** The question that proves it: answered from the skill, it names the Voice section. */
     const val CHECK_QUESTION = "How do I change the voice in Hermes Vox?"
