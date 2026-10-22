@@ -305,7 +305,8 @@ new features or workflows proposed by people using the app join the same list.
   per-tool grants, a visible control state, an audit log and a dead-man switch.
 - `[ ]` **Wake word (#45).** D6 step one needs training compute the House does not have, and the
   always-on question is not settled either.
-- `[ ]` **Watch items (#237, #238).** Prior art worth reading, not dependencies.
+- `[ ]` **Watch items (#237, #238, #292, #293).** Prior art worth reading, not dependencies: Ming's
+tag vocabulary, the VoiceManager protocol, KittenTTS's ONNX voices, and gradium's streaming Phonon.
 
 Detail and constraints: [`docs/PLAN-FUTURE.md`](docs/PLAN-FUTURE.md).
 
