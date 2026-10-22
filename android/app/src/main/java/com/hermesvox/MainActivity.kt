@@ -43,6 +43,17 @@ class MainActivity : AppCompatActivity() {
     private var replyBuf = ""
     private var sseBuf = "// stream log — watch the agent work"
     private var toolCount = 0
+    // #281: the step the agent is running now, and a failed step's line held to the next turn.
+    private var opStep: Operations.Step? = null
+    private var opStartedAt = 0L
+    private var opHeld: String? = null
+    private val opTicker = object : Runnable {
+        override fun run() {
+            val s = opStep ?: return
+            showOperation(Operations.running(s, android.os.SystemClock.uptimeMillis() - opStartedAt))
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
     private lateinit var conversation: android.widget.ScrollView
     private lateinit var convoText: android.widget.TextView
     // The dim "heard" line (HeardLine): what the last voice turn sent Hermes.
@@ -556,6 +567,7 @@ class MainActivity : AppCompatActivity() {
         callLive = false
         mainHandler.removeCallbacks(routeRebuildTask)
         callHandler.removeCallbacks(callTicker)
+        clearOperation()
         liveController?.setVoiceChannelOpen(false)
         liveController?.stop(); liveController = null
         stopVoiceWake()
@@ -613,6 +625,15 @@ class MainActivity : AppCompatActivity() {
         if (callLive) { b.text = "\u2706"; b.setTextColor(0xFFFF5B5B.toInt()); b.contentDescription = "Hang up call" }
         else { b.text = "\u2706"; b.setTextColor(0xFF35D07F.toInt()); b.contentDescription = "Start call" }
     }
+    /** #281: one line of plain language on the state line, mirrored to the call notification. */
+    private fun showOperation(line: String) {
+        setStatus(line, true)
+        if (callLive) VoiceService.update(this, line)
+    }
+    private fun clearOperation() {
+        mainHandler.removeCallbacks(opTicker); opStep = null; opHeld = null
+    }
+
     private fun setStatus(text: String, show: Boolean) {
         status.text = text
         status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
@@ -1409,13 +1430,21 @@ class MainActivity : AppCompatActivity() {
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
                 warmingNow = state == "warming"
-                setStatus(when (state) {
+                // #281/#280: a new turn retires the last turn's steps, a held failure included.
+                if (state == "thinking") clearOperation()
+                val words = when (state) {
                     "listening" -> "Listening…"
                     "thinking" -> "The entity is working…"
                     "speaking" -> "Speaking…"
                     "warming" -> ConnectionPhase.pill(ConnectionPhase.Phase.WARMING)
                     else -> getString(R.string.hv_connected)
-                }, state == "warming")
+                }
+                // The state line (docs/STATE-AUDIT.md): kept up for the whole call, because the
+                // being alone cannot carry a state with the being off, the sound off, or in light
+                // mode. A failed step's line outranks the idle words until the next turn.
+                val line = if (state == "listening" || state == "idle") opHeld ?: words else words
+                setStatus(line, state == "warming" || callLive || state == "thinking")
+                if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
                 // renderMotion reads the real playback RMS instead.
@@ -1507,10 +1536,25 @@ class MainActivity : AppCompatActivity() {
             appendConvo("Agent: $finalText")
         } }
         override fun onError(msg: String) { runOnUiThread {
+            mainHandler.removeCallbacks(opTicker); opStep = null   // a cut or failed turn ends its step
             setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
             feed(MotionState.Signal.REST); appendStream("// $msg")
             // A barge/stop is not a failure: the being was interrupted, it did not err.
             if (!msg.contains("interrupt")) cues?.play(CueSynth.Cue.ERROR)
+        } }
+        override fun onTool(name: String, arguments: String) { runOnUiThread {
+            val step = Operations.step(name, arguments)
+            opStep = step; opStartedAt = android.os.SystemClock.uptimeMillis()
+            mainHandler.removeCallbacks(opTicker)
+            showOperation(Operations.running(step, 0))
+            mainHandler.postDelayed(opTicker, 1000)
+        } }
+        override fun onToolOutput(output: String) { runOnUiThread {
+            val step = opStep ?: return@runOnUiThread
+            mainHandler.removeCallbacks(opTicker); opStep = null
+            val reason = Operations.failure(output)
+            if (reason == null) showOperation(Operations.finished(step))
+            else { val l = Operations.failed(step, reason); opHeld = l; showOperation(l) }
         } }
         override fun onHeard(text: String) { runOnUiThread {
             // Conversation mode already IS a transcript: the words go there, in memory
