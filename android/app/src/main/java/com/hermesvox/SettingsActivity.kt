@@ -1160,6 +1160,9 @@ class SettingsActivity : AppCompatActivity() {
     private var previewBound = false
     private fun bindBeingPreview() {
         val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+        // #275: on the light theme the preview is ink on the page, exactly as the main screen.
+        val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        v.setLightSurface(night != android.content.res.Configuration.UI_MODE_NIGHT_YES, ContextCompat.getColor(this, R.color.hv_bg))
         v.applyLookPrefs(prefs)
         if (!previewBound) {
             previewBound = true
