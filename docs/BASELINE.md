@@ -25,12 +25,19 @@ and end; `event=turn-dropped` and failed outcomes for dropped turns.
 
 | Measure | Pixel 7 | Pixel 9 |
 |---|---|---|
-| cold start → first frame (`am start -W`) | pending | pending |
-| warm: STT / TTS / presence | pending | pending |
-| short turn: first text / first audio / full reply | pending | pending |
-| presence render p50 / p95 | pending | pending |
-| peak RSS / lowest MemAvailable | pending | pending |
-| ten-minute call: thermal start → end, dropped turns | pending | pending |
+| cold start → first frame (`am start -W`, connected) | 157 / 169 / 209 ms | pending |
+| warm: STT / TTS / presence | Whisper base 590 ms · Nemotron load 4290 + warm 3033 ms · Supertonic 295–395 ms · Gemma 7.3 s (4.3 GB free) to ~50 s (0 MB free) | pending |
+| short turn: first text / first audio / full reply | pending (no spoken turn yet) | pending |
+| presence render p50 / p95 | greeting 1216 ms (n=1) | pending |
+| peak RSS / lowest MemAvailable | Realtime: 638 MB / 94 MB · Enhanced + Nemotron: 3306–3490 MB / 0–1089 MB (see below) | pending |
+| ten-minute call: thermal start → end, dropped turns | 11 min Enhanced, all four legs: none → none (67 samples, skin ≈ 27 °C), 0 dropped | pending |
 
-**Status: not recorded.** The instrument landed in 0.9.1 (ResourceProbe + `baseline-report.py`);
-the run needs the release APK on both devices.
+**Pixel 7 conditions (2026-10-22).** Nightly `ca0e66f`/`097e1be`, not the release APK; on USB
+power (so no battery figure). The phone carried another app (`org.phononai.app`) holding a
+2.5 GB on-device model resident; with it running, MemAvailable reached **0**, Gemma took ~50 s
+to load and the low-memory killer cleared dozens of apps, including that one (#191, #179).
+Without it, a 5.3 min and an 11 min Enhanced call bottomed at 1088–1089 MB available. The
+memory row is therefore a property of the phone's whole load, not of Vox alone.
+
+**Status: partly recorded.** Pixel 7 rows from nightlies, no spoken turn yet; Pixel 9 and the
+release APK pending.
