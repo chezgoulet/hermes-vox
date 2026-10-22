@@ -201,6 +201,10 @@ The row's subtitle is computed from the take count and the words "not listening"
 | Cycle all categories | `visual_cycle_all` | false | Rotates through every visual family while idle | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:77 `DEFAULT_CYCLE_ALL = false`) |
 | Energy | `visual_energy` | 1.0× | Motion energy multiplier | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:92 `DEFAULT_ENERGY = 1f`) |
 | Glow / bloom | `visual_glow` | 1.0× | Bloom multiplier | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:93 `DEFAULT_GLOW = 1f`) |
+| Density | `visual_density` | 100 % | How many of the particles are drawn (30–100 %) | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:100 `KEY_DENSITY`) |
+| Speed | `visual_speed` | 1.0× | How fast the being's own clock runs — drift, shimmer, breath | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:104 `KEY_SPEED`) |
+| Trail | `visual_trail` | the category's | Light trails behind each particle; 0 keeps the category's own | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:108 `KEY_TRAIL`) |
+| Hue | `visual_hue` | 0° | Turns the whole palette around the colour wheel | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:112 `KEY_HUE`) |
 | Speaking / Listening / Thinking shape | `visual_shape_speaking` / `_listening` / `_thinking` | `soundwave` / `eye` / `radar` | Which shape fires in each active state | (android/app/src/main/java/com/hermesvox/AvatarView.kt:91 `DEFAULT_SHAPE_SPEAKING = "soundwave"`) |
 | Presence shape / theme | `particles_theme` | `aura` | The idle shape family | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1227 `"particles_theme", "aura"`) |
 | Cycle themes while idle | `particles_cycle` | true | Rotates the idle shape | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1233 `"particles_cycle", true`) |
@@ -229,6 +233,9 @@ a command that runs in place shows *queued / running… / done / failed* on its 
 | `/health` | (also `/status`) Whether the agent is up, and its version | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:48 `Show whether the agent is up`) |
 | `/models` | Choose which model the agent thinks with | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:50 `Choose which model the agent thinks with`) |
 | `/help` | The list, with these same lines | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:52 `What each command does`) |
+The **Being** section opens with a live preview: the same being the main screen draws, from the
+same prefs, walking through resting, listening, working and speaking — so a look is judged in
+Settings, not by leaving it (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1143 `previewStates`).
 
 ### Voice models
 
