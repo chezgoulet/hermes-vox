@@ -99,7 +99,10 @@ class StreamingTranscriberTest {
         t.feed(voiced(3200), 16000)
         assertEquals("w w w", t.partial())            // decoded as it arrives, on one stream
         assertEquals(1, opened.size)
-        assertEquals(listOf("accept", "decode", "accept", "decode"), opened[0].calls)
+        // #235: fed as the clip is — 20 ms pieces, each drained.
+        assertTrue(opened[0].chunkSizes.all { it <= 320 })
+        assertEquals(4800, opened[0].chunkSizes.sum())
+        assertEquals(opened[0].chunkSizes.size, opened[0].calls.windowed(2).count { it == listOf("accept", "decode") })
         t.reset()
         assertTrue(opened[0].released)
         assertEquals("", t.partial())
@@ -113,5 +116,60 @@ class StreamingTranscriberTest {
         t.feed(voiced(3200), 16000)
         t.transcribeClip(voiced(16000), 16000)
         assertEquals("w w", t.partial())
+    }
+
+    // ---- #235: one live stream per utterance, fed only the new audio ----
+
+    @Test fun a_two_minute_turn_decodes_every_sample_exactly_once() {
+        val opened = mutableListOf<FakeDecoder>()
+        val u = LiveUtterance(StreamingTranscriber { FakeDecoder().also { opened += it } })
+        val sr = 16000
+        val total = sr * 120                      // a two-minute turn
+        val tick = sr * 900 / 1000                // the partial worker's cadence
+        var fed = 0
+        var snapshotDecoded = 0L                  // what the old re-decode-the-snapshot worker cost
+        var captured = 0
+        while (captured + tick < total) {
+            captured += tick
+            snapshotDecoded += captured
+            u.feed(1, voiced(captured - fed), sr)  // only what arrived since the last feed
+            fed = captured
+        }
+        val text = u.finish(1, voiced(total - fed), sr)
+        assertEquals(1, opened.size)                                    // one stream, the whole turn
+        assertEquals(total.toLong(), u.lastFinishedFed)                 // no sample decoded twice
+        assertEquals(total + sr * StreamingTranscriber.TAIL_MS / 1000, opened[0].fed.size)
+        assertTrue(opened[0].released)
+        assertEquals(List(total / 1600) { "w" }.joinToString(" "), text)
+        // Linear, not quadratic: the old worker decoded ~66x the turn's audio.
+        assertTrue(snapshotDecoded > 60L * total)
+    }
+
+    @Test fun live_text_matches_the_whole_clip_text() {
+        val clip = voiced(16000 * 7 + 55)
+        val whole = StreamingTranscriber { FakeDecoder() }.transcribeClip(clip, 16000)
+        val u = LiveUtterance(StreamingTranscriber { FakeDecoder() })
+        u.feed(4, clip.copyOfRange(0, 30000), 16000)
+        u.feed(4, clip.copyOfRange(30000, 90000), 16000)
+        assertEquals(whole, u.finish(4, clip.copyOfRange(90000, clip.size), 16000))
+    }
+
+    @Test fun a_new_segment_starts_a_new_stream() {
+        val opened = mutableListOf<FakeDecoder>()
+        val u = LiveUtterance(StreamingTranscriber { FakeDecoder().also { opened += it } })
+        assertEquals("w", u.feed(1, voiced(1600), 16000))
+        // Segment 1 was dropped (an echo tail, say); segment 2 must not inherit its audio.
+        assertEquals("w", u.feed(2, voiced(1600), 16000))
+        assertEquals(2, opened.size)
+        assertTrue(opened[0].released)
+        assertEquals("w w", u.finish(2, voiced(1600), 16000))
+        assertEquals(3200L, u.lastFinishedFed)
+    }
+
+    @Test fun finishing_an_unfed_segment_decodes_it_whole() {
+        // Partial STT off: nothing was fed live, so the finish is the whole clip.
+        val u = LiveUtterance(StreamingTranscriber { FakeDecoder() })
+        assertEquals("w w w", u.finish(9, voiced(4800), 16000))
+        assertEquals(4800L, u.lastFinishedFed)
     }
 }

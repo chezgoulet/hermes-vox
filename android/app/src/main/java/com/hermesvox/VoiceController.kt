@@ -657,6 +657,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (seeded != null) speechStartAt = segStart   // the carry opens in speech
                     // VAD-driven segmentation: gather one utterance; close it on a pause.
                     val partialEnabled = micBool("partial_stt", true)
+                    // #235: the streaming arm keeps ONE stream for this utterance; the partial
+                    // worker feeds it only seg[liveFed, …) — the audio it has not decoded yet —
+                    // and the turn's text finishes that stream instead of re-decoding the clip.
+                    val live = stt as? LiveStt
+                    var liveFed = 0
                     var lastPartialMs = android.os.SystemClock.uptimeMillis()
                     while (listening && !commitRequested && !focusPause) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
@@ -727,9 +732,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                             lastPartialMs = android.os.SystemClock.uptimeMillis()
                             if (!partialRunning) {
                                 partialRunning = true
-                                val snapStart = EarlyStartRule.snapshotStart(seg.size, sr)
+                                val snapStart = if (live != null) liveFed else EarlyStartRule.snapshotStart(seg.size, sr)
                                 val snapEnd = seg.size
                                 val snap = seg.subList(snapStart, snapEnd).toFloatArray()
+                                if (live != null) liveFed = snapEnd   // handed over: never fed again
                                 val now = android.os.SystemClock.uptimeMillis()
                                 val sm = silentMs.toLong()   // immutable snapshot: don't read the mutable silentMs in the lambda
                                 // H3: guard the partial-STT submit (from the capture thread — it
@@ -738,9 +744,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 // block every future partial in the session).
                                 if (!execSubmit partial@{
                                     try {
-                                        val t = runCatching { stt?.transcribe(snap, sr) }.getOrNull()
+                                        val t = runCatching { if (live != null) live.feedLive(segId, snap, sr) else stt?.transcribe(snap, sr) }.getOrNull()
                                         if (t.isNullOrBlank()) return@partial
-                                        if (segCounter == segId) latestPartial.set(PartialHyp(segId, t, snapStart, snapEnd))
+                                        // A live partial covers the utterance from its first sample.
+                                        val hypStart = if (live != null) 0 else snapStart
+                                        if (segCounter == segId) latestPartial.set(PartialHyp(segId, t, hypStart, snapEnd))
                                         if (voiceState.mayStart(t, sm, now)) {
                                             main.post {
                                                 if (!turnInFlight && !commitRequested && segCounter == segId) {
@@ -791,6 +799,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val text = when {
                         !speechOk -> null
                         reused -> partial!!.text
+                        live != null -> finishLive(live, segId, seg, liveFed, sr)
                         else -> try { stt?.transcribeWhole(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
                     }
                     if (text != null) LatencyStats.pushStt(android.os.SystemClock.uptimeMillis() - segStart)   // #40 speech->text
@@ -2227,6 +2236,20 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (replies.end(rg, ReplyLedger.End.CANCELLED)) VoxLog.d("event=reply-end gen=$rg reason=cancelled cause=$reason")
         VoxLog.d("event=tts-stop reason=$reason msSinceBarge=${if (bargeAt > 0L) android.os.SystemClock.uptimeMillis() - bargeAt else 0L} cancelToSilenceMs=$silentMs")
         releaseTurnGate(turnGen, reason)
+    }
+
+    /** #235: end utterance [segId] on the live stream with only the audio the partial worker
+     *  has not fed. The worker hands a slice over before it feeds it, so wait (bounded) for
+     *  it to land first; if it does not, or the stream cannot finish, decode the clip whole —
+     *  the old path, slower but never wrong. */
+    private fun finishLive(live: LiveStt, segId: Long, seg: List<Float>, fed: Int, sr: Int): String? {
+        val until = android.os.SystemClock.uptimeMillis() + 2_000L
+        while (partialRunning && android.os.SystemClock.uptimeMillis() < until) android.os.SystemClock.sleep(5L)
+        val text = if (partialRunning) null
+            else try { live.finishLive(segId, seg.subList(fed, seg.size).toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
+        if (text != null) return text
+        VoxLog.w("event=stt-live-fallback seg=$segId reason=${if (partialRunning) "worker-busy" else "finish-failed"}")
+        return try { stt?.transcribeWhole(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
     }
 
     private fun releaseTurnGate(gen: Long, reason: String) {
