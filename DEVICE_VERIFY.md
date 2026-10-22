@@ -17,7 +17,13 @@ optional Enhanced Realtime (alpha) layer.
   release APK is measured). What remains is the on-device speech runtime. Nightly
   pre-releases come from `testing`.
 - **Your own build** — `bash scripts/gate.sh`, then
-  `adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk`.
+  `adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk`. That works when the
+  installed app is itself a debug build. Against a **release- or nightly-signed** install
+  (Obtainium, or a release APK) the debug APK is refused with
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`: the signatures differ, and Android will not replace a
+  package signed with another key. Install a build signed with the release key
+  (`vox_build.sh`, which needs `keystore/keystore.properties`), or uninstall first — which
+  takes the app's settings, downloaded models and stored gateway key with it.
 
 ## Upgrading to 0.9 — HTTPS for entity endpoints
 
