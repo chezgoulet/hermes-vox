@@ -19,13 +19,13 @@ class WorkingRender(
     /** When the render was requested (the run's working state becoming known). */
     val requestedAtMs: Long,
     /**
-     * #218: the caller's wait that this render's directive was composed against, in seconds — the
-     * one number the guard may accept in the line it returns. The voucher travels with the render
-     * because the line says the wait as it was when the line was written; delivery must not
-     * re-measure it, or an honest line would be refused for a few seconds' drift. Null when no
-     * wait was known, which vouches for nothing (the old rule).
+     * D20 (generalising #218): the digit runs the client wrote into this render's directive — the
+     * numbers the guard may accept in the line it returns. They travel with the render because the
+     * line was composed against that directive; delivery must not recompose it, or an honest line
+     * would be refused for drift. Empty when the directive carried no number, which vouches for
+     * nothing (a number the directive did not carry is still refused).
      */
-    val vouchedSeconds: Long? = null,
+    val vouched: Set<String> = emptySet(),
 ) {
     private val lock = Any()
     private var outcome: ErSoulTurn.Outcome? = null
