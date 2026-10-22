@@ -396,6 +396,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  sentence's WRITE_BLOCKING write (F2: bounds the drain-wait to ~2s). */
     fun streamChunk(text: String): Boolean {
         if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
+        // #240: the chunk's token. A stop that lands while it synthesizes kills it for good,
+        // even if the next turn re-opens the fence before the synthesis returns.
+        val epoch = streamFence.stopEpoch
         val eng = tts ?: return false
         return try {
             val audio = synth(eng, text)
@@ -406,7 +409,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // #D1: re-check under the lock — a stop that landed while we were
                 // synthesizing closed the fence, so a null track here must NOT be
                 // treated as "first chunk" (that rebuild is the resurrection bug).
-                if (!streamFence.allowed) return false
+                if (!streamFence.allows(epoch)) {
+                    if (streamFence.allowed) VoxLog.d("event=tts-drop reason=stale-epoch chars=${text.length}")
+                    return false
+                }
                 if (streamTrack == null) {
                     val built = buildStreamTrack(sr)
                     streamTrack = built; streamWritten = 0
@@ -430,7 +436,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
                 var at = 0
                 while (at < samples.size) {
-                    if (!streamFence.allowed) return false   // F2: stop between sub-writes exits fast
+                    if (!streamFence.allows(epoch)) return false   // F2: stop between sub-writes exits fast
                     val n = minOf(twoSec, samples.size - at)
                     t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
                     at += n
