@@ -41,3 +41,9 @@ recordings** and the device's own STT cadence.
 loop's partial worker runs every 900 ms (#235), so wired in today the endpointer would behave as
 a different, worse one than the one measured. It goes in behind `SemanticEndpoint.KEY` when the
 live stream's partials arrive at the bench's cadence.
+
+## Licence of the fixture
+
+The traces are derived from the sttbench clips (recogniser output and VAD flags), so they carry
+those clips' licences and attribution — LibriSpeech CC BY 4.0, EdAcc CC BY-SA 4.0 — as set out in
+`../sttbench/corpus/README.md`.
