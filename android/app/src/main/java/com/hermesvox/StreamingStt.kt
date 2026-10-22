@@ -38,8 +38,9 @@ internal interface StreamDecoder {
  * [transcribeClip] runs the bench's procedure (android/bench StreamingSttBench) on a whole
  * clip, minus the wall-clock pacing: 20 ms chunks, each followed by a drain, then 500 ms of
  * trailing silence (the bench's endpoint tail) and inputFinished(), drained once more. Each
- * clip gets its own stream. [feed]/[partial] keep one live stream for a future continuous
- * caller; the turn loop does not use them.
+ * clip gets its own stream. [feed]/[partial]/[finishLive] keep one live stream: the capture
+ * loop's partial worker feeds it only the audio it has not fed yet (#235), so an utterance's
+ * audio is decoded once, however long it runs.
  */
 internal class StreamingTranscriber(private val open: () -> StreamDecoder) {
     private var live: StreamDecoder? = null
@@ -62,11 +63,38 @@ internal class StreamingTranscriber(private val open: () -> StreamDecoder) {
         } finally { d.release() }
     }
 
-    /** Append [chunk] to the live stream (opened on first use) and decode what is ready. */
+    /** Samples handed to the live stream since it opened — the #235 instrument. */
+    var liveFedSamples = 0L
+        private set
+
+    /** Append [chunk] to the live stream (opened on first use) and decode what is ready. Fed
+     *  in [CHUNK_MS] pieces, each drained, exactly as [transcribeClip] feeds a clip, so the
+     *  live text and the whole-clip text come from the same procedure. */
     fun feed(chunk: FloatArray, sampleRate: Int) {
-        val d = live ?: open().also { live = it }
-        d.accept(chunk, sampleRate)
-        d.decodeReady()
+        val d = live ?: open().also { live = it; liveFedSamples = 0 }
+        val step = chunkSamples(sampleRate)
+        var at = 0
+        while (at < chunk.size) {
+            val n = minOf(step, chunk.size - at)
+            d.accept(if (at == 0 && n == chunk.size) chunk else chunk.copyOfRange(at, at + n), sampleRate)
+            d.decodeReady()
+            at += n
+        }
+        liveFedSamples += chunk.size
+    }
+
+    /** End the live stream: feed [rest] (the audio not yet fed), the endpoint tail and
+     *  inputFinished(), drain, and return the final text. The stream is released; the next
+     *  [feed] opens a fresh utterance. */
+    fun finishLive(rest: FloatArray, sampleRate: Int): String {
+        if (rest.isNotEmpty()) feed(rest, sampleRate)
+        val d = live ?: open().also { live = it; liveFedSamples = 0 }
+        return try {
+            d.accept(FloatArray(sampleRate * TAIL_MS / 1000), sampleRate)
+            d.inputFinished()
+            d.decodeReady()
+            d.text().trim()
+        } finally { reset() }
     }
 
     /** The live stream's text so far ("" before the first [feed]). */
@@ -83,6 +111,48 @@ internal class StreamingTranscriber(private val open: () -> StreamDecoder) {
         const val TAIL_MS = 500
         fun chunkSamples(sampleRate: Int): Int = (sampleRate * CHUNK_MS / 1000).coerceAtLeast(160)
     }
+}
+
+/**
+ * #235: a recognizer that can keep one stream per utterance. The capture loop hands it each
+ * new stretch of an utterance's audio as it arrives and reads the partial back, then ends the
+ * utterance with only the audio it has not fed yet — instead of re-decoding a growing
+ * snapshot every 900 ms, which cost the square of the utterance's length.
+ */
+internal interface LiveStt {
+    /** Feed [chunk] — the samples of utterance [segId] after the last feed — and return the
+     *  text so far. A new [segId] starts a new stream. */
+    fun feedLive(segId: Long, chunk: FloatArray, sampleRate: Int): String?
+    /** End utterance [segId] with [rest], the samples not fed yet; the final text, or null
+     *  when the stream could not finish (the caller falls back to a whole-clip decode). */
+    fun finishLive(segId: Long, rest: FloatArray, sampleRate: Int): String?
+}
+
+/** The per-utterance bookkeeping of a [LiveStt] over a [StreamingTranscriber]: which segment
+ *  the live stream belongs to, and how much audio it has decoded (pure, unit-tested). */
+internal class LiveUtterance(private val tr: StreamingTranscriber) {
+    var segId = Long.MIN_VALUE
+        private set
+    /** Samples decoded for the last finished utterance, tail excluded — equal to its length
+     *  when no audio was decoded twice. */
+    var lastFinishedFed = 0L
+        private set
+
+    fun feed(seg: Long, chunk: FloatArray, sampleRate: Int): String {
+        if (seg != segId) { tr.reset(); segId = seg }
+        tr.feed(chunk, sampleRate)
+        return tr.partial()
+    }
+
+    fun finish(seg: Long, rest: FloatArray, sampleRate: Int): String {
+        if (seg != segId) { tr.reset(); segId = seg }
+        if (rest.isNotEmpty()) tr.feed(rest, sampleRate)
+        lastFinishedFed = tr.liveFedSamples
+        segId = Long.MIN_VALUE
+        return tr.finishLive(FloatArray(0), sampleRate)
+    }
+
+    fun reset() { tr.reset(); segId = Long.MIN_VALUE }
 }
 
 /** [StreamDecoder] over a sherpa-onnx [OnlineStream]. */
@@ -108,13 +178,14 @@ private class SherpaStreamDecoder(private val rec: OnlineRecognizer) : StreamDec
  * finished utterance through a fresh stream and returns the text, so the capture loop is
  * unchanged. Endpointing is OFF: the turn's end is still the app's EndpointRule.
  */
-class OnlineNemotronStt(private val context: Context, private val modelId: String = ModelCatalog.NEMOTRON_STREAM_ID) : VoxStt {
+class OnlineNemotronStt(private val context: Context, private val modelId: String = ModelCatalog.NEMOTRON_STREAM_ID) : VoxStt, LiveStt {
     override val name get() = "Nemotron-$modelId"
     /** Streaming decoding keeps a bounded state, so there is no whole-clip limit. */
     override val maxWindowMs: Int get() = 0
 
     private var rec: OnlineRecognizer? = null
     private var transcriber: StreamingTranscriber? = null
+    private var utterance: LiveUtterance? = null
     @Volatile private var ready = false
     override val isAvailable get() = rec != null
 
@@ -180,7 +251,7 @@ class OnlineNemotronStt(private val context: Context, private val modelId: Strin
                 // READY MEANS WARM, as the offline legs: one discarded decode of faint noise.
                 val tw = System.currentTimeMillis()
                 try { tr.transcribeClip(FloatArray(16000) { ((it * 7919) % 200 - 100) / 100_000f }, 16000) } catch (_: Throwable) {}
-                synchronized(this) { rec = r; transcriber = tr; ready = true }
+                synchronized(this) { rec = r; transcriber = tr; utterance = LiveUtterance(tr); ready = true }
                 VoxLog.d("$name loaded: threads=$sttThreads loadMs=${tw - t0} warmMs=${System.currentTimeMillis() - tw}")
                 onReady(true)
             } catch (e: Throwable) {
@@ -197,22 +268,30 @@ class OnlineNemotronStt(private val context: Context, private val modelId: Strin
         catch (e: Throwable) { VoxLog.e("$name decode: ${e.message}"); null }
     }
 
-    /** Continuous-use surface (unused by the turn loop): append audio to the live stream. */
-    @Synchronized fun feed(chunk: FloatArray, sampleRate: Int) {
-        if (!ready) return
-        try { transcriber?.feed(chunk, sampleRate) } catch (e: Throwable) { VoxLog.e("$name feed: ${e.message}") }
+    @Synchronized override fun feedLive(segId: Long, chunk: FloatArray, sampleRate: Int): String? {
+        if (!ready) return null
+        val u = utterance ?: return null
+        return try { u.feed(segId, chunk, sampleRate) }
+        catch (e: Throwable) { VoxLog.e("$name feed: ${e.message}"); u.reset(); null }
     }
 
-    /** The live stream's text so far. */
-    @Synchronized fun partial(): String = if (ready) transcriber?.partial().orEmpty() else ""
-
-    /** Start the live stream over. */
-    @Synchronized fun resetStream() { transcriber?.reset() }
+    @Synchronized override fun finishLive(segId: Long, rest: FloatArray, sampleRate: Int): String? {
+        if (!ready) return null
+        val u = utterance ?: return null
+        return try {
+            val t0 = System.currentTimeMillis()
+            val text = u.finish(segId, rest, sampleRate)
+            // #235's instrument: fedMs equal to the utterance's length means no audio was
+            // decoded twice; finishMs is the tail the caller waited after the speech ended.
+            VoxLog.d("event=stt-live seg=$segId fedMs=${u.lastFinishedFed * 1000 / sampleRate} restMs=${rest.size * 1000L / sampleRate} finishMs=${System.currentTimeMillis() - t0}")
+            text
+        } catch (e: Throwable) { VoxLog.e("$name finish: ${e.message}"); u.reset(); null }
+    }
 
     @Synchronized override fun shutdown() {
         ready = false
         try { transcriber?.reset() } catch (_: Throwable) {}
-        transcriber = null
+        transcriber = null; utterance = null
         rec?.release(); rec = null
     }
 }
