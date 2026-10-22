@@ -29,6 +29,8 @@ class BeingFrame {
     var accR = 0.7f; var accG = 0.9f; var accB = 1f
     /** #275: the light theme draws ink on this paper; 0 = the dark theme, light on black. */
     var ink = 0f; var paperR = 0f; var paperG = 0f; var paperB = 0f
+    /** #225: the fraction of particles drawn (1 = all the quality level allows). */
+    var density = 1f
 
     fun copyFrom(o: BeingFrame) {
         t = o.t; archA = o.archA; archB = o.archB; mix = o.mix
@@ -42,6 +44,7 @@ class BeingFrame {
         baseR = o.baseR; baseG = o.baseG; baseB = o.baseB
         accR = o.accR; accG = o.accG; accB = o.accB
         ink = o.ink; paperR = o.paperR; paperG = o.paperG; paperB = o.paperB
+        density = o.density
     }
 }
 
@@ -170,7 +173,9 @@ class BeingRenderer {
         GLES30.glUseProgram(point)
         setPointUniforms(f)
         GLES30.glBindVertexArray(vao)
-        GLES30.glDrawArrays(GLES30.GL_POINTS, 0, counts[quality])
+        // #225: any prefix of the shuffled buffer is a uniform sample, so density is a prefix;
+        // per-point brightness stays the quality level's, so a sparser being is also lighter.
+        GLES30.glDrawArrays(GLES30.GL_POINTS, 0, VisualStyle.drawCount(counts[quality], f.density))
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBindVertexArray(quadVao)
 

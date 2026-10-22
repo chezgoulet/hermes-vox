@@ -93,6 +93,34 @@ object VisualStyle {
     const val DEFAULT_GLOW = 1f
 
     const val ENERGY_MIN = 0.5f; const val ENERGY_MAX = 1.6f; const val ENERGY_STEP = 0.1f
+
+    // #225: the fine-grained look. Each is a scalar over the category, never a replacement,
+    // and each default is the identity — an untouched install draws exactly what it drew.
+    /** How many of the being's particles are drawn, as a fraction. */
+    const val KEY_DENSITY = "visual_density"
+    const val DEFAULT_DENSITY = 1f
+    const val DENSITY_MIN = 0.3f; const val DENSITY_MAX = 1f; const val DENSITY_STEP = 0.1f
+    /** How fast the being's own clock runs: its drift, shimmer and breath. */
+    const val KEY_SPEED = "visual_speed"
+    const val DEFAULT_SPEED = 1f
+    const val SPEED_MIN = 0.5f; const val SPEED_MAX = 1.8f; const val SPEED_STEP = 0.1f
+    /** Light trails behind the particles; 0 keeps the category's own (most have none). */
+    const val KEY_TRAIL = "visual_trail"
+    const val DEFAULT_TRAIL = 0f
+    const val TRAIL_MIN = 0f; const val TRAIL_MAX = 0.9f; const val TRAIL_STEP = 0.1f
+    /** A hue turn applied to the whole palette, in degrees; 0 keeps the authored colours. */
+    const val KEY_HUE = "visual_hue"
+    const val DEFAULT_HUE = 0f
+    const val HUE_MIN = -180f; const val HUE_MAX = 180f; const val HUE_STEP = 15f
+
+    fun density(pref: Float): Float = pref.coerceIn(DENSITY_MIN, DENSITY_MAX)
+    fun speed(pref: Float): Float = pref.coerceIn(SPEED_MIN, SPEED_MAX)
+    fun trail(pref: Float): Float = pref.coerceIn(TRAIL_MIN, TRAIL_MAX)
+    fun hue(pref: Float): Float = pref.coerceIn(HUE_MIN, HUE_MAX)
+    /** The trail the renderer draws: the user's, or the category's own if that is longer. */
+    fun trails(category: Float, user: Float): Float = maxOf(category, trail(user))
+    /** How many points to draw out of [of] at [density] — never fewer than one. */
+    fun drawCount(of: Int, density: Float): Int = maxOf(1, (of * density(density)).toInt())
     const val GLOW_MIN = 0.4f;   const val GLOW_MAX = 1.6f;   const val GLOW_STEP = 0.1f
 
     /**

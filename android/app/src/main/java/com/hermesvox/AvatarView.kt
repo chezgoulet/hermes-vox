@@ -385,6 +385,34 @@ class AvatarView @JvmOverloads constructor(
     }
     private var inkOn = 0f
     private var paperR = 0f; private var paperG = 0f; private var paperB = 0f
+    // #225: the fine-grained look.
+    fun setVisualDensity(v: Float) { visDensity = VisualStyle.density(v) }
+    fun setVisualSpeed(v: Float) { visSpeed = VisualStyle.speed(v) }
+    fun setVisualTrail(v: Float) { visTrail = VisualStyle.trail(v) }
+    fun setVisualHue(v: Float) { visHue = VisualStyle.hue(v) }
+    private var visDensity = VisualStyle.DEFAULT_DENSITY
+    private var visSpeed = VisualStyle.DEFAULT_SPEED
+    private var visTrail = VisualStyle.DEFAULT_TRAIL
+    private var visHue = VisualStyle.DEFAULT_HUE
+
+    /** Every look pref, read once and applied — the main screen and the Settings preview
+     *  (#225) render from the same call, so the preview cannot drift from the real thing. */
+    fun applyLookPrefs(p: android.content.SharedPreferences) {
+        setIdleTheme(p.getString("particles_theme", "aura") ?: "aura")
+        setCycleThemes(p.getBoolean("particles_cycle", true))
+        applyStateShapes(
+            p.getString(KEY_SHAPE_SPEAKING, DEFAULT_SHAPE_SPEAKING) ?: DEFAULT_SHAPE_SPEAKING,
+            p.getString(KEY_SHAPE_LISTENING, DEFAULT_SHAPE_LISTENING) ?: DEFAULT_SHAPE_LISTENING,
+            p.getString(KEY_SHAPE_THINKING, DEFAULT_SHAPE_THINKING) ?: DEFAULT_SHAPE_THINKING,
+        )
+        setVisualCategory(p.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT)
+        setVisualEnergy(p.getFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY))
+        setVisualGlow(p.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
+        setVisualDensity(p.getFloat(VisualStyle.KEY_DENSITY, VisualStyle.DEFAULT_DENSITY))
+        setVisualSpeed(p.getFloat(VisualStyle.KEY_SPEED, VisualStyle.DEFAULT_SPEED))
+        setVisualTrail(p.getFloat(VisualStyle.KEY_TRAIL, VisualStyle.DEFAULT_TRAIL))
+        setVisualHue(p.getFloat(VisualStyle.KEY_HUE, VisualStyle.DEFAULT_HUE))
+    }
     fun visualCategory(): String = vsty.token
     fun cyclingAllCategories(): Boolean = cycleAll
 
@@ -395,7 +423,7 @@ class AvatarView @JvmOverloads constructor(
         if (width == 0 || height == 0) return
         val dt = if (lastNanos == 0L) 0.016f else ((now - lastNanos) / 1e9f).coerceIn(0.001f, 0.05f)
         lastNanos = now
-        time += dt
+        time += dt * visSpeed                    // #225: the being's own clock, scaled
         if (time > 3600f) time -= 3600f          // bounded clock: shader trig stays precise
 
         advanceCycle(dt)
@@ -437,7 +465,8 @@ class AvatarView @JvmOverloads constructor(
         f.glow = rHalo * visGlow
         f.ink = inkOn; f.paperR = paperR; f.paperG = paperG; f.paperB = paperB
         f.halo = (0.45f + sBright * 0.8f) * rHalo * visGlow
-        f.trails = rTrails
+        f.trails = VisualStyle.trails(rTrails, visTrail)
+        f.density = visDensity
         f.baseR = Color.red(curBase) / 255f; f.baseG = Color.green(curBase) / 255f; f.baseB = Color.blue(curBase) / 255f
         f.accR = Color.red(curAcc) / 255f; f.accG = Color.green(curAcc) / 255f; f.accB = Color.blue(curAcc) / 255f
         t.publish(f)
@@ -494,6 +523,7 @@ class AvatarView @JvmOverloads constructor(
         }
         tBase = VisualStyle.shade(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
         tAcc = VisualStyle.shade(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        if (visHue != 0f) { tBase = VisualStyle.turn(tBase, visHue); tAcc = VisualStyle.turn(tAcc, visHue) }   // #225
     }
 
     /** Which shape the being forms right now. */

@@ -1961,24 +1961,7 @@ class MainActivity : AppCompatActivity() {
     // state) + the idle shape/theme + auto-cycle. Settings -> Visuals. This stays the
     // one controller: Settings only writes prefs, the feed applies them.
     private fun applyParticlePrefs() {
-        val theme = prefs.getString("particles_theme", "aura") ?: "aura"
-        avatar.setIdleTheme(theme)
-        avatar.setCycleThemes(prefs.getBoolean("particles_cycle", true))
-        // video-statewire: the active-state shape picks, fed the SAME way as the idle
-        // theme (cached in AvatarView.applyStateShapes, never read per frame). Defaults
-        // are the Wave 1 semantic fits and agree with the Settings pickers.
-        avatar.applyStateShapes(
-            prefs.getString(AvatarView.KEY_SHAPE_SPEAKING, AvatarView.DEFAULT_SHAPE_SPEAKING)
-                ?: AvatarView.DEFAULT_SHAPE_SPEAKING,
-            prefs.getString(AvatarView.KEY_SHAPE_LISTENING, AvatarView.DEFAULT_SHAPE_LISTENING)
-                ?: AvatarView.DEFAULT_SHAPE_LISTENING,
-            prefs.getString(AvatarView.KEY_SHAPE_THINKING, AvatarView.DEFAULT_SHAPE_THINKING)
-                ?: AvatarView.DEFAULT_SHAPE_THINKING,
-        )
-        avatar.setVisualCategory(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)
-            ?: VisualStyle.DEFAULT)
-        avatar.setVisualEnergy(prefs.getFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY))
-        avatar.setVisualGlow(prefs.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
+        avatar.applyLookPrefs(prefs)   // #225: one reader for the main screen and the Settings preview
     }
 
     /** ~30 fps for the being, with slack so the check lands on the right vsync at 60/90/120 Hz. */
