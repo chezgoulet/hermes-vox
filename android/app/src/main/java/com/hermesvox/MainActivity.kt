@@ -380,6 +380,7 @@ class MainActivity : AppCompatActivity() {
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
+        avatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))   // #275: ink on the page
         conversation = findViewById(R.id.conversation)
         // #156 (D7): the being's procedural sound cues. On by default; CuePolicy owns
         // every judgement about whether a cue may be heard or felt right now.
@@ -1079,6 +1080,11 @@ class MainActivity : AppCompatActivity() {
         // onStop-no-call), so the flag can never outlive the call — no leak.
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
+    /** #275: the resolved theme (the app's own choice, or the system's when it follows it). */
+    private fun isLightTheme(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
     private fun modeIsEnhanced() =
         (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
 
