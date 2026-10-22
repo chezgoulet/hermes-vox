@@ -67,7 +67,7 @@ strong two-beat / two heavier beats).
 
 ## Settings
 
-`Settings → Spoken replies`:
+`Settings → Being` (in 0.9.1; *Spoken replies* before #224):
 
 - **Sound cues** (default **on** for a new install) with a **preview** button. The
   preview reports what the policy decided, because on a vibrate-only, DND or muted
@@ -75,7 +75,7 @@ strong two-beat / two heavier beats).
 - **Cue level** (10% steps, default 70%) — relative to media volume.
 - **Cues when the ringer is silent (opt-in)** — default off, per D7.
 
-"Restore defaults (Spoken replies)" resets all three.
+"Restore defaults (Being)" resets them (0.9.1, #224).
 
 ## Files
 
