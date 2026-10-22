@@ -37,7 +37,7 @@ ones. A row that says *both* means each must be enough alone.
 | Thinking | `THINKING` | `THINKING` cue on the edge | `Working…` | `Working…` | ambient is enough while short; the word covers being-off |
 | A tool running | `TOOL` motif | — | **`Checking your calendar · today`** — which tool, in plain language, and on what | same line | **the being cannot say *what*.** This is #281 |
 | A long job | `STALL` drift | — | `… · still working, 40 s` — the elapsed time, after 8 s | same line | a spinner is a hope; a counter is proof it is moving |
-| A step failed | `TOOL_RESULT`, then rest | `ERROR` cue | **`Couldn't send the email — <reason>`**, held until the next turn | same line | a failure must be readable after the fact, not a shimmer |
+| A step failed | `TOOL_RESULT`, then rest | — (the agent may recover; the reply says whether it did) | **`Couldn't send the email — <reason>`**, held until the next turn | same line | a failure must be readable after the fact, not a shimmer |
 | A step done | `TOOL_RESULT` shimmer | — | `Checked your calendar` (past tense), until the next step or the reply | — | the closure of the step, without asserting the world changed (D26) |
 | Speaking | `SPEAKING` waveform | the voice | `Speaking` | `On a call · speaking` | the voice is the signal; the word is for sound-off |
 | Interrupted | `RECOIL` | — | `You interrupted` (exists) | — | |
