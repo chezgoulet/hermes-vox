@@ -54,3 +54,6 @@ __pycache__/
 
 # Presence-bench host output (docs/PRESENCE-BENCH.md); the numbers live in the doc.
 presence-bench-results/
+# #165: the from-source sherpa-onnx build and its staged output.
+android/.sherpa-build/
+android/sherpa-src/

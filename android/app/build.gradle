@@ -103,11 +103,26 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     }
 }
 
+// #165: the staged from-source runtime, or null for the prebuilt AAR (the default build).
+def sherpaSource = project.findProperty('hermesvox.sherpaSource')?.with { file(it) }
+if (sherpaSource != null) {
+    if (!new File(sherpaSource, 'jniLibs').isDirectory() || !new File(sherpaSource, 'kotlin').isDirectory())
+        throw new GradleException("hermesvox.sherpaSource=$sherpaSource has no jniLibs/ + kotlin/ — run scripts/build-sherpa-from-source.sh")
+    android.sourceSets.main.jniLibs.srcDirs += new File(sherpaSource, 'jniLibs')
+    android.sourceSets.main.java.srcDirs += new File(sherpaSource, 'kotlin')
+}
+
 dependencies {
     implementation 'org.apache.commons:commons-compress:1.26.2'
-    // Only the pinned sherpa-onnx runtime (scripts/fetch-runtime.sh). Named rather than
-    // '*.aar' so a stale mobile.aar from a pre-#126 checkout can never be packaged.
-    implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: 'libs')
+    // The sherpa-onnx runtime. By default the pinned prebuilt AAR (scripts/fetch-runtime.sh);
+    // named rather than '*.aar' so a stale mobile.aar from a pre-#126 checkout can never be
+    // packaged. With -Phermesvox.sherpaSource=<dir> (#165, F-Droid path B) the runtime is the
+    // one scripts/build-sherpa-from-source.sh built, and onnxruntime comes from Maven Central.
+    if (sherpaSource != null) {
+        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'   // = ORT_VERSION in the script
+    } else {
+        implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: 'libs')
+    }
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'
