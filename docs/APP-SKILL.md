@@ -13,13 +13,15 @@ The app sends one turn asking the agent to run the install itself and say whethe
 Or, on the machine running Hermes:
 
 ```
-hermes skills install https://raw.githubusercontent.com/chezgoulet/hermes-vox/main/skills/hermes-vox-app/SKILL.md --yes
+hermes skills install https://raw.githubusercontent.com/chezgoulet/hermes-vox/v<version>/skills/hermes-vox-app/SKILL.md --yes
 ```
 
 For a named profile (a Vox profile whose address is `https://host/p/<name>`), the profile goes
 first: `hermes -p <name> skills install … --yes`. The *Copy command* button fills it in.
 
-`main` is the released app's description; it is the one to install.
+Install the description of the build you run: a release's own tag (`v0.9.1`), or `testing` for a
+nightly — the app's button picks it from its version. Not `main`: the skill reached `testing` after
+0.9.0.1 was cut, so `main` has none until the next release (found on the device, 2026-10-22).
 
 ## Make sure it is on
 
