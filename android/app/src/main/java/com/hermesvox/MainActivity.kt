@@ -528,7 +528,13 @@ class MainActivity : AppCompatActivity() {
     /** Start the real-time call: warm + open the continuous voice line and set the
      *  live-call UI (red hang-up button + running timer). The call PERSISTS across
      *  app-close / screen-off (the mic-type foreground service + loop keep running). */
+    // #191: when the Presence wait began (voice legs ready, Gemma still loading), and whether
+    // the caller chose to start this call without it.
+    private var presenceWaitStartedAt = 0L
+    private var skipPresenceThisCall = false
+
     private fun startCall() {
+        skipPresenceThisCall = false; presenceWaitStartedAt = 0L
         sampleResources()   // #191: the memory picture before the models warm, should the load kill us
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
@@ -584,14 +590,28 @@ class MainActivity : AppCompatActivity() {
         // voice was ready, the soul simply was not coming. The call opens, and the ER
         // requirement pill (refreshModelsGate / the load callback) says what is missing.
         val soulComing = ModelCatalog.isInstalled(this, "gemma-e2b") && (express as? GemmaExpress)?.loadFailed != true
-        val soulReady = !modeIsEnhanced() || express.available || !soulComing
+        val soulReady = !modeIsEnhanced() || express.available || !soulComing || skipPresenceThisCall
         if (!c.isWarm() || !soulReady) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
                 // LOCAL pipeline load — this and only this is "Initializing".
                 warmingNow = true
-                showPhase()
+                // #191: when only Presence is pending, say so, count, and after a while offer
+                // to start without it — one word for ~50 s is indistinguishable from a hang.
+                if (presenceWaitStartedAt == 0L && c.isWarm()) presenceWaitStartedAt = android.os.SystemClock.uptimeMillis()
+                val waited = if (presenceWaitStartedAt == 0L) 0L else android.os.SystemClock.uptimeMillis() - presenceWaitStartedAt
+                val pw = PresenceWait.line(c.isWarm(), !soulReady, waited)
+                if (pw == null) showPhase() else {
+                    setStatus(pw, true)
+                    if (PresenceWait.canSkip(c.isWarm(), !soulReady, waited)) {
+                        statusOfferShown = true
+                        status.setOnClickListener {
+                            VoxLog.d("event=presence-skip waitedMs=$waited")
+                            skipPresenceThisCall = true
+                        }
+                    }
+                }
                 mainHandler.postDelayed({ if (!isFinishing) openVoiceLine(s) }, 500)
                 return
             }
@@ -609,6 +629,7 @@ class MainActivity : AppCompatActivity() {
         val wasWarming = warmingNow
         warmingNow = false
         warmRetries = 0
+        presenceWaitStartedAt = 0L
         if (wasWarming) dialGateway()
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // MIC-TYPE FOREGROUND SERVICE keeps the process + the loop alive after the app
@@ -2024,10 +2045,18 @@ class MainActivity : AppCompatActivity() {
             val g = express as? GemmaExpress
             // Load the on-device model once. A model that is installed but cannot start (no
             // supported accelerator/CPU path on this device) is said out loud, not hidden.
-            if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) g.load { ok ->
+            if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) {
+                // #191: the load's cost on this phone, from the memory it started under to how
+                // long it took — the two numbers the field report could not give.
+                val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
+                val t0 = android.os.SystemClock.uptimeMillis()
+                VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
+                g.load { ok ->
+                VoxLog.d("event=presence-load phase=end ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
                 if (!ok && g.loadFailed) runOnUiThread {
                     modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
                 }
+            }
             }
         }
         // 0.6.7: the presence-voice mode is a live read — a Settings change
