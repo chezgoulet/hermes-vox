@@ -1937,7 +1937,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (audioStartedAt == 0L) return   // cut before a single word was voiced: no lock to hold
         val at = liveCursor()
         frozenChars = at
-        VoxLog.dd("event=reveal-freeze reason=$reason chars=$at of=${synchronized(cursorLock) { spokenSb.length }}")
+        // #202: one of the three lines that decide a truncation report, so it is in the shared
+        // log by default — it was dd(), so the exported log the issue asks for never had it.
+        VoxLog.d("event=reveal-freeze reason=$reason chars=$at of=${synchronized(cursorLock) { spokenSb.length }}")
     }
 
     private fun bumpSpeakLevel() {
