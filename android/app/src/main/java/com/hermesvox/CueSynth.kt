@@ -51,7 +51,7 @@ object CueSynth {
     const val PEAK = 0.85f
 
     /** The four cue families. The name is the log token. */
-    enum class Cue { LISTENING, THINKING, REPLY_READY, ERROR }
+    enum class Cue { LISTENING, THINKING, REPLY_READY, ERROR, PING, IDLE }
 
     /** A timbre family, chosen from the being's idle archetype. */
     enum class Timbre { SOFT, BRIGHT, GLASS, DEEP }
@@ -117,6 +117,15 @@ object CueSynth {
         Cue.ERROR -> listOf(
             Note(0, 110, 466.16f, 440.00f, 1.0f),     // A#4 -> A4
             Note(130, 150, 293.66f, 261.63f, 0.90f),  // D4 -> C4 — down, rough
+        )
+        // #251: a single soft, low note — a pulse while the agent works, not an event.
+        Cue.PING -> listOf(
+            Note(0, 60, 329.63f, 329.63f, 1.0f),      // E4, once
+        )
+        // #251: the check-in after a long silence — a question: up, a breath, up again.
+        Cue.IDLE -> listOf(
+            Note(0, 80, 523.25f, 587.33f, 0.85f),     // C5 -> D5
+            Note(240, 120, 587.33f, 698.46f, 1.0f),   // D5 -> F5 — "still there?"
         )
     }
 
@@ -198,6 +207,8 @@ object CueSynth {
         Cue.THINKING -> longArrayOf(0, 9, 55, 9) to intArrayOf(0, 110, 0, 90)
         Cue.REPLY_READY -> longArrayOf(0, 16, 80, 26) to intArrayOf(0, 200, 0, 255)
         Cue.ERROR -> longArrayOf(0, 40, 60, 40) to intArrayOf(0, 230, 0, 230)
+        Cue.PING -> longArrayOf(0, 6) to intArrayOf(0, 70)
+        Cue.IDLE -> longArrayOf(0, 20, 220, 20) to intArrayOf(0, 160, 0, 160)
     }
 
     private const val ATTACK_MS = 5

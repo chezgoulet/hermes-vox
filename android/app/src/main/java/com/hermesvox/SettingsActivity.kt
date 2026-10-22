@@ -1000,6 +1000,34 @@ class SettingsActivity : AppCompatActivity() {
         bindIntSeekBar(R.id.set_seek_cue_level, R.id.set_cue_level_val, CuePolicy.PREF_LEVEL,
             0, 100, 10, CuePolicy.DEFAULT_LEVEL) { "$it%" }
 
+        // #251: one ambient channel at a time — the cues, or Presence's asides.
+        val scopeLabels = arrayOf("Only when Presence is off", "Always")
+        val scopeTokens = arrayOf(CuePolicy.SCOPE_PRESENCE_OFF, CuePolicy.SCOPE_ALWAYS)
+        val curScope = prefs.getString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE)
+        findViewById<TextView>(R.id.set_cue_scope_val).text = scopeLabels[scopeTokens.indexOf(curScope).coerceAtLeast(0)]
+        findViewById<LinearLayout>(R.id.row_cue_scope).setOnClickListener {
+            pick("Cues play", scopeLabels, scopeTokens, CuePolicy.PREF_SCOPE, R.id.set_cue_scope_val)
+        }
+        findViewById<SwitchCompat>(R.id.set_cue_ping).apply {
+            isChecked = prefs.getBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean(CuePolicy.PREF_PING, on).apply() }
+        }
+        val idleLabels = arrayOf("Never", "After 1 min", "After 2 min", "After 5 min")
+        val idleSecs = intArrayOf(0, 60, 120, 300)
+        fun idleLabel() = idleLabels[idleSecs.indexOf(prefs.getInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)).coerceAtLeast(0)]
+        findViewById<TextView>(R.id.set_cue_idle_val).text = idleLabel()
+        findViewById<LinearLayout>(R.id.row_cue_idle).setOnClickListener {
+            val cur = idleSecs.indexOf(prefs.getInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)).coerceAtLeast(0)
+            AlertDialog.Builder(this)
+                .setTitle("Check in after a silent call")
+                .setSingleChoiceItems(idleLabels, cur) { d, w ->
+                    prefs.edit().putInt(CuePolicy.PREF_IDLE_S, idleSecs[w]).apply()
+                    findViewById<TextView>(R.id.set_cue_idle_val).text = idleLabels[w]
+                    d.dismiss()
+                }
+                .show()
+        }
+
         findViewById<TextView>(R.id.set_cue_preview).setOnClickListener {
             val d = cuePlayerOrCreate().play(CueSynth.Cue.REPLY_READY, preview = true)
             Toast.makeText(this, cuePreviewNote(d), Toast.LENGTH_SHORT).show()
@@ -1380,6 +1408,9 @@ class SettingsActivity : AppCompatActivity() {
                     .putBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
                     .putBoolean(CuePolicy.PREF_SILENT, CuePolicy.DEFAULT_SILENT)
                     .putInt(CuePolicy.PREF_LEVEL, CuePolicy.DEFAULT_LEVEL)
+                    .putString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE)
+                    .putBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING)
+                    .putInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)
             }
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")

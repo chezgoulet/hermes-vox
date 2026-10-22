@@ -197,8 +197,37 @@ class MainActivity : AppCompatActivity() {
 
     /** Any evidence the turn is alive: an SSE delta, a console line, a state change,
      *  audible audio. Resets the stall watch and lifts a stall that is showing. */
+    // #251: the ambient cues. The ping pulses while the agent works; the check-in fires once
+    // after a long silence in a call, so a stalled task is noticed without looking.
+    private var ambientWorking = false
+    private var lastPingAt = 0L
+    private var lastHeardFromAt = 0L
+    private var idleFired = false
+    private val ambientTick = object : Runnable {
+        override fun run() {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (prefs.getBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING) &&
+                CuePolicy.Ambient.pingDue(ambientWorking, lastPingAt, now)) {
+                lastPingAt = now; cues?.play(CueSynth.Cue.PING)
+            }
+            val idleS = prefs.getInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)
+            if (CuePolicy.Ambient.idleDue(callLive, idleS, lastHeardFromAt, now, idleFired)) {
+                idleFired = true
+                VoxLog.d("event=cue-idle silentS=${(now - lastHeardFromAt) / 1000} working=$ambientWorking")
+                cues?.play(CueSynth.Cue.IDLE)
+            }
+            if (callLive) mainHandler.postDelayed(this, 1000)
+        }
+    }
+    private fun startAmbient() {
+        lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false
+        mainHandler.removeCallbacks(ambientTick); mainHandler.postDelayed(ambientTick, 1000)
+    }
+    private fun stopAmbient() { mainHandler.removeCallbacks(ambientTick); ambientWorking = false }
+
     private fun markActivity() {
         lastSignalAt = android.os.SystemClock.uptimeMillis()
+        lastHeardFromAt = lastSignalAt; idleFired = false   // #251: any input or output re-arms the check-in
         if (motionStalled) setMotionStall(false, 0L)
     }
 
@@ -613,11 +642,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.widget.TextView>(R.id.call_timer)?.text = String.format("%02d:%02d", callSeconds / 60, callSeconds % 60)
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.VISIBLE
         callHandler.postDelayed(callTicker, 1000)
+        startAmbient()
         updateCallButton()
         setCallTone(true)
     }
     private fun exitCallUi() {
         callHandler.removeCallbacks(callTicker)
+        stopAmbient()
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.GONE
         updateCallButton()
         setCallTone(false)
@@ -1460,6 +1491,10 @@ class MainActivity : AppCompatActivity() {
         override fun onState(state: String) {
             runOnUiThread {
                 if (state != "thinking") toolCount = 0   // a new turn begins
+                // #251: the agent is working from "thinking" until it answers or the turn ends;
+                // the first ping follows the THINKING cue by a full period, never on top of it.
+                if (state == "thinking" && !ambientWorking) lastPingAt = android.os.SystemClock.uptimeMillis()
+                ambientWorking = state == "thinking"
                 // K3 (0.5.0.3): scope replyBuf to the turn. "thinking" fires exactly
                 // once per turn (runStreamedTurn, beside armTranscript which resets the
                 // cursor space), but replyBuf had NO matching reset — it carried the
@@ -1513,6 +1548,7 @@ class MainActivity : AppCompatActivity() {
             // Once the voice starts, the crawl is painted by the speech cursor instead —
             // appending here is what raced 3-4 sentences ahead of the audio.
             replyBuf += text
+            ambientWorking = false   // #251: the answer is arriving; the work is done
             markActivity()   // previewB: a delta is proof the provider is alive
             if (!revealActive) reply.setText(replyBuf)
         } }
@@ -1601,6 +1637,7 @@ class MainActivity : AppCompatActivity() {
             else { val l = Operations.failed(step, reason); opHeld = l; showOperation(l) }
         } }
         override fun onHeard(text: String) { runOnUiThread {
+            lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false   // #251: input
             // Conversation mode already IS a transcript: the words go there, in memory
             // only (convoBuf is never persisted). Presence mode gets the fading line.
             appendConvo("You: $text")

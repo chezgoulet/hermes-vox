@@ -71,7 +71,7 @@ class SoundCuePlayer(context: Context) {
                 "haptics=${world.hapticsEnabled} timbre=${timbre().name.lowercase()}")
         try {
             when (decision.action) {
-                CuePolicy.Action.AUDIO -> playAudio(cue, decision.volume)
+                CuePolicy.Action.AUDIO -> playAudio(cue, if (cue == CueSynth.Cue.PING) decision.volume * CuePolicy.Ambient.PING_GAIN else decision.volume)
                 CuePolicy.Action.HAPTIC -> playHaptic(cue)
                 CuePolicy.Action.SILENT -> Unit
             }
@@ -105,6 +105,10 @@ class SoundCuePlayer(context: Context) {
         hapticsEnabled = hapticsEnabled(),
         ttsSpeaking = voiceActive,
         preview = preview,
+        scope = prefs.getString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE) ?: CuePolicy.DEFAULT_SCOPE,
+        // Presence speaks only in Enhanced Realtime with its switch on (the skill's "Modes").
+        presenceOn = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED &&
+            prefs.getBoolean("er_presence", true),
     )
 
     private fun maxVolume(): Int = am?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0
