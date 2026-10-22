@@ -44,6 +44,10 @@ class VoiceController(private val context: Context, private val session: HermesS
          *  reply lands. Display only: hosts must not persist it unless the user
          *  opted into `log_transcripts`. */
         fun onHeard(text: String) {}
+        /** #281: a tool step started — the stream's `function_call` name and raw arguments. */
+        fun onTool(name: String, arguments: String) {}
+        /** #281: a tool step's result arrived — the `function_call_output` text. */
+        fun onToolOutput(output: String) {}
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -1506,11 +1510,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val name = e.optString("name")
                         val args = e.optString("arguments")
                         mindTool = if (args.isBlank()) name else "$name (${args.take(60)})"
-                        main.post { listener?.onLog("◆ tool: $name ${args.take(80)}") }
+                        main.post { listener?.onLog("◆ tool: $name ${args.take(80)}"); listener?.onTool(name, args) }
                     }
                     "function_call_output" -> {
-                        val out = e.optString("output").replace("\n", " ")
-                        main.post { listener?.onLog("◆ tool · ${out.take(120)}") }
+                        val raw = e.optString("output")
+                        val out = raw.replace("\n", " ")
+                        main.post { listener?.onLog("◆ tool · ${out.take(120)}"); listener?.onToolOutput(raw) }
                     }
                 }
                 "response.output_text.delta" -> {

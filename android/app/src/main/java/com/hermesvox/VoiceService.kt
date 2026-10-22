@@ -22,7 +22,6 @@ class VoiceService : Service() {
     // VoiceController can run (it reuses the entity session). It does NOT create
     // its own VoiceController — a second VoiceController/second AudioRecord was
     // the realtime double-fire root.
-    private val CHANNEL = "hermes_vox_voice"
 
     override fun onCreate() {
         super.onCreate()
@@ -32,12 +31,13 @@ class VoiceService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         VoxLog.d("event=fg-service start id=$startId")
-        return try { startForeground(1, buildNotification()); START_STICKY }
+        return try { startForeground(1, buildNotification()); running = true; START_STICKY }
         catch (e: Exception) { VoxLog.e("event=fg-service startForeground-failed err=${e.message}"); START_NOT_STICKY }
     }
 
     override fun onDestroy() {
         VoxLog.d("event=fg-service destroy")
+        running = false; line = null
         super.onDestroy()
     }
 
@@ -50,16 +50,32 @@ class VoiceService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification =
-        NotificationCompat.Builder(this, CHANNEL)
-            .setContentTitle("Hermes Vox")
-            .setContentText("Listening for the entity…")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+    private fun buildNotification(): Notification = build(this, line ?: "Listening for the entity…")
 
     companion object {
+        private const val CHANNEL = "hermes_vox_voice"
+        @Volatile private var running = false
+        /** The state line the notification shows (#281) — the one surface left when the call is pocketed. */
+        @Volatile private var line: String? = null
+
+        private fun build(context: Context, text: String): Notification =
+            NotificationCompat.Builder(context, CHANNEL)
+                .setContentTitle("Hermes Vox")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+
+        /** Mirror the state line into the running call's notification; a no-op when no call runs. */
+        fun update(context: Context, text: String) {
+            if (line == text) return
+            line = text
+            if (!running) return
+            try { (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(1, build(context, text)) }
+            catch (e: Exception) { VoxLog.w("event=fg-service update-failed err=${e.message}") }
+        }
         fun start(context: Context) {
             VoxLog.d("event=fg-service-start requested sdk=${Build.VERSION.SDK_INT}")
             try {
