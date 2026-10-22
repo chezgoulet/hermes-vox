@@ -344,6 +344,9 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
         status.visibility = android.view.View.GONE
         agentName = findViewById(R.id.agent_name)
+        // #174: the agent's name is where the active profile shows, so it is where it switches.
+        agentName.setOnClickListener { profiles.showSwitcher() }
+        agentName.contentDescription = "Profiles"
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
@@ -1349,6 +1352,47 @@ class MainActivity : AppCompatActivity() {
         setStatus(getString(R.string.hv_connected), false)
     }
 
+    // #174: saved connections. The switcher lives on the header; a switch ends the call.
+    private val profiles by lazy { ProfileDialogs(this, prefs) { switchProfile(it) } }
+
+    /** The header: the agent's name, and the active profile's once there is a choice. */
+    private fun headerLabel(model: String): String {
+        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { model }
+        val list = profiles.list()
+        val active = profiles.activeName()
+        VoiceService.title = if (list.size < 2 || active.isBlank()) "Hermes Vox" else "Hermes Vox · $active"
+        return Profiles.headerLabel(agent, active, list.size)
+    }
+
+    /**
+     * #174: make [p] the active connection. One line at a time is an invariant, so a live
+     * call ends first; the session is rebuilt from the profile's prefs, which starts a new
+     * conversation — `previous_response_id` belongs to the profile it came from.
+     */
+    private fun switchProfile(p: Profiles.Profile) {
+        // Settings → Entity edits the live keys, so fold them back into the profile being
+        // left before overwriting them; otherwise an edit made there is lost on the switch.
+        val cur = profiles.activeName()
+        val list = profiles.list()
+        // (Not when the active profile itself was just edited: the saved edit is the newer one.)
+        val synced = if (cur.isNotBlank() && !cur.equals(p.name, ignoreCase = true) && Profiles.find(list, cur) != null)
+            Profiles.upsert(list, Profiles.fromPrefs(Profiles.find(list, cur)!!.name) { prefs.getString(it, "").orEmpty() })
+        else list
+        val wasLive = callLive
+        if (wasLive) endCall()
+        prefs.edit().apply {
+            putString(Profiles.PREF_LIST, Profiles.encode(synced))
+            for ((k, v) in Profiles.toPrefs(p)) putString(k, v)
+            putString(Profiles.PREF_ACTIVE, p.name)
+        }.apply()
+        session?.resetConversation()   // the same url+key (two scopes on one gateway) keeps the object
+        LatencyStats.resetSessionTurns()
+        clearConversationUi()
+        connectFromPrefs()
+        VoxLog.d("event=profile-switch profiles=${synced.size} callEnded=$wasLive")
+        setStatus(if (wasLive) "Call ended · ${p.name} · new conversation" else "${p.name} · new conversation", true)
+    }
+
     private fun connectFromPrefs() {
         val u = prefs.getString("url", "").orEmpty()
         val k = storedKey()
@@ -1381,7 +1425,7 @@ class MainActivity : AppCompatActivity() {
         dialGateway()
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
-        agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { m }.uppercase()
+        agentName.text = headerLabel(m)
         appendStream("// connected → $u")
         // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
         // (surviving an app-close) is detected on create and resumed below.
@@ -1691,7 +1735,7 @@ class MainActivity : AppCompatActivity() {
                             s.resetConversation()   // re-init the session under the new backend
                             LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
                             sesModel = modelId; sesProvider = prov
-                            agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { modelId }.uppercase()
+                            agentName.text = headerLabel(modelId)
                         }
                     }
                     .setNegativeButton("Cancel", null).show()
