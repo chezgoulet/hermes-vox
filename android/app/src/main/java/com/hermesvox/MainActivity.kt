@@ -1354,6 +1354,9 @@ class MainActivity : AppCompatActivity() {
          *  buffers. Reaches the LIVE session (MainActivity + live controller), so a
          *  Settings "New conversation" clears the same context an active call sees. */
         fun resetActiveConversation() {
+            // #252's class: stopping the controller while `callLive` stays true leaves a call
+            // that looks live and hears nothing. A reset that ends the call ends it properly.
+            active?.let { if (ConversationReset.plan(ConversationReset.Trigger.SETTINGS, it.callLive).endCall) it.endCall() }
             session?.resetConversation()
             LatencyStats.resetSessionTurns()   // C3: a reset conversation is a fresh session
             liveController?.setVoiceChannelOpen(false)
@@ -1697,14 +1700,7 @@ class MainActivity : AppCompatActivity() {
                     "/new"       -> newSession()
                     "/reconnect" -> reconnect()
                     "/clear",
-                    "/reset" -> {
-                        liveController?.stop(); liveController = null
-                        session?.resetConversation()
-                        LatencyStats.resetSessionTurns()   // C3: cleared conversation = fresh session
-                        revealActive = false; mainHandler.removeCallbacks(revealTask)
-                        replyBuf = ""; reply.setText("")
-                        feed(MotionState.Signal.REST); setStatus(getString(R.string.hv_connected), false)
-                    }
+                    "/reset" -> newSession(ConversationReset.Trigger.CLEAR)
                     else         -> showHelpCard()   // /help
                 }
             }
@@ -1836,25 +1832,27 @@ class MainActivity : AppCompatActivity() {
      *  The server-side response id must be captured on the bg thread BEFORE the
      *  client chain is dropped (resetConversation clears lastID), so the delete and
      *  the reset run on the SAME thread, in order. */
-    private fun newSession() {
+    private fun newSession(trigger: ConversationReset.Trigger = ConversationReset.Trigger.NEW) {
         val s = session
+        val plan = ConversationReset.plan(trigger, callLive)
         // #252: /new tore the voice layer down by hand — four of the six lines of endCall(),
         // minus the two that matter. `callLive` was never cleared and the call UI never
         // exited, so startCall()'s `if (callLive) return` refused to re-arm and a live call
         // went permanently deaf until the user hung up. One teardown now, and it re-arms
         // through openVoiceLine(), the same path a route change uses.
         val wasLive = callLive
-        if (wasLive) endCall()
+        if (plan.endCall) endCall()
         if (s != null) {
             kotlin.concurrent.thread {
-                try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
+                // /clear and /reset keep the server's copy; /new also deletes it.
+                if (plan.deleteServerCopy) try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
                 s.resetConversation()   // then drop the client chain + lastID
                 LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
                 // Re-arm only after the chain is actually reset, and only if a call was live.
-                if (wasLive) runOnUiThread { startCall() }
+                if (plan.rearm) runOnUiThread { startCall() }
             }
         }
-        VoxLog.d("event=session-reset callLive=$callLive rearm=$wasLive")
+        VoxLog.d("event=session-reset trigger=${trigger.name.lowercase()} callLive=$callLive rearm=${plan.rearm}")
         stopVoiceWake()
         releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
         unregisterRouteCallback()  // C3: no line -> no route rebuilds
@@ -1871,8 +1869,10 @@ class MainActivity : AppCompatActivity() {
             val m = prefs.getString("model", "hermes-agent").orEmpty()
             val ok = try { HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
             runOnUiThread {
-                resetActiveConversation()
+                val wasLive = callLive
+                resetActiveConversation()   // ends a live call properly (#252's class)
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)
+                if (ConversationReset.plan(ConversationReset.Trigger.RECONNECT, wasLive, ok).rearm) startCall()   // and re-arms it, as /new does
                 setStatus(if (ok) "Reconnected" else "Reconnect failed — check network + address", true)
             }
         }
