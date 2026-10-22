@@ -227,6 +227,41 @@ class MainActivity : AppCompatActivity() {
             if (callLive) mainHandler.postDelayed(this, 1000)
         }
     }
+    // #179/#191/#209: what the call costs the phone — RSS, MemAvailable, thermal — every 10 s,
+    // and the worst of it when the call ends. Main-thread reads of tiny files and two system
+    // services; a failure skips the sample, never the call.
+    private var resSummary: ResourceProbe.Summary? = null
+    private var resStartedAt = 0L
+    private val resTick = object : Runnable {
+        override fun run() {
+            sampleResources()
+            if (callLive) mainHandler.postDelayed(this, ResourceProbe.EVERY_MS)
+        }
+    }
+    private fun sampleResources() {
+        val s = try {
+            val am = getSystemService(android.app.ActivityManager::class.java)
+            val mi = android.app.ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+            val rss = ResourceProbe.rssKb(java.io.File("/proc/self/status").readText())
+            val th = if (android.os.Build.VERSION.SDK_INT >= 29)
+                getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: -1 else -1
+            ResourceProbe.Sample(rss, mi.availMem / 1024, mi.totalMem / 1024, mi.lowMemory, th)
+        } catch (_: Throwable) { return }
+        resSummary?.add(s)
+        VoxLog.d(s.line())
+    }
+    private fun startResourceTrace() {
+        resSummary = ResourceProbe.Summary(); resStartedAt = android.os.SystemClock.uptimeMillis()
+        mainHandler.removeCallbacks(resTick); mainHandler.post(resTick)
+    }
+    private fun endResourceTrace() {
+        mainHandler.removeCallbacks(resTick)
+        val sum = resSummary ?: return
+        sampleResources()
+        VoxLog.d(sum.line(android.os.SystemClock.uptimeMillis() - resStartedAt))
+        resSummary = null
+    }
+
     private fun startAmbient() {
         lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false
         // #284: a new call — count it, and let the stuck hint be offered once more if still early days.
@@ -494,6 +529,7 @@ class MainActivity : AppCompatActivity() {
      *  live-call UI (red hang-up button + running timer). The call PERSISTS across
      *  app-close / screen-off (the mic-type foreground service + loop keep running). */
     private fun startCall() {
+        sampleResources()   // #191: the memory picture before the models warm, should the load kill us
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (callLive) return
@@ -654,12 +690,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.widget.TextView>(R.id.call_timer)?.text = String.format("%02d:%02d", callSeconds / 60, callSeconds % 60)
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.VISIBLE
         callHandler.postDelayed(callTicker, 1000)
+        startResourceTrace()
         startAmbient()
         updateCallButton()
         setCallTone(true)
     }
     private fun exitCallUi() {
         callHandler.removeCallbacks(callTicker)
+        endResourceTrace()
         stopAmbient()
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.GONE
         updateCallButton()
