@@ -2052,7 +2052,10 @@ class MainActivity : AppCompatActivity() {
                 val t0 = android.os.SystemClock.uptimeMillis()
                 VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
                 g.load { ok ->
-                VoxLog.d("event=presence-load phase=end ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
+                // A second caller while a load is in flight is chained onto it and told false at once
+                // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
+                val chained = !ok && !g.loadFailed
+                VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
                 if (!ok && g.loadFailed) runOnUiThread {
                     modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
                 }
