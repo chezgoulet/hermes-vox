@@ -611,6 +611,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // spans turns (the echo belongs to this line, not to one reply) and a
                 // rebuilt line relearns. See EchoFloor and docs/BARGE-WHY-0.7-WORKED.md.
                 val echoFloor = EchoFloor()
+                // #228 — continuous capture, read ONCE per call: the recorder stays open and
+                // the live stream is fed every 100 ms instead of every 900 ms. Off by default,
+                // so an ordinary call behaves exactly as it did.
+                val liveStt = stt as? LiveStt
+                val continuousOn = micBool(ContinuousCapture.KEY, false)
+                val continuous = ContinuousCapture.active(continuousOn, liveStt != null)
+                // #229 — semantic endpointing, its own switch, and it engages only on fresh
+                // partials: its thresholds are fitted to 100 ms frames, so without continuous
+                // capture a "stable" partial is a quarter-second-old fact.
+                val semanticOn = micBool(SemanticEndpoint.KEY, false)
+                val semantic = if (ContinuousCapture.semanticReady(semanticOn, continuous))
+                    EndpointWatch(SemanticEndpoint.Eagerness.of(
+                        prefString(SemanticEndpoint.KEY_EAGERNESS, SemanticEndpoint.Eagerness.BALANCED.key)))
+                else null
+                if (continuousOn && liveStt == null)
+                    VoxLog.w("event=capture-continuous skip reason=no-live-stream")
+                if (semanticOn && semantic == null)
+                    VoxLog.w("event=endpoint-semantic skip reason=no-continuous-capture")
+                VoxLog.d("event=capture-continuous on=$continuous partialMs=${ContinuousCapture.cadenceMs(continuous)} " +
+                    "semantic=${semantic?.eagerness?.key ?: "off"}")
+                // The partial cadence, call-scoped: the legacy 900 ms clock runs from the mic
+                // opening (unchanged), and continuous capture restarts it at each segment's
+                // first sample (there is nothing to decode before a segment exists).
+                val cadence = PartialCadence(ContinuousCapture.cadenceMs(continuous), android.os.SystemClock.uptimeMillis())
                 // ONE owning loop. Half-duplex: it listens OR speaks, never both — so it
                 // can NEVER hear its own reply (the self-trigger/echo). The hard speak-gate
                 // (turnDone.await through speech-complete) enforces that.
@@ -622,7 +646,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // controller is never stopped here (the call stays one tap away).
                     while (listening && focusPause) android.os.SystemClock.sleep(200L)
                     if (!listening) break
-                    try { r.startRecording() } catch (_: Throwable) { break }
+                    // #228: with continuous capture the recorder is opened once for the call
+                    // and left recording across turns — no stop/start seam, no re-negotiated
+                    // AEC/NS session between turns. Without it, unchanged: start per turn.
+                    if (!continuous || r.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                        try { r.startRecording() } catch (_: Throwable) { break }
+                    }
                     // #28: listener callbacks must land on the main thread (the
                     // documented contract) — the capture loop runs on the executor.
                     main.post { listener?.onState("listening") }
@@ -660,9 +689,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // #235: the streaming arm keeps ONE stream for this utterance; the partial
                     // worker feeds it only seg[liveFed, …) — the audio it has not decoded yet —
                     // and the turn's text finishes that stream instead of re-decoding the clip.
-                    val live = stt as? LiveStt
+                    val live = liveStt
                     var liveFed = 0
-                    var lastPartialMs = android.os.SystemClock.uptimeMillis()
+                    // #228: the cadence IS the switch — one partial per 100 ms with continuous
+                    // capture, per 900 ms without it. #229's stability clock runs on these ticks,
+                    // which is why the endpointer needs this one on first.
+                    if (continuous) cadence.reset(segStart)
+                    // #179's in-situ instrument: the time spent inside the recogniser for this
+                    // segment, against the segment's audio, is the RTF a live call actually pays.
+                    val liveFeedDecodeMs = java.util.concurrent.atomic.AtomicLong()
+                    val liveFeeds = java.util.concurrent.atomic.AtomicInteger()
+                    semantic?.reset()
                     while (listening && !commitRequested && !focusPause) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
@@ -704,7 +741,23 @@ class VoiceController(private val context: Context, private val session: HermesS
                             for (f in frames) seg.add(f)
                             if (spoke) { speechSamples += n; lastSpeechEnd = seg.size }
                         }
-                        if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
+                        // #229: with the semantic endpointer engaged the end of the turn is a
+                        // judgement — a probability from the pause, the words and how long the
+                        // hypothesis has held still — plus its ceiling. Only FINAL commits.
+                        // It replaces the fixed pause, never the max/hard ceiling below.
+                        if (semantic != null) {
+                            if (inSpeech) semantic.onSpeech(android.os.SystemClock.uptimeMillis())
+                            if (inSpeech && !turnInFlight) {
+                                val at = android.os.SystemClock.uptimeMillis()
+                                if (semantic.verdict(silentMs.toLong(), at) == SemanticEndpoint.Verdict.FINAL) {
+                                    VoxLog.d("event=endpoint-semantic verdict=final eagerness=${semantic.eagerness.key} " +
+                                        "silenceMs=$silentMs stableMs=${semantic.stableMs(at)} " +
+                                        "elapsedMs=${EndpointRule.utteranceMs(at, speechStartAt)} " +
+                                        "text=${if (logTranscripts()) semantic.text().take(60) else "<hidden>"}")
+                                    break
+                                }
+                            }
+                        } else if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
                         // B2 (revised): the old maxMs break chopped a long continuous
                         // utterance mid-sentence ("The app is." + a "That" fragment).
                         // EndpointRule never chops a still-talking speaker: past maxMs
@@ -727,9 +780,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // TRIGGER: the turn text is the whole segment's transcription,
                         // or this partial only when it covered the whole utterance.
                         if (partialEnabled && inSpeech && !turnInFlight && !focusPause &&
-                            android.os.SystemClock.uptimeMillis() - lastPartialMs >= 900 &&
+                            cadence.due(android.os.SystemClock.uptimeMillis()) &&
                             seg.size >= (sr * minSpeechMs / 1000)) {
-                            lastPartialMs = android.os.SystemClock.uptimeMillis()
                             if (!partialRunning) {
                                 partialRunning = true
                                 val snapStart = if (live != null) liveFed else EarlyStartRule.snapshotStart(seg.size, sr)
@@ -744,11 +796,19 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 // block every future partial in the session).
                                 if (!execSubmit partial@{
                                     try {
+                                        val decodeAt = android.os.SystemClock.uptimeMillis()
                                         val t = runCatching { if (live != null) live.feedLive(segId, snap, sr) else stt?.transcribe(snap, sr) }.getOrNull()
+                                        if (live != null) {
+                                            liveFeedDecodeMs.addAndGet(android.os.SystemClock.uptimeMillis() - decodeAt)
+                                            liveFeeds.incrementAndGet()
+                                        }
                                         if (t.isNullOrBlank()) return@partial
                                         // A live partial covers the utterance from its first sample.
                                         val hypStart = if (live != null) 0 else snapStart
                                         if (segCounter == segId) latestPartial.set(PartialHyp(segId, t, hypStart, snapEnd))
+                                        // #229: the endpointer's stability clock runs on the live
+                                        // hypothesis, so it must see every tick that changed it.
+                                        if (live != null) semantic?.onPartial(t, android.os.SystemClock.uptimeMillis())
                                         if (voiceState.mayStart(t, sm, now)) {
                                             main.post {
                                                 if (!turnInFlight && !commitRequested && segCounter == segId) {
@@ -796,13 +856,27 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val partial = latestPartial.get()?.takeIf { it.segId == segId }
                     val reused = speechOk && partial != null &&
                         EarlyStartRule.mayReusePartial(partial.start, partial.end, lastSpeechEnd)
+                    var finishAt = 0L
                     val text = when {
                         !speechOk -> null
                         reused -> partial!!.text
-                        live != null -> finishLive(live, segId, seg, liveFed, sr)
+                        live != null -> { finishAt = android.os.SystemClock.uptimeMillis(); finishLive(live, segId, seg, liveFed, sr) }
                         else -> try { stt?.transcribeWhole(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
                     }
                     if (text != null) LatencyStats.pushStt(android.os.SystemClock.uptimeMillis() - segStart)   // #40 speech->text
+                    // #179: the RTF a live call actually pays. feedDecodeMs is the recogniser's
+                    // own time for this segment's audio (the partial worker's feeds, summed on
+                    // the capture thread's clock); finishMs is the one-off tail after the pause.
+                    // #235's proof is here too: feeds × the cadence is the whole utterance, so
+                    // audioMs is decoded once — the ratio does not grow with the turn's length.
+                    if (live != null && speechOk) {
+                        val audioMs = (seg.size * 1000L / sr).coerceAtLeast(1L)
+                        val feedMs = liveFeedDecodeMs.get()
+                        val tailMs = if (finishAt > 0L) android.os.SystemClock.uptimeMillis() - finishAt else 0L
+                        VoxLog.d("event=stt-rtf seg=$segId audioMs=$audioMs feedDecodeMs=$feedMs finishMs=$tailMs " +
+                            "rtf=${"%.2f".format(feedMs.toFloat() / audioMs)} feeds=${liveFeeds.get()} " +
+                            "cadenceMs=${ContinuousCapture.cadenceMs(continuous)} reused=$reused")
+                    }
                     val t = (text ?: "").trim()
                     val speechMs = speechSamples * 1000L / sr
                     val clipMs = seg.size * 1000L / sr
@@ -822,7 +896,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                         VoxLog.d("event=stt-collapse reason=repetition text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
                     if (focusPause || cleaned.isBlank()) {
                         VoxLog.dd("realtime: noise-refuse raw=${if (logTranscripts()) t.take(60) else "<hidden>"}")
-                        try { r.stop() } catch (_: Throwable) {}
+                        // #228: with continuous capture the recorder never stops between turns
+                        // — re-opening it is exactly the seam the switch removes.
+                        if (!continuous) try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
                     // HARD SPEAK-GATE: block until the reply AND its speech finish.

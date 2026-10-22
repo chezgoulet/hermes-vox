@@ -987,6 +987,17 @@ class SettingsActivity : AppCompatActivity() {
             "Acoustic echo cancellation. The phone listens to its own speaker and subtracts " +
             "that sound from the mic, so the entity does not hear itself and mistake its own " +
             "voice for yours. Leave it on unless a headset works better with it off.")
+        bindHelp(R.id.help_continuous, "Continuous capture",
+            "Normally the mic works a turn at a time and the recogniser hears it in chunks. " +
+            "With this on, the mic stays open for the whole call and the recogniser follows " +
+            "your words as you say them — the first word after a reply is never lost, and the " +
+            "partial transcript is never more than a tenth of a second old. Costs battery: the " +
+            "recogniser is reading all the time. Leave off unless you want that.")
+        bindHelp(R.id.help_semantic, "Judge when you finish",
+            "Ends your turn by judgement instead of a fixed pause: if the words so far read as " +
+            "finished and have stopped changing, your turn ends sooner; if they trail off " +
+            "(\"…and\", \"…because\") it waits longer. Needs Continuous capture on, because it " +
+            "decides from a transcript that keeps up. Off: the fixed pause below.")
         bindHelp(R.id.help_vad, "VAD (voice activity detection)",
             "A tiny on-device model decides when audio is speech and when it is silence, so " +
             "the app knows when you started and stopped talking. The threshold below is how " +
@@ -1015,6 +1026,11 @@ class SettingsActivity : AppCompatActivity() {
         bindMicToggle(R.id.set_mic_aec, "mic_aec", true)
         bindMicToggle(R.id.set_ns_extra, "ns_extra", true)
         bindMicToggle(R.id.set_partial_stt, "partial_stt", true)
+        // #228 / #229: both ship off. Continuous capture keeps the mic open and reads the
+        // streaming recogniser every 100 ms; the semantic endpointer is a judgement that only
+        // engages once those partials exist, behind its own switch because the two fail apart.
+        bindMicToggle(R.id.set_continuous_capture, ContinuousCapture.KEY, false)
+        bindMicToggle(R.id.set_semantic_endpoint, SemanticEndpoint.KEY, false)
         bindMicToggle(R.id.set_tts_voice_usage, "tts_voice_usage", false)   // D2: engine default OFF (field A/B)
 
         bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
@@ -1511,6 +1527,10 @@ class SettingsActivity : AppCompatActivity() {
                 .putInt("vad_min_speech_ms", 300)
                 .putInt("vad_max_ms", 15000)
                 .putBoolean("partial_stt", true)
+                // #228/#229: both ship OFF; restore puts them back that way.
+                .putBoolean(ContinuousCapture.KEY, false)
+                .putBoolean(SemanticEndpoint.KEY, false)
+                .putString(SemanticEndpoint.KEY_EAGERNESS, SemanticEndpoint.Eagerness.BALANCED.key)
                 .putBoolean("mic_aec", true)
                 .putBoolean("ns_extra", true)
                 .putBoolean("tts_voice_usage", false)   // D2: echo-routing default OFF (field A/B 2026-09-06)
