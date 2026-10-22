@@ -38,6 +38,20 @@ object CuePolicy {
     /** Cue level, percent of the media stream. Default [DEFAULT_LEVEL]. */
     const val PREF_LEVEL = "sound_cue_level"
 
+    /** #251: when cues may sound at all — [SCOPE_ALWAYS], or [SCOPE_PRESENCE_OFF] (the
+     *  default): while Presence is on its asides already occupy the ambient channel, and a
+     *  cue would double it. The owner's read is that a caller wants one or the other. */
+    const val PREF_SCOPE = "sound_cue_scope"
+    const val SCOPE_ALWAYS = "always"
+    const val SCOPE_PRESENCE_OFF = "presence_off"
+    const val DEFAULT_SCOPE = SCOPE_PRESENCE_OFF
+    /** #251: a soft ping, repeated while the agent works, so a pocketed call says it is alive. */
+    const val PREF_PING = "sound_cue_ping"
+    const val DEFAULT_PING = true
+    /** #251: seconds without any input or output before a call checks in; 0 = never. */
+    const val PREF_IDLE_S = "sound_cue_idle_s"
+    const val DEFAULT_IDLE_S = 120
+
     const val DEFAULT_ENABLED = true
     const val DEFAULT_SILENT = false
     const val DEFAULT_LEVEL = 70
@@ -71,6 +85,8 @@ object CuePolicy {
         val hapticsEnabled: Boolean = true,
         val ttsSpeaking: Boolean = false,
         val preview: Boolean = false,
+        val scope: String = DEFAULT_SCOPE,
+        val presenceOn: Boolean = false,
     )
 
     /** What the cue becomes. [SILENT] is a real answer, not a failure. */
@@ -86,6 +102,8 @@ object CuePolicy {
     fun decide(w: World): Decision {
         if (w.ttsSpeaking) return Decision(Action.SILENT, 0f, "tts")
         if (!w.enabled && !w.preview) return Decision(Action.SILENT, 0f, "off")
+        // #251: one ambient channel at a time — Presence's asides, or the cues.
+        if (w.scope == SCOPE_PRESENCE_OFF && w.presenceOn && !w.preview) return Decision(Action.SILENT, 0f, "presence")
         if (w.dnd) return Decision(Action.SILENT, 0f, "dnd")
         if (w.ringerMode == RINGER_SILENT && !w.silentOptIn) return Decision(Action.SILENT, 0f, "silent")
 
@@ -93,6 +111,25 @@ object CuePolicy {
         if (w.ringerMode == RINGER_VIBRATE) return hapticOrSilent(w, "vibrate")
         if (w.mediaVolume <= 0 || level <= 0f) return hapticOrSilent(w, "inaudible")
         return Decision(Action.AUDIO, level, if (w.preview) "preview" else "heard")
+    }
+
+    /**
+     * #251: the two ambient cues' timing, pure so the cadence is proven off-device.
+     *
+     * The ping repeats every [PING_EVERY_MS] while the agent works and stops the moment it
+     * does not; it is played at [PING_GAIN] of the cue level, because it is a pulse, not an
+     * event. The idle check-in fires once per silent stretch: after [idleS] seconds with no
+     * input and no output in a live call, then not again until something happens.
+     */
+    object Ambient {
+        const val PING_EVERY_MS = 6_000L
+        const val PING_GAIN = 0.35f
+
+        fun pingDue(working: Boolean, lastPingAt: Long, now: Long): Boolean =
+            working && now - lastPingAt >= PING_EVERY_MS
+
+        fun idleDue(callLive: Boolean, idleS: Int, lastActivityAt: Long, now: Long, firedThisStretch: Boolean): Boolean =
+            callLive && idleS > 0 && !firedThisStretch && now - lastActivityAt >= idleS * 1000L
     }
 
     private fun hapticOrSilent(w: World, why: String): Decision =

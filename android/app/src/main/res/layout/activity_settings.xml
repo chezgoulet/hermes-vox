@@ -1276,6 +1276,62 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                <LinearLayout
+                    android:id="@+id/row_cue_scope"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Cues play"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_scope_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Only when Presence is off"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_cue_ping"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Soft ping while the agent works"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_cue_ping"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_cue_idle"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Check in after a silent call"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_idle_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="After 2 min"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
                 <!-- #112: ONE reset scope for this section — TTS engine AND voice
                      register fold into GROUP_TTS (the old separate row_voice_reset
                      "Restore defaults (Voice)" duplicated it). -->
