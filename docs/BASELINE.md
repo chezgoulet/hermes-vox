@@ -99,6 +99,11 @@ installed and loaded. Nothing about the build was changed for these rows: no cal
 setting was touched. `MemAvailable` is read from `/proc/meminfo`, the footprint from
 `dumpsys meminfo com.hermesvox`.
 
+Sections 1–3 need no instrumented build. **Sections 4–5 do**, and were measured later the same day
+on the nightly built from #322 (`0.9.0.1-nightly-d3139fa`): the first three on the phone, and the
+dev dialog that could not draw its choices was fixed there. Same device, same method, same
+`MemAvailable` source; the arm each load used is quoted from the load's own log line.
+
 The question is the one the release has to answer: *how much can the app give back without changing
 how it behaves?* On this phone the answer is **≈2.2 GB, and the price of taking it is 5.6–7.0 s of
 reload** — a trade, not a free win.
@@ -147,19 +152,78 @@ Also logged per load: `primeMs=2736` then a warm probe of `980 ms` (backend `gpu
 the 5.6–7.0 s is the end-to-end "the soul can speak again", not the engine construct alone. Cold
 start to first frame stayed at 364 ms (`am start -W TotalTime`).
 
-### 4. What is not in these numbers
+### 4. The KV-cache arms (measured on `nightly-d3139fa`, §322)
 
-- **The KV-cache arms (4096 / 2048) are unmeasured.** They need a build that reads the pref
-  (`MemoryBudget.PREF_KV_TOKENS`, dev-only: long-press "Verbose file log" in Settings). The cache
-  lives inside the 707 MB native allocation, so these rows cannot separate it from the weights.
-  One consequence is already structural: `SoulBudget.HEADROOM_TOKENS` is a fixed 1024, so a 2048
-  cache can use **1024 tokens** for persona (~600) plus history before it rotates — the small arm
-  is not "2 GB cheaper, same voice", it is a shorter memory with a persona re-prefill each rotation.
-- **The 30-prompt substance comparison is unmeasured** for the same reason. The soul's output at each
-  arm has to be read, not inferred.
+Three arms, one cold load each: force-stop, settle until two `MemAvailable` samples 4 s apart agree
+within 40 MB, launch, wait for `event=presence-load phase=end ok=true` (ready means primed — the
+warm-up pair has already run), sample 4 s later. The arm is taken from the load's own line
+(`GemmaExpress loaded: … kv=NNNN (primed)`, i.e. `EngineConfig.maxNumTokens` as built), not from the
+settings screen. Set through the dev dialog, which now draws its rows: it used to call `setMessage()`
+and `setSingleChoiceItems()` on one builder and render **the message with no rows**, which is what
+kept this table empty until #322.
+
+| Arm | Loads | `MemAvailable` Δ | Spread | load (cache warm) |
+|---|---|---|---|---|
+| 8192 (shipped) | 6 | **2185 MB** mean | 1950–2311 MB (361) | 5645–6043 ms |
+| 4096 | 3 | **2068 MB** mean | 2027–2094 MB (67) | 5516–5535 ms |
+| 2048 | 5 | **1975 MB** mean | 1931–2028 MB (97) | 4977–5471 ms |
+
+The unpaired spread is wider than the signal and it is an **order artefact**: every sample's
+"before" state differs (3440–3946 MB), because the kernel's reclaim of the previous process's pages
+lands somewhere else each time. The interleaved check — 2048, 8192, 2048, 8192 with the pref
+rewritten between every run — removes it:
+
+| Pair | 2048 Δ | 8192 Δ | 8192 − 2048 |
+|---|---|---|---|
+| 1 | 2000 MB | 2351 MB | **351 MB** |
+| 2 | 2028 MB | 2293 MB | **265 MB** |
+
+**So the whole KV cache is worth ≈265–351 MB (mean 308) between the smallest and the shipped arm** —
+~50 MB per 1024 tokens, far less than the ~2 GB the engine holds either way. 4096 is not resolvable
+from 8192 on this phone (its Δ sits inside the 8192 spread and below the 8192 mean), and 2048 buys
+~300 MB for a cache that can spend only **1024 tokens** on persona + history before rotating
+(`SoulBudget.HEADROOM_TOKENS` is a fixed 1024), i.e. a persona re-prefill each rotation.
+
+One anomaly, named rather than explained: **the first load on an arm this install has never used
+took 31.6 s and 33.1 s** (2048 and 4096 respectively), while every later load on the same arm was
+5.0–5.9 s. Consistent with LiteRT-LM's `cacheDir` being keyed by `EngineConfig`, which would make a
+KV change a one-off ~31 s — but that is inference from two samples, not a measurement.
+
+### 5. The delayed arm (§322): release N minutes after hangup
+
+`MemoryBudget.PREF_UNLOAD_DELAY`, minutes, `0` = never (shipped). Set to **2** on the phone for the
+test. The idle-release arm exists because unload-on-every-hangup charges the reload to every redial;
+this one pays it only when the phone was actually left alone.
+
+| Step | Evidence |
+|---|---|
+| call ended 08:21:02 | `event=call-end`, then `event=presence-unload-arm trigger=call-end minutes=2` |
+| t+5 s | nothing released: `MemAvailable` 1773 MB, engine resident |
+| t+76 s (mid-window) | still resident: 1907 MB |
+| t+120.0 s | `event=presence-unload-due reason=idle` at 08:23:02.709 — **120.001 s after the arm** |
+| the release | `event=presence-unload reason=idle released=true availMb=2902` |
+| t+150 s | `MemAvailable` **3660 MB** — ≈1.75 GB returned |
+
+The in-window cancel, on a second cycle: armed 08:23:50.642, a call started 08:24:13.904 →
+`event=presence-unload-cancel reason=call-start`, the call opened with `expressReady=true` (no load,
+soul greeting 827 ms), and the original deadline (08:25:50) passed with **no `-due` and no unload**
+while the call was live.
+
+The price is real and exact: the redial that landed *after* a completed idle release paid
+`event=presence-load phase=end ok=true ms=6888` — the cold load, inside the call's warm gate.
+
+With the shipped defaults restored (`kv=8192 unload=false idleMin=0`, `event=memory-budget`), a call
+and hangup produced `event=call-end` and **no arm, no release**: presence stayed resident at 1590 MB
+free, i.e. the 0.9.1 behaviour.
+
+### 6. What is not in these numbers
+
+- **The 30-prompt substance comparison is unmeasured.** The soul's output at each arm has to be
+  read, not inferred — the KV table says what a shorter cache *costs* in memory, not in voice.
 - **RTF / peak RSS over a 10-minute Enhanced call are unmeasured here**: this host's Hermes gateway
   exposes no `/v1/responses` (`config.yaml` has no API server; the running gateway is messaging
-  only), so no call could be placed. The 0.9.1 co-residency row above remains the reference.
+  only). A call *could* be placed on the phone (one was, for §5), but not driven through the mind
+  for 10 minutes. The 0.9.1 co-residency row above remains the reference.
 - **The sherpa arena setting does not exist in this binding.** `sherpa-onnx 1.13.6`'s
   `OnlineModelConfig` / `OfflineModelConfig` Kotlin constructors expose `numThreads` and `provider`
   and no CPU-memory-arena flag (`javap` on the pinned AAR), so "arena off/shrunk" cannot be a runtime
@@ -169,19 +233,20 @@ start to first frame stayed at 364 ms (`am start -W TotalTime`).
 
 - **Phase 1 (instruments): take it as-is.** Both fields are additive, unit-tested, and leave every
   previously recorded number comparable.
-- **Phase 2 (KV cache): do not shrink on this evidence.** The measured prize is in phase 4 (2.2 GB),
-  not in the cache, which these rows cannot even resolve; and 2048 trades voice memory for rotation
-  cost before it trades any megabytes. Run the three arms on a signed build before deciding.
+- **Phase 2 (KV cache): do not shrink on this evidence.** The whole cache is 265–351 MB against a
+  ~2 GB engine; 2048 halves the usable memory (1024 tokens for persona + history) for ~300 MB, and
+  4096 is not even distinguishable from 8192 at this device's noise floor.
 - **Phase 3 (allocator/threads): arena is impossible in this binding; leave threads alone.** The
   shipped 185.8 % of one core and max RTF 1.17 have no measured headroom story yet, and a setting
   whose max RTF reaches 1.0 is rejected by the brief — unmeasurable here, so unchanged.
-- **Phase 4 (unload on call end): the only lever with a measured number, and it is a real trade.**
-  2.2 GB back, 5.6–7.0 s to reload, paid inside the call's warm gate. For a phone that is otherwise
-  at 688 MB free during a call (#179), that is the difference between the low-memory killer clearing
-  other apps and not. Implemented behind `MemoryBudget.PREF_UNLOAD`, default **off**; the owner
-  decides.
+- **Phase 4 (unload on call end): measured, and it charges 5.6–7.7 s to every redial.** 2.2 GB back,
+  yes — but a phone that is redialled is the common case, so this is not the shipped default.
+- **Phase 5 (delayed release): the arm to ship behind the owner's decision.** ~1.75 GB back 2 minutes
+  after the last hangup, nothing at all for a redial inside the window, and the cold load paid only
+  when the phone really was left alone. Implemented behind `MemoryBudget.PREF_UNLOAD_DELAY`, default
+  **0 = never**, so the shipped behaviour is still 0.9.1.
 
-**Status: partly recorded, and the gaps are named.** Measured: the resident cost of the shipped
-presence layer, and the cold reload it would cost to release it. Unmeasured: the KV arms, the
-output comparison, the in-call RTF/RSS, and the warm (process-alive) reload — all blocked on an
-installable instrumented build (the release keystore is not on this host) and a reachable mind.
+**Status: recorded for the memory questions the brief asked, residue named.** Measured: the resident
+cost, the cold reload, the three KV arms (with their spread and an interleaved control), and the
+delayed arm including its cancel. Unmeasured: the 30-prompt output comparison and the in-call
+RTF/RSS.
