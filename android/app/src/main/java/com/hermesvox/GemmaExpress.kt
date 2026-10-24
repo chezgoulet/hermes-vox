@@ -277,12 +277,13 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      * Phase 5 — the DELAYED arm (docs/BASELINE.md, "Memory"). Called at call end and when the
      * mode leaves Enhanced; [MemoryBudget.release] decides what actually happens:
      *
-     *  - [MemoryBudget.Release.KEEP]        — shipped default, nothing at all;
+     *  - [MemoryBudget.Release.KEEP]        — the off switch: nothing at all (pref 0);
      *  - [MemoryBudget.Release.ON_HANGUP]   — release now (the arm that charges 7.7 s to every
-     *    redial, measured in Phase 4);
-     *  - [MemoryBudget.Release.AFTER_DELAY] — arm a timer for N minutes and release then. This is
-     *    the arm a phone left alone needs: the memory comes back while it sits in a pocket, and a
-     *    redial inside the window still finds the engine warm ([cancelIdleUnload] on call start).
+     *    redial, measured in Phase 4 — never shipped);
+     *  - [MemoryBudget.Release.AFTER_DELAY] — arm a timer for N minutes and release then. **This
+     *    is the shipped default, at one minute (D27):** the memory comes back while the phone sits
+     *    in a pocket, and a redial inside the window still finds the engine warm
+     *    ([cancelIdleUnload] on call start).
      *
      * The timer is read at the trigger, not per render, so changing the pref takes effect at the
      * next hangup without a reload.

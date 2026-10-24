@@ -34,14 +34,15 @@ class MemoryBudgetTest {
         assertTrue(MemoryBudget.shouldUnload(true))
     }
 
-    @Test fun idle_release_is_never_unless_asked() {
-        // The shipped value, and the only one a phone that never opened the dev dialog has.
-        assertEquals(0, MemoryBudget.DELAY_DEFAULT)
-        assertEquals(0, MemoryBudget.unloadDelayMinutes(0))
+    @Test fun idle_release_is_one_minute_by_default() {
+        // D27: the shipped value, and the only one a phone that never opened the dev dialog has.
+        assertEquals(1, MemoryBudget.DELAY_DEFAULT)
+        assertEquals(0, MemoryBudget.unloadDelayMinutes(0))   // the off switch still works
         assertEquals(0L, MemoryBudget.unloadDelayMs(0))
-        // junk cannot schedule a release nobody asked for
+        assertEquals(60_000L, MemoryBudget.unloadDelayMs(MemoryBudget.DELAY_DEFAULT))
+        // junk falls back to the shipped minute, never to a schedule nobody chose
         for (junk in intArrayOf(-1, -60, MemoryBudget.MAX_DELAY_MINUTES + 1, Int.MIN_VALUE, Int.MAX_VALUE))
-            assertEquals("pref=$junk", 0, MemoryBudget.unloadDelayMinutes(junk))
+            assertEquals("pref=$junk", MemoryBudget.DELAY_DEFAULT, MemoryBudget.unloadDelayMinutes(junk))
         // and the arm the run measured is two minutes, exactly
         assertEquals(2, MemoryBudget.unloadDelayMinutes(2))
         assertEquals(120_000L, MemoryBudget.unloadDelayMs(2))
@@ -50,8 +51,10 @@ class MemoryBudgetTest {
     }
 
     @Test fun release_policy_prefers_the_delayed_arm_and_keeps_the_shipped_default() {
-        // shipped: both prefs absent -> nothing happens at hangup
-        assertEquals(MemoryBudget.Release.KEEP, MemoryBudget.release(false, MemoryBudget.DELAY_DEFAULT))
+        // shipped: both prefs absent -> the engine is released a minute after hangup (D27)
+        assertEquals(MemoryBudget.Release.AFTER_DELAY, MemoryBudget.release(false, MemoryBudget.DELAY_DEFAULT))
+        // an explicit "never" is still the off switch
+        assertEquals(MemoryBudget.Release.KEEP, MemoryBudget.release(false, 0))
         // the Phase 4 arm still works exactly as measured
         assertEquals(MemoryBudget.Release.ON_HANGUP, MemoryBudget.release(true, 0))
         // the Phase 5 arm, and its precedence: a delay is the gentler of the two, so it wins

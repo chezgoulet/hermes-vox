@@ -576,3 +576,21 @@ does not make sense, and it is closed as nonsense.
   replaces #283.
 
 Counted: 0.9.1 is **24 issues**.
+
+## D27 — Presence releases one minute after hangup
+
+Set 2026-10-24, on the memory measurements in docs/BASELINE.md ("Memory", §5).
+
+Presence holds ~2.2 GB of `MemAvailable` while resident, and 0.9.1 returned none of it between
+calls: the engine lived until the process died. Unloading on every hangup is measured and wrong —
+it charges 5.6–7.7 s to every redial. The delayed arm returns ~1.75 GB when the phone is left
+alone and cancels on a new call, so the only cost is paid by a user who dials again after the
+window, which is the case a delay exists to exclude.
+
+**The delay is one minute.** A longer window returns the memory later for no benefit; a shorter
+one starts charging the reload to a redial. A user either redials promptly or is not coming back.
+
+The KV cache is not part of this decision. Measured against a ~2 GB engine it is 265–351 MB in
+total; 4096 is inside the device's noise floor; 2048 halves the soul's usable memory for ~300 MB;
+and a cache configuration LiteRT-LM has not seen costs a one-off ~31 s first load, because its
+cache is keyed by it. The shipped cache stays 8192.

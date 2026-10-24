@@ -4,11 +4,12 @@ package com.hermesvox
  * MemoryBudget — the knobs this investigation exists to measure, and the ONE place their
  * defaults are written down. Pure JVM, so the policy is testable without a device.
  *
- * **No shipped default changes here.** [kvTokens] returns the shipped 8192 unless a debug
- * pref names a smaller arm of the A/B, [shouldUnload] is false unless it is switched on, and
- * [unloadDelayMinutes] is 0 (never) unless it is set. Presence costs ~2.2 GB of MemAvailable
- * while resident on a Pixel 7 (docs/BASELINE.md, "Memory"); whether to trade that for a 5.6–7.7 s
- * reload is the owner's call, so the code only makes the trade measurable — it never takes it.
+ * **The KV cache never changes by itself.** [kvTokens] returns the shipped 8192 unless a debug
+ * pref names a smaller arm of the A/B, and [shouldUnload] is false unless it is switched on. The
+ * one default that is a decision rather than a measurement is the idle release: **one minute
+ * after hangup** (D27). Presence costs ~2.2 GB of MemAvailable while resident on a Pixel 7
+ * (docs/BASELINE.md, "Memory") and returning it costs a 5.6–7.7 s reload; a minute is long
+ * enough that a redial inside it stays warm, short enough that a phone left alone gets the RAM.
  *
  * Both knobs are read at ENGINE LOAD, not per render: `maxNumTokens` IS the KV cache, so a
  * new value needs a reload to exist at all. The release policy ([release]) is read at call
@@ -26,10 +27,11 @@ object MemoryBudget {
     const val PREF_UNLOAD_DELAY = "presence_unload_delay_min"
 
     /**
-     * Shipped idle-release delay: **never**. A phone that never opens the dev dialog keeps
-     * the engine resident across calls, exactly as 0.9.1 does.
+     * Shipped idle-release delay: **one minute after hangup** (D27). Long enough that a redial
+     * inside the window finds the engine warm — the measured reload is 5.6–7.7 s — and short
+     * enough that a phone which is not being used gets ~1.75 GB back.
      */
-    const val DELAY_DEFAULT = 0
+    const val DELAY_DEFAULT = 1
 
     /** What the dev dialog offers, in minutes. 0 is the off switch; 2 is the arm the
      *  measurement run used — short enough to observe, long enough that a redial inside the
@@ -39,8 +41,8 @@ object MemoryBudget {
     /** Past this it is not a delay, it is a typo (12 h). */
     const val MAX_DELAY_MINUTES = 720
 
-    /** The delay a pref names, in minutes. Junk and negatives are [DELAY_DEFAULT] (never),
-     *  so a corrupt or hand-edited pref can never schedule a release nobody asked for. */
+    /** The delay a pref names, in minutes. Junk and negatives are [DELAY_DEFAULT] (the shipped
+     *  minute), so a corrupt or hand-edited pref cannot remove the release or invent a schedule. */
     fun unloadDelayMinutes(pref: Int): Int =
         if (pref in 0..MAX_DELAY_MINUTES) pref else DELAY_DEFAULT
 
@@ -68,9 +70,14 @@ object MemoryBudget {
 
     fun unloadLabel(on: Boolean): String = "Unload on hangup: " + if (on) "on" else "off (shipped)"
 
-    fun delayLabel(minutes: Int): String =
-        if (unloadDelayMinutes(minutes) == 0) "Idle release: never (shipped)"
-        else "Idle release: ${unloadDelayMinutes(minutes)} min after hangup"
+    fun delayLabel(minutes: Int): String {
+        val m = unloadDelayMinutes(minutes)
+        return when {
+            m == 0 -> "Idle release: never"
+            m == DELAY_DEFAULT -> "Idle release: $m min after hangup  (shipped)"
+            else -> "Idle release: $m min after hangup"
+        }
+    }
 
     /**
      * The shipped cache (GemmaExpress's `EngineConfig.maxNumTokens`, mirrored by
