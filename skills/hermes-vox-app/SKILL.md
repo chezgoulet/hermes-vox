@@ -319,7 +319,7 @@ Do not send a user hunting for these.
   (android/app/src/main/java/com/hermesvox/LatencyStats.kt:86 `speechEndToFirstText=`).
 - `event=er-soul-first-token` is the presence render's first token, on the same stream as
   `event=turn`, so a soul render and the turn it belongs to can be compared directly
-  (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:523 `er-soul-first-token`).
+  (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:524 `er-soul-first-token`).
 
 Every `event=` name the app emits is listed below, grouped by subsystem. If you meet one
 that is not here, this list is stale: add it with a reference.
@@ -421,9 +421,9 @@ that is not here, this list is stale: add it with a reference.
 |---|---|---|---|
 | `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1152 `er-soul kind=`) |
 | `event=presence-unload` | The presence Engine was released: `reason=` one of `call-end` (immediate arm, dev pref), `idle` (the delayed arm's timer), `mode-leave`, `released=`, `availMb=` after the close | Never fires on a shipped build — both release arms are off by default | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:273 `event=presence-unload reason=`) |
-| `event=presence-unload-arm` | The delayed arm was armed at hangup: `trigger=call-end`/`mode-leave`, `minutes=` | Fires and is never followed by `-due` or `-cancel` = the timer died | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:321 `event=presence-unload-arm trigger=`) |
+| `event=presence-unload-arm` | The delayed arm was armed at hangup: `trigger=call-end`/`mode-leave`, `minutes=` | Fires and is never followed by `-due` or `-cancel` = the timer died | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:322 `event=presence-unload-arm trigger=`) |
 | `event=memory-budget` | The dev memory dialog was applied: `kv=` (2048/4096/8192, applies on the next presence load), `unload=`, `idleMin=` | Any `kv=` other than the arm a run believes it is in = the measurement is misattributed | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:686 `event=memory-budget`) |
-| `event=presence-unload-cancel` | A pending release was called off: `reason=call-start` (a redial inside the window, the case the arm exists for), `presence-load`, `policy-keep`, `policy-on-hangup` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:333 `event=presence-unload-cancel reason=`) |
+| `event=presence-unload-cancel` | A pending release was called off: `reason=call-start` (a redial inside the window, the case the arm exists for), `presence-load`, `policy-keep`, `policy-on-hangup` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:334 `event=presence-unload-cancel reason=`) |
 | `event=er-soul-drop` | A soul line was rendered but not delivered; `reason=late` (too late to the turn), `undeliverable`, `already-answered`, `mind-already-replying`, `greeting-already-said`, `greeting-reply-live` | All are drops; `late` is the measured common one (see the note under this table) | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1370 `er-soul-drop reason=`) |
 | `event=er-mood` | The soul tagged the caller's tone; the mood steers delivery | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1362 `er-mood`) |
 | `event=er-glue` | A Presence line was accepted for playback; `source=`, `critical=`, `chars=` | `critical=true` lines pre-empt fillers by design | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2170 `er-glue source=`) |
@@ -439,11 +439,11 @@ that is not here, this list is stale: add it with a reference.
 | `event=er-presence skip` | A cadence slot passed in silence; `reason=silent / late / glue-playing / undeliverable / blocked / no-soul / lag-not-said` | `late` = the line arrived after the reply started; `blocked`/`no-soul` = the layer is not wired | (android/app/src/main/java/com/hermesvox/ErPresence.kt:288 `er-presence skip`) |
 | `event=er-presence detail` | Which line was thrown away and why (`why=`, `deltaMs=`, text hidden unless transcript logging is on) | Any `why=` other than `silent` is a refusal worth reading | (android/app/src/main/java/com/hermesvox/VoiceController.kt:352 `er-presence detail`) |
 | `event=er-presence stop` | The cadence ended; `reason=cap / reply / barge / hush / call-end` | `reason=cap` = the run used every line and stalled | (android/app/src/main/java/com/hermesvox/ErPresence.kt:274 `er-presence stop`) |
-| `event=er-render-skip` | A render was skipped by the spacing floor (1.2 s) | Clusters = renders requested too often | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:365 `er-render-skip`) |
+| `event=er-render-skip` | A render was skipped by the spacing floor (1.2 s) | Clusters = renders requested too often | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:366 `er-render-skip`) |
 | `event=er-render-drop` | A render was dropped because one was in flight | Frequent = the queue is too small for the turn rate | (android/app/src/main/java/com/hermesvox/VoxExpress.kt:106 `er-render-drop`) |
 | `event=er-render-preempt` | An urgent render pre-empted the one in flight | — | (android/app/src/main/java/com/hermesvox/VoxExpress.kt:118 `er-render-preempt`) |
-| `event=soul-heard` | The soul processed the caller's audio; `audioBytes=` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:424 `soul-heard`) |
-| `event=soul-conv-rotate` | The rolling LiteRT-LM conversation was rebuilt; `tokens=`, `personaChanged=` | Frequent rotations = the conversation keeps filling | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:443 `soul-conv-rotate`) |
+| `event=soul-heard` | The soul processed the caller's audio; `audioBytes=` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:425 `soul-heard`) |
+| `event=soul-conv-rotate` | The rolling LiteRT-LM conversation was rebuilt; `tokens=`, `personaChanged=` | Frequent rotations = the conversation keeps filling | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:444 `soul-conv-rotate`) |
 | `event=vox-resync` | The VOX.md pull finished; `doc=` length and `result=ok / ok repaired=… / invalid: …` | `result=invalid:` = the entity's reply was not a usable document | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:431 `vox-resync`) |
 | `event=vox-resync-failed` | The pull threw | Any | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:431 `vox-resync-failed`) |
 
