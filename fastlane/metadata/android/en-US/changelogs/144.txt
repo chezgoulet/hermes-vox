@@ -1,0 +1,4 @@
+Fixes a call that went deaf when you pressed /new mid-call: the app now ends the old call
+and re-arms a new one, with the microphone back in 1.9 seconds.
+
+Everything else is unchanged from 0.9.0.
