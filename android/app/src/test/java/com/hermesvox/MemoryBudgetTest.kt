@@ -61,8 +61,9 @@ class MemoryBudgetTest {
         // over unload-on-every-hangup rather than being silently doubled up with it
         assertEquals(MemoryBudget.Release.AFTER_DELAY, MemoryBudget.release(false, 2))
         assertEquals(MemoryBudget.Release.AFTER_DELAY, MemoryBudget.release(true, 2))
-        // junk delay with unload on is still the immediate arm, not "never"
-        assertEquals(MemoryBudget.Release.ON_HANGUP, MemoryBudget.release(true, -5))
+        // a junk delay falls back to the shipped minute (D27), so with unload also on the
+        // delayed arm still wins — a corrupt pref cannot turn the release into "never"
+        assertEquals(MemoryBudget.Release.AFTER_DELAY, MemoryBudget.release(true, -5))
     }
 
     @Test fun the_dialog_offers_the_three_kv_arms_it_measures() {
