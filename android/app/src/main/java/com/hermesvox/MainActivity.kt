@@ -590,6 +590,11 @@ class MainActivity : AppCompatActivity() {
         // voice was ready, the soul simply was not coming. The call opens, and the ER
         // requirement pill (refreshModelsGate / the load callback) says what is missing.
         val soulComing = ModelCatalog.isInstalled(this, "gemma-e2b") && (express as? GemmaExpress)?.loadFailed != true
+        // Phase 4: after an unload the engine is gone while the activity is already resumed,
+        // so ask for it here — otherwise the warm gate below would wait for a load nobody
+        // started. Idempotent: a loaded engine returns immediately.
+        if (modeIsEnhanced() && soulComing && (express as? GemmaExpress)?.isLoading != true)
+            ensurePresenceLoading()
         val soulReady = !modeIsEnhanced() || express.available || !soulComing || skipPresenceThisCall
         if (!c.isWarm() || !soulReady) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
@@ -678,6 +683,10 @@ class MainActivity : AppCompatActivity() {
         exitCallUi()
         setStatus(getString(R.string.hv_connected), false)
         feed(MotionState.Signal.REST)
+        // Phase 4: the call is over; the presence engine's ~2.2 GB has nothing left to
+        // serve. Default OFF (MemoryBudget.shouldUnload) — the reload is 5.6–7.0 s, and
+        // whether that trade is worth it is the owner's decision, not this branch's.
+        (express as? GemmaExpress)?.unloadIfEnabled("call-end")
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -2035,6 +2044,30 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
 
+    /** Load the on-device presence model once, if Enhanced needs it and it is not up.
+     *  A model that is installed but cannot start (no supported accelerator/CPU path on
+     *  this device) is said out loud, not hidden. Extracted from handleModeUi so a call
+     *  start can ask as well: after a Phase-4 unload the engine is gone while the activity
+     *  is already resumed, and only a resume would otherwise bring it back. */
+    private fun ensurePresenceLoading() {
+        val g = express as? GemmaExpress ?: return
+        if (g.available || !ModelCatalog.isInstalled(this, "gemma-e2b")) return
+        // #191: the load's cost on this phone, from the memory it started under to how
+        // long it took — the two numbers the field report could not give.
+        val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
+        val t0 = android.os.SystemClock.uptimeMillis()
+        VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
+        g.load { ok ->
+            // A second caller while a load is in flight is chained onto it and told false at once
+            // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
+            val chained = !ok && !g.loadFailed
+            VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
+            if (!ok && g.loadFailed) runOnUiThread {
+                modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
+            }
+        }
+    }
+
     // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
     // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
     private fun handleModeUi() {
@@ -2042,25 +2075,11 @@ class MainActivity : AppCompatActivity() {
         refreshModelsGate()   // the ER requirement pill follows the mode
         val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
         if (mode == ModelCatalog.MODE_ENHANCED) {
-            val g = express as? GemmaExpress
-            // Load the on-device model once. A model that is installed but cannot start (no
-            // supported accelerator/CPU path on this device) is said out loud, not hidden.
-            if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) {
-                // #191: the load's cost on this phone, from the memory it started under to how
-                // long it took — the two numbers the field report could not give.
-                val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
-                val t0 = android.os.SystemClock.uptimeMillis()
-                VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
-                g.load { ok ->
-                // A second caller while a load is in flight is chained onto it and told false at once
-                // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
-                val chained = !ok && !g.loadFailed
-                VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
-                if (!ok && g.loadFailed) runOnUiThread {
-                    modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
-                }
-            }
-            }
+            ensurePresenceLoading()
+        } else {
+            // Phase 4: leaving Enhanced, the presence engine has nothing to do. Off by
+            // default (MemoryBudget.shouldUnload), so this is a no-op on a shipped build.
+            (express as? GemmaExpress)?.unloadIfEnabled("mode-leave")
         }
         // 0.6.7: the presence-voice mode is a live read — a Settings change
         // lands on the next tick without rebuilding the controller.

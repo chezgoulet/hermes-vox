@@ -27,6 +27,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     override val available: Boolean get() = loaded
 
+    /** The KV cache this engine is built with (Phase 2 of the memory budget): the shipped
+     *  8192 unless a debug pref names 4096 or 2048. `maxNumTokens` IS the cache, so this is
+     *  read at load and cannot change under a running engine. */
+    private val kvTokens: Int
+        get() = MemoryBudget.kvTokens(
+            context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+                .getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
+
     private val modelFile get() = File(context.filesDir, "models/gemma-e2b/gemma-4-E2B-it.litertlm")
 
     /**
@@ -80,7 +88,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 // "warm-up renders over turn 1"). The soul is available once it is primed.
                 warmUp()
                 loaded = true
-                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears (primed)")
+                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears kv=$kvTokens (primed)")
                 onReady(true)
                 // The full-vs-minimal prefill probe is diagnostic and holds the engine for
                 // seconds, so it runs only for a verbose-log field session, after ready.
@@ -100,6 +108,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      *  device, instead of leaving it to inference from frame drops. */
     @Volatile var activeBackend: String = "none"
         private set
+
+    /** True between a load thread's start and its callback. The call-open path uses it so it
+     *  never opens a second `event=presence-load` pair for a load it did not start — those
+     *  `ms=` values are quoted in docs/BASELINE.md and must stay one per real load. */
+    val isLoading: Boolean get() = loading
 
     /** A real load failure this session (no backend could start the model) — distinct from the
      *  `false` a caller gets while another load is already in flight. */
@@ -192,7 +205,10 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     // the persona is ~600 tokens and a render is capped at 256 output.
                     // 8k keeps real headroom for a growing VOX.md and for bounded
                     // conversation reuse later, while cutting the cache 4x.
-                    maxNumTokens = SoulBudget.MAX_TOKENS,
+                    // Phase 2 (memory budget): 8192 is the shipped default; 4096/2048 are
+                    // reachable only through the debug pref, and the value is logged so a
+                    // run can be attributed to an arm without trusting the settings screen.
+                    maxNumTokens = kvTokens,
                     // 0.8/M2.1: LiteRT-LM's docs call this out ("Pick a writable dir.
                     // This can improve 2nd load time.") and its published benchmarks are
                     // cache-enabled — we were paying the uncached first-load path on
@@ -217,6 +233,51 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     private val loadLock = Object()
     @Volatile private var loading = false
+
+    /**
+     * Phase 4: release the Engine. This is the only code path in the app that returns the
+     * presence layer's memory — measured on a Pixel 7 at ~2.2 GB of MemAvailable between
+     * "resident" and "released" (docs/BASELINE.md). It is NOT on by default: [unloadIfEnabled]
+     * consults [MemoryBudget.shouldUnload], so a phone with no pref behaves exactly as 0.9.1
+     * (load at resume, keep forever). The trade is the reload: 5.6–7.0 s measured cold, the
+     * next call paying it inside the warm gate.
+     *
+     * Ordering: flip [loaded] false FIRST so a render that arrives during the teardown falls
+     * back to the routed line instead of touching a closed engine, then close the rolling
+     * conversation under [genLock] (the same lock a render holds), then the engine.
+     */
+    fun unload(reason: String) {
+        synchronized(loadLock) { if (loading) { VoxLog.d("event=presence-unload reason=$reason skipped=loading"); return } }
+        if (!loaded && llm == null) return
+        loaded = false
+        val freed = try {
+            synchronized(genLock) {
+                closeSoul()
+                val e = llm
+                llm = null
+                try { e?.close() } catch (t: Throwable) { VoxLog.e("GemmaExpress unload: engine close failed (${t.message})") }
+                e != null
+            }
+        } catch (t: Throwable) {
+            VoxLog.e("GemmaExpress unload failed: ${t.message}"); false
+        }
+        loadFailed = false   // a released engine is not a device that cannot run one
+        activeBackend = "none"
+        val mi = android.app.ActivityManager.MemoryInfo().also {
+            context.getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it)
+        }
+        VoxLog.d("event=presence-unload reason=$reason released=$freed availMb=${mi.availMem / 1048576}")
+    }
+
+    /** Unload only when the debug pref asks for it (Phase 4 A/B). Default: do nothing. */
+    fun unloadIfEnabled(reason: String) {
+        val on = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+            .getBoolean(MemoryBudget.PREF_UNLOAD, false)
+        if (!MemoryBudget.shouldUnload(on)) return
+        // Never on the caller's thread: endCall() runs on main, and closing the Engine frees
+        // ~2 GB of GPU/native memory — that is a stall, not an operation.
+        kotlin.concurrent.thread(isDaemon = true, name = "presence-unload") { unload(reason) }
+    }
 
     /** True when the engine came up with its audio encoder; cleared for the session if a heard
      *  render fails, so one bad audio path degrades to text-only rather than failing every turn. */
@@ -246,7 +307,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         }
         val t0 = System.currentTimeMillis()
         try {
-            return render(intent, content, tone, spaced, if (hears) audio else null)
+            return render(intent, content, tone, spaced, if (hears) audio else null, t0)
         } finally {
             // 0.8/M1: the soul's OWN latency is the number that decides whether the
             // instant lane is viable (gate G2). Measured on-device, never estimated.
@@ -256,14 +317,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     }
 
     /** The render itself, timed by [express]. */
-    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true, audio: ByteArray? = null): String {
+    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true, audio: ByteArray? = null, reqStartMs: Long = 0L): String {
         if (!loaded || llm == null) return fallback.express(intent, content, tone)   // soul intents -> "" (RoutedExpress)
         // The soul intents carry a complete directive (ErSoulTurn); anything else is the legacy
         // operator-directive shape.
         val prompt = if (intent in VoiceOrchestrator.SOUL_INTENTS) content
             else "Operator directive: intent=$intent. Content to render: $content"
         return try {
-            generateWarmHeard(prompt, audio)
+            generateWarmHeard(prompt, audio, reqStartMs, intent)
                 // 0.6.3: the render rails — cap runaway output, enforce spacing.
                 .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), if (spaced) lastRenderAt else 0L) ?: "" }
                 // The soul intents are parsed by the caller: blank means "nothing", never the
@@ -295,22 +356,22 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /** A heard render; if the audio path fails, drop the soul's ears for the session and render
      *  the same directive text-only — the turn still gets its decision. */
-    private fun generateWarmHeard(prompt: String, audio: ByteArray?): String {
-        if (audio == null) return generateWarm(prompt)
+    private fun generateWarmHeard(prompt: String, audio: ByteArray?, reqStartMs: Long = 0L, tag: String = ""): String {
+        if (audio == null) return generateWarm(prompt, null, reqStartMs, tag)
         val t0 = System.currentTimeMillis()
         return try {
-            generateWarm(prompt, audio).also {
+            generateWarm(prompt, audio, reqStartMs, tag).also {
                 VoxLog.d("event=soul-heard audioBytes=${audio.size} ms=${System.currentTimeMillis() - t0}")
             }
         } catch (e: Throwable) {
             hears = false
             VoxLog.e("GemmaExpress: heard render failed (${e.message}) — the soul reads words only this session")
-            generateWarm(prompt)
+            generateWarm(prompt, null, reqStartMs, tag)
         }
     }
 
     /** Render [prompt] on the warm soul conversation, creating or rotating it as needed. */
-    private fun generateWarm(prompt: String, audio: ByteArray? = null): String {
+    private fun generateWarm(prompt: String, audio: ByteArray? = null, reqStartMs: Long = 0L, tag: String = ""): String {
         val engine = llm ?: return ""
         val p = persona
         synchronized(genLock) {
@@ -318,7 +379,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
             var conv = soulConv
             val tokens = try { conv?.getTokenCount() ?: 0 } catch (_: Throwable) { SoulBudget.MAX_TOKENS }
             val alive = try { conv?.isAlive == true } catch (_: Throwable) { false }
-            if (conv == null || !alive || soulConvPersona != p || SoulBudget.shouldRotate(tokens)) {
+            if (conv == null || !alive || soulConvPersona != p || MemoryBudget.mustRotate(tokens, kvTokens)) {
                 if (conv != null) VoxLog.d("event=soul-conv-rotate tokens=$tokens alive=$alive personaChanged=${soulConvPersona != p}")
                 closeSoul()
                 conv = engine.createConversation(ConversationConfig(
@@ -328,7 +389,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 soulConv = conv; soulConvPersona = p
             }
             return try {
-                val out = send(conv!!, prompt, audio)
+                val out = send(conv!!, prompt, audio, reqStartMs, tag)
                 if (cancelRequested) "" else out
             } catch (t: Throwable) {
                 closeSoul()   // a failed conversation is never reused
@@ -370,7 +431,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /** One message on [conv], collected via the callback API. [audio] (a WAV) rides the same
      *  message ahead of the text, so the model hears the caller before it reads the directive. */
-    private fun send(conv: Conversation, prompt: String, audio: ByteArray? = null): String {
+    private fun send(conv: Conversation, prompt: String, audio: ByteArray? = null, reqStartMs: Long = 0L, tag: String = ""): String {
         run {
                     // 0.6.6: the CALLBACK API, not the Flow API. The Flow overload's
                     // onDone closes the ProducerScope channel
@@ -384,12 +445,25 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     val sb = StringBuilder()
                     val done = java.util.concurrent.CountDownLatch(1)
                     var error: Throwable? = null
+                    // Phase 1 (#209 gap 2): the presence render's FIRST TOKEN, on the same
+                    // VoxLog stream as event=turn so the two can be put side by side. Until now
+                    // only the whole render was timed (`event=er-soul ms=`), which is why
+                    // PRESENCE-BENCH's 289 ms first-token baseline could never be compared to
+                    // a field row. Logged once per request; a warm-up/probe render (no start
+                    // passed) does not log, exactly as it does not feed ErTelemetry.
+                    var firstTokenLogged = false
                     val cb = object : com.google.ai.edge.litertlm.MessageCallback {
                         override fun onMessage(m: com.google.ai.edge.litertlm.Message) {
                             // The message's Contents may carry text and/or tool
                             // calls; the presence layer only renders TEXT parts.
                             for (c in m.contents.contents) {
-                                if (c is com.google.ai.edge.litertlm.Content.Text) sb.append(c.text)
+                                if (c is com.google.ai.edge.litertlm.Content.Text) {
+                                    if (!firstTokenLogged && reqStartMs > 0L && c.text.isNotEmpty()) {
+                                        firstTokenLogged = true
+                                        VoxLog.d("event=er-soul-first-token ms=${System.currentTimeMillis() - reqStartMs} intent=$tag")
+                                    }
+                                    sb.append(c.text)
+                                }
                             }
                         }
                         override fun onDone() { done.countDown() }
