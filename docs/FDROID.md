@@ -82,6 +82,23 @@ UpdateCheckMode: Tags ^v[0-9.]+$
 (read from the 0.9.0.1 release APK with `apksigner verify --print-certs`; the nightlies carry
 the same one).
 
+## Store metadata, and the unsigned build path
+
+`fastlane/metadata/android/en-US` carries the title, the short and full descriptions, and a
+changelog per version code, which is what an F-Droid listing renders. The descriptions are
+written to be true of the app as it ships: a client for a gateway the user already runs, no
+account, no service of its own, recognition on the device. Screenshots are still missing; they
+have to be captured on a phone, not generated.
+
+Signing is deliberately **not** made optional. A release build with no
+`keystore/keystore.properties` fails loudly rather than falling back to the public debug key,
+which is the right default: a maintainer build that silently produced a debug-signed APK would
+be worse than one that stopped. The unsigned path already exists for reproducibility —
+`scripts/repro-check.sh` builds with `-Phermesvox.unsigned` — and an F-Droid build has no
+maintainer keystore, so the fdroiddata recipe must pass that same property. Anything else, such
+as making the signing config conditional on the file, weakens a guard to save one line of
+recipe.
+
 ## What is left, and whose it is
 
 1. **The reproducible-build check against a released tag.** F-Droid's rebuild must match our
