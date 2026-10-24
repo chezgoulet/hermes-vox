@@ -82,11 +82,11 @@ Presence is a **layer on that**, not a second mode (docs/DECISIONS.md:254 `prese
 What the build actually does, as opposed to the direction D16 records:
 
 - The layer is gated on the `voice_mode` pref being `enhanced`
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2077 `ModelCatalog.MODE_ENHANCED`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2087 `ModelCatalog.MODE_ENHANCED`).
 - That pref defaults to `realtime`
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:125 `ModelCatalog.MODE_REALTIME`), and the
   Settings picker still calls the two values "Realtime" and "Enhanced Realtime (alpha)"
-  (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:867 `Enhanced Realtime (alpha)`).
+  (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:949 `Enhanced Realtime (alpha)`).
 - Inside the layer, the Presence switch (`er_presence`) defaults to on
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:280 `"er_presence", true`).
 
@@ -122,7 +122,7 @@ older build still sees the old names.
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
 | Profiles (tap the agent's name on the main screen) | `profiles`, `profile_active` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope — one active at a time; the header and notification name the active one once there are two | (android/app/src/main/java/com/hermesvox/MainActivity.kt:423 `profiles.showSwitcher()`) |
-| Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:901 `testConnectionAsync`) |
+| Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:983 `testConnectionAsync`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:159 `prefs.getString("url", "")`) |
 | Teach your agent this app | (action) | — | Asks the agent to install this skill on its gateway, or copies the `hermes skills install …` command (with `-p <profile>` for a profile address) | (android/app/src/main/java/com/hermesvox/AppSkill.kt:36 `fun command`) |
 | API key | `key` | "" | Bearer credential, Keystore-encrypted at rest | (android/app/src/main/java/com/hermesvox/core/Entity.kt:52 `Bearer`) |
@@ -135,18 +135,18 @@ older build still sees the old names.
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
 | Barge-in | `duplex` | true | Talking over the entity interrupts it | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:559 `"duplex", true`) |
-| Noise & echo cancel (AEC) | `mic_aec` | true | Uses `VOICE_COMMUNICATION` capture (hardware AEC/NS) instead of raw MIC | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1055 `set_mic_aec`) |
-| Extra noise suppression | `ns_extra` | true | Adds a platform `NoiseSuppressor` on the record session | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1056 `set_ns_extra`) |
-| Streaming partial transcripts | `partial_stt` | true | Runs partial decoding to end a turn early on a finished-sounding pause | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1057 `set_partial_stt`) |
+| Noise & echo cancel (AEC) | `mic_aec` | true | Uses `VOICE_COMMUNICATION` capture (hardware AEC/NS) instead of raw MIC | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1137 `set_mic_aec`) |
+| Extra noise suppression | `ns_extra` | true | Adds a platform `NoiseSuppressor` on the record session | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1138 `set_ns_extra`) |
+| Streaming partial transcripts | `partial_stt` | true | Runs partial decoding to end a turn early on a finished-sounding pause | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1139 `set_partial_stt`) |
 | Voice-call echo routing | `tts_voice_usage` | **false** | On: playback uses the voice-communication usage so the platform AEC gets an echo reference; off (the field-A/B default) plays on the media stream and measured louder | (android/app/src/main/java/com/hermesvox/SherpaTts.kt:161 `kill-switch`) |
-| Mic sensitivity (VAD) | `vad_threshold` | 0.50 | How sure Silero must be before a sound counts as speech | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1065 `"vad_threshold"`) |
-| Pause to end your turn | `vad_silence_ms` | 800 ms | Silence that closes an utterance | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1067 `"vad_silence_ms"`) |
-| Early-start pause | `vad_early_silence_ms` | 450 ms | How final a partial must sound before the turn ends early | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1069 `"vad_early_silence_ms"`) |
-| Min speech before a turn | `vad_min_speech_ms` | 300 ms | Shortest speech that becomes a turn | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1071 `"vad_min_speech_ms"`) |
-| Max speech per turn | `vad_max_ms` | 15000 ms | Past this, the segment only closes on a real pause — a continuous speaker is not chopped | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1073 `"vad_max_ms"`) |
-| Barge sensitivity | `barge_rms_min` | 0.10 | The ceiling for the playback barge floor; the floor itself is measured from the reply's echo | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1075 `"barge_rms_min"`) |
-| Barge grace | `barge_grace_ms` | 500 ms | Ignore interruption attempts this soon after speech starts | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1077 `"barge_grace_ms"`) |
-| Level-only barge | `barge_level_only_ms` | 200 ms | Sustained loud voice cuts the entity even when VAD misses it through echo; 0 disables | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1079 `"barge_level_only_ms"`) |
+| Mic sensitivity (VAD) | `vad_threshold` | 0.50 | How sure Silero must be before a sound counts as speech | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1147 `"vad_threshold"`) |
+| Pause to end your turn | `vad_silence_ms` | 800 ms | Silence that closes an utterance | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1149 `"vad_silence_ms"`) |
+| Early-start pause | `vad_early_silence_ms` | 450 ms | How final a partial must sound before the turn ends early | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1151 `"vad_early_silence_ms"`) |
+| Min speech before a turn | `vad_min_speech_ms` | 300 ms | Shortest speech that becomes a turn | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1153 `"vad_min_speech_ms"`) |
+| Max speech per turn | `vad_max_ms` | 15000 ms | Past this, the segment only closes on a real pause — a continuous speaker is not chopped | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1155 `"vad_max_ms"`) |
+| Barge sensitivity | `barge_rms_min` | 0.10 | The ceiling for the playback barge floor; the floor itself is measured from the reply's echo | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1157 `"barge_rms_min"`) |
+| Barge grace | `barge_grace_ms` | 500 ms | Ignore interruption attempts this soon after speech starts | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1159 `"barge_grace_ms"`) |
+| Level-only barge | `barge_level_only_ms` | 200 ms | Sustained loud voice cuts the entity even when VAD misses it through echo; 0 disables | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1161 `"barge_level_only_ms"`) |
 
 ### Transcription (STT)
 
@@ -156,17 +156,17 @@ older build still sees the old names.
 | STT model | `stt_model` | `whisper-base` | Which offline recogniser runs | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:137 `whisper-base`) |
 | (streaming arm) | `stt_stream_model` | unset | Selecting a streaming model stores it here and leaves `stt_model` as the fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:148 `stt_stream_model`) |
 | Voice CPU threads | `voice_threads` | Auto (0) | Thread override for STT and TTS; applies on the next model load | (android/app/src/main/java/com/hermesvox/VoxThreads.kt:41 `fun stt`) |
-| Remote STT URL | `stt_remote_url` | "" | The server audio is POSTed to; blank means the remote leg is unavailable | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:792 `KEY_STT_REMOTE_URL`) |
+| Remote STT URL | `stt_remote_url` | "" | The server audio is POSTed to; blank means the remote leg is unavailable | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:874 `KEY_STT_REMOTE_URL`) |
 | Remote STT model | `stt_remote_model` | `whisper` | The model name sent to that server | (android/app/src/main/java/com/hermesvox/RemoteStt.kt:14 `DEFAULT_REMOTE_MODEL`) |
-| Remote STT key | `stt_remote_key` | "" | Encrypted bearer key for that server | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:794 `KEY_STT_REMOTE_KEY`) |
-| Test STT server connection | (action) | — | Probes `/v1/models` then `/api/v1/models` and reports ok/FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:829 `event=stt-remote-test`) |
+| Remote STT key | `stt_remote_key` | "" | Encrypted bearer key for that server | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:876 `KEY_STT_REMOTE_KEY`) |
+| Test STT server connection | (action) | — | Probes `/v1/models` then `/api/v1/models` and reports ok/FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:911 `event=stt-remote-test`) |
 
 ### Voice (TTS; was "Spoken replies")
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
 | Text-to-speech | `tts` | unset → best installed (`supertonic` → `piper` → `system`) | Which engine speaks | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:123 `fun defaultTts`) |
-| Delivery | `voice` | `system` (shown as "Natural") | Synthesis register: Natural / Bright / Deep | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1399 `"voice", "system"`) |
+| Delivery | `voice` | `system` (shown as "Natural") | Synthesis register: Natural / Bright / Deep | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1481 `"voice", "system"`) |
 | Speaker | `tts_speaker_<model>` | Supertonic F2 (id 1), Piper 0 | The engine's built-in voice; per engine | (android/app/src/main/java/com/hermesvox/VoiceSpeakers.kt:27 `defaultId`) |
 | Speak responses | `speak_responses` | true | Whether replies are voiced at all | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:562 `"speak_responses", true`) |
 
@@ -189,14 +189,14 @@ older build still sees the old names.
 | Wake word | (no pref) | "0 of 8 takes · not listening" | Records enrolment takes into an encrypted store; nothing is trained and nothing listens | (android/app/src/main/res/layout/activity_settings.xml:202 `Wake word (preview)`) |
 
 The row's subtitle is computed from the take count and the words "not listening"
-(android/app/src/main/java/com/hermesvox/SettingsActivity.kt:740 `not listening`).
+(android/app/src/main/java/com/hermesvox/SettingsActivity.kt:822 `not listening`).
 
 ### Appearance & Layout, Being, About
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Theme | `theme` | `system` | System / Dark / Light | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:879 `label("theme", "system")`) |
-| Screen layout | `layout_mode` | `presence` | "Being" (avatar fills the screen) or "Transcript" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:742 `layout_mode`) |
+| Theme | `theme` | `system` | System / Dark / Light | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:824 `label("theme", "system")`) |
+| Screen layout | `layout_mode` | `presence` | "Being" (avatar fills the screen) or "Transcript" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:824 `layout_mode`) |
 | Keep screen on during calls | `keep_screen_on` | true | A window flag while a call is open; no wake lock | (android/app/src/main/java/com/hermesvox/ScreenAwake.kt:8 `KEEP_SCREEN_ON_DEFAULT = true`) |
 | Visual category | `visual_category` | `lumen` | Re-colours/re-lights/re-paces the being in every state | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:91 `DEFAULT = "lumen"`) |
 | Cycle all categories | `visual_cycle_all` | false | Rotates through every visual family while idle | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:77 `DEFAULT_CYCLE_ALL = false`) |
@@ -207,8 +207,8 @@ The row's subtitle is computed from the take count and the words "not listening"
 | Trail | `visual_trail` | the category's | Light trails behind each particle; 0 keeps the category's own | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:108 `KEY_TRAIL`) |
 | Hue | `visual_hue` | 0° | Turns the whole palette around the colour wheel | (android/app/src/main/java/com/hermesvox/VisualStyle.kt:112 `KEY_HUE`) |
 | Speaking / Listening / Thinking shape | `visual_shape_speaking` / `_listening` / `_thinking` | `soundwave` / `eye` / `radar` | Which shape fires in each active state | (android/app/src/main/java/com/hermesvox/AvatarView.kt:91 `DEFAULT_SHAPE_SPEAKING = "soundwave"`) |
-| Presence shape / theme | `particles_theme` | `aura` | The idle shape family | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1318 `"particles_theme", "aura"`) |
-| Cycle themes while idle | `particles_cycle` | true | Rotates the idle shape | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1324 `"particles_cycle", true`) |
+| Presence shape / theme | `particles_theme` | `aura` | The idle shape family | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1400 `"particles_theme", "aura"`) |
+| Cycle themes while idle | `particles_cycle` | true | Rotates the idle shape | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1406 `"particles_cycle", true`) |
 | Sound cues | `sound_cues` | true | The being's own thinking/listening/error cues | (android/app/src/main/java/com/hermesvox/CuePolicy.kt:55 `DEFAULT_ENABLED = true`) |
 | Cue level | `sound_cue_level` | 70 % | Relative to media volume | (android/app/src/main/java/com/hermesvox/CuePolicy.kt:57 `DEFAULT_LEVEL = 70`) |
 | Cues play | `sound_cue_scope` | `presence_off` | **Only when Presence is off** (default) or **Always**. While Presence speaks its asides, cues would double the same channel, so by default they are quiet then — "I hear no cues" with Presence on is this setting, logged as `event=cue … reason=presence` | (android/app/src/main/java/com/hermesvox/CuePolicy.kt:47 `DEFAULT_SCOPE = SCOPE_PRESENCE_OFF`) |
@@ -236,13 +236,13 @@ a command that runs in place shows *queued / running… / done / failed* on its 
 | `/help` | The list, with these same lines | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:60 `What each command does`) |
 The **Being** section opens with a live preview: the same being the main screen draws, from the
 same prefs, walking through resting, listening, working and speaking — so a look is judged in
-Settings, not by leaving it (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1231 `previewStates`).
+Settings, not by leaving it (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1313 `previewStates`).
 
 **How the being shows a command.** Each command's kind maps to one of six motions — sweep
 (inspect), pulse (choose), converge (compress), scatter (start over), ring (reconnect), settle
 (help) — held while it runs; it ends in a bloom when it worked and in the hourglass, in the
 waiting colour, when it failed (android/app/src/main/java/com/hermesvox/CommandMotion.kt:43 `fun verbFor`).
-The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:1806 `event=command-motion`).
+The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:1812 `event=command-motion`).
 
 **Finding a command.** The commands screen has a search box that matches what a person wants
 ("it's slow", "can't reach it", "start over"), not only command names
@@ -263,7 +263,7 @@ the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java
 with its key: "Not served" means that gateway has no such profile, "Key rejected" means each
 profile needs its own key (android/app/src/main/java/com/hermesvox/Profiles.kt:69 `NOT_SERVED`).
 Switching ends a live call and starts a new conversation — the old conversation belongs to the
-old profile (android/app/src/main/java/com/hermesvox/MainActivity.kt:1447 `resetConversation`). The
+old profile (android/app/src/main/java/com/hermesvox/MainActivity.kt:1453 `resetConversation`). The
 app cannot list a gateway's profiles; they are added by hand.
 
 ### Prefs that have no Settings screen
@@ -277,15 +277,15 @@ Do not send a user hunting for these.
   ignore it and always decode English (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:165 `stt_language`).
   This tree never writes it either, so multilingual models always auto-detect.
 - `provider` — the per-request provider override, written when a model is picked from the
-  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:1872 `putString("provider"`).
+  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:1878 `putString("provider"`).
 - `agent_name` — the label above the being; read with the model id as its fallback
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1481 `agent_name`). This tree never
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1487 `agent_name`). This tree never
   writes it, so in practice the label is always the model id.
 - `er_filler_cap` — a legacy slider, read only to migrate an upgraded install into
   `er_presence_density` (android/app/src/main/java/com/hermesvox/PresenceCadence.kt:36 `LEGACY_PREF`).
   Nothing writes it any more.
 - `presence` — a second narration gate read alongside `er_presence` when a tool call wants a
-  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:1679 `"presence", true`).
+  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:1685 `"presence", true`).
   Read with a default of true and never written by this tree, so treat it as permanently on.
 
 ---
@@ -319,7 +319,7 @@ Do not send a user hunting for these.
   (android/app/src/main/java/com/hermesvox/LatencyStats.kt:86 `speechEndToFirstText=`).
 - `event=er-soul-first-token` is the presence render's first token, on the same stream as
   `event=turn`, so a soul render and the turn it belongs to can be compared directly
-  (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:463 `er-soul-first-token`).
+  (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:523 `er-soul-first-token`).
 
 Every `event=` name the app emits is listed below, grouped by subsystem. If you meet one
 that is not here, this list is stale: add it with a reference.
@@ -328,16 +328,16 @@ that is not here, this list is stale: add it with a reference.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:672 `call-end`) |
-| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2151 `activity-stop`) |
+| `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:676 `call-end`) |
+| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2162 `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:33 `fg-service start`) |
 | `event=fg-service-start` | The mic foreground service was requested | `event=fg-service-start-failed err=` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:87 `fg-service-start ok`) |
-| `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1180 `wake acquired`) |
-| `event=screen-alive` | The keep-screen-on window flag was armed | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1188 `screen-alive armed`) |
-| `event=focus-acquire` | Audio focus requested; `result=granted` or `denied` | `event=focus-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1252 `focus-acquire result=`) |
-| `event=focus-change` | Another app took/returned focus; `state=loss kind=loss / transient / can-duck`, or `state=resume` | `action=hangup reason=over-…` means focus stayed away too long and the call ended | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1290 `focus-change state=loss`) |
-| `event=focus` | Focus released | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1266 `focus released`) |
-| `event=audio-route` | Capture/playback re-attached for a device change; `devices=` lists the route | `event=audio-route-register-failed`, `event=audio-route-unregister-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1357 `audio-route devices=`) |
+| `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1186 `wake acquired`) |
+| `event=screen-alive` | The keep-screen-on window flag was armed | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1194 `screen-alive armed`) |
+| `event=focus-acquire` | Audio focus requested; `result=granted` or `denied` | `event=focus-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1258 `focus-acquire result=`) |
+| `event=focus-change` | Another app took/returned focus; `state=loss kind=loss / transient / can-duck`, or `state=resume` | `action=hangup reason=over-…` means focus stayed away too long and the call ended | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1296 `focus-change state=loss`) |
+| `event=focus` | Focus released | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1272 `focus released`) |
+| `event=audio-route` | Capture/playback re-attached for a device change; `devices=` lists the route | `event=audio-route-register-failed`, `event=audio-route-unregister-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1363 `audio-route devices=`) |
 | `event=comm-route` | Headset/communication-route selection (`action=set ok=…`, `action=none`, `action=cleared`) | `action=select-failed`, `ok=false` | (android/app/src/main/java/com/hermesvox/CommRoute.kt:92 `comm-route action=set`) |
 | `event=harness` | Debug builds only: a test intent set ringer mode | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:389 `harness ringer=`) |
 | `event=res` | Every 10 s of a call: the app's resident memory, the phone's available memory, low-memory flag, thermal state | `low=true`, `availMb` under ~1000, or `thermal=severe` and above — the phone is close to killing something | (android/app/src/main/java/com/hermesvox/ResourceProbe.kt:35 `event=res rssMb=`) |
@@ -357,7 +357,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=stt-live-fallback` | The live stream could not finish, so the clip was decoded whole: `reason=worker-busy` or `finish-failed` | Any — the turn's text was right but slow | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2386 `stt-live-fallback`) |
 | `event=stt-remote-init` | The remote STT availability probe finished; `ok=` and `api=` prefix | `ok=false` = the server is not usable | (android/app/src/main/java/com/hermesvox/RemoteStt.kt:187 `stt-remote-init`) |
 | `event=stt-remote` | One remote transcription; `ms=`/`textLen=` on success (that success line is `dd`) | `err=http-…`, `err=empty-or-unparseable`, `err=` transport | (android/app/src/main/java/com/hermesvox/RemoteStt.kt:202 `stt-remote err=`) |
-| `event=stt-remote-test` † | The Settings "Test STT server connection" result | `ok=false reason=no-url`; `ok=false` | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:829 `stt-remote-test`) |
+| `event=stt-remote-test` † | The Settings "Test STT server connection" result | `ok=false reason=no-url`; `ok=false` | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:911 `stt-remote-test`) |
 
 ### C. The turn over the wire
 
@@ -373,9 +373,9 @@ that is not here, this list is stale: add it with a reference.
 | `event=turn-dropped` | A completed turn was dropped because the generation was stopped | `reason=stopped` after a hangup is expected | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1626 `turn-dropped`) |
 | `event=settle-drop` | A settled reply was not spoken because it was cancelled or already voiced | Both reasons are protective; a drop with no cut means a double-settle bug | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1727 `settle-drop`) |
 | `event=stream-fallback` | The stream failed **after** assembling text; the text is spoken non-streamed instead of lost | Any — the reply is degraded | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1745 `stream-fallback`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1927 `compress-failed`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1933 `compress-failed`) |
 | `event=command` | A command from the commands screen changed state: `name=`, `state=running / done / failed` | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:151 `event=command name=`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1927 `compress-failed`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1933 `compress-failed`) |
 | `event=turn` | One line per settled turn with latency fields and `outcome=` | Cut outcomes: `reply-error`, `stream-lost`, `empty-reply`, `stopped`, `hush`, `barge-in`, `focus-loss`, `suppressed-inflight`; healthy: `stream-done`, `speak-done`, `text-only` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1892 `stream-done`) |
 | `event=turn-skip` † | A second settle for the same epoch was suppressed | Repeats = a double-settle path | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2405 `turn-skip`) |
 | `event=lat` | Rolling p50/p95 per metric every 8 turns | Compare `first-audio` against the cadence target, p50 700 ms / p95 1.4 s (docs/DECISIONS.md:322 `p50 ≤ 700 ms`) | (android/app/src/main/java/com/hermesvox/LatencyStats.kt:92 `event=lat`) |
@@ -408,7 +408,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=tts-speak-drop` | Synthesis finished after the reply was stopped, so the audio was dropped | Normal after a barge; on its own = a stop raced the synth | (android/app/src/main/java/com/hermesvox/SherpaTts.kt:308 `tts-speak-drop`) |
 | `event=tts-speak-cut` | Playback was cut at sample `at=` of `of=` | — | (android/app/src/main/java/com/hermesvox/SherpaTts.kt:328 `tts-speak-cut`) |
 | `event=tts-teardown` | The engine was torn down; `result=timeout` means a writer was still active | `result=timeout` = a stuck writer | (android/app/src/main/java/com/hermesvox/SherpaTts.kt:503 `tts-teardown result=timeout`) |
-| `event=voice-preview` | A Settings voice preview finished; `engine=` and `ms=` | — | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1380 `voice-preview`) |
+| `event=voice-preview` | A Settings voice preview finished; `engine=` and `ms=` | — | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1462 `voice-preview`) |
 | `event=cue` | A sound cue decision: `cue=`, `action=audio / haptic / silent`, `reason=` | `action=silent` with `reason=off / dnd / silent` explains "I hear nothing" | (android/app/src/main/java/com/hermesvox/SoundCuePlayer.kt:68 `event=cue cue=`) |
 | `event=cue-fail` | A cue could not be played | Any | (android/app/src/main/java/com/hermesvox/SoundCuePlayer.kt:80 `cue-fail`) |
 | `event=reveal-hold` | The speech-locked transcript held position through a synthesis gap | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1969 `reveal-hold`) |
@@ -419,8 +419,11 @@ that is not here, this list is stale: add it with a reference.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1146 `er-soul kind=`) |
-| `event=presence-unload` | The presence Engine was released: `reason=call-end`/`mode-leave` (only when the dev pref is on), `released=`, `availMb=` after the close | Never fires on a shipped build — the unload is off by default | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:269 `event=presence-unload reason=`) |
+| `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1152 `er-soul kind=`) |
+| `event=presence-unload` | The presence Engine was released: `reason=` one of `call-end` (immediate arm, dev pref), `idle` (the delayed arm's timer), `mode-leave`, `released=`, `availMb=` after the close | Never fires on a shipped build — both release arms are off by default | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:273 `event=presence-unload reason=`) |
+| `event=presence-unload-arm` | The delayed arm was armed at hangup: `trigger=call-end`/`mode-leave`, `minutes=` | Fires and is never followed by `-due` or `-cancel` = the timer died | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:321 `event=presence-unload-arm trigger=`) |
+| `event=memory-budget` | The dev memory dialog was applied: `kv=` (2048/4096/8192, applies on the next presence load), `unload=`, `idleMin=` | Any `kv=` other than the arm a run believes it is in = the measurement is misattributed | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:686 `event=memory-budget`) |
+| `event=presence-unload-cancel` | A pending release was called off: `reason=call-start` (a redial inside the window, the case the arm exists for), `presence-load`, `policy-keep`, `policy-on-hangup` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:333 `event=presence-unload-cancel reason=`) |
 | `event=er-soul-drop` | A soul line was rendered but not delivered; `reason=late` (too late to the turn), `undeliverable`, `already-answered`, `mind-already-replying`, `greeting-already-said`, `greeting-reply-live` | All are drops; `late` is the measured common one (see the note under this table) | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1370 `er-soul-drop reason=`) |
 | `event=er-mood` | The soul tagged the caller's tone; the mood steers delivery | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1362 `er-mood`) |
 | `event=er-glue` | A Presence line was accepted for playback; `source=`, `critical=`, `chars=` | `critical=true` lines pre-empt fillers by design | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2170 `er-glue source=`) |
@@ -436,11 +439,11 @@ that is not here, this list is stale: add it with a reference.
 | `event=er-presence skip` | A cadence slot passed in silence; `reason=silent / late / glue-playing / undeliverable / blocked / no-soul / lag-not-said` | `late` = the line arrived after the reply started; `blocked`/`no-soul` = the layer is not wired | (android/app/src/main/java/com/hermesvox/ErPresence.kt:288 `er-presence skip`) |
 | `event=er-presence detail` | Which line was thrown away and why (`why=`, `deltaMs=`, text hidden unless transcript logging is on) | Any `why=` other than `silent` is a refusal worth reading | (android/app/src/main/java/com/hermesvox/VoiceController.kt:352 `er-presence detail`) |
 | `event=er-presence stop` | The cadence ended; `reason=cap / reply / barge / hush / call-end` | `reason=cap` = the run used every line and stalled | (android/app/src/main/java/com/hermesvox/ErPresence.kt:274 `er-presence stop`) |
-| `event=er-render-skip` | A render was skipped by the spacing floor (1.2 s) | Clusters = renders requested too often | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:305 `er-render-skip`) |
+| `event=er-render-skip` | A render was skipped by the spacing floor (1.2 s) | Clusters = renders requested too often | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:365 `er-render-skip`) |
 | `event=er-render-drop` | A render was dropped because one was in flight | Frequent = the queue is too small for the turn rate | (android/app/src/main/java/com/hermesvox/VoxExpress.kt:106 `er-render-drop`) |
 | `event=er-render-preempt` | An urgent render pre-empted the one in flight | — | (android/app/src/main/java/com/hermesvox/VoxExpress.kt:118 `er-render-preempt`) |
-| `event=soul-heard` | The soul processed the caller's audio; `audioBytes=` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:364 `soul-heard`) |
-| `event=soul-conv-rotate` | The rolling LiteRT-LM conversation was rebuilt; `tokens=`, `personaChanged=` | Frequent rotations = the conversation keeps filling | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:383 `soul-conv-rotate`) |
+| `event=soul-heard` | The soul processed the caller's audio; `audioBytes=` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:424 `soul-heard`) |
+| `event=soul-conv-rotate` | The rolling LiteRT-LM conversation was rebuilt; `tokens=`, `personaChanged=` | Frequent rotations = the conversation keeps filling | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:443 `soul-conv-rotate`) |
 | `event=vox-resync` | The VOX.md pull finished; `doc=` length and `result=ok / ok repaired=… / invalid: …` | `result=invalid:` = the entity's reply was not a usable document | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:431 `vox-resync`) |
 | `event=vox-resync-failed` | The pull threw | Any | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:431 `vox-resync-failed`) |
 
@@ -582,7 +585,7 @@ Debug / crash log → Share full log).
 - **Do:** confirm the build includes the measured floor (`EchoFloor`,
   android/app/src/main/java/com/hermesvox/EchoFloor.kt:82 `0.030`), then lower Barge
   sensitivity a step and/or enable Level-only barge
-  (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1079 `barge_level_only_ms`). A
+  (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1161 `barge_level_only_ms`). A
   headset changes the room; retest there.
 
 ### 6.5 A long reply cannot be interrupted for its last minute
@@ -656,7 +659,7 @@ Debug / crash log → Share full log).
 
 - **Signature:** the main screen pill reads "⚠ The presence model could not start on this
   device — Enhanced Realtime is running as Realtime"
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2066 `could not start on this device`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2076 `could not start on this device`).
 - **Cause:** the LiteRT-LM engine could not initialise on this GPU, and the CPU path is the
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:76 `1.8s`); there is also a recorded
@@ -675,7 +678,7 @@ Debug / crash log → Share full log).
   room — measured at ~50 s on an 8 GB Pixel 7 whose other apps held a 2.5 GB model of their own (#191). It is not
   a hang. After 20 s the pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt:22 `OFFER_SKIP_MS`),
   which opens the call with Presence joining when it is ready
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:615 `event=presence-skip`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:619 `event=presence-skip`).
 - **What to do:** close other heavy apps (on-device AI apps especially), or use Realtime on that phone.
 
 ### 6.12 The text on screen runs ahead of (or behind) the voice
@@ -755,13 +758,13 @@ These prevent confident wrong advice. None of them is a bug report; they are the
 ## 8. A 60-second triage recipe
 
 1. Ask for Settings → About & Diagnostics → Debug / crash log → Share full log. It ships both
-   log generations (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:931 `mergedRuntimeLog`).
+   log generations (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1013 `mergedRuntimeLog`).
 2. Search `event=gate-timeout`, `event=stream-poll-abort`, `event=stream-turn-failed`,
    `event=stt-fallback`, `event=barge-nearmiss`, `event=er-presence skip`,
    `event=model-dl-end`. Those seven are the fastest route into 6.1–6.14.
 3. Read one `event=turn`: `outcome=` says how the turn ended, and the latency fields say which
    leg was slow (android/app/src/main/java/com/hermesvox/LatencyStats.kt:84 `outcome=`).
 4. Check the version and the mode: `voice_mode` decides whether Presence exists at all
-   (android/app/src/main/java/com/hermesvox/MainActivity.kt:2077 `MODE_ENHANCED`).
+   (android/app/src/main/java/com/hermesvox/MainActivity.kt:2087 `MODE_ENHANCED`).
 5. If the log has no `dd()` lines, the user's "Verbose file log" is off — ask them to turn it
    on and reproduce (android/app/src/main/java/com/hermesvox/VoxLog.kt:71 `fun dd`).

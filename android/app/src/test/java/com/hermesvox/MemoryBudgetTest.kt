@@ -34,6 +34,46 @@ class MemoryBudgetTest {
         assertTrue(MemoryBudget.shouldUnload(true))
     }
 
+    @Test fun idle_release_is_never_unless_asked() {
+        // The shipped value, and the only one a phone that never opened the dev dialog has.
+        assertEquals(0, MemoryBudget.DELAY_DEFAULT)
+        assertEquals(0, MemoryBudget.unloadDelayMinutes(0))
+        assertEquals(0L, MemoryBudget.unloadDelayMs(0))
+        // junk cannot schedule a release nobody asked for
+        for (junk in intArrayOf(-1, -60, MemoryBudget.MAX_DELAY_MINUTES + 1, Int.MIN_VALUE, Int.MAX_VALUE))
+            assertEquals("pref=$junk", 0, MemoryBudget.unloadDelayMinutes(junk))
+        // and the arm the run measured is two minutes, exactly
+        assertEquals(2, MemoryBudget.unloadDelayMinutes(2))
+        assertEquals(120_000L, MemoryBudget.unloadDelayMs(2))
+        assertEquals(0, MemoryBudget.DELAY_CHOICES[0])   // the off switch is offered first
+        assertTrue(MemoryBudget.DELAY_CHOICES.contains(2))
+    }
+
+    @Test fun release_policy_prefers_the_delayed_arm_and_keeps_the_shipped_default() {
+        // shipped: both prefs absent -> nothing happens at hangup
+        assertEquals(MemoryBudget.Release.KEEP, MemoryBudget.release(false, MemoryBudget.DELAY_DEFAULT))
+        // the Phase 4 arm still works exactly as measured
+        assertEquals(MemoryBudget.Release.ON_HANGUP, MemoryBudget.release(true, 0))
+        // the Phase 5 arm, and its precedence: a delay is the gentler of the two, so it wins
+        // over unload-on-every-hangup rather than being silently doubled up with it
+        assertEquals(MemoryBudget.Release.AFTER_DELAY, MemoryBudget.release(false, 2))
+        assertEquals(MemoryBudget.Release.AFTER_DELAY, MemoryBudget.release(true, 2))
+        // junk delay with unload on is still the immediate arm, not "never"
+        assertEquals(MemoryBudget.Release.ON_HANGUP, MemoryBudget.release(true, -5))
+    }
+
+    @Test fun the_dialog_offers_the_three_kv_arms_it_measures() {
+        // The 0.9.1 dialog drew a message and no rows; the labels are the rows. Pinned so the
+        // arms cannot disappear again without failing a test.
+        val labels = MemoryBudget.KV_CHOICES.map { MemoryBudget.kvLabel(it) }
+        assertEquals(3, labels.size)
+        for (tokens in intArrayOf(2048, 4096, 8192))
+            assertTrue("missing $tokens", labels.any { it.startsWith("$tokens ") })
+        assertTrue(labels.last().contains("shipped"))
+        assertTrue(MemoryBudget.delayLabel(0).contains("never"))
+        assertTrue(MemoryBudget.delayLabel(2).contains("2 min"))
+    }
+
     @Test fun rotation_follows_the_cache_the_engine_was_built_with() {
         // A 2048 cache with an 8192 rotation threshold would overrun the cache before the
         // soul ever rotated — the render would fail instead. Rotation must track the arm.

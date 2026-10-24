@@ -237,9 +237,9 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     /**
      * Phase 4: release the Engine. This is the only code path in the app that returns the
      * presence layer's memory — measured on a Pixel 7 at ~2.2 GB of MemAvailable between
-     * "resident" and "released" (docs/BASELINE.md). It is NOT on by default: [unloadIfEnabled]
-     * consults [MemoryBudget.shouldUnload], so a phone with no pref behaves exactly as 0.9.1
-     * (load at resume, keep forever). The trade is the reload: 5.6–7.0 s measured cold, the
+     * "resident" and "released" (docs/BASELINE.md). It is NOT on by default: [requestUnload]
+     * consults [MemoryBudget.release], so a phone with no pref behaves exactly as 0.9.1
+     * (load at resume, keep forever). The trade is the reload: 5.6–7.7 s measured cold, the
      * next call paying it inside the warm gate.
      *
      * Ordering: flip [loaded] false FIRST so a render that arrives during the teardown falls
@@ -249,6 +249,10 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     fun unload(reason: String) {
         synchronized(loadLock) { if (loading) { VoxLog.d("event=presence-unload reason=$reason skipped=loading"); return } }
         if (!loaded && llm == null) return
+        // A release disarms any pending idle release: there is nothing left to release, and a
+        // stale arm would log a second `presence-unload` after the next load.
+        idleArmed = false
+        try { idleHandler.removeCallbacks(idleTask) } catch (_: Throwable) {}
         loaded = false
         val freed = try {
             synchronized(genLock) {
@@ -269,13 +273,69 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         VoxLog.d("event=presence-unload reason=$reason released=$freed availMb=${mi.availMem / 1048576}")
     }
 
-    /** Unload only when the debug pref asks for it (Phase 4 A/B). Default: do nothing. */
-    fun unloadIfEnabled(reason: String) {
-        val on = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
-            .getBoolean(MemoryBudget.PREF_UNLOAD, false)
-        if (!MemoryBudget.shouldUnload(on)) return
-        // Never on the caller's thread: endCall() runs on main, and closing the Engine frees
-        // ~2 GB of GPU/native memory — that is a stall, not an operation.
+    /**
+     * Phase 5 — the DELAYED arm (docs/BASELINE.md, "Memory"). Called at call end and when the
+     * mode leaves Enhanced; [MemoryBudget.release] decides what actually happens:
+     *
+     *  - [MemoryBudget.Release.KEEP]        — shipped default, nothing at all;
+     *  - [MemoryBudget.Release.ON_HANGUP]   — release now (the arm that charges 7.7 s to every
+     *    redial, measured in Phase 4);
+     *  - [MemoryBudget.Release.AFTER_DELAY] — arm a timer for N minutes and release then. This is
+     *    the arm a phone left alone needs: the memory comes back while it sits in a pocket, and a
+     *    redial inside the window still finds the engine warm ([cancelIdleUnload] on call start).
+     *
+     * The timer is read at the trigger, not per render, so changing the pref takes effect at the
+     * next hangup without a reload.
+     */
+    fun requestUnload(trigger: String) {
+        val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val delayMin = prefs.getInt(MemoryBudget.PREF_UNLOAD_DELAY, MemoryBudget.DELAY_DEFAULT)
+        when (MemoryBudget.release(prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false), delayMin)) {
+            MemoryBudget.Release.KEEP -> cancelIdleUnload("policy-keep")
+            MemoryBudget.Release.ON_HANGUP -> {
+                cancelIdleUnload("policy-on-hangup")
+                unloadAsync(trigger)
+            }
+            MemoryBudget.Release.AFTER_DELAY -> armIdleUnload(trigger, MemoryBudget.unloadDelayMinutes(delayMin))
+        }
+    }
+
+    /** Main-thread handler for the idle timer: a call can start from the UI, and the timer must
+     *  be cancelled by the same thread discipline that posted it. */
+    private val idleHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+    @Volatile private var idleArmed = false
+
+    /** Fires at the end of the delay. The log line the field run greps for is
+     *  `event=presence-unload reason=idle` — emitted by [unload] itself, so a delayed release
+     *  and an immediate one are told apart by their reason, not by two log shapes. */
+    private val idleTask = Runnable {
+        idleArmed = false
+        VoxLog.d("event=presence-unload-due reason=idle")
+        unloadAsync("idle")
+    }
+
+    private fun armIdleUnload(trigger: String, minutes: Int) {
+        idleHandler.removeCallbacks(idleTask)
+        idleArmed = true
+        VoxLog.d("event=presence-unload-arm trigger=$trigger minutes=$minutes")
+        idleHandler.postDelayed(idleTask, MemoryBudget.unloadDelayMs(minutes))
+    }
+
+    /** A call starting, or a load being asked for, beats the clock: the delayed arm exists so
+     *  that it never charges the reload to a redial, so anything that wants the engine cancels
+     *  the pending release. Logged, because "the release never happened" must be explainable
+     *  from the field log rather than look like a timer that silently died. */
+    fun cancelIdleUnload(reason: String) {
+        if (!idleArmed) return
+        idleArmed = false
+        idleHandler.removeCallbacks(idleTask)
+        VoxLog.d("event=presence-unload-cancel reason=$reason")
+    }
+
+    /** Never on the caller's thread: endCall() runs on main, and closing the Engine frees
+     *  ~2 GB of GPU/native memory — that is a stall, not an operation. */
+    private fun unloadAsync(reason: String) {
         kotlin.concurrent.thread(isDaemon = true, name = "presence-unload") { unload(reason) }
     }
 
