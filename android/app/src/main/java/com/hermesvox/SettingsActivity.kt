@@ -586,25 +586,107 @@ class SettingsActivity : AppCompatActivity() {
         bindMicAdvanced()  // #118: collapse/expand the Mic & Barge-in timing-tuner panel
     }
 
-    /** Dev-only: the presence memory knobs. Two choices that both need an engine RELOAD to
-     *  take effect (the KV cache size is an EngineConfig value; the unload policy is read at
-     *  call end), which the message says out loud so a measurement run is not attributed to
-     *  the wrong arm. */
+    /** Dev-only: the presence memory knobs. All of them need no reload to be *stored*, and the
+     *  KV size needs one to *exist* — which the dialog's first line says out loud so a
+     *  measurement run is not attributed to the wrong arm.
+     *
+     *  **0.9.1 defect fixed here.** The old dialog called `setMessage()` and
+     *  `setSingleChoiceItems()` on ONE builder, and AppCompat renders that pair as the message
+     *  with NO rows: on the phone the three KV arms were unreachable, which is what blocked the
+     *  KV measurement. The message is now a plain `TextView` inside a custom view and the arms
+     *  are real `RadioButton` rows in a `RadioGroup`, so there is no list panel for the support
+     *  library to lose them into.
+     */
     private fun memoryBudgetDialog() {
-        val cur = MemoryBudget.kvTokens(prefs.getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
-        val unload = prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false)
-        val labels = MemoryBudget.KV_CHOICES.map {
-            "$it tokens" + if (it == MemoryBudget.KV_DEFAULT) " (shipped)" else ""
-        }.toTypedArray()
+        val kv = MemoryBudget.kvTokens(prefs.getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
+        val unloadOn = prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false)
+        var delayMin = MemoryBudget.unloadDelayMinutes(
+            prefs.getInt(MemoryBudget.PREF_UNLOAD_DELAY, MemoryBudget.DELAY_DEFAULT))
+        var unloadChecked = unloadOn
+
+        val d = resources.displayMetrics.density
+        val pad = (16 * d).toInt()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, pad / 2)
+        }
+        box.addView(TextView(this).apply {
+            text = "KV cache — the engine is rebuilt on the next presence load " +
+                "(force-stop, or leave and re-enter Enhanced). Release policy is read at hangup."
+            textSize = 13f
+        })
+
+        // The three arms, as rows that exist. The index into KV_CHOICES is tracked rather
+        // than the view id, so the write below cannot read the wrong row.
+        val group = android.widget.RadioGroup(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, pad / 2, 0, 0)
+        }
+        val radios = ArrayList<android.widget.RadioButton>(MemoryBudget.KV_CHOICES.size)
+        MemoryBudget.KV_CHOICES.forEach { tokens ->
+            val rb = android.widget.RadioButton(this).apply {
+                id = android.view.View.generateViewId()
+                text = MemoryBudget.kvLabel(tokens)
+                isChecked = tokens == kv
+                setPadding(0, pad / 4, 0, 0)
+            }
+            radios += rb
+            group.addView(rb)
+        }
+        box.addView(group)
+
+        val unloadSw = SwitchCompat(this).apply {
+            text = MemoryBudget.unloadLabel(unloadChecked)
+            isChecked = unloadChecked
+            setPadding(0, pad / 2, 0, 0)
+        }
+        box.addView(unloadSw)
+
+        val delayRow = TextView(this).apply {
+            text = MemoryBudget.delayLabel(delayMin)
+            textSize = 15f
+            setPadding(0, pad, 0, 0)
+        }
+        box.addView(delayRow)
+
+        // The two release policies are alternatives, not a stack: whichever is picked last
+        // turns the other off, so the arm that is measured is the arm that is shown.
+        unloadSw.setOnCheckedChangeListener { _, on ->
+            unloadChecked = on
+            unloadSw.text = MemoryBudget.unloadLabel(on)
+            if (on && delayMin != 0) { delayMin = 0; delayRow.text = MemoryBudget.delayLabel(0) }
+        }
+        delayRow.setOnClickListener {
+            val labels = MemoryBudget.DELAY_CHOICES.map { MemoryBudget.delayLabel(it) }.toTypedArray()
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("Idle release")
+                .setSingleChoiceItems(labels, MemoryBudget.DELAY_CHOICES.indexOf(delayMin).coerceAtLeast(0)) { dd, which ->
+                    delayMin = MemoryBudget.DELAY_CHOICES[which]
+                    delayRow.text = MemoryBudget.delayLabel(delayMin)
+                    if (delayMin > 0 && unloadChecked) {
+                        unloadChecked = false
+                        unloadSw.isChecked = false
+                    }
+                    dd.dismiss()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         AlertDialog.Builder(this)
             .setTitle("Presence memory (dev)")
-            .setMessage("KV cache. The engine is rebuilt on the next presence load — force-stop or leave/re-enter Enhanced.")
-            .setSingleChoiceItems(labels, MemoryBudget.KV_CHOICES.indexOf(cur).coerceAtLeast(0)) { d, which ->
-                prefs.edit().putInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_CHOICES[which]).apply()
-                d.dismiss()
-            }
-            .setNeutralButton("Unload on hangup: ${if (unload) "on" else "off"}") { _, _ ->
-                prefs.edit().putBoolean(MemoryBudget.PREF_UNLOAD, !unload).apply()
+            .setView(box)
+            .setPositiveButton("Apply") { _, _ ->
+                val choice = MemoryBudget.KV_CHOICES[radios.indexOfFirst { it.isChecked }.coerceAtLeast(0)]
+                prefs.edit()
+                    .putInt(MemoryBudget.PREF_KV_TOKENS, choice)
+                    .putBoolean(MemoryBudget.PREF_UNLOAD, unloadChecked && delayMin == 0)
+                    .putInt(MemoryBudget.PREF_UNLOAD_DELAY, delayMin)
+                    .apply()
+                VoxLog.d("event=memory-budget kv=$choice unload=${unloadChecked && delayMin == 0} idleMin=$delayMin")
+                Toast.makeText(this,
+                    "KV $choice · ${MemoryBudget.delayLabel(delayMin)} — KV applies on the next presence load",
+                    Toast.LENGTH_LONG).show()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
