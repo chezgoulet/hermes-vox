@@ -566,6 +566,10 @@ class MainActivity : AppCompatActivity() {
      *  and the C3 route-change rebuild (both are start()/stop() compositions; no
      *  new engine code). The caller has already done the reset/permission checks. */
     private fun openVoiceLine(s: HermesSession) {
+        // Phase 5: a call is starting inside (or after) the idle window. The pending delayed
+        // release is cancelled HERE, before anything else touches the engine, so the redial
+        // finds a warm soul instead of paying the 7.7 s cold load the arm exists to avoid.
+        (express as? GemmaExpress)?.cancelIdleUnload("call-start")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             wireSoul(it)
@@ -684,9 +688,11 @@ class MainActivity : AppCompatActivity() {
         setStatus(getString(R.string.hv_connected), false)
         feed(MotionState.Signal.REST)
         // Phase 4: the call is over; the presence engine's ~2.2 GB has nothing left to
-        // serve. Default OFF (MemoryBudget.shouldUnload) — the reload is 5.6–7.0 s, and
-        // whether that trade is worth it is the owner's decision, not this branch's.
-        (express as? GemmaExpress)?.unloadIfEnabled("call-end")
+        // serve. Phase 5 adds the delayed arm: the release can happen N minutes later
+        // instead of now, so a redial inside the window stays warm. Both are OFF by
+        // default (MemoryBudget.release) — whether the trade is worth it is the owner's
+        // decision, not this branch's.
+        (express as? GemmaExpress)?.requestUnload("call-end")
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -2052,6 +2058,10 @@ class MainActivity : AppCompatActivity() {
     private fun ensurePresenceLoading() {
         val g = express as? GemmaExpress ?: return
         if (g.available || !ModelCatalog.isInstalled(this, "gemma-e2b")) return
+        // Phase 5: a load is about to run, so a pending idle release would undo the work it
+        // is paying for. Cancelled only on the load path — a resident engine left idle keeps
+        // its timer (that is the arm's whole point).
+        g.cancelIdleUnload("presence-load")
         // #191: the load's cost on this phone, from the memory it started under to how
         // long it took — the two numbers the field report could not give.
         val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
@@ -2078,8 +2088,9 @@ class MainActivity : AppCompatActivity() {
             ensurePresenceLoading()
         } else {
             // Phase 4: leaving Enhanced, the presence engine has nothing to do. Off by
-            // default (MemoryBudget.shouldUnload), so this is a no-op on a shipped build.
-            (express as? GemmaExpress)?.unloadIfEnabled("mode-leave")
+            // default (MemoryBudget.release); the delayed arm applies here too, so a trip
+            // to Settings and back does not pay a cold load.
+            (express as? GemmaExpress)?.requestUnload("mode-leave")
         }
         // 0.6.7: the presence-voice mode is a live read — a Settings change
         // lands on the next tick without rebuilding the controller.
