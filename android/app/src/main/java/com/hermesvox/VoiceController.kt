@@ -131,6 +131,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     // C4: wall-clock launch (t0) of the current streamed turn — the streaming worker
     // reads this so time-to-first-AUDIO is measured from the same origin as stt/Byte/Text.
     @Volatile private var turnStartedAt = 0L
+    // Phase 1 (#209 gap 1): WHERE THE CALLER STOPPED TALKING. The capture path knows the
+    // last VAD-speech sample of the segment (speechEndAt), so that instant — not the
+    // segment's open, and not the turn's launch — is the origin the conversational fields
+    // are measured from. pendingSpeechEndAt is handed over once, to the turn this segment
+    // starts; a typed turn has no anchor and logs "-" for the speech-end fields.
+    @Volatile private var pendingSpeechEndAt = 0L
+    @Volatile private var pendingSttDecodeMs = -1L
+    /** Per-turn copy of the anchor, so the streaming worker can close the timeline at
+     *  "render done" without racing the next segment. */
+    @Volatile private var turnSpeechEndAt = 0L
     // T2: wall-clock of the LAST genuine turn activity (an SSE delta/event, a TTS
     // chunk handed to the engine, or a drain mic read). Reset at every gate close and
     // touched from the stream worker + the streaming-TTS worker + the drain loop, so
@@ -857,13 +867,33 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val reused = speechOk && partial != null &&
                         EarlyStartRule.mayReusePartial(partial.start, partial.end, lastSpeechEnd)
                     var finishAt = 0L
+                    // Phase 1: the recogniser's OWN time for this segment — feeds that ran
+                    // during speech plus the tail decode here. The `stt=` field above can never
+                    // say this (it is `now - segStart`, and an idle segment reports its idle time).
+                    var decodeMs = -1L
                     val text = when {
                         !speechOk -> null
-                        reused -> partial!!.text
-                        live != null -> { finishAt = android.os.SystemClock.uptimeMillis(); finishLive(live, segId, seg, liveFed, sr) }
-                        else -> try { stt?.transcribeWhole(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
+                        reused -> { decodeMs = liveFeedDecodeMs.get(); partial!!.text }
+                        live != null -> {
+                            finishAt = android.os.SystemClock.uptimeMillis()
+                            val d0 = finishAt
+                            finishLive(live, segId, seg, liveFed, sr).also {
+                                decodeMs = (android.os.SystemClock.uptimeMillis() - d0) + liveFeedDecodeMs.get()
+                            }
+                        }
+                        else -> {
+                            val d0 = android.os.SystemClock.uptimeMillis()
+                            try { stt?.transcribeWhole(seg.toFloatArray(), sr) } catch (e: Throwable) { VoxLog.e("transcribe: ${e.message}"); null }
+                                .also { decodeMs = android.os.SystemClock.uptimeMillis() - d0 }
+                        }
                     }
-                    if (text != null) LatencyStats.pushStt(android.os.SystemClock.uptimeMillis() - segStart)   // #40 speech->text
+                    if (text != null) {
+                        LatencyStats.pushStt(android.os.SystemClock.uptimeMillis() - segStart)   // #40 speech->text
+                        // The turn this segment is about to start is measured from the end of
+                        // speech. Handed over here, consumed once in runStreamedTurn.
+                        pendingSpeechEndAt = speechEndAt
+                        pendingSttDecodeMs = decodeMs
+                    }
                     // #179: the RTF a live call actually pays. feedDecodeMs is the recogniser's
                     // own time for this segment's audio (the partial worker's feeds, summed on
                     // the capture thread's clock); finishMs is the one-off tail after the pause.
@@ -1368,6 +1398,15 @@ class VoiceController(private val context: Context, private val session: HermesS
         armTranscript()         // 0.5.0-A: a fresh reveal cursor for this turn
         val t0 = android.os.SystemClock.uptimeMillis()
         turnStartedAt = t0
+        // Phase 1: take this turn's speech-end anchor (one-shot — a typed turn must not
+        // inherit the previous utterance's) and the recogniser time that produced the text.
+        // The 15 s ceiling is a sanity rail, not a tunable: an anchor older than that belongs
+        // to a segment whose turn never started (a stop or a hangup mid-transcribe), and
+        // reporting it against a later typed turn would be a fabricated latency.
+        val anchor = pendingSpeechEndAt
+        turnSpeechEndAt = if (anchor > 0L && t0 - anchor in 0L..15_000L) anchor else 0L
+        pendingSpeechEndAt = 0L
+        if (pendingSttDecodeMs >= 0L) { LatencyStats.pushSttDecode(pendingSttDecodeMs); pendingSttDecodeMs = -1L }
         // The mid-run line's render starts with the run, not when the cadence's slot comes due:
         // the slot cannot open before LAG_AFTER_MS, and waiting until it does puts the whole
         // render between "due" and "delivered" (docs/PRESENCE-LATE-DIAGNOSIS.md). A turn that
@@ -1622,6 +1661,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (!firstTextLatch) {
                             firstTextAtMs = android.os.SystemClock.uptimeMillis()
                             firstTextLatch = true; LatencyStats.pushFirstText(firstTextAtMs - t0)
+                            // Phase 1: the same instant, from the end of speech. This is the
+                            // first field D18's 700 ms is about (the caller is already waiting).
+                            val se = turnSpeechEndAt
+                            if (se > 0L && firstTextAtMs > se) LatencyStats.pushSpeechToText(firstTextAtMs - se)
                             erPresence.endCadence("reply")   // the reply is the voice now: no more mid-run lines
                         }
                         streamFeed(d)   // start speaking as it streams
@@ -1730,6 +1773,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // the rule is testable off-device. RETIRE (final && drained) is the natural
                 // close; ABORT (sClosed) is the barge/hush/stop/error fence.
                 val start = android.os.SystemClock.uptimeMillis()
+                // Phase 1: this worker owns ONE turn's audio, so it takes the turn's
+                // speech-end anchor now — a barge that starts the next segment while this
+                // tail plays out must not move the number this worker is about to report.
+                val speechEndForRender = turnSpeechEndAt
                 var chunkIdx = 0   // #D1: # chunks already handed to the engine
                 var retiring = false
                 try {
@@ -1798,7 +1845,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true
-                                LatencyStats.pushFirstAudio(android.os.SystemClock.uptimeMillis() - turnStartedAt)
+                                val audioAt = android.os.SystemClock.uptimeMillis()
+                                LatencyStats.pushFirstAudio(audioAt - turnStartedAt)
+                                // Phase 1: and the number the conversational target is written in.
+                                val se = turnSpeechEndAt
+                                if (se > 0L && audioAt > se) LatencyStats.pushSpeechToAudio(audioAt - se)
                             }
                             // speaking stays true for the whole reply (UI state + barge-in mode)
                         }
@@ -1811,6 +1862,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // synth gap), THEN releases the track.
                         try { (tts as? SherpaTts)?.finishStreaming() } catch (_: Throwable) {}
                         try { (tts as? SherpaTts)?.stopStreaming() } catch (_: Throwable) {}
+                        // Phase 1 "render done": every audio sample of the reply has played.
+                        // Measured from the end of speech, so it is the whole cost of waiting
+                        // the caller actually experienced — not just the path to first audio.
+                        val doneAt = android.os.SystemClock.uptimeMillis()
+                        if (speechEndForRender > 0L && doneAt > speechEndForRender)
+                            LatencyStats.pushSpeechToRender(doneAt - speechEndForRender)
                     } else {
                         // Abort/cancel/error — unchanged fence: the cancel path already
                         // released the track (stopTts); finishStreaming() waits any tail
