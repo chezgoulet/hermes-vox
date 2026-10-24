@@ -191,7 +191,7 @@ KV change a one-off ~31 s — but that is inference from two samples, not a meas
 
 ### 5. The delayed arm (§322): release N minutes after hangup
 
-`MemoryBudget.PREF_UNLOAD_DELAY`, minutes, `0` = never (shipped). Set to **2** on the phone for the
+`MemoryBudget.PREF_UNLOAD_DELAY`, minutes, shipped **1** (D27), `0` = never. Set to **2** on the phone for the
 test. The idle-release arm exists because unload-on-every-hangup charges the reload to every redial;
 this one pays it only when the phone was actually left alone.
 
@@ -241,10 +241,11 @@ free, i.e. the 0.9.1 behaviour.
   whose max RTF reaches 1.0 is rejected by the brief — unmeasurable here, so unchanged.
 - **Phase 4 (unload on call end): measured, and it charges 5.6–7.7 s to every redial.** 2.2 GB back,
   yes — but a phone that is redialled is the common case, so this is not the shipped default.
-- **Phase 5 (delayed release): the arm to ship behind the owner's decision.** ~1.75 GB back 2 minutes
-  after the last hangup, nothing at all for a redial inside the window, and the cold load paid only
-  when the phone really was left alone. Implemented behind `MemoryBudget.PREF_UNLOAD_DELAY`, default
-  **0 = never**, so the shipped behaviour is still 0.9.1.
+- **Phase 5 (delayed release): shipped at one minute (D27).** ~1.75 GB back after the last hangup,
+  nothing at all for a redial inside the window, and the cold load paid only when the phone really
+  was left alone. `MemoryBudget.PREF_UNLOAD_DELAY` now defaults to **1**; `0` remains the off
+  switch in the dev dialog. The measured run used 2 minutes and its timer fired at 120.001 s, so
+  the mechanism is the same one minute earlier; a 1-minute window has not itself been timed.
 
 **Status: recorded for the memory questions the brief asked, residue named.** Measured: the resident
 cost, the cold reload, the three KV arms (with their spread and an interleaved control), and the
