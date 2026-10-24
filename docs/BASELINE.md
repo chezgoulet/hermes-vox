@@ -82,5 +82,106 @@ time (165 s and 76 s outliers in this run), so it is not a decode time; use `eve
 Presence **first token** is not logged by this build — `event=er-soul ms=` is the whole render — so
 the 289 ms first-token baseline in `docs/PRESENCE-BENCH.md` cannot be compared to these rows.
 
+> **Both gaps are closed in `feat/memory-budget`.** `event=turn` now carries
+> `speechEndToFirstText=`, `speechEndToFirstAudio=`, `speechEndToRenderDone=` and `sttDecodeMs=`
+> on the same line as the old fields, measured from the last speech sample rather than from the
+> segment's open; `event=er-soul-first-token ms= intent=` logs the render's first token on the same
+> stream. The rows above keep their old meaning and are still comparable to each other.
+
 **Status: partly recorded.** Pixel 7 rows from nightlies, spoken turn now measured (AEC off, clips),
 no RTF-first-token equivalent yet; Pixel 9 and the release APK pending.
+
+## Memory: what the presence layer holds, and what releasing it returns
+
+Measured 2026-10-24 on the Pixel 7 (`2A091FDH200AJ1`, USB, `org.phononai.app` disabled), with the
+**installed nightly `0.9.0.1-nightly-097e1be`** — the 0.9.1 code, Enhanced mode, the presence model
+installed and loaded. Nothing about the build was changed for these rows: no call was placed, no
+setting was touched. `MemAvailable` is read from `/proc/meminfo`, the footprint from
+`dumpsys meminfo com.hermesvox`.
+
+The question is the one the release has to answer: *how much can the app give back without changing
+how it behaves?* On this phone the answer is **≈2.2 GB, and the price of taking it is 5.6–7.0 s of
+reload** — a trade, not a free win.
+
+### 1. What is resident while idle
+
+Two days after the last call, with no activity on screen and no call live, the process still held
+everything it had ever loaded:
+
+| Measure | Value | How |
+|---|---|---|
+| `MemAvailable` seen | **967–1221 MB** (of 7468 MB total) | `/proc/meminfo`, 3 samples |
+| total PSS / RSS | 2 366 353 kB / 1 985 292 kB | `dumpsys meminfo` |
+| of which GL-tracked | **1 878 912 kB private dirty** | `GL mtrack` row |
+| native heap alloc | 707 198 kB | `Native Heap` row |
+| swapped out | 462 392 kB | `TOTAL SWAP PSS` |
+| activities / views / frames | 0 / 0 / 0 | `dumpsys meminfo`, `dumpsys gfxinfo` |
+
+The GL share is not the being: that process had no activity, no surface and no frame. It is the
+GPU backend's own allocations, which is where the 2.5 GB model file ends up when it is loaded
+(1.79 GB of it resident, the rest file-backed and reclaimable).
+
+### 2. The A/B that needs no new build (process death = release)
+
+| State | `MemAvailable` | Δ |
+|---|---|---|
+| force-stopped (no app) | **3144 MB** | — |
+| app launched, presence loaded, idle, no call | 1221 MB | **−1923 MB** |
+| force-stopped again, then relaunched | 3472 MB → 1052 MB | **−2420 MB** |
+
+Two different pre-states, same conclusion: the app holds **1.9–2.4 GB** it could return the moment
+it stops being a presence. It never returns any of it today, on hangup or on leaving Enhanced.
+
+### 3. What releasing it costs (n=3 cold loads)
+
+Each row is a force-stop, a settle, then `am start` — i.e. exactly what "unload on teardown" would
+make the *next* call pay, with the current code's cold path:
+
+| Run | `MemAvailable` before | after | Δ | `event=presence-load` |
+|---|---|---|---|---|
+| 1 | 3029 MB | 1201 MB | 1828 MB | 7008 ms |
+| 2 | 3496 MB | 1266 MB | 2230 MB | 6049 ms |
+| 3 | 3499 MB | 1248 MB | 2251 MB | 5636 ms |
+
+Also logged per load: `primeMs=2736` then a warm probe of `980 ms` (backend `gpu`, `hears=true`), so
+the 5.6–7.0 s is the end-to-end "the soul can speak again", not the engine construct alone. Cold
+start to first frame stayed at 364 ms (`am start -W TotalTime`).
+
+### 4. What is not in these numbers
+
+- **The KV-cache arms (4096 / 2048) are unmeasured.** They need a build that reads the pref
+  (`MemoryBudget.PREF_KV_TOKENS`, dev-only: long-press "Verbose file log" in Settings). The cache
+  lives inside the 707 MB native allocation, so these rows cannot separate it from the weights.
+  One consequence is already structural: `SoulBudget.HEADROOM_TOKENS` is a fixed 1024, so a 2048
+  cache can use **1024 tokens** for persona (~600) plus history before it rotates — the small arm
+  is not "2 GB cheaper, same voice", it is a shorter memory with a persona re-prefill each rotation.
+- **The 30-prompt substance comparison is unmeasured** for the same reason. The soul's output at each
+  arm has to be read, not inferred.
+- **RTF / peak RSS over a 10-minute Enhanced call are unmeasured here**: this host's Hermes gateway
+  exposes no `/v1/responses` (`config.yaml` has no API server; the running gateway is messaging
+  only), so no call could be placed. The 0.9.1 co-residency row above remains the reference.
+- **The sherpa arena setting does not exist in this binding.** `sherpa-onnx 1.13.6`'s
+  `OnlineModelConfig` / `OfflineModelConfig` Kotlin constructors expose `numThreads` and `provider`
+  and no CPU-memory-arena flag (`javap` on the pinned AAR), so "arena off/shrunk" cannot be a runtime
+  A/B at all. Threads already are one: `voice_threads` (Settings → Voice CPU threads, 1–4).
+
+### Recommendation per phase
+
+- **Phase 1 (instruments): take it as-is.** Both fields are additive, unit-tested, and leave every
+  previously recorded number comparable.
+- **Phase 2 (KV cache): do not shrink on this evidence.** The measured prize is in phase 4 (2.2 GB),
+  not in the cache, which these rows cannot even resolve; and 2048 trades voice memory for rotation
+  cost before it trades any megabytes. Run the three arms on a signed build before deciding.
+- **Phase 3 (allocator/threads): arena is impossible in this binding; leave threads alone.** The
+  shipped 185.8 % of one core and max RTF 1.17 have no measured headroom story yet, and a setting
+  whose max RTF reaches 1.0 is rejected by the brief — unmeasurable here, so unchanged.
+- **Phase 4 (unload on call end): the only lever with a measured number, and it is a real trade.**
+  2.2 GB back, 5.6–7.0 s to reload, paid inside the call's warm gate. For a phone that is otherwise
+  at 688 MB free during a call (#179), that is the difference between the low-memory killer clearing
+  other apps and not. Implemented behind `MemoryBudget.PREF_UNLOAD`, default **off**; the owner
+  decides.
+
+**Status: partly recorded, and the gaps are named.** Measured: the resident cost of the shipped
+presence layer, and the cold reload it would cost to release it. Unmeasured: the KV arms, the
+output comparison, the in-call RTF/RSS, and the warm (process-alive) reload — all blocked on an
+installable instrumented build (the release keystore is not on this host) and a reachable mind.

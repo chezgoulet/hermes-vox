@@ -570,6 +570,11 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
+        // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
+        // long-press on the debug-log row in the developer section. Both settings default to
+        // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens
+        // this dialog is byte-for-byte 0.9.1 in its memory behaviour.
+        dbl.setOnLongClickListener { memoryBudgetDialog(); true }
         findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
             startActivity(android.content.Intent(this, ModelsActivity::class.java))
         }
@@ -579,6 +584,30 @@ class SettingsActivity : AppCompatActivity() {
         refreshFlowVals()
         refreshGrpVals()   // #115: populate the Settings-home row subtitles
         bindMicAdvanced()  // #118: collapse/expand the Mic & Barge-in timing-tuner panel
+    }
+
+    /** Dev-only: the presence memory knobs. Two choices that both need an engine RELOAD to
+     *  take effect (the KV cache size is an EngineConfig value; the unload policy is read at
+     *  call end), which the message says out loud so a measurement run is not attributed to
+     *  the wrong arm. */
+    private fun memoryBudgetDialog() {
+        val cur = MemoryBudget.kvTokens(prefs.getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
+        val unload = prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false)
+        val labels = MemoryBudget.KV_CHOICES.map {
+            "$it tokens" + if (it == MemoryBudget.KV_DEFAULT) " (shipped)" else ""
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Presence memory (dev)")
+            .setMessage("KV cache. The engine is rebuilt on the next presence load — force-stop or leave/re-enter Enhanced.")
+            .setSingleChoiceItems(labels, MemoryBudget.KV_CHOICES.indexOf(cur).coerceAtLeast(0)) { d, which ->
+                prefs.edit().putInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_CHOICES[which]).apply()
+                d.dismiss()
+            }
+            .setNeutralButton("Unload on hangup: ${if (unload) "on" else "off"}") { _, _ ->
+                prefs.edit().putBoolean(MemoryBudget.PREF_UNLOAD, !unload).apply()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /** The STT model chooser: the shipped models, then the streaming arm. Picking the
