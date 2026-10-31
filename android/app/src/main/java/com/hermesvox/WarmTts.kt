@@ -34,22 +34,42 @@ interface VoxTts {
 class SystemTts(private val context: Context) : VoxTts {
     private var tts: TextToSpeech? = null
     private val main = Handler(Looper.getMainLooper())
+    @Volatile private var reason: String = ""
     override val name get() = "System"
     override val isWarm get() = false
-    override val warmReason get() = ""
+    override val warmReason get() = reason
     override fun init(onReady: (Boolean) -> Unit) {
         val (rate, pitch) = voiceRegister(currentVoiceRegister(context))
         try {
             tts?.shutdown()
             tts = TextToSpeech(context) { code ->
-                if (code == TextToSpeech.SUCCESS) {
+                if (code != TextToSpeech.SUCCESS) {
+                    // No engine installed/enabled for this user, or the engine refused to start.
+                    // Name it: a call must not be reported as "models failed to load" for this.
+                    reason = "system TTS engine failed to initialise (code $code)"
+                    VoxLog.w("tts: system engine init failed code=$code -> text-only")
+                    onReady(false)
+                } else {
                     tts?.setPitch(pitch)
                     tts?.setSpeechRate(rate)
-                    tts?.language = Locale.US
+                    val lang = try { tts?.setLanguage(Locale.US) } catch (_: Throwable) { null }
+                    if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        // A missing language pack looks exactly like a missing engine from the
+                        // outside; keep them distinguishable in the log and the status line.
+                        reason = "system TTS has no en-US voice (setLanguage=$lang)"
+                        VoxLog.w("tts: system engine language unavailable code=$lang -> text-only")
+                        onReady(false)
+                    } else {
+                        reason = ""
+                        onReady(true)
+                    }
                 }
-                onReady(code == TextToSpeech.SUCCESS)
             }
-        } catch (_: Throwable) { onReady(false) }
+        } catch (t: Throwable) {
+            reason = "system TTS unavailable: ${t.message ?: t::class.java.simpleName}"
+            VoxLog.w("tts: system engine threw ${t::class.java.simpleName} -> text-only")
+            onReady(false)
+        }
     }
     override fun speak(text: String, onDone: () -> Unit) {
         val t = tts ?: return onDone()
