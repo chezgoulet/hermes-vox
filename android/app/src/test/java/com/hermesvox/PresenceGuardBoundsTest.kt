@@ -101,12 +101,18 @@ class PresenceGuardBoundsTest {
         // now cuts at its comma and speaks. Nothing else in the corpus moved — the other over-long
         // lines have no clause end inside the budget, so D20 drops them exactly as before.
         assertEquals("spoke, i.e. passed every bound", 27, rows.count { it.second == null })
+        // HYPOTHESIS, not a citation: no field failure has fixed MAX_OPENER_WORDS = 7 or
+        // MAX_OPENER_CHARS = 60. Retire the numbers when a session shows a seven-word cut
+        // colliding with the mind's first text, when the bench (#256) measures a longer budget as
+        // safe, or when the voice's duration rather than its characters is what gets bounded.
         assertEquals(9, counts["too-many-words"])
         assertEquals(1, counts["too-long"])
         // #218 split the old `digits-or-markup` in two: the four digit lines are refused as
         // unvouched numbers (nothing is vouched for in this corpus), the two bracket lines keep the
         // old reason. The total refusal count is unchanged.
         assertEquals(4, counts["digits-unvouched"])
+        // HYPOTHESIS: bracket markup has no field log either. Retire the refusal when a field
+        // session set logs none, or once the render prompt stops producing it.
         assertEquals(2, counts["digits-or-markup"])
         assertEquals(2, counts["repeat"])
         assertEquals(3, counts["not-spoken"])

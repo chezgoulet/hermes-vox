@@ -287,6 +287,14 @@ class ErPresence(
     fun noteWorkingSkip(slot: Slot, reason: String) =
         VoxLog.er("event=er-presence skip line=${slot.line} reason=$reason density=${slot.density.key}")
 
+    /**
+     * D20: the line was SHORTENED, not silenced. Shape repair (a clause cut, markup, a fence, a
+     * title line, a trailing courtesy) changed the render and the result was still spoken. Logged
+     * separately from `skip` so the field can tell the two apart at a glance.
+     */
+    fun noteWorkingRepair(slot: Slot, reason: String) =
+        VoxLog.er("event=er-presence repair line=${slot.line} reason=$reason density=${slot.density.key}")
+
     /** Stop the tick. */
     private fun halt() {
         tick?.let { main.removeCallbacks(it) }

@@ -149,10 +149,12 @@ object ErSoulTurn {
         val already = if (said.isEmpty()) "" else
             " You have already said: " + said.joinToString(", ") { "\"$it\"" } + "."
         val wait = if (waitedSeconds == null) "" else
-            " They have been waiting $waitedSeconds seconds, if that is worth saying."
+            " The caller has been waiting $waitedSeconds seconds."
+        // The wait and the run's lines are part of rule two — the moment — not extra rules. The
+        // directive is the five sentences of [presenceRules] and no other instruction.
         return presenceRules(
-            "The caller asked: \"$callerText\", and the mind is still working on it.$ctx$already"
-        ) + wait
+            "The caller asked: \"$callerText\", and the mind is still working on it.$ctx$already$wait"
+        )
     }
 
     /**
@@ -237,8 +239,39 @@ object ErSoulTurn {
         return judge(text, vouched, saidThisRun).reason
     }
 
-    /** The guard's one decision, so [workingLine] and [workingReject] cannot drift apart. */
-    private class Judged(val line: String?, val reason: String?)
+    /**
+     * What [workingLine] would repair before speaking, as log tokens (`cut`, `markup`, `fence`,
+     * `title`, `courtesy`). Empty when nothing was repaired, and empty when the line is refused:
+     * the field log must be able to tell "shortened" from "silenced" — a refused line is not a
+     * repair, and reporting one would hide the refusal.
+     *
+     * The overloads mirror [workingLine]/[workingReject], and all three use the same [judge], so
+     * the logged repair cannot drift from the spoken line.
+     */
+    fun workingRepairs(
+        rendered: String?,
+        saidThisRun: List<String> = emptyList(),
+        vouched: Set<String> = emptySet(),
+    ): List<String> =
+        if (rendered.isNullOrBlank()) emptyList()
+        else workingRepairs(parse(rendered), saidThisRun, vouched)
+
+    fun workingRepairs(
+        decision: Outcome,
+        saidThisRun: List<String> = emptyList(),
+        vouched: Set<String> = emptySet(),
+    ): List<String> {
+        val text = (decision as? Outcome.Spoken)?.text ?: return emptyList()
+        val judged = judge(text, vouched, saidThisRun)
+        return if (judged.line != null) judged.repairs else emptyList()
+    }
+
+    /** The guard's one decision, so [workingLine], [workingReject] and [workingRepairs] cannot drift apart. */
+    private class Judged(
+        val line: String?,
+        val reason: String?,
+        val repairs: List<String> = emptyList(),
+    )
 
     /**
      * Repair the shape, then refuse only content. Content is judged first, on the repaired line
@@ -248,14 +281,15 @@ object ErSoulTurn {
      * backstop (`too-long`), then repeat.
      */
     private fun judge(text: String, vouched: Set<String>, said: List<String>): Judged {
-        val repaired = repairLine(text) ?: return Judged(null, "empty")
+        val repairs = ArrayList<String>()
+        val repaired = repairLine(text, repairs) ?: return Judged(null, "empty")
         numberRefusal(repaired, vouched)?.let { return Judged(null, it) }
         if (hasMarkup(repaired)) return Judged(null, "digits-or-markup")
         if (claimsResult(repaired)) return Judged(null, REASON_UNBACKED_RESULT)
-        val fitted = fitToBound(repaired) ?: return Judged(null, "too-many-words")
+        val fitted = fitToBound(repaired, repairs) ?: return Judged(null, "too-many-words")
         if (fitted.length > MAX_OPENER_CHARS) return Judged(null, "too-long")
         if (said.any { norm(it) == norm(fitted) }) return Judged(null, "repeat")
-        return Judged(speakable(fitted), null)
+        return Judged(speakable(fitted), null, repairs)
     }
 
     /**
@@ -360,20 +394,36 @@ object ErSoulTurn {
      * Nothing here changes what the line CLAIMS: a claim that survives repair is still refused by
      * [claimsResult].
      */
-    fun repairLine(raw: String?): String? {
-        val lines = raw.orEmpty().lines()
+    fun repairLine(raw: String?): String? = repairLine(raw, null)
+
+    private fun repairLine(raw: String?, repairs: MutableList<String>?): String? {
+        val all = raw.orEmpty().lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-            .filterNot { FENCE_MARKER.matches(it) }
+        val lines = all.filterNot { FENCE_MARKER.matches(it) }
+        if (lines.size != all.size) repairs?.addOnce("fence")
         if (lines.isEmpty()) return null
         // A title line is dropped only when something else can be the line; a render that is only
         // a heading is repaired to its text rather than thrown away.
-        var line = lines.filterNot { isTitleLine(it) }.ifEmpty { lines }.first()
-        line = stripMarkers(line)
-        line = stripBullet(line)
-        line = stripCourtesy(line)
+        val withoutTitles = lines.filterNot { isTitleLine(it) }
+        if (withoutTitles.size != lines.size) repairs?.addOnce("title")
+        var line = withoutTitles.ifEmpty { lines }.first()
+        val marked = stripMarkers(line)
+        if (marked != line) repairs?.addOnce("markup")
+        line = marked
+        val bulleted = stripBullet(line)
+        if (bulleted != line) repairs?.addOnce("markup")
+        line = bulleted
+        val courteous = stripCourtesy(line)
+        if (courteous != line) repairs?.addOnce("courtesy")
+        line = courteous
         line = line.trim('"', '\'', ' ', '-', '—', ':')
         return line.ifEmpty { null }
+    }
+
+    /** One log token per kind of repair, in the order the repairs happened. */
+    private fun MutableList<String>.addOnce(kind: String) {
+        if (kind !in this) add(kind)
     }
 
     /** A fence line is the marker alone; backticks inside a line are inline code and are stripped. */
@@ -388,7 +438,9 @@ object ErSoulTurn {
      * dropped instead. The clause end is kept inside the text (a comma is dropped, a full stop
      * kept) so the spoken line ends where a person would pause.
      */
-    fun fitToBound(text: String): String? {
+    fun fitToBound(text: String): String? = fitToBound(text, null)
+
+    private fun fitToBound(text: String, repairs: MutableList<String>?): String? {
         val tokens = Regex("\\S+").findAll(text).toList()
         if (tokens.size <= MAX_OPENER_WORDS) return text
         val limit = tokens[MAX_OPENER_WORDS - 1].range.last + 1
@@ -397,7 +449,9 @@ object ErSoulTurn {
         val candidate = text.substring(0, end).trim().trimEnd(',', ';', ':', '—', '–').trim()
         if (candidate.isEmpty()) return null
         val words = candidate.split(Regex("\\s+")).count { it.isNotEmpty() }
-        return if (words in 1..MAX_OPENER_WORDS) candidate else null
+        if (words !in 1..MAX_OPENER_WORDS) return null
+        repairs?.addOnce("cut")
+        return candidate
     }
 
     /**

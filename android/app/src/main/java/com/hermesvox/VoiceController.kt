@@ -361,6 +361,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                 )
                 erPresence.noteWorkingSkip(slot, skip); return@post
             }
+            // D20: a line that survived shape repair is SPOKEN, and the log says what was changed
+            // (`reason=cut / markup / fence / title / courtesy`). A refused line logs the detail
+            // above instead, so the field can tell "shortened" from "silenced".
+            val repairs = ErSoulTurn.workingRepairs(outcome, said, vouched)
+            if (repairs.isNotEmpty()) erPresence.noteWorkingRepair(slot, repairs.joinToString(","))
             synchronized(workingSaid) { workingSaid.add(line!!) }
             erPresence.noteWorkingLine(slot, "soul")
             speakGlue(line!!, source = SOURCE_WORKING)
