@@ -582,26 +582,25 @@ class MainActivity : AppCompatActivity() {
             modelsMissingPill("Voice model not installed — tap to download")
             return
         }
-        // 0.8/M3: in Enhanced mode the express layer is part of "initialized". A call
-        // must not open with the soul's voice still loading — the field log shows Gemma
+        // 0.8/M3: when Presence runs, its model is part of "initialized". A call must
+        // not open with the soul's voice still loading — the field log shows Gemma
         // finishing 22s INTO a call, with its warm-up renders running over turn 1's
-        // audio (GPU work contending with a live turn). Realtime never waits on it: it
-        // does not use the express model, so gating it there would add a full cold load
-        // for nothing. Diagnostics keep the per-leg detail; the UI shows one word.
+        // audio (GPU work contending with a live turn). With Presence off (or unable to
+        // run) the call never waits on it: it does not use the express model, so gating
+        // it there would add a full cold load for nothing. Diagnostics keep the per-leg
+        // detail; the UI shows one word.
         // Wait for the soul only when it can actually arrive. Without the presence model
         // installed — or with one that failed to start on this device — the old gate waited
         // the full 90 s and then reported "Voice models failed to load", which was false: the
-        // voice was ready, the soul simply was not coming. The call opens, and the ER
-        // requirement pill (refreshModelsGate / the load callback) says what is missing.
-        val soulComing = ModelCatalog.isInstalled(this, "gemma-e2b") && (express as? GemmaExpress)?.loadFailed != true
-        // Phase 4: after an unload the engine is gone while the activity is already resumed,
-        // so ask for it here — otherwise the warm gate below would wait for a load nobody
-        // started. Idempotent: a loaded engine returns immediately.
-        if (modeIsEnhanced() && soulComing && (express as? GemmaExpress)?.isLoading != true)
+        // voice was ready, the soul simply was not coming. The call opens as normal
+        // operation; the Settings presence row is where the absence is explained.
+        var presenceWanted = presenceActive()
+        if (presenceWanted && (express as? GemmaExpress)?.isLoading != true)
             ensurePresenceLoading()
-        val soulReady = !modeIsEnhanced() || express.available || !soulComing || skipPresenceThisCall
+        val soulReady = !presenceWanted || express.available || skipPresenceThisCall
+        c.presenceActive = presenceWanted
         if (!c.isWarm() || !soulReady) {
-            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
+            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} presence=$presenceWanted")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
                 // LOCAL pipeline load — this and only this is "Initializing".
@@ -627,9 +626,19 @@ class MainActivity : AppCompatActivity() {
             warmRetries = 0
             warmingNow = false
             if (::warming.isInitialized) warming.visibility = android.view.View.GONE
-            VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
-            setStatus("Voice models failed to load", true)
-            return
+            if (c.isWarm() && !express.available) {
+                // The voice pipeline is ready; only Presence never arrived. That is normal
+                // operation, not a failed call, and it is not announced as a mode: open the
+                // line without the layer. The Settings presence row still explains the state.
+                VoxLog.w("event=presence-unavailable reason=warm-timeout")
+                skipPresenceThisCall = true
+                presenceWanted = false
+                c.presenceActive = false
+            } else {
+                VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
+                setStatus("Voice models failed to load", true)
+                return
+            }
         }
         // #330: warmth no longer includes TTS, so a broken engine reaches this point.
         // Say so once, non-blocking, and name the real cause instead of blaming the models.
@@ -671,11 +680,12 @@ class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
         setStatus("On call", false)
-        // 0.8/M3c: THE SOUL OPENS THE CALL. In ER the entity greets you first, in its own voice,
-        // before the mind has anything to answer — so there is no race to lose and the mode is
-        // perceptible from the first second rather than only on slow turns. The greeting is
-        // RENDERED by the soul against its own VOX.md, so it varies by personality.
-        if (modeIsEnhanced()) c.soulGreet()
+        // 0.8/M3c: THE SOUL OPENS THE CALL. With Presence on the entity greets you first,
+        // in its own voice, before the mind has anything to answer — so there is no race
+        // to lose and the layer is perceptible from the first second rather than only on
+        // slow turns. The greeting is RENDERED by the soul against its own VOX.md, so it
+        // varies by personality.
+        if (presenceWanted) c.soulGreet()
     }
 
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
@@ -795,14 +805,11 @@ class MainActivity : AppCompatActivity() {
         val missing = ModelCatalog.missingRequired(this)
         val total = ModelCatalog.required.size
         if (missing.isEmpty()) {
+            // #222/D16: the presence model is optional. When it is absent or cannot
+            // start, the app is simply normal operation — no pill, no half-state. The
+            // Settings presence row is the only place the absence is reported, because
+            // it is the only place the user can act on it.
             modelsGate?.visibility = android.view.View.GONE
-            // Locked decision #2: the presence model is a REQUIREMENT of Enhanced Realtime. ER
-            // without it is not a quiet downgrade to a canned stand-in — the user is told, and one
-            // tap takes them to the download.
-            if (modeIsEnhanced() && !ModelCatalog.isInstalled(this, "gemma-e2b")) {
-                modelsMissingPill("⚠ Enhanced Realtime needs the presence model — tap to download")
-                return
-            }
             modelsWarnReset()
             return
         }
@@ -919,9 +926,9 @@ class MainActivity : AppCompatActivity() {
     // caller actually has to find — the mic-state pill and the voice control —
     // rather than covering the screen with prose. Dismissing (the button or the
     // scrim) sets the "seen" pref, so they never show twice.
-    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT path
-    // was stripped in C2 (0.4.0) — so the copy says there is no push-to-talk
-    // button and names the real switch (Settings → Voice mode).
+    // NOTE: this build is hands-free — the walkie-talkie/PTT path was stripped
+    // in C2 (0.4.0) — so the copy says there is no push-to-talk button and names
+    // the one switch that matters (Settings → Presence).
     // -----------------------------------------------------------------------
     private fun maybeShowCoachMarks() {
         if (coachOverlay != null) return
@@ -977,11 +984,11 @@ class MainActivity : AppCompatActivity() {
                 body = "The pill under the name says what your mic is doing: Listening…, " +
                     "The entity is working…, or Speaking…. It updates during a call — " +
                     "tap ✆ to open the line.", withButton = false)
-            addCoachBubble(root, callTarget, above = true, lead = "VOICE MODE",
+            addCoachBubble(root, callTarget, above = true, lead = "THE CALL",
                 body = "✆ opens and closes the hands-free voice line (green = closed, " +
-                    "red = on a call). There is no push-to-talk. Both modes listen hands-free — " +
-                    "switch Realtime ↔ Enhanced Realtime in ⚙ Settings → Voice mode. " +
-                    "Talk over a reply to interrupt.", withButton = true)
+                    "red = on a call). It listens hands-free; there is no push-to-talk. " +
+                    "Presence — the being on the phone — is a layer you can turn off in " +
+                    "⚙ Settings → Presence. Talk over a reply to interrupt.", withButton = true)
         }
         return root
     }
@@ -1132,7 +1139,7 @@ class MainActivity : AppCompatActivity() {
                 ErSoulTurn.KIND_WORKING -> text   // the controller built it: it knows the run's lines
                 else -> ErSoulTurn.directive(text, toolContext, heard)
             }
-            // A mid-run line renders in the narration class: it never preempts a turn decision,
+            // A mid-run aside renders in the narration class: it never preempts a turn decision,
             // and it is dropped (silence) while another render runs.
             val intent = if (kind == ErSoulTurn.KIND_WORKING) VoiceOrchestrator.INTENT_SOUL_NARRATE
                 else VoiceOrchestrator.INTENT_SOUL_TURN
@@ -1179,8 +1186,13 @@ class MainActivity : AppCompatActivity() {
         (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
             android.content.res.Configuration.UI_MODE_NIGHT_YES
 
-    private fun modeIsEnhanced() =
-        (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
+    /** #222/D16: Presence runs only when the user asked for it AND the phone can supply
+     *  it — the model is downloaded and able to start. Otherwise this is normal operation. */
+    private fun presenceActive(): Boolean = PresenceGate.active(
+        enabled = PresenceGate.enabled(prefs),
+        installed = ModelCatalog.isInstalled(this, "gemma-e2b"),
+        canStart = (express as? GemmaExpress)?.loadFailed != true,
+    )
 
     // Hold a wake lock while the hands-free line is open so it isn't Dozed.
     private var voiceWake: android.os.PowerManager.WakeLock? = null
@@ -1689,11 +1701,12 @@ class MainActivity : AppCompatActivity() {
                 // a full prefill + generation of GPU time, thrown away, competing with
                 // the being's render loop. (09-10 log: five such wasted renders in one
                 // tool-heavy turn.)
-                // Narration is the soul's, so it exists only in Enhanced Realtime: in Realtime the
-                // line was rendered for a status pill that is hidden, which was pure GPU waste. The
-                // tool is NAMED so the line can be topical, and the soul may decline — the token
-                // means silence, and it is parsed, never spoken.
-                val narrationWanted = modeIsEnhanced() && prefs.getBoolean("presence", true) &&
+                // Narration is the soul's, so it exists only when Presence runs: with the
+                // layer off the line was rendered for a status pill that is hidden, which
+                // was pure GPU waste. The tool is NAMED so the aside can be topical, and
+                // the soul may decline — the token means silence, and it is parsed, never
+                // spoken.
+                val narrationWanted = presenceActive() && prefs.getBoolean("presence", true) &&
                     liveController?.glueBlocked() != true
                 if (narrationWanted) {
                     val args = line.removePrefix("◆ tool: ").substringAfter(' ', "").take(60)
@@ -1760,7 +1773,7 @@ class MainActivity : AppCompatActivity() {
         } }
         override fun onPresenceSpoke(text: String, source: String) { runOnUiThread {
             // #223: the Presence path's own speech — the soul's answer (the turn's reply)
-            // and its asides (beats, working lines, fillers, greeting). Only lines that
+            // and its asides (beats, working asides, fillers, greeting). Only lines that
             // were actually voiced reach here, so the transcript is what was heard.
             appendPresence(text, source)
         } }
@@ -2087,11 +2100,13 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
 
-    /** Load the on-device presence model once, if Enhanced needs it and it is not up.
+    /** Load the on-device presence model once, if Presence is on and it is not up.
      *  A model that is installed but cannot start (no supported accelerator/CPU path on
-     *  this device) is said out loud, not hidden. Extracted from handleModeUi so a call
-     *  start can ask as well: after a Phase-4 unload the engine is gone while the activity
-     *  is already resumed, and only a resume would otherwise bring it back. */
+     *  this device) leaves the app in normal operation: the model verdict is recorded for
+     *  the Settings presence row, which is the only place the absence is explained. No
+     *  pill, no "running as" label. Extracted from handleModeUi so a call start can ask as
+     *  well: after a Phase-4 unload the engine is gone while the activity is already
+     *  resumed, and only a resume would otherwise bring it back. */
     private fun ensurePresenceLoading() {
         val g = express as? GemmaExpress ?: return
         if (g.available || !ModelCatalog.isInstalled(this, "gemma-e2b")) return
@@ -2109,28 +2124,36 @@ class MainActivity : AppCompatActivity() {
             // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
             val chained = !ok && !g.loadFailed
             VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
-            if (!ok && g.loadFailed) runOnUiThread {
-                modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
+            if (!chained) runOnUiThread {
+                // The Settings row reads this verdict; nothing is announced on the main
+                // screen. Normal operation is not a degraded mode.
+                PresenceGate.modelCanStart = !g.loadFailed
+                if (g.loadFailed) VoxLog.w("event=presence-unavailable reason=start-failed")
+                liveController?.presenceActive = presenceActive()
             }
         }
     }
 
-    // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
-    // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
+    // #222/D16: there is ONE normal operation — a hands-free open line (VAD + barge-in).
+    // Presence is a layer on it, on by default, running only when its model is downloaded
+    // and able to start. There is no mode to switch.
     private fun handleModeUi() {
         applyLayoutMode()
-        refreshModelsGate()   // the ER requirement pill follows the mode
-        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
-        if (mode == ModelCatalog.MODE_ENHANCED) {
+        refreshModelsGate()
+        PresenceGate.modelCanStart = (express as? GemmaExpress)?.loadFailed != true
+        val presence = presenceActive()
+        if (presence) {
             ensurePresenceLoading()
         } else {
-            // Phase 4: leaving Enhanced, the presence engine has nothing to do. Off by
-            // default (MemoryBudget.release); the delayed arm applies here too, so a trip
-            // to Settings and back does not pay a cold load.
-            (express as? GemmaExpress)?.requestUnload("mode-leave")
+            // The layer is off (by choice, or because its model cannot run). The engine
+            // has nothing to do; unload it. Off by default (MemoryBudget.release); the
+            // delayed arm applies here too, so a trip to Settings and back does not pay a
+            // cold load.
+            (express as? GemmaExpress)?.requestUnload("presence-off")
         }
-        // 0.6.7: the presence-voice mode is a live read — a Settings change
-        // lands on the next tick without rebuilding the controller.
+        liveController?.presenceActive = presence
+        // 0.6.7: the narration voice is a live read — a Settings change lands on the
+        // next tick without rebuilding the controller.
         liveController?.erPresence?.voiceMode =
             prefs.getString("er_presence_voice", "sounds") ?: "sounds"
     }

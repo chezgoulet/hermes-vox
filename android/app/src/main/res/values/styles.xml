@@ -51,7 +51,7 @@
         <item name="android:lineSpacingExtra">2dp</item>
     </style>
 
-    <!-- Ghost action buttons (Settings/Realtime/Clear) -->
+    <!-- Ghost action buttons (Settings/Call/Clear) -->
     <style name="HvGhostButton" parent="android:Widget.Button">
         <item name="android:fontFamily">@font/rajdhani_medium</item>
         <item name="android:textSize">15sp</item>

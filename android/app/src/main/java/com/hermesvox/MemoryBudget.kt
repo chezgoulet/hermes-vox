@@ -20,7 +20,7 @@ object MemoryBudget {
     /** `hv` pref holding the KV-cache size in tokens. Absent = [KV_DEFAULT]. */
     const val PREF_KV_TOKENS = "presence_kv_tokens"
 
-    /** `hv` pref: release the Engine when the call ends / the mode leaves Enhanced. */
+    /** `hv` pref: release the Engine when the call ends / Presence is switched off. */
     const val PREF_UNLOAD = "presence_unload"
 
     /** `hv` pref (minutes): release the Engine this long after the call ends. 0 = never. */
@@ -50,7 +50,7 @@ object MemoryBudget {
     fun unloadDelayMs(pref: Int): Long = unloadDelayMinutes(pref) * 60_000L
 
     /**
-     * What the call-end / mode-leave hook should do, given both prefs. One function so the
+     * What the call-end / presence-off hook should do, given both prefs. One function so the
      * precedence is a tested fact instead of an `if` buried in the activity: the delayed arm
      * wins over unload-on-every-hangup, because a delay exists precisely to stop charging the
      * 7.7 s reload to every redial. Both off is [Release.KEEP] — the shipped behaviour.

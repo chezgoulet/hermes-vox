@@ -49,7 +49,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** #281: a tool step's result arrived — the `function_call_output` text. */
         fun onToolOutput(output: String) {}
         /** #223: a line the Presence layer voiced on its own — the soul's answer, a beat,
-         *  a working line, a filler or the greeting. These never pass through [onReply]
+         *  a working aside, a filler or the greeting. These never pass through [onReply]
          *  (only the mind's reply does), which is why a transcript that listened only to
          *  [onReply] was empty in Presence. [source] names the path, so a host can tell
          *  the turn's answer from an aside. Display only, like [onHeard]. */
@@ -194,11 +194,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     // (delta/chunk/read) has happened for this long — the genuinely-stalled case.
     private val GATE_STALL_IDLE_MS = 30000L
     // T1 probe thresholds (dd-only near-miss / mic-gap / skip telemetry — zero behavior).
-    // ER Phase 4: the presence loop — lives only when the voice mode is enhanced.
+    // ER Phase 4: the presence loop — lives only while Presence runs (host-set gate).
     // It feeds speakGlue (the P3 path) only; never speaks over the mind's reply.
-    // The filler cap and the mid-run line cadence follow the "Presence while working"
+    // The filler cap and the mid-run aside cadence follow the "Presence while working"
     // register (read live per tick).
-    // 0.6.7: the presence-voice mode (silent/sounds/spoken) + the clip Context.
+    // 0.6.7: the narration register (silent/sounds/spoken) + the clip Context.
     val erPresence = ErPresence(
         { glue, source -> if (erPresenceOn) speakGlue(glue, source = source) },
         { presenceDensity().fillerCap },
@@ -245,11 +245,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
     /** The caller's words that started the current mind run, what the mind is using right now
-     *  (the latest tool call), and the mid-run lines said this run — the working directive's input. */
+     *  (the latest tool call), and the mid-run asides said this run — the working directive's input. */
     @Volatile private var workingAsk: String? = null
     @Volatile private var mindTool: String? = null
     private val workingSaid = ArrayList<String>()
-    /** The run's mid-run line, rendered early by [prewarmWorkingLine]; one attempt per turn. */
+    /** The run's mid-run aside, rendered early by [prewarmWorkingLine]; one attempt per turn. */
     @Volatile private var workingWarm: WorkingRender? = null
 
     /**
@@ -265,7 +265,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
-     * A mid-run line slot opened ([PresenceCadence], on the presence tick): speak the line the
+     * A mid-run aside slot opened ([PresenceCadence], on the presence tick): speak the line the
      * run already rendered ([prewarmWorkingLine]) so it lands the instant the slot opens, or —
      * when that render never happened — ask the soul for one now, as before. The line plays as
      * glue (as a beat does) and is refused if the run ended while it rendered: the reply landed,
@@ -301,11 +301,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
-     * Render the run's mid-run line while the mind is still working, instead of when the
+     * Render the run's mid-run aside while the mind is still working, instead of when the
      * cadence's slot comes due — that ordering is what let a ~2.5 s render sit between "due"
      * and "delivered", so the mind's first text could land inside it and the line died `late`.
      *
-     * [ErFillers.LAG_AFTER_MS] is the earliest admissible point: no working line can be spoken
+     * [ErFillers.LAG_AFTER_MS] is the earliest admissible point: no working aside can be spoken
      * before it, the turn's own render has finished by then, and the render spacing floor has
      * passed, so the narration is neither dropped nor blanked. One render per run; a render that
      * never lands simply leaves the slot to render on demand.
@@ -324,7 +324,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
-    /** Speak a working line, or record why the slot passed in silence. [vouched] is the set of
+    /** Speak a working aside, or record why the slot passed in silence. [vouched] is the set of
      *  numbers the render's directive carried (#218, generalised by D20) — the only ones allowed. */
     private fun deliverWorkingLine(
         slot: ErPresence.Slot,
@@ -406,7 +406,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun prefsGetInt(k: String, d: Int) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getInt(k, d)
     @Volatile private var erActive = false
-    // ER Phase 5: a live mind turn in Enhanced mode (the semantic barge scope
+    /** #222/D16: the host sets this from [PresenceGate] — the user asked for Presence AND
+     *  its model is downloaded AND able to start. When false the app is normal operation:
+     *  no presence loop, no asides, and no call-register prefix on the voice turn. */
+    @Volatile var presenceActive: Boolean =
+        PresenceGate.enabled(context) && ModelCatalog.isInstalled(context, "gemma-e2b")
+    // ER Phase 5: a live mind turn while Presence runs (the semantic barge scope
     // applies only then). Set true per voice turn, cleared with the window.
     @Volatile private var erMindLive = false
     // ER Phase 5: the utterance that STARTED the current mind turn — bookkeeping
@@ -1222,8 +1227,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         soulGreeted = false   // 0.8/M3c: the next call opens with a greeting too
         // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
         // case; this one guarantees a hangup always closes the measurement out).
-        if (prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED)
-            VoxLog.er(ErTelemetry.line())
+        if (presenceActive) VoxLog.er(ErTelemetry.line())
         // #D1: endCall uses the SAME single silence path as barge/hush — stopTts
         // (closes the SherpaTts fence -> streamChunk returns false -> no track
         // resurrection), close the streaming worker, cancel the SSE stream, then
@@ -1277,7 +1281,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         } finally { initializing = false }
     }
 
-    /** A text turn (the Send path / the Realtime text-mode fallback). */
+    /** A text turn (the Send path / the text fallback). */
     fun sendText(text: String) {
         if (text.isBlank()) return
         stopTts()
@@ -1363,12 +1367,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     // --- The streamed entity turn (REAL SSE) ---
     private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
-        val voiceTurn = fromVoice && prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
+        val voiceTurn = fromVoice && presenceActive
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
         // runtime are user-togglable in Settings (er_semantic_barge / er_presence).
-        // erSemanticBarge=false → ER voice turns behave like Realtime on barge
-        // (always cancel); erPresenceOn=false → the classifier/window still run
-        // (the drift-sync log stays honest) but NOTHING is spoken as glue.
+        // erSemanticBarge=false → presence voice turns always cancel on a barge;
+        // erPresenceOn=false → the classifier/window still run (the drift-sync log
+        // stays honest) but NOTHING is spoken as glue.
         erSemanticBarge = voiceTurn && prefsGetBoolean("er_semantic_barge", true)
         erPresenceOn = prefsGetBoolean("er_presence", true)
     // ER Phase 4: classify the voice utterance and open the presence window.
@@ -1463,7 +1467,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         turnSpeechEndAt = if (anchor > 0L && t0 - anchor in 0L..15_000L) anchor else 0L
         pendingSpeechEndAt = 0L
         if (pendingSttDecodeMs >= 0L) { LatencyStats.pushSttDecode(pendingSttDecodeMs); pendingSttDecodeMs = -1L }
-        // The mid-run line's render starts with the run, not when the cadence's slot comes due:
+        // The mid-run aside's render starts with the run, not when the cadence's slot comes due:
         // the slot cannot open before LAG_AFTER_MS, and waiting until it does puts the whole
         // render between "due" and "delivered" (docs/PRESENCE-LATE-DIAGNOSIS.md). A turn that
         // ends before then makes the prewarm bail on its gen check.
@@ -1729,7 +1733,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // first field D18's 700 ms is about (the caller is already waiting).
                             val se = turnSpeechEndAt
                             if (se > 0L && firstTextAtMs > se) LatencyStats.pushSpeechToText(firstTextAtMs - se)
-                            erPresence.endCadence("reply")   // the reply is the voice now: no more mid-run lines
+                            erPresence.endCadence("reply")   // the reply is the voice now: no more mid-run asides
                         }
                         streamFeed(d, gen)   // start speaking as it streams
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
@@ -1907,7 +1911,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // beat on every turn that would be the first words of most answers. A
                             // beat is a few trailing words: let it land (bounded), cut it if it
                             // runs long, then re-open the stream so this chunk plays whole. A
-                            // mid-run line is filler about the wait that just ended: cut at once.
+                            // mid-run aside is filler about the wait that just ended: cut at once.
                             if (glueSpeaking) {
                                 val t0h = android.os.SystemClock.uptimeMillis()
                                 while (glueSpeaking && !glueCutAtHandoff && !genCancelled && !sClosed &&
@@ -2194,7 +2198,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val glueWindow = GlueWindow()
     /** Set once this turn's reply has begun writing to the stream track (reset per turn). */
     @Volatile private var replyOwnsTrack = false
-    /** The glue playing is a mid-run line: the reply's first audio cuts it without waiting. */
+    /** The glue playing is a mid-run aside: the reply's first audio cuts it without waiting. */
     @Volatile private var glueCutAtHandoff = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
     private val HANDOFF_WAIT_MS = 1200L
@@ -2303,7 +2307,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         // ER Phase 6: the arbiter owns the P3 admission (and P2's preempt of a
         // P3). Non-ER or plain glue keeps today's behavior: stopTts + play.
-        val erOn = prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
+        val erOn = presenceActive
         if (erOn) {
             val current = if (glueSpeaking) ErArbiter.Priority.P3_FILLER else null
             val request = if (critical) ErArbiter.Priority.P2_SOUL_CRITICAL else ErArbiter.Priority.P3_FILLER
@@ -2324,7 +2328,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         glueCutAtHandoff = source == SOURCE_WORKING
         // #223: every line the presence layer actually voices is conversation, in the
         // order it was said. This is the one funnel all of them pass through (soul answer,
-        // beat, working line, filler, greeting, tool narration), so the transcript cannot
+        // beat, working aside, filler, greeting, tool narration), so the transcript cannot
         // drift from what the caller heard. State changes never come through here — and
         // must not: the transcript records speech, it does not narrate states.
         main.post { listener?.onPresenceSpoke(text, source) }
@@ -2394,7 +2398,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // the user's voice outranks the soul's fillers too.
         if (erActive) { erActive = false; erPresence.stop("barge") }
         if (!erMindLive) {
-            // Realtime (or a non-voice turn): today's behavior, unchanged.
+            // Presence off (or a non-voice turn): today's behavior, unchanged.
             genCancelled = true
             // #D1: ONE synchronous silence path — the gate release lands here, on main,
             // immediately after the barge decision (not queued behind TTS callbacks).
@@ -2519,11 +2523,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (settledEpoch == lastTurnLoggedEpoch) { VoxLog.dd("event=turn-skip gen=$gen epoch=$settledEpoch reason=$reason (already settled)"); return }
         lastTurnLoggedEpoch = settledEpoch
         LatencyStats.log("turn", reason, gen)
-        // 0.8/M1: the ER counters, every N turns in Enhanced mode. Before this the
-        // Phase-8 instrumentation had ZERO emit sites — every claim about ER was an
-        // impression. This is the line that makes the ER delta falsifiable.
-        if (prefString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED &&
-            ErTelemetry.shouldEmit()) VoxLog.er(ErTelemetry.line())
+        // 0.8/M1: the presence counters, every N turns while the layer runs. Before
+        // this the Phase-8 instrumentation had ZERO emit sites — every claim about
+        // Presence was an impression. This is the line that makes the delta falsifiable.
+        if (presenceActive && ErTelemetry.shouldEmit()) VoxLog.er(ErTelemetry.line())
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }

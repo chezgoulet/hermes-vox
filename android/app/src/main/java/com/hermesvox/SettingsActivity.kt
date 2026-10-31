@@ -14,11 +14,12 @@ import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 
 /**
- * SettingsActivity — a real settings screen. Home sections: Voice mode, Voice
- * models, Entity & Connection, Hearing, Transcription (STT), Voice, Presence,
+ * SettingsActivity — a real settings screen. Home sections: Voice models,
+ * Entity & Connection, Hearing, Transcription (STT), Voice, Presence,
  * Appearance & Layout, Being, About & Diagnostics. Values are stored
  * as stable TOKENS (the logic reads tokens, e.g. buildTts checks
- * "kokoro"/"piper"); the UI renders human labels.
+ * "kokoro"/"piper"); the UI renders human labels. Presence is a layer on the one
+ * normal operation (#222/D16), so it has a switch, not a mode selector.
  */
 class SettingsActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
@@ -129,19 +130,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun bindGroups() {
-        // #111: Voice mode now lives as a TOP-LEVEL home row (first in grp_list) —
-        // its picker is wired here with the other home rows, and its value label is
-        // refreshed from modeLabel() by refreshFlowVals() (see refreshFlowVals).
-        findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
-            pick("Voice mode",
-                arrayOf("Realtime", "Enhanced Realtime (alpha)"),
-                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
-                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val) {
-                if (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED) {
-                    maybeBootstrapVox()
-                }
-            }
-        }
         findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { showSection(SECTION_MODELS) }
         findViewById<android.view.View>(R.id.row_grp_entity)?.setOnClickListener { showSection(SECTION_ENTITY) }
         findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
@@ -282,14 +270,15 @@ class SettingsActivity : AppCompatActivity() {
         refreshVoxVal()
     }
 
-    /** 0.6.2: the ER runtime controls — every tunable the presence runtime reads,
-     *  exposed. All are Enhanced-Realtime-only (Realtime ignores them entirely). */
+    /** 0.6.2: the presence runtime controls — every tunable the presence layer reads,
+     *  exposed. They matter when Presence runs; the layer's on/off switch is above. */
     private fun bindErControls() {
         val swPresence = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_presence)
         val swBarge = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_semantic_barge)
         val sbEcho = findViewById<SeekBar>(R.id.sb_er_echo)
         val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
 
+        bindPresenceEnabled()
         swPresence.isChecked = prefs.getBoolean("er_presence", true)
         swPresence.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean("er_presence", checked).apply()
@@ -316,13 +305,13 @@ class SettingsActivity : AppCompatActivity() {
                 else "The soul reads your words only",
                 Toast.LENGTH_SHORT).show()
         }
-        // 0.6.7 Tier 1: the presence-voice mode (silent / sounds / spoken).
+        // 0.6.7 Tier 1: the narration register (silent / sounds / spoken).
         findViewById<LinearLayout>(R.id.row_er_voice).setOnClickListener {
             val modes = arrayOf("Silent (motion only)", "Sounds (natural mm/breath)", "Spoken (sentence fillers)")
             val tokens = arrayOf("silent", "sounds", "spoken")
             val cur = prefs.getString("er_presence_voice", "sounds") ?: "sounds"
             AlertDialog.Builder(this)
-                .setTitle("Narration voice (Enhanced Realtime)")
+                .setTitle("Narration voice")
                 .setSingleChoiceItems(modes, tokens.indexOf(cur).coerceAtLeast(0)) { d, which ->
                     prefs.edit().putString("er_presence_voice", tokens[which]).apply()
                     findViewById<TextView>(R.id.set_er_voice_val).text = modes[which].substringBefore(" (")
@@ -341,7 +330,7 @@ class SettingsActivity : AppCompatActivity() {
                 "silent" -> "Silent"; "spoken" -> "Spoken"; else -> "Sounds"
             }
         // "Presence while working": one register for how often the entity speaks while the mind
-        // works — the mid-run line interval and the filler cap (PresenceCadence). Replaces the raw
+        // works — the mid-run aside interval and the filler cap (PresenceCadence). Replaces the raw
         // filler-density slider, which it migrates from until a register is chosen.
         val tvDensity = findViewById<TextView>(R.id.set_er_density_val)
         tvDensity.text = densityLabel(currentDensity())
@@ -370,6 +359,62 @@ class SettingsActivity : AppCompatActivity() {
                 prefs.edit().putFloat("er_echo_skip_ms", echoSteps[sbEcho.progress].toFloat()).apply()
             }
         })
+    }
+
+    /** #222/D16: the one switch that means Presence on or off. The absence of the
+     *  layer is reported here and nowhere else — this is the only place a user can act
+     *  on it. */
+    private fun bindPresenceEnabled() {
+        val sw = findViewById<SwitchCompat>(R.id.sw_presence_enabled)
+        sw.isChecked = PresenceGate.enabled(prefs)
+        sw.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(PresenceGate.KEY_PRESENCE_ENABLED, checked).apply()
+            refreshPresenceRow()
+            if (!checked) return@setOnCheckedChangeListener
+            if (!ModelCatalog.isInstalled(this, "gemma-e2b")) {
+                AlertDialog.Builder(this)
+                    .setTitle("Presence needs its model")
+                    .setMessage("The being, its asides and its voice run on an on-device " +
+                        "model. Download it in Voice models — Presence starts as soon as " +
+                        "it is there.")
+                    .setPositiveButton("Download") { _, _ -> openModelsStore() }
+                    .setNegativeButton("Later", null)
+                    .show()
+            } else maybeBootstrapVox()
+        }
+        refreshPresenceRow()
+    }
+
+    private fun presenceState(): PresenceGate.State = PresenceGate.state(
+        enabled = PresenceGate.enabled(prefs),
+        installed = ModelCatalog.isInstalled(this, "gemma-e2b"),
+        canStart = PresenceGate.modelCanStart,
+    )
+
+    /** The one-line explanation under the switch. Every branch names why, and the two
+     *  the user can fix are tappable. */
+    private fun refreshPresenceRow() {
+        val tv = findViewById<TextView>(R.id.set_presence_status) ?: return
+        tv.setOnClickListener(null)
+        tv.isClickable = false
+        tv.isFocusable = false
+        tv.text = when (presenceState()) {
+            PresenceGate.State.ON ->
+                if (prefs.getBoolean("er_presence", true))
+                    "On · " + PresenceCadence.resolve(
+                        prefs.getString(PresenceCadence.PREF, null), null).key
+                else "On · quiet"
+            PresenceGate.State.OFF ->
+                "Off — turn on to give the agent a body and asides"
+            PresenceGate.State.NO_MODEL -> {
+                tv.isClickable = true
+                tv.isFocusable = true
+                tv.setOnClickListener { openModelsStore() }
+                "On, but the model is not downloaded — tap to download it in Voice models"
+            }
+            PresenceGate.State.CANNOT_START ->
+                "On, but the model cannot start on this device — Presence stays off here"
+        }
     }
 
     private fun currentDensity(): PresenceCadence.Density = PresenceCadence.resolve(
@@ -402,17 +447,17 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** ER Phase 3 bootstrap: first enable of Enhanced Realtime. When the mode is
-     *  switched to enhanced and no valid mirror exists, pull VOX.md right away
-     *  (the resync flow) and surface the honest state if it fails — the soul
-     *  "can't find its voice" is a visible condition, never a silent proceed. */
+    /** ER Phase 3 bootstrap: first switch-on of Presence. When no valid mirror exists,
+     *  pull VOX.md right away (the resync flow) and surface the honest state if it
+     *  fails — the soul "can't find its voice" is a visible condition, never a silent
+     *  proceed. */
     private fun maybeBootstrapVox() {
         if (VoxSoul.mirrorStatus(VoxMirror.read(this)) is VoxSoul.Mirror.Present) return
         AlertDialog.Builder(this)
-            .setTitle("Enhanced Realtime — meet your entity's voice")
+            .setTitle("Presence — meet your entity's voice")
             .setMessage(
-                "Enhanced Realtime adds the on-device presence layer: the being on the " +
-                "phone speaks in your agent's own voice. It needs VOX.md — your agent's " +
+                "Presence is the being on the phone: it speaks asides in your agent's " +
+                "own voice while the mind works. It needs VOX.md — your agent's " +
                 "voice-export, authored by the agent itself.\n\nPull it from the gateway now?")
             .setPositiveButton("Pull VOX.md") { _, _ -> resyncVox() }
             .setNegativeButton("Later", null)
@@ -562,10 +607,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // Per sub-menu RESTORE DEFAULTS (via the central restoreDefaults helper).
-        // #112 reset scopes: every setting belongs to exactly ONE group. Voice mode
-        // resets with GROUP_ENTITY (row_restore_entity) and the voice register resets
-        // with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice") — the standalone
-        // Mode/Voice branches and their row_mode_reset/row_voice_reset rows are gone.
+        // #112 reset scopes: every setting belongs to exactly ONE group. Presence
+        // resets with GROUP_PRESENCE (row_restore_presence) and the voice register
+        // resets with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice").
         bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "Transcription")
         bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "Voice")
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
@@ -625,7 +669,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         box.addView(TextView(this).apply {
             text = "KV cache — the engine is rebuilt on the next presence load " +
-                "(force-stop, or leave and re-enter Enhanced). Release policy is read at hangup."
+                "(force-stop, or leave Settings and come back). Release policy is read at hangup."
             textSize = 13f
         })
 
@@ -746,7 +790,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshFlowVals() {
-        findViewById<TextView>(R.id.set_mode_val).text = modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
         findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
         findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
@@ -817,18 +860,24 @@ class SettingsActivity : AppCompatActivity() {
         try {
             findViewById<TextView>(R.id.set_entity_grpval)?.text =
                 connectionLine(prefs.getString("url", "").orEmpty())
-            // "Mic & Barge-in" owns the input side only — voice mode has its own
-            // top-level row, and echoing it here made the sub-title unpredictable.
+            // "Mic & Barge-in" owns the input side only; Presence has its own row.
             findViewById<TextView>(R.id.set_speech_grpval)?.text =
                 "Barge-in ${onOff(prefs.getBoolean("duplex", true))} · AEC ${onOff(prefs.getBoolean("mic_aec", true))}"
             findViewById<TextView>(R.id.set_stt_grpval)?.text =
                 sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
             findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
-            // #224: Presence says whether it is on, not just that it exists.
-            findViewById<TextView>(R.id.set_presence_grpval)?.text =
-                if (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) != ModelCatalog.MODE_ENHANCED) "Enhanced Realtime only"
-                else if (prefs.getBoolean("er_presence", true)) "On · " + PresenceCadence.resolve(prefs.getString(PresenceCadence.PREF, null), null).key
-                else "Quiet"
+            // #224/#222: Presence says whether it is on, and if it cannot be, why.
+            refreshPresenceRow()
+            findViewById<TextView>(R.id.set_presence_grpval)?.text = when (presenceState()) {
+                PresenceGate.State.ON ->
+                    if (prefs.getBoolean("er_presence", true))
+                        "On · " + PresenceCadence.resolve(
+                            prefs.getString(PresenceCadence.PREF, null), null).key
+                    else "On · quiet"
+                PresenceGate.State.OFF -> "Off"
+                PresenceGate.State.NO_MODEL -> "On · model not downloaded"
+                PresenceGate.State.CANNOT_START -> "On · model cannot start here"
+            }
             // Counting files only — no decryption on the Settings home.
             findViewById<TextView>(R.id.set_wake_grpval)?.text =
                 "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
@@ -965,11 +1014,6 @@ class SettingsActivity : AppCompatActivity() {
         ModelCatalog.BACKEND_REMOTE -> "Remote (server)"
         else -> "On-device (offline)"
     }
-    private fun modeLabel(tok: String): String = when (tok) {
-        ModelCatalog.MODE_ENHANCED -> "Enhanced Realtime (alpha)"
-        else -> "Realtime"   // a stale stored token reads as Realtime (never crashes)
-    }
-
     private fun bindAppearance() {
         findViewById<LinearLayout>(R.id.row_theme).setOnClickListener {
             pick("Theme", arrayOf("System", "Dark", "Light"),
@@ -1134,7 +1178,7 @@ class SettingsActivity : AppCompatActivity() {
             "the app knows when you started and stopped talking. The threshold below is how " +
             "sure it must be before a sound counts as speech.")
         bindHelp(R.id.help_semantic_barge, "Semantic barge-in",
-            "In Enhanced Realtime, some interruptions are not meant to cancel the work — " +
+            "With Presence on, some interruptions are not meant to cancel the work — " +
             "\"take your time\" or \"go on\" means keep going. This lets the entity tell those " +
             "apart from a real interruption. Off: every interruption cancels its work.")
     }
@@ -1696,9 +1740,9 @@ class SettingsActivity : AppCompatActivity() {
                 // flip er_presence back on. The REAL 0.6.4 field bug is below in
                 // refreshFlowVals: restoreDefaults(GROUP_ENTITY) ran refreshFlowVals
                 // which did not re-read the ER switches. Now it does (bindErControls).
-                .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // #112: voice mode folds into Entity (GROUP_MODE branch removed); url/key untouched (identity)
-            // #224: the Presence section's own restore scope (these keys lived under Entity).
+            // #224/#222: the Presence section's own restore scope (these keys lived under Entity).
             GROUP_PRESENCE -> e
+                .putBoolean(PresenceGate.KEY_PRESENCE_ENABLED, PresenceGate.DEFAULT_ENABLED)
                 .putBoolean("er_presence", true)
                 .putBoolean("er_semantic_barge", true)
                 .putString(PresenceCadence.PREF, PresenceCadence.DEFAULT.key)
@@ -1744,7 +1788,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_APPEARANCE -> bindKeepScreenOn()
             GROUP_VISUALS -> { bindVisuals(); bindSoundCues() }   // #224: the cue rows live in Being now
             GROUP_TTS -> bindFlows()   // 0.6.5: re-read the speak toggle after restore
-            GROUP_PRESENCE -> { refreshFlowVals(); bindErControls() }
+            GROUP_PRESENCE -> { refreshFlowVals(); bindErControls(); refreshGrpVals() }
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()
@@ -1764,7 +1808,7 @@ class SettingsActivity : AppCompatActivity() {
         const val GROUP_STT = "stt"
         const val GROUP_TTS = "tts"
         // #112: no GROUP_VOICE / GROUP_MODE — the voice register folds into GROUP_TTS
-        // and voice mode folds into GROUP_ENTITY, so each setting has ONE reset scope.
+        // and Presence has its own GROUP_PRESENCE scope, so each setting has ONE reset scope.
         const val GROUP_ENTITY = "entity"
         const val GROUP_APPEARANCE = "appearance"
         const val GROUP_VISUALS = "visuals"

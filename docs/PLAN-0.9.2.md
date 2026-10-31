@@ -66,9 +66,10 @@ racing the mind's first token. Pick one and record why.
 
 ## 6. The instrument and the bar (#217)
 
-Presence has been judged by ear. The log already carries `er-presence line/skip/stop`,
+Presence has been judged by ear. The log already carries `er-presence line/skip/stop`
+(line = one aside offered),
 `er-soul kind=working`, `er-render-skip` and the `soul(...)` counters — `scripts/presence-session-report.py`
-summarises a session from them: slots offered, lines spoken, skips by reason, repeats, render
+summarises a session from them: slots offered, asides spoken, skips by reason, repeats, render
 p50/p95, and any line that landed after the reply's first text.
 
 **The bar for this release:** at Conversational, over one long run, at least two thirds of offered

@@ -103,9 +103,9 @@ same fence for every voice. Delivery follows the caller's mood as the soul heard
 (`VoiceMood`: speed and pause length). `SpeechCursor` locks the on-screen words to what
 has actually been spoken.
 
-### 4. The presence — Enhanced Realtime (the soul)
-Enhanced Realtime adds a small on-device model as the *soul's voice*, never a second
-brain ([design][er-design]):
+### 4. The presence — the layer (the soul)
+Presence is a layer on the one normal operation (D16). It adds a small on-device model as
+the *soul's voice*, never a second brain ([design][er-design]):
 
 - **Contract + Soul (`VoxSoul`, VOX.md).** The Hermes agent authors its own distilled
   voice file from its `SOUL.md`; the device mirrors it **read-only** and validates it

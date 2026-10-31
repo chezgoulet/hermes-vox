@@ -51,28 +51,9 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- #111: Voice mode is the headline interaction model, so it gets
-                     its own TOP-LEVEL home row (above Models) instead of being buried
-                     under Entity &amp; Connection. Tapping it opens the same picker
-                     (bound in bindGroups). -->
-                <LinearLayout
-                    android:id="@+id/row_mode"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Voice mode"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mode_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Realtime"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
+                <!-- #222/D16: the voice-mode selector is retired. Presence is a
+                     layer on the one normal operation, with its own switch inside the
+                     Presence section. -->
 
                 <LinearLayout
                     android:id="@+id/row_grp_models"
@@ -1161,8 +1142,9 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_presence: Presence (#224) — the layer's own settings, moved out of
-                 Entity & Connection. Enhanced Realtime only; Realtime ignores them. ══ -->
+            <!-- ══ sec_presence: Presence (#224/#222) — the layer's own settings,
+                 moved out of Entity & Connection. Presence is on by default and only
+                 runs when its model is downloaded and able to start. ══ -->
             <LinearLayout
                 android:id="@+id/sec_presence"
                 android:layout_width="match_parent"
@@ -1170,7 +1152,38 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- 0.6.2: the ER runtime controls (Enhanced Realtime mode only). -->
+                <!-- #222/D16: the one switch that means on or off. The line under it
+                     is the ONLY place the layer's absence is explained. -->
+                <LinearLayout
+                    android:id="@+id/row_presence_enabled"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Presence"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_presence_enabled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/set_presence_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="10dp"
+                    android:text="On"
+                    android:textColor="@color/hv_text_dim"
+                    android:textSize="13sp" />
+
+                <!-- 0.6.2: the presence runtime controls (they matter when the layer runs). -->
                 <LinearLayout
                     android:id="@+id/row_er_presence"
                     style="@style/HvRow"
@@ -1259,7 +1272,7 @@
                         android:checked="true" />
                 </LinearLayout>
 
-                <!-- 0.6.7 Tier 1: the presence-voice mode. -->
+                <!-- 0.6.7 Tier 1: the narration register. -->
                 <LinearLayout
                     android:id="@+id/row_er_voice"
                     style="@style/HvRow"
