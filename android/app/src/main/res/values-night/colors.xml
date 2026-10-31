@@ -11,6 +11,10 @@
     <color name="hv_violet_soft">#4A3C6E</color>
     <color name="hv_text">#E6EDF7</color>
     <color name="hv_text_dim">#8B98AC</color>
+    <!-- #281: the state line on the dark chip (#101724). The same semantic names as the
+         light theme, so the line is written once and is legible in both. -->
+    <color name="hv_status">#00E5FF</color>
+    <color name="hv_status_live">#35D07F</color>
     <color name="hv_ok">#34D399</color>
     <color name="hv_warn">#FBBF24</color>
     <color name="hv_danger">#F87171</color>
