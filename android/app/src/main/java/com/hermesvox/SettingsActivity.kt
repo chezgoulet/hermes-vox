@@ -15,8 +15,8 @@ import androidx.core.content.ContextCompat
 
 /**
  * SettingsActivity — a real settings screen. Home sections: Voice mode, Voice
- * models, Entity & Connection, Mic & Barge-in, Transcription (STT), Spoken
- * replies, Appearance & Layout, Visuals, About & Diagnostics. Values are stored
+ * models, Entity & Connection, Hearing, Transcription (STT), Voice, Presence,
+ * Appearance & Layout, Being, About & Diagnostics. Values are stored
  * as stable TOKENS (the logic reads tokens, e.g. buildTts checks
  * "kokoro"/"piper"); the UI renders human labels.
  */
@@ -52,22 +52,35 @@ class SettingsActivity : AppCompatActivity() {
 
     /** #224: one line under each row's title saying what it changes (SettingsHints). */
     private fun applyHints() {
-        val dim = ContextCompat.getColor(this, R.color.hv_text_dim)
-        for ((name, hint) in SettingsHints.HINTS) {
+        for ((name, _) in SettingsHints.HINTS) {
             val id = resources.getIdentifier(name, "id", packageName)
             val row = findViewById<android.view.ViewGroup>(id) ?: continue
             val title = firstTitle(row) ?: continue
-            val head = title.text.toString()
-            val s = android.text.SpannableString("$head\n$hint")
-            s.setSpan(android.text.style.RelativeSizeSpan(0.82f), head.length + 1, s.length, 0)
-            s.setSpan(android.text.style.ForegroundColorSpan(dim), head.length + 1, s.length, 0)
-            title.text = s
+            applyHint(name, title)
         }
     }
+
+    /** Put [SettingsHints]' line under a title that another refresh may have just rewritten. */
+    private fun applyHint(rowName: String, title: TextView) {
+        val hint = SettingsHints.HINTS[rowName] ?: return
+        val dim = ContextCompat.getColor(this, R.color.hv_text_dim)
+        // The head is the row's own label, never a hint stacked on a previous one.
+        val head = title.text.toString().substringBefore('\n')
+        val s = android.text.SpannableString("$head\n$hint")
+        s.setSpan(android.text.style.RelativeSizeSpan(0.82f), head.length + 1, s.length, 0)
+        s.setSpan(android.text.style.ForegroundColorSpan(dim), head.length + 1, s.length, 0)
+        title.text = s
+    }
+
     private fun firstTitle(v: android.view.ViewGroup): TextView? {
         for (i in 0 until v.childCount) {
             val c = v.getChildAt(i)
-            if (c is TextView && c !is android.widget.Button && c.id == android.view.View.NO_ID) return c
+            if (c is TextView && c !is android.widget.Button) {
+                // The Speaker row's title carries an id because its refresh rewrites it.
+                val namedTitle = c.id != android.view.View.NO_ID &&
+                    runCatching { resources.getResourceEntryName(c.id).endsWith("_title") }.getOrDefault(false)
+                if (c.id == android.view.View.NO_ID || namedTitle) return c
+            }
             if (c is android.view.ViewGroup) firstTitle(c)?.let { return it }
         }
         return null
@@ -583,7 +596,7 @@ class SettingsActivity : AppCompatActivity() {
 
         refreshFlowVals()
         refreshGrpVals()   // #115: populate the Settings-home row subtitles
-        bindMicAdvanced()  // #118: collapse/expand the Mic & Barge-in timing-tuner panel
+        bindAdvancedDisclosures()  // #118/#224: one collapsed disclosure per section
     }
 
     /** Dev-only: the presence memory knobs. All of them need no reload to be *stored*, and the
@@ -843,13 +856,20 @@ class SettingsActivity : AppCompatActivity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: ""
     } catch (_: Throwable) { "" }
 
-    // #118: the Mic & Barge-in "Advanced — timing tuning" chip collapses/expands the
-    // panel of VAD/barge-timing sliders (collapsed by default, progressive disclosure).
-    private fun bindMicAdvanced() {
+    // #118/#224: the advanced panels (Hearing's timing tuning, Being's fine look,
+    // Presence's behaviour controls) are collapsed by default, one disclosure each.
+    private fun bindAdvancedDisclosures() {
+        bindDisclosure(R.id.row_mic_advanced, R.id.adv_mic_panel, R.id.set_mic_adv_state)
+        bindDisclosure(R.id.row_being_advanced, R.id.adv_being_panel, R.id.set_being_adv_state)
+        bindDisclosure(R.id.row_presence_advanced, R.id.adv_presence_panel, R.id.set_presence_adv_state)
+    }
+
+    /** Wire one disclosure chip to the panel it reveals. */
+    private fun bindDisclosure(rowId: Int, panelId: Int, stateId: Int) {
         try {
-            val chip = findViewById<android.view.View>(R.id.row_mic_advanced) ?: return
-            val panel = findViewById<android.view.View>(R.id.adv_mic_panel) ?: return
-            val state = findViewById<TextView>(R.id.set_mic_adv_state) ?: return
+            val chip = findViewById<android.view.View>(rowId) ?: return
+            val panel = findViewById<android.view.View>(panelId) ?: return
+            val state = findViewById<TextView>(stateId) ?: return
             chip.setOnClickListener {
                 val show = panel.visibility != android.view.View.VISIBLE
                 panel.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
@@ -1510,6 +1530,9 @@ class SettingsActivity : AppCompatActivity() {
             SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
             SherpaVoice.PIPER -> "Speaker (Piper)"
         }
+        // #224: this row's title is rewritten whenever the engine changes; keep its
+        // one-line statement attached to the new title.
+        applyHint("row_tts_speaker", findViewById(R.id.set_tts_speaker_title))
         findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerValue(engine)
     }
 
