@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
             heardLine.text = ""; heardLine.contentDescription = null
         }.start()
     }
-    private var convoBuf = ""
+    private val transcript = Transcript()
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
@@ -1480,7 +1480,7 @@ class MainActivity : AppCompatActivity() {
         revealActive = false; mainHandler.removeCallbacks(revealTask)
         replyBuf = ""
         reply.setText("")
-        convoBuf = ""
+        transcript.clear()
         convoText.setText("")
         feed(MotionState.Signal.REST)
         setStatus(getString(R.string.hv_connected), false)
@@ -1654,6 +1654,10 @@ class MainActivity : AppCompatActivity() {
             ambientWorking = false   // #251: the answer is arriving; the work is done
             markActivity()   // previewB: a delta is proof the provider is alive
             if (!revealActive) reply.setText(replyBuf)
+            // #223: the transcript gets the reply as it arrives, not only when the turn
+            // completes. The crawl above keeps its speech-locked reveal untouched: this
+            // is the reading surface, and a reader must not wait on the audio.
+            appendReplyDelta(text)
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
@@ -1717,7 +1721,7 @@ class MainActivity : AppCompatActivity() {
             // the voice IS the signal, and a cue must never run into TTS (D7).
             if (liveController?.voiceWillSpeak() != true) cues?.play(CueSynth.Cue.REPLY_READY)
             if (!revealActive) reply.setText(replyBuf)
-            appendConvo("Agent: $finalText")
+            appendReplyFinal(finalText)
         } }
         override fun onError(msg: String) { runOnUiThread {
             mainHandler.removeCallbacks(opTicker); opStep = null   // a cut or failed turn ends its step
@@ -1750,9 +1754,15 @@ class MainActivity : AppCompatActivity() {
             lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false   // #251: input
             callTurns++   // #284: the caller has spoken; no stuck hint this call
             // Conversation mode already IS a transcript: the words go there, in memory
-            // only (convoBuf is never persisted). Presence mode gets the fading line.
+            // only (the transcript is never persisted). Presence mode gets the fading line.
             appendConvo("You: $text")
             if (conversation.visibility != View.VISIBLE) showHeard(text)
+        } }
+        override fun onPresenceSpoke(text: String, source: String) { runOnUiThread {
+            // #223: the Presence path's own speech — the soul's answer (the turn's reply)
+            // and its asides (beats, working lines, fillers, greeting). Only lines that
+            // were actually voiced reach here, so the transcript is what was heard.
+            appendPresence(text, source)
         } }
     }
 
@@ -2020,11 +2030,31 @@ class MainActivity : AppCompatActivity() {
         val conv = prefs.getString("layout_mode", "presence") == "conversation"
         conversation.visibility = if (conv) View.VISIBLE else View.GONE
         reply.visibility = if (conv) View.GONE else View.VISIBLE
-        if (conv) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
+        if (conv) { convoText.text = transcript.text; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
     }
     private fun appendConvo(line: String) {
-        convoBuf = (convoBuf + "\n" + line).trim().takeLast(4000)
-        if (conversation.visibility == View.VISIBLE) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
+        transcript.line(line)
+        paintTranscript()
+    }
+    /** #223: the mind's reply, as it streams in — a reader does not wait for the turn to end. */
+    private fun appendReplyDelta(text: String) {
+        transcript.delta(text)
+        paintTranscript()
+    }
+    /** #223: the turn is complete; the final text reconciles the streamed block. */
+    private fun appendReplyFinal(text: String) {
+        transcript.replyFinal(text)
+        paintTranscript()
+    }
+    /** #223: a line the Presence layer voiced on its own (the soul's answer or an aside). */
+    private fun appendPresence(text: String, source: String) {
+        transcript.presence(text, source)
+        paintTranscript()
+    }
+    private fun paintTranscript() {
+        if (conversation.visibility != View.VISIBLE) return
+        convoText.text = transcript.text
+        conversation.post { conversation.scrollTo(0, conversation.bottom) }
     }
 
     private fun appendStream(line: String) {

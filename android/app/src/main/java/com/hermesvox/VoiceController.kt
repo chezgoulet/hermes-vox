@@ -48,6 +48,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         fun onTool(name: String, arguments: String) {}
         /** #281: a tool step's result arrived — the `function_call_output` text. */
         fun onToolOutput(output: String) {}
+        /** #223: a line the Presence layer voiced on its own — the soul's answer, a beat,
+         *  a working line, a filler or the greeting. These never pass through [onReply]
+         *  (only the mind's reply does), which is why a transcript that listened only to
+         *  [onReply] was empty in Presence. [source] names the path, so a host can tell
+         *  the turn's answer from an aside. Display only, like [onHeard]. */
+        fun onPresenceSpoke(text: String, source: String) {}
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -1423,7 +1429,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         return@post
                     }
                     soulSpokeThisTurn = true
-                    speakGlue(line!!, source = if (isBeat) "soul-beat" else "soul-answer")
+                    speakGlue(line!!, source = if (isBeat) "soul-beat" else Transcript.SOURCE_SOUL_ANSWER)
                 }
             }
         } else {
@@ -2262,6 +2268,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         glueSpeaking = true
         glueCutAtHandoff = source == SOURCE_WORKING
+        // #223: every line the presence layer actually voices is conversation, in the
+        // order it was said. This is the one funnel all of them pass through (soul answer,
+        // beat, working line, filler, greeting, tool narration), so the transcript cannot
+        // drift from what the caller heard. State changes never come through here — and
+        // must not: the transcript records speech, it does not narrate states.
+        main.post { listener?.onPresenceSpoke(text, source) }
         main.post {
             tts?.speak(text) {
                 glueSpeaking = false
