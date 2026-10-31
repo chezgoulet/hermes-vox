@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="720" viewBox="0 0 840 720">
+  <rect width="840" height="720" fill="#FFFFFF"/>
+  <text x="36" y="52" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="bold" fill="#0F172A">Pocketed · sound off · the notification is the only surface</text>
+  <text x="36" y="80" font-family="DejaVu Sans, sans-serif" font-size="13.5" fill="#444C5C">VoiceService keeps the call alive with a foreground notification. MainActivity.showOperation and onState mirror</text>
+  <text x="36" y="99" font-family="DejaVu Sans, sans-serif" font-size="13.5" fill="#444C5C">the state line into it (VoiceService.update). Nothing else does.</text>
+
+  <!-- ============ left: a tool is running ============ -->
+  <rect x="36" y="128" width="360" height="520" rx="26" fill="#06070B" stroke="#1C2A3A" stroke-width="2"/>
+  <text x="216" y="196" font-family="DejaVu Sans, sans-serif" font-size="46" font-weight="300" text-anchor="middle" fill="#E6EDF7">02:14</text>
+  <text x="216" y="220" font-family="DejaVu Sans, sans-serif" font-size="12" text-anchor="middle" fill="#8B98AC">Sat 31 Oct</text>
+  <!-- notification -->
+  <rect x="58" y="264" width="316" height="104" rx="16" fill="#101724" stroke="#1C2A3A"/>
+  <circle cx="84" cy="292" r="9" fill="#00E5FF" opacity="0.85"/>
+  <text x="102" y="296" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="bold" fill="#E6EDF7">Hermes Vox</text>
+  <text x="360" y="296" font-family="DejaVu Sans, sans-serif" font-size="10" text-anchor="end" fill="#8B98AC">call 00:42</text>
+  <text x="76" y="320" font-family="DejaVu Sans Mono, monospace" font-size="11.5" fill="#D6F4FF">Searching the web · trail</text>
+  <text x="76" y="336" font-family="DejaVu Sans Mono, monospace" font-size="11.5" fill="#D6F4FF">conditions · still working, 20 s</text>
+  <text x="76" y="354" font-family="DejaVu Sans, sans-serif" font-size="9.5" fill="#8B98AC">foreground · microphone · ongoing</text>
+  <!-- ghosts of what is NOT there -->
+  <rect x="58" y="392" width="316" height="34" rx="10" fill="none" stroke="#1C2A3A" stroke-dasharray="4 4"/>
+  <text x="72" y="414" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#5C6B7D">no reading of what was searched beyond 40 chars</text>
+  <rect x="58" y="440" width="316" height="34" rx="10" fill="none" stroke="#1C2A3A" stroke-dasharray="4 4"/>
+  <text x="72" y="462" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#5C6B7D">no action, no answer field, no progress bar</text>
+  <text x="216" y="600" font-family="DejaVu Sans, sans-serif" font-size="12" text-anchor="middle" fill="#8B98AC">the being's loop stops when the view is not visible</text>
+  <text x="216" y="618" font-family="DejaVu Sans, sans-serif" font-size="12" text-anchor="middle" fill="#8B98AC">(AvatarView.onVisibilityAggregated)</text>
+
+  <!-- ============ right: the failure ============ -->
+  <rect x="444" y="128" width="360" height="520" rx="26" fill="#06070B" stroke="#1C2A3A" stroke-width="2"/>
+  <text x="624" y="196" font-family="DejaVu Sans, sans-serif" font-size="46" font-weight="300" text-anchor="middle" fill="#E6EDF7">02:15</text>
+  <text x="624" y="220" font-family="DejaVu Sans, sans-serif" font-size="12" text-anchor="middle" fill="#8B98AC">Sat 31 Oct</text>
+  <rect x="466" y="264" width="316" height="104" rx="16" fill="#101724" stroke="#1C2A3A"/>
+  <circle cx="492" cy="292" r="9" fill="#00E5FF" opacity="0.85"/>
+  <text x="510" y="296" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="bold" fill="#E6EDF7">Hermes Vox</text>
+  <text x="768" y="296" font-family="DejaVu Sans, sans-serif" font-size="10" text-anchor="end" fill="#8B98AC">call 01:42</text>
+  <!-- the card is unchanged: that is the finding -->
+  <text x="484" y="320" font-family="DejaVu Sans Mono, monospace" font-size="11.5" fill="#D6F4FF">Searching the web · trail</text>
+  <text x="484" y="336" font-family="DejaVu Sans Mono, monospace" font-size="11.5" fill="#D6F4FF">conditions · still working, 20 s</text>
+  <text x="484" y="354" font-family="DejaVu Sans, sans-serif" font-size="9.5" fill="#8B98AC">foreground · microphone · ongoing</text>
+  <!-- red annotation -->
+  <rect x="466" y="392" width="316" height="76" rx="10" fill="#1A0E10" stroke="#5A2A2E"/>
+  <text x="480" y="412" font-family="DejaVu Sans, sans-serif" font-size="11" font-weight="bold" fill="#FF8A8A">The turn failed 40 s ago. The card did not change.</text>
+  <text x="480" y="430" font-family="DejaVu Sans Mono, monospace" font-size="10" fill="#FFB3B3">MainActivity.onError → setStatus only</text>
+  <text x="480" y="446" font-family="DejaVu Sans Mono, monospace" font-size="10" fill="#FFB3B3">(no VoiceService.update; no cue if cues are off)</text>
+  <text x="480" y="461" font-family="DejaVu Sans, sans-serif" font-size="10" fill="#FFB3B3">So the pocketed caller waits for a reply that will not come.</text>
+  <text x="624" y="600" font-family="DejaVu Sans, sans-serif" font-size="12" text-anchor="middle" fill="#8B98AC">and the first line the notification ever shows is</text>
+  <text x="624" y="618" font-family="DejaVu Sans, sans-serif" font-size="12" text-anchor="middle" fill="#8B98AC">"Listening for the entity…" — a hardcoded fallback</text>
+
+  <!-- caption -->
+  <text x="36" y="684" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#0F172A">The mirror is one-way and incomplete.</text>
+  <text x="36" y="702" font-family="DejaVu Sans, sans-serif" font-size="12.5" fill="#444C5C">onState and showOperation update the notification; onError does not. With cues off, a failed turn is completely silent</text>
+  <text x="36" y="719" font-family="DejaVu Sans, sans-serif" font-size="12.5" fill="#444C5C">while the phone is in a pocket — the state the audit exists to catch.</text>
+</svg>

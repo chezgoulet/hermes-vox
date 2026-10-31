@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="710" viewBox="0 0 900 710">
+<rect width="900" height="710" fill="#FFFFFF"/>
+<text x="36" y="50" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="bold" fill="#0F172A">What carries what, today</text>
+<text x="36" y="78" font-family="DejaVu Sans, sans-serif" font-size="13.5" fill="#444C5C">Solid = the surface carries the state on its own. Pale = only under a condition. Hollow = the surface says nothing.</text>
+<circle cx="640" cy="106" r="7" fill="#0092AE"/><text x="654" y="110" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#0F172A">carries it</text>
+<circle cx="730" cy="106" r="7" fill="#96D2DD"/><text x="744" y="110" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#0F172A">conditional</text>
+
+<line x1="36" y1="126" x2="864" y2="126" stroke="#D2D9E7"/>
+<text x="36" y="150" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="bold" fill="#5A6B85">STATE</text>
+<text x="330" y="150" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#5A6B85">being</text>
+<text x="424" y="150" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#5A6B85">state line</text>
+<text x="518" y="150" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#5A6B85">cue</text>
+<text x="620" y="150" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#5A6B85">notification</text>
+<text x="748" y="150" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#5A6B85">transcript</text>
+<line x1="36" y1="160" x2="864" y2="160" stroke="#D2D9E7"/>
+<text x="36" y="186" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">listening</text>
+<text x="36" y="203" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">the mic is open and nothing is happening</text>
+<circle cx="330" cy="181" r="7" fill="#0092AE"/>
+<circle cx="424" cy="181" r="7" fill="#96D2DD"/>
+<circle cx="518" cy="181" r="7" fill="#0092AE"/>
+<circle cx="620" cy="181" r="7" fill="#96D2DD"/>
+<circle cx="748" cy="181" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<text x="36" y="237" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">the user speaking</text>
+<text x="36" y="254" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">looks exactly like listening; the "You:" line lands after the turn</text>
+<circle cx="330" cy="232" r="7" fill="#96D2DD"/>
+<circle cx="424" cy="232" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="518" cy="232" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="620" cy="232" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="748" cy="232" r="7" fill="#96D2DD"/>
+<text x="36" y="288" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">thinking</text>
+<text x="36" y="305" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">the only word shown outside a call</text>
+<circle cx="330" cy="283" r="7" fill="#0092AE"/>
+<circle cx="424" cy="283" r="7" fill="#0092AE"/>
+<circle cx="518" cy="283" r="7" fill="#0092AE"/>
+<circle cx="620" cy="283" r="7" fill="#0092AE"/>
+<circle cx="748" cy="283" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<text x="36" y="339" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">a tool running</text>
+<text x="36" y="356" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">the only place the tool and its target are named: Operations.running</text>
+<circle cx="330" cy="334" r="7" fill="#0092AE"/>
+<circle cx="424" cy="334" r="7" fill="#0092AE"/>
+<circle cx="518" cy="334" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="620" cy="334" r="7" fill="#0092AE"/>
+<circle cx="748" cy="334" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<text x="36" y="390" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">waiting on the user</text>
+<text x="36" y="407" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">carried only by the prose of the previous reply</text>
+<circle cx="330" cy="385" r="7" fill="#96D2DD"/>
+<circle cx="424" cy="385" r="7" fill="#96D2DD"/>
+<circle cx="518" cy="385" r="7" fill="#96D2DD"/>
+<circle cx="620" cy="385" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="748" cy="385" r="7" fill="#0092AE"/>
+<text x="36" y="441" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#A33A3A">approval needed</text>
+<text x="36" y="458" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#A33A3A">no surface at all; the transport does not emit approval.request</text>
+<circle cx="330" cy="436" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="424" cy="436" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="518" cy="436" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="620" cy="436" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="748" cy="436" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<text x="36" y="492" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">failed — a step</text>
+<text x="36" y="509" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">being shows the success shimmer; no cue; the line is held to the next turn</text>
+<circle cx="330" cy="487" r="7" fill="#96D2DD"/>
+<circle cx="424" cy="487" r="7" fill="#0092AE"/>
+<circle cx="518" cy="487" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="620" cy="487" r="7" fill="#96D2DD"/>
+<circle cx="748" cy="487" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<text x="36" y="543" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">failed — the turn</text>
+<text x="36" y="560" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">the flip side: it has the cue the step lacks, and no notification</text>
+<circle cx="330" cy="538" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="424" cy="538" r="7" fill="#0092AE"/>
+<circle cx="518" cy="538" r="7" fill="#0092AE"/>
+<circle cx="620" cy="538" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="748" cy="538" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<text x="36" y="594" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">done</text>
+<text x="36" y="611" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">the reply is the marker; the cue only plays when nothing will be spoken</text>
+<circle cx="330" cy="589" r="7" fill="#0092AE"/>
+<circle cx="424" cy="589" r="7" fill="#0092AE"/>
+<circle cx="518" cy="589" r="7" fill="#96D2DD"/>
+<circle cx="620" cy="589" r="7" fill="#0092AE"/>
+<circle cx="748" cy="589" r="7" fill="#0092AE"/>
+<text x="36" y="645" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#0F172A">background / away</text>
+<text x="36" y="662" font-family="DejaVu Sans, sans-serif" font-size="10.5" fill="#8A97AC">the notification is the whole surface; the cues are the only edge</text>
+<circle cx="330" cy="640" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="424" cy="640" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+<circle cx="518" cy="640" r="7" fill="#0092AE"/>
+<circle cx="620" cy="640" r="7" fill="#0092AE"/>
+<circle cx="748" cy="640" r="6" fill="none" stroke="#B9C3D2" stroke-width="1.5"/>
+</svg>
