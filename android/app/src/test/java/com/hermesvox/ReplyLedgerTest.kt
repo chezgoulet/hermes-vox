@@ -1,6 +1,8 @@
 package com.hermesvox
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -11,8 +13,10 @@ class ReplyLedgerTest {
         val l = ReplyLedger()
         assertTrue(l.begin(1))
         assertTrue(l.end(1, ReplyLedger.End.CANCELLED))
+        assertEquals(ReplyLedger.End.CANCELLED, l.ending(1))
         assertFalse("a second end", l.end(1, ReplyLedger.End.CANCELLED))
         assertFalse("a late natural end after a cancel", l.end(1, ReplyLedger.End.DONE))
+        assertFalse("a late failure after a cancel", l.end(1, ReplyLedger.End.FAILED))
     }
 
     @Test fun noEndForAnIdThatNeverBegan() {
@@ -42,6 +46,38 @@ class ReplyLedgerTest {
         val l = ReplyLedger()
         l.begin(3); l.end(3, ReplyLedger.End.CANCELLED)
         assertFalse(l.begin(3)); assertFalse(l.accepts(3))
+    }
+
+    @Test fun aCompletedIdIsDeadForAudioToo() {
+        // Rule 2 is not only about cancel: once a reply has its end event (normal
+        // completion), a late frame stamped with that id must not restart a stream.
+        val l = ReplyLedger()
+        l.begin(6)
+        assertTrue(l.end(6, ReplyLedger.End.DONE))
+        assertEquals(ReplyLedger.End.DONE, l.ending(6))
+        assertFalse(l.accepts(6))
+        assertTrue(l.isDead(6))
+        assertFalse("a done id cannot be re-opened", l.begin(6))
+    }
+
+    @Test fun aFailedReplyStillGetsExactlyOneEnd() {
+        // Empty reply / stream error: no playable tail, but the id still ends once so
+        // the ledger never leaks an open reply into the rest of the session.
+        val l = ReplyLedger()
+        l.begin(8)
+        assertTrue(l.end(8, ReplyLedger.End.FAILED))
+        assertEquals(ReplyLedger.End.FAILED, l.ending(8))
+        assertFalse(l.end(8, ReplyLedger.End.FAILED))
+        assertFalse(l.accepts(8))
+    }
+
+    @Test fun anIdThatWasNeverCancelledStillStreams() {
+        val l = ReplyLedger()
+        assertTrue(l.begin(9))
+        assertTrue(l.accepts(9))
+        assertNull(l.ending(9))
+        assertFalse(l.isDead(9))
+        assertTrue(l.accepts(9))
     }
 
     @Test fun idsOlderThanTheWindowStayDead() {
