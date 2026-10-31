@@ -123,6 +123,9 @@ immediately after the press, as in the 0.9.0.2 run.
 | #351 | 200 ms | 1.94 s | 17.72 s |
 | #351 | 30 s (client gives up at 20 s) | **2.07 s** | 15.77 s |
 
+The recorder sessions behind the #351 rows (old → new, from `RecordActivityMonitor`):
+foreground 5185→5193 and 5201→5209; backgrounded 5193→5201 and 5209→5217.
+
 The pre-#351 foreground row is the defect, on the same build family as the 0.9.0.2 numbers
 above: the re-arm follows the DELETE, so it tracks the gateway's latency (2.34 s → 22.08 s).
 With #351 the same 30 s DELETE is issued at the tap instant and simply runs on beside the
