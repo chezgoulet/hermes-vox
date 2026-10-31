@@ -107,6 +107,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var listener: Listener? = null
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
+    /** Why spoken replies are off, when they are. Empty when TTS is ready.
+     *  TTS is an OUTPUT leg: its failure must never stop a call from starting. */
+    @Volatile private var ttsIssue: String = ""
     @Volatile private var sttReady = false
     @Volatile private var partialRunning = false
     @Volatile private var partialEnabled = false
@@ -347,7 +350,18 @@ class VoiceController(private val context: Context, private val session: HermesS
         (tts as? SherpaTts)?.onAudioSegment = { text, samples -> recordAudioSegment(text, samples) }
         VoxLog.d("pipeline: tts=${tts?.name} (voice=$voice) ttsReady=$ttsReady")
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
-        tts?.init { ttsReady = it }
+        // 0.9.0.2/330: a TTS failure is not a pipeline failure. Degrade to text-only and
+        // name the cause — the readiness gate no longer waits for this leg.
+        tts?.init { ready ->
+            ttsReady = ready
+            if (ready) {
+                ttsIssue = ""
+            } else {
+                ttsIssue = tts?.warmReason?.takeIf { it.isNotBlank() }
+                    ?: "text-to-speech engine unavailable"
+                VoxLog.w("event=tts-unavailable reason=$ttsIssue (call continues text-only)")
+            }
+        }
         // STT backend/model from Settings: on-device Whisper (selected model), a
         // user-supplied OpenAI-compatible `remote` endpoint, or platform
         // (SpeechRecognizer fallback).
@@ -391,8 +405,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (fallback != null) fallback.init { onSttReady(it) }
     }
 
-    /** True once the offline STT + TTS (+ VAD) are fully loaded/warm. */
-    fun isWarm() = sttReady && ttsReady && (vad?.isAvailable != false)
+    /** True once the offline STT (+ VAD) is loaded/warm. TTS is deliberately NOT part of
+     *  this: a broken output leg must not keep the call from starting (#330). Use
+     *  [ttsStatus] to report spoken-reply availability separately. */
+    fun isWarm() = sttReady && (vad?.isAvailable != false)
+
+    /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
+    fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
 
     /** True when the listen loop is actually running (capturing). NOT a sticky flag:
      *  the Activity gates re-open on this, so it can restart after a stop/background/
@@ -401,7 +420,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /** Warm-up breakdown for diagnostics: which leg is not yet ready. */
     fun warmDiagnostics(): String =
-        "sttReady=$sttReady ttsReady=$ttsReady vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null}"
+        "sttReady=$sttReady ttsReady=$ttsReady ttsIssue=${ttsIssue.ifBlank { "-" }} vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null}"
 
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
