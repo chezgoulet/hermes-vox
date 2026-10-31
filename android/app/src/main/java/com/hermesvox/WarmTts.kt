@@ -46,8 +46,12 @@ class SystemTts(private val context: Context) : VoxTts {
                 if (code != TextToSpeech.SUCCESS) {
                     // No engine installed/enabled for this user, or the engine refused to start.
                     // Name it: a call must not be reported as "models failed to load" for this.
-                    reason = "system TTS engine failed to initialise (code $code)"
-                    VoxLog.w("tts: system engine init failed code=$code -> text-only")
+                    // #346: `engines` distinguishes the two cases on Android 11+ — an empty list
+                    // means the engine package is not visible to us (manifest query missing),
+                    // not that no engine is installed.
+                    val visible = describeEngines(tts?.engines?.map { it.name })
+                    reason = "system TTS engine failed to initialise (code $code; engines=$visible)"
+                    VoxLog.w("tts: system engine init failed code=$code engines=$visible -> text-only")
                     onReady(false)
                 } else {
                     tts?.setPitch(pitch)
@@ -165,4 +169,19 @@ fun voiceRegister(pref: String): Pair<Float, Float> = when (pref) {
     "bright" -> 1.12f to 1.15f
     "deep" -> 0.88f to 0.85f
     else -> 1.0f to 1.0f   // system (default)
+}
+
+/**
+ * A short, pure description of the TTS engines this app can actually see — used in the
+ * failure log and the status line.
+ *
+ * `none-visible` on Android 11+ is the signature of a missing package-visibility query:
+ * the engine is installed and other apps can speak, but this app cannot bind to it
+ * (#346). `unavailable` means the engine list itself could not be read. Keeping this a
+ * pure function is what makes the distinction testable without a device.
+ */
+internal fun describeEngines(names: List<String>?): String = when {
+    names == null -> "unavailable"
+    names.isEmpty() -> "none-visible"
+    else -> names.joinToString(",")
 }
