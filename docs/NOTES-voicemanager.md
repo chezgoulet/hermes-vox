@@ -65,6 +65,17 @@ We hand-rolled two of these after the fact: `genCancelled` exists because our po
 polling a cancelled stream (~200 `no such stream` errors in one field log), and the
 "1.77 s carried into the next turn" report is the client-side discard rule, missing.
 
+**In the client (landed, #240):** `ReplyLedger` is the per-id lifecycle — `begin`/`end`
+with a bounded window of ended ids, and `accepts(id)` is the one gate every frame passes
+before it can be queued or played. A frame is stamped with the id of the turn that produced
+it, never with "whatever reply is current", so a late frame from a cut reply is dropped
+and logged (`event=tts-drop reason=reply-ended source=delta|queue|finish|begin`) instead of
+starting a stream. `StreamFence.stopEpoch` is the second witness for a chunk that was
+already synthesizing. The end event (`event=reply-end`) is once per id on every terminal
+path: `done`, `cancelled cause=…`, or `failed cause=…`. `silenceAll` measures
+`cancelToSilenceMs` from the instant the cancel is issued (entry to `silenceAll`) to the
+instant the track is paused, and logs it next to `msSinceBarge`.
+
 **Lands in:** the barge-in and stop paths, now.
 
 ## 4. `flush` and `done` are different verbs

@@ -18,11 +18,16 @@ package com.hermesvox
  *  4. stopping playback is the caller's (`silenceAll`), and happens at the cancel, not at
  *     any later acknowledgement — the ledger is the discard rule, not the stop signal.
  *
+ * The distinction between [End.DONE] and [End.CANCELLED] is for the log line only: both
+ * make a frame for that id unplayable. [End.FAILED] is a reply that ended without a
+ * playable tail (an empty reply, a stream error, a timeout) so every begun id still gets
+ * its one end event.
+ *
  * Pure JVM, so the rules are proven off-device.
  */
 internal class ReplyLedger(private val capacity: Int = 32) {
 
-    enum class End { DONE, CANCELLED }
+    enum class End { DONE, CANCELLED, FAILED }
 
     private val open = HashSet<Long>()
     private val ended = LinkedHashMap<Long, End>()
@@ -50,6 +55,10 @@ internal class ReplyLedger(private val capacity: Int = 32) {
     /** May audio for [id] still play? Only while it is open. */
     @Synchronized fun accepts(id: Long): Boolean = id > floor && open.contains(id)
 
-    /** Was [id] cut (or has it left the window)? */
-    @Synchronized fun isDead(id: Long): Boolean = id <= floor || ended[id] == End.CANCELLED
+    /** Why [id] ended, or null while it is still open / was never begun. */
+    @Synchronized fun ending(id: Long): End? = ended[id]
+
+    /** Was [id] cut (or has it left the window)? Any ended id is dead for playback: a
+     *  completed reply must not be restarted by a late frame either (rule 2). */
+    @Synchronized fun isDead(id: Long): Boolean = id <= floor || ended.containsKey(id)
 }
