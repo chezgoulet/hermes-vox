@@ -52,6 +52,11 @@ invents a number is refused for the invention even when it is also too long. One
 `result-unbacked` is D20's one new token. Every other token keeps its name, including
 `digits-or-markup`, which now covers only bracket markup (`< > [ ]`) because emphasis is repaired.
 
+A repair is logged as `event=er-presence repair line=N reason=cut,markup,fence,title,courtesy`, and
+the line is spoken; a refusal keeps its `event=er-presence detail why=…` line and is silent. That
+split is the field's proof that a line was **shortened**, not silenced — the two are never the same
+event, and a repaired line never also logs a refusal.
+
 ## Every bound, and what it cites
 
 D20's rule: a bound names the recorded failure it answers, or it is labelled a hypothesis with the

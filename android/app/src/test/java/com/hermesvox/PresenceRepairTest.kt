@@ -103,6 +103,40 @@ class PresenceRepairTest {
         assertNull(ErSoulTurn.workingLine("Thanks so much."))
     }
 
+    // ---- the log: shortened is not silenced ----
+
+    @Test fun every_repair_path_reports_what_changed_and_still_speaks() {
+        // Each token is the field log's witness that the line was SHORTENED. The line itself is
+        // asserted non-null: a repair that ended in silence would be indistinguishable from a
+        // refusal, which is exactly what D20 forbids.
+        fun repaired(raw: String, vararg reasons: String) {
+            assertTrue("$raw was spoken", ErSoulTurn.workingLine(raw) != null)
+            assertEquals(listOf(*reasons), ErSoulTurn.workingRepairs(raw))
+        }
+
+        repaired("I am still reading, through the logs for you now and later", "cut")
+        repaired("**Checking** on it", "markup")
+        repaired("- Checking on it", "markup")
+        repaired("```\nChecking the logs now\n```", "fence")
+        repaired("# Update\nI am reading the logs", "title")
+        repaired("Checking the logs now. Hope this helps!", "courtesy")
+
+        // Two repairs in one render are both named.
+        assertEquals(
+            listOf("fence", "markup"),
+            ErSoulTurn.workingRepairs("```\n**Checking** on it\n```"),
+        )
+    }
+
+    @Test fun a_line_that_was_not_repaired_or_was_refused_reports_nothing() {
+        assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs("Checking on it now"))
+        // A refusal is silence, not a repair: the detail log carries the reason instead.
+        assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs("I've booked it"))
+        assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs("It'll take 2 minutes"))
+        assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs(ErSoulTurn.ESCALATE))
+        assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs(""))
+    }
+
     // ---- no new numbers ----
 
     @Test fun a_number_the_directive_carried_is_spoken_and_the_same_number_twice_is_refused() {
@@ -155,6 +189,11 @@ class PresenceRepairTest {
         assertTrue(d.contains("Never state a result you do not have: nothing is done until the mind says it is done."))
         assertTrue(d.contains("One line, in your own voice, no longer than a breath."))
         assertTrue(d.contains("Silence is a valid answer, and often the right one"))
+
+        // The five rules are the whole instruction: the wait is part of the moment (rule two), not
+        // a sixth conditional sentence telling the model what to do with it.
+        assertTrue("the measurement rides the moment", d.contains("The caller has been waiting 90 seconds."))
+        assertFalse(d.contains("if that is worth saying"))
 
         // The old lexical contract, exactly, is gone.
         for (ban in listOf(
