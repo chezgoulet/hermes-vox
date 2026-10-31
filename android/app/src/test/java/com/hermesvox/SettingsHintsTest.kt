@@ -140,8 +140,10 @@ class SettingsHintsTest {
         )) assertTrue("$r should be in Hearing", r in hearing)
 
         val presence = rowsIn("sec_presence")
-        for (r in listOf("row_er_presence", "row_er_density", "row_er_echo", "row_er_voice", "row_vox"))
-            assertTrue("$r should be in Presence", r in presence)
+        for (r in listOf(
+            "row_presence_enabled", "row_er_presence", "row_er_density", "row_er_echo",
+            "row_er_voice", "row_vox",
+        )) assertTrue("$r should be in Presence", r in presence)
         assertFalse("row_er_hears is a hearing setting now", "row_er_hears" in presence)
     }
 
@@ -230,7 +232,7 @@ class SettingsHintsTest {
             "ModelCatalog.KEY_STT_BACKEND",
             "ModelCatalog.KEY_STT_MODEL",
             "ModelCatalog.KEY_STT_STREAM_MODEL",
-            "ModelCatalog.KEY_VOICE_MODE",
+            "PresenceGate.KEY_PRESENCE_ENABLED",
             "PresenceCadence.LEGACY_PREF",
             "PresenceCadence.PREF",
             "SemanticEndpoint.KEY",

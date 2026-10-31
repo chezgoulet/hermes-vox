@@ -83,7 +83,7 @@ is already done at 22 s, so delivery happens at slot open and that window is gon
 
 ## 5. The change that moved the request earlier
 
-One warm render per run, requested at the first moment a working line could ever be
+One warm render per run, requested at the first moment a working aside could ever be
 spoken — `ErFillers.LAG_AFTER_MS` (4 s) after the turn starts (`VoiceController.kt:1260`) —
 and consumed by the first working slot instead of rendered on demand. No capture-loop,
 barge, cadence-register or guard-bound change; `late` keeps its rule.

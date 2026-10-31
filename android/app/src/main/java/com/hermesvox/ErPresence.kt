@@ -5,15 +5,15 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * ErPresence — the Enhanced Realtime presence loop (ER Phase 4), owned by the
- * VoiceController. Composes the two pure pieces — [ErIntent] (the classifier)
+ * ErPresence — the presence loop (ER Phase 4), owned by the VoiceController.
+ * Composes the two pure pieces — [ErIntent] (the classifier)
  * and [ErFillers] (the filler state machine) — into the live presence:
  *
  *  - user speech → classify → BACKCHANNEL holds (no escalation, maybe a soft
  *    ack), EMOTION/SMALLTALK the soul converses directly (Gemma), INFORMATION/
  *    ACTION the soul acknowledges ("let me think…") and the MIND is engaged;
  *  - while the mind works → bounded fillers on the ~1s tick, density-capped,
- *    fail-soft after 4s; then, on the same tick, the mid-run lines [PresenceCadence]
+ *    fail-soft after 4s; then, on the same tick, the mid-run asides [PresenceCadence]
  *    paces (one soul line per interval, capped per run) so a long tool call is not
  *    71 seconds of silence;
  *  - the mind's reply preempts everything (the existing speakGlue/speak
@@ -22,7 +22,7 @@ import android.os.Looper
  * KEEP-LIST NOTE: this loop ADDS glue speech only through speakGlue (the
  * existing P3 path) — it never touches speak(), the gate, or the streaming
  * worker. When ER is off, presenceAt/erActive stay false and the loop is a
- * no-op (Realtime behavior byte-identical).
+ * no-op (normal operation byte-identical).
  */
 class ErPresence(
     /** utterance + a SOURCE tag, so the field log can name who spoke (0.8/M3). */
@@ -30,18 +30,18 @@ class ErPresence(
     /** The filler cap per window — set by the "Presence while working" register (Settings ER
      *  section). Read live per tick so a change lands on the next turn. */
     private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
-    /** The "Presence while working" register — the mid-run line interval and cap. Read live. */
+    /** The "Presence while working" register — the mid-run aside interval and cap. Read live. */
     private val density: () -> PresenceCadence.Density = { PresenceCadence.DEFAULT },
 ) {
 
-    /** A mid-run line slot: the line's number in the run, the gap since the previous line, the
+    /** A mid-run aside slot: the line's number in the run, the gap since the previous line, the
      *  register that paced it, and the run it belongs to (its start) so a late line can be told. */
     data class Slot(val line: Int, val intervalMs: Long, val density: PresenceCadence.Density, val runId: Long)
 
     /**
-     * Asked on the tick when a mid-run line is due (line 2 onward — line 1 is the lag line). The
+     * Asked on the tick when a mid-run aside is due (line 2 onward — line 1 is the lag line). The
      * owner renders the soul's line and reports back with [noteWorkingLine] / [noteWorkingSkip].
-     * Null = no mid-run lines: the loop behaves exactly as before the cadence existed.
+     * Null = no mid-run asides: the loop behaves exactly as before the cadence existed.
      */
     var onWorkingSlot: ((Slot) -> Unit)? = null
 
@@ -53,7 +53,7 @@ class ErPresence(
 
     private val main = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
-    /** 0.6.7 Tier 1: the presence-voice mode (Settings: silent / sounds / spoken).
+    /** 0.6.7 Tier 1: the narration register (Settings: silent / sounds / spoken).
      *  Read live per tick. silent = motion only; sounds = ErClips (the natural
      *  nonverbals, private track); spoken = Piper sentence fillers (the old path). */
     var clipContext: Context? = null
@@ -181,7 +181,7 @@ class ErPresence(
                     if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
                     spokeThisWindow = true
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
-                    // 0.6.7 Tier 1: deliver per the presence-voice mode.
+                    // 0.6.7 Tier 1: deliver per the narration register.
                     // sounds = ErClips (private track — never Piper, never the
                     // reply's track/fence); spoken = the old speakGlue path;
                     // silent = never happens here (Tier 0 already gated it).

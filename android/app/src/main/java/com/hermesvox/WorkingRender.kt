@@ -1,7 +1,7 @@
 package com.hermesvox
 
 /**
- * WorkingRender — one mid-run line's render, started with the run instead of when the line is due.
+ * WorkingRender — one mid-run aside's render, started with the run instead of when the line is due.
  *
  * The mid-run slot cannot open before [ErFillers.LAG_AFTER_MS], and with a Conversational
  * register the first soul line is due one interval after that (22 s by default). The render used
@@ -56,7 +56,7 @@ class WorkingRender(
 
     companion object {
         /**
-         * The `late` rule as a time rather than a latch: a working line may not speak once the
+         * The `late` rule as a time rather than a latch: a working aside may not speak once the
          * mind's first text has landed. [firstTextAtMs] is 0 until it lands, so a run with no
          * reply text is never late for this reason. [deliveredAtMs] is when the line would
          * speak. This is the same rejection the boolean latch made — not a relaxation of it.

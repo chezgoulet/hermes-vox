@@ -1,10 +1,10 @@
 package com.hermesvox
 
 /**
- * PresenceWait — what an Enhanced call says while it waits for Presence's model (#191).
+ * PresenceWait — what a call says while it waits for Presence's model (#191).
  *
  * The field report: "hangs on initializing, then the process dies." On a Pixel 7 (8 GB) with
- * another app keeping a 2.5 GB model resident, the Enhanced warm-up sat on one word —
+ * another app keeping a 2.5 GB model resident, the Presence warm-up sat on one word —
  * "Initializing…" — for ~50 s while Gemma loaded, MemAvailable fell to 0 and the system's
  * low-memory killer cleared ~30 other apps to make room (2026-10-22). It was a slow load
  * under memory starvation, not a deadlock — but a caller cannot tell those apart from a word.

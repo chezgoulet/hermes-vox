@@ -12,7 +12,7 @@ changed how those facts are laid out, not what they are.
 | --- | --- | --- |
 | **Hearing** | `stt`, `vad` | Turns your speech into text, and hears when you start and stop talking. |
 | **Voice** | `tts` | Speaks Hermes' replies aloud, fully on-device. |
-| **Being** | `express` | Runs the optional on-device presence layer (Enhanced Realtime, alpha). |
+| **Being** | `express` | Runs the optional on-device Presence layer — the being, its asides and its voice. |
 
 - The three shelves always appear in that order.
 - A kind that is not one of those three is **not hidden**: it gets its own shelf

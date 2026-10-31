@@ -13,23 +13,14 @@ import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------------------
-// #120-B: canonical one-line voice-mode comparison. There are exactly TWO voice
-// modes in this build (the walkie-talkie/PTT path was stripped in C2, 0.4.0 —
-// both modes are hands-free open lines). These strings are the single source
-// for the onboarding step and the Settings picker (agent A/C may reuse them
-// for per-option subtitles).
+// #222/D16: there is one normal operation — a hands-free open line (the
+// walkie-talkie/PTT path was stripped in C2, 0.4.0). Presence is a layer on it,
+// not a second mode, so first run describes the layer in one line instead of
+// asking the user to choose between two.
 // ---------------------------------------------------------------------------
-fun voiceModeCompare(mode: String?): String = when (mode) {
-    ModelCatalog.MODE_REALTIME -> "hands-free, always listening"
-    ModelCatalog.MODE_ENHANCED -> "adds a phone-call persona"
-    else -> "hands-free, always listening"
-}
-
-/** #120-B: full "· name — what it means" line for a mode. */
-fun voiceModeLine(mode: String?): String = when (mode) {
-    ModelCatalog.MODE_ENHANCED -> "· Enhanced Realtime (alpha) — " + voiceModeCompare(mode)
-    else -> "· Realtime — " + voiceModeCompare(mode)
-}
+const val PRESENCE_FIRST_RUN_LINE =
+    "· Presence — the being, its voice and its asides on your phone. On by default; " +
+        "turn it off in Settings → Presence."
 
 /**
  * OnboardingActivity — first-run connection flow. The user enters the entity
@@ -44,7 +35,7 @@ fun voiceModeLine(mode: String?): String = when (mode) {
  * gateway's per-transcript default.
  *
  * #120-A: a true first run opens on a short "how this works" step (what the
- * being is, the two voice modes, mic vs PTT) before the connection form, and
+ * being is, Presence as a layer, mic vs PTT) before the connection form, and
  * "Skip" now explains what it skips instead of proceeding silently.
  */
 class OnboardingActivity : AppCompatActivity() {
@@ -82,11 +73,8 @@ class OnboardingActivity : AppCompatActivity() {
             if (firstRun) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<android.view.View>(R.id.ob_step_connect).visibility =
             if (firstRun) android.view.View.GONE else android.view.View.VISIBLE
-        // #120-B: fill the per-mode comparison lines from the shared copy.
-        findViewById<TextView>(R.id.ob_mode_realtime).text =
-            voiceModeLine(ModelCatalog.MODE_REALTIME)
-        findViewById<TextView>(R.id.ob_mode_enhanced).text =
-            voiceModeLine(ModelCatalog.MODE_ENHANCED)
+        // #222/D16: one line about the layer, never a choice between two modes.
+        findViewById<TextView>(R.id.ob_presence_line).text = PRESENCE_FIRST_RUN_LINE
 
         findViewById<Button>(R.id.ob_got_it).setOnClickListener { showConnectStep() }
         findViewById<Button>(R.id.connect).setOnClickListener { connectAndVerify() }

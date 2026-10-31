@@ -106,8 +106,11 @@ class SoundCuePlayer(context: Context) {
         ttsSpeaking = voiceActive,
         preview = preview,
         scope = prefs.getString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE) ?: CuePolicy.DEFAULT_SCOPE,
-        // Presence speaks only in Enhanced Realtime with its switch on (the skill's "Modes").
-        presenceOn = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED &&
+        // Presence speaks asides only when the layer is on, its model is downloaded and
+        // its own narration switch is on. (Whether the engine can start is known only to
+        // the host; if it cannot, there are no asides and cues are not suppressed forever.)
+        presenceOn = PresenceGate.enabled(prefs) &&
+            ModelCatalog.isInstalled(app, "gemma-e2b") &&
             prefs.getBoolean("er_presence", true),
     )
 

@@ -103,10 +103,10 @@ object ModelCatalog {
                 "Licensed by NVIDIA Corporation under the NVIDIA Open Model License",
                 "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b")),
         ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,
-            "On-device expression layer (Enhanced Realtime, alpha)", true, 7,
+            "On-device expression layer for Presence", true, 7,
             "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", false,
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-            "Optional on-device presence layer for Enhanced Realtime (alpha) mode — runs on the GPU")
+            "Optional on-device presence layer — the being, its asides and its voice; runs on the GPU")
     )
 
     // #114-denominator: REQUIRED and RECOMMENDED are THE SAME SET, everywhere.
@@ -178,12 +178,9 @@ object ModelCatalog {
 
     const val KEY_STT_BACKEND = "stt_backend"
     const val KEY_STT_MODEL = "stt_model"
-    const val KEY_VOICE_MODE = "voice_mode"
     const val BACKEND_ONDEVICE = "on-device"
     const val BACKEND_PLATFORM = "platform"
     const val BACKEND_REMOTE = "remote"
-    const val MODE_REALTIME = "realtime"          // emulated call, local S2P + Hermes
-    const val MODE_ENHANCED = "enhanced"          // + on-device Gemma presence layer
 
     /**
      * Pure resolver for a model-source override. Blank/null input falls back to

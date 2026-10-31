@@ -93,41 +93,32 @@
                 android:textColor="@color/hv_text"
                 android:textSize="15sp" />
 
-            <!-- Voice modes (B: one-line behavioral difference per mode).
-                 The two lines below are filled by OnboardingActivity from the
-                 shared voiceModeLine() copy so Settings/coach marks agree. -->
+            <!-- #222/D16: Presence is a layer, not a second mode. One line, filled
+                 by OnboardingActivity, so first run never asks the user to choose. -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 style="@style/TextVox.Label"
-                android:text="VOICE MODE — HOW YOU TALK" />
+                android:text="PRESENCE — HOW IT FEELS" />
 
             <TextView
-                android:id="@+id/ob_mode_realtime"
+                android:id="@+id/ob_presence_line"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:textColor="@color/hv_text"
                 android:textSize="14sp" />
 
-            <TextView
-                android:id="@+id/ob_mode_enhanced"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/hv_text"
-                android:textSize="14sp" />
-
-            <!-- Mic vs PTT: this build is hands-free in every mode (the old
-                 walkie-talkie/push-to-talk path was stripped) — say so plainly. -->
+            <!-- Mic vs PTT: this build is hands-free (the old walkie-talkie/
+                 push-to-talk path was stripped) — say so plainly. -->
             <TextView
                 android:id="@+id/ob_mic_note"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="Mic vs push-to-talk: Vox is hands-free in every mode — you just talk. There is no PTT button to hold."
+                android:text="Mic vs push-to-talk: Vox is hands-free — you just talk. There is no PTT button to hold."
                 android:textColor="@color/hv_text_dim"
                 android:textSize="13sp" />
 

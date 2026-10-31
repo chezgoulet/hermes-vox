@@ -26,8 +26,6 @@ object SettingsHints {
     )
 
     val HINTS: Map<String, String> = linkedMapOf(
-        // home
-        "row_mode" to "Realtime is the agent alone; Enhanced adds Presence on the phone",
         // Entity & Connection
         "row_test_conn" to "Checks the address and key reach your Hermes gateway",
         "row_entity" to "Where your Hermes gateway is, and the key it expects",
@@ -60,6 +58,7 @@ object SettingsHints {
         "row_tts_speaker" to "Which of the engine's voices speaks",
         "row_speak" to "Off shows replies as text only",
         // Presence
+        "row_presence_enabled" to "The being, its voice and its asides on the phone; on by default",
         "row_er_presence" to "Short asides while the agent works; off keeps Presence quiet",
         "row_er_semantic_barge" to "\"Take your time\" lets the agent keep working; \"stop\" cancels",
         "row_er_hears" to "Presence reads your tone of voice, on the phone only",

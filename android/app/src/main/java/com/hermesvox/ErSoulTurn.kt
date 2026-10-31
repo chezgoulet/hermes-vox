@@ -174,7 +174,7 @@ object ErSoulTurn {
     ).joinToString(" ")
 
     /**
-     * The mid-run line to speak, or null for silence. Silence is an escalate token in any form or
+     * The mid-run aside to speak, or null for silence. Silence is an escalate token in any form or
      * a blank render; a line is refused only for CONTENT, and [workingReject] names the reason.
      *
      * Shape is REPAIRED (D20): an over-long line is cut at a clause end inside the budget

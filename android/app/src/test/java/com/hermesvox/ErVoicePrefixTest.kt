@@ -15,8 +15,8 @@ import org.junit.Test
  *    mutation — per-conversation prompt caching stays intact (KEEP-list);
  *  - it is gateway-agnostic: no `voice:` request field, no gateway patch — it
  *    reaches the model on any stock gateway (BYOG universality);
- *  - it applies to VOICE-originated Enhanced-mode turns only — typed sends
- *    (sendText) and Realtime-mode voice turns stay prefix-free.
+ *  - it applies to VOICE-originated turns while Presence runs only — typed sends
+ *    (sendText) and voice turns with the layer off stay prefix-free.
  */
 class ErVoicePrefixTest {
 
@@ -62,12 +62,14 @@ class ErVoicePrefixTest {
     }
 
     @Test
-    fun `voice-mode constant contract is unchanged (enhanced opt-in only)`() {
-        // The wiring gate: voiceTurn = fromVoice && modeIsEnhanced. If the
-        // mode key/value ever drifts, the prefix silently leaks into plain
-        // Realtime (or stops applying in Enhanced) — pin both constants.
-        assertEquals("voice_mode", ModelCatalog.KEY_VOICE_MODE)
-        assertEquals("enhanced", ModelCatalog.MODE_ENHANCED)
-        assertTrue(ModelCatalog.MODE_ENHANCED != ModelCatalog.MODE_REALTIME)
+    fun `the presence contract is one boolean, default on`() {
+        // The wiring gate: voiceTurn = fromVoice && presenceActive, and the host derives
+        // that from PresenceGate (the user's choice AND the model downloaded AND able to
+        // start). If the key or its default drifts, the prefix silently leaks into normal
+        // operation or stops applying — pin both.
+        assertEquals("presence_enabled", PresenceGate.KEY_PRESENCE_ENABLED)
+        assertTrue(PresenceGate.DEFAULT_ENABLED)
+        assertTrue(PresenceGate.active(enabled = true, installed = true, canStart = true))
+        assertTrue(!PresenceGate.active(enabled = false, installed = true, canStart = true))
     }
 }

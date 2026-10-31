@@ -275,7 +275,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /**
      * Phase 5 — the DELAYED arm (docs/BASELINE.md, "Memory"). Called at call end and when the
-     * mode leaves Enhanced; [MemoryBudget.release] decides what actually happens:
+     * Presence is switched off; [MemoryBudget.release] decides what actually happens:
      *
      *  - [MemoryBudget.Release.KEEP]        — the off switch: nothing at all (pref 0);
      *  - [MemoryBudget.Release.ON_HANGUP]   — release now (the arm that charges 7.7 s to every
@@ -480,7 +480,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         return synchronized(genLock) {
             engine.createConversation(ConversationConfig(
                 systemInstruction = Contents.of(personaOverride),
-                    // 0.8/M3: bounds a presence line, and sits ABOVE ErGemmaGuard's char
+                    // 0.8/M3: bounds an aside, and sits ABOVE ErGemmaGuard's char
                     // cap so the guard stays the binding UX control and this is only the
                     // hard backstop against a runaway render. 256 tokens (~1.7x the char
                     // guard) leaves room for the soul to hold a short conversation rather

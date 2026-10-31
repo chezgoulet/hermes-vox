@@ -20,7 +20,7 @@ package com.hermesvox
 object PresenceCadence {
 
     /**
-     * The register the caller chose ("Presence while working"). It governs the mid-run line
+     * The register the caller chose ("Presence while working"). It governs the mid-run aside
      * interval and, through [fillerCap], the existing per-window filler cap.
      */
     enum class Density(val key: String, val intervalMs: Long, val cap: Int, val fillerCap: Int) {

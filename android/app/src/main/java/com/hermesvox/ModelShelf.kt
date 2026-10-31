@@ -40,7 +40,7 @@ object ModelShelf {
     private fun blurbFor(key: String): String = when (key) {
         HEARING -> "Turns your speech into text, and hears when you start and stop talking."
         VOICE -> "Speaks Hermes' replies aloud, fully on-device."
-        BEING -> "Runs the optional on-device presence layer (Enhanced Realtime, alpha)."
+        BEING -> "Runs the optional on-device Presence layer — the being, its asides and its voice."
         else -> "Not part of the voice pipeline; kept here so nothing is hidden."
     }
 

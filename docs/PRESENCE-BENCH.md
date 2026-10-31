@@ -127,7 +127,7 @@ to Qwen would put that prefill back on every turn.
 
 ### What the numbers say about the budget
 
-A presence line is 8–15 tokens. At the measured rates:
+An aside is 8–15 tokens. At the measured rates:
 
 | Model/backend | First token | 12-token line | Budget (300 / 700 ms) |
 |---|---|---|---|
