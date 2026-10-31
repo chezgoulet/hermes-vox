@@ -104,9 +104,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var focusPause = false
     private var warmTries = 0
     @Volatile private var listening = false
+    /** One cold-start retry per listen session: the audio route can come up a beat after the
+     *  call starts, and the platform recogniser reports ERROR_CLIENT/ERROR_AUDIO for that. */
+    private var listenRetry = 0
     private var listener: Listener? = null
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
+    /** Why spoken replies are off, when they are. Empty when TTS is ready.
+     *  TTS is an OUTPUT leg: its failure must never stop a call from starting. */
+    @Volatile private var ttsIssue: String = ""
     @Volatile private var sttReady = false
     @Volatile private var partialRunning = false
     @Volatile private var partialEnabled = false
@@ -347,7 +353,18 @@ class VoiceController(private val context: Context, private val session: HermesS
         (tts as? SherpaTts)?.onAudioSegment = { text, samples -> recordAudioSegment(text, samples) }
         VoxLog.d("pipeline: tts=${tts?.name} (voice=$voice) ttsReady=$ttsReady")
         // Load the TTS engine up front so a reply is always voiced (text OR mic).
-        tts?.init { ttsReady = it }
+        // 0.9.0.2/330: a TTS failure is not a pipeline failure. Degrade to text-only and
+        // name the cause — the readiness gate no longer waits for this leg.
+        tts?.init { ready ->
+            ttsReady = ready
+            if (ready) {
+                ttsIssue = ""
+            } else {
+                ttsIssue = tts?.warmReason?.takeIf { it.isNotBlank() }
+                    ?: "text-to-speech engine unavailable"
+                VoxLog.w("event=tts-unavailable reason=$ttsIssue (call continues text-only)")
+            }
+        }
         // STT backend/model from Settings: on-device Whisper (selected model), a
         // user-supplied OpenAI-compatible `remote` endpoint, or platform
         // (SpeechRecognizer fallback).
@@ -391,8 +408,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (fallback != null) fallback.init { onSttReady(it) }
     }
 
-    /** True once the offline STT + TTS (+ VAD) are fully loaded/warm. */
-    fun isWarm() = sttReady && ttsReady && (vad?.isAvailable != false)
+    /** True once the offline STT (+ VAD) is loaded/warm. TTS is deliberately NOT part of
+     *  this: a broken output leg must not keep the call from starting (#330). Use
+     *  [ttsStatus] to report spoken-reply availability separately. */
+    fun isWarm() = sttReady && (vad?.isAvailable != false)
+
+    /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
+    fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
 
     /** True when the listen loop is actually running (capturing). NOT a sticky flag:
      *  the Activity gates re-open on this, so it can restart after a stop/background/
@@ -401,7 +423,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /** Warm-up breakdown for diagnostics: which leg is not yet ready. */
     fun warmDiagnostics(): String =
-        "sttReady=$sttReady ttsReady=$ttsReady vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null}"
+        "sttReady=$sttReady ttsReady=$ttsReady ttsIssue=${ttsIssue.ifBlank { "-" }} vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null}"
 
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
@@ -409,6 +431,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Begins the listening loop. Returns true when STT is actually running. */
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
+        listenRetry = 0   // a new call gets its own cold-start retry
         // Re-initialize any pipeline leg that stopped warming (e.g. after stop() reset the
         // ready flags) so a fresh start doesn't listen against a dead TTS/STT/VAD.
         ensureWarm()
@@ -1014,12 +1037,19 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun listen(): Boolean {
         stopTts()
         listening = true
-        listener?.onState("listening")
         recognizer?.destroy()
+        var readyAnnounced = false
+        fun announceReady() {
+            if (!readyAnnounced && listening) {
+                readyAnnounced = true
+                // #328: the eye means "the mic is capturing", not "the controller intends to".
+                listener?.onState("listening")
+            }
+        }
         return try {
             val r = SpeechRecognizer.createSpeechRecognizer(context)
             r.setRecognitionListener(object : android.speech.RecognitionListener {
-                override fun onReadyForSpeech(p: Bundle?) {}
+                override fun onReadyForSpeech(p: Bundle?) { announceReady() }
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(b: ByteArray?) {}
@@ -1036,6 +1066,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                 override fun onError(e: Int) {
                     if (e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || e == SpeechRecognizer.ERROR_NO_MATCH) {
                         if (listening) listen()
+                    } else if ((e == SpeechRecognizer.ERROR_CLIENT || e == SpeechRecognizer.ERROR_AUDIO) &&
+                        listenRetry < 1) {
+                        // #328 cold start: the route/mic is not up yet on the first attempt.
+                        // Retry once before surfacing an error, so the first sentence is not lost.
+                        listenRetry++
+                        VoxLog.w("event=stt-retry code=$e attempt=$listenRetry (cold-start audio route)")
+                        main.postDelayed({ if (listening) listen() }, 400L)
                     } else {
                         listening = false
                         listener?.onError("speech unavailable ($e)")
@@ -1050,6 +1087,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             }
             r.startListening(intent)
+            // A device that never delivers onReadyForSpeech would otherwise show no eye at all;
+            // this keeps the UI honest without letting a slow route look like a dead one.
+            main.postDelayed({ announceReady() }, 1500L)
             listener?.onLog("// hear → listening")
             true
         } catch (e: Throwable) {
