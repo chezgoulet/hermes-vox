@@ -20,6 +20,8 @@ object SettingsHints {
         "row_restore_presence", "row_restore_models", "row_restore_appearance",
         "row_restore_visuals", "row_restore_about",
         "row_mic_advanced",      // the disclosure chip itself
+        "row_being_advanced",    // the disclosure chip itself
+        "row_presence_advanced", // the disclosure chip itself
         "row_visual_cycle_all",  // carries its own description line
     )
 

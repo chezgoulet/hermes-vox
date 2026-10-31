@@ -588,6 +588,26 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
+                <!-- #224: what Presence can HEAR belongs with the other hearing settings,
+                     not with the Presence controls that decide how it behaves. -->
+                <LinearLayout
+                    android:id="@+id/row_er_hears"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="The soul hears your tone (on-device, audio never leaves the phone)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_hears"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
                 <!-- #118: Advanced = timing/barge tuning sliders, collapsed until tapped.
                      Reuses the row-into-panel reveal pattern (like remote_stt_panel). -->
                 <LinearLayout
@@ -1170,6 +1190,43 @@
                         android:checked="true" />
                 </LinearLayout>
 
+                <!-- #224: one disclosure for the layer's advanced controls; on/off stays
+                     on the everyday surface above. -->
+                <LinearLayout
+                    android:id="@+id/row_presence_advanced"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@drawable/bg_chip"
+                    android:clickable="true"
+                    android:focusable="true">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Advanced — how Presence behaves"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_presence_adv_state"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="show ›"
+                        android:textColor="@color/hv_cyan"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/adv_presence_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
                 <LinearLayout
                     android:id="@+id/row_er_semantic_barge"
                     style="@style/HvRow"
@@ -1197,25 +1254,6 @@
                         android:textSize="14sp" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/sw_er_semantic_barge"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_er_hears"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="The soul hears your tone (on-device, audio never leaves the phone)"
-                        style="@style/HvRowTitle" />
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/sw_er_hears"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:checked="true" />
@@ -1321,6 +1359,8 @@
                         android:layout_height="wrap_content"
                         android:text="what the on-device soul reads"
                         style="@style/HvRowValue" />
+                </LinearLayout>
+
                 </LinearLayout>
 
                 <LinearLayout
@@ -1559,6 +1599,43 @@
                         android:text="Animate the being through every style, one family at a time. Off returns to your fixed pick."
                         style="@style/HvRowValue" />
                 </LinearLayout>
+
+                <!-- #224: one disclosure for the being's fine look controls; the category,
+                     the cycle and the cues stay on the everyday surface. -->
+                <LinearLayout
+                    android:id="@+id/row_being_advanced"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@drawable/bg_chip"
+                    android:clickable="true"
+                    android:focusable="true">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Advanced — fine look and shapes"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_being_adv_state"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="show ›"
+                        android:textColor="@color/hv_cyan"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/adv_being_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
 
                 <LinearLayout
                     android:id="@+id/row_visual_energy"
@@ -1801,6 +1878,8 @@
                         android:id="@+id/set_particle_cycle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
+                </LinearLayout>
+
                 </LinearLayout>
 
                 <TextView
