@@ -24,6 +24,10 @@ import com.hermesvox.core.JsonException
  * shape Hermes uses for a failed tool: a top-level `error` (`tools/registry.py tool_error`)
  * or a non-zero `exit_code` (the terminal tool). Free text is never read for failure words.
  *
+ * History is deliberately unchanged (STATE-AUDIT F12, #281): the transcript stays free of
+ * operations. The line is the state while the step is current; a completed step is not
+ * replayed, and the reply is the record. A log viewer is the thing #281 forbids.
+ *
  * Pure JVM, so the vocabulary is proven off-device.
  */
 object Operations {
@@ -33,8 +37,11 @@ object Operations {
     /** One tool step: the present-tense line, its past tense, and the thing it acts on. */
     data class Step(val tool: String, val doing: String, val done: String, val target: String)
 
-    /** After this long a running step shows its elapsed time — a counter is proof it is moving. */
-    const val LONG_MS = 8_000L
+    /** When the line starts moving. It must move BEFORE the being stalls
+     *  ([MotionState.STALL_MS], 2.5 s): the words are proof, the aura is only a sign
+     *  (STATE-AUDIT #281 item 4). The first move is "still working"; an elapsed count
+     *  follows in [TICK_S] steps, so the line never claims more than time passed. */
+    const val LONG_MS = 2_000L
 
     /** The elapsed count's step, in seconds. */
     const val TICK_S = 5L
@@ -111,11 +118,15 @@ object Operations {
     }
 
     /** The running line: what, on what, and — past [LONG_MS] — that it is still moving. The
-     *  count moves in [TICK_S]-second steps: the line is a polite live region, and a screen
+     *  first move is the indeterminate phrase "still working", not a number: at [LONG_MS]
+     *  no honest count exists yet. After [TICK_S] seconds the count joins it. It never
+     *  says how far through the step is, because that number is not known. The count
+     *  moves in [TICK_S]-second steps: the line is a polite live region, and a screen
      *  reader must not be read a clock. */
     fun running(s: Step, elapsedMs: Long): String {
         val base = withTarget(s.doing, s.target)
         if (elapsedMs < LONG_MS) return base
+        if (elapsedMs < TICK_S * 1000) return "$base · still working"
         val sec = elapsedMs / 1000 / TICK_S * TICK_S
         return "$base · still working, $sec s"
     }
@@ -156,9 +167,15 @@ object Operations {
         }
     }
 
-    /** `mcp_github_list_issues` → "Using github: list issues". */
+    /** Any unknown identifier becomes words: `mcp_github_list_issues` → "Using github: list
+     *  issues", `some.weird-tool` → "Using some weird tool". An identifier must never reach
+     *  the line (STATE-AUDIT F4): if the table does not know the tool, the name is still
+     *  read as a phrase. */
     private fun humanised(tool: String): Verb {
-        val words = tool.removePrefix("mcp_").replace('_', ' ').replace('-', ' ').trim()
+        val words = tool.removePrefix("mcp_")
+            .replace(Regex("[^A-Za-z0-9]+"), " ")
+            .trim()
+            .lowercase()
         val (server, rest) = if (tool.startsWith("mcp_") && words.contains(' '))
             words.substringBefore(' ') to words.substringAfter(' ') else "" to words
         val what = if (server.isEmpty()) rest.ifBlank { "a tool" } else "$server: $rest"

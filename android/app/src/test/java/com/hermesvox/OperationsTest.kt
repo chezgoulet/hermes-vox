@@ -1,7 +1,10 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** #281: the state line's words for a tool step, from the stream's own two facts. */
@@ -39,6 +42,9 @@ class OperationsTest {
     @Test fun unknownToolIsHumanisedFromItsName() {
         assertEquals("Using github: list issues", Operations.running(Operations.step("mcp_github_list_issues", "{}"), 0))
         assertEquals("Using home assistant", Operations.running(Operations.step("home_assistant", "not json"), 0))
+        // An identifier must still read as words, even when no table knows the tool.
+        assertEquals("Using some new tool", Operations.running(Operations.step("some_new_tool", "{}"), 0))
+        assertEquals("Using odd server do the thing", Operations.running(Operations.step("odd.server-do_the.thing", "{}"), 0))
     }
 
     @Test fun memoryWriteIsNotACheck() {
@@ -49,8 +55,22 @@ class OperationsTest {
     @Test fun longStepShowsThatItIsStillMoving() {
         val s = Operations.step("terminal", """{"command":"gws calendar events list"}""")
         assertEquals("Running a command · gws calendar events list", Operations.running(s, Operations.LONG_MS - 1))
+        // The first move is indeterminate: no count exists yet, and no progress is claimed.
+        assertEquals("Running a command · gws calendar events list · still working", Operations.running(s, Operations.LONG_MS))
         assertEquals("Running a command · gws calendar events list · still working, 10 s", Operations.running(s, 12_400))
         assertEquals("Running a command · gws calendar events list · still working, 15 s", Operations.running(s, 15_000))
+    }
+
+    @Test fun longWordsMoveBeforeTheBeingStalls() {
+        // #280 #281 item 4: the line is proof; the aura is only a sign. The words start
+        // moving at 2 s, the being's stall is 2.5 s — so the line never waits on the aura.
+        assertTrue(Operations.LONG_MS < MotionState.STALL_MS)
+        val s = Operations.step("web_search", """{"query":"x"}""")
+        val base = Operations.running(s, 0)
+        val moved = Operations.running(s, Operations.LONG_MS)
+        assertNotEquals(base, moved)
+        assertTrue("the line says it is still moving", moved.contains("still working"))
+        assertFalse("no percentage we cannot justify", moved.contains("%"))
     }
 
     @Test fun longTargetIsCutToOneShortLine() {

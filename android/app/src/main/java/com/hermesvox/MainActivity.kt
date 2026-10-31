@@ -417,6 +417,7 @@ class MainActivity : AppCompatActivity() {
         maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
         status.visibility = android.view.View.GONE
         agentName = findViewById(R.id.agent_name)
         // #174: the agent's name is where the active profile shows, so it is where it switches.
@@ -777,13 +778,17 @@ class MainActivity : AppCompatActivity() {
         status.text = text
         status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
         // A real phase/status replaces the models-warning pill: drop its tap
-        // handler and restore the tag color so phase pills never read as
-        // warnings or navigate to the model store by accident (#12/#6).
+        // handler so phase pills never read as warnings or navigate to the model
+        // store by accident (#12/#6).
         if (modelsWarnShown) {
             modelsWarnShown = false
             status.setOnClickListener(null)
-            status.setTextColor(ContextCompat.getColor(this, R.color.hv_cyan))
         }
+        // #281/#280 F6: every state word is legible on both themes. The old near-white
+        // after a call was 1.0:1 on the light chip; these colours are AA on each theme's
+        // chip and follow the call tone without a call-only colour surviving the call.
+        status.setTextColor(ContextCompat.getColor(this,
+            if (callLive) R.color.hv_status_live else R.color.hv_status))
     }
 
     // -----------------------------------------------------------------------
@@ -1170,7 +1175,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setCallTone(live: Boolean) {
-        try { status.setTextColor(if (live) 0xFF35D07F.toInt() else 0xFFD6F4FF.toInt()) } catch (_: Throwable) {}
+        // #281/#280 F6: theme-aware, AA on the chip. It used to write the dark theme's
+        // near-white into light mode, where SetStatus then left it: 1.0:1 after a call.
+        try {
+            status.setTextColor(ContextCompat.getColor(this,
+                if (live) R.color.hv_status_live else R.color.hv_status))
+        } catch (_: Throwable) {}
     }
     private fun stopVoiceWake() {
         if (voiceWake != null) VoxLog.d("event=wake released")
@@ -1633,11 +1643,16 @@ class MainActivity : AppCompatActivity() {
                     "warming" -> ConnectionPhase.pill(ConnectionPhase.Phase.WARMING)
                     else -> getString(R.string.hv_connected)
                 }
-                // The state line (docs/STATE-AUDIT.md): kept up for the whole call, because the
-                // being alone cannot carry a state with the being off, the sound off, or in light
-                // mode. A failed step's line outranks the idle words until the next turn.
-                val line = if (state == "listening" || state == "idle") opHeld ?: words else words
-                setStatus(line, state == "warming" || callLive || state == "thinking")
+                // The state line (docs/STATE-AUDIT.md): the being alone cannot carry a state
+                // with the being off, the sound off, or in light mode. #280 F8: the line is a
+                // property of the state, not of the call — a running step or a held failure is
+                // shown wherever it happens, typed use included; the ambient words keep their
+                // old warming/thinking/call rule.
+                val running = opStep?.let {
+                    Operations.running(it, android.os.SystemClock.uptimeMillis() - opStartedAt)
+                }
+                val line = StateLine.words(running, opHeld, words)
+                setStatus(line, StateLine.visible(running != null, opHeld != null, state, callLive))
                 if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
@@ -1737,10 +1752,14 @@ class MainActivity : AppCompatActivity() {
             appendReplyFinal(finalText)
         } }
         override fun onError(msg: String) { runOnUiThread {
-            mainHandler.removeCallbacks(opTicker); opStep = null   // a cut or failed turn ends its step
+            // a cut or failed turn ends its step; a failed turn outranks a held step failure
+            mainHandler.removeCallbacks(opTicker); opStep = null; opHeld = null
             // #284: a failed turn's line offers the command that usually fixes it, in place.
             val (line, offer) = Discovery.errorLine(msg)
             setStatus(line, offer)
+            // #280 F7: a pocketed call must still learn that the turn failed — onError used
+            // to write the pill only, and the notification kept the last happy state.
+            if (callLive) VoiceService.update(this@MainActivity, line)
             if (offer) {
                 lastTurnFailed = true; statusOfferShown = true
                 status.setOnClickListener { reconnect() }
@@ -1751,7 +1770,8 @@ class MainActivity : AppCompatActivity() {
         } }
         override fun onTool(name: String, arguments: String) { runOnUiThread {
             val step = Operations.step(name, arguments)
-            opStep = step; opStartedAt = android.os.SystemClock.uptimeMillis()
+            opStep = step; opHeld = null   // new work supersedes an earlier step's failure
+            opStartedAt = android.os.SystemClock.uptimeMillis()
             mainHandler.removeCallbacks(opTicker)
             showOperation(Operations.running(step, 0))
             mainHandler.postDelayed(opTicker, 1000)
@@ -1761,7 +1781,15 @@ class MainActivity : AppCompatActivity() {
             mainHandler.removeCallbacks(opTicker); opStep = null
             val reason = Operations.failure(output)
             if (reason == null) showOperation(Operations.finished(step))
-            else { val l = Operations.failed(step, reason); opHeld = l; showOperation(l) }
+            else {
+                val l = Operations.failed(step, reason); opHeld = l
+                // #280 F2: a failed step gets the being's own failure ending — the hourglass
+                // in the waiting colour — not the success shimmer the log event just fed it.
+                // Done keeps the shimmer; the two outcomes stop looking alike.
+                val e = CommandMotion.Ending.FAILED
+                avatar.endVerb(e.shape, e.state, e.ms)
+                showOperation(l)
+            }
         } }
         override fun onHeard(text: String) { runOnUiThread {
             lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false   // #251: input

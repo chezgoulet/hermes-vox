@@ -11,6 +11,10 @@
     <color name="hv_violet_soft">#DCCCF7</color>
     <color name="hv_text">#0F172A</color>
     <color name="hv_text_dim">#5A6B85</color>
+    <!-- #281: the state line on the light chip (#EAEFF7). Both are >= 4.5:1; the
+         old cyan was 3.18:1 and the dark theme's near-white after a call was 1.0:1. -->
+    <color name="hv_status">#0F5F73</color>
+    <color name="hv_status_live">#0B6B4F</color>
     <color name="hv_ok">#0F9D76</color>
     <color name="hv_warn">#B45309</color>
     <color name="hv_danger">#DC2626</color>
