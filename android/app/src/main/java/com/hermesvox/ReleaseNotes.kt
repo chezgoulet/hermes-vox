@@ -88,5 +88,15 @@ internal object ReleaseNotes {
                 "Starting a new session with /new during a call no longer leaves the call deaf. The call closes and re-opens its microphone itself, in about two seconds — no hang-up needed.",
             ),
         ),
+
+        ReleaseNote(
+            versionCode = 145,
+            versionName = "0.9.0.2",
+            title = "The fallback release",
+            bullets = listOf(
+                "A phone with no working system text-to-speech engine can now start a call. Replies arrive as text and the status line names the engine failure, instead of the call stopping with \"Voice models failed to load\".",
+                "Cold start: the listening indicator now waits until the microphone is actually capturing, and the first attempt retries once if the audio route is still coming up.",
+            ),
+        ),
     )
 }
