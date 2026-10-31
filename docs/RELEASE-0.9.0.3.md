@@ -25,11 +25,22 @@ mistaken for "no engine installed".
 
 ## Verification
 
-- `assembleDebug testDebugUnitTest` green on the release branch; three new unit tests for
-  the engine-visibility description.
-- CI green on the source PR (#347) before merge into `testing`.
-- **Device proof is outstanding.** The acceptance is the reporter's log showing
-  `ttsReady=true` and no `event=tts-unavailable`. Asked for on #330.
+- Built in CI by `release.yml` (run 41225227232) on `main`: two clean checkouts,
+  **identical payloads**.
+- Version stamp asserted before the build: `versionCode=146 versionName=0.9.0.3`.
+- `apksigner verify --print-certs`: `CN=Hermes Vox, OU=ChezGoulet, O=ChezGoulet,
+  L=Windsor, ST=VT, C=US`, certificate SHA-256
+  `8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19` — the release key,
+  the same certificate that signed 0.9.0.1 and 0.9.0.2.
+- Three new unit tests cover the engine-visibility description.
+
+```
+sha256:  6cb0879e1f2e300184485b1fd42b6579547c4fc2ea5aa657b5f9dee5fefa116f
+certs:   CN=Hermes Vox, OU=ChezGoulet, O=ChezGoulet, L=Windsor, ST=VT, C=US
+```
+
+**Device proof is still outstanding.** The acceptance is the reporter's log showing
+`ttsReady=true` and no `event=tts-unavailable`; asked for on #330 when this ships.
 
 ## Known issues
 
