@@ -1976,9 +1976,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state.
-     *  The server-side response id must be captured on the bg thread BEFORE the
-     *  client chain is dropped (resetConversation clears lastID), so the delete and
-     *  the reset run on the SAME thread, in order. */
+     *  The server-side response id is captured BEFORE the reset drops it, and the
+     *  delete runs AFTER the re-arm (#351): housekeeping never holds the microphone. */
     private fun newSession(trigger: ConversationReset.Trigger = ConversationReset.Trigger.NEW, onDone: (Boolean) -> Unit = {}) {
         val s = session
         val plan = ConversationReset.plan(trigger, callLive)
@@ -1989,18 +1988,31 @@ class MainActivity : AppCompatActivity() {
         // through openVoiceLine(), the same path a route change uses.
         val wasLive = callLive
         if (plan.endCall) endCall()
+        // #351: the delete's argument is the chain head, and RESET_CHAIN drops it — so it is
+        // taken here, before the plan runs, and handed to the delete step. (Reading the head
+        // inside the delete step would target whatever turn the re-armed call had made.)
+        val doomedId = if (s != null && plan.deleteServerCopy) s.lastResponseId() else ""
         if (s != null) {
-            kotlin.concurrent.thread {
-                // /clear and /reset keep the server's copy; /new also deletes it.
-                if (plan.deleteServerCopy) try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
-                s.resetConversation()   // then drop the client chain + lastID
-                LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
-                // Re-arm only after the chain is actually reset, and only if a call was live.
-                if (plan.rearm) runOnUiThread { startCall() }
-                runOnUiThread { onDone(true) }
+            // The plan IS the order (#351): reset, re-arm, then housekeeping. The delete gets
+            // its own thread, so even this loop never waits for the gateway; the re-arm is
+            // posted to the UI thread and runs before that thread is started.
+            for (step in plan.steps) when (step) {
+                ConversationReset.Step.RESET_CHAIN -> {
+                    s.resetConversation()   // drop the client chain + lastID
+                    LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
+                }
+                ConversationReset.Step.REARM_CALL -> runOnUiThread { startCall() }
+                ConversationReset.Step.DELETE_SERVER_COPY -> kotlin.concurrent.thread {
+                    // Housekeeping: if the gateway is slow or unreachable, say so and carry on.
+                    // The user is already talking again on the line above.
+                    try { s.deleteResponse(doomedId) } catch (e: Throwable) {
+                        VoxLog.w("event=session-delete-failed id=$doomedId err=${e.message?.take(120)}")
+                    }
+                }
             }
+            runOnUiThread { onDone(true) }
         } else onDone(true)
-        VoxLog.d("event=session-reset trigger=${trigger.name.lowercase()} callLive=$callLive rearm=${plan.rearm}")
+        VoxLog.d("event=session-reset trigger=${trigger.name.lowercase()} callLive=$callLive rearm=${plan.rearm} steps=${plan.steps.joinToString(",") { it.name.lowercase() }}")
         stopVoiceWake()
         releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
         unregisterRouteCallback()  // C3: no line -> no route rebuilds

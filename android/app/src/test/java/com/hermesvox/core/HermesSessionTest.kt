@@ -163,6 +163,30 @@ class HermesSessionTest {
         }
     }
 
+    /**
+     * #351: the reset drops the chain head, so a delete that runs AFTER the reset must be
+     * handed the id captured before it — reading the head at delete time would either find
+     * nothing or, worse, the fresh turn the re-armed call already made.
+     */
+    @Test
+    fun `deleteResponse deletes a captured id after the reset, not the new head`() {
+        var n = 0
+        TestServer { r, w ->
+            if (r.method == "DELETE") w.send(204, "No Content", "")
+            else { n++; w.send(200, "OK", """{"id":"resp_$n","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}""") }
+        }.use { srv ->
+            val s = HermesSession(srv.url, "k", "m")
+            s.turnStored("hi")                     // resp_1 is the head
+            val doomed = s.lastResponseId()
+            assertEquals("resp_1", doomed)
+            s.resetConversation()                  // #351's step order: reset first
+            s.turnStored("fresh")                  // the re-armed call makes resp_2 the head
+            s.deleteResponse(doomed)               // the captured id, not the new head
+            assertEquals("/v1/responses/resp_1", srv.requests.last().path)
+            assertEquals("resp_2", s.lastID)
+        }
+    }
+
     @Test
     fun `gateway endpoints return the raw body and report the code`() {
         TestServer { r, w ->
