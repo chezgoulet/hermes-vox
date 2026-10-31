@@ -98,5 +98,15 @@ internal object ReleaseNotes {
                 "Cold start: the listening indicator now waits until the microphone is actually capturing, and the first attempt retries once if the audio route is still coming up.",
             ),
         ),
+
+        ReleaseNote(
+            versionCode = 146,
+            versionName = "0.9.0.3",
+            title = "The hearing fix",
+            bullets = listOf(
+                "A phone whose text-to-speech engine could not be reached can now speak. Android 11 and later hide other apps' services unless an app declares that it needs them, and Vox never declared it — so the engine was invisible to the app while every other app on the phone spoke normally.",
+                "If no speech engine is available at all, the call still opens as text and the status line names the reason.",
+            ),
+        ),
     )
 }
