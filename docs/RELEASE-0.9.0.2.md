@@ -8,9 +8,9 @@
 
 ### A phone with no system TTS engine can start a call (#330)
 
-Reported from GrapheneOS: selecting "System (fallback)" on a phone whose
-TextToSpeech engine could not initialise left the call unable to start, and the UI
-reported *"Voice models failed to load"* — a message that named the wrong component.
+Reported from GrapheneOS: selecting "System (fallback)" on a phone whose TextToSpeech
+engine could not initialise left the call unable to start, and the UI reported
+*"Voice models failed to load"* — a message that named the wrong component.
 
 Readiness now covers speech recognition and voice-activity detection only. Text to
 speech is an output leg: when it fails, the call opens anyway, replies arrive as text,
@@ -34,15 +34,20 @@ will say so.
 
 ## Verification
 
-- `./gradlew :app:assembleDebug :app:testDebugUnitTest` — green on the release branch.
-- CI on both source PRs (#332, #333) was green before merge into `testing`.
-- `assembleRelease` + reproducible-build comparison: **not yet run** — see the release
-  checklist. The APK hash and signature line below are filled in when the signed
-  artifact exists.
+Built in CI by `release.yml` (run 41216325109) on `main`, because the release keystore
+exists only as the `KEYSTORE_AGE_KEY` repo secret.
+
+- `assembleRelease` + `testReleaseUnitTest` — green.
+- Version stamp asserted before the build: `versionCode=145 versionName=0.9.0.2`.
+- **Reproducibility:** two clean checkouts built separately produced **identical
+  payloads** — `689d1d011861420b0c1a6dbd869f64bb4945f7b450567e6f0d6da264df617fc3`.
+- `apksigner verify --print-certs`: `CN=Hermes Vox, OU=ChezGoulet, O=ChezGoulet,
+  L=Windsor, ST=VT, C=US` (cert SHA-256 `8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19`) —
+  the release key, not the debug key.
 
 ```
-sha256:  <to be recorded from the signed APK>
-certs:   <apksigner verify --print-certs output>
+sha256:  689d1d011861420b0c1a6dbd869f64bb4945f7b450567e6f0d6da264df617fc3
+certs:   CN=Hermes Vox, OU=ChezGoulet, O=ChezGoulet, L=Windsor, ST=VT, C=US
 ```
 
 ## Known issues
