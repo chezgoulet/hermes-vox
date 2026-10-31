@@ -1,0 +1,175 @@
+name: release-build
+
+# Cut a release artifact from main, twice, and compare.
+#
+# This does NOT create a GitHub release. It produces a signed APK plus its hashes,
+# verifies the signature and the version stamp, and uploads both builds so the two
+# can be compared. Creating the release is still a deliberate step
+# (`gh release create …`) per docs/RELEASE-PROCESS.md.
+#
+# Why it exists: the release keystore is only available to CI (repo secret
+# KEYSTORE_AGE_KEY). There is no local copy on the build host, so a release that
+# must be "the same artifact anyone can rebuild" has to be built here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Expected versionName in android/app/build.gradle (e.g. 0.9.0.2)"
+        required: true
+      ref:
+        description: "Git ref to build"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g"
+
+jobs:
+  build:
+    name: build A
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install age
+        run: |
+          curl -fsSL -o /tmp/age.tar.gz https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz
+          tar -xzf /tmp/age.tar.gz -C /tmp
+          sudo mv /tmp/age/age /usr/local/bin/age
+
+      - name: Restore keystore + the sherpa AAR
+        env:
+          KEYSTORE_AGE_KEY: ${{ secrets.KEYSTORE_AGE_KEY }}
+        run: |
+          mkdir -p keystore android/app/libs
+          printf '%s' "$KEYSTORE_AGE_KEY" > /tmp/rel.key
+          age -d -i /tmp/rel.key keystore/release.keystore.age > keystore/release.keystore
+          age -d -i /tmp/rel.key keystore/keystore.properties.age > keystore/keystore.properties
+          age -d -i /tmp/rel.key libs/sherpa-onnx-1.13.6.aar.age > android/app/libs/sherpa-onnx-1.13.6.aar
+          rm -f /tmp/rel.key
+          echo "keystore: $(wc -c < keystore/release.keystore) bytes"
+
+      - name: Assert the version stamp
+        run: |
+          VN=$(grep -m1 'versionName' android/app/build.gradle | sed 's/.*"\(.*\)".*/\1/')
+          VC=$(grep -m1 'versionCode' android/app/build.gradle | awk '{print $2}')
+          echo "versionCode=$VC versionName=$VN (expected ${{ inputs.version }})"
+          test "$VN" = "${{ inputs.version }}" || { echo "::error::versionName $VN != ${{ inputs.version }}"; exit 1; }
+          case "$VN" in *-nightly-*) echo "::error::refusing to release a nightly-stamped build"; exit 1;; esac
+
+      - name: Build release APK + unit tests
+        working-directory: android
+        run: ./gradlew --no-daemon -q assembleRelease testReleaseUnitTest
+
+      - name: Verify artifact
+        run: |
+          APK=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          echo "apk=$APK"
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt2" dump badging "$APK" | head -3
+          "$BT/apksigner" verify --print-certs "$APK"
+          sha256sum "$APK" | tee SHA256SUMS
+          cp "$APK" "hermes-vox-${{ inputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-a
+          path: |
+            hermes-vox-${{ inputs.version }}.apk
+            SHA256SUMS
+
+  rebuild:
+    name: build B (clean checkout)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          clean: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install age
+        run: |
+          curl -fsSL -o /tmp/age.tar.gz https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz
+          tar -xzf /tmp/age.tar.gz -C /tmp
+          sudo mv /tmp/age/age /usr/local/bin/age
+
+      - name: Restore keystore + the sherpa AAR
+        env:
+          KEYSTORE_AGE_KEY: ${{ secrets.KEYSTORE_AGE_KEY }}
+        run: |
+          mkdir -p keystore android/app/libs
+          printf '%s' "$KEYSTORE_AGE_KEY" > /tmp/rel.key
+          age -d -i /tmp/rel.key keystore/release.keystore.age > keystore/release.keystore
+          age -d -i /tmp/rel.key keystore/keystore.properties.age > keystore/keystore.properties
+          age -d -i /tmp/rel.key libs/sherpa-onnx-1.13.6.aar.age > android/app/libs/sherpa-onnx-1.13.6.aar
+          rm -f /tmp/rel.key
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew --no-daemon -q assembleRelease
+
+      - name: Hash the rebuild
+        run: |
+          APK=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          sha256sum "$APK" | awk '{print $1}' > hash-b.txt
+          cp "$APK" "hermes-vox-${{ inputs.version }}-rebuild.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-b
+          path: |
+            hermes-vox-${{ inputs.version }}-rebuild.apk
+            hash-b.txt
+          if-no-files-found: error
+
+  compare:
+    name: reproducibility
+    needs: [build, rebuild]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-apk-a
+          path: a
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-apk-b
+          path: b
+      - name: Compare
+        run: |
+          A=$(sha256sum a/hermes-vox-${{ inputs.version }}.apk | awk '{print $1}')
+          B=$(cat b/hash-b.txt)
+          echo "A (build):    $A"
+          echo "B (rebuild):  $B"
+          if [ "$A" = "$B" ]; then
+            echo "VERDICT: reproducible — identical payloads"
+          else
+            echo "VERDICT: not byte-identical — see docs/REPRODUCIBLE.md before publishing"
+          fi | tee compare.txt
+          {
+            echo "### 0.9.0.2 reproducibility"
+            echo ""
+            echo "- build A: \`$A\`"
+            echo "- build B: \`$B\`"
+            echo "- verdict: $([ "$A" = "$B" ] && echo identical || echo differs)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reproducibility-report
+          path: compare.txt
