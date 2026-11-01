@@ -140,9 +140,13 @@ class LightModeContrastTest {
             val ground = if (night) "night" else "light"
             val bg = resColor("hv_bg", night)
             val chip = resColor("hv_surface_high", night)
+            // #226: a command row is its own ground — bg_command_row fills @color/hv_surface,
+            // so the row's effect line, cost line and state chip are read there, not on the
+            // page. A token that clears the page and the chip and not the row would ship.
+            val row = resColor("hv_surface", night)
             for (tok in both + if (night) emptyList<String>() else lightOnly) {
                 val c = resColor(tok, night)
-                for ((where, back) in listOf("page" to bg, "chip" to chip)) {
+                for ((where, back) in listOf("page" to bg, "chip" to chip, "row" to row)) {
                     val r = Contrast.ratio(c, back)
                     assertTrue("$ground/$tok is ${"%.2f".format(r)}:1 on the $where " +
                         "(#%06X on #%06X, floor 4.5)".format(c and 0xFFFFFF, back and 0xFFFFFF),

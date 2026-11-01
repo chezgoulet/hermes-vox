@@ -463,6 +463,9 @@ class MainActivity : AppCompatActivity() {
                 setStatus("$st · ${VisualStyle.labelOf(cat)}", true)
             }
         }
+        // #226: the screenshot pass needs the commands sheet itself, on a screen where
+        // nothing else is in the way. Debug-only, like everything above. Extra: `sheet`.
+        if (intent.getBooleanExtra("sheet", false)) mainHandler.postDelayed({ showCommands() }, 600L)
     }
 
     /** The installed version code, from the manifest (BuildConfig is not generated). */
