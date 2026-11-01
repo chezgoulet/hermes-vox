@@ -18,6 +18,13 @@
     <color name="hv_ok">#34D399</color>
     <color name="hv_warn">#FBBF24</color>
     <color name="hv_danger">#F87171</color>
+    <!-- #275: the same semantic names as the light theme, so the call glyph and the
+         scrim are written once and are legible in both. -->
+    <color name="hv_call_idle">#35D07F</color>
+    <color name="hv_call_live">#FF5B5B</color>
+    <color name="hv_cmd_done">#35D07F</color>
+    <color name="hv_cmd_failed">#FF5B5B</color>
+    <color name="hv_scrim">#E606070B</color>
     <color name="hv_avatar_idle">#00E5FF</color>
     <color name="hv_avatar_listen">#34D399</color>
     <color name="hv_avatar_think">#FBBF24</color>

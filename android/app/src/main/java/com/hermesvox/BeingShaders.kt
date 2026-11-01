@@ -904,10 +904,17 @@ void main() {
 """
 
     /** Scene + two bloom levels + the ambient halo, tone-mapped, vignetted. On the light
-     *  theme (#275, [uInk] = 1) the same emission is laid down as ink on [uPaper] instead of
-     *  light on black: coverage from the tone-mapped luminance, colour from its hue at a
-     *  darker value, no vignette (a darkened edge on white is a smudge, not depth). With
-     *  [uInk] = 0 the output is the dark theme's, unchanged. [LightInk] mirrors it on the JVM. */
+     *  theme (#275, [uInk] = 1) the same emission is laid down as INK on [uPaper] instead
+     *  of light on black; the ground is designed, not inverted:
+     *
+     *      out = paper + (ink - paper) * cover
+     *      ink   = normalised emission hue * uInkValue   (authored per family)
+     *      cover = clamp(tone-mapped luminance * uInkCover) * 0.92
+     *
+     *  A hot core is a DENSER mark (never a white one, which would vanish), a bloom is a
+     *  low-opacity stain, and there is no vignette (a darkened edge on white is a smudge,
+     *  not depth). With [uInk] = 0 the output is the dark theme's, unchanged.
+     *  [LightInk] mirrors this branch on the JVM. */
     val FRAGMENT_COMPOSITE = """#version 300 es
 precision mediump float;
 in vec2 vUv;
@@ -916,7 +923,7 @@ uniform float uGlow, uHalo;
 uniform vec3 uBase;
 uniform vec2 uCenterUv, uHaloR;
 uniform vec3 uPaper;
-uniform float uInk;
+uniform float uInk, uInkValue, uInkCover;
 out vec4 o;
 void main() {
     vec3 c = texture(uScene, vUv).rgb;
@@ -932,8 +939,8 @@ void main() {
     c = mix(c, vec3(lt), smoothstep(0.75, 1.0, lt) * 0.5);   // only the very hottest cores whiten
     vec2 v = vUv - 0.5;
     vec3 dark = c * (1.0 - 0.45 * smoothstep(0.35, 0.85, length(v * vec2(1.0, 0.9))));
-    float cover = clamp(lt * 1.6, 0.0, 1.0) * 0.92;
-    vec3 ink = clamp(hue * 0.5, 0.0, 1.0);
+    float cover = clamp(lt * uInkCover, 0.0, 1.0) * 0.92;
+    vec3 ink = clamp(hue * uInkValue, 0.0, 1.0);
     vec3 light = mix(uPaper, ink, cover);
     o = vec4(mix(dark, light, uInk), 1.0);
 }

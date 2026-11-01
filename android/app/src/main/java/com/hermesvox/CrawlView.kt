@@ -34,12 +34,21 @@ class CrawlView @JvmOverloads constructor(
     private var layout: StaticLayout? = null
     private var padBottom = dp(28f)
 
+    /** #275: the crawl is text on the app's ground, so it follows the ground's tokens
+     *  instead of the near-white that was painted for the old black surface. The glow
+     *  shadow is a dark-theme effect only: on paper it only softens the glyph edge. */
+    private val lightGround = (context.resources.configuration.uiMode and
+        android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+
     private val replyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFD6F4FF.toInt(); textSize = sp(17f); typeface = android.graphics.Typeface.MONOSPACE
-        setShadowLayer(6f, 0f, 0f, 0x552AC3DC.toInt())
+        color = androidx.core.content.ContextCompat.getColor(context, R.color.hv_text)
+        textSize = sp(17f); typeface = android.graphics.Typeface.MONOSPACE
+        if (!lightGround) setShadowLayer(6f, 0f, 0f, 0x552AC3DC.toInt())
     }
     private val ssePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF5C6B7D.toInt(); textSize = sp(15f); typeface = android.graphics.Typeface.MONOSPACE
+        color = androidx.core.content.ContextCompat.getColor(context, R.color.hv_text_dim)
+        textSize = sp(15f); typeface = android.graphics.Typeface.MONOSPACE
     }
 
     @JvmOverloads

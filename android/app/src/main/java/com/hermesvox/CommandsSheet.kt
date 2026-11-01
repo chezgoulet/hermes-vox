@@ -169,8 +169,8 @@ class CommandsSheet(
         chip.text = s.label
         chip.visibility = if (s == CommandCatalog.RunState.IDLE) View.INVISIBLE else View.VISIBLE
         chip.setTextColor(when (s) {
-            CommandCatalog.RunState.DONE -> 0xFF35D07F.toInt()
-            CommandCatalog.RunState.FAILED -> 0xFFFF5B5B.toInt()
+            CommandCatalog.RunState.DONE -> color(R.color.hv_cmd_done)
+            CommandCatalog.RunState.FAILED -> color(R.color.hv_cmd_failed)
             else -> color(R.color.hv_cyan)
         })
     }
