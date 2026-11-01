@@ -349,6 +349,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent); setIntent(intent); handleDebugHarness(intent)
+        // #329: the assist gesture, arriving at a call screen that already exists (the
+        // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
+        // second one). Deferred like the harness so the intent never runs inside dispatch.
+        if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
+    }
+
+    /**
+     * #329: the assistant gesture has opened this screen. What happens next is [AssistRoute]'s
+     * decision, and the only thing this method does is carry it out: focus a live call (the
+     * bridge already brought this screen forward — nothing to start), start the call ready to
+     * listen, or open onboarding when there is no gateway yet.
+     */
+    private fun onAssistInvoked() {
+        val onboarding = FirstRunRoute.shouldOnboard(
+            prefs.getString("url", ""), prefs.getBoolean(FirstRunRoute.PREF_SKIPPED, false)
+        )
+        val target = AssistRoute.target(onboarding, callIsLive())
+        VoxLog.d("event=assist route=${target.name.lowercase()} callLive=$callLive onboarding=$onboarding")
+        when (target) {
+            AssistRoute.Target.FOCUS_LIVE_CALL -> Unit   // the live call is already on this screen
+            AssistRoute.Target.ONBOARD -> openOnboarding()
+            AssistRoute.Target.START_CALL -> startCall()
+        }
     }
 
     /** DEBUG-ONLY harness entry (inert when !isDebuggable). Lets the emulator
@@ -522,6 +545,9 @@ class MainActivity : AppCompatActivity() {
 
         connectFromPrefs()
         resumeLiveCallIfAny()
+        // #329: launched by the assistant gesture (AssistActivity). After the session and any
+        // surviving call are re-established, so the route sees the truth about both.
+        if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
         refreshModelsGate()   // #6/#12: first-run empty state / warning pill
         wireButtons()
         startAvatarLoop()
@@ -1490,6 +1516,17 @@ class MainActivity : AppCompatActivity() {
         @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
+
+        /** #329: intent extra set by AssistActivity — this launch came from the assist gesture. */
+        const val EXTRA_ASSIST = "com.hermesvox.extra.ASSIST"
+
+        /**
+         * #329: is a voice call running anywhere in the app? `callLive` is per-Activity, but the
+         * loop lives in VoiceService and survives the screen, so the assistant gesture needs the
+         * app-wide answer: a live controller with a start time, or a live screen that says so.
+         * If this said "not live" while the loop ran, the gesture would dial a second session.
+         */
+        fun callIsLive(): Boolean = active?.callLive == true || (liveController != null && callStartedAt != 0L)
         // #61: dedicated call-start permission request code + pending flag so the
         // warm-retry path never re-requests while the dialog is up / after denial.
         const val REQ_MIC_CALL = 101
