@@ -45,6 +45,38 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         }
     }
 
+    /**
+     * #282: answers a run's pending approval. [runId] is the event's `run_id` (the
+     * gateway registers a streamed completion under that id) and [requestId] is the
+     * event's `request_id`; an older gateway may omit the latter.
+     *
+     * One POST per decision — the exactly-once rule lives in [ApprovalGate], not here.
+     * A non-2xx is surfaced: 409 means the gateway already timed the request out or it
+     * was answered elsewhere, which is a fact the field log should carry.
+     */
+    fun answerApproval(runId: String, choice: String, requestId: String, executionGeneration: Int? = null): String {
+        val body = Json.encode(linkedMapOf<String, Any?>("choice" to choice).apply {
+            if (requestId.isNotEmpty()) put("request_id", requestId)
+            // Session-authority runs require the generation fence back; plain runs omit it.
+            if (executionGeneration != null) put("execution_generation", executionGeneration)
+        }).toByteArray(Charsets.UTF_8)
+        val c = Entity.open("POST", Entity.url(baseURL, "/v1/runs/${segment(runId)}/approval"),
+            Entity.headers(apiKey, "") + ("Content-Type" to "application/json"),
+            TIMEOUT_MS, TIMEOUT_MS)
+        return Entity.exchange(c, TIMEOUT_MS.toLong(), "hermes approval") {
+            Entity.send(c, body)
+            val code = c.responseCode
+            if (code != 200) {
+                throw HermesException("hermes approval ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+            }
+            Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+        }
+    }
+
+    /** A path segment: run ids are ASCII today, but never concatenate untrusted text raw. */
+    private fun segment(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
     companion object {
         const val TIMEOUT_MS = 20_000
     }
