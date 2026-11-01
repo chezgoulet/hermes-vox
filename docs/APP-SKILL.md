@@ -98,6 +98,9 @@ hermes skills install https://raw.githubusercontent.com/chezgoulet/hermes-vox/v<
   device, 2026-10-22).
 - The installer scans the skills it fetches and quarantines on a bad verdict; the app skill
   comes back `SAFE` / `ALLOWED`. You do not need to pass `--force`.
+- The bundle is `Files: SKILL.md` and nothing else. (Before this note the skill's pointer to its
+  checker read as `scripts/<file>` inside the skill folder, so every install tried to fetch a
+  support file that does not exist there and logged `referenced support file … skipping it`.)
 
 **From the phone.** Vox cannot write to the gateway, and does not pretend to. Two surfaces ask
 the agent to do it instead, both using one stored turn on the same `/v1/responses` path a
@@ -193,6 +196,28 @@ chat command the app has no surface for. It is the shape of answer the issue is 
 Four real rows from the skill's settings map (section 3, *Voice*), the right section name, and
 the right distinction between the app's voice and the gateway's — the last paragraph is the
 skill's own warning that the two are different things.
+
+Re-run against the branch head this note ships with (byte-identical to the file in the PR, same
+gateway), the answer took the same route without the field names:
+
+> To change the voice in Hermes Vox:
+>
+> **In the app (Settings → Voice):**
+> - **Voice provider**: Choose between **Supertonic** (10 voices) or **Piper** (different voices)
+> - **Voice selection**: Pick your preferred voice within the selected provider
+>
+> **Behind the scenes:**
+> - The app uses on-device STT (Silero VAD + Whisper/Parakeet) and TTS (Supertonic or Piper) via sherpa-onnx
+> - Models (≈290 MB total) download automatically from Settings → Voice models
+> - Three required models: Silero VAD, Supertonic, and Whisper base.en
+>
+> **Gateway configuration** (for your Hermes Agent):
+> In your `config.yaml` under the `voice.tts` section, you can also specify alternative TTS providers like ElevenLabs, OpenAI, or xAI — but these don't appear in the Vox app UI. The app only controls Supertonic/Piper voices.
+
+Wording varies run to run (the model is a local 4B); the route does not. Both runs without the
+skill named the gateway's `config.yaml`; both runs with it named Settings → Voice and nothing
+else. The second run also logged `tool skill_view completed (0.06s, 79298 chars)` — the agent
+opening the skill it had seen in its prompt index.
 
 ### And the platform key is real: installed but disabled for `api_server`
 
