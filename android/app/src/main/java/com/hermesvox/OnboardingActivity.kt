@@ -151,8 +151,9 @@ class OnboardingActivity : AppCompatActivity() {
         if (scopeIssue != null) { Toast.makeText(this, scopeIssue, Toast.LENGTH_LONG).show(); return }
         val btn = findViewById<Button>(R.id.connect); btn.isEnabled = false; btn.text = "Verifying…"
         thread {
+            val session = HermesSession(u, k, m)
             val ok = try {
-                HermesSession(u, k, m).ping()
+                session.ping()
                 true
             } catch (e: Throwable) { false }
             runOnUiThread {
@@ -161,13 +162,19 @@ class OnboardingActivity : AppCompatActivity() {
                     prefs.edit().putString("url", u).putString("model", m).putString("key", (SecureStore.encrypt(k) ?: k))
                         .putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
                     Toast.makeText(this, "Connected → the entity", Toast.LENGTH_SHORT).show()
-                    goMain()
+                    // #285: the first moment an agent exists to ask — offer it the app's own
+                    // description once, then go on whatever the answer was.
+                    AppSkillInstall.offerOnce(this, prefs, session, versionName()) { goMain() }
                 } else {
                     Toast.makeText(this, "Could not reach the entity — check URL + key", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
+
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+    } catch (_: Throwable) { "" }
 
     private fun goMain() {
         startActivity(Intent(this, MainActivity::class.java))
