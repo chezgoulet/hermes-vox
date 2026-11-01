@@ -136,6 +136,14 @@ class AvatarView @JvmOverloads constructor(
     private var lastFrameNs = 0L
     private var lastNanos = 0L
     private var running = false
+    /** #225: the host screen has paused us. Rendering is held DOWN until [setPaused] lifts it,
+     *  even though the TextureView's surface is still alive — a Settings preview must not keep
+     *  a GL context and its targets resident behind another screen. */
+    private var paused = false
+    /** The live surface, kept so a paused view can build a fresh render thread on resume. */
+    private var surface: SurfaceTexture? = null
+    private var surfaceW = 1
+    private var surfaceH = 1
     private val ticker = object : Runnable {
         override fun run() {
             if (!running) return
@@ -151,23 +159,58 @@ class AvatarView @JvmOverloads constructor(
     }
 
     override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
-        thread = BeingThread(st).also { it.resize(w, h); it.start() }
-        running = true
-        lastNanos = 0L
-        postOnAnimation(ticker)
+        surface = st; surfaceW = w; surfaceH = h
+        if (paused) return
+        startRenderThread()
     }
 
-    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) { thread?.resize(w, h) }
+    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
+        surfaceW = w; surfaceH = h
+        thread?.resize(w, h)
+    }
 
     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-        running = false
-        removeCallbacks(ticker)
-        thread?.let { it.finish(); try { it.join(500) } catch (_: InterruptedException) {} }
-        thread = null
+        surface = null
+        releaseRenderThread()
         return true
     }
 
     override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+
+    /** Build the render thread (if the surface exists) and start the frame ticker. */
+    private fun startRenderThread() {
+        val st = surface ?: return
+        if (thread == null) {
+            thread = BeingThread(st).also { it.resize(surfaceW, surfaceH); it.start() }
+        }
+        if (running || !isShown) return
+        running = true
+        lastNanos = 0L
+        lastFrameNs = 0L
+        postOnAnimation(ticker)
+    }
+
+    /** Stop the ticker and hand the GPU back: the thread joins, which destroys its EGL context
+     *  and every render target it allocated. The surface is untouched, so a resume rebuilds
+     *  the same picture. */
+    private fun releaseRenderThread() {
+        running = false
+        removeCallbacks(ticker)
+        thread?.let { it.finish(); try { it.join(500) } catch (_: InterruptedException) {} }
+        thread = null
+    }
+
+    /**
+     * #225: hold rendering while the host screen is in the background. This is stricter than
+     * visibility (a paused window is still "visible" until it is stopped), and it is what makes
+     * a live preview in Settings free when Settings is not in front. Idempotent; the default is
+     * false, so every other host of this view behaves exactly as before.
+     */
+    fun setPaused(p: Boolean) {
+        if (p == paused) return
+        paused = p
+        if (p) releaseRenderThread() else startRenderThread()
+    }
 
     /** Render only while the being can be seen: a backgrounded app (or a hidden onboarding
      *  step) must not keep a 60 fps GPU pipeline running and draining the battery. */

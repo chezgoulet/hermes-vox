@@ -1669,22 +1669,42 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
+                <!-- #225: one slider per entry in LookControls.ALL. The header carries the
+                     control's reset so an experiment is reversible in one tap; the value line
+                     reads "current · range"; the max is the control's step count (LookControls
+                     sets it again at bind, so the two can never disagree for long). -->
                 <LinearLayout
                     android:id="@+id/row_visual_energy"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Motion energy"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Motion energy"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_energy"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_energy_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0×"
+                        android:text="1.0× · 0.5–1.6 ×"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_energy"
@@ -1699,16 +1719,32 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Glow / bloom"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Glow / bloom"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_glow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_glow_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0×"
+                        android:text="1.0× · 0.4–1.6 ×"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_glow"
@@ -1723,22 +1759,38 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Density"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Density"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_density"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_density_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="100%"
+                        android:text="100 % · 30–100 %"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_density"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:max="12" />
+                        android:max="7" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -1747,22 +1799,38 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Speed"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Speed"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_speed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_speed_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0×"
+                        android:text="1.0× · 0.5–1.8 ×"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_speed"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:max="12" />
+                        android:max="13" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -1771,22 +1839,38 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Trail"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Trail"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_trail"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_trail_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="the category's"
+                        android:text="the category's · 0–90 %"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_trail"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:max="12" />
+                        android:max="9" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -1795,22 +1879,38 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Hue"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Hue"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_hue"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_hue_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="0°"
+                        android:text="0° · −180° … 180°"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_hue"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:max="12" />
+                        android:max="24" />
                 </LinearLayout>
 
                 <!-- video-statewire: which archetype fires in each ACTIVE state. Three
