@@ -286,11 +286,15 @@ So:
 On the gateway host, the checks that settle it:
 
 ```bash
-hermes -p <profile> skills list        # installed? (hub-installed count, and the name)
-hermes -p <profile> config get skills  # disabled / platform_disabled
-grep -n "hermes-vox-app" ~/.hermes/profiles/<profile>/config.yaml
-ls ~/.hermes/profiles/<profile>/skills  # the directory itself
+hermes -p <profile> skills list                    # installed? (and the name)
+hermes -p <profile> config get skills.disabled     # off everywhere?
+hermes -p <profile> config get skills.platform_disabled   # off for api_server?
+hermes -p <profile> config path                    # the config.yaml it reads
+ls "$(dirname "$(hermes -p <profile> config path)")/skills/hermes-vox-app"
 ```
+
+(Without `-p`, these answer for the default profile. `config path` prints that profile's
+`config.yaml`, so the skills directory is its sibling.)
 
 `hermes skills list` reporting the skill as installed while the agent still ignores it is
 almost always one of two things: a disable list (section 1), or the wrong profile.
