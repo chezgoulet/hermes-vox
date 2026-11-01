@@ -31,6 +31,7 @@ export PATH="${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools:$PATH"
 OUT="${1:-artifacts/225-particle-controls}"
 PKG="${2:-com.hermesvox.shot}"
 SETTLE="${SETTLE:-6}"
+GROUNDS="${GROUNDS:-light dark}"
 
 # The five controls #225 names, and the bounds VisualStyle gives them.
 CONTROLS=(density speed trail hue energy)
@@ -49,17 +50,21 @@ DEVICE_BUILD="$(adb shell getprop ro.build.fingerprint | tr -d '\r')"
 # ensure_app: the shot build is installed and has a data directory.
 #
 # A shared emulator can be restored to a snapshot between shots — the package disappears
-# mid-run. When that happens, reinstall from $APK (the shot build) instead of aborting the
-# whole pass; on a phone this is a no-op after the first check.
+# mid-run. When that happens, wait for the device to be up and reinstall from $APK (the shot
+# build) instead of aborting the whole pass; on a phone this is a no-op after the first check.
 ensure_app() {
-  adb shell run-as "$PKG" true >/dev/null 2>&1 && return 0
-  if [ -n "${APK:-}" ] && [ -f "$APK" ]; then
-    echo "  (reinstalling $PKG from $APK)"
+  local i
+  for i in 1 2 3; do
+    adb shell run-as "$PKG" true >/dev/null 2>&1 && return 0
+    [ -n "${APK:-}" ] && [ -f "$APK" ] || return 1
+    # A just-restarted emulator takes a moment before its package manager answers.
+    timeout 180 adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done' >/dev/null 2>&1 || true
+    echo "  (installing $PKG from $APK)"
     adb install -r -g "$APK" >/dev/null 2>&1 \
       || { adb uninstall "$PKG" >/dev/null 2>&1 || true; adb install -g "$APK" >/dev/null 2>&1 || true; }
     adb shell am start -n "$PKG/com.hermesvox.MainActivity" >/dev/null 2>&1 || true
-    sleep 4
-  fi
+    sleep 5
+  done
   adb shell run-as "$PKG" true >/dev/null 2>&1
 }
 
@@ -70,7 +75,7 @@ ensure_app || { echo "capture: $PKG is not installed/debuggable (set APK=<shot.a
 # shipped defaults, so an extreme is the ONLY thing that differs between two shots.
 seed() {
   local ground="$1" key="${2:-}" value="${3:-}"
-  ensure_app || { echo "capture: $PKG is not installed and no \$APK to restore it" >&2; exit 2; }
+  ensure_app || { echo "capture: cannot prepare $PKG (set APK=<shot.apk> to install it)" >&2; exit 2; }
   local d=1.0 s=1.0 t=0.0 h=0.0 e=1.0
   case "$key" in
     density) d="$value" ;;
@@ -119,17 +124,26 @@ shoot() {
     read -r ok ink < <(python3 - "$file" "$ground" <<'PY' 2>/dev/null || echo "0 0"
 import sys
 from PIL import Image
+
 im = Image.open(sys.argv[1]).convert("RGB")
 w, h = im.size
-margin = im.crop((0, int(h * 0.35), max(1, w // 12), int(h * 0.50)))   # page, left margin
-mr = sum(p[0] for p in margin.getdata()) / (margin.width * margin.height)
-mg = sum(p[1] for p in margin.getdata()) / (margin.width * margin.height)
-mb = sum(p[2] for p in margin.getdata()) / (margin.width * margin.height)
-paper = mr > 200 and mg > 200 and mb > 200      # @color/hv_bg  #F3F5F9
-dark = mr < 60 and mg < 60 and mb < 60          # the night ground
-band = im.crop((0, int(h * 0.10), w, int(h * 0.30)))                   # the preview's own band
-ink = sum(1 for r, g, b in band.getdata() if abs(r - 243) + abs(g - 245) + abs(b - 249) > 60)
-ok = (paper if sys.argv[2] == "light" else dark)
+
+def mean(img):
+    data = img.getdata()
+    n = len(data)
+    return (sum(p[0] for p in data) / n, sum(p[1] for p in data) / n, sum(p[2] for p in data) / n)
+
+# The page colour, read from the left margin where no card is drawn: #F3F5F9 on the light
+# ground, near-black on the dark one. The ground asked for decides which is expected.
+mr, mg, mb = mean(im.crop((0, int(h * 0.35), max(1, w // 12), int(h * 0.50))))
+paper = mr > 200 and mg > 200 and mb > 200
+night = mr < 60 and mg < 60 and mb < 60
+ok = paper if sys.argv[2] == "light" else night
+
+# The preview band, measured against that same page colour — the being is ink on light and
+# light on dark, so "pixels unlike the page" is the honest test in both grounds.
+band = im.crop((0, int(h * 0.10), w, int(h * 0.30)))
+ink = sum(1 for r, g, b in band.getdata() if abs(r - mr) + abs(g - mg) + abs(b - mb) > 60)
 print(1 if ok else 0, ink)
 PY
 )
@@ -157,6 +171,11 @@ wait_for_settings() {
 # "working" (the sparsest, most legible state for density/trail/hue), scroll to ROW, shoot.
 capture() {
   local ground="$1" name="$2" row="${3:-}"
+  # Resume: a run that the emulator interrupted leaves real frames behind; keep them.
+  if [ -f "$OUT/$name.png" ] && [ "$(stat -c%s "$OUT/$name.png" 2>/dev/null || echo 0)" -gt 100000 ]; then
+    echo "  = $OUT/$name.png (kept)"
+    return 0
+  fi
   adb shell cmd uimode night "$([ "$ground" = dark ] && echo yes || echo no)" >/dev/null 2>&1 || true
   adb shell am force-stop "$PKG"
   # MainActivity is the exported entry; its debug harness opens Settings and finishes
@@ -172,7 +191,8 @@ capture() {
 }
 
 echo "capture: $DEVICE_MODEL ($PKG) -> $OUT"
-for ground in light dark; do
+# GROUNDS lets an interrupted pass be resumed one ground at a time; both is the default.
+for ground in ${GROUNDS:-light dark}; do
   # The section itself at the shipped look: preview + the panel's first rows.
   seed "$ground"
   capture "$ground" "$ground-top"

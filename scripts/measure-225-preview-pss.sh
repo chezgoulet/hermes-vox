@@ -74,6 +74,54 @@ wait_pid() {
   return 1
 }
 
+# The Being section is opened the way a user opens it — one tap on its row — so the preview
+# runs in the SAME process and the SAME Settings instance as the home-list sample. (Starting
+# MainActivity again would deliver the intent to the task's root instead of opening the
+# section; that measured an idle screen once, and this is the fix.)
+dump() {
+  local i=0
+  while [ "$i" -lt 8 ]; do
+    if adb shell uiautomator dump /sdcard/hv-225-u.xml >/dev/null 2>&1; then
+      adb shell cat /sdcard/hv-225-u.xml > /tmp/hv-225-u.xml 2>/dev/null || true
+      [ -s /tmp/hv-225-u.xml ] && return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  echo "measure: could not dump the view hierarchy" >&2
+  return 1
+}
+bounds() {
+  python3 - "$1" <<'PY'
+import re, sys
+k = sys.argv[1]
+try:
+    xml = open('/tmp/hv-225-u.xml').read()
+except Exception:
+    print(); raise SystemExit
+m = re.search(rf'resource-id="[^"]*:id/{re.escape(k)}"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
+print(" ".join(m.groups()) if m else "")
+PY
+}
+tap_id() {
+  local id="$1" tries=0 b l t x y
+  while [ "$tries" -lt 8 ]; do
+    dump || return 1
+    b=$(bounds "$id")
+    if [ -n "$b" ]; then
+      set -- $b; l=$1; t=$2; x=$(((l + $3) / 2)); y=$(((t + $4) / 2))
+      adb shell input tap "$x" "$y"
+      return 0
+    fi
+    # The row may be below the fold: the group list scrolls.
+    adb shell input swipe 1000 1800 1000 1100 300
+    sleep 1
+    tries=$((tries + 1))
+  done
+  echo "measure: no row $id on screen" >&2
+  return 1
+}
+
 sample() { # label -> "label kB frames wakes"
   local label="$1" vals=() f p w
   sleep "$SETTLE"
@@ -103,10 +151,8 @@ wait_pid
 sample "settings-home"
 home_pss="${LAST_PSS:-0}"
 
-# 2. The Being section, in the SAME process: the preview is drawing.
-adb shell am start -n "$PKG/com.hermesvox.MainActivity" \
-  --es settings visuals --es being_advanced true --es preview_state thinking >/dev/null
-wait_pid
+# 2. The Being section, in the SAME process and instance: the preview is drawing.
+tap_id row_grp_visuals || { echo "measure: could not open Being" >&2; exit 2; }
 sample "preview-running"
 run_pss="${LAST_PSS:-0}"; run_frames="${LAST_FRAMES:-0}"
 
