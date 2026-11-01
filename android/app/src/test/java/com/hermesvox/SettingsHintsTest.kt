@@ -165,6 +165,21 @@ class SettingsHintsTest {
             assertFalse("$r does not belong in Voice", r in voice)
     }
 
+    /**
+     * #224: the hint is a second line inside the row's title, so the row must top-align
+     * its children. Baseline-aligning a two- or three-line title against the row's help
+     * chip or switch pushes it past the padding box, where clipToPadding cuts the last
+     * line in half — the device capture showed "the mic hears" sliced through the
+     * middle. Top alignment keeps every line inside the card.
+     */
+    @Test fun hintLinesAreNotClippedByBaselineAlignment() {
+        val styles = File("src/main/res/values/settings_styles.xml").readText()
+        val hvRow = Regex("""<style name="HvRow">(.*?)</style>""", RegexOption.DOT_MATCHES_ALL)
+            .find(styles)?.groupValues?.get(1) ?: error("HvRow style is missing")
+        assertTrue("HvRow must top-align so a hinted title stays inside the padding box",
+            hvRow.contains("""<item name="android:baselineAligned">false</item>"""))
+    }
+
     /** #224: each section has at most one advanced disclosure, and it starts closed. */
     @Test fun advancedRowsSitBehindOneCollapsedDisclosurePerSection() {
         val disclosures = mapOf(

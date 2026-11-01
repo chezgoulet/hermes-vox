@@ -2,6 +2,11 @@
 <resources>
     <style name="HvRow">
         <item name="android:background">@drawable/bg_surface</item>
+        <!-- #224: rows carry a one-line hint under the title, so the title is often
+             two or three lines. Baseline-aligning it with the row's help chip or
+             switch pushes it past the padding box, where clipToPadding cuts the last
+             line in half. Top-align instead: every child starts inside the padding. -->
+        <item name="android:baselineAligned">false</item>
         <item name="android:padding">16dp</item>
         <item name="android:layout_marginBottom">8dp</item>
     </style>
