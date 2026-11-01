@@ -191,6 +191,25 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_grp_assistant"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Be the phone's assistant"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_assistant_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="not set"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_grp_appearance"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -2053,6 +2072,76 @@
                         android:text="reset"
                         style="@style/HvRowAction" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <!-- ══ sec_assistant: Be the phone's assistant (#329).
+                 Android's role is the part this app can ask for; the side-button mapping is
+                 the maker's, so the section says which is which instead of promising a key. ══ -->
+            <LinearLayout
+                android:id="@+id/sec_assistant"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/set_assistant_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="4dp"
+                    android:text="…"
+                    style="@style/HvRowValue" />
+
+                <LinearLayout
+                    android:id="@+id/row_assistant_request"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Use Hermes Vox as the assistant"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_assistant_action"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="16dp"
+                        android:text="ask android"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_assistant_settings"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Android's digital assistant settings"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="16dp"
+                        android:text="open"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/set_assistant_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="12dp"
+                    android:text="Android owns the role; the phone maker owns the button. Asking makes Hermes Vox the app Android's assistant gesture opens — the same gesture a Pixel fires on a long press of the power button.\n\nOn a Samsung that long press is a One UI setting (the phone's own side-key or Bixby settings), and no app can bind a physical key: if the phone does not send the gesture to the assistant, Vox never sees it.\n\nUndo it here or in Android's default-apps settings at any time. Vox keeps no listener and hears nothing until the call screen is open."
+                    style="@style/HvRowValue" />
             </LinearLayout>
 
             <!-- ══ sec_about: About & Diagnostics ══ -->

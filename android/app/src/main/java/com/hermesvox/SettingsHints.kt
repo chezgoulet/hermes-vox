@@ -31,6 +31,9 @@ object SettingsHints {
         "row_entity" to "Where your Hermes gateway is, and the key it expects",
         "row_reset" to "Starts a fresh conversation; ends a call that is live",
         "row_app_skill" to "So it can answer \"where is that setting?\" from the app's own notes",
+        // The phone's assistant (#329)
+        "row_assistant_request" to "Hands the assistant gesture to Vox; Android asks you first",
+        "row_assistant_settings" to "Android's own screen — the only place the role can be taken back",
         // Hearing
         "row_bargein" to "Lets you talk over a reply to interrupt it",
         "row_mic_aec" to "Removes the phone's own voice from what the mic hears",

@@ -8,6 +8,13 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- #329: Android 11+ package visibility again. The Settings row names the app that
+             currently receives the assistant gesture, so it must be allowed to resolve the
+             assist intent it also handles. Where several apps qualify, Android answers with
+             the platform resolver and the row says "another app" rather than guessing. -->
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
     </queries>
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -51,6 +58,26 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- #329: the digital-assistant entry point. Handling android.intent.action.ASSIST
+             (+ CATEGORY_DEFAULT) is what makes an app eligible for
+             android.app.role.ASSISTANT; the role is what the assist gesture (a long press of
+             the side button, where the maker wires it to the assistant) actually invokes.
+             Translucent, no history, its own task: it exists only to hand off to the call
+             screen and must never appear as a second UI or in Recents. It is exported because
+             the system — not this app — is what starts it. -->
+        <activity
+            android:name=".AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="com.hermesvox.assist"
+            android:theme="@style/Theme.HermesVox.Assist">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 

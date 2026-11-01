@@ -12,4 +12,11 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
     </style>
+
+    <!-- #329: the assist gesture is fired by the system, sometimes from the lock screen.
+         The bridge must be invisible: no window, no dim, no animation. -->
+    <style name="Theme.HermesVox.Assist" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>
