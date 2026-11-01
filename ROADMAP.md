@@ -207,47 +207,49 @@ speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. 
 
 **The work, in dependency order:**
 
-- `[ ]` **States and surfaces (#280, #281).** Audit what each state is — listening, thinking, a tool
+Status is stated, not implied: `[ ]` not built · `[~]` built and merged on `testing`, awaiting
+field verification on a device · `[x]` verified on a device and closed. A merged pull request is
+not a tick; the owner's session is.
+- `[~]` **States and surfaces (#280, #281).** Audit what each state is — listening, thinking, a tool
   running, waiting, failed, done — and decide whether the being or explicit UI carries it. Then show
   what is running and on what, and what failed and why. No log viewer; one line of plain language and
-  a state.
-- `[ ]` **Approvals on the phone (#282).** When Hermes stops for a sign-off, surface what is being
+  a state. **Built** — the state audit is committed as `docs/STATE-AUDIT.md` and the operations line ships (#281).
+- `[~]` **Approvals on the phone (#282).** When Hermes stops for a sign-off, surface what is being
   approved, why, and what yes and no do — answerable by voice or touch, timing out to *no*. The
-  loop is not closed if the barricade is invisible.
-- `[ ]` **Discovery (#284, #285).** Three mechanisms as one system — the being suggests in context,
+  loop is not closed if the barricade is invisible. **Built** — `approval.request` is surfaced, answered by voice or touch, timing out to *no*.
+- `[~]` **Discovery (#284, #285).** Three mechanisms as one system — the being suggests in context,
   the interface reveals what is relevant, a searchable surface teaches by use — plus the app skill
-  bundled and enabled, so the agent itself can answer "where is that setting".
+  bundled and enabled, so the agent itself can answer "where is that setting". **Built** — `Discovery.kt` with the stuck hint and catalog suggestions, and the app skill is offered at first run.
 - `[ ]` **Co-residency (#179) — the gate.** One live call with VAD + the streaming arm + TTS +
   presence resident: RTF, peak RSS, worst `MemAvailable`, presence first token, stutter, thermal.
   Then the default arm is decided and written into `DECISIONS.md` with the numbers.
-- `[ ]` **The listening half, continuous (#228, #235, #229).** The mic stays open for the call, the
+- `[~]` **The listening half, continuous (#228, #235, #229).** The mic stays open for the call, the
   partial worker stops re-decoding from scratch, and endpointing becomes a probability with a
   timeout and an `eagerness` preset rather than a silence constant. This is the substrate 0.9.2's
-  behaviours need; building it is 0.9.1's work because a call is better with it either way.
-- `[ ]` **The reply lifecycle under interruption (#240, #202).** One end event per request, audio
+  behaviours need; building it is 0.9.1's work because a call is better with it either way. **Built, default off** — `ContinuousCapture`, `SemanticEndpoint` and the partial worker are wired behind prefs.
+- `[~]` **The reply lifecycle under interruption (#240, #202).** One end event per request, audio
   already in flight attributable to its reply, and the truncation channel either producing a named
-  cause or closed with the evidence that narrowed it.
-- `[ ]` **Profiles (#174).** A registry of saved connections and a switcher — endpoint, key, agent
+  cause or closed with the evidence that narrowed it. **Half built** — #240 shipped (one end event per reply id); #202 is fixed but unconfirmed until a human ear says so.
+- `[~]` **Profiles (#174).** A registry of saved connections and a switcher — endpoint, key, agent
   name, session scope. Client-side only: `GET /v1/models` returns one entity name, so discovery is a
-  gateway contract. Switching ends the live call; one line at a time is an invariant.
-- `[ ]` **The commands surface (#226, #227, #252).** A themed sub-UI instead of the stock list, a
+  gateway contract. Switching ends the live call; one line at a time is an invariant. **Built** — `Profiles.kt`, `ProfileDialogs.kt` and the header switcher; #174 stays open until the switch is verified on a device, including that switching ends a live call.
+- `[~]` **The commands surface (#226, #227, #252).** A themed sub-UI instead of the stock list, a
   six-verb animation grammar instead of per-command art, and the open question in #252 settled: does
   the app keep full command parity in-app, or lean into the phone-call identity and make hanging up
-  and calling back the normal way to start a new session?
-- `[ ]` **The settings and the look (#224, #225, #275).** Split Visuals by what the user is changing —
+  and calling back the normal way to start a new session? **Built** — the commands screen (#226) and the six-verb motion grammar (#227); the #252 design question is still open.
+- `[~]` **The settings and the look (#224, #225, #275).** Split Visuals by what the user is changing —
   Being, Hearing, Voice, Presence — and give the look real controls with a preview that runs in the
   screen where the change is made. Light mode gets its own set of being animations; a black box on a
-  white screen is not a theme. The Presence section carries today's controls until #222 trims it.
+  white screen is not a theme. The Presence section carries today's controls until #222 trims it. **Built** — four sections, look controls with an in-screen preview, and an authored light ground with measured contrast floors.
 - `[ ]` **The regression that stops the product (#191).** Presence hangs on initialising after the
   Gemma download and the process dies. The load path is supposed to degrade gracefully, so the cause
   is below it — most likely memory. It cannot wait a release, and the co-residency run is where the
   memory picture becomes legible.
 - `[ ]` **Ambient cues (#251).** A thinking ping and an idle-timeout cue — the ambient channel while
   Presence is off, and explicitly not layered on top of asides when it is on.
-- `[ ]` **The instruments (#209, #208, F4, F5, F8).** The performance baseline and behaviour matrix
+- `[~]` **The instruments (#209, #208, F4, F5, F8).** The performance baseline and behaviour matrix
   recorded per release; GPU contention and the thirty-minute thermal soak measured; a fixed
-  ten-utterance verdict script so "this build is better" stops being an impression.
-
+  ten-utterance verdict script so "this build is better" stops being an impression. **Partly** — #209 has a one-device baseline on the 0.9.1 build (median 161 ms cold start, 640 MB in call); #208, F4, F5 and F8 are not built.
 - `[ ]` **The store rail (#165).** F-Droid path B: sherpa-onnx and onnxruntime built from source,
   `Binaries:` + `AllowedAPKSigningKeys`, submission against the released tag. It runs alongside this
   release and **does not gate its cut** — if the recipe is not ready, 0.9.1 still ships.
