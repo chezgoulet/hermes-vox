@@ -508,9 +508,9 @@ class MainActivity : AppCompatActivity() {
         warming = android.widget.TextView(this).apply {
             text = "Preparing your voice\u2026"
             textSize = 18f
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_text))
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_text))
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_bg))
             typeface = android.graphics.Typeface.MONOSPACE
             visibility = android.view.View.GONE
             layoutParams = android.view.ViewGroup.LayoutParams(
@@ -898,7 +898,7 @@ class MainActivity : AppCompatActivity() {
             text = "Download the voice models"
             textSize = 22f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_text))
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_text))
             gravity = android.view.Gravity.CENTER
             setPadding(0, (14 * d).toInt(), 0, 0)
         })
@@ -907,7 +907,7 @@ class MainActivity : AppCompatActivity() {
                 "Your offline voice needs $need small models downloaded once — " +
                 "after that every conversation runs on-device, no cloud."
             textSize = 15f
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_text_dim))
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_dim))
             gravity = android.view.Gravity.CENTER
             setPadding(0, (10 * d).toInt(), 0, 0)
         })
@@ -927,7 +927,7 @@ class MainActivity : AppCompatActivity() {
         body.addView(Button(this).apply {
             text = "Not now"
             isAllCaps = false
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_text_dim))
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_dim))
             background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_ghost)
             setOnClickListener {
                 modelsGate?.visibility = View.GONE
@@ -943,7 +943,7 @@ class MainActivity : AppCompatActivity() {
         return android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_bg))
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_bg))
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)

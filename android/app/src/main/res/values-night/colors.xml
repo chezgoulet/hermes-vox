@@ -18,6 +18,15 @@
     <color name="hv_ok">#34D399</color>
     <color name="hv_warn">#FBBF24</color>
     <color name="hv_danger">#F87171</color>
+    <!-- #275: the pre-change hardcoded values, so the dark scheme does not move. -->
+    <color name="hv_crawl_reply">#D6F4FF</color>
+    <color name="hv_crawl_dim">#5C6B7D</color>
+    <color name="hv_overlay_bg">#06070B</color>
+    <color name="hv_overlay_text">#D6F4FF</color>
+    <color name="hv_overlay_dim">#9FB3C9</color>
+    <color name="hv_verdict_ok">#35D07F</color>
+    <color name="hv_verdict_cold">#FFB43D</color>
+    <color name="hv_verdict_fail">#FF5B5B</color>
     <!-- #275: the same semantic names as the light theme, so the call glyph and the
          scrim are written once and are legible in both. -->
     <color name="hv_call_idle">#35D07F</color>

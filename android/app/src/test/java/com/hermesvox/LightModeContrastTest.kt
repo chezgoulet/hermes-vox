@@ -128,14 +128,19 @@ class LightModeContrastTest {
     // ---- the words and controls follow the ground too -------------------------
 
     @Test fun every_text_token_clears_4_5_on_its_real_background() {
-        val tokens = listOf("hv_text", "hv_text_dim", "hv_cyan", "hv_status", "hv_status_live",
+        val both = listOf("hv_text", "hv_text_dim", "hv_cyan", "hv_status", "hv_status_live",
             "hv_ok", "hv_warn", "hv_danger", "hv_call_idle", "hv_call_live",
-            "hv_cmd_done", "hv_cmd_failed")
+            "hv_cmd_done", "hv_cmd_failed", "hv_crawl_reply", "hv_overlay_text",
+            "hv_overlay_dim", "hv_verdict_ok", "hv_verdict_cold", "hv_verdict_fail")
+        // The dev SSE console keeps its 0.9.0.3 dark colour (#5C6B7D, 3.85:1 on black):
+        // it is diagnostic-only and changing it would move the dark scheme, which this
+        // issue does not touch. Its LIGHT value is fixed with everything else (4.96:1).
+        val lightOnly = listOf("hv_crawl_dim")
         for (night in listOf(false, true)) {
             val ground = if (night) "night" else "light"
             val bg = resColor("hv_bg", night)
             val chip = resColor("hv_surface_high", night)
-            for (tok in tokens) {
+            for (tok in both + if (night) emptyList<String>() else lightOnly) {
                 val c = resColor(tok, night)
                 for ((where, back) in listOf("page" to bg, "chip" to chip)) {
                     val r = Contrast.ratio(c, back)
@@ -155,6 +160,15 @@ class LightModeContrastTest {
         assertEquals(0xFF8B98AC.toInt(), resColor("hv_text_dim", night = true))
         assertEquals(0xFF35D07F.toInt(), resColor("hv_call_idle", night = true))
         assertEquals(0xFFFF5B5B.toInt(), resColor("hv_call_live", night = true))
+        // The UI that used to be hardcoded also keeps its exact dark values.
+        assertEquals(0xFFD6F4FF.toInt(), resColor("hv_crawl_reply", night = true))
+        assertEquals(0xFF5C6B7D.toInt(), resColor("hv_crawl_dim", night = true))
+        assertEquals(0xFF06070B.toInt(), resColor("hv_overlay_bg", night = true))
+        assertEquals(0xFFD6F4FF.toInt(), resColor("hv_overlay_text", night = true))
+        assertEquals(0xFF9FB3C9.toInt(), resColor("hv_overlay_dim", night = true))
+        assertEquals(0xFF35D07F.toInt(), resColor("hv_verdict_ok", night = true))
+        assertEquals(0xFFFFB43D.toInt(), resColor("hv_verdict_cold", night = true))
+        assertEquals(0xFFFF5B5B.toInt(), resColor("hv_verdict_fail", night = true))
     }
 
     @Test fun the_scrim_is_the_dark_theme_blackout_and_a_light_paper_wash() {

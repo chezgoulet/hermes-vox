@@ -42,12 +42,12 @@ class CrawlView @JvmOverloads constructor(
         android.content.res.Configuration.UI_MODE_NIGHT_YES
 
     private val replyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = androidx.core.content.ContextCompat.getColor(context, R.color.hv_text)
+        color = androidx.core.content.ContextCompat.getColor(context, R.color.hv_crawl_reply)
         textSize = sp(17f); typeface = android.graphics.Typeface.MONOSPACE
         if (!lightGround) setShadowLayer(6f, 0f, 0f, 0x552AC3DC.toInt())
     }
     private val ssePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = androidx.core.content.ContextCompat.getColor(context, R.color.hv_text_dim)
+        color = androidx.core.content.ContextCompat.getColor(context, R.color.hv_crawl_dim)
         textSize = sp(15f); typeface = android.graphics.Typeface.MONOSPACE
     }
 

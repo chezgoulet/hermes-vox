@@ -21,6 +21,17 @@
     <color name="hv_ok">#0B7355</color>
     <color name="hv_warn">#8F4308</color>
     <color name="hv_danger">#B91C1C</color>
+    <!-- #275: texts that were hardcoded for the old black surface. Night keeps the
+         exact shipped values so the dark scheme is pixel-identical; light is the same
+         idea on paper. Each clears 4.5:1 on hv_bg and the hv_surface_high chip. -->
+    <color name="hv_crawl_reply">#0F172A</color>
+    <color name="hv_crawl_dim">#5A6B85</color>
+    <color name="hv_overlay_bg">#F3F5F9</color>
+    <color name="hv_overlay_text">#0F172A</color>
+    <color name="hv_overlay_dim">#5A6B85</color>
+    <color name="hv_verdict_ok">#0B7355</color>
+    <color name="hv_verdict_cold">#8F4308</color>
+    <color name="hv_verdict_fail">#B91C1C</color>
     <!-- The call glyph is a textual control, so it needs the text floor, not the
          non-text one. Light is deep enough to read on paper; night keeps the dark
          theme's exact values (the hero scheme is pixel-identical). -->
