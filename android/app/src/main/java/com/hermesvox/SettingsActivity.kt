@@ -50,6 +50,7 @@ class SettingsActivity : AppCompatActivity() {
         applyHints()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
         openSectionFromIntent()
+        applyDebugHarness()   // debug-only; inert in a release build
     }
 
     /** #224: one line under each row's title saying what it changes (SettingsHints). */
@@ -116,6 +117,7 @@ class SettingsActivity : AppCompatActivity() {
             SECTION_VISUALS -> "Being"; SECTION_ASSISTANT -> "The assistant role"
             else -> "About & Diagnostics"
         }
+        syncPreview()   // #225: the being only renders while its own section is open
     }
 
     /** WS1: return to the Settings home (group list). */
@@ -131,6 +133,7 @@ class SettingsActivity : AppCompatActivity() {
         refreshModelsVal()
         refreshGrpVals()
         refreshAssistant()   // #329: the role can change in Android's settings while we are away
+        syncPreview()   // #225: back on the home list, nothing of the being's is drawing
     }
 
     private fun bindGroups() {
@@ -896,10 +899,24 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         // A download may have finished while the store was open; the Settings
         // warning must clear (or appear) the moment we come back.
         refreshModelsVal()
         refreshGrpVals()
+        // #225: re-read the look (a theme change recreates the screen; a pref may have moved
+        // elsewhere) and restart the preview only if the Being section is the one on screen.
+        bindBeingPreview()
+        syncPreview()
+    }
+
+    /** #225: the preview stops at onPause, not at onDestroy — a backgrounded Settings screen
+     *  must not keep a render thread, a GL context or a 60 fps ticker alive. */
+    override fun onPause() {
+        super.onPause()
+        resumed = false
+        previewHandler.removeCallbacks(previewTick)
+        findViewById<AvatarView>(R.id.set_being_preview)?.setPaused(true)
     }
 
     // #115: the Settings-home rows each carry a live-value subtitle so a user can see
@@ -1423,39 +1440,165 @@ class SettingsActivity : AppCompatActivity() {
     // truncated list to drift. A3 adds "cycle all categories" so the whole breadth can be
     // seen animating. The pre-existing shape/theme + cycle controls are preserved verbatim
     // into this group (same prefs, same wording).
+    // ---- #225: the look controls, bound from ONE table ------------------------------
+    // Each slider reads and writes exactly the pref its LookControls entry names, prints
+    // "current · range", and carries a one-tap reset beside its title.
+    private fun bindLookControls() {
+        for (c in LookControls.ALL) bindLookControl(c)
+    }
+
+    private fun bindLookControl(c: LookControls.Control) {
+        val seek = findViewById<SeekBar>(idOf(c.seek)) ?: return
+        val tv = findViewById<TextView>(idOf(c.value)) ?: return
+        val reset = findViewById<TextView>(idOf(LookControls.resetName(c.seek)))
+        // Named `key` on purpose: the Settings pref-key audit (SettingsHintsTest) treats a
+        // helper parameter as a parameter, so this table-driven binding adds no unowned key.
+        val key = c.key
+        seek.max = c.steps
+        // The value line and the reset's state are one thing (the control's position), so
+        // they are refreshed together — a reset can never leave a stale value on screen.
+        val show: (Int) -> Unit = { p ->
+            tv.text = c.labelAt(p)
+            reset?.let {
+                val atDefault = c.isDefault(p)
+                it.alpha = if (atDefault) 0.35f else 1f
+                it.isClickable = !atDefault
+            }
+        }
+        seek.progress = c.progressOf(prefs.getFloat(key, c.default))
+        show(seek.progress)
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.edit().putFloat(key, c.at(p)).apply()
+                show(p)
+            }
+            override fun onStartTrackingTouch(s: SeekBar) {}
+            override fun onStopTrackingTouch(s: SeekBar) {}
+        })
+        reset?.setOnClickListener {
+            prefs.edit().putFloat(key, c.default).apply()
+            seek.progress = c.progressOf(c.default)
+            show(seek.progress)
+        }
+    }
+
+    /** A layout id by resource name — the table stores names so a test can hold it against
+     *  the layout without this file restating every id twice. */
+    private fun idOf(name: String): Int = resources.getIdentifier(name, "id", packageName)
+
     // ---- #225: the live preview ---------------------------------------------------------
     // The same AvatarView the main screen draws, fed by the same applyLookPrefs(), so a change
     // is judged where it is made. It walks through the states a call shows, so a look is seen
-    // listening, working and speaking — not only at rest.
+    // listening, working and speaking — not only at rest. It renders ONLY while the Being
+    // section is on screen and the screen is resumed: leaving releases the render thread and
+    // its GPU targets (AvatarView.setPaused), so nothing keeps drawing — or holding memory —
+    // behind the Settings home, another section, or another app.
     private val previewStates = arrayOf("idle" to "resting", "listening" to "listening",
         "thinking" to "working", "speaking" to "speaking")
     private var previewAt = 0
+    /** DEBUG harness only (#225 screenshots): hold one state instead of walking them. */
+    private var previewHold: String? = null
+    /** True between onResume and onPause; the preview may only run when this is set. */
+    private var resumed = false
     private val previewHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val previewTick = object : Runnable {
         override fun run() {
             val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
             val (st, label) = previewStates[previewAt % previewStates.size]
             previewAt++
-            v.setPresent(st, null, if (st == "thinking") 0.7f else 0.15f, if (st == "speaking") 0.55f else 0.2f)
-            findViewById<TextView>(R.id.set_being_preview_state)?.text = label
+            showPreviewState(v, st, label)
             previewHandler.postDelayed(this, PREVIEW_STATE_MS)
         }
     }
     private val lookListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, _ ->
-        findViewById<AvatarView>(R.id.set_being_preview)?.applyLookPrefs(p)
+        // A pref written by a row above must show up in the preview at once — but never on a
+        // screen that is in the background (onPause has already released the renderer).
+        if (resumed) findViewById<AvatarView>(R.id.set_being_preview)?.applyLookPrefs(p)
     }
     private var previewBound = false
+
+    /** Put the preview in [st] and say which state it is showing. */
+    private fun showPreviewState(v: AvatarView, st: String, label: String) {
+        v.setPresent(st, null, if (st == "thinking") 0.7f else 0.15f,
+            if (st == "speaking") 0.55f else 0.2f)
+        findViewById<TextView>(R.id.set_being_preview_state)?.text = label
+    }
+
     private fun bindBeingPreview() {
         val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
-        // #275: on the light theme the preview is ink on the page, exactly as the main screen.
+        // #275: on the light theme the preview is ink on the page, exactly as the main screen —
+        // setLightSurface snaps the family's authored light axes, so the preview cannot show a
+        // dark panel in light mode.
         val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
         v.setLightSurface(night != android.content.res.Configuration.UI_MODE_NIGHT_YES, ContextCompat.getColor(this, R.color.hv_bg))
         v.applyLookPrefs(prefs)
         if (!previewBound) {
             previewBound = true
             prefs.registerOnSharedPreferenceChangeListener(lookListener)
+        }
+    }
+
+    /** Run the preview only while it is both on screen and in front; otherwise stop the state
+     *  walk AND hand the GPU back (AvatarView.setPaused tears the render thread down). */
+    private fun syncPreview() {
+        val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+        val on = resumed && currentSection == SECTION_VISUALS
+        previewHandler.removeCallbacks(previewTick)
+        v.setPaused(!on)
+        if (!on) return
+        val hold = previewHold
+        if (hold != null) {
+            val label = previewStates.firstOrNull { it.first == hold }?.second ?: hold
+            showPreviewState(v, hold, label)
+        } else {
             previewHandler.post(previewTick)
         }
+    }
+
+    // ---- DEBUG harness (screenshots) ------------------------------------------------
+    /** DEBUG-ONLY (#275/#225 convention): make a capture deterministic without taps.
+     *  Extras: `section` (already honoured), `being_advanced` (open the fine-look panel),
+     *  `preview_state` (hold the preview on idle|listening|thinking|speaking) and `scroll_to`
+     *  (a row or seek-bar resource name to scroll the section to). Inert in a release build,
+     *  because it is guarded by the same FLAG_DEBUGGABLE test MainActivity's harness uses. */
+    private fun applyDebugHarness() {
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        intent?.getStringExtra("being_advanced")?.let { want ->
+            if (want != "false") {
+                findViewById<android.view.View>(R.id.adv_being_panel)?.visibility = android.view.View.VISIBLE
+                findViewById<TextView>(R.id.set_being_adv_state)?.text = "hide"
+            }
+        }
+        intent?.getStringExtra("preview_state")?.let { s ->
+            previewHold = previewStates.firstOrNull { it.first == s.lowercase() }?.first
+        }
+        // showSection() already ran, so it started the walk; taking the hold now must take
+        // effect on this same screen, not after the next section switch.
+        if (previewHold != null) syncPreview()
+        intent?.getStringExtra("scroll_to")?.let { name -> scrollToRow(name) }
+    }
+
+    /** DEBUG only: scroll so [name]'s row sits at the BOTTOM of the screen, which keeps the
+     *  preview and the rows above it in frame — the control and (for the upper rows) the
+     *  being it changes in one shot. Waits for the section's first layout: the offset is
+     *  meaningless before it, and a scroll computed too early lands at the top. The row is
+     *  nested (the fine-look panel is one child of the ScrollView), so the offset comes from
+     *  screen coordinates, not from the row's own `bottom`. */
+    private fun scrollToRow(name: String) {
+        val row = findViewById<android.view.View>(idOf(name)) ?: return
+        val scroll = findViewById<android.widget.ScrollView>(R.id.settings_scroll) ?: return
+        val margin = (resources.displayMetrics.density * 16f).toInt()
+        scroll.viewTreeObserver.addOnGlobalLayoutListener(
+            object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    scroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    val r = IntArray(2); row.getLocationOnScreen(r)
+                    val s = IntArray(2); scroll.getLocationOnScreen(s)
+                    val rowBottomInContent = r[1] - s[1] + scroll.scrollY + row.height
+                    scroll.scrollTo(0, (rowBottomInContent - scroll.height + margin).coerceAtLeast(0))
+                }
+            })
     }
 
     private fun bindVisuals() {
@@ -1479,25 +1622,10 @@ class SettingsActivity : AppCompatActivity() {
                 prefs.edit().putBoolean(VisualStyle.KEY_CYCLE_ALL, on).apply()
             }
         }
-        bindFloatSeekBar(R.id.set_seek_visual_energy, R.id.set_visual_energy_val, VisualStyle.KEY_ENERGY,
-            VisualStyle.ENERGY_MIN, VisualStyle.ENERGY_MAX, VisualStyle.ENERGY_STEP,
-            VisualStyle.DEFAULT_ENERGY) { "%.1f×".format(it) }
-        bindFloatSeekBar(R.id.set_seek_visual_glow, R.id.set_visual_glow_val, VisualStyle.KEY_GLOW,
-            VisualStyle.GLOW_MIN, VisualStyle.GLOW_MAX, VisualStyle.GLOW_STEP,
-            VisualStyle.DEFAULT_GLOW) { "%.1f×".format(it) }
-        // #225: the fine-grained look, each a scalar over the category.
-        bindFloatSeekBar(R.id.set_seek_visual_density, R.id.set_visual_density_val, VisualStyle.KEY_DENSITY,
-            VisualStyle.DENSITY_MIN, VisualStyle.DENSITY_MAX, VisualStyle.DENSITY_STEP,
-            VisualStyle.DEFAULT_DENSITY) { "${(it * 100).toInt()}%" }
-        bindFloatSeekBar(R.id.set_seek_visual_speed, R.id.set_visual_speed_val, VisualStyle.KEY_SPEED,
-            VisualStyle.SPEED_MIN, VisualStyle.SPEED_MAX, VisualStyle.SPEED_STEP,
-            VisualStyle.DEFAULT_SPEED) { "%.1f×".format(it) }
-        bindFloatSeekBar(R.id.set_seek_visual_trail, R.id.set_visual_trail_val, VisualStyle.KEY_TRAIL,
-            VisualStyle.TRAIL_MIN, VisualStyle.TRAIL_MAX, VisualStyle.TRAIL_STEP,
-            VisualStyle.DEFAULT_TRAIL) { if (it <= 0f) "the category's" else "${(it * 100).toInt()}%" }
-        bindFloatSeekBar(R.id.set_seek_visual_hue, R.id.set_visual_hue_val, VisualStyle.KEY_HUE,
-            VisualStyle.HUE_MIN, VisualStyle.HUE_MAX, VisualStyle.HUE_STEP,
-            VisualStyle.DEFAULT_HUE) { "${it.toInt()}°" }
+        // #225: the look's sliders are bound from LookControls.ALL — one table that names the
+        // pref, the row, the bounds and the reading, so a slider can only write the pref it
+        // says it writes. Energy and glow ride it too (see the table's own note).
+        bindLookControls()
         bindBeingPreview()
 
         // video-statewire: WHICH SHAPE FIRES IN EACH ACTIVE STATE. Three pickers over the

@@ -466,6 +466,22 @@ class MainActivity : AppCompatActivity() {
         // #226: the screenshot pass needs the commands sheet itself, on a screen where
         // nothing else is in the way. Debug-only, like everything above. Extra: `sheet`.
         if (intent.getBooleanExtra("sheet", false)) mainHandler.postDelayed({ showCommands() }, 600L)
+        // #225: the capture pass needs the Being section with its fine-look panel open, which
+        // no shell command can reach — SettingsActivity is not exported, and tapping through a
+        // screenshot run is not reproducible. Debug-only, like everything above. Extras:
+        // `settings` (the section to open: visuals…) plus the extras SettingsActivity's own
+        // harness reads (`being_advanced`, `preview_state`, `scroll_to`), forwarded verbatim.
+        intent.getStringExtra("settings")?.let { section ->
+            startActivity(android.content.Intent(this, SettingsActivity::class.java).apply {
+                if (section != "home") putExtra("section", section)
+                for (k in arrayOf("being_advanced", "preview_state", "scroll_to")) {
+                    intent.getStringExtra(k)?.let { putExtra(k, it) }
+                }
+            })
+            // One app screen at a time: leaving Main's own being running behind Settings would
+            // put a second renderer in the process and blur what a measurement is measuring.
+            finish()
+        }
     }
 
     /** The installed version code, from the manifest (BuildConfig is not generated). */
