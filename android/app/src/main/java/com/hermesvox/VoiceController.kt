@@ -1281,15 +1281,17 @@ class VoiceController(private val context: Context, private val session: HermesS
         } finally { initializing = false }
     }
 
-    /** A text turn (the Send path / the text fallback). */
-    fun sendText(text: String) {
+    /** A text turn (the Send path / the text fallback). [pasted] is a clipboard turn:
+     *  the text goes to the entity exactly as typed; a paste is never a command and its
+     *  body is never logged. */
+    fun sendText(text: String, pasted: Boolean = false) {
         if (text.isBlank()) return
         stopTts()
         // #240: a typed turn is a NEW reply, so it takes a new id. Reusing the live
         // turnGen ended the previous voice reply under the same id, and the ledger
         // (correctly) refuses to reopen an ended id — the typed turn would go silent.
         turnGen++
-        runStreamedTurn(text, turnGen)
+        runStreamedTurn(text, turnGen, pasted = pasted)
     }
 
     private fun initTts(): Boolean {
@@ -1365,7 +1367,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     // --- The streamed entity turn (REAL SSE) ---
-    private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false) {
+    private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false, pasted: Boolean = false) {
         if (turnInFlight) { VoxLog.d("turn suppressed (in flight)"); releaseTurnGate(turnGen, "suppressed-inflight"); return }
         val voiceTurn = fromVoice && presenceActive
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
@@ -1477,7 +1479,13 @@ class VoiceController(private val context: Context, private val session: HermesS
         // drift-sync epilogue rides the user text — cache-safe per-turn channel).
         // NOTE: applied BEFORE the onLog line, so the console shows what the
         // gateway actually received.
-        listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
+        // #327: a paste can be a megabyte of someone's clipboard. Its body never reaches
+        // the console (or the file log, which mirrors the console) even when "log spoken
+        // transcript" is on — only its size does.
+        listener?.onLog(
+            if (pasted) "// you → (pasted, ${text.length} characters)"
+            else if (logTranscripts()) "// you → $text"
+            else "// (you spoke)")
         if (shouldSpeak() && tts?.supportsStreaming == true) streamBegin(gen)
         // 0.5.0.1 / H3: route the turn submit through the guard. It re-checks
         // stopped/isShutdown AND catches the RejectedExecutionException from the check-
