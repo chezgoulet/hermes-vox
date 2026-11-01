@@ -33,6 +33,51 @@
             android:text="@string/hv_not_connected" />
     </LinearLayout>
 
+    <!-- #282: the approval card. It exists because a barricade is not "work": the
+         being cannot carry "answer this", so the request gets its own line, the
+         gateway's exact choices, and a deny that is always available. Buttons are
+         built in code because the list is the event's, never a fixed four. -->
+    <LinearLayout
+        android:id="@+id/approval_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_banner"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/approval_title"
+            style="@style/TextVox.Tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="APPROVAL NEEDED" />
+
+        <TextView
+            android:id="@+id/approval_line"
+            style="@style/TextVox.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:accessibilityLiveRegion="polite" />
+
+        <TextView
+            android:id="@+id/approval_state"
+            style="@style/TextVox.Tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/approval_choices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal" />
+    </LinearLayout>
+
     <!-- What's new: shown once on the first launch after an upgrade (#0.9) -->
     <LinearLayout
         android:id="@+id/update_banner"

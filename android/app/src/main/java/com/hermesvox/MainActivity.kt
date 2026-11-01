@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.hermesvox.core.ApprovalChoices
 import com.hermesvox.core.HermesSession
 
 /**
@@ -22,6 +23,14 @@ import com.hermesvox.core.HermesSession
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    // #282: the approval surface. The card exists for the decision; the state line
+    // carries the waiting phase; the transcript keeps the timed-out request visible.
+    private lateinit var approvalCard: android.widget.LinearLayout
+    private lateinit var approvalLine: TextView
+    private lateinit var approvalState: TextView
+    private lateinit var approvalChoices: android.widget.LinearLayout
+    private var approvalBusy = false
+    private var approvalWaiting = false
     private lateinit var warming: android.widget.TextView
     // #6/#12: voice models are a first-run REQUIREMENT (nothing works without
     // them). modelsGate = the blocking empty-state overlay shown when NONE of
@@ -506,6 +515,10 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
         status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
         status.visibility = android.view.View.GONE
+        approvalCard = findViewById(R.id.approval_card)
+        approvalLine = findViewById(R.id.approval_line)
+        approvalState = findViewById(R.id.approval_state)
+        approvalChoices = findViewById(R.id.approval_choices)
         agentName = findViewById(R.id.agent_name)
         // #174: the agent's name is where the active profile shows, so it is where it switches.
         agentName.setOnClickListener { profiles.showSwitcher() }
@@ -1737,6 +1750,9 @@ class MainActivity : AppCompatActivity() {
                 // upstream is slow." The fallback now shows only THIS turn's composed
                 // text (the arguably-correct "you see what it'll say" case, unchanged).
                 if (state == "thinking") { replyBuf = ""; revealHadCursor = false; revealBufLoggedFor = -1 }
+                // #282: a new turn retires the PREVIOUS approval card; a request that is
+                // still waiting is never hidden by its own run's state.
+                if (state == "thinking" && !approvalWaiting) approvalCard.visibility = View.GONE
                 // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
@@ -1758,8 +1774,11 @@ class MainActivity : AppCompatActivity() {
                 val running = opStep?.let {
                     Operations.running(it, android.os.SystemClock.uptimeMillis() - opStartedAt)
                 }
-                val line = StateLine.words(running, opHeld, words)
-                setStatus(line, StateLine.visible(running != null, opHeld != null, state, callLive))
+                // #282: while a request waits, the line says so — a late state callback
+                // must not put the waiting phase back into "working".
+                val line = if (approvalWaiting) "Waiting for your approval"
+                    else StateLine.words(running, opHeld, words)
+                setStatus(line, approvalWaiting || StateLine.visible(running != null, opHeld != null, state, callLive))
                 if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
@@ -1912,6 +1931,92 @@ class MainActivity : AppCompatActivity() {
             // were actually voiced reach here, so the transcript is what was heard.
             appendPresence(text, source)
         } }
+        override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
+            approvalBusy = false
+            approvalWaiting = true
+            approvalCard.visibility = View.VISIBLE
+            approvalLine.text = prompt.line
+            approvalLine.contentDescription = prompt.line
+            approvalState.text = ""
+            approvalState.visibility = View.GONE
+            buildApprovalButtons(prompt)
+            // The state audit (#280) asked for exactly this: a request is not "work".
+            setStatus("Waiting for your approval", true)
+            if (callLive) VoiceService.update(this@MainActivity, "Waiting for your approval")
+            // The transcript is the record; a timed-out request must stay in it rather
+            // than vanish when the card is replaced by the next turn.
+            appendConvo("! Approval needed: ${prompt.action}")
+        } }
+        override fun onApprovalResolved(prompt: ApprovalPrompt, choice: String, timedOut: Boolean) { runOnUiThread {
+            approvalBusy = false
+            approvalWaiting = false
+            approvalState.visibility = View.VISIBLE
+            approvalState.text = when {
+                timedOut -> "TIMED OUT — DENIED"
+                choice == "deny" -> "DENIED"
+                else -> "APPROVED · ${ApprovalChoices.label(choice)}"
+            }
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            appendConvo(
+                when {
+                    timedOut -> "! Approval timed out — denied: ${prompt.action}"
+                    choice == "deny" -> "! Approval denied: ${prompt.action}"
+                    else -> "! Approved ${ApprovalChoices.spoken(choice)}: ${prompt.action}"
+                }
+            )
+            if (timedOut) {
+                // The card and the transcript carry the timeout; the run itself continues
+                // (the agent adapts to the deny), so the state line returns to work.
+                appendStream("// approval timed out — denied")
+            }
+            setStatus("The entity is working…", true)
+            if (callLive) VoiceService.update(this@MainActivity, "The entity is working…")
+        } }
+        override fun onApprovalClosed(prompt: ApprovalPrompt, reason: String) { runOnUiThread {
+            approvalBusy = false
+            approvalWaiting = false
+            approvalState.visibility = View.VISIBLE
+            approvalState.text = "ENDED WITH THE RUN"
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            appendConvo("! Approval ended with the run: ${prompt.action}")
+        } }
+    }
+
+    /**
+     * #282: one button per choice the gateway offered — never a fixed four. Deny is the
+     * filled, safe-default control and sits last; the positive choices stay outlined
+     * with the accent colour. A tap disables the row before handing the choice to the
+     * controller (belt; the gate is the braces).
+     */
+    private fun buildApprovalButtons(prompt: ApprovalPrompt) {
+        approvalChoices.removeAllViews()
+        val density = resources.displayMetrics.density
+        for (choice in prompt.choices) {
+            val deny = choice == "deny"
+            val b = Button(this)
+            b.text = ApprovalChoices.label(choice)
+            b.textSize = 12f
+            b.isAllCaps = false
+            b.letterSpacing = 0.06f
+            b.setTextColor(ContextCompat.getColor(this, if (deny) R.color.hv_text else R.color.hv_cyan))
+            b.background = ContextCompat.getDrawable(this, if (deny) R.drawable.bg_chip else R.drawable.bg_button_ghost)
+            b.contentDescription = if (deny) "No — deny this action"
+                else "Approve — ${ApprovalChoices.spoken(choice)}"
+            b.layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, (44 * density).toInt(), 1f).apply { marginEnd = (6 * density).toInt() }
+            b.setOnClickListener {
+                if (approvalBusy) return@setOnClickListener
+                approvalBusy = true
+                for (i in 0 until approvalChoices.childCount) approvalChoices.getChildAt(i).isEnabled = false
+                approvalState.text = "SENDING…"
+                approvalState.visibility = View.VISIBLE
+                liveController?.answerApproval(choice)
+            }
+            approvalChoices.addView(b)
+        }
+        approvalChoices.visibility = if (prompt.choices.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /** Show the heard line: fade in, hold for its reading time (longer when a
