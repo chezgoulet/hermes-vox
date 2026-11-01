@@ -10,6 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.hermesvox.core.ApprovalAnswer
+import com.hermesvox.core.ApprovalGate
+import com.hermesvox.core.ApprovalRequest
+import com.hermesvox.core.ApprovalVoice
 import com.hermesvox.core.HermesSession
 import org.json.JSONArray
 import org.json.JSONObject
@@ -54,6 +58,15 @@ class VoiceController(private val context: Context, private val session: HermesS
          *  [onReply] was empty in Presence. [source] names the path, so a host can tell
          *  the turn's answer from an aside. Display only, like [onHeard]. */
         fun onPresenceSpoke(text: String, source: String) {}
+        /** #282: the run stopped for an approval. [prompt.choices] is exactly what the
+         *  gateway offered; answer with [answerApproval]. */
+        fun onApproval(prompt: ApprovalPrompt) {}
+        /** #282: the request was answered (touch/voice) or timed out. The host keeps the
+         *  request visible in the transcript; [timedOut] means the automatic deny won. */
+        fun onApprovalResolved(prompt: ApprovalPrompt, choice: String, timedOut: Boolean) {}
+        /** #282: the run ended while the request was still up, so it can no longer be
+         *  answered. Never a decision — the gateway withdrew it. */
+        fun onApprovalClosed(prompt: ApprovalPrompt, reason: String) {}
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -443,6 +456,30 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val BARGE_READ_GAP_MS = 500L      // a drain r.read() return gap this big -> the mic loop is starved
     private val BARGE_NEARMISS_WINDOW_MS = 2000L  // at most one event=barge-nearmiss per this window
     private val BARGE_SKIP_STATE_MS = 3000L   // the !spk && !turnInFlight skip state held this long -> deaf window
+
+    // ---- #282: approvals -----------------------------------------------------
+    // The once-only gate owns the safety properties (never auto-approve, timeout is a
+    // deny, a duplicate answer is a local no-op). This class owns the Android edges:
+    // the card callback, the scheduler, and the existing microphone path.
+    private val approvalGate = ApprovalGate()
+    /** The request whose card is on screen; "" when none. */
+    @Volatile private var approvalShownKey = ""
+    /** The request whose timeout is scheduled; "" when none. */
+    @Volatile private var approvalTimeoutKey = ""
+    private val approvalTimeout = Runnable {
+        val key = approvalTimeoutKey
+        if (key.isEmpty()) return@Runnable
+        // A late timeout loses to a human answer: the gate returns null once answered.
+        approvalGate.timeout(key)?.let { submitApproval(it) }
+    }
+    // Voice capture while a request is up, inside the SAME single-capture drain that
+    // already listens for a barge. No second recorder and no second recogniser.
+    private val approvalSeg = ArrayList<Float>(16000 * 4)
+    private val approvalPre = FloatRing(16000 / 4)
+    private var approvalInSpeech = false
+    private var approvalSilentMs = 0L
+    @Volatile private var approvalDecoding = false
+    private val APPROVAL_PAUSE_MS = 600L
 
     init {
         // 0.8/M2.1: a PROBE-ONLY controller exists to ping the gateway and nothing
@@ -970,6 +1007,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (!continuous) try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
+                    // #282: a phrase heard while a request is up answers the request; it
+                    // is never a new turn (and never a barge against the waiting run).
+                    if (approvalGate.current() != null) {
+                        val matched = approvalVoice(cleaned)
+                        VoxLog.d("event=approval-voice capture=segment matched=$matched " +
+                            "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
+                        if (!continuous) try { r.stop() } catch (_: Throwable) {}
+                        continue
+                    }
                     // HARD SPEAK-GATE: block until the reply AND its speech finish.
                     turnDone = java.util.concurrent.CountDownLatch(1)
                     val latch = turnDone
@@ -1119,6 +1165,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                             continue
                         }
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
+                        // #282: while an approval is up, the mic answers THAT — it must
+                        // not barge-cancel the run that is waiting for the answer. The
+                        // same frames, VAD and recogniser as the ordinary loop; only the
+                        // decision is different.
+                        if (approvalGate.current() != null) {
+                            captureApproval(frames, sr, vadSpeech, readAt)
+                            bargeStat.reset()
+                            continue
+                        }
                         // ER Phase 5: capture the interrupting speech while it plays —
                         // the two-stage design reads the utterance BEFORE deciding
                         // whether the mind cancels. During GENERATION (turnInFlight &&
@@ -1221,6 +1276,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun stop() {
         listening = false
         recognizer?.destroy(); recognizer = null
+        // #282: a hanging-up call withdraws any open approval — never answer a request
+        // the user can no longer see. The gate's latch still refuses a late tap.
+        closeApprovals("call-ended")
+        resetApprovalCapture()
         // ER Phase 4: controller teardown kills the presence loop first — its
         // handler callbacks must never outlive the executor they feed.
         erActive = false; erPresence.stop("call-end")
@@ -1294,6 +1353,180 @@ class VoiceController(private val context: Context, private val session: HermesS
         runStreamedTurn(text, turnGen, pasted = pasted)
     }
 
+    // ---- #282: approvals -----------------------------------------------------
+
+    /** Touch: answer the approval currently on screen. A duplicate tap (or a choice the
+     *  gateway did not offer) is a local no-op and never a second POST. */
+    fun answerApproval(choice: String) {
+        val request = approvalGate.current() ?: return
+        val answer = approvalGate.answer(request.key(), choice, "touch") ?: run {
+            VoxLog.d("event=approval ignored reason=duplicate-or-unoffered choice=$choice request=${request.key()}")
+            return
+        }
+        submitApproval(answer)
+    }
+
+    /**
+     * Voice: interpret [text] while a request is up. True when the utterance was an
+     * approval answer (even a duplicate), so the capture loop must NOT start a turn.
+     * "approve" takes the least-privilege yes the gateway offered; "no" is always deny.
+     */
+    fun approvalVoice(text: String): Boolean {
+        val request = approvalGate.current() ?: return false
+        val choice = ApprovalVoice.resolve(text, request.choices) ?: return false
+        val answer = approvalGate.answer(request.key(), choice, "voice") ?: return true
+        submitApproval(answer)
+        return true
+    }
+
+    /** Called from the stream worker when an `approval.request` arrives. */
+    private fun approvalArrived(request: ApprovalRequest, runAlive: Boolean) {
+        val accepted = approvalGate.offer(request, runAlive)
+        if (accepted == null) {
+            VoxLog.d("event=approval ignored reason=${if (!runAlive) "run-ended" else "duplicate"} " +
+                "run=${request.runId} request=${request.key()}")
+            return
+        }
+        VoxLog.d("event=approval-request run=${accepted.runId} request=${accepted.key()} " +
+            "choices=${accepted.choices.joinToString(",")} action=${accepted.action().take(180)}")
+        main.post {
+            listener?.onLog("// approval: ${accepted.line()}")
+            showNextApproval()
+            // Platform-STT installs: the existing recogniser is idle between turns, so
+            // arm that same path to hear the hands-free yes/no. The on-device loop is
+            // already draining the mic, so it needs nothing here.
+            if (stt == null && listening && !speaking && !glueSpeaking) listen()
+        }
+    }
+
+    /** Shows the oldest pending request (main thread only). */
+    private fun showNextApproval() {
+        val request = approvalGate.current() ?: return
+        val key = request.key()
+        if (key == approvalShownKey) return
+        approvalShownKey = key
+        approvalTimeoutKey = key
+        val prompt = promptOf(request)
+        listener?.onApproval(prompt)
+        main.removeCallbacks(approvalTimeout)
+        main.postDelayed(approvalTimeout, approvalGate.timeoutMs)
+    }
+
+    /**
+     * The decision is logged HERE, before the POST, so a field report has the fact even
+     * when the gateway later refuses it. The POST itself runs off-main (blocking HTTP on
+     * main throws on Android). [ApprovalGate] has already removed the request, so a
+     * racing tap/voice/timeout cannot produce a second answer.
+     */
+    private fun submitApproval(answer: ApprovalAnswer) {
+        main.removeCallbacks(approvalTimeout)
+        approvalTimeoutKey = ""
+        approvalShownKey = ""
+        VoxLog.d(answer.logLine())
+        val prompt = promptOf(answer.request)
+        main.post {
+            listener?.onApprovalResolved(prompt, answer.choice, answer.timedOut)
+            if (!answer.timedOut) listener?.onState("thinking")
+        }
+        execSubmit {
+            try {
+                session.answerApproval(
+                    answer.request.runId, answer.choice, answer.request.requestId,
+                    answer.request.executionGeneration,
+                )
+                VoxLog.d("event=approval-sent run=${answer.request.runId} request=${answer.request.key()} choice=${answer.choice}")
+            } catch (e: Exception) {
+                VoxLog.w("event=approval-post-failed run=${answer.request.runId} " +
+                    "request=${answer.request.key()} choice=${answer.choice} err=${e.message?.take(120)}")
+            }
+            main.post { showNextApproval() }
+        }
+    }
+
+    /** The run ended: withdraw its requests rather than answering them. */
+    private fun closeApprovals(reason: String) {
+        val dropped = approvalGate.closeAll()
+        if (dropped.isEmpty()) return
+        main.removeCallbacks(approvalTimeout)
+        approvalTimeoutKey = ""
+        approvalShownKey = ""
+        for (request in dropped) {
+            VoxLog.d("event=approval ignored reason=$reason run=${request.runId} request=${request.key()}")
+            main.post { listener?.onApprovalClosed(promptOf(request), reason) }
+        }
+    }
+
+    private fun promptOf(request: ApprovalRequest) = ApprovalPrompt(
+        runId = request.runId,
+        requestId = request.key(),
+        action = request.action(),
+        line = request.line(),
+        choices = request.choices,
+        timeoutMs = approvalGate.timeoutMs,
+    )
+
+    /**
+     * One batch of microphone frames while an approval is pending. This is a small
+     * VAD-segmented capture on the SAME recorder/recogniser as a turn — not a second
+     * listener. A short pause ends the utterance; the transcript is matched against
+     * "approve"/"no" and anything else is ignored (never sent as a turn).
+     */
+    private fun captureApproval(frames: FloatArray, sr: Int, spoke: Boolean, readAt: Long) {
+        if (speaking || glueSpeaking) { resetApprovalCapture(); return }
+        if (!approvalInSpeech && !spoke) {
+            approvalPre.add(frames)
+            return
+        }
+        if (spoke) {
+            approvalInSpeech = true
+            approvalSilentMs = 0
+        } else if (approvalInSpeech) {
+            approvalSilentMs += frames.size * 1000L / sr
+        }
+        if (approvalInSpeech) {
+            if (approvalSeg.isEmpty() && approvalPre.size > 0) approvalPre.drainInto(approvalSeg)
+            for (f in frames) approvalSeg.add(f)
+        }
+        if (approvalInSpeech && approvalSilentMs >= APPROVAL_PAUSE_MS &&
+            approvalSeg.size >= sr * 250 / 1000) {
+            val snapshot = approvalSeg.toFloatArray()
+            resetApprovalCapture()
+            transcribeApproval(snapshot, sr, readAt)
+        }
+    }
+
+    private fun resetApprovalCapture() {
+        approvalSeg.clear()
+        approvalPre.clear()
+        approvalInSpeech = false
+        approvalSilentMs = 0L
+    }
+
+    private fun transcribeApproval(samples: FloatArray, sr: Int, readAt: Long) {
+        if (approvalDecoding) return
+        approvalDecoding = true
+        execSubmit {
+            try {
+                val raw = try { stt?.transcribeWhole(samples, sr)?.trim() } catch (_: Throwable) { null }
+                val said = raw?.let {
+                    (TranscriptValidator.validate(it, -1L, -1L) as? TranscriptValidator.Verdict.Accept)?.text
+                } ?: raw
+                val request = approvalGate.current()
+                if (request != null && !said.isNullOrBlank()) {
+                    val choice = ApprovalVoice.resolve(said, request.choices)
+                    VoxLog.d("event=approval-voice ms=${android.os.SystemClock.uptimeMillis() - readAt} " +
+                        "request=${request.key()} choice=${choice ?: "none"} " +
+                        "text=${if (logTranscripts()) said.take(80) else "<hidden>"}")
+                    if (choice != null) {
+                        approvalGate.answer(request.key(), choice, "voice")?.let { submitApproval(it) }
+                    }
+                }
+            } finally {
+                approvalDecoding = false
+            }
+        }
+    }
+
     private fun initTts(): Boolean {
         tts?.init { ttsReady = it }
         return true
@@ -1327,6 +1560,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // 0.6.8: the same bracketed-noise strip as the on-device loop —
                     // platform transcripts hallucinate [sound]/(buzzing) too.
                     val cleaned = text.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
+                    // #282: on this leg the same recogniser is armed for the approval
+                    // while one is pending; its answer never becomes a turn.
+                    if (approvalGate.current() != null) {
+                        val matched = approvalVoice(cleaned)
+                        VoxLog.d("event=approval-voice capture=platform matched=$matched " +
+                            "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
+                        if (listening && approvalGate.current() != null) listen()
+                        return
+                    }
                     if (cleaned.isNotBlank() && cleaned.length >= 3) runStreamedTurn(cleaned, turnGen, fromVoice = true) else if (listening) listen()
                 }
                 override fun onError(e: Int) {
@@ -1609,8 +1851,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val idle = tick - lastEventAt
                             // previewB: the SAME detection now also reaches the presence layer.
                             // It was log-only, so a 15s provider hang looked exactly like rest.
-                            if (idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
-                            else if (idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
+                            // #282: an approval wait is the human's turn, not a stalled
+                            // provider — the card is the signal, so no stall warning.
+                            val waiting = approvalGate.current() != null
+                            if (!waiting && idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
+                            else if (!waiting && idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                         }
                         emitEvents(evts, t0, gen)
                         if (obj.optBoolean("done")) {
@@ -1684,6 +1929,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                // #282: a request cannot be answered once its run is over; withdraw it
+                // rather than leaving a card that would 409 if tapped.
+                closeApprovals("run-ended")
                 // ER Phase 4/5: the mind has answered (or failed) — the presence
                 // window closes; the reply's speech owns the floor now.
                 if (erActive || erMindLive) {
@@ -1708,6 +1956,10 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     private fun emitEvents(arr: JSONArray?, t0: Long, gen: Long) {
         if (arr == null) return
+        // #282: an approval that lands AFTER the turn's terminal event is not answerable,
+        // and must not be surfaced. Track order within the batch, not just the poll's
+        // done flag, so an approval that arrived just BEFORE completion still shows.
+        var runEnded = false
         for (i in 0 until arr.length()) {
             val e = arr.optJSONObject(i) ?: continue
             when (e.optString("type")) {
@@ -1754,9 +2006,43 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val c = e.optString("commentary")
                     if (c.isNotBlank()) main.post { listener?.onLog("// entity: ${c.replace("\n", " ").take(160)}") }
                 }
-                "response.completed" -> main.post { listener?.onLog("// response completed") }
+                "response.completed" -> {
+                    runEnded = true
+                    main.post { listener?.onLog("// response completed") }
+                }
+                "response.failed", "error", "response.incomplete" -> runEnded = true
+                "approval.request" -> {
+                    val request = approvalFrom(e)
+                    if (request == null) {
+                        VoxLog.w("event=approval ignored reason=unreadable-event gen=$gen")
+                    } else {
+                        approvalArrived(request, runAlive = !runEnded)
+                    }
+                }
             }
         }
+    }
+
+    /** #282: the canonical approval view carried by the core stream (`approval` map). */
+    private fun approvalFrom(e: JSONObject): ApprovalRequest? {
+        val a = e.optJSONObject("approval") ?: return null
+        val arr = a.optJSONArray("choices")
+        val choices = if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+            arr.optString(i).takeIf { it.isNotBlank() }
+        }
+        val runId = a.optString("run_id")
+        val requestId = a.optString("request_id")
+        if (runId.isBlank() && requestId.isBlank()) return null
+        return ApprovalRequest(
+            runId = runId,
+            requestId = requestId,
+            command = a.optString("command"),
+            description = a.optString("description"),
+            reason = a.optString("reason"),
+            choices = choices,
+            // Null when absent: echo the fence only if the gateway actually sent one.
+            executionGeneration = if (a.has("execution_generation")) a.optInt("execution_generation") else null,
+        )
     }
 
     /**

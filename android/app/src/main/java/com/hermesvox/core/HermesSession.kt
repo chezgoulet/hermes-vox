@@ -123,6 +123,19 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      *  aborts the gateway's generation, and retires the stream. */
     fun cancelStream(streamID: String) = Streams.cancel(streamID)
 
+    // ---- Approvals (#282): the answer to an `approval.request` run event ----
+
+    /**
+     * Answers one pending approval: `POST /v1/runs/{run_id}/approval`.
+     * [choice] must be one the event offered (the controller renders those and nothing
+     * else); [requestId] is omitted from the body when the gateway did not send one.
+     * [executionGeneration] is echoed only when the event carried one (session-authority
+     * gateways fence the answer on it). Blocks — call it off the main thread.
+     */
+    fun answerApproval(runId: String, choice: String, requestId: String, executionGeneration: Int? = null) {
+        gateway.answerApproval(runId, choice, requestId, executionGeneration)
+    }
+
     /** Starts a NEW conversation: drops the chain head. The gateway-side history
      *  remains until its own retention clears it. */
     fun resetConversation() {

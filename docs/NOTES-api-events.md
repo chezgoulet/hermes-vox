@@ -52,3 +52,29 @@ Parity, not a new mechanism:
 Then the app can render #282 and answer with `POST /v1/runs/{response_id}/approval`. This is the
 "small upstream hook" D25 describes: the capability is upstream-owned, and the app's work is the
 affordance.
+
+## The app side (#282, landed)
+
+The client now consumes that contract and does not need the tool's display name:
+
+- **Event:** `approval.request` (`core/Stream.kt`), carrying `run_id`, `request_id`,
+  `command` (already redacted upstream), `description`, `reason` and `choices`. The event
+  name rides both the SSE `event:` line and the `event` field; `type` is not required.
+  A session-authority gateway also sends `execution_generation`; the app echoes it when
+  present and omits it otherwise.
+- **Answer:** `POST /v1/runs/{run_id}/approval` with `{"choice", "request_id"}`
+  (`core/HermesSession.answerApproval`).
+- **Rules:** the choices are rendered exactly as offered (unknown words dropped, `deny`
+  always appended); a positive voice answer takes the least privilege offered
+  (`once` → `session` → `always`); a timeout is always `deny`; the exactly-once latch is
+  `core/ApprovalGate`, so a double tap or a second voice match never posts twice.
+- **Log:** `event=approval decision=once|deny|timeout choice=… run=… request=… cause=…`.
+
+**Verified against this host's gateway source (Hermes 0.22.5):** `_approval_request_event`
+builds exactly that event, and the `/v1/runs` bridge answers it. On 0.22.5 the
+`/v1/responses` writer still does **not** register its response as a run or pass
+`approval_notify`, so a real `approval.request` cannot yet appear on Vox's stream from
+this build. That is the upstream hook above, unchanged. The deterministic stand-in used
+to prove the phone half is [`scripts/approval-harness.py`](../scripts/approval-harness.py);
+it emits the same event and records the POST. Once the gateway ships the hook, the same
+code path runs with no app change.

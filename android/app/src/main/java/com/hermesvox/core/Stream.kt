@@ -29,12 +29,20 @@ internal class StreamEvent(val type: String) {
     var commentary = "" // mid-turn progress text — never spoken as the reply
     var text = ""       // accumulated assistant text so far
     var done = false    // true once the turn completed
+    /** #282: the run's approval request, when this event is `approval.request`. */
+    var approval: ApprovalRequest? = null
 
-    fun toMap(): Map<String, Any?> = linkedMapOf(
-        "type" to type, "response_id" to responseId, "item_type" to itemType, "item_id" to itemId,
-        "name" to name, "arguments" to arguments, "output" to output, "delta" to delta,
-        "commentary" to commentary, "text" to text, "done" to done,
-    )
+    fun toMap(): Map<String, Any?> {
+        val map = linkedMapOf<String, Any?>(
+            "type" to type, "response_id" to responseId, "item_type" to itemType, "item_id" to itemId,
+            "name" to name, "arguments" to arguments, "output" to output, "delta" to delta,
+            "commentary" to commentary, "text" to text, "done" to done,
+        )
+        // Only approval events carry the field: every other event's shape is pinned by
+        // testdata/stream goldens, so an always-present null would rewrite them all.
+        approval?.let { map["approval"] = it.toMap() }
+        return map
+    }
 }
 
 /**
@@ -285,7 +293,9 @@ internal object Streams {
     /** Decodes one event payload and applies it to [st]. Undecodable payloads are dropped. */
     private fun dispatch(st: StreamState, evName: String, data: String) {
         val env = try { Envelope.decode(data) } catch (_: JsonException) { return }
-        val name = env.type.ifEmpty { evName }
+        // Run events (`approval.request`) carry their name in `event`, OpenAI response
+        // events carry it in `type`; the SSE `event:` line is the fallback for both.
+        val name = env.type.ifEmpty { env.eventName.ifEmpty { evName } }
         val ev = StreamEvent(name)
         synchronized(st.lock) {
             when (name) {
@@ -357,6 +367,14 @@ internal object Streams {
                     env.response?.errorMessage?.takeIf { it.isNotEmpty() }?.let { msg = it }
                     if (msg.isEmpty()) msg = "the gateway reported a failure"
                     st.failure = "hermes response failed: $msg"
+                    ev.text = st.text.toString()
+                }
+                // #282: the gateway's run event. The command is already redacted
+                // upstream; this layer carries it without rewriting it. The controller
+                // decides whether the request is still answerable (a request that
+                // arrives after response.completed is ignored there).
+                "approval.request" -> {
+                    ev.approval = env.approval
                     ev.text = st.text.toString()
                 }
                 else -> ev.text = st.text.toString()
@@ -474,11 +492,13 @@ internal class LineReader(private val ins: InputStream, private val maxLine: Int
  */
 internal class Envelope(
     val type: String,
+    val eventName: String,
     val itemId: String,
     val delta: String,
     val message: String,
     val item: Item?,
     val response: Response?,
+    val approval: ApprovalRequest?,
 ) {
     class Part(val type: String, val text: String)
     class Item(val id: String, val type: String, val phase: String, val name: String,
@@ -516,8 +536,28 @@ internal class Envelope(
                     incompleteReason = Json.str(Json.obj(r, "incomplete_details"), "reason"),
                 )
             }
-            return Envelope(Json.str(o, "type"), Json.str(o, "item_id"), Json.str(o, "delta"),
-                Json.str(o, "message"), item, response)
+            val type = Json.str(o, "type")
+            val eventName = Json.str(o, "event")
+            val approval = if (type == "approval.request" || eventName == "approval.request") {
+                ApprovalRequest(
+                    runId = Json.str(o, "run_id"),
+                    requestId = Json.str(o, "request_id"),
+                    command = Json.str(o, "command"),
+                    description = Json.str(o, "description"),
+                    reason = Json.str(o, "reason").ifEmpty { Json.str(o, "why") },
+                    // A malformed choices field must not drop the whole request: with no
+                    // renderable positive choice the surface still offers the safe deny.
+                    choices = try {
+                        Json.arr(o, "choices").mapNotNull { (it as? JStr)?.value }
+                    } catch (_: JsonException) {
+                        emptyList()
+                    },
+                    // Session-authority gateways fence the answer on this; plain ones omit it.
+                    executionGeneration = (o?.get("execution_generation") as? JNum)?.raw?.toIntOrNull(),
+                )
+            } else null
+            return Envelope(type, eventName, Json.str(o, "item_id"), Json.str(o, "delta"),
+                Json.str(o, "message"), item, response, approval)
         }
     }
 }
