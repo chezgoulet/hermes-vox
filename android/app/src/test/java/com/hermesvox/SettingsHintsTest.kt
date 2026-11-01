@@ -31,6 +31,7 @@ class SettingsHintsTest {
         "sec_models" to "Voice models",
         "sec_appearance" to "Appearance & Layout",
         "sec_about" to "About & Diagnostics",
+        "sec_assistant" to "Be the phone's assistant",   // #329
     )
 
     private fun Element.id(): String? {

@@ -44,6 +44,7 @@ class SettingsActivity : AppCompatActivity() {
         bindVisuals()
         bindSoundCues()
         bindGroups()
+        bindAssistant()
         bindSectionRestoreRows()
         bindAppSkill()
         applyHints()
@@ -101,6 +102,7 @@ class SettingsActivity : AppCompatActivity() {
             SECTION_STT to R.id.sec_stt, SECTION_TTS to R.id.sec_tts,
             SECTION_MODELS to R.id.sec_models, SECTION_APPEARANCE to R.id.sec_appearance,
             SECTION_VISUALS to R.id.sec_visuals, SECTION_ABOUT to R.id.sec_about,
+            SECTION_ASSISTANT to R.id.sec_assistant,
             SECTION_PRESENCE to R.id.sec_presence)
         ids.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<android.view.View>(ids[section]!!).visibility = android.view.View.VISIBLE
@@ -111,7 +113,7 @@ class SettingsActivity : AppCompatActivity() {
             SECTION_STT -> "Transcription (STT)"; SECTION_TTS -> "Voice"
             SECTION_PRESENCE -> "Presence"
             SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Layout"
-            SECTION_VISUALS -> "Being"
+            SECTION_VISUALS -> "Being"; SECTION_ASSISTANT -> "The assistant role"
             else -> "About & Diagnostics"
         }
     }
@@ -121,12 +123,14 @@ class SettingsActivity : AppCompatActivity() {
         currentSection = null
         findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.VISIBLE
         val ids = listOf(R.id.sec_entity, R.id.sec_speech, R.id.sec_stt, R.id.sec_tts,
-            R.id.sec_models, R.id.sec_appearance, R.id.sec_visuals, R.id.sec_about, R.id.sec_presence)
+            R.id.sec_models, R.id.sec_appearance, R.id.sec_visuals, R.id.sec_about,
+            R.id.sec_assistant, R.id.sec_presence)
         ids.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<TextView>(R.id.set_title).text = "Settings"
         // Subtitles are a summary of what changed while inside a section.
         refreshModelsVal()
         refreshGrpVals()
+        refreshAssistant()   // #329: the role can change in Android's settings while we are away
     }
 
     private fun bindGroups() {
@@ -141,7 +145,71 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
+        findViewById<android.view.View>(R.id.row_grp_assistant)?.setOnClickListener { showSection(SECTION_ASSISTANT) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
+    }
+
+    /** #329: the assistant row opens a section, not a dialog — the state, the request, the
+     *  way out, and the part Android does not control all need a place to be said. */
+    private fun bindAssistant() {
+        findViewById<android.view.View>(R.id.row_assistant_request)?.setOnClickListener { requestAssistantRole() }
+        findViewById<android.view.View>(R.id.row_assistant_settings)?.setOnClickListener {
+            startActivity(AssistantRole.systemSettingsIntent(this))
+        }
+        refreshAssistant()
+    }
+
+    /** Read the role from Android every time; a cached "yes" would outlive the user's change. */
+    private fun refreshAssistant() {
+        val state = AssistantRole.state(this)
+        val summary = AssistantRole.summary(state, AssistantRole.otherHolderLabel(this))
+        findViewById<TextView>(R.id.set_assistant_status)?.text = summary
+        findViewById<TextView>(R.id.set_assistant_grpval)?.text = summary
+        val request = findViewById<android.view.View>(R.id.row_assistant_request)
+        request?.isEnabled = state != AssistantRole.State.HELD && state != AssistantRole.State.UNAVAILABLE
+        request?.alpha = if (request?.isEnabled == true) 1f else 0.4f
+        findViewById<TextView>(R.id.set_assistant_action)?.text =
+            when (state) {
+                AssistantRole.State.HELD -> "on"
+                AssistantRole.State.UNAVAILABLE -> "unavailable"
+                AssistantRole.State.OTHER -> "ask android"
+            }
+    }
+
+    /**
+     * The ONLY request path in the app, and it is a tap on one row: Android's own consent
+     * dialog decides. Nothing is granted by this call, and nothing runs at first launch.
+     */
+    private fun requestAssistantRole() {
+        val intent = AssistantRole.requestIntent(this)
+        if (intent == null) {
+            Toast.makeText(this, "This Android build has no assistant role to grant", Toast.LENGTH_LONG).show()
+            return
+        }
+        startActivityForResult(intent, REQ_ASSISTANT)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_ASSISTANT) return
+        refreshAssistant()
+        if (AssistantRole.state(this) == AssistantRole.State.HELD) {
+            Toast.makeText(this, "Vox is the phone's assistant", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // #329: the other assistant kept the role. Say so and hand over the screen that can
+        // change it — a dialog that just disappeared would look like nothing happened.
+        AlertDialog.Builder(this)
+            .setTitle("Android kept the current assistant")
+            .setMessage(
+                "The assistant gesture still opens the other app. Only Android can change that: " +
+                    "its digital assistant settings list every app that qualifies, Hermes Vox among them."
+            )
+            .setPositiveButton("Open Android settings") { _, _ ->
+                startActivity(AssistantRole.systemSettingsIntent(this))
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     private fun bindSectionRestoreRows() {
@@ -870,6 +938,9 @@ class SettingsActivity : AppCompatActivity() {
                 VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
             findViewById<TextView>(R.id.set_about_grpval)?.text =
                 getString(R.string.app_name) + " " + versionName()
+            // #329: the role's real state, read from Android (never remembered in a pref).
+            findViewById<TextView>(R.id.set_assistant_grpval)?.text =
+                AssistantRole.summary(AssistantRole.state(this), AssistantRole.otherHolderLabel(this))
         } catch (_: Throwable) {
             // never let a subtitle populate crash the settings screen
         }
@@ -1809,5 +1880,9 @@ class SettingsActivity : AppCompatActivity() {
         const val SECTION_VISUALS = "visuals"
         const val SECTION_ABOUT = "about"
         const val SECTION_PRESENCE = "presence"
+        const val SECTION_ASSISTANT = "assistant"
+
+        /** #329: the system's assistant-role dialog (distinct from REQ_MIC_CALL in MainActivity). */
+        const val REQ_ASSISTANT = 102
     }
 }
