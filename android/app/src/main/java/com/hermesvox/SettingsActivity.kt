@@ -154,21 +154,17 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /** #285: put the app's own description on the agent. The install is the gateway's — the
-     *  app asks the agent to do it, or hands over the exact command. */
+     *  app asks the agent to do it, or hands over the exact command (AppSkillInstall). */
     private fun bindAppSkill() {
         findViewById<LinearLayout>(R.id.row_app_skill)?.setOnClickListener {
-            val cmd = AppSkill.command(versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
+            val cmd = AppSkillInstall.command(prefs, versionName())
             AlertDialog.Builder(this)
                 .setTitle("Teach your agent this app")
                 .setMessage("Your agent can answer \"where is that setting?\" from this app's own description, " +
                     "once it is installed on your gateway.\n\nAsk the agent to install it, or run this on " +
                     "the machine running Hermes:\n\n$cmd\n\nThen ask: \"${AppSkill.CHECK_QUESTION}\"")
                 .setPositiveButton("Ask the agent") { _, _ -> askAgentToInstall() }
-                .setNeutralButton("Copy command") { _, _ ->
-                    val cm = getSystemService(android.content.ClipboardManager::class.java)
-                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("hermes skills install", cmd))
-                    Toast.makeText(this, "Command copied", Toast.LENGTH_SHORT).show()
-                }
+                .setNeutralButton("Copy command") { _, _ -> AppSkillInstall.copy(this, cmd) }
                 .setNegativeButton("Close", null)
                 .show()
         }
@@ -178,21 +174,7 @@ class SettingsActivity : AppCompatActivity() {
         val s = MainActivity.session ?: run {
             Toast.makeText(this, "Connect to your gateway first", Toast.LENGTH_LONG).show(); return
         }
-        val wait = AlertDialog.Builder(this).setTitle("Asking your agent…")
-            .setMessage("It will run the install and say whether it worked.").setCancelable(true).show()
-        kotlin.concurrent.thread {
-            val reply = try { s.turnStored(AppSkill.installTurn(versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))) } catch (e: Throwable) {
-                VoxLog.w("event=app-skill-install result=failed err=${e.message?.take(80)}"); null
-            }
-            VoxLog.d("event=app-skill-install result=${if (reply.isNullOrBlank()) "no-reply" else "replied"}")
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-                wait.dismiss()
-                AlertDialog.Builder(this).setTitle("Your agent says")
-                    .setMessage(reply?.takeIf { it.isNotBlank() } ?: "No answer — check the connection, or copy the command instead.")
-                    .setPositiveButton("OK", null).show()
-            }
-        }
+        AppSkillInstall.ask(this, s, versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
     }
 
     private fun bindEntity() {

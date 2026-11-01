@@ -32,4 +32,11 @@ class AppSkillTest {
         val skill = File("../../skills/hermes-vox-app/SKILL.md").readText()
         assertTrue(skill.contains("name: ${AppSkill.NAME}"))
     }
+
+    @Test fun theSkillCarriesTheOfferKeyTheAppStores() {
+        // #285: the skill's settings map must name the preference the app actually writes, or
+        // an agent reading it points the user at a key nothing stores.
+        val skill = File("../../skills/hermes-vox-app/SKILL.md").readText()
+        assertTrue(skill.contains("`${AppSkillInstall.PREF_OFFERED}`"))
+    }
 }

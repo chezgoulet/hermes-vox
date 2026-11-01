@@ -183,6 +183,14 @@ the rails, and both carry the same signed APK.
    (2.6 GB, for Enhanced Realtime) are optional.
 3. Tap the call button and talk.
 
+On the way through, Vox offers once to **teach your agent this app**: after the connection
+is verified it asks whether to install the app's own description (`hermes-vox-app`) on your
+gateway, so the agent can answer "where is that setting?" about the app it is talking through.
+*Ask the agent*, *Copy command*, or *Later* — it never installs anything on its own, and the
+same choice lives in **Settings → Entity & Connection → Teach your agent this app**. What that
+skill is, how it gets enabled, and what to do when your agent runs in another profile:
+[docs/APP-SKILL.md](docs/APP-SKILL.md).
+
 Notes on the fields:
 
 - **The endpoint may carry a trailing slash.** Vox trims it. (The gateway itself
@@ -311,6 +319,13 @@ not `/hermes/v1/responses`).
 ### "Preparing your voice…" stays up
 The required models are not all installed yet. Open **Settings → Voice models**; downloads
 continue in the background and resume after network loss.
+
+### The agent doesn't know how the app works
+It answers about the gateway's own settings instead of Vox's screens. The app's description
+(`hermes-vox-app`) is not installed on the profile that answers you — the repo shipping it is
+not the same thing. Install it (one tap from **Settings → Entity & Connection → Teach your
+agent this app**, or one command), and check you installed it into *that* profile:
+[docs/APP-SKILL.md](docs/APP-SKILL.md).
 
 ## Credits
 
