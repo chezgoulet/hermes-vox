@@ -14,10 +14,12 @@ the failure modes the field has actually produced. It is written so support can 
 from a log rather than from a guess.
 
 **How to read the references.** Every factual claim ends with `(path:line token)`: the file,
-the line, and a literal token that must appear on that line. `scripts/check-skill-claims.py`
-verifies all of them on every gate run, so a reference that no longer holds fails the build.
-If you are reading this and a line number looks odd, the checker is authoritative — run
-`python3 scripts/check-skill-claims.py` and fix or delete the claim.
+the line, and a literal token that must appear on that line. The checker `check-skill-claims.py`,
+in the repository's `scripts` directory, verifies all of them on every gate run, so a reference
+that no longer holds fails the build. If you are reading this and a line number looks odd, the
+checker is authoritative — run it from the repository root and fix or delete the claim. (It
+lives outside this folder on purpose: it reads repository paths, and a copy inside the skill
+would be fetched as a support file on install and then drift.)
 
 **One rule for answering.** Never tell a user a feature exists because this file mentions a
 setting; check the row's reference. The most useful answers here are the ones that say what
@@ -128,6 +130,7 @@ older build still sees the old names.
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1029 `testConnectionAsync`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:177 `prefs.getString("url", "")`) |
 | Teach your agent this app | (action) | — | Asks the agent to install this skill on its gateway, or copies the `hermes skills install …` command (with `-p <profile>` for a profile address) | (android/app/src/main/java/com/hermesvox/AppSkill.kt:36 `fun command`) |
+| Teach your agent this app — first run | `app_skill_offered` | unset | The same install, offered once right after the connection is verified ("Teach your agent this app?", Ask the agent / Copy command / Later). The answer is remembered either way; it is an offer, never an automatic install | (android/app/src/main/java/com/hermesvox/AppSkillInstall.kt:87 `fun offerOnce`) |
 | API key | `key` | "" | Bearer credential, Keystore-encrypted at rest | (android/app/src/main/java/com/hermesvox/core/Entity.kt:52 `Bearer`) |
 | Model | `model` | `hermes-agent` | The model route sent on every request | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:225 `"hermes-agent"`) |
 | Entity scope | `session_scope` | "" (blank) | Optional `X-Hermes-Session-Key`; blank means "declare no identity" | (android/app/src/main/java/com/hermesvox/SessionScope.kt:33 `session_scope`) |
@@ -746,6 +749,10 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   user says "it doesn't wake on Hey Hermes", the answer is "it cannot, by design yet".
 - **No local mind.** The app never reasons, calls tools or stores long-term memory; Gemma
   only expresses (android/app/src/main/java/com/hermesvox/VoxExpress.kt:7 `Gemma NEVER runs the agentic stream`).
+- **No automatic install on the gateway.** The app offers to ask the agent to install this
+  skill once, and the answer is remembered; it never installs anything on the gateway by
+  itself, and a skill the owner disabled for the API server stays off
+  (android/app/src/main/java/com/hermesvox/AppSkillInstall.kt:96 `PREF_OFFERED, false`).
 - **No full duplex.** It listens *or* speaks, with barge-in; it does not hear you while it is
   talking (docs/ARCHITECTURE.md:203 `Half-duplex`).
 - **No streaming partials by default.** Recognition is batch: a turn is transcribed after it
