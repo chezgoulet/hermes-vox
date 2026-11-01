@@ -108,5 +108,21 @@ internal object ReleaseNotes {
                 "If no speech engine is available at all, the call still opens as text and the status line names the reason.",
             ),
         ),
+        ReleaseNote(
+            versionCode = 147,
+            versionName = "0.9.1",
+            title = "The daylight release",
+            bullets = listOf(
+                "Light mode is a real ground now, not a black panel: every visual family has its own light value, a hot core is drawn as denser ink rather than brighter light, and the reply text, call glyphs and verdict chips all clear a measured contrast floor.",
+                "Settings is split by what you are changing — Being, Hearing, Voice, Presence — and every row says what it changes. Advanced rows sit behind one disclosure per section.",
+                "The status line says what is running, and on what, in plain verbs. A long job shows movement without inventing a percentage, and a failure says what failed in the same line.",
+                "Paste reads the clipboard and shows what it is about to send — a short head and the real character count — and sends only when you press SEND. Useful for URLs, paths and stack traces that are awkward to say.",
+                "Vox can be your phone's assistant. Granting the role is a Settings action, and the side-button mapping itself belongs to the phone maker, not to this app.",
+                "A new session during a call re-opens the microphone before it deletes the server copy, so /new no longer leaves the call deaf for a turn.",
+                "An interrupted reply stops the audio that was already in flight: every frame is keyed to its reply, so nothing from the old answer resumes after you start speaking.",
+                "Presence is a layer rather than a mode, and a repaired presence line is logged as repaired — a shortened reply is never read as silence.",
+                "The app can teach your agent about itself: after the connection is verified it offers, once, to install the app skill on the gateway.",
+            ),
+        ),
     )
 }
