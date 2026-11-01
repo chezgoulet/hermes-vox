@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #226: a command row. The focused state is drawn — a keyboard user can see where they
+     are — and the ring uses the theme's cyan, which clears 3:1 on both grounds. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape>
+            <solid android:color="@color/hv_surface_high" />
+            <corners android:radius="@dimen/corner_l" />
+            <stroke android:width="2dp" android:color="@color/hv_cyan" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape>
+            <solid android:color="@color/hv_surface_high" />
+            <corners android:radius="@dimen/corner_l" />
+            <stroke android:width="1dp" android:color="@color/hv_cyan" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="@color/hv_surface" />
+            <corners android:radius="@dimen/corner_l" />
+            <stroke android:width="1dp" android:color="@color/hv_border" />
+        </shape>
+    </item>
+</selector>

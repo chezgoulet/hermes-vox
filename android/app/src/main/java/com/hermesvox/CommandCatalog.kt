@@ -4,19 +4,31 @@ package com.hermesvox
  * CommandCatalog — the commands the app offers, grouped by what they do (#226).
  *
  * The stock list said `/compress` and nothing else; a person had to know the command to use
- * it. Each entry here states its effect in plain language, belongs to a group named for what
- * it does, and declares a [Category] — the closed vocabulary the being animates a command
- * from (#227), so a new command inherits its motion by saying what kind of thing it does.
+ * it. Each entry here states its effect in plain language, names the group a person would
+ * look under (conversation, connection, session, diagnostics — never the subsystem that does
+ * the work), states its cost or risk when it has one, and declares a [Category] — the closed
+ * vocabulary the being animates a command from (#227), so a new command inherits its motion
+ * by saying what kind of thing it does.
+ *
+ * It also says how a command can report itself. A command that runs in place reports
+ * queued / running / done / failed on its own row; one that opens a card says so, because
+ * its progress is in the card and the row must not pretend (no spinner, no invented
+ * percentage — the same rule as the operations line, #281).
  *
  * Pure JVM, so the catalogue's copy and its rules are proven off-device.
  */
 object CommandCatalog {
 
+    /**
+     * What the command is *for*, in the words a person uses — the four groups the screen
+     * shows, in screen order. The label is what the header prints, so a command cannot
+     * appear without one.
+     */
     enum class Group(val label: String) {
         CONVERSATION("Conversation"),
         CONNECTION("Connection"),
-        AGENT("The agent"),
-        HELP("Help"),
+        SESSION("Session"),
+        DIAGNOSTICS("Diagnostics"),
     }
 
     /** What a command does to the world, in the being's terms (#227). */
@@ -26,11 +38,19 @@ object CommandCatalog {
      *  its own view (a chooser, a status card) and closes the sheet. */
     enum class Kind { INLINE, CARD }
 
+    /** What a command costs — and whether it can be taken back. */
+    data class Cost(val text: String, val risk: Boolean)
+
     data class Command(
         val name: String,
         val aliases: List<String>,
         val group: Group,
+        /** What it does, in one line. */
         val effect: String,
+        /** What it spends or risks, in one line — null when it only asks and changes
+         *  nothing. [Cost.risk] is true only when something is lost and cannot be brought
+         *  back, so the row's warning colour means "irreversible", not "unpleasant". */
+        val cost: Cost?,
         val category: Category,
         val kind: Kind,
         /** #284: the words a person uses for what they want, not for the command. */
@@ -38,26 +58,40 @@ object CommandCatalog {
     )
 
     val ALL: List<Command> = listOf(
-        Command("/new", emptyList(), Group.CONVERSATION,
-            "Start a fresh conversation; the agent forgets this one's thread", Category.CLEAR, Kind.INLINE,
+        Command("/new", emptyList(), Group.SESSION,
+            effect = "Start fresh — the agent forgets this thread",
+            cost = Cost("Cannot be undone; a live call is re-dialled", risk = true),
+            category = Category.CLEAR, kind = Kind.INLINE,
             listOf("start over", "fresh", "new topic", "forget", "begin again")),
         Command("/clear", listOf("/reset"), Group.CONVERSATION,
-            "Clear the screen and start over; the agent's copy is kept", Category.CLEAR, Kind.INLINE,
+            effect = "Clear the screen; the agent keeps its copy",
+            cost = Cost("The screen's copy cannot be brought back", risk = true),
+            category = Category.CLEAR, kind = Kind.INLINE,
             listOf("wipe", "clean", "erase", "screen")),
         Command(CompressCommand.NAME, listOf(CompressCommand.ALIAS), Group.CONVERSATION,
-            "Ask the agent to compact a long conversation so it stays quick", Category.CONDENSE, Kind.INLINE,
+            effect = "Compact a long conversation so it stays quick",
+            cost = Cost("Costs one turn; the agent keeps the summary", risk = false),
+            category = Category.CONDENSE, kind = Kind.INLINE,
             listOf("slow", "too long", "summarize", "summarise", "shorten", "memory full", "context")),
         Command("/reconnect", emptyList(), Group.CONNECTION,
-            "Reach the gateway again and re-dial a live call", Category.CONNECT, Kind.INLINE,
+            effect = "Reach the gateway again and re-dial a call",
+            cost = Cost("Stays down if the gateway does not answer", risk = false),
+            category = Category.CONNECT, kind = Kind.INLINE,
             listOf("offline", "not working", "can't reach", "cannot reach", "disconnected", "retry", "stuck", "frozen")),
-        Command("/health", listOf("/status"), Group.CONNECTION,
-            "Show whether the agent is up, and its version", Category.INSPECT, Kind.CARD,
+        Command("/health", listOf("/status"), Group.DIAGNOSTICS,
+            effect = "Whether the agent is up, and its version",
+            cost = null,   // it asks and reports; nothing changes
+            category = Category.INSPECT, kind = Kind.CARD,
             listOf("is it working", "server", "gateway", "up", "down", "version", "status")),
-        Command("/models", emptyList(), Group.AGENT,
-            "Choose which model the agent thinks with", Category.CHOOSE, Kind.CARD,
+        Command("/models", emptyList(), Group.SESSION,
+            effect = "Choose which model the agent thinks with",
+            cost = Cost("Switching starts a fresh thread", risk = false),
+            category = Category.CHOOSE, kind = Kind.CARD,
             listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
-        Command("/help", emptyList(), Group.HELP,
-            "What each command does", Category.INFORM, Kind.CARD,
+        Command("/help", emptyList(), Group.DIAGNOSTICS,
+            effect = "What each command does",
+            cost = null,
+            category = Category.INFORM, kind = Kind.CARD,
             listOf("how", "what can i", "list", "help")),
     )
 
@@ -71,8 +105,35 @@ object CommandCatalog {
     fun grouped(): List<Pair<Group, List<Command>>> =
         Group.values().map { g -> g to ALL.filter { it.group == g } }.filter { it.second.isNotEmpty() }
 
-    /** A command's state on its row (#226): never a toast. */
-    enum class RunState(val label: String) { IDLE(""), QUEUED("queued"), RUNNING("running…"), DONE("done"), FAILED("failed") }
+    /** Whether the row can report this command's own progress. A card command's work happens
+     *  in the view it opens, so its row says where to look instead of showing a state it
+     *  cannot see (#226). */
+    fun reportsOnRow(c: Command): Boolean = c.kind == Kind.INLINE
+
+    /** A command's state on its row (#226): never a toast, an endless spinner or a made-up
+     *  percentage. */
+    enum class RunState(val label: String) {
+        IDLE(""),
+        QUEUED("queued"),
+        RUNNING("running…"),
+        DONE("done"),
+        FAILED("failed"),
+    }
+
+    /** What a row says when the command's progress is not on the row at all: it opens a
+     *  card, and the card is where you see what happened. */
+    const val IN_CARD = "opens a card"
+
+    /**
+     * The words in a row's state slot. A long-running command says "still working…" after
+     * [Operations.LONG_MS] — the same move as the operations line (#281): the first change is
+     * the indeterminate phrase, never a number that claims progress.
+     */
+    fun stateText(c: Command, s: RunState, elapsedMs: Long = 0L): String = when {
+        !reportsOnRow(c) -> IN_CARD
+        s == RunState.RUNNING && elapsedMs >= Operations.LONG_MS -> "still working…"
+        else -> s.label
+    }
 
     // ---- #284: find a command by what you want to do -------------------------------------
 

@@ -95,7 +95,7 @@ What the build does:
   `enhanced` becomes on, an install that never touched it gets on
   (android/app/src/main/java/com/hermesvox/PresenceGate.kt:56 `fun migrated`).
 - Presence runs only when the model is downloaded **and** able to start
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1272 `presenceActive`). When it
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1275 `presenceActive`). When it
   cannot, the app is normal operation: no label, no degraded-mode pill.
 - The Settings presence row is the only place the absence is explained
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:447 `set_presence_status`),
@@ -126,7 +126,7 @@ older build still sees the old names.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Profiles (tap the agent's name on the main screen) | `profiles`, `profile_active` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope — one active at a time; the header and notification name the active one once there are two | (android/app/src/main/java/com/hermesvox/MainActivity.kt:492 `profiles.showSwitcher()`) |
+| Profiles (tap the agent's name on the main screen) | `profiles`, `profile_active` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope — one active at a time; the header and notification name the active one once there are two | (android/app/src/main/java/com/hermesvox/MainActivity.kt:495 `profiles.showSwitcher()`) |
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1100 `testConnectionAsync`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:245 `prefs.getString("url", "")`) |
 | Teach your agent this app | (action) | — | Asks the agent to install this skill on its gateway, or copies the `hermes skills install …` command (with `-p <profile>` for a profile address) | (android/app/src/main/java/com/hermesvox/AppSkill.kt:36 `fun command`) |
@@ -248,19 +248,35 @@ declaration is what makes the app eligible
 
 ### Commands (the `/` button on the main screen)
 
-Grouped by what they do — Conversation, Connection, The agent, Help — each row stating its effect;
-a command that runs in place shows *queued / running… / done / failed* on its row instead of a toast
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:75 `RunState`).
+Grouped by what a person is doing — Conversation, Connection, Session, Diagnostics — never by the
+subsystem that does the work (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:27 `enum class Group`).
+Each row states its effect in one line and, when the command has one, what it spends or risks in a
+second line (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:53 `val cost`).
 
-| Command | What it does | Reference |
-|---|---|---|
-| `/new` | A fresh conversation; the agent forgets this one's thread. Ends and re-dials a live call | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:42 `Start a fresh conversation`) |
-| `/clear` | (also `/reset`) Clears the screen and starts over; the agent keeps its copy. Re-dials a live call | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:45 `Clear the screen and start over`) |
-| `/compress` | (also `/compact`) Asks the agent to compact a long conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:48 `compact a long conversation`) |
-| `/reconnect` | Reaches the gateway again and re-dials a live call if it answered | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:51 `Reach the gateway again`) |
-| `/health` | (also `/status`) Whether the agent is up, and its version | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:54 `Show whether the agent is up`) |
-| `/models` | Choose which model the agent thinks with | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:57 `Choose which model the agent thinks with`) |
-| `/help` | The list, with these same lines | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:60 `What each command does`) |
+A command that runs in place shows *queued / running… / done / failed* on the row where it was
+tapped, instead of a toast (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:115 `enum class RunState`).
+Past two seconds the word becomes "still working…" and never a number that pretends to be
+progress (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:132 `fun stateText`). A command
+that opens its own card says "opens a card" rather than showing a state it cannot see
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:111 `fun reportsOnRow`).
+
+| Command | Group | What it does | Cost or risk | Reference |
+|---|---|---|---|---|
+| `/new` | Session | A fresh conversation; the agent forgets this thread. Ends and re-dials a live call | Cannot be undone | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:62 `Start fresh`) |
+| `/clear` | Conversation | (also `/reset`) Clears the screen; the agent keeps its copy, and a live call is re-dialled | The screen's copy is gone for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:67 `Clear the screen`) |
+| `/compress` | Conversation | (also `/compact`) Asks the agent to compact a long conversation | Costs one turn; the agent keeps the summary | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:72 `Compact a long conversation`) |
+| `/reconnect` | Connection | Reaches the gateway again and re-dials a live call | The call stays down if the gateway does not answer | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:77 `Reach the gateway again`) |
+| `/health` | Diagnostics | (also `/status`) Whether the agent is up, and its version | none — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:82 `Whether the agent is up`) |
+| `/models` | Session | Choose which model the agent thinks with | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:87 `Choose which model`) |
+| `/help` | Diagnostics | The list, with these same lines | none — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:92 `What each command does`) |
+
+Those seven (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue, and a
+command added without a group, an effect or an alias target fails
+`CommandCatalogTest.everyCommandBelongsToALabelledGroup`
+(android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt:47 `everyCommandBelongsToALabelledGroup`).
+**There is no `/file`.** No build of this tree has ever had a handler for it — the dispatch has
+exactly the seven names above (android/app/src/main/java/com/hermesvox/MainActivity.kt:1983 `when (c.name)`),
+so tell a user who asks that files are not something Vox can send; do not invent it.
 The **Being** section opens with a live preview: the same being the main screen draws, from the
 same prefs, walking through resting, listening, working and speaking — so a look is judged in
 Settings, not by leaving it (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1430 `previewStates`).
@@ -269,13 +285,13 @@ Settings, not by leaving it (android/app/src/main/java/com/hermesvox/SettingsAct
 (inspect), pulse (choose), converge (compress), scatter (start over), ring (reconnect), settle
 (help) — held while it runs; it ends in a bloom when it worked and in the hourglass, in the
 waiting colour, when it failed (android/app/src/main/java/com/hermesvox/CommandMotion.kt:43 `fun verbFor`).
-The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:1977 `event=command-motion`).
+The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:1980 `event=command-motion`).
 
 **Finding a command.** The commands screen has a search box that matches what a person wants
 ("it's slow", "can't reach it", "start over"), not only command names
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:84 `fun search`), and leads with what fits the moment —
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:145 `fun search`), and leads with what fits the moment —
 *reconnect* and *health* after a failed turn, *compress* in a long conversation
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:114 `fun suggest`). A failed turn's line on the main screen
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:175 `fun suggest`). A failed turn's line on the main screen
 ends "tap to reconnect" and does it; on a caller's first three calls, twenty silent seconds bring
 the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java/com/hermesvox/Discovery.kt:17 `STUCK_AFTER_MS`).
 
@@ -295,7 +311,7 @@ worst-case JSON escaping is 6 bytes per character
 truncates with a `…` and says exactly how many characters are dropped; it never shortens
 silently. A paste is **not** a command, even when it spells one, and its body never reaches a
 log line — the console says `(pasted, N characters)` instead
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:1675 `R.id.paste`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:1678 `R.id.paste`).
 
 ### Voice models
 
@@ -308,7 +324,7 @@ log line — the console says `(pasted, N characters)` instead
 with its key: "Not served" means that gateway has no such profile, "Key rejected" means each
 profile needs its own key (android/app/src/main/java/com/hermesvox/Profiles.kt:69 `NOT_SERVED`).
 Switching ends a live call and starts a new conversation — the old conversation belongs to the
-old profile (android/app/src/main/java/com/hermesvox/MainActivity.kt:1564 `resetConversation`). The
+old profile (android/app/src/main/java/com/hermesvox/MainActivity.kt:1567 `resetConversation`). The
 app cannot list a gateway's profiles; they are added by hand.
 
 ### Prefs that have no Settings screen
@@ -322,15 +338,15 @@ Do not send a user hunting for these.
   ignore it and always decode English (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:165 `stt_language`).
   This tree never writes it either, so multilingual models always auto-detect.
 - `provider` — the per-request provider override, written when a model is picked from the
-  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:2043 `putString("provider"`).
+  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:2046 `putString("provider"`).
 - `agent_name` — the label above the being; read with the model id as its fallback
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1598 `agent_name`). This tree never
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1601 `agent_name`). This tree never
   writes it, so in practice the label is always the model id.
 - `er_filler_cap` — a legacy slider, read only to migrate an upgraded install into
   `er_presence_density` (android/app/src/main/java/com/hermesvox/PresenceCadence.kt:36 `LEGACY_PREF`).
   Nothing writes it any more.
 - `presence` — a second narration gate read alongside `er_presence` when a tool call wants a
-  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:1812 `"presence", true`).
+  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:1815 `"presence", true`).
   Read with a default of true and never written by this tree, so treat it as permanently on.
 
 ---
@@ -373,16 +389,16 @@ that is not here, this list is stale: add it with a reference.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:765 `call-end`) |
-| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2369 `activity-stop`) |
+| `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:768 `call-end`) |
+| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2372 `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:33 `fg-service start`) |
 | `event=fg-service-start` | The mic foreground service was requested | `event=fg-service-start-failed err=` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:87 `fg-service-start ok`) |
-| `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1286 `wake acquired`) |
-| `event=screen-alive` | The keep-screen-on window flag was armed | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1294 `screen-alive armed`) |
-| `event=focus-acquire` | Audio focus requested; `result=granted` or `denied` | `event=focus-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1358 `focus-acquire result=`) |
-| `event=focus-change` | Another app took/returned focus; `state=loss kind=loss / transient / can-duck`, or `state=resume` | `action=hangup reason=over-…` means focus stayed away too long and the call ended | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1396 `focus-change state=loss`) |
-| `event=focus` | Focus released | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1372 `focus released`) |
-| `event=audio-route` | Capture/playback re-attached for a device change; `devices=` lists the route | `event=audio-route-register-failed`, `event=audio-route-unregister-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1463 `audio-route devices=`) |
+| `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1289 `wake acquired`) |
+| `event=screen-alive` | The keep-screen-on window flag was armed | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1297 `screen-alive armed`) |
+| `event=focus-acquire` | Audio focus requested; `result=granted` or `denied` | `event=focus-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1361 `focus-acquire result=`) |
+| `event=focus-change` | Another app took/returned focus; `state=loss kind=loss / transient / can-duck`, or `state=resume` | `action=hangup reason=over-…` means focus stayed away too long and the call ended | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1399 `focus-change state=loss`) |
+| `event=focus` | Focus released | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1375 `focus released`) |
+| `event=audio-route` | Capture/playback re-attached for a device change; `devices=` lists the route | `event=audio-route-register-failed`, `event=audio-route-unregister-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1466 `audio-route devices=`) |
 | `event=comm-route` | Headset/communication-route selection (`action=set ok=…`, `action=none`, `action=cleared`) | `action=select-failed`, `ok=false` | (android/app/src/main/java/com/hermesvox/CommRoute.kt:92 `comm-route action=set`) |
 | `event=assist` | #329: the assistant gesture reached the app; `route=start_call` (cold, opens ready to listen), `route=focus_live_call` (a call was already running — never a second session) or `route=onboard` (no gateway yet) | `route=start_call` while the user was mid-call | (android/app/src/main/java/com/hermesvox/MainActivity.kt:369 `event=assist route=`) |
 | `event=harness` | Debug builds only: a test intent set ringer mode | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:432 `harness ringer=`) |
@@ -419,9 +435,9 @@ that is not here, this list is stale: add it with a reference.
 | `event=turn-dropped` | A completed turn was dropped because the generation was stopped | `reason=stopped` after a hangup is expected | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1701 `turn-dropped`) |
 | `event=settle-drop` | A settled reply was not spoken because it was cancelled or already voiced | Both reasons are protective; a drop with no cut means a double-settle bug | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1820 `settle-drop`) |
 | `event=stream-fallback` | The stream failed **after** assembling text; the text is spoken non-streamed instead of lost | Any — the reply is degraded | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1838 `stream-fallback`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2098 `compress-failed`) |
-| `event=command` | A command from the commands screen changed state: `name=`, `state=running / done / failed` | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:151 `event=command name=`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2098 `compress-failed`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2101 `compress-failed`) |
+| `event=command` | A command from the commands screen changed state: `name=`, `state=queued / running / done / failed`; `queued` carries `behind=` the command it waits for | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:230 `event=command name=`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2101 `compress-failed`) |
 | `event=turn` | One line per settled turn with latency fields and `outcome=` | Cut outcomes: `reply-error`, `stream-lost`, `empty-reply`, `stopped`, `hush`, `barge-in`, `focus-loss`, `suppressed-inflight`; healthy: `stream-done`, `speak-done`, `text-only` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:1997 `stream-done`) |
 | `event=turn-skip` † | A second settle for the same epoch was suppressed | Repeats = a double-settle path | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2531 `turn-skip`) |
 | `event=lat` | Rolling p50/p95 per metric every 8 turns | Compare `first-audio` against the cadence target, p50 700 ms / p95 1.4 s (docs/DECISIONS.md:322 `p50 ≤ 700 ms`) | (android/app/src/main/java/com/hermesvox/LatencyStats.kt:92 `event=lat`) |
@@ -465,7 +481,7 @@ that is not here, this list is stale: add it with a reference.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1242 `er-soul kind=`) |
+| `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1245 `er-soul kind=`) |
 | `event=presence-unload` | The presence Engine was released: `reason=` one of `call-end` (immediate arm, dev pref), `idle` (the delayed arm's timer), `presence-off`, `released=`, `availMb=` after the close | Never fires on a shipped build — both release arms are off by default | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:273 `event=presence-unload reason=`) |
 | `event=presence-unload-arm` | The delayed arm was armed at hangup: `trigger=call-end`/`presence-off`, `minutes=` | Fires and is never followed by `-due` or `-cancel` = the timer died | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:322 `event=presence-unload-arm trigger=`) |
 | `event=memory-budget` | The dev memory dialog was applied: `kv=` (2048/4096/8192, applies on the next presence load), `unload=`, `idleMin=` | Any `kv=` other than the arm a run believes it is in = the measurement is misattributed | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:793 `event=memory-budget`) |
@@ -708,7 +724,7 @@ Debug / crash log → Share full log).
   reads "On, but the model cannot start on this device — Presence stays off here"
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:466 `cannot start on this device`),
   and the log carries `event=presence-unavailable reason=start-failed`
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2278 `presence-unavailable`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2281 `presence-unavailable`).
 - **Cause:** the LiteRT-LM engine could not initialise on this GPU, and the CPU path is the
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:76 `1.8s`); there is also a recorded
@@ -728,7 +744,7 @@ Debug / crash log → Share full log).
   room — measured at ~50 s on an 8 GB Pixel 7 whose other apps held a 2.5 GB model of their own (#191). It is not
   a hang. After 20 s the pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt:22 `OFFER_SKIP_MS`),
   which opens the call with Presence joining when it is ready
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:690 `event=presence-skip`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:693 `event=presence-skip`).
 - **What to do:** close other heavy apps (on-device AI apps especially), or turn Presence off on that phone.
 
 ### 6.12 The text on screen runs ahead of (or behind) the voice
