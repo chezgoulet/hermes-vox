@@ -83,13 +83,13 @@ Dark ground:
   `onPause`**. Dark: same shape (39 → 93 → 95, then 0). The frame counter is the sharp
   witness; a stopped renderer draws nothing.
 - **No wake lock**, in any state, in the power service's own list (`uid=10209`).
-- **PSS.** The preview peak is 14–21 MB above the preview's own released state on this
-  emulator; after leaving, the process sits back in the band it started in (light 53.5 MB
-  against a 46.5 MB home band, dark 54.3 MB against 61.3 MB). PSS on a software-GL
-  emulator with a freshly warmed process is noisy — the light preview peak carries its
-  first-frame GL allocations — which is why the frame counter and the wake-lock list are
-  reported beside it. **These are emulator numbers, not the phone's**; the Pixel pass is
-  the one the issue asks for and is still owed.
+- **PSS.** In the light run the preview peak is 20.9 MB above the home band (46.5 MB), and
+  Back hands 12.8 MB of it back; the process then sits at 53.5 MB, its own starting band,
+  with the renderer stopped. The dark run was taken on a process that had already rendered
+  the preview in earlier passes, so its GL allocations were already resident and the peak is
+  only 1.4 MB above home (62.7 against 61.3 MB) — which is why PSS is reported *beside* the
+  frame counter and the wake-lock list, not instead of them. **These are emulator numbers,
+  not the phone's**; the Pixel pass is the one the issue asks for and is still owed.
 
 ## Reproduce
 
