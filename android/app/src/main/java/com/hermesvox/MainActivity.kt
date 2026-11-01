@@ -393,6 +393,26 @@ class MainActivity : AppCompatActivity() {
         // would reject, nor one silently rewritten into a different identity.
         if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
+        // #327: the device matrix needs the clipboard in a known state and the paste
+        // sheet open, which no shell command can do on this Android. Debug-only (the
+        // FLAG_DEBUGGABLE guard above), inert in a release build, and never logged.
+        intent.getStringExtra("clipboard")?.let { body ->
+            getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("paste-test", body))
+        }
+        // The same, from a file: a 5,000-character multi-line paste does not survive
+        // a shell argument cleanly. Debug-only, read once, never logged.
+        intent.getStringExtra("clipboard_file")?.let { path ->
+            val body = runCatching { java.io.File(path).readText() }.getOrNull()
+            if (body != null) getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("paste-test", body))
+        }
+        if (intent.getBooleanExtra("clipboard_empty", false)) {
+            val cm = getSystemService(android.content.ClipboardManager::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= 28) cm?.clearPrimaryClip()
+            else cm?.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+        }
+        if (intent.getBooleanExtra("open_paste", false)) showPaste()
         // #156: the device matrix needs to PUT the phone into each state and then fire
         // a cue. There is no shell command for the ringer mode on this build, so the
         // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
@@ -1652,18 +1672,24 @@ class MainActivity : AppCompatActivity() {
     private fun wireButtons() {
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
+        findViewById<Button>(R.id.paste).setOnClickListener { showPaste() }
         findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
     }
 
-    private fun send(text: String) {
+    /** #327: [pasted] marks a clipboard turn. It is sent exactly like typed text; only
+     *  what the transcript and the console repeat changes (a paste can be enormous, and
+     *  the clipboard's contents must never reach a log line). */
+    private fun send(text: String, pasted: Boolean = false) {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
         // K2: typing /compress (or /compact) is the same native command as picking it
         // from the commands sheet — status feedback + the gateway's answer in a card,
         // instead of the word disappearing into the turn as ordinary conversation.
-        if (CompressCommand.matches(text)) { compressContext(); return }
-        appendConvo("You: $text")
+        // A paste is text, not a command: the same word typed is a command, pasted is
+        // sent to the agent as-is (the command sheet's grammar is unchanged).
+        if (!pasted && CompressCommand.matches(text)) { compressContext(); return }
+        appendConvo(if (pasted) ClipboardPaste.transcriptLine(text) else "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             wireSoul(it)
@@ -1671,7 +1697,7 @@ class MainActivity : AppCompatActivity() {
             LatencyStats.resetSessionTurns()   // C3: first-use controller = fresh session
         }
         c.attachListeners(listener)
-        c.sendText(text)
+        c.sendText(text, pasted = pasted)
     }
 
     private val listener = object : VoiceController.Listener {
@@ -1919,6 +1945,25 @@ class MainActivity : AppCompatActivity() {
     private var stuckShownThisCall = false
     private var callTurns = 0L
     private fun showCommands() = commandsSheet.show()
+
+    /** #327: paste → preview → send. The decision (empty, cap, dropped count, and the
+     *  rule that a read never sends) is pure JVM in ClipboardPaste/PasteFlow; this holds
+     *  the two Android edges — the clipboard read and the turn send. */
+    private val pasteFlow by lazy {
+        PasteFlow(readClipboard = { readClipboard() }, send = { send(it, pasted = true) })
+    }
+    private val pasteSheet by lazy { PasteSheet(this, pasteFlow) }
+    private fun showPaste() = pasteSheet.show()
+
+    /** The clipboard's first text item, or null when there is nothing to paste. A clip
+     *  that holds something else (an image, a URI) is not text and is reported as empty.
+     *  Never logged: clipboard contents do not belong in a log or a crash report. */
+    private fun readClipboard(): String? {
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
+        val clip = try { cm.primaryClip } catch (_: Throwable) { null } ?: return null
+        if (clip.itemCount == 0) return null
+        return clip.getItemAt(0)?.text?.toString()
+    }
 
     private fun runCommand(c: CommandCatalog.Command, finished: (Boolean) -> Unit) {
         // #227: the being shows the command in its own language — the verb its category maps

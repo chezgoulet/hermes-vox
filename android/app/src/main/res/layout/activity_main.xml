@@ -195,6 +195,20 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1" />
+        <!-- #327: paste sits next to the command list — the same place the `/` sheet
+             opens from — and says what it is rather than showing an opaque glyph. -->
+        <Button
+            android:id="@+id/paste"
+            style="@style/HvGhostButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_button_ghost"
+            android:paddingHorizontal="12dp"
+            android:text="PASTE"
+            android:textColor="@color/hv_text"
+            android:textSize="12sp"
+            android:letterSpacing="0.08"
+            android:contentDescription="Paste from clipboard" />
         <Button
             android:id="@+id/commands"
             style="@style/HvGhostButton"
