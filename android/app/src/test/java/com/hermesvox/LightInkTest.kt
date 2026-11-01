@@ -56,6 +56,8 @@ class LightInkTest {
         assertTrue(fs.contains("uniform float uInk, uInkValue, uInkCover;"))
         assertTrue(fs.contains("clamp(lt * uInkCover, 0.0, 1.0) * 0.92"))
         assertTrue(fs.contains("clamp(hue * uInkValue, 0.0, 1.0)"))
+        assertTrue("hue is normalised by max channel, not luma",
+            fs.contains("vec3 hue = c / max(max(c.r, max(c.g, c.b)), 1e-3);"))
         assertTrue(fs.contains("vec3 light = mix(uPaper, ink, cover);"))
         assertTrue("dark output unchanged at uInk = 0", fs.contains("o = vec4(mix(dark, light, uInk), 1.0);"))
     }

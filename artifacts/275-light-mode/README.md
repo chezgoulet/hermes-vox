@@ -35,7 +35,7 @@ each shot is set by the debug harness, so every PNG says what it is.
 | `ink-listening.png` | Ink — 1-bit | listening (the iris) |
 | `ink-thinking.png` | Ink — 1-bit | thinking (the spiral) |
 | `ink-speaking.png` | Ink — 1-bit | speaking (the soundwave) |
-| `settings-being-light.png` | Lumen — its own light | Settings → Being, live preview at rest |
+| `settings-being-light.png` | Lumen — its own light | Settings → Being, live preview (working) |
 | `before-light-release-nightly.png` | Lumen (old code) | **before**: the installed release nightly, same light page — the pale cyan atom the issue is about |
 
 The four families are deliberately different substances: Lumen has no family tint

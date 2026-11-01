@@ -14,9 +14,10 @@ import kotlin.math.max
  *
  * A darker emission is a denser mark, never a brighter one. The tone-mapped luminance
  * still decides *how much* paper a pixel covers, but the hue is normalised by its own
- * luma and placed at the family's authored [VisualStyle.Light.value] — so a deep hue
- * (Abyss' indigo) stays deep instead of clipping toward white, and the "sums to white"
- * families (Prism, Solar) become dense centres instead of holes in the page.
+ * MAX CHANNEL and placed at the family's authored [VisualStyle.Light.value] — so a deep
+ * hue (Abyss' indigo) stays deep, and a high-luma hue (a green) cannot exceed the
+ * authored value and clip toward white. The "sums to white" families (Prism, Solar)
+ * become dense centres instead of holes in the page.
  *
  * This object exists to prove the shader's light branch off-device: the strings in
  * [LightInkTest] pin the GLSL, and the contrast table is computed with [map] and
@@ -46,9 +47,11 @@ object LightInk {
             inkValue: Float = 0.4f, coverGain: Float = 1.6f): FloatArray {
         val l = max(lum(r, g, b), 1e-4f)
         val lt = 1f - exp(-l * 1.4f)
-        // The shader tone-maps c to unit luminance (c * lt/l) and then divides by lt again,
-        // so its "hue" is the input colour over its own luminance. Keep that exactly.
-        val hue = floatArrayOf(r / l, g / l, b / l)
+        // The shader normalises the tone-mapped hue by its MAX CHANNEL (uniform scaling
+        // cancels), so the authored ink value is the body's value. Keep that exactly;
+        // normalising by luma here would flatter the dark/high-luma families.
+        val m = max(max(r, g), max(b, 1e-4f))
+        val hue = floatArrayOf(r / m, g / m, b / m)
         val cover = (lt * coverGain).coerceIn(0f, 1f) * MAX_COVER
         return FloatArray(3) { i ->
             val ink = (hue[i] * inkValue).coerceIn(0f, 1f)

@@ -935,7 +935,11 @@ void main() {
     float lum = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
     float lt = 1.0 - exp(-lum * 1.4);
     c = c * (lt / lum);
-    vec3 hue = c / max(lt, 1e-3);                              // the colour at unit value
+    // Normalise the hue by its MAX CHANNEL, not by luma: luma-normalising a green
+    // (max 0.84, luma 0.72) lifts it past 1 and clips toward white, which is how the
+    // old light branch lost the authored value. The max channel makes uInkValue the
+    // body's value, exactly as VisualStyle.ink and the contrast test measure it.
+    vec3 hue = c / max(max(c.r, max(c.g, c.b)), 1e-3);
     c = mix(c, vec3(lt), smoothstep(0.75, 1.0, lt) * 0.5);   // only the very hottest cores whiten
     vec2 v = vUv - 0.5;
     vec3 dark = c * (1.0 - 0.45 * smoothstep(0.35, 0.85, length(v * vec2(1.0, 0.9))));
