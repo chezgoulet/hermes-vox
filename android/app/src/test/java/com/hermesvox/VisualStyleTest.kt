@@ -81,6 +81,25 @@ class VisualStyleTest {
 
     // ---- 2. the categories are actually diverse, not recolours ----
 
+    @Test fun the_dark_palette_is_the_shipped_one() {
+        // #275 added a second ground. These are the DARK (hero) body colours from before it,
+        // pinned so "the dark scheme is unchanged" is a test rather than a claim: adding a
+        // light variant may not move what the being looks like on black.
+        val golden = mapOf(
+            "lumen" to 0xFF3ED598, "ember" to 0xFF7BB26E, "solar" to 0xFF81D170,
+            "abyss" to 0xFF38938F, "tide" to 0xFF36CA9D, "frost" to 0xFF78D5BA,
+            "ripple" to 0xFF39DAB1, "verdant" to 0xFF31DB92, "moss" to 0xFF62B57B,
+            "aurora" to 0xFF22F19B, "prism" to 0xFF25E295, "dusk" to 0xFF77BF7C,
+            "raven" to 0xFF447B72, "ink" to 0xFFB6BCBA, "sculpt" to 0xFFAABFB5,
+            "static" to 0xFF8FBFAF, "nebula" to 0xFF6B9BC7, "aura" to 0xFF7CD7A0,
+            "gale" to 0xFF75C2AA, "comet" to 0xFF47D7A8)
+        assertEquals(VisualStyle.TOKENS.size, golden.size)
+        for ((t, want) in golden) {
+            assertEquals("dark body colour moved for $t", want.toInt(),
+                VisualStyle.shade(listen, VisualStyle.of(t), false))
+        }
+    }
+
     @Test fun every_category_renders_a_distinct_palette() {
         val seen = HashSet<Int>()
         for (t in VisualStyle.TOKENS) seen.add(VisualStyle.shade(listen, VisualStyle.of(t), false))

@@ -904,10 +904,17 @@ void main() {
 """
 
     /** Scene + two bloom levels + the ambient halo, tone-mapped, vignetted. On the light
-     *  theme (#275, [uInk] = 1) the same emission is laid down as ink on [uPaper] instead of
-     *  light on black: coverage from the tone-mapped luminance, colour from its hue at a
-     *  darker value, no vignette (a darkened edge on white is a smudge, not depth). With
-     *  [uInk] = 0 the output is the dark theme's, unchanged. [LightInk] mirrors it on the JVM. */
+     *  theme (#275, [uInk] = 1) the same emission is laid down as INK on [uPaper] instead
+     *  of light on black; the ground is designed, not inverted:
+     *
+     *      out = paper + (ink - paper) * cover
+     *      ink   = normalised emission hue * uInkValue   (authored per family)
+     *      cover = clamp(tone-mapped luminance * uInkCover) * 0.92
+     *
+     *  A hot core is a DENSER mark (never a white one, which would vanish), a bloom is a
+     *  low-opacity stain, and there is no vignette (a darkened edge on white is a smudge,
+     *  not depth). With [uInk] = 0 the output is the dark theme's, unchanged.
+     *  [LightInk] mirrors this branch on the JVM. */
     val FRAGMENT_COMPOSITE = """#version 300 es
 precision mediump float;
 in vec2 vUv;
@@ -916,7 +923,7 @@ uniform float uGlow, uHalo;
 uniform vec3 uBase;
 uniform vec2 uCenterUv, uHaloR;
 uniform vec3 uPaper;
-uniform float uInk;
+uniform float uInk, uInkValue, uInkCover;
 out vec4 o;
 void main() {
     vec3 c = texture(uScene, vUv).rgb;
@@ -928,12 +935,16 @@ void main() {
     float lum = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
     float lt = 1.0 - exp(-lum * 1.4);
     c = c * (lt / lum);
-    vec3 hue = c / max(lt, 1e-3);                              // the colour at unit value
+    // Normalise the hue by its MAX CHANNEL, not by luma: luma-normalising a green
+    // (max 0.84, luma 0.72) lifts it past 1 and clips toward white, which is how the
+    // old light branch lost the authored value. The max channel makes uInkValue the
+    // body's value, exactly as VisualStyle.ink and the contrast test measure it.
+    vec3 hue = c / max(max(c.r, max(c.g, c.b)), 1e-3);
     c = mix(c, vec3(lt), smoothstep(0.75, 1.0, lt) * 0.5);   // only the very hottest cores whiten
     vec2 v = vUv - 0.5;
     vec3 dark = c * (1.0 - 0.45 * smoothstep(0.35, 0.85, length(v * vec2(1.0, 0.9))));
-    float cover = clamp(lt * 1.6, 0.0, 1.0) * 0.92;
-    vec3 ink = clamp(hue * 0.5, 0.0, 1.0);
+    float cover = clamp(lt * uInkCover, 0.0, 1.0) * 0.92;
+    vec3 ink = clamp(hue * uInkValue, 0.0, 1.0);
     vec3 light = mix(uPaper, ink, cover);
     o = vec4(mix(dark, light, uInk), 1.0);
 }

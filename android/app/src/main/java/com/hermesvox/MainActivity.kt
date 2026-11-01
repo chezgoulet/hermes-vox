@@ -395,6 +395,31 @@ class MainActivity : AppCompatActivity() {
             val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
             if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
         }
+        // #275: the screenshot pass needs the being in a named state and family without a
+        // gateway, a mic or a model download. Debug-only, like everything above. Extras:
+        // `category` (a VisualStyle token), `being` (listening|thinking|speaking|stalled).
+        // The status line is set to what is on screen so the capture is self-labelling.
+        intent.getStringExtra("category")?.let { cat ->
+            prefs.edit().putString(VisualStyle.KEY_CATEGORY, VisualStyle.of(cat).token).apply()
+            applyParticlePrefs()
+        }
+        intent.getStringExtra("being")?.let { want ->
+            if (this::avatar.isInitialized) {
+                val b = want.lowercase()
+                val st = if (b == "stalled") "waiting" else b
+                val work = if (st == "thinking") 0.7f else 0.15f
+                val a = if (st == "speaking") 0.55f else 0.2f
+                if (b == "stalled") {
+                    avatar.setPresent("thinking", null, work, a)
+                    avatar.setStall(true, 12_000L)
+                } else {
+                    avatar.setStall(false, 0L)
+                    avatar.setPresent(st, null, work, a)
+                }
+                val cat = prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)
+                setStatus("$st · ${VisualStyle.labelOf(cat)}", true)
+            }
+        }
     }
 
     /** The installed version code, from the manifest (BuildConfig is not generated). */
@@ -483,9 +508,9 @@ class MainActivity : AppCompatActivity() {
         warming = android.widget.TextView(this).apply {
             text = "Preparing your voice\u2026"
             textSize = 18f
-            setTextColor(0xFFD6F4FF.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_text))
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(0xFF06070B.toInt())
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_bg))
             typeface = android.graphics.Typeface.MONOSPACE
             visibility = android.view.View.GONE
             layoutParams = android.view.ViewGroup.LayoutParams(
@@ -760,8 +785,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateCallButton() {
         val b = findViewById<Button>(R.id.call) ?: return
-        if (callLive) { b.text = "\u2706"; b.setTextColor(0xFFFF5B5B.toInt()); b.contentDescription = "Hang up call" }
-        else { b.text = "\u2706"; b.setTextColor(0xFF35D07F.toInt()); b.contentDescription = "Start call" }
+        if (callLive) { b.text = "\u2706"; b.setTextColor(ContextCompat.getColor(this, R.color.hv_call_live)); b.contentDescription = "Hang up call" }
+        else { b.text = "\u2706"; b.setTextColor(ContextCompat.getColor(this, R.color.hv_call_idle)); b.contentDescription = "Start call" }
     }
     /** #281: one line of plain language on the state line, mirrored to the call notification. */
     private fun showOperation(line: String) {
@@ -873,7 +898,7 @@ class MainActivity : AppCompatActivity() {
             text = "Download the voice models"
             textSize = 22f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setTextColor(0xFFD6F4FF.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_text))
             gravity = android.view.Gravity.CENTER
             setPadding(0, (14 * d).toInt(), 0, 0)
         })
@@ -882,7 +907,7 @@ class MainActivity : AppCompatActivity() {
                 "Your offline voice needs $need small models downloaded once — " +
                 "after that every conversation runs on-device, no cloud."
             textSize = 15f
-            setTextColor(0xFF9FB3C9.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_dim))
             gravity = android.view.Gravity.CENTER
             setPadding(0, (10 * d).toInt(), 0, 0)
         })
@@ -902,7 +927,7 @@ class MainActivity : AppCompatActivity() {
         body.addView(Button(this).apply {
             text = "Not now"
             isAllCaps = false
-            setTextColor(0xFF9FB3C9.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_dim))
             background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_ghost)
             setOnClickListener {
                 modelsGate?.visibility = View.GONE
@@ -918,7 +943,7 @@ class MainActivity : AppCompatActivity() {
         return android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(0xFF06070B.toInt())
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_bg))
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
@@ -964,7 +989,7 @@ class MainActivity : AppCompatActivity() {
      *  rings and bubbles land on the real view bounds (no hardcoded y values). */
     private fun buildCoachOverlay(): android.view.View {
         val root = android.widget.FrameLayout(this).apply {
-            setBackgroundColor(0xE606070B.toInt())
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_scrim))
             // A tap anywhere dismisses; it never reaches the controls underneath.
             isClickable = true
             setOnClickListener { dismissCoachMarks() }

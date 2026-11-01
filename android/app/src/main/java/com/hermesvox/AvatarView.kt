@@ -382,9 +382,27 @@ class AvatarView @JvmOverloads constructor(
         // The rounded window was the light theme's frame for the black surface; on paper the
         // being needs none.
         if (light) clipToOutline = false
+        // The ground is chosen at activity creation, not animated: snap the light axes to the
+        // current family so the first rendered frame is already ink, not a white flash that
+        // eases into it. A later category change still flows through easeStyle. The dark
+        // branch is deliberately untouched — it keeps its historical identity-to-family ease,
+        // so the hero scheme is pixel-identical.
+        if (light) {
+            val l = vsty.light
+            rTintAmt = l.tintAmt
+            rSat = l.sat
+            rAccentTurn = l.accentTurn
+            rCoreHeat = l.coreHeat
+            rEdge = l.edge
+            rHalo = l.halo
+            rTint = l.tint
+            rInkValue = l.value
+            rInkCover = l.cover
+        }
     }
     private var inkOn = 0f
     private var paperR = 0f; private var paperG = 0f; private var paperB = 0f
+    private var rInkValue = 1f; private var rInkCover = 1.6f
     // #225: the fine-grained look.
     fun setVisualDensity(v: Float) { visDensity = VisualStyle.density(v) }
     fun setVisualSpeed(v: Float) { visSpeed = VisualStyle.speed(v) }
@@ -493,6 +511,7 @@ class AvatarView @JvmOverloads constructor(
         f.core = rCoreHeat; f.edge = rEdge
         f.glow = rHalo * visGlow
         f.ink = inkOn; f.paperR = paperR; f.paperG = paperG; f.paperB = paperB
+        f.inkValue = rInkValue; f.inkCover = rInkCover
         f.halo = (0.45f + sBright * 0.8f) * rHalo * visGlow
         f.trails = VisualStyle.trails(rTrails, visTrail)
         f.density = visDensity
@@ -550,8 +569,15 @@ class AvatarView @JvmOverloads constructor(
             "stream" -> { tBase = cCyan;   tAcc = cCyanHi }
             else     -> { tBase = lerpColor(cIdle, cCyan, 0.26f + amp * 0.22f); tAcc = cIdleHi }
         }
-        tBase = VisualStyle.shade(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
-        tAcc = VisualStyle.shade(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        if (inkOn > 0.5f) {
+            // #275: on paper the state hue is normalised and placed as ink, not shaded
+            // toward a dark-ground tint. The scalar overload is the crossfade path.
+            tBase = VisualStyle.inkHue(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
+            tAcc = VisualStyle.inkHue(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        } else {
+            tBase = VisualStyle.shade(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
+            tAcc = VisualStyle.shade(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        }
         if (visHue != 0f) { tBase = VisualStyle.turn(tBase, visHue); tAcc = VisualStyle.turn(tAcc, visHue) }   // #225
     }
 
@@ -643,19 +669,26 @@ class AvatarView @JvmOverloads constructor(
         vsty = VisualStyle.of(VisualStyle.TOKENS[cycleIdx])
     }
 
-    /** Ease the render-style toward the target category so a change flows, never snaps. */
+    /** Ease the render-style toward the target category so a change flows, never snaps.
+     *  On the light ground the light variant's axes are the targets (#275): the palette,
+     *  the bake and the wash are all authored for paper, while motion stays the dark
+     *  family's — the ground may change what the family is made of, never what it does. */
     private fun easeStyle(dt: Float) {
         val k = (dt * 2.4f).coerceIn(0f, 1f)
-        rTintAmt += (vsty.tintAmt - rTintAmt) * k
-        rSat += (vsty.sat - rSat) * k
-        rAccentTurn += (vsty.accentTurn - rAccentTurn) * k
-        rCoreHeat += (vsty.coreHeat - rCoreHeat) * k
-        rEdge += (vsty.edge - rEdge) * k
-        rHalo += (vsty.halo - rHalo) * k
+        val light = inkOn > 0.5f
+        val l = vsty.light
+        rTintAmt += ((if (light) l.tintAmt else vsty.tintAmt) - rTintAmt) * k
+        rSat += ((if (light) l.sat else vsty.sat) - rSat) * k
+        rAccentTurn += ((if (light) l.accentTurn else vsty.accentTurn) - rAccentTurn) * k
+        rCoreHeat += ((if (light) l.coreHeat else vsty.coreHeat) - rCoreHeat) * k
+        rEdge += ((if (light) l.edge else vsty.edge) - rEdge) * k
+        rHalo += ((if (light) l.halo else vsty.halo) - rHalo) * k
         rSize += (vsty.size - rSize) * k
         rFlicker += (vsty.flicker - rFlicker) * k
         rEnergy += (vsty.energy - rEnergy) * k
-        rTint = lerpColor(rTint, vsty.tint, k)
+        rTint = lerpColor(rTint, if (light) l.tint else vsty.tint, k)
+        rInkValue += ((if (light) l.value else 1f) - rInkValue) * k
+        rInkCover += ((if (light) l.cover else 1.6f) - rInkCover) * k
         // Trails are real frame feedback now, so they ease like everything else.
         rTrails += ((if (vsty.trails) 0.78f else 0f) - rTrails) * k
     }

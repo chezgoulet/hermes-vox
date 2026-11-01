@@ -985,8 +985,8 @@ class SettingsActivity : AppCompatActivity() {
             null -> "…"
         }
         tv.setTextColor(when (state) {
-            true -> 0xFF35D07F.toInt()
-            false -> 0xFFFF5B5B.toInt()
+            true -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_ok)
+            false -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_fail)
             null -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_cyan)
         })
     }
@@ -1024,7 +1024,7 @@ class SettingsActivity : AppCompatActivity() {
             // stream=false(unknown)`: a verdict for a test that never reached the network.
             findViewById<TextView>(R.id.set_test_val)?.let {
                 it.text = "testing…"
-                it.setTextColor(0xFFD6F4FF.toInt())
+                it.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.hv_overlay_text))
             }
             c.testConnectionAsync(true) { probe, msg ->
                 val ok = probe == ConnectionPhase.Probe.OK
@@ -1036,9 +1036,9 @@ class SettingsActivity : AppCompatActivity() {
                         else -> "FAILED"
                     }
                     it.setTextColor(when (probe) {
-                        ConnectionPhase.Probe.OK -> 0xFF35D07F.toInt()
-                        ConnectionPhase.Probe.COLD -> 0xFFFFB43D.toInt()   // reachable, just not ready
-                        else -> 0xFFFF5B5B.toInt()
+                        ConnectionPhase.Probe.OK -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_ok)
+                        ConnectionPhase.Probe.COLD -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_cold)   // reachable, just not ready
+                        else -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_fail)
                     })
                 }
                 androidx.appcompat.app.AlertDialog.Builder(this)

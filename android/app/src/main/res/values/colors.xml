@@ -5,7 +5,7 @@
     <color name="hv_surface">#FFFFFF</color>
     <color name="hv_surface_high">#EAEFF7</color>
     <color name="hv_border">#D2D9E7</color>
-    <color name="hv_cyan">#0092AE</color>
+    <color name="hv_cyan">#00718A</color>
     <color name="hv_cyan_soft">#B9E6EE</color>
     <color name="hv_violet">#6D3BD0</color>
     <color name="hv_violet_soft">#DCCCF7</color>
@@ -15,9 +15,34 @@
          old cyan was 3.18:1 and the dark theme's near-white after a call was 1.0:1. -->
     <color name="hv_status">#0F5F73</color>
     <color name="hv_status_live">#0B6B4F</color>
-    <color name="hv_ok">#0F9D76</color>
-    <color name="hv_warn">#B45309</color>
-    <color name="hv_danger">#DC2626</color>
+    <!-- #275: the being is no longer a black box, so the words and controls that
+         were painted for that box follow the page. Every value here is >= 4.5:1 on
+         both hv_bg and the hv_surface_high chip; LightModeContrastTest proves it. -->
+    <color name="hv_ok">#0B7355</color>
+    <color name="hv_warn">#8F4308</color>
+    <color name="hv_danger">#B91C1C</color>
+    <!-- #275: texts that were hardcoded for the old black surface. Night keeps the
+         exact shipped values so the dark scheme is pixel-identical; light is the same
+         idea on paper. Each clears 4.5:1 on hv_bg and the hv_surface_high chip. -->
+    <color name="hv_crawl_reply">#0F172A</color>
+    <color name="hv_crawl_dim">#5A6B85</color>
+    <color name="hv_overlay_bg">#F3F5F9</color>
+    <color name="hv_overlay_text">#0F172A</color>
+    <color name="hv_overlay_dim">#5A6B85</color>
+    <color name="hv_verdict_ok">#0B7355</color>
+    <color name="hv_verdict_cold">#8F4308</color>
+    <color name="hv_verdict_fail">#B91C1C</color>
+    <!-- The call glyph is a textual control, so it needs the text floor, not the
+         non-text one. Light is deep enough to read on paper; night keeps the dark
+         theme's exact values (the hero scheme is pixel-identical). -->
+    <color name="hv_call_idle">#0A6B4F</color>
+    <color name="hv_call_live">#B91C1C</color>
+    <!-- #275: the command sheet's DONE/FAILED chips are text on the page too. Night
+         keeps the exact values the sheet shipped with, so only the light ground moves. -->
+    <color name="hv_cmd_done">#0B6B4F</color>
+    <color name="hv_cmd_failed">#B91C1C</color>
+    <!-- The coach-mark scrim: a paper wash, not a blackout. -->
+    <color name="hv_scrim">#D9F3F5F9</color>
     <color name="hv_avatar_idle">#6FB7C9</color>
     <color name="hv_avatar_listen">#34D399</color>
     <color name="hv_avatar_think">#FBBF24</color>
