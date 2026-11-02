@@ -254,8 +254,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         }
     }
 
-    override fun speak(text: String, onDone: () -> Unit) {
-        val t = tts ?: return onDone()
+    override fun speak(text: String, onDone: () -> Unit) = speakReporting(text) { onDone() }
+
+    override fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) {
+        val t = tts ?: return onDone(TtsOutcome(TtsEnd.FAILED, "model not loaded"))
         thread {
             // 0.4.0.4: capture the cancel token BEFORE synthesis. generate() takes over
             // a second for a full reply (field log: 1.4s for 199 chars), and play() has
@@ -264,14 +266,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             val token = streamFence.stopEpoch
             try {
                 val audio = synth(t, text)
-                val samples = audio.samples ?: return@thread onDone()
+                val samples = audio.samples ?: return@thread onDone(TtsOutcome(TtsEnd.FAILED, "no audio"))
                 val sr = audio.sampleRate
                 VoxLog.d("${voice.modelId} generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
+                VoxLog.d("event=tts-speak engine=${voice.modelId} reason=one-shot chars=${text.length}")
                 play(samples, sr, token, text)
-                onDone()
+                // #373: a fence bump during play means the utterance was cut (barge, hush,
+                // hang-up, or a newer utterance) — not that the engine failed.
+                onDone(if (streamFence.stopEpoch != token) TtsOutcome(TtsEnd.INTERRUPTED, "stopped")
+                    else TtsOutcome(TtsEnd.SPOKEN))
             } catch (e: Throwable) {
                 VoxLog.e("${voice.modelId} speak: ${e.message}")
-                onDone()
+                onDone(TtsOutcome(TtsEnd.FAILED, e.message ?: e::class.java.simpleName))
             }
         }
     }
@@ -429,6 +435,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
             VoxLog.d("${voice.modelId} chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
+            // #373: one line per spoken utterance naming the engine, so the next field
+            // report can say WHICH engine went quiet instead of "no TTS".
+            VoxLog.d("event=tts-speak engine=${voice.modelId} reason=stream chars=${text.length}")
             // L2: this phrase is next on the track — register it BEFORE the first write so
             // the reveal can interpolate through it while the head is inside it.
             try { onAudioSegment?.invoke(text, samples.size) } catch (_: Throwable) {}
@@ -444,7 +453,11 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 streamWritten += samples.size
                 true
             } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
-        } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
+        } catch (e: Throwable) {
+            VoxLog.e("streamChunk: ${e.message}")
+            VoxLog.w("event=tts-fail engine=${voice.modelId} reason=stream code=${e.message ?: e::class.java.simpleName}")
+            false
+        }
     }
 
     /** Wait for the whole reply to play out, then release the persistent track. */
