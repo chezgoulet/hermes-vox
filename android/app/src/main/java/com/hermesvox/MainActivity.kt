@@ -1632,7 +1632,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // #174: saved connections. The switcher lives on the header; a switch ends the call.
-    private val profiles by lazy { ProfileDialogs(this, prefs) { switchProfile(it) } }
+    private val profiles by lazy { ProfileDialogs(this, prefs, { switchProfile(it) }) { refreshHeaderFromRegistry() } }
 
     /** The header: the agent's name, and the active profile's once there is a choice. */
     private fun headerLabel(model: String): String {
@@ -1644,9 +1644,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * #174: make [p] the active connection. One line at a time is an invariant, so a live
-     * call ends first; the session is rebuilt from the profile's prefs, which starts a new
-     * conversation — `previous_response_id` belongs to the profile it came from.
+     * #174/#371: make [p] the active connection. One line at a time is an invariant, so a
+     * live call ends first; the session is rebuilt from the profile's prefs (a new
+     * conversation), and this holds however [p] arrived — typed or host-populated.
      */
     private fun switchProfile(p: Profiles.Profile) {
         // Settings → Entity edits the live keys, so fold them back into the profile being
@@ -1658,7 +1658,7 @@ class MainActivity : AppCompatActivity() {
             Profiles.upsert(list, Profiles.fromPrefs(Profiles.find(list, cur)!!.name) { prefs.getString(it, "").orEmpty() })
         else list
         val wasLive = callLive
-        if (wasLive) endCall()
+        if (ConversationReset.plan(ConversationReset.Trigger.PROFILE_SWITCH, wasLive).endCall) endCall()
         prefs.edit().apply {
             putString(Profiles.PREF_LIST, Profiles.encode(synced))
             for ((k, v) in Profiles.toPrefs(p)) putString(k, v)
@@ -1701,7 +1701,7 @@ class MainActivity : AppCompatActivity() {
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
         // gateway to actually answer.
-        dialGateway()
+        dialGateway(); profiles.refreshFromHost()   // #371: ask the host which profiles it serves
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = headerLabel(m)
@@ -2537,5 +2537,16 @@ class MainActivity : AppCompatActivity() {
         cues = null
         if (active === this) active = null
         super.onDestroy()
+    }
+
+    /**
+     * #371: the host can populate the registry while the user is doing something else, and
+     * the header's shape (and the notification title) depend on how many profiles there are —
+     * so the registry tells the header when it moves. Called on the UI thread; it never
+     * switches a profile, so it can never end a live call.
+     */
+    private fun refreshHeaderFromRegistry() {
+        if (!::agentName.isInitialized) return
+        agentName.text = headerLabel(prefs.getString("model", "hermes-agent").orEmpty())
     }
 }

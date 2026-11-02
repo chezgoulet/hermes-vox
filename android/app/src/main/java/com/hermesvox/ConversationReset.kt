@@ -16,11 +16,14 @@ package com.hermesvox
  * order they must run and puts the delete last, after the call is armed: the server copy is
  * housekeeping, not a precondition for the user to speak.
  *
+ * #371: a profile switch is in the same table. How a profile was populated — typed by hand or
+ * fetched from `GET /v1/profiles` — must not decide whether a live call survives the switch.
+ *
  * Pure JVM, so the rule — and the order — is proven off-device.
  */
 object ConversationReset {
 
-    enum class Trigger { NEW, CLEAR, RECONNECT, SETTINGS }
+    enum class Trigger { NEW, CLEAR, RECONNECT, SETTINGS, PROFILE_SWITCH }
 
     /** One action a reset performs. [Plan.steps] holds them in run order. */
     enum class Step {
@@ -58,7 +61,8 @@ object ConversationReset {
             Trigger.NEW, Trigger.CLEAR -> steps += Step.REARM_CALL
             Trigger.RECONNECT -> if (gatewayOk) steps += Step.REARM_CALL
             // Settings says "Clears context and ends any live call": it ends it, and stays ended.
-            Trigger.SETTINGS -> Unit
+            // #371: a profile switch is the same — the call belonged to the profile it was in.
+            Trigger.SETTINGS, Trigger.PROFILE_SWITCH -> Unit
         }
         // #351: the delete is LAST. It is the only step that can block on the gateway, and
         // nobody should wait for housekeeping to hear the entity again.
