@@ -9,11 +9,11 @@ import com.hermesvox.core.JsonException
 /**
  * Profiles — saved connections, one active at a time (#174).
  *
- * Client-side only: `GET /v1/models` returns one entity name, not a profile list, so the
- * gateway cannot be asked which profiles it serves (docs/PLAN-0.9.1.md §4). A Hermes profile
- * is addressed by its base URL (`https://host/p/<name>`) and needs its own key, so a profile
- * here is the whole connection: name, base URL, key, model, agent name, session scope and
- * provider.
+ * The list comes from the host (#371): `GET /v1/profiles` is folded in by [HostProfiles] on
+ * connect and whenever the switcher opens, so the user never types the agent's name. What
+ * stays the user's is the connection itself — a Hermes profile is addressed by its base URL
+ * (`https://host/p/<name>`) and needs its own key, so a profile here is the whole connection:
+ * name, base URL, key, model, agent name, session scope and provider.
  *
  * The rest of the app keeps reading the one active connection from the ordinary prefs
  * (`url`, `key`, `model`, …). Switching writes the chosen profile into those keys, and the
