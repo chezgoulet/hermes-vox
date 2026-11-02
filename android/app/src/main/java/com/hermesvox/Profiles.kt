@@ -9,8 +9,10 @@ import com.hermesvox.core.JsonException
 /**
  * Profiles — saved connections, one active at a time (#174).
  *
- * The list comes from the host (#371): `GET /v1/profiles` is folded in by [HostProfiles] on
- * connect and whenever the switcher opens, so the user never types the agent's name. What
+ * The list comes from the host (#371/#384): [ProfilesAsk] asks the agent in conversation on
+ * connect and on an explicit refresh, proves every name with `/v1/models`, and [HostProfiles]
+ * folds the proven list in — so the user never types the agent's name. The answer is cached:
+ * opening the switcher reads it instantly. What
  * stays the user's is the connection itself — a Hermes profile is addressed by its base URL
  * (`https://host/p/<name>`) and needs its own key, so a profile here is the whole connection:
  * name, base URL, key, model, agent name, session scope and provider.
@@ -38,7 +40,12 @@ object Profiles {
     const val K_SCOPE = "session_scope"
     const val K_PROVIDER = "provider"
 
-    const val NAME_MAX = 24
+    /**
+     * The longest saved name. #384: the profile list comes from the host, whose names follow
+     * the spec's `[a-z0-9][a-z0-9_-]{0,31}` — 32 characters. A smaller UI cap would silently
+     * skip a name the host legitimately serves, so the registry's limit is the spec's.
+     */
+    const val NAME_MAX = 32
 
     /** One saved connection. [keyEnc] is the stored (encrypted) key, never the plain one. */
     data class Profile(

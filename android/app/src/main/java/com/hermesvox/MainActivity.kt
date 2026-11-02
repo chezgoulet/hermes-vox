@@ -823,6 +823,9 @@ class MainActivity : AppCompatActivity() {
         // default (MemoryBudget.release) — whether the trade is worth it is the owner's
         // decision, not this branch's.
         (express as? GemmaExpress)?.requestUnload("call-end")
+        // #384: a profile refresh that arrived during the call waited for exactly this
+        // moment — the conversation is over, so asking now cannot disturb it.
+        profiles.runDeferredAsk()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -1701,7 +1704,7 @@ class MainActivity : AppCompatActivity() {
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
         // gateway to actually answer.
-        dialGateway(); profiles.refreshFromHost()   // #371: ask the host which profiles it serves
+        dialGateway(); profiles.refreshFromHost(ProfilesAsk.AskKind.CONNECT)   // #384: ask the agent which profiles it serves
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = headerLabel(m)
