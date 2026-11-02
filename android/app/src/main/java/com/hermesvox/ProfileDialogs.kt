@@ -6,7 +6,11 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -15,18 +19,21 @@ import kotlin.concurrent.thread
  *
  * A profile the user types is saved only after `GET <base>/v1/models` answers 200, so a
  * profile the gateway does not serve says "not served" and a wrong key says "key rejected" —
- * at save time, not as a vague failure in the middle of a call. A profile the host listed is
- * saved on the host's own word (#371): it just answered with its name, and re-probing it
- * would be a second round-trip for nothing. Switching is the caller's ([onSwitch]): it ends
- * any live call and starts a new conversation.
+ * at save time, not as a vague failure in the middle of a call.
  *
- * #371: the list itself now comes from the host. [refreshFromHost] asks
- * `GET <base>/v1/profiles` on connect and every time the switcher opens, and
- * [HostProfiles.merge] folds the answer into the registry — so a Hermes profile appears
- * without the user ever typing its name. When the host does not advertise its profiles the
- * switcher keeps the manual path and says so in one line ([HostProfiles.FALLBACK_LINE]);
- * a profile the host stopped serving is shown as unavailable, never deleted, because the
- * key belongs to the user. Adding a profile is not switching one: a refresh never ends a call.
+ * #384: the list comes from the agent, asked in conversation (SPEC-conversational-bridge §A).
+ * [refreshFromHost] tries `GET <base>/v1/profiles` first (the #382 fast path) and otherwise
+ * sends one non-streaming `POST <base>/v1/chat/completions` carrying [ProfilesAsk.ASK], on
+ * the same bearer and never through the voice pipeline — the reply is not spoken and never
+ * enters the call transcript. Only the assistant's text is read, and every name it names is
+ * probed before it is saved: the list is a hint, the probe is the proof.
+ *
+ * The ask runs on connect and on an explicit refresh, is cached in between, and is refused
+ * inside 60 s of the last one. Opening the switcher never asks — it renders the cache
+ * instantly. A live call defers the ask until it ends, so a profile refresh can never
+ * disturb a conversation. A profile the host stopped serving (or one whose probe fails) is
+ * shown as unavailable, never deleted, because the key belongs to the user. Adding a profile
+ * is not switching one: a refresh never ends a call, and a switch still does.
  */
 class ProfileDialogs(
     private val activity: AppCompatActivity,
@@ -39,12 +46,26 @@ class ProfileDialogs(
     private fun save(list: List<Profiles.Profile>) =
         prefs.edit().putString(Profiles.PREF_LIST, Profiles.encode(list)).apply()
 
-    /** #371: the last thing this host said. null = not asked yet, so say nothing about it. */
-    @Volatile private var answer: HostProfiles.Answer? = null
+    /** The last thing this host said. null = not asked yet, so say nothing about it. */
+    @Volatile private var answer: ProfilesAsk.Result? = null
 
-    /** One question at a time: opening the switcher while a connect-time ask is in flight
-     *  must not double the call (and must not reorder two answers). */
+    /** When the last ask finished — the cache's clock, and the 60 s refresh guard. */
+    @Volatile private var askedAt: Long = 0L
+
+    /** The proven names from the last answer, in served order: what "Add" may offer. */
+    @Volatile private var usable: List<HostProfiles.Served> = emptyList()
+
+    /** Saved profiles this host did not prove — kept and marked, never deleted. */
+    @Volatile private var gone: List<String> = emptyList()
+
+    /** The partial-refresh line (`2 profiles added · 1 not reachable`), null when whole. */
+    @Volatile private var partial: String? = null
+
+    /** One question at a time: a connect-time ask and a refresh must not race. */
     @Volatile private var asking = false
+
+    /** A refresh that arrived during a live call, remembered for when it ends. */
+    @Volatile private var deferred: ProfilesAsk.AskKind? = null
 
     /** The switcher currently on screen, so an answer that lands late can still land visibly. */
     private var open: AlertDialog? = null
@@ -62,96 +83,187 @@ class ProfileDialogs(
     }
 
     fun showSwitcher() {
-        // #371: every open asks the host, so a profile added on the gateway shows up without
-        // the user typing anything. The dialog is already usable while the ask is in flight.
-        refreshFromHost()
+        // #384: the switcher reads the cache instantly. It never asks — a switcher that
+        // waited on a model turn would be worse than typing the profile by hand.
         renderSwitcher()
     }
 
     private fun renderSwitcher() {
         val l = seeded()
         val active = activeName()
-        val a = answer
-        val base = prefs.getString(Profiles.K_URL, "").orEmpty()
-        val gone = HostProfiles.unavailable(l, base, a)
+        val gone = this.gone
         val rows = l.map { p ->
             val mark = if (p.name.equals(active, ignoreCase = true)) "● " else "   "
             mark + p.name + if (p.name in gone) " — unavailable" else ""
-        } + "+ Add a profile"
+        } + "+ Add a profile" + "Refresh from host"
         val b = AlertDialog.Builder(activity)
             .setTitle("Profiles")
             .setItems(rows.toTypedArray()) { _, i ->
-                if (i == l.size) addProfile(l, a)
-                else if (!l[i].name.equals(active, ignoreCase = true)) onSwitch(l[i])
+                when {
+                    i < l.size -> if (!l[i].name.equals(active, ignoreCase = true)) onSwitch(l[i])
+                    i == l.size -> addProfile(l)
+                    else -> refreshFromHost(ProfilesAsk.AskKind.REFRESH)
+                }
             }
             .setNegativeButton("Close", null)
         if (l.isNotEmpty()) b.setNeutralButton("Edit…") { _, _ -> pickToEdit(l) }
-        a?.let { b.setMessage(HostProfiles.line(it)) }
+        message()?.let { b.setMessage(it) }
         open = b.show()
     }
 
+    /** The one line under the list: freshness, a partial refresh, or a stated failure. */
+    private fun message(): String? {
+        partial?.let { return it }
+        val a = answer ?: return null
+        if (a is ProfilesAsk.Result.Failed) return ProfilesAsk.line(a)
+        return if (askedAt > 0L) ProfilesAsk.freshness(askedAt, System.currentTimeMillis()) else null
+    }
+
     /**
-     * #371: ask the host which profiles it serves, then fold the answer into the registry.
-     * Runs off the UI thread; [HostProfiles] decides what the answer means and whether
-     * anything changes. Adding profiles does not switch them (a switch ends a live call).
+     * #384: ask the host which profiles it serves, then fold the answer into the registry.
+     *
+     * [kind] is what the user did. [ProfilesAsk.decide] owns the policy — the switcher never
+     * asks, a live call defers, a manual refresh inside 60 s is refused — and this method is
+     * only the Android edge: the two HTTP calls and the probes. Runs off the UI thread.
      */
-    fun refreshFromHost() {
+    fun refreshFromHost(kind: ProfilesAsk.AskKind = ProfilesAsk.AskKind.REFRESH) {
+        val now = System.currentTimeMillis()
+        when (ProfilesAsk.decide(kind, askedAt, now, MainActivity.callIsLive())) {
+            ProfilesAsk.AskDecision.READ_CACHE -> return
+            ProfilesAsk.AskDecision.REFUSE_RECENT -> {
+                toast("Checked less than a minute ago")
+                return
+            }
+            ProfilesAsk.AskDecision.DEFER -> {
+                deferred = kind
+                toast("Will check when the call ends")
+                return
+            }
+            ProfilesAsk.AskDecision.NOW -> Unit
+        }
         if (asking) return
         val base = prefs.getString(Profiles.K_URL, "").orEmpty().trim()
         if (base.isBlank()) return
         val stored = prefs.getString(Profiles.K_KEY, "").orEmpty()
         val key = GatewayKey.resolve(stored) { SecureStore.decrypt(it) }
         if (key.isBlank()) {
-            // Nothing to authenticate with: the manual path, and the same honest line — the
-            // host was never asked, so it cannot be said to have listed anything.
-            settle(HostProfiles.Answer.Silent(-1, "no key"), base, stored, "")
+            // Nothing to authenticate with: the host was never asked, so it cannot be said
+            // to have listed anything. Say the honest line and do not stamp the cache.
+            settle(ProfilesAsk.Result.Failed(ProfilesAsk.Failure.NO_BLOCK, -1), base, stored, "", 0L,
+                emptyMap(), -1, kind, stamp = false)
             return
         }
         asking = true
         val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         val model = prefs.getString(Profiles.K_MODEL, "").orEmpty()
         thread {
-            val (code, body) = try { fetch(base, key, scope) } catch (_: Throwable) { -1 to "" }
-            val a = HostProfiles.answer(code, body)
-            activity.runOnUiThread {
-                asking = false
-                settle(a, base, stored, model)
+            try {
+                val started = System.currentTimeMillis()
+                // 1. The #382 route, opportunistically: one request, and the day Hermes ships it
+                //    nothing here changes.
+                val (fastCode, fastBody) = try { fetch(base, key, scope) } catch (_: Throwable) { -1 to "" }
+                val fast = ProfilesAsk.fastPath(fastCode, fastBody)
+                // 2. Otherwise the conversational ask: a plain chat turn, never the voice path.
+                val result: ProfilesAsk.Result = fast ?: run {
+                    val r = ask(base, key, model)
+                    ProfilesAsk.fromChat(r.code, r.body, r.timedOut)
+                }
+                // 3. The list is a hint; the probe is the proof.
+                val reachable = if (result is ProfilesAsk.Result.Named)
+                    probeAll(ProfilesAsk.probes(base, result.served), key) else emptyMap()
+                val elapsed = System.currentTimeMillis() - started
+                activity.runOnUiThread {
+                    asking = false
+                    settle(result, base, stored, model, elapsed, reachable, fastCode, kind)
+                }
+            } catch (_: Throwable) {
+                // An unexpected failure must not wedge every later ask on `asking`.
+                activity.runOnUiThread { asking = false }
             }
         }
     }
 
+    /** Run a refresh that was deferred by a live call, now that the call has ended. */
+    fun runDeferredAsk() {
+        val kind = deferred ?: return
+        deferred = null
+        refreshFromHost(kind)
+    }
+
     /** Apply one answer on the UI thread: save what changed, log it, re-render if open. */
-    private fun settle(a: HostProfiles.Answer, base: String, stored: String, model: String) {
-        // The connection the app is on is a profile in its own right before the host is
-        // compared against the registry, or a first connect would add the host's list beside
-        // a current connection that was never saved.
+    private fun settle(
+        result: ProfilesAsk.Result,
+        base: String,
+        stored: String,
+        model: String,
+        elapsedMs: Long,
+        reachable: Map<String, Boolean>,
+        fastCode: Int,
+        kind: ProfilesAsk.AskKind,
+        stamp: Boolean = true,
+    ) {
+        // The user may have switched hosts while the ask was out. That answer describes a
+        // connection this screen is no longer on; using it would repaint the wrong host.
+        if (base != prefs.getString(Profiles.K_URL, "").orEmpty().trim()) return
         val local = seeded()
         val before = answer
-        val merged = HostProfiles.merge(local, base, stored, a, model)
-        val dead = activity.isFinishing || activity.isDestroyed
-        if (merged.changed) {
-            save(merged.list)
-            if (!dead) onRegistryChanged()
+        var changed = false
+        var added = 0
+        var unreachable = 0
+        var unavailable = 0
+        when (result) {
+            is ProfilesAsk.Result.Named -> {
+                val applied = ProfilesAsk.settle(local, base, stored, result, model, reachable)
+                added = applied.added
+                unreachable = applied.unreachable.size
+                unavailable = applied.merge.unavailable.size
+                usable = applied.usable
+                gone = applied.merge.unavailable
+                partial = if (unreachable == 0) null else applied.line
+                changed = applied.merge.changed
+                if (changed) {
+                    save(applied.merge.list)
+                    if (!activity.isFinishing && !activity.isDestroyed) onRegistryChanged()
+                }
+            }
+            is ProfilesAsk.Result.Failed -> {
+                // Silence is not evidence that a profile is gone: the last proven view
+                // (`gone`, `usable`) is kept, and only the line changes.
+                partial = null
+            }
         }
-        answer = a
+        answer = result
+        if (stamp) askedAt = System.currentTimeMillis()
         VoxLog.d(
-            "event=profiles-host status=${statusOf(a)} added=${merged.added.size} " +
-                "unavailable=${merged.unavailable.size}"
+            "event=profiles-ask kind=${kind.name.lowercase()} " +
+                "source=${sourceOf(result)} status=${statusOf(result)} ms=$elapsedMs fast=$fastCode " +
+                "added=$added unavailable=$unavailable dropped=${droppedOf(result)}"
         )
-        if (dead) return
+        if (activity.isFinishing || activity.isDestroyed) return
         val shown = open
         // Only redraw when the list or the line would actually differ: an unchanged answer
         // must not make the switcher flicker under the user's finger.
-        if (shown != null && shown.isShowing && (merged.changed || before != a)) {
+        if (shown != null && shown.isShowing && (changed || before != result)) {
             shown.dismiss()
             renderSwitcher()
         }
     }
 
-    private fun statusOf(a: HostProfiles.Answer): String = when (a) {
-        is HostProfiles.Answer.Advertised -> "200"
-        is HostProfiles.Answer.Silent -> a.code.toString()
+    private fun sourceOf(a: ProfilesAsk.Result): String = when (a) {
+        is ProfilesAsk.Result.Named -> when (a.source) {
+            ProfilesAsk.Source.FAST_PATH -> "fast"
+            ProfilesAsk.Source.CONVERSATION -> "chat"
+        }
+        is ProfilesAsk.Result.Failed -> "none"
     }
+
+    private fun statusOf(a: ProfilesAsk.Result): String = when (a) {
+        is ProfilesAsk.Result.Named -> "200"
+        is ProfilesAsk.Result.Failed -> a.code.toString()
+    }
+
+    private fun droppedOf(a: ProfilesAsk.Result): Int =
+        (a as? ProfilesAsk.Result.Named)?.dropped ?: 0
 
     /** Add ([editing] null) or edit a profile. The dialog stays open until the gateway
      *  accepts it, and says precisely why when it does not. */
@@ -216,13 +328,15 @@ class ProfileDialogs(
     }
 
     /**
-     * #371 — "+ Add a profile" when the host advertises its list: pick the profile the host
-     * named instead of typing its name, address and key. "Enter an address manually…" stays,
-     * because a saved connection may live on another host.
+     * #384 — "+ Add a profile" when the host proved a list: pick a profile the host named
+     * instead of typing its name, address and key. Only names that answered their probe are
+     * offered. "Enter an address manually…" stays, because a saved connection may live on
+     * another host.
      */
-    private fun addProfile(l: List<Profiles.Profile>, a: HostProfiles.Answer?) {
-        val served = a as? HostProfiles.Answer.Advertised ?: run { showEditor(null); return }
-        val unsaved = served.served.filter { Profiles.find(l, it.name) == null }
+    private fun addProfile(l: List<Profiles.Profile>) {
+        val served = usable
+        if (served.isEmpty()) { showEditor(null); return }
+        val unsaved = served.filter { Profiles.find(l, it.name) == null }
         if (unsaved.isEmpty()) {
             toast("Every profile this host serves is already saved")
             return
@@ -238,7 +352,7 @@ class ProfileDialogs(
             .show()
     }
 
-    /** #371: the host supplied the name, the address follows its addressing rule, and the
+    /** #384: the host supplied the name, the address follows its addressing rule, and the
      *  key is the one already in this (the same) host's registry — nothing new is typed. */
     private fun addServed(s: HostProfiles.Served) {
         val base = prefs.getString(Profiles.K_URL, "").orEmpty().trim()
@@ -251,7 +365,7 @@ class ProfileDialogs(
     }
 
     private fun pickToEdit(l: List<Profiles.Profile>) {
-        val gone = HostProfiles.unavailable(l, prefs.getString(Profiles.K_URL, "").orEmpty(), answer)
+        val gone = this.gone
         AlertDialog.Builder(activity)
             .setTitle("Edit a profile")
             .setItems(l.map { it.name + if (it.name in gone) " — unavailable" else "" }.toTypedArray()) { _, i ->
@@ -275,7 +389,7 @@ class ProfileDialogs(
 
     /** `GET <base>/v1/profiles` with this connection's own key: status and body, or -1. */
     private fun fetch(base: String, key: String, scope: String): Pair<Int, String> = try {
-        val c = URL(base.trimEnd('/') + HostProfiles.PATH).openConnection() as HttpURLConnection
+        val c = URL(HostProfiles.rootBase(base).trimEnd('/') + HostProfiles.PATH).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "GET"
             c.connectTimeout = HostProfiles.TIMEOUT_MS
@@ -290,6 +404,63 @@ class ProfileDialogs(
         } finally { c.disconnect() }
     } catch (_: Throwable) { -1 to "" }
 
+    private data class Chat(val code: Int, val body: String, val timedOut: Boolean)
+
+    /**
+     * `POST <base>/v1/chat/completions`: the ask as a plain OpenAI-shaped turn, on the
+     * bearer the app already holds, with a 45 s budget. Deliberately *not*
+     * `VoiceController.sendText` — that speaks the reply and puts it in the call transcript,
+     * which for a profile list is both wrong and noisy.
+     *
+     * `{base}` is the connection with any `/p/<profile>` suffix stripped: the ask goes to
+     * the host, not to a profile. The session scope is deliberately not sent: this is not a
+     * conversation, and it must not write into the user's memory scope.
+     */
+    private fun ask(base: String, key: String, model: String): Chat = try {
+        val c = URL(HostProfiles.rootBase(base).trimEnd('/') + ProfilesAsk.PATH).openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"
+            c.connectTimeout = ProfilesAsk.TIMEOUT_MS
+            c.readTimeout = ProfilesAsk.TIMEOUT_MS
+            c.useCaches = false
+            c.doOutput = true
+            c.setRequestProperty("Authorization", "Bearer $key")
+            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("Accept", "application/json")
+            val body = ProfilesAsk.requestBody(model).toByteArray(Charsets.UTF_8)
+            c.setFixedLengthStreamingMode(body.size)
+            c.outputStream.use { it.write(body) }
+            val code = c.responseCode
+            val stream = if (code in 200..299) c.inputStream else c.errorStream
+            val text = stream?.use { readAtMost(it, ProfilesAsk.BODY_MAX) }.orEmpty()
+            Chat(code, text, false)
+        } finally { c.disconnect() }
+    } catch (_: SocketTimeoutException) {
+        Chat(-1, "", true)
+    } catch (_: Throwable) {
+        Chat(-1, "", false)
+    }
+
+    /**
+     * Run the probes: one `GET …/v1/models` per proven candidate, at most eight in flight,
+     * each with a 10 s budget. A 200 is the only "usable".
+     */
+    private fun probeAll(probes: List<ProfilesAsk.Probe>, key: String): Map<String, Boolean> {
+        if (probes.isEmpty()) return emptyMap()
+        val out = ConcurrentHashMap<String, Boolean>()
+        val pool = Executors.newFixedThreadPool(minOf(ProfilesAsk.PROBE_CONCURRENCY, probes.size))
+        try {
+            for (batch in ProfilesAsk.batches(probes)) {
+                val futures = batch.map { p -> pool.submit { out[p.name] = ProfilesAsk.probeSucceeded(modelsStatus(p.url, key)) } }
+                for (f in futures) {
+                    try { f.get(ProfilesAsk.PROBE_TIMEOUT_MS + 2_000L, TimeUnit.MILLISECONDS) }
+                    catch (_: Throwable) { /* the name stays absent = unavailable */ }
+                }
+            }
+        } finally { pool.shutdownNow() }
+        return out
+    }
+
     private fun readAtMost(stream: java.io.InputStream, max: Int): String {
         val buf = java.io.ByteArrayOutputStream()
         val chunk = ByteArray(4096)
@@ -302,10 +473,17 @@ class ProfileDialogs(
     }
 
     /** `GET <base>/v1/models` with the profile's own key: the status, or -1 for no answer. */
-    private fun modelsStatus(base: String, key: String): Int = try {
-        val c = URL(base.trimEnd('/') + "/v1/models").openConnection() as HttpURLConnection
+    private fun modelsStatus(base: String, key: String): Int =
+        statusOfUrl(base.trimEnd('/') + "/v1/models", key)
+
+    /** One probe at a full URL, with the probe budget. */
+    private fun statusOfUrl(url: String, key: String): Int = try {
+        val c = URL(url).openConnection() as HttpURLConnection
         try {
-            c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000; c.useCaches = false
+            c.requestMethod = "GET"
+            c.connectTimeout = ProfilesAsk.PROBE_TIMEOUT_MS
+            c.readTimeout = ProfilesAsk.PROBE_TIMEOUT_MS
+            c.useCaches = false
             c.setRequestProperty("Authorization", "Bearer $key")
             c.responseCode
         } finally { c.disconnect() }

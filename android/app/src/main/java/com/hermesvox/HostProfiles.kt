@@ -9,22 +9,27 @@ import com.hermesvox.core.Json
 /**
  * HostProfiles — the profiles a Hermes gateway says it serves (#371).
  *
+ * This file is now the **fast path** of two (#384, SPEC-conversational-bridge §A). The
+ * gateway multiplexes profiles at `/p/<name>/…` and no Hermes route lists them, so the list
+ * is normally asked in conversation ([ProfilesAsk]); a `GET <base>/v1/profiles` that answers
+ * 200 in the shape below is still used when it is there, so the day Hermes ships the route
+ * nothing here changes.
+ *
  * The owner's verdict on #174 was that the switcher must populate itself: *"The user should
  * not ever have to put in the name of their Hermes agent… It should always pull from the
- * Hermes host."* So the app asks `GET <base>/v1/profiles` with the bearer key it already
- * holds — once on connect and again every time the switcher opens — and turns the answer into
- * registry entries.
+ * Hermes host."* So the app asks with the bearer key it already holds, caches the answer,
+ * and turns it into registry entries.
  *
- * The route is the gateway's half and is being built separately, so this half is written to
- * work the day it lands and to degrade honestly until then:
+ * This half is written to work the day the route lands and to degrade honestly until then:
  *
  *  * **200 with a usable list** → [Answer.Advertised]: new profiles are added without the
  *    user typing anything, an existing profile keeps its address, key, scope and provider,
  *    and a profile the host no longer serves is marked [unavailable] rather than deleted —
  *    a server-side change must not throw the user's key away.
  *  * **404 / 501 / any other status / no answer / a shape we do not know** → [Answer.Silent]:
- *    the switcher falls back to the manual path and says [FALLBACK_LINE]. One line, no
- *    spinner that never settles, no empty list pretending the host has no profiles.
+ *    for this file, silence. The conversational ask ([ProfilesAsk]) then runs, and *its*
+ *    failure lines are the ones the user sees; [FALLBACK_LINE] remains this half's own
+ *    description of silence and is kept for the #382 tests.
  *
  * The assumed response is deliberately narrow and documented in the PR body so the gateway
  * lane can match it:
