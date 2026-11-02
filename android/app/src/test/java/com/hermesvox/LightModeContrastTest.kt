@@ -22,6 +22,10 @@ import java.io.File
  *
  * A future family cannot ship invisible on white: [every_family_has_an_authored_light_variant]
  * fails first, and the two exhaustive loops fail with the family/state named.
+ *
+ * SCOPE (#372): this pins TOKENS. It cannot see a `Paint.alpha`, which is how the crawl's
+ * unread tail shipped at 2.21:1 on paper while `hv_crawl_reply` measured 16.36:1 here.
+ * What the view actually paints is [CrawlDrawContrastTest]'s contract.
  */
 class LightModeContrastTest {
 
