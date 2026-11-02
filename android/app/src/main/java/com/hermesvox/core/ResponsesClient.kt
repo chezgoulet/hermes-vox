@@ -59,14 +59,17 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
 
     /**
      * Verifies the entity connection: GET /v1/models with the bearer must answer
-     * 200. Onboarding's "Connect & verify" — never fakes success.
+     * 200, and returns that answer. Onboarding's "Connect & verify" — never fakes
+     * success. The body is handed back because the host names itself there
+     * (`data[0].id`); a ping that threw it away made the user type the name.
      */
-    fun ping() {
+    fun ping(): String {
         val c = Entity.open("GET", Entity.url(baseURL, "/v1/models"), entityHeaders(), PING_TIMEOUT_MS, PING_TIMEOUT_MS)
-        Entity.exchange(c, PING_TIMEOUT_MS.toLong(), "hermes ping") {
+        return Entity.exchange(c, PING_TIMEOUT_MS.toLong(), "hermes ping") {
             val code = c.responseCode
-            Entity.body(c)?.use { it.readBytes() }
+            val raw = Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
             if (code != 200) throw HermesException("hermes ${Entity.status(c)}")
+            raw
         }
     }
 

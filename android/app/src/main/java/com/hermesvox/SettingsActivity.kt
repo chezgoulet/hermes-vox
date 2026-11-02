@@ -271,8 +271,16 @@ class SettingsActivity : AppCompatActivity() {
             val emodel = view.findViewById<EditText>(R.id.d_model)
             val ekey = view.findViewById<EditText>(R.id.d_key)
             val escope = view.findViewById<EditText>(R.id.d_scope)
+            // T7: `d_model` is the entity's name here, not the request route. It is a
+            // read-only display refreshed from the host, so a typed name can never
+            // contradict the host. The route stays `model` and is chosen in /models.
+            emodel.hint = getString(R.string.hv_entity_hint)
+            emodel.isFocusable = false
+            emodel.isClickable = false
+            emodel.isCursorVisible = false
+            emodel.keyListener = null
+            emodel.setText(storedEntityName())
             eurl.setText(prefs.getString("url", ""))
-            emodel.setText(prefs.getString("model", "hermes-agent"))
             ekey.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
             escope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
             val dlg = AlertDialog.Builder(this)
@@ -292,8 +300,9 @@ class SettingsActivity : AppCompatActivity() {
                         Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
                     }
+                    // The display is not a setting: Save writes the connection, never
+                    // the host-derived name back into the request route (`model`).
                     prefs.edit().putString("url", eurl.text.toString().trim())
-                        .putString("model", emodel.text.toString().trim().ifEmpty { "hermes-agent" })
                         .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
                     refreshEntityVal()
@@ -301,6 +310,9 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             dlg.show()
+            // The same rule as onboarding: the host is the authority. Ask the probe
+            // the connection flow already makes, and adopt the name it gives.
+            refreshEntityName(dlg, view, eurl.text.toString().trim(), ekey.text.toString().trim())
         }
         refreshEntityVal()
         bindVoxRow()
@@ -607,11 +619,63 @@ class SettingsActivity : AppCompatActivity() {
         }
         // A declared scope is an identity, and an identity you cannot see is one
         // you cannot check — the VOX.md row surfaces its state, so this row
-        // states whether a scope is in play (and which one).
+        // states whether a scope is in play (and which one). The entity's name is
+        // the host's (T7); the model id is only the fallback until a verify names it.
         val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         val who = if (scope.isEmpty()) "no scope" else "scope · $scope"
-        findViewById<TextView>(R.id.set_entity_val).text =
-            "$u · ${prefs.getString("model", "hermes-agent")} · $who"
+        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who"
+    }
+
+    /** The host's adopted name, or the old `model` value until a verify gives one. */
+    private fun storedEntityName(): String =
+        prefs.getString(Profiles.K_AGENT, "").orEmpty().ifBlank {
+            prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        }
+
+    /**
+     * T7: refresh the dialog's entity name from the host, using the same
+     * `GET /v1/models` probe the connection flow already makes — one request, on
+     * open, off the UI thread. A 200 with `data[0].id` is adopted (and saved as
+     * `agent_name`); a 200 with no id says [HostEntity.FALLBACK_LINE] and keeps the
+     * stored name; a failed probe keeps it silently. Nothing is invented, and a
+     * closed dialog is not written to.
+     */
+    private fun refreshEntityName(dlg: AlertDialog, view: android.view.View, url: String, key: String) {
+        val field = view.findViewById<EditText>(R.id.d_model)
+        val note = view.findViewById<TextView>(R.id.d_entity_note)
+        val stored = storedEntityName()
+        val u = url.trim()
+        if (u.isBlank() || key.isBlank()) return
+        note.text = "asking the host…"
+        note.visibility = android.view.View.VISIBLE
+        kotlin.concurrent.thread {
+            val answer = try {
+                val body = com.hermesvox.core.HermesSession(
+                    u, key, prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" },
+                ).ping()
+                HostEntity.answer(200, body)
+            } catch (_: Throwable) {
+                HostEntity.Answer.Refused(-1, "no answer")
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !dlg.isShowing) return@runOnUiThread
+                when (answer) {
+                    is HostEntity.Answer.Named -> {
+                        field.setText(answer.name)
+                        // Only a verified host name is adopted; an existing saved name
+                        // is not rewritten by a probe that failed or said nothing.
+                        prefs.edit().putString(Profiles.K_AGENT, answer.name).apply()
+                        note.visibility = android.view.View.GONE
+                    }
+                    is HostEntity.Answer.Unnamed -> {
+                        field.setText(HostEntity.name(answer, stored).orEmpty())
+                        note.text = HostEntity.FALLBACK_LINE
+                        note.visibility = android.view.View.VISIBLE
+                    }
+                    is HostEntity.Answer.Refused -> note.visibility = android.view.View.GONE
+                }
+            }
+        }
     }
 
     private fun bindFlows() {

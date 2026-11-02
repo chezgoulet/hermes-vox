@@ -43,9 +43,10 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      */
     fun setSessionKey(scope: String) = responses.setSessionKey(scope)
 
-    /** Verifies the entity connection (GET /v1/models, bearer auth). Throws on a wrong
+    /** Verifies the entity connection (GET /v1/models, bearer auth) and returns the body
+     *  the host answered with — the host names itself there. Throws on a wrong
      *  URL/key/host. Onboarding uses this — never fake success. */
-    fun ping() = responses.ping()
+    fun ping(): String = responses.ping()
 
     /** The raw /api/model/options catalog JSON — the REAL gateway catalog the /models
      *  chooser reads (the on-device ModelCatalog is separate). */
