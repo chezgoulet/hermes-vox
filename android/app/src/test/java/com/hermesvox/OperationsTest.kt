@@ -52,6 +52,31 @@ class OperationsTest {
         assertEquals("Checking memory", Operations.running(Operations.step("memory", "{}"), 0))
     }
 
+    @Test fun commandRunSaysWhatItRan() {
+        // #377 / T27: this is verbatim the argument text the stream hands the app for the
+        // `terminal` call in `testdata/stream/tools.sse` — Stream.dispatch keeps the JSON
+        // string's source text with only the quotes trimmed, so the escapes survive and the
+        // text is not itself an object. It used to fail the parse, and the line fell back to
+        // the bare terminal verb with nothing in it.
+        val args = """{\"command\":\"date\"}"""
+        val s = Operations.step("terminal", args)
+        assertEquals("Running a command · date", Operations.running(s, 0))
+        assertEquals("Ran a command · date", Operations.finished(s))
+        assertNotEquals("Running a command", Operations.running(s, 0))
+        assertNotEquals("Ran a command", Operations.finished(s))
+    }
+
+    @Test fun everyStepKeepsItsSubjectFromTheStreamsArgumentText() {
+        // The same escaping reached every tool, so each step lost the thing it acts on.
+        assertEquals("Searching the web · trail conditions",
+            Operations.running(Operations.step("web_search", """{\"query\":\"trail conditions\"}"""), 0))
+        assertEquals("Checking your calendar · today",
+            Operations.running(Operations.step("mcp_google_calendar_list_events", """{\"date\":\"today\"}"""), 0))
+        // The clean object is still read: the line does not depend on which form arrives.
+        assertEquals("Running a command · date",
+            Operations.running(Operations.step("terminal", """{"command":"date"}"""), 0))
+    }
+
     @Test fun longStepShowsThatItIsStillMoving() {
         val s = Operations.step("terminal", """{"command":"gws calendar events list"}""")
         assertEquals("Running a command · gws calendar events list", Operations.running(s, Operations.LONG_MS - 1))
