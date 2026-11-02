@@ -126,7 +126,7 @@ older build still sees the old names.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Profiles (tap the agent's name on the main screen) | `profiles`, `profile_active` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope — one active at a time; the header and notification name the active one once there are two | (android/app/src/main/java/com/hermesvox/MainActivity.kt:524 `profiles.showSwitcher()`) |
+| Profiles (tap the agent's name on the main screen) | `profiles`, `profile_active` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope — one active at a time. The list populates from `GET /v1/profiles` on connect and on every open (#371), so the host names its profiles and the user types nothing; a host that does not advertise them falls back to adding them by hand, in one line. A profile the host stopped listing is marked unavailable, never deleted. The header and notification name the active one once there are two | (android/app/src/main/java/com/hermesvox/MainActivity.kt:524 `profiles.showSwitcher()`) |
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1117 `testConnectionAsync`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:248 `prefs.getString("url", "")`) |
 | Teach your agent this app | (action) | — | Asks the agent to install this skill on its gateway, or copies the `hermes skills install …` command (with `-p <profile>` for a profile address) | (android/app/src/main/java/com/hermesvox/AppSkill.kt:36 `fun command`) |
@@ -328,9 +328,9 @@ log line — the console says `(pasted, N characters)` instead
 **Profiles, said plainly.** A profile is saved only after the gateway answers `/v1/models`
 with its key: "Not served" means that gateway has no such profile, "Key rejected" means each
 profile needs its own key (android/app/src/main/java/com/hermesvox/Profiles.kt:69 `NOT_SERVED`).
-Switching ends a live call and starts a new conversation — the old conversation belongs to the
-old profile (android/app/src/main/java/com/hermesvox/MainActivity.kt:1605 `resetConversation`). The
-app cannot list a gateway's profiles; they are added by hand.
+The list itself now comes from the gateway (#371): `GET /v1/profiles` fills the switcher on
+connect and on every open, while a switch still ends a live call and starts a new conversation
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:1605 `resetConversation`); a host without that route falls back to by-hand profiles and says so.
 
 ### Prefs that have no Settings screen
 
@@ -409,6 +409,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=harness` | Debug builds only: a test intent set ringer mode | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:441 `harness ringer=`) |
 | `event=res` | Every 10 s of a call: the app's resident memory, the phone's available memory, low-memory flag, thermal state | `low=true`, `availMb` under ~1000, or `thermal=severe` and above — the phone is close to killing something | (android/app/src/main/java/com/hermesvox/ResourceProbe.kt:35 `event=res rssMb=`) |
 | `event=res-summary` | At hang-up: the call's peak RSS, lowest available memory, thermal start → end | A peak that grows release over release (docs/BASELINE.md) | (android/app/src/main/java/com/hermesvox/ResourceProbe.kt:12 `event=res-summary`) |
+| `event=profiles-host` | #371: the host was asked for the profiles it serves, on connect or on opening the switcher. `status=` is its HTTP code (`-1` = no answer), `added=` profiles new to this phone, `unavailable=` saved profiles this host no longer lists (kept, marked in the switcher) | A steady `404`/`501` = a gateway without the route (the manual path, said in one line); `added=0 unavailable=0` after a profile was created on the gateway = the device is on another host or key | (android/app/src/main/java/com/hermesvox/ProfileDialogs.kt:138 `event=profiles-host`) |
 
 ### B. Mic, VAD, STT
 
