@@ -249,7 +249,7 @@ not a tick; the owner's session is.
   Presence is off, and explicitly not layered on top of asides when it is on.
 - `[~]` **The instruments (#209, #208, F4, F5, F8).** The performance baseline and behaviour matrix
   recorded per release; GPU contention and the thirty-minute thermal soak measured; a fixed
-  ten-utterance verdict script so "this build is better" stops being an impression. **Partly** — #209 has a one-device baseline on the 0.9.1 build (median 161 ms cold start, 640 MB in call); #208, F4, F5 and F8 are not built.
+  ten-utterance verdict script so "this build is better" stops being an impression. **Partly** — #209 has a one-device baseline on the 0.9.1 build (median 161 ms cold start, 640 MB in call) and F8 ships as `scripts/verdict-f8.sh` with the budgets in `docs/BUDGETS-0.9.1.md`; #208, F4 and F5 are measured on one handset only.
 - `[ ]` **The store rail (#165).** F-Droid path B: sherpa-onnx and onnxruntime built from source,
   `Binaries:` + `AllowedAPKSigningKeys`, submission against the released tag. It runs alongside this
   release and **does not gate its cut** — if the recipe is not ready, 0.9.1 still ships.
