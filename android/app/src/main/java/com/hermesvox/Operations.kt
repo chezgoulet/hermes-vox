@@ -215,9 +215,25 @@ object Operations {
 
     private fun str(o: JObj?, key: String): String = (o?.get(key) as? JStr)?.value.orEmpty()
 
+    /** The step's arguments, from the text the stream hands over.
+     *
+     *  `Stream.dispatch` passes a `function_call`'s arguments through as the *source text of
+     *  a JSON string* with its quotes trimmed, so the escapes inside it survive
+     *  (`{\"command\":\"date\"}`) and the text is not itself valid JSON. Reading it as JSON
+     *  on the first try worked off-device only, where every test fed the clean object; from
+     *  the real stream the parse failed, [target] came back empty, and the line fell back to
+     *  the bare verb — "Ran a command" with no command in it (#377, T27). Both forms are
+     *  accepted here, so the line does not depend on which one the producer sends. */
     private fun parseObj(text: String): JObj? {
         val t = text.trim()
         if (!t.startsWith("{")) return null
-        return try { Json.parse(t) as? JObj } catch (_: JsonException) { null }
+        parseObject(t)?.let { return it }
+        // The escaped form is a JSON string's *interior*: wrapping it in quotes makes it a
+        // JSON string again, and decoding that yields the arguments' own text.
+        val decoded = try { (Json.parse("\"$t\"") as? JStr)?.value } catch (_: JsonException) { null }
+        return decoded?.let { parseObject(it.trim()) }
     }
+
+    private fun parseObject(t: String): JObj? =
+        try { Json.parse(t) as? JObj } catch (_: JsonException) { null }
 }
