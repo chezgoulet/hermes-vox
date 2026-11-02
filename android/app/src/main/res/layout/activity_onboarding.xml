@@ -183,14 +183,21 @@
                 android:textColorHint="@color/hv_text_dim"
                 android:textSize="16sp" />
 
+            <!-- T7: the entity's name is the host's to give. This is a display, not a
+                 text field — visible so the user knows who they are talking to, and
+                 read-only so a typed name cannot contradict the host. -->
             <EditText
                 android:id="@+id/model"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_input"
-                android:hint="@string/hv_model_hint"
-                android:inputType="text"
+                android:clickable="false"
+                android:cursorVisible="false"
+                android:focusable="false"
+                android:hint="@string/hv_entity_hint"
+                android:inputType="none"
+                android:longClickable="false"
                 android:padding="14dp"
                 android:textColor="@color/hv_text"
                 android:textColorHint="@color/hv_text_dim"

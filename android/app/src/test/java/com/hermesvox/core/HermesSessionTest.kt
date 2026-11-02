@@ -54,6 +54,15 @@ class HermesSessionTest {
         }
     }
 
+    /** T7: the probe's body is the host naming itself — ping must hand it back, not discard it. */
+    @Test
+    fun `ping returns the v1 models body`() {
+        TestServer { _, w -> w.send(200, "OK", """{"object":"list","data":[{"id":"hermes-agent"}]}""") }.use { srv ->
+            val body = HermesSession(srv.url, "testkey", "hermes-agent").ping()
+            assertEquals("hermes-agent", Json.str(((Json.parse(body) as JObj)["data"] as JArr).items.first() as JObj, "id"))
+        }
+    }
+
     @Test
     fun `ping reports the status on a non-200`() {
         TestServer { _, w -> w.send(401, "Unauthorized", "nope") }.use { srv ->

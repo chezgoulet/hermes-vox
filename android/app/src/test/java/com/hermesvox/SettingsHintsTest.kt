@@ -251,6 +251,8 @@ class SettingsHintsTest {
             "PresenceGate.KEY_PRESENCE_ENABLED",
             "PresenceCadence.LEGACY_PREF",
             "PresenceCadence.PREF",
+            // T7: Settings → Entity reads and writes the host-adopted entity name.
+            "Profiles.K_AGENT",
             "SemanticEndpoint.KEY",
             "SemanticEndpoint.KEY_EAGERNESS",
             "SessionScope.PREF",

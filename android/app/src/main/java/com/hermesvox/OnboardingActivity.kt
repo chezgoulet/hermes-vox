@@ -59,7 +59,9 @@ class OnboardingActivity : AppCompatActivity() {
         key = findViewById(R.id.key)
         model = findViewById(R.id.model)
         scope = findViewById(R.id.scope)
-        model.setText(prefs.getString("model", "hermes-agent"))
+        // T7: the entity's name is the host's, not a text field. It is shown here and
+        // adopted from the probe; the request route (`model`) stays its own value.
+        showEntityName(storedEntityName())
         url.setText(prefs.getString("url", ""))
         key.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
         // Re-entering onboarding on an existing install shows what is declared
@@ -141,7 +143,10 @@ class OnboardingActivity : AppCompatActivity() {
     private fun connectAndVerify() {
         val u = url.text.toString().trim()
         val k = key.text.toString().trim()
-        val m = model.text.toString().trim().ifEmpty { "hermes-agent" }
+        // The field is the entity's name (the host's to give), not the request route.
+        // `model` is read separately so a host-named entity can never become the route.
+        val route = modelRoute()
+        val fallback = storedEntityName()
         val sc = scope.text.toString()
         if (u.isBlank() || k.isBlank()) { Toast.makeText(this, "Enter the endpoint and API key", Toast.LENGTH_SHORT).show(); return }
         // Checked BEFORE the probe: a scope the gateway would reject (or one that
@@ -151,25 +156,56 @@ class OnboardingActivity : AppCompatActivity() {
         if (scopeIssue != null) { Toast.makeText(this, scopeIssue, Toast.LENGTH_LONG).show(); return }
         val btn = findViewById<Button>(R.id.connect); btn.isEnabled = false; btn.text = "Verifying…"
         thread {
-            val session = HermesSession(u, k, m)
-            val ok = try {
-                session.ping()
-                true
-            } catch (e: Throwable) { false }
+            val session = HermesSession(u, k, route)
+            val probe = try {
+                HostEntity.answer(200, session.ping())
+            } catch (e: Throwable) {
+                HostEntity.Answer.Refused(-1, e.message.orEmpty())
+            }
             runOnUiThread {
                 btn.isEnabled = true; btn.text = getString(R.string.hv_connect_verify)
-                if (ok) {
-                    prefs.edit().putString("url", u).putString("model", m).putString("key", (SecureStore.encrypt(k) ?: k))
-                        .putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
-                    Toast.makeText(this, "Connected → the entity", Toast.LENGTH_SHORT).show()
-                    // #285: the first moment an agent exists to ask — offer it the app's own
-                    // description once, then go on whatever the answer was.
-                    AppSkillInstall.offerOnce(this, prefs, session, versionName()) { goMain() }
-                } else {
+                if (probe is HostEntity.Answer.Refused) {
+                    // Nothing is saved on a failed probe, exactly as before.
                     Toast.makeText(this, "Could not reach the entity — check URL + key", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
                 }
+                val name = HostEntity.name(probe, fallback).orEmpty()
+                val edit = prefs.edit().putString("url", u).putString("key", (SecureStore.encrypt(k) ?: k))
+                    .putString(SessionScope.PREF, SessionScope.normalize(sc))
+                // Only the host's own name is adopted. A 200 with no id keeps the
+                // fallback that is already displayed and stored; nothing is invented.
+                if (probe is HostEntity.Answer.Named) edit.putString(Profiles.K_AGENT, name)
+                edit.apply()
+                showEntityName(name)
+                Toast.makeText(
+                    this,
+                    if (probe is HostEntity.Answer.Named) "Connected → $name" else HostEntity.FALLBACK_LINE,
+                    Toast.LENGTH_LONG,
+                ).show()
+                // #285: the first moment an agent exists to ask — offer it the app's own
+                // description once, then go on whatever the answer was.
+                AppSkillInstall.offerOnce(this, prefs, session, versionName()) { goMain() }
             }
         }
+    }
+
+    /** The host's name when a verify has adopted one; the old `model` value only while it has not. */
+    private fun storedEntityName(): String =
+        prefs.getString(Profiles.K_AGENT, "").orEmpty().ifBlank {
+            prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        }
+
+    /** The route sent on every request. Never the entity-name field's contents. */
+    private fun modelRoute(): String =
+        prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+
+    /** T7: show the name, do not offer it as text. Read-only, still visible. */
+    private fun showEntityName(name: String) {
+        model.setText(name)
+        model.isFocusable = false
+        model.isClickable = false
+        model.isCursorVisible = false
+        model.keyListener = null
     }
 
     private fun versionName(): String = try {
