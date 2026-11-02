@@ -617,6 +617,9 @@ class MainActivity : AppCompatActivity() {
 
     private var warmRetries = 0
     @Volatile private var callLive = false
+    /** #373: the last state line the screen showed, so a recovered voice leg can put it
+     *  back instead of inventing one. */
+    private var lastStateLine = ""
     private var callSeconds = 0
     private val callHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val callTicker = object : Runnable {
@@ -750,6 +753,12 @@ class MainActivity : AppCompatActivity() {
         if (ttsIssueNow.isNotBlank()) {
             VoxLog.w("event=tts-degraded reason=$ttsIssueNow")
             setStatus("Spoken replies off — $ttsIssueNow", true)
+        } else {
+            // #373: the requested voice is not the one that will speak (a model that is not
+            // installed, or an engine that would not load). The call is fine; saying which
+            // voice actually speaks is the difference between a bug report and a setting.
+            val fallbackNow = c.ttsFallbackNote()
+            if (fallbackNow.isNotBlank()) setStatus(fallbackNow, true)
         }
         // Warmth just completed. THIS is the moment the gateway may honestly be
         // tested (B2c): re-dial now, so the pill moves Initializing -> Dialing ->
@@ -1778,6 +1787,7 @@ class MainActivity : AppCompatActivity() {
                 // must not put the waiting phase back into "working".
                 val line = if (approvalWaiting) "Waiting for your approval"
                     else StateLine.words(running, opHeld, words)
+                lastStateLine = line   // #373: what to put back when a voice leg recovers
                 setStatus(line, approvalWaiting || StateLine.visible(running != null, opHeld != null, state, callLive))
                 if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
@@ -1981,6 +1991,25 @@ class MainActivity : AppCompatActivity() {
             approvalChoices.removeAllViews()
             approvalChoices.visibility = View.GONE
             appendConvo("! Approval ended with the run: ${prompt.action}")
+        } }
+        /**
+         * #373: the spoken-replies leg changed. Both directions land here: a fallback that
+         * dies shows the reason, and one that recovers puts the call's own line back — the
+         * screen used to learn this exactly once, at call open.
+         */
+        override fun onSpokenReplies(line: String, degraded: Boolean) { runOnUiThread {
+            if (line.isBlank()) {
+                // Recovered: put back the state this screen was already showing.
+                if (callLive) {
+                    val back = lastStateLine.ifBlank { "Listening…" }
+                    setStatus(back, false)
+                    VoiceService.update(this@MainActivity, back)
+                }
+                return@runOnUiThread
+            }
+            val shown = if (degraded) "Spoken replies off — $line" else line
+            setStatus(shown, true)
+            if (callLive) VoiceService.update(this@MainActivity, shown)
         } }
     }
 

@@ -4,8 +4,29 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * #373: how one utterance ended. The engine names its own outcome, because a fallback
+ * that dies has to be distinguishable from one that was deliberately cut — a barge or a
+ * hang-up must not trigger an engine rebuild, and an engine that returns an error must.
+ */
+enum class TtsEnd {
+    /** The whole utterance was spoken. */
+    SPOKEN,
+    /** The utterance was cut on purpose (stop / barge / hang-up / a newer utterance). */
+    INTERRUPTED,
+    /** The engine could not speak it. [TtsOutcome.code] carries the engine's own reason. */
+    FAILED,
+}
+
+/** One utterance's result. [code] is the engine's own error (a TextToSpeech error code, a
+ *  sherpa exception message, `timeout`) so a field log can settle the question without a
+ *  device session. */
+data class TtsOutcome(val end: TtsEnd, val code: String = "")
 
 /**
  * VoxTts abstracts the text-to-speech leg so the pipeline can pick a warm,
@@ -22,6 +43,17 @@ interface VoxTts {
     val warmReason: String         // why warm audio is/in't available ("", "model missing", …)
     fun init(onReady: (Boolean) -> Unit)
     fun speak(text: String, onDone: () -> Unit)
+
+    /**
+     * #373: speak, and say how it ended. The default keeps every existing engine (and
+     * every test fake) working: it reports SPOKEN when [speak] returned. Engines that can
+     * see a failure — the system engine's error codes, sherpa's exceptions — override it
+     * so a dead engine is diagnosable instead of merely quiet.
+     */
+    fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) {
+        speak(text) { onDone(TtsOutcome(TtsEnd.SPOKEN)) }
+    }
+
     /** True when this engine can synth+play chunks sequentially (reply-streaming TTS). */
     val supportsStreaming: Boolean get() = false
     /** Blocking synth+play on the caller's thread; false if unsupported / not warm. */
@@ -35,12 +67,19 @@ class SystemTts(private val context: Context) : VoxTts {
     private var tts: TextToSpeech? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var reason: String = ""
+    /** The last per-utterance failure the engine itself reported ("" = none). */
+    @Volatile private var lastError: String = ""
+    private var seq = 0
+    /** The live utterance's finish, so stop() can report a deliberate cut instead of
+     *  waiting for a callback the platform may never send. */
+    @Volatile private var currentFinish: ((TtsOutcome) -> Unit)? = null
     override val name get() = "System"
     override val isWarm get() = false
-    override val warmReason get() = reason
+    override val warmReason get() = reason.ifBlank { lastError }
     override fun init(onReady: (Boolean) -> Unit) {
         val (rate, pitch) = voiceRegister(currentVoiceRegister(context))
         try {
+            currentFinish = null
             tts?.shutdown()
             tts = TextToSpeech(context) { code ->
                 if (code != TextToSpeech.SUCCESS) {
@@ -75,18 +114,95 @@ class SystemTts(private val context: Context) : VoxTts {
             onReady(false)
         }
     }
-    override fun speak(text: String, onDone: () -> Unit) {
-        val t = tts ?: return onDone()
-        // Post per-utterance completion via a polling check; QUEUE_FLUSH replaces prior speech.
-        t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hv")
-        scheduleDone(onDone, text.length)
+
+    override fun speak(text: String, onDone: () -> Unit) = speakReporting(text) { onDone() }
+
+    /**
+     * #373: the system engine's completion is now an EVENT (UtteranceProgressListener),
+     * not a single delayed `isSpeaking` poll.
+     *
+     * The poll was the silent-latch shape: it ran once, at a guessed instant, and if the
+     * engine was still speaking then it never ran again — so the caller's completion
+     * callback never arrived, `speaking`/`glueSpeaking` stayed true, and every later
+     * utterance was refused by the controller's own gates. A watchdog still backs the
+     * listener: an engine that goes away without a callback must end the utterance
+     * (FAILED, code=timeout) instead of latching the call.
+     */
+    override fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) {
+        // A new utterance flushes the old one (QUEUE_FLUSH below). End the old one here,
+        // as INTERRUPTED, so its watchdog cannot later blame the engine for a silence the
+        // new utterance caused.
+        currentFinish?.invoke(TtsOutcome(TtsEnd.INTERRUPTED, "superseded"))
+        val t = tts
+        if (t == null) {
+            lastError = "engine not initialised"
+            main.post { onDone(TtsOutcome(TtsEnd.FAILED, "engine not initialised")) }
+            return
+        }
+        val id = "hv" + (++seq)
+        val done = AtomicBoolean(false)
+        // ~90 ms/char is slower than speech (~60-70), +8 s: a watchdog, not a cue.
+        val timeoutMs = text.length * 90L + 8000L
+        var watchdog: Runnable? = null
+        fun finish(out: TtsOutcome) {
+            if (!done.compareAndSet(false, true)) return
+            currentFinish = null
+            watchdog?.let { main.removeCallbacks(it) }
+            if (out.end == TtsEnd.FAILED) lastError = out.code
+            // The callback lands on the main thread: the pre-#373 poll did, and the glue
+            // path (startStreaming on completion) was written against that contract.
+            main.post { onDone(out) }
+        }
+        val wd = Runnable {
+            if (done.compareAndSet(false, true)) {
+                currentFinish = null
+                lastError = "no completion callback in ${timeoutMs}ms"
+                VoxLog.w("event=tts-timeout engine=system chars=${text.length} afterMs=$timeoutMs")
+                main.post { onDone(TtsOutcome(TtsEnd.FAILED, "timeout")) }
+            }
+        }
+        watchdog = wd
+        currentFinish = { out -> finish(out) }
+        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) {
+                if (utteranceId == id) finish(TtsOutcome(TtsEnd.SPOKEN))
+            }
+            override fun onError(utteranceId: String?) {
+                if (utteranceId == id) finish(TtsOutcome(TtsEnd.FAILED, "engine-error"))
+            }
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                if (utteranceId == id) finish(TtsOutcome(TtsEnd.FAILED, "error-$errorCode"))
+            }
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                if (utteranceId == id) finish(TtsOutcome(TtsEnd.INTERRUPTED, "stopped"))
+            }
+        })
+        val rc = try {
+            t.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+        } catch (e: Throwable) {
+            lastError = "speak threw ${e::class.java.simpleName}"
+            VoxLog.w("tts: system speak threw ${e::class.java.simpleName}")
+            TextToSpeech.ERROR
+        }
+        if (rc != TextToSpeech.SUCCESS) {
+            // Previously ignored: a refused utterance was silent AND invisible.
+            finish(TtsOutcome(TtsEnd.FAILED, "speak=$rc"))
+            return
+        }
+        main.postDelayed(wd, timeoutMs)
     }
-    private fun scheduleDone(onDone: () -> Unit, chars: Int) {
-        val delay = (chars * 70L).coerceAtLeast(400L)   // ~70ms/char heuristic; not precise but non-blocking
-        main.postDelayed({ if (tts?.isSpeaking == false) onDone() }, delay + 200)
+
+    override fun stop() {
+        try { tts?.stop() } catch (_: Throwable) {}
+        // A deliberate cut is not an engine failure: report it as INTERRUPTED at once, so
+        // the watchdog cannot later blame the engine for a silence the caller asked for.
+        currentFinish?.invoke(TtsOutcome(TtsEnd.INTERRUPTED, "stopped"))
     }
-    override fun stop() { try { tts?.stop() } catch (_: Throwable) {} }
-    override fun shutdown() { try { tts?.shutdown() } catch (_: Throwable) {} }
+    override fun shutdown() {
+        currentFinish?.invoke(TtsOutcome(TtsEnd.INTERRUPTED, "shutdown"))
+        try { tts?.shutdown() } catch (_: Throwable) {}
+    }
 }
 
 /**
@@ -123,37 +239,44 @@ class WarmTts(private val context: Context) : VoxTts {
     }
 }
 
+/**
+ * #373: build EXACTLY the engine [token] names, or null when this build cannot run it.
+ * No substitution happens here — [TtsPolicy] decides what a missing engine means, and
+ * the caller must be able to tell "asked for Piper, got Piper" from "asked for Piper,
+ * got the system voice".
+ */
+fun ttsEngineFor(context: Context, token: String): VoxTts? = try {
+    when (TtsPolicy.localEngineOf(token)) {
+        "piper" -> SherpaTts(context, SherpaVoice.PIPER)
+        "supertonic" -> SherpaTts(context, SherpaVoice.SUPERTONIC)
+        // Kokoro's runtime is a stub (isWarm is always false); it can never speak.
+        "kokoro" -> WarmTts(context).takeIf { it.isWarm }
+        else -> SystemTts(context)
+    }
+} catch (_: Throwable) { null }
+
 /** Builds the configured VoxTts, HONORING the `tts` pref (#31). `system` yields
  *  SystemTts, `piper` yields SherpaTts (when the Piper model is installed, else an
  *  honest fallback to System), and `kokoro` yields the Kokoro backend (WarmTts)
  *  when it can honestly produce audio, else an honest fallback to System. An
  *  unknown/blank token resolves to SystemTts — never a silent or ignore-the-pref
- *  engine. */
+ *  engine.
+ *
+ *  This is the PREVIEW builder (Settings): the call path goes through
+ *  [TtsEngineHost], which keeps the substitution's reason instead of discarding it. */
 fun buildTts(context: Context, prefer: String): VoxTts {
     return try {
-        when (prefer) {
-            "piper" -> if (ModelCatalog.isInstalled(context, "piper-lessac")) SherpaTts(context, SherpaVoice.PIPER)
-                else { VoxLog.d("tts: piper requested but model not installed -> system fallback"); SystemTts(context) }
-            "supertonic" -> if (ModelCatalog.isInstalled(context, "supertonic")) SherpaTts(context, SherpaVoice.SUPERTONIC)
-                else { VoxLog.d("tts: supertonic requested but model not installed -> system fallback"); SystemTts(context) }
-            // "kokoro" was offered but its runtime was a stub that always fell back to the
-            // system voice; the bake-off measured Kokoro int8 slower than real time, so the
-            // token now resolves like any unknown one (system), and Settings no longer offers it.
-            "kokoro" -> kokoroBackend(context)
-            else -> SystemTts(context)   // "system" (and unknown tokens) -> system
+        val local = TtsPolicy.localEngineOf(prefer)
+        val modelId = local?.let { TtsPolicy.modelIdOf(it) }
+        // A local voice whose model is absent is not loaded at all (the load would only
+        // fail slowly); the honest answer is the system engine.
+        if (local != null && modelId != null && !ModelCatalog.isInstalled(context, modelId)) {
+            VoxLog.d("tts: $local requested but model not installed -> system fallback")
+            SystemTts(context)
+        } else {
+            ttsEngineFor(context, prefer) ?: SystemTts(context)
         }
     } catch (_: Throwable) { SystemTts(context) }
-}
-
-/** The Kokoro backend: WarmTts. Its runtime is a stub (isWarm=false until a real
- *  kokoro model ships), so pick it only when it can actually produce audio and
- *  otherwise fall back to SystemTts — never a silent reply. */
-private fun kokoroBackend(context: Context): VoxTts {
-    val warm = WarmTts(context)
-    return if (warm.isWarm) warm else {
-        VoxLog.d("tts: kokoro runtime unavailable -> system fallback")
-        SystemTts(context)
-    }
 }
 
 /** The current `voice` register token (system/bright/deep). Default "system". */
