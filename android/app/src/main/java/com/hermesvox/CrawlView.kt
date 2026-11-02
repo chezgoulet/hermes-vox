@@ -94,14 +94,18 @@ class CrawlView @JvmOverloads constructor(
             val baseline = tl.getLineBaseline(i)
             val screenY = blockTop + baseline
             if (screenY < -50f) continue
-            // top fade: 0 as a line nears the top (approaching the being) -> 1 at the bottom
-            val a = (screenY / fadeBand).coerceIn(0f, 1f)
+            // top fade: 0 as a line nears the top (approaching the being) -> 1 at the bottom.
+            // #372: the fade and the unspoken weight are per ground — on paper the fade
+            // stops at a legible floor and the tail sits at its constant weight, because
+            // dimming dark ink toward the page is the operation that removed the contrast.
+            val a = CrawlInk.lineAlpha(screenY, fadeBand, lightGround)
             val lineStart = tl.getLineStart(i)
             val lineEnd = tl.getLineEnd(i)
-            val bright = (255 * a).toInt()
-            val dim = (bright * UNSPOKEN_ALPHA).toInt()
+            val bright = CrawlInk.spokenAlpha(a)
+            val dim = CrawlInk.tailAlpha(bright, a, lightGround)
             // Split the line at the speech cursor: spoken side normal, unspoken side dim.
-            // The top-fade alpha still multiplies both, so the crawl is unchanged.
+            // On night the top-fade alpha still multiplies both (unchanged); on paper the
+            // weights are per ground, so the tail never drops under 4.5:1 (CrawlInk).
             val cut = if (spoken < 0) lineEnd else spoken.coerceIn(lineStart, lineEnd)
             if (cut > lineStart) {
                 paint.alpha = bright
@@ -121,10 +125,9 @@ class CrawlView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
-    private companion object {
-        /** The unspoken tail's weight relative to the line's own fade alpha. */
-        const val UNSPOKEN_ALPHA = 0.35f
-    }
+    // #372: the draw-time weights and their floors live in CrawlInk (not here) because
+    // they are contrast, and contrast is measured: CrawlDrawContrastTest composites the
+    // same constants this view paints with, on both grounds.
 
     private fun dp(v: Float) = v * resources.displayMetrics.density + 0.5f
     private fun sp(v: Float) = v * resources.displayMetrics.scaledDensity + 0.5f
