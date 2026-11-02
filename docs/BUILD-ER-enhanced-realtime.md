@@ -58,8 +58,8 @@ api_server channel Vox uses.
 3. **Serve it**: an endpoint (or include in the responses payload) the app can GET VOX.md
    from the gateway. Gateway-authoritative, read-only. The app never writes it.
 4. **Soul file format**: the Contract (fixed rules 1-6) + Soul (name, essence, register,
-   relationship, distilled memory facts, humor). Keys for app display (name, theme) that
-   the motion system can read (see Phase 4).
+   relationship, humor, what it is proud of). No memory section: the voice speaks the moment.
+   Keys for app display (name, theme) that the motion system can read (see Phase 4).
 
 ## PHASE 3 — App: ER mode toggle + onboarding bootstrap
 1. **Enable ER** in Settings (a toggle). First-enable triggers the bootstrap:
