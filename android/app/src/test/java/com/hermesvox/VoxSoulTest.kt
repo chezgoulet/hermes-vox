@@ -18,11 +18,10 @@ class VoxSoulTest {
         "Essence" to "Steward of the House — I see what is missing and what should not be there.",
         "Register" to "plain, direct, warm; no fluff",
         "Relationship" to "yours; we build things together at this desk",
-        "Memory" to "loves hiking; learning the cello",
         "Humor" to "dry, structural",
         "Proud" to "the library",
     )): String {
-        val soulLines = listOf("Name", "Essence", "Register", "Relationship", "Memory", "Humor", "Proud")
+        val soulLines = listOf("Name", "Essence", "Register", "Relationship", "Humor", "Proud")
             .joinToString("\n") { "${it}: ${soul[it] ?: ""}" }
         return "# Contract\n" + VoxSoul.CONTRACT_LINES.joinToString("\n") + "\n\n# Soul\n" + soulLines
     }
@@ -60,8 +59,22 @@ class VoxSoulTest {
         assertTrue(v is VoxSoul.Valid.Bad)
     }
 
+@Test fun memory_section_is_refused() {
+        val withMemory = canonical().replace(
+            "Humor: dry, structural",
+            "Memory: remembers the kitchen smelling of maple shortbread\nHumor: dry, structural")
+        val v = VoxSoul.validate(withMemory)
+        assertTrue("a document carrying a Memory section must be refused", v is VoxSoul.Valid.Bad)
+        assertTrue((v as VoxSoul.Valid.Bad).reason.contains("Memory"))
+    }
+
     @Test fun secret_pattern_is_rejected() {
-        val leaky = canonical() + "\nMemory: the key is sk-abcdefghijklmnop1234"
+        // The fixture carries a token the pattern actually matches. The old one used
+        // "sk-abc...1234", which has three alphanumerics after the prefix — the regex
+        // requires eight, so the test asserted a refusal the validator never had to make.
+        val leaky = canonical().replace(
+            "Humor: dry, structural",
+            "Humor: dry, structural — sk-abcdef1234567890")
         val v = VoxSoul.validate(leaky)
         assertTrue(v is VoxSoul.Valid.Bad)
         assertTrue((v as VoxSoul.Valid.Bad).reason.contains("secret"))

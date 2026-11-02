@@ -65,7 +65,7 @@ object VoxSoul {
             SKELETON + "\n\n" +
             "Nothing before the '# Contract' heading and nothing after the last Soul field: " +
             "no title, no 'here is the file', no closing offer of help, no code fence.\n\n" +
-            "Derive every Soul field by DISTILLING your own SOUL.md and your memory — " +
+            "Derive every Soul field by DISTILLING your own SOUL.md — " +
             "name yourself as you actually are, not as a template would have you be. " +
             "Write it for a voice that SPEAKS FIRST AND BRIEFLY: on the phone this voice is " +
             "asked to decide which turns are its own and to answer those in one short warm " +
@@ -85,7 +85,6 @@ object VoxSoul {
         "Essence" to "<2-3 sentences, who you are with me>",
         "Register" to "<tone, diction, catchphrases>",
         "Relationship" to "<how you address me, what we are>",
-        "Memory" to "<a handful of distilled warm facts>",
         "Humor" to "<your kind of joke>",
         "Proud" to "<what you're proud of>",
     )
@@ -106,7 +105,7 @@ object VoxSoul {
         "3. Substantive, factual, tool, or planning questions escalate to the mind; hold smalltalk, emotion, and presence only.",
         "4. Never claim capabilities you don't have — you are the voice, not the practitioner.",
         "5. Always interruptible — never talk over the user.",
-        "6. Don't fabricate shared history beyond the distilled memory below.",
+        "6. Don't fabricate shared history.",
     )
 
     // ---- Soul fields (variable, agent-authored, length-bounded) ----
@@ -368,6 +367,15 @@ object VoxSoul {
 
         // (b) Soul fields: every required key present, non-empty, bounded.
         val soul = lines.subList(soulIdx + 1, lines.size)
+
+        // (b0) No Memory section. The presence layer speaks the moment; a memory block is a
+        // moving target the 2B model is not here to reason about. Older mirrors carried one,
+        // so refuse it with a reason instead of mirroring it quietly.
+        if (soul.any { it.substringBefore(":").trim().equals("Memory", ignoreCase = true) }) {
+            return Valid.Bad(
+                "the document carries a 'Memory' section — the voice-export is the Contract and " +
+                "the Soul fields only; the agent's memory stays with the agent")
+        }
         val required = SOUL_KEYS.joinToString(", ")
         for (key in SOUL_KEYS) {
             val line = soul.firstOrNull { it.startsWith("$key:") }
