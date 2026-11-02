@@ -67,10 +67,20 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** #282: the run ended while the request was still up, so it can no longer be
          *  answered. Never a decision — the gateway withdrew it. */
         fun onApprovalClosed(prompt: ApprovalPrompt, reason: String) {}
+        /** #373: the spoken-replies leg changed. [line] is the reason to show ("" when the
+         *  leg is healthy again, so the screen can put the call's own state back);
+         *  [degraded] means spoken replies are OFF. Both directions arrive here — a
+         *  fallback that recovers must clear the line it set. */
+        fun onSpokenReplies(line: String, degraded: Boolean) {}
     }
 
     private var recognizer: SpeechRecognizer? = null
-    private var tts: VoxTts? = null
+    /** #373: owns the voice-output engine — acquire, replace after a failure, release at
+     *  hang-up. Null only for a probe-only controller (no pipeline is built). */
+    @Volatile private var ttsHost: TtsEngineHost? = null
+    /** The engine that would speak right now (null before the pipeline exists, after a
+     *  release, or while a replacement is being installed). */
+    private val tts: VoxTts? get() = ttsHost?.engine
     @Volatile private var stt: VoxStt? = null
     // Set while the `remote` backend is selected with a saved http(s) URL. When
     // RemoteStt's availability probe fails the leg is swapped for the on-device
@@ -95,6 +105,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  through here — two of them had no guard at all before H3. */
     private fun execSubmit(block: () -> Unit): Boolean = ExecGuard.submit(exec, stopped, block)
     @Volatile private var speaking = false
+    /** #373: which utterance owns the speaker. A completion from an utterance that a newer
+     *  speak() replaced must not clear the newer one's state (or its mic gate). */
+    private val speakSeq = java.util.concurrent.atomic.AtomicLong()
     @Volatile private var currentStream: String? = null
     @Volatile private var turnInFlight = false
     @Volatile private var loopActive = false
@@ -142,6 +155,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Why spoken replies are off, when they are. Empty when TTS is ready.
      *  TTS is an OUTPUT leg: its failure must never stop a call from starting. */
     @Volatile private var ttsIssue: String = ""
+    /** #373: spoken replies work, but not in the requested voice (e.g. the Piper model is
+     *  not installed, so the system voice speaks). Empty when the leg is clean. */
+    @Volatile private var ttsNote: String = ""
     @Volatile private var sttReady = false
     @Volatile private var partialRunning = false
     @Volatile private var partialEnabled = false
@@ -496,28 +512,24 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** The speech pipeline: TTS + STT + VAD, each loading its own on-device model.
      *  Built by [init] unless this controller exists only to probe the gateway. */
     private fun initPipeline() {
+        // #373: the voice-output leg is owned by TtsEngineHost from here on. It applies
+        // TtsPolicy (requested engine when its model is installed, else the system voice
+        // WITH the reason kept), replaces an engine that dies, and is the only thing that
+        // ever releases one.
         // Blessed default: auto-use the best installed on-device voice — Supertonic (the
         // bake-off winner), else Piper — and System only when neither is present. An explicit
         // user choice in Settings always wins.
-        val voice = prefString("tts", ModelCatalog.defaultTts(context))
-        tts = buildTts(context, voice)
-        // 0.5.0-previewA speech-locked transcript: the warm engine reports each phrase
-        // (text, samples) as it hands it to the playback track, in playback order.
-        (tts as? SherpaTts)?.onAudioSegment = { text, samples -> recordAudioSegment(text, samples) }
-        VoxLog.d("pipeline: tts=${tts?.name} (voice=$voice) ttsReady=$ttsReady")
-        // Load the TTS engine up front so a reply is always voiced (text OR mic).
-        // 0.9.0.2/330: a TTS failure is not a pipeline failure. Degrade to text-only and
-        // name the cause — the readiness gate no longer waits for this leg.
-        tts?.init { ready ->
-            ttsReady = ready
-            if (ready) {
-                ttsIssue = ""
-            } else {
-                ttsIssue = tts?.warmReason?.takeIf { it.isNotBlank() }
-                    ?: "text-to-speech engine unavailable"
-                VoxLog.w("event=tts-unavailable reason=$ttsIssue (call continues text-only)")
-            }
-        }
+        val host = TtsEngineHost(
+            requested = { prefString("tts", ModelCatalog.defaultTts(context)) },
+            installed = { id -> ModelCatalog.isInstalled(context, id) },
+            factory = { token -> ttsEngineFor(context, token) },
+            onChange = { st -> onTtsState(st) },
+            warn = { VoxLog.w(it) },
+            debug = { VoxLog.d(it) },
+        )
+        ttsHost = host
+        host.ensure()
+        VoxLog.d("pipeline: tts=${host.state.engine} (voice=${host.state.requested}) ttsReady=$ttsReady")
         // STT backend/model from Settings: on-device Whisper (selected model), a
         // user-supplied OpenAI-compatible `remote` endpoint, or platform
         // (SpeechRecognizer fallback).
@@ -527,6 +539,31 @@ class VoiceController(private val context: Context, private val session: HermesS
             vad = SileroVadGate(context, micFloat("vad_threshold", 0.5f)); vad?.init {}
         }
         VoxLog.d("pipeline: stt=${stt?.name} sttReady=$sttReady vad=${vad?.isAvailable}")
+    }
+
+    /**
+     * #373: the voice leg's state changed — engine installed, ready, fell back, failed, or
+     * was released. Everything the rest of the controller and the screen see is derived
+     * here, from the host's state, so "down" and "up" travel the same path (a fallback that
+     * recovers must clear the degraded line, not just set it once).
+     */
+    private fun onTtsState(st: TtsEngineHost.State) {
+        ttsReady = st.speaking
+        ttsIssue = if (st.speaking) "" else st.issue
+        ttsNote = if (st.speaking) st.note else ""
+        // The speech-locked transcript needs the phrase seam on whichever engine is live;
+        // a replacement engine must be wired exactly like the first one.
+        (tts as? SherpaTts)?.onAudioSegment = { text, samples -> recordAudioSegment(text, samples) }
+        // Nothing to announce while an engine is merely still loading, or after the call
+        // has released it.
+        if (st.released) return
+        if (!st.speaking && st.issue.isBlank()) return
+        val line = when {
+            !st.speaking -> st.issue
+            st.note.isNotBlank() -> st.note
+            else -> ""   // recovered: the screen puts the call's own line back
+        }
+        main.post { listener?.onSpokenReplies(line, !st.speaking) }
     }
 
     /** Set when the streaming STT arm failed to load in this controller; the shipped model
@@ -609,6 +646,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
     fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
 
+    /** #373: non-empty when spoken replies work but not in the requested voice (the system
+     *  voice is standing in). The call is fine; the setting is not being honoured, and the
+     *  screen says so instead of the app silently substituting an engine. */
+    fun ttsFallbackNote(): String = if (ttsReady) ttsNote else ""
+
     /** True when the listen loop is actually running (capturing). NOT a sticky flag:
      *  the Activity gates re-open on this, so it can restart after a stop/background/
      *  turn instead of being locked out forever. */
@@ -616,7 +658,7 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /** Warm-up breakdown for diagnostics: which leg is not yet ready. */
     fun warmDiagnostics(): String =
-        "sttReady=$sttReady ttsReady=$ttsReady ttsIssue=${ttsIssue.ifBlank { "-" }} vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null}"
+        "sttReady=$sttReady ttsReady=$ttsReady ttsIssue=${ttsIssue.ifBlank { "-" }} vadAvailable=${vad?.isAvailable != false} vadPresent=${vad != null} ${ttsHost?.diagnostics() ?: "ttsEngine=-"}"
 
     /** Set/replace the render callbacks (works for text turns too — the send path). */
     fun attachListeners(l: Listener) { listener = l }
@@ -1312,7 +1354,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         try { record?.stop(); record?.release() } catch (_: Exception) {}
         record = null
         try { ns?.release() } catch (_: Exception) {}; ns = null
-        tts?.shutdown()
+        ttsHost?.release()   // #373: shuts the engine down and drops it — a released engine is never reused
         stt?.shutdown(); vad?.shutdown()
         // After shutting the legs down the pipeline is no longer warm: reset the ready
         // flags so isWarm() reflects reality (a stale true left transcribe returning null).
@@ -1334,7 +1376,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (initializing) return
         initializing = true
         try {
-            val t = tts; if (t != null && !ttsReady) t.init { ttsReady = it }
+            // #373: the host re-acquires (or re-inits) the voice leg itself, applying the
+            // policy — a missing model or a dead engine becomes the system voice, never a
+            // silent leg.
+            ttsHost?.ensure()
             val s = stt; if (s != null && !sttReady) s.init { onSttReady(it) }
             val v = vad; if (v != null && !v.isAvailable) v.init {}
         } finally { initializing = false }
@@ -1528,7 +1573,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     private fun initTts(): Boolean {
-        tts?.init { ttsReady = it }
+        ttsHost?.ensure()
         return true
     }
 
@@ -2627,32 +2672,38 @@ class VoiceController(private val context: Context, private val session: HermesS
         // must not: the transcript records speech, it does not narrate states.
         main.post { listener?.onPresenceSpoke(text, source) }
         main.post {
-            tts?.speak(text) {
-                glueSpeaking = false
-                // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
-                // one-voice rule) closes the fence, which is the reply's
-                // streamChunk gate. When a glue ends and a streamed reply is
-                // still open, re-open the fence — the reply owns the track
-                // between fillers.
-                // Not once the reply owns the track: startStreaming() resets the track, and a
-                // glue cut by the handoff can finish AFTER the reply's first chunk was written.
-                if (streamed && !sClosed && !replyOwnsTrack) {
-                    try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
-                    VoxLog.er("event=er-fence-reopen after-glue")
+            val seq = speakSeq.incrementAndGet()
+            val took = ttsHost?.speak(text) { _ ->
+                if (speakSeq.get() == seq) {
+                    glueSpeaking = false
+                    // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
+                    // one-voice rule) closes the fence, which is the reply's
+                    // streamChunk gate. When a glue ends and a streamed reply is
+                    // still open, re-open the fence — the reply owns the track
+                    // between fillers.
+                    // Not once the reply owns the track: startStreaming() resets the track, and a
+                    // glue cut by the handoff can finish AFTER the reply's first chunk was written.
+                    if (streamed && !sClosed && !replyOwnsTrack) {
+                        try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
+                        VoxLog.er("event=er-fence-reopen after-glue")
+                    }
                 }
+            } ?: false
+            if (!took) {
+                // #373: nothing could speak the line (the host logged which engine and why).
+                // Release the glue latch so the next line is not refused by our own gate.
+                glueSpeaking = false
+                VoxLog.er("event=er-glue-skip source=$source reason=no-engine")
             }
         }
     }
 
     private fun speak(text: String, gen: Long) {
-        val t = tts
-        if (t == null || !ttsReady) {
-            // No usable engine — never hang the "speaking" state; settle quietly.
-            listener?.onState("idle")
-            endReply(gen, ReplyLedger.End.DONE)   // #240 rule 1: a completed reply still ends once
-            releaseTurnGate(gen, "no-engine")   // no speech will run -> release the loop's speak-gate
-            return
-        }
+        val host = ttsHost
+        // #373: a stale completion (an utterance this speak replaced) must not clear the
+        // state of the one that is playing now — that race is how a live reply ends up
+        // with `speaking=false` and the mic gate reopened mid-sentence.
+        val seq = speakSeq.incrementAndGet()
         glueSpeaking = false      // Hermes preempts Gemma
         stopTts()                 // cut any in-flight glue so the reply isn't truncated
         // 0.6.5: the one-shot speak() REPLACES streamTrack + resets streamWritten.
@@ -2662,15 +2713,25 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (streamed) stopStreaming()
         speaking = true
         listener?.onState("speaking")
-        t.speak(text) {
-            speaking = false
-            // #28: the TTS completion callback runs on the engine thread; the
-            // listener must be dispatched on the main thread per the contract.
-            main.post {
-                listener?.onState("idle")
-                endReply(gen, ReplyLedger.End.DONE)   // #240: the one-shot reply's end event
-                releaseTurnGate(gen, "speak-done")   // release the realtime loop's speak-gate after speech finishes
+        val took = host?.speak(text) { _ ->
+            if (speakSeq.get() == seq) {
+                speaking = false
+                // #28: the TTS completion callback runs on the engine thread; the
+                // listener must be dispatched on the main thread per the contract.
+                main.post {
+                    listener?.onState("idle")
+                    endReply(gen, ReplyLedger.End.DONE)   // #240: the one-shot reply's end event
+                    releaseTurnGate(gen, "speak-done")   // release the realtime loop's speak-gate after speech finishes
+                }
             }
+        } ?: false
+        if (!took) {
+            // #373: no engine can speak this reply (reported by the host with its reason).
+            // The call continues text-only — never hang the "speaking" state (#330).
+            speaking = false
+            listener?.onState("idle")
+            endReply(gen, ReplyLedger.End.DONE)   // #240 rule 1: a completed reply still ends once
+            releaseTurnGate(gen, "no-engine")   // no speech will run -> release the loop's speak-gate
         }
         // B1: barge-in needs no delayed arm here — the capture loop's single-capture
         // drain is already running and starts its checks after the playback grace
