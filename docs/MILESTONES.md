@@ -68,11 +68,27 @@ Presence it stays off, with one line saying why and where to turn it on.
 #179 (co-residency), #165 (store rail), #249 (render budget). Done in 0.9.1 if achievable;
 otherwise they close in whatever release closes them.
 
-## 0.9.2 — the gate opens
+## 0.9.2 — the gate opens, and whatever we have learned by then
+
+A living milestone, not a promise. What it holds today:
 
 - **Presence on by default.** The Alpha gate opens for Presence: it stops being opt-in.
-- **Per-profile settings** — voice, model and look, the things still device-wide. *The only
-  feature work explicitly deferred.*
+- **Per-profile settings** — voice, model and look, the things still device-wide. The one item
+  carried out of 0.9.1 by decision.
+
+What else lands there is decided by what the 0.9.1 acceptance run and real use turn up. Expect new
+features to be wanted, expect some of them to be the ones we have not thought of yet, and expect
+this list to grow between now and the cut. That is the normal shape of a beta milestone; a frozen
+list would mean we stopped listening.
+
+## Polish is continuous, and belongs to no milestone
+
+Refinements are not saved up. A rough edge found in use — a wording, a colour, a timing, a screen
+that needs explaining — is fixed when it is found and ships in the next point release. The
+Perpetual task does not get a milestone number, and it does not wait for 0.9.2 to be planned.
+
+The same applies to defects: a real one is fixed when it is known, not scheduled. What a milestone
+records is the work that needed deciding, not the work that simply needed doing.
 
 ## 1.0 — GA
 
