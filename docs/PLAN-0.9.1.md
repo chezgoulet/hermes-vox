@@ -173,3 +173,24 @@ Carried without a number — done here if achievable, otherwise closed wherever 
 
 **Not in 0.9.1** — **per-profile settings** (voice, model, look). That is the one deferred item,
 and 0.9.2 is where it lands, together with the Alpha gate opening for Presence: on by default.
+
+## 11. Decisions taken before the build
+
+Between the acceptance run and the rest of the build, the open questions were settled in a
+structured interrogation and recorded as **D29** in `docs/DECISIONS.md`. They are binding on this
+plan, and §13 of `docs/0.9.1-SCOPE.md` carries the list. The ones that change what gets built:
+
+- **#325** ships as a setting, off by default.
+- **#252** is settled: **full command parity in-app**.
+- **Continuous capture and semantic endpointing default on, behind the Alpha gate** — and the
+  release is gated on testing them there.
+- **The hardware bar is 8 GB**, with a free-memory floor; the check advises in the Alpha panel.
+- **The cut waits for the route flip.**
+- **The no-new-numbers rule is dropped**; the false-action-claim guard stays, and #256 measures as
+  observation rather than a gate.
+- **Budgets are re-measured with continuous capture on, and the cut holds to them.**
+- **#165 is in scope and the release waits for the F-Droid listing** — a dependency on someone
+  else's review, accepted deliberately.
+- **Signing 0.9.1** means the acceptance run passes on a device, by voice, with no regressions,
+  **and every milestone issue is closed**.
+

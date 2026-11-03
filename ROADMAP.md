@@ -196,6 +196,28 @@ Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-p
 
 ## `0.9.1` — mechanics
 
+**The complete, status-bearing list is [`docs/0.9.1-SCOPE.md`](docs/0.9.1-SCOPE.md); this section is
+the narrative.** Since D28/D29 this release carries more than mechanics: it ships the Presence layer
+and its behaviours behind one Alpha gate, the approvals route flip, profiles from the host, share
+with agent, and the F-Droid rail. It stays open until the owner signs it.
+
+Items added on 2026-11-03 and **not yet built**, each with its own issue:
+
+- `[ ]` **The Alpha gate (#402)** — a master toggle at the top of Settings, off by default; enabling it
+  slides out the feature sets we have marked alpha, Presence first; with it off, everything alpha is
+  dimmed and unreachable.
+- `[ ]` **The first-run hardware check (#403)** — 8 GB and a free-memory floor, then a real load
+  attempt that can demote; advises, never enables.
+- `[ ]` **The route flip (#404)** — \`/v1/runs\` as the default, with the device pass. **The cut waits.**
+- `[ ]` **Budgets re-measured with continuous capture on (#405)** — the cut holds to those numbers.
+- `[ ]` **The no-new-numbers rule is dropped (#406)** — the false-action-claim guard stays.
+- `[~]` **Presence behaviours** — asides and backchannels (#245), resume (#243), overlap
+  classification (#242), the tuning bar (#217), the Presence transcript (#223), the invention
+  measurement (#256), and a fresh pass on the directive and rails (#257). Moved from 0.9.2 to 0.9.1.
+- `[ ]` **The store rail (#165)** — now in scope, and **the release waits until the app is listed in
+  F-Droid** (D29). External review, so no date.
+
+
 **The claim:** the loop closes. A stranger gives a real command by voice, sees what the agent is
 doing, gets a clean result, and discovers the next thing without being taught. The app is also fast,
 correct and navigable with Presence **off** — a property this release must have, not its purpose.
