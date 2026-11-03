@@ -1,0 +1,144 @@
+package com.hermesvox
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+/**
+ * #402/D29 — the Alpha gate: one master switch, off by default, and feature sets selected one by
+ * one, Presence first. Acceptance: a fresh install reaches nothing alpha; turning the master on
+ * and selecting one set enables exactly that set; turning it off returns everything to dimmed.
+ */
+class AlphaGateTest {
+
+    private class Fake(val m: MutableMap<String, Any> = HashMap()) : AlphaGate.Store {
+        override fun getBoolean(key: String, default: Boolean) = (m[key] as? Boolean) ?: default
+        override fun contains(key: String) = m.containsKey(key)
+        override fun getString(key: String) = m[key] as? String
+        override fun putBoolean(key: String, value: Boolean) { m[key] = value }
+    }
+
+    private val P = AlphaGate.FeatureSet.PRESENCE
+    private val L = AlphaGate.FeatureSet.CONTINUOUS_LISTENING
+
+    @Test fun presence_is_the_first_set_and_every_set_has_its_own_key() {
+        assertEquals(P, AlphaGate.FeatureSet.entries.first())
+        val keys = AlphaGate.FeatureSet.entries.map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
+        assertFalse(keys.contains(AlphaGate.KEY_MASTER))
+    }
+
+    @Test fun a_fresh_install_reaches_nothing_alpha() {
+        val s = Fake()
+        AlphaGate.migrate(s, presenceModelInstalled = false)
+        assertEquals(false, s.m[AlphaGate.KEY_MASTER])
+        assertFalse(AlphaGate.masterOn(s))
+        AlphaGate.FeatureSet.entries.forEach { assertFalse(it.name, AlphaGate.allows(s, it)) }
+    }
+
+    @Test fun a_fresh_install_with_the_model_already_on_disk_is_still_off() {
+        // A model on disk is not a choice. Only a Presence key written by an earlier version is.
+        val s = Fake()
+        AlphaGate.migrate(s, presenceModelInstalled = true)
+        assertFalse(AlphaGate.masterOn(s))
+        assertFalse(AlphaGate.allows(s, P))
+    }
+
+    @Test fun master_on_and_one_set_selected_enables_exactly_that_set() {
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, L.key to true))
+        assertTrue(AlphaGate.allows(s, L))
+        assertFalse(AlphaGate.allows(s, P))
+        assertEquals(1, AlphaGate.selectedCount(s))
+    }
+
+    @Test fun master_off_returns_everything_to_off_and_keeps_the_selections() {
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, P.key to true, L.key to true))
+        assertTrue(AlphaGate.allows(s, P))
+        s.putBoolean(AlphaGate.KEY_MASTER, false)
+        AlphaGate.FeatureSet.entries.forEach { assertFalse(AlphaGate.allows(s, it)) }
+        // The tester's picks survive, so turning Alpha back on restores the same sets.
+        assertEquals(2, AlphaGate.selectedCount(s))
+        s.putBoolean(AlphaGate.KEY_MASTER, true)
+        assertTrue(AlphaGate.allows(s, P))
+    }
+
+    @Test fun a_selected_set_without_the_master_is_not_allowed() {
+        val s = Fake(mutableMapOf(P.key to true))
+        assertFalse(AlphaGate.allows(s, P))
+    }
+
+    @Test fun an_upgrade_that_had_presence_running_keeps_it() {
+        // 0.9.0 wrote presence_enabled=true on first start; with the model installed it ran.
+        val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to true))
+        AlphaGate.migrate(s, presenceModelInstalled = true)
+        assertTrue(AlphaGate.allows(s, P))
+        assertFalse("continuous capture shipped off and was not on", AlphaGate.allows(s, L))
+    }
+
+    @Test fun an_upgrade_that_chose_presence_without_its_model_was_not_running_it() {
+        val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to true))
+        AlphaGate.migrate(s, presenceModelInstalled = false)
+        assertFalse(AlphaGate.masterOn(s))
+    }
+
+    @Test fun an_upgrade_that_had_presence_off_stays_off() {
+        val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to false))
+        AlphaGate.migrate(s, presenceModelInstalled = true)
+        assertFalse(AlphaGate.masterOn(s))
+    }
+
+    @Test fun an_upgrade_with_continuous_capture_on_keeps_continuous_listening() {
+        val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to false, ContinuousCapture.KEY to true))
+        AlphaGate.migrate(s, presenceModelInstalled = false)
+        assertTrue(AlphaGate.allows(s, L))
+        assertFalse(AlphaGate.allows(s, P))
+    }
+
+    @Test fun the_legacy_enhanced_choice_counts_as_presence_running() {
+        val s = Fake(mutableMapOf(PresenceGate.LEGACY_KEY_VOICE_MODE to PresenceGate.LEGACY_ENHANCED))
+        AlphaGate.migrate(s, presenceModelInstalled = true)
+        assertTrue(AlphaGate.allows(s, P))
+    }
+
+    @Test fun the_migration_runs_once() {
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to false, PresenceGate.KEY_PRESENCE_ENABLED to true))
+        AlphaGate.migrate(s, presenceModelInstalled = true)
+        assertFalse("a stored master is never rewritten", AlphaGate.masterOn(s))
+    }
+
+    @Test fun continuous_listening_switches_default_on_behind_the_gate() {
+        // D29: their preferences default on; the gate is what keeps them from running.
+        assertTrue(ContinuousCapture.DEFAULT_ON)
+        assertTrue(SemanticEndpoint.DEFAULT_ON)
+    }
+
+    // ---- the wiring, pinned at source level (the readers are Android-bound) ----
+
+    private val src = File("src/main/java/com/hermesvox")
+
+    @Test fun presence_runs_only_through_the_gate() {
+        val gate = File(src, "PresenceGate.kt").readText()
+        assertTrue(gate.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE) && chosen(prefs)"))
+    }
+
+    @Test fun the_call_reads_continuous_listening_through_the_gate() {
+        val vc = File(src, "VoiceController.kt").readText()
+        assertTrue(vc.contains("listeningAlpha && micBool(ContinuousCapture.KEY"))
+        assertTrue(vc.contains("listeningAlpha && micBool(SemanticEndpoint.KEY"))
+    }
+
+    @Test fun the_master_switch_is_the_first_row_of_settings() {
+        val layout = File("src/main/res/layout/activity_settings.xml").readText()
+        val list = layout.substringAfter("@+id/grp_list\"")
+        assertTrue(list.indexOf("@+id/row_grp_alpha\"") in 0 until list.indexOf("@+id/row_grp_models\""))
+    }
+
+    @Test fun settings_dims_every_alpha_row() {
+        val s = File(src, "SettingsActivity.kt").readText()
+        for (row in listOf("row_grp_presence", "row_er_hears", "row_mic_continuous", "row_mic_semantic")) {
+            assertTrue(row, s.contains("gate(R.id.$row,"))
+        }
+    }
+}

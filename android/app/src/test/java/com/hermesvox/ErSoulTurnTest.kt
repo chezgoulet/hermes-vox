@@ -92,8 +92,9 @@ class ErSoulTurnTest {
     }
 
     @Test fun an_unsafe_opener_escalates_silently() {
-        // A number is a fact: the Contract is enforced in code, not trusted to the model.
-        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} It's 72 degrees"))
+        // A claimed result is refused in code, not trusted to the model (D29/#406: numbers no
+        // longer are — "It's 72 degrees" would be a beat now, and #256 observes it).
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} It's booked"))
         // Too long to be a beat — that is an answer the soul must not give.
         assertEquals(ErSoulTurn.Outcome.Escalate,
             ErSoulTurn.parse("${ErSoulTurn.ESCALATE} well I think the forecast says it will rain all day"))
@@ -180,8 +181,8 @@ class ErSoulTurnTest {
     }
 
     @Test fun a_working_line_obeys_the_contract_in_code() {
-        // A number is a fact; a long line is not one clause.
-        assertNull(ErSoulTurn.workingLine("Your server has 3 errors"))
+        // A claimed result is not the working lane's to give; a long line is not one clause.
+        assertNull(ErSoulTurn.workingLine("I've fixed your server"))
         assertNull(ErSoulTurn.workingLine("I am still checking the system status for you right now, hang on"))
     }
 
@@ -195,9 +196,9 @@ class ErSoulTurnTest {
         assertNull(ErSoulTurn.workingReject("Reading the logs now"))
         assertEquals("not-spoken", ErSoulTurn.workingReject(ErSoulTurn.ESCALATE))
         assertEquals("empty", ErSoulTurn.workingReject(""))
-        // Nothing is vouched for in this call, so the old rule applies — under the number's own
-        // reason, which is what tells a field log an invented number from markup (#218).
-        assertEquals("digits-unvouched", ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
+        // D29/#406: a number is not a reason any more; only a claimed result is.
+        assertNull(ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
+        assertEquals(ErSoulTurn.REASON_UNBACKED_RESULT, ErSoulTurn.workingReject("I've booked it"))
         assertEquals(
             "too-many-words",
             ErSoulTurn.workingReject("I am still reading through the logs for you right now")

@@ -22,11 +22,13 @@ package com.hermesvox
  *
  * The thresholds are a first fit to the sttbench corpus, replayed on every build by
  * EndpointBenchTest; they are hypotheses until a field bench says otherwise (D20). Ships behind
- * its own switch (KEY), off by default.
+ * its own switch (KEY), on by default (D29), and the whole feature behind the Alpha gate's
+ * continuous-listening set (#402).
  */
 object SemanticEndpoint {
 
     const val KEY = "semantic_endpoint"
+    const val DEFAULT_ON = true
     const val KEY_EAGERNESS = "endpoint_eagerness"
 
     /**

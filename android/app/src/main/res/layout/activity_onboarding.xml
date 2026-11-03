@@ -93,14 +93,33 @@
                 android:textColor="@color/hv_text"
                 android:textSize="15sp" />
 
-            <!-- #222/D16: Presence is a layer, not a second mode. One line, filled
-                 by OnboardingActivity, so first run never asks the user to choose. -->
+            <!-- #230: the three things first run sets up, named the way Settings
+                 names them. Filled by OnboardingActivity. -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 style="@style/TextVox.Label"
-                android:text="PRESENCE — HOW IT FEELS" />
+                android:text="WHAT YOU ARE SETTING UP" />
+
+            <TextView
+                android:id="@+id/ob_three_line"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/hv_text"
+                android:textSize="14sp" />
+
+            <!-- #222/D16: Presence is a layer, not a second mode. One line, filled
+                 by OnboardingActivity from the hardware check (#403), so first run
+                 never asks the user to choose and never switches it on. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                style="@style/TextVox.Label"
+                android:text="PRESENCE — ALPHA, OFF UNTIL YOU TURN IT ON" />
 
             <TextView
                 android:id="@+id/ob_presence_line"

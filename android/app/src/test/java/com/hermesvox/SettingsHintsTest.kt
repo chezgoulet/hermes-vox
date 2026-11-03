@@ -227,6 +227,8 @@ class SettingsHintsTest {
     private companion object {
         /** Captured from the screen before the four-way split (and identical after it). */
         val BEFORE_AND_AFTER_SPLIT_PREF_KEYS: Set<String> = setOf(
+            // #402: the one key added deliberately since the split — the Alpha master switch.
+            "AlphaGate.KEY_MASTER",
             "AvatarView.KEY_SHAPE_LISTENING",
             "AvatarView.KEY_SHAPE_SPEAKING",
             "AvatarView.KEY_SHAPE_THINKING",

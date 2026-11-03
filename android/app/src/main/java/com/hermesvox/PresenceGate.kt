@@ -8,8 +8,10 @@ import android.content.SharedPreferences
  *
  * Two facts decide whether the layer runs, and they are deliberately different kinds of fact:
  *
- *  - **The user's choice**, [KEY_PRESENCE_ENABLED], default on. This is the only thing the
- *    Settings switch writes.
+ *  - **The user's choice**, [KEY_PRESENCE_ENABLED], default on, read by [chosen]. This is the
+ *    only thing the Presence section's switch writes. Since #402 the choice applies only
+ *    behind the Alpha gate: [enabled] is the choice AND [AlphaGate.allows] Presence, so with
+ *    the master off (the fresh-install default) Presence does not run.
  *  - **What the phone can supply** — the model is downloaded AND able to start. When either is
  *    false the app is simply normal operation: no label, no pill, no half-state. The Settings
  *    presence row is the only place the absence is explained, because it is the only place a
@@ -73,8 +75,13 @@ object PresenceGate {
 
     fun migrate(prefs: SharedPreferences) = migrate(SharedPreferencesStore(prefs))
 
-    fun enabled(prefs: SharedPreferences): Boolean =
+    /** The Presence section's own switch, before the Alpha gate is asked. */
+    fun chosen(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PRESENCE_ENABLED, DEFAULT_ENABLED)
+
+    /** Whether the layer may run: the user's choice, behind the Alpha gate (#402). */
+    fun enabled(prefs: SharedPreferences): Boolean =
+        AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE) && chosen(prefs)
 
     fun enabled(context: Context): Boolean =
         enabled(context.getSharedPreferences("hv", Context.MODE_PRIVATE))

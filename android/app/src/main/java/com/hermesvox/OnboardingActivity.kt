@@ -16,11 +16,19 @@ import kotlin.math.roundToInt
 // #222/D16: there is one normal operation — a hands-free open line (the
 // walkie-talkie/PTT path was stripped in C2, 0.4.0). Presence is a layer on it,
 // not a second mode, so first run describes the layer in one line instead of
-// asking the user to choose between two.
+// asking the user to choose between two. #230/#403: that line is the hardware
+// check's (HardwareCheck.firstRunLine) — Presence is alpha and off at first run,
+// and when the phone falls short the line says why and where to turn it on.
 // ---------------------------------------------------------------------------
-const val PRESENCE_FIRST_RUN_LINE =
-    "· Presence — the being, its voice and its asides on your phone. On by default; " +
-        "turn it off in Settings → Presence."
+
+/** #230: first run names the three things being set up, by the names Settings uses. */
+const val FIRST_RUN_THREE_THINGS =
+    "· The connection — your Hermes gateway, where the agent's mind, memory and tools live " +
+        "(Settings → Entity & Connection).\n" +
+        "· The voice — on-device models that hear you and speak; your words do not leave the " +
+        "phone to be transcribed (Settings → Voice models).\n" +
+        "· The being — the shape on screen that listens, thinks and speaks with the agent " +
+        "(Settings → Being)."
 
 /**
  * OnboardingActivity — first-run connection flow. The user enters the entity
@@ -75,8 +83,12 @@ class OnboardingActivity : AppCompatActivity() {
             if (firstRun) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<android.view.View>(R.id.ob_step_connect).visibility =
             if (firstRun) android.view.View.GONE else android.view.View.VISIBLE
-        // #222/D16: one line about the layer, never a choice between two modes.
-        findViewById<TextView>(R.id.ob_presence_line).text = PRESENCE_FIRST_RUN_LINE
+        // #230: the connection, the voice and the being, named once.
+        findViewById<TextView>(R.id.ob_three_line).text = FIRST_RUN_THREE_THINGS
+        // #222/D16 + #403: one line about the layer, never a choice between two modes —
+        // and the hardware check's verdict folded in. It advises; nothing is enabled here.
+        findViewById<TextView>(R.id.ob_presence_line).text =
+            HardwareCheck.firstRunLine(HardwareCheck.store(prefs))
 
         findViewById<Button>(R.id.ob_got_it).setOnClickListener { showConnectStep() }
         findViewById<Button>(R.id.connect).setOnClickListener { connectAndVerify() }

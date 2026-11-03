@@ -84,26 +84,21 @@ class WorkingRenderTest {
         assertEquals(0L, warm.doneAtMs())
     }
 
-    @Test fun the_voucher_travels_with_the_render_so_delivery_cannot_re_recompose_it() {
-        // #218 generalised by D20: the grounded numbers are the ones the directive carried. The
-        // voucher is the render's, so an honest line is never refused for a directive recomposed
-        // seconds later.
+    @Test fun the_voucher_travels_with_the_render_so_the_observation_cannot_drift() {
+        // D29/#406: the grounded numbers gate nothing, but they are the grounded side of #256's
+        // observation. They are the render's, so a directive recomposed at delivery cannot make an
+        // honest number look invented.
         val warm = WorkingRender(gen = 1, requestedAtMs = lagMs, vouched = setOf("22"))
         warm.settle(ErSoulTurn.Outcome.Spoken("We're about 22 seconds in"), slotOpensAt + renderMs)
 
         assertEquals(setOf("22"), warm.vouched)
-        assertEquals(
-            "We're about 22 seconds in...",
-            ErSoulTurn.workingLine(warm.take()!!, emptyList(), warm.vouched),
-        )
-        // A directive recomposed at delivery that no longer carries 22 refuses the same honest
-        // line — which is why the voucher is not recomposed here.
-        assertNull(ErSoulTurn.workingLine(warm.take()!!, emptyList(), setOf("25")))
+        assertEquals("We're about 22 seconds in...", ErSoulTurn.workingLine(warm.take()!!, emptyList()))
+        assertEquals(emptyList<String>(), ErSoulTurn.unvouchedNumbers("We're about 22 seconds in", warm.vouched))
+        assertEquals(listOf("22"), ErSoulTurn.unvouchedNumbers("We're about 22 seconds in", setOf("25")))
     }
 
-    @Test fun a_render_with_no_wait_vouches_for_nothing() {
-        // Before a turn has started there is no wait to offer, and the guard keeps the old rule.
+    @Test fun a_render_with_no_wait_vouches_for_nothing_and_the_number_is_still_spoken() {
         assertEquals(emptySet<String>(), WorkingRender(gen = 1, requestedAtMs = lagMs).vouched)
-        assertNull(ErSoulTurn.workingLine("About 90 seconds in", emptyList(), WorkingRender(1, lagMs).vouched))
+        assertEquals("About 90 seconds in...", ErSoulTurn.workingLine("About 90 seconds in", emptyList()))
     }
 }

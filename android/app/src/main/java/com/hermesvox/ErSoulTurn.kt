@@ -105,7 +105,7 @@ object ErSoulTurn {
             "If answering it needs a fact, a tool, a real-world action, or a plan — or if you are not " +
             "sure — reply with $ESCALATE followed by two to six words you would say out loud as you " +
             "start to think about it, in your own voice. Those words must not contain any fact, " +
-            "answer, number or promise, and must not repeat an opener you already used."
+            "answer or promise, and must not repeat an opener you already used."
     }
 
     /**
@@ -119,7 +119,7 @@ object ErSoulTurn {
         return "The mind has just started using a tool for the caller: $what. " +
             "If a few words about what you are doing for them would feel natural on a call right now, " +
             "say ONE short line in your own voice, under twelve words — what you are doing, never a " +
-            "result, a fact or a number. Otherwise reply with exactly $ESCALATE."
+            "result you do not have. Otherwise reply with exactly $ESCALATE."
     }
 
     /**
@@ -135,9 +135,10 @@ object ErSoulTurn {
      * bound refuses them regardless ([workingLine]).
      *
      * [waitedSeconds] is the caller's measured wait (#218), on the same clock the latency stats
-     * use. It is written into the directive because that is what grounds it: D20 generalises #218
-     * from "the one wait" to "no new numbers" — every number the client wrote into the directive
-     * may be spoken ([vouchedNumbers]), and nothing else may.
+     * use. It is written into the directive because that is what grounds it: every number the
+     * client wrote into the directive is the client's fact ([vouchedNumbers]). D29/#406 dropped
+     * the no-new-numbers rule — a number nobody supplied is no longer refused, only observed
+     * ([unvouchedNumbers]) so #256 can measure what the model does with that freedom.
      */
     fun workingDirective(
         callerText: String,
@@ -162,7 +163,7 @@ object ErSoulTurn {
      * caller; the other four are fixed.
      *
      * The text deliberately carries no digits: every digit in a directive is a grounded number
-     * (D20), so numbering a rule would vouch for "1".
+     * (D20), so numbering a rule would make the #256 observation count "1" as grounded.
      */
     private fun presenceRules(moment: String): String = listOf(
         "You are Hermes, in your own voice — who you are comes from VOX.md.",
@@ -185,24 +186,21 @@ object ErSoulTurn {
      * It must not repeat a line already said this run — across the whole run, not the
      * [REPEAT_WINDOW_MS] the glue ring keeps, because two lines 40 s apart are still a stuck record.
      *
-     * [vouched] is the set of digit runs the client wrote into the directive that produced this
-     * render ([vouchedNumbers]). A line may speak one of them, once; two numbers are still refused
-     * even when both are grounded, because a line doing arithmetic is the model guessing (#218).
+     * Numbers are not judged (D29/#406): the no-new-numbers rule is dropped. What a line may not
+     * do, unconditionally, is claim a result the mind has not given ([REASON_UNBACKED_RESULT]).
      */
     fun workingLine(
         rendered: String?,
         saidThisRun: List<String> = emptyList(),
-        vouched: Set<String> = emptySet(),
-    ): String? = workingLine(parse(rendered), saidThisRun, vouched)
+    ): String? = workingLine(parse(rendered), saidThisRun)
 
     /** [workingLine] for an already-parsed decision (the host's soul hook parses). */
     fun workingLine(
         decision: Outcome,
         saidThisRun: List<String> = emptyList(),
-        vouched: Set<String> = emptySet(),
     ): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return null
-        return judge(text, vouched, saidThisRun).line
+        return judge(text, saidThisRun).line
     }
 
     /**
@@ -212,8 +210,7 @@ object ErSoulTurn {
      * vocabulary.
      *
      * Reasons, in the order the guard applies them: `not-spoken` (escalate or empty render),
-     * `empty` (nothing survived repair), [REASON_UNVOUCHED_NUMBER] (a number the directive did not
-     * carry: two of them, or any number when the directive carried none), `digits-or-markup`
+     * `empty` (nothing survived repair), `digits-or-markup`
      * (bracket markup — the name is unchanged for log continuity), [REASON_UNBACKED_RESULT] (a
      * claimed result the mind has not given), `too-many-words` (over [MAX_OPENER_WORDS] with no
      * clause end to cut at), `too-long` (> [MAX_OPENER_CHARS] after the cut), `repeat` (same line
@@ -223,20 +220,18 @@ object ErSoulTurn {
     fun workingReject(
         rendered: String?,
         saidThisRun: List<String> = emptyList(),
-        vouched: Set<String> = emptySet(),
     ): String? =
         // A blank render is "empty", not "not-spoken": parse() turns both into Nothing, and the
         // difference is the diagnosis the log needs.
         if (rendered.isNullOrBlank()) "empty"
-        else workingReject(parse(rendered), saidThisRun, vouched)
+        else workingReject(parse(rendered), saidThisRun)
 
     fun workingReject(
         decision: Outcome,
         saidThisRun: List<String> = emptyList(),
-        vouched: Set<String> = emptySet(),
     ): String? {
         val text = (decision as? Outcome.Spoken)?.text ?: return "not-spoken"
-        return judge(text, vouched, saidThisRun).reason
+        return judge(text, saidThisRun).reason
     }
 
     /**
@@ -251,18 +246,16 @@ object ErSoulTurn {
     fun workingRepairs(
         rendered: String?,
         saidThisRun: List<String> = emptyList(),
-        vouched: Set<String> = emptySet(),
     ): List<String> =
         if (rendered.isNullOrBlank()) emptyList()
-        else workingRepairs(parse(rendered), saidThisRun, vouched)
+        else workingRepairs(parse(rendered), saidThisRun)
 
     fun workingRepairs(
         decision: Outcome,
         saidThisRun: List<String> = emptyList(),
-        vouched: Set<String> = emptySet(),
     ): List<String> {
         val text = (decision as? Outcome.Spoken)?.text ?: return emptyList()
-        val judged = judge(text, vouched, saidThisRun)
+        val judged = judge(text, saidThisRun)
         return if (judged.line != null) judged.repairs else emptyList()
     }
 
@@ -275,15 +268,14 @@ object ErSoulTurn {
 
     /**
      * Repair the shape, then refuse only content. Content is judged first, on the repaired line
-     * before any cut: a line that invents a number or claims a result is refused even if the cut
-     * would have dropped that clause — repair may remove formatting, never a claim. After content,
+     * before any cut: a line that claims a result is refused even if the cut would have dropped
+     * that clause — repair may remove formatting, never a claim. After content,
      * the shape is fitted (`too-many-words` when there is no clause end), then the character
      * backstop (`too-long`), then repeat.
      */
-    private fun judge(text: String, vouched: Set<String>, said: List<String>): Judged {
+    private fun judge(text: String, said: List<String>): Judged {
         val repairs = ArrayList<String>()
         val repaired = repairLine(text, repairs) ?: return Judged(null, "empty")
-        numberRefusal(repaired, vouched)?.let { return Judged(null, it) }
         if (hasMarkup(repaired)) return Judged(null, "digits-or-markup")
         if (claimsResult(repaired)) return Judged(null, REASON_UNBACKED_RESULT)
         val fitted = fitToBound(repaired, repairs) ?: return Judged(null, "too-many-words")
@@ -317,22 +309,19 @@ object ErSoulTurn {
     const val MAX_OPENER_CHARS = 60
 
     /**
-     * #218, generalised by D20: a number the directive did not carry. Its own token so a field log
-     * can tell an invented number from a wrapped line; the number is the dangerous one.
-     */
-    const val REASON_UNVOUCHED_NUMBER = "digits-unvouched"
-
-    /**
      * D20's one new reason: a claimed result the working lane cannot have — "I've booked it" before
      * the mind has said so. Content, never shape; it is refused, not repaired. Named its own token
-     * so a field log separates a lie from a formatting defect.
+     * so a field log separates a lie from a formatting defect. D29/#406: this is the one content
+     * guard left, and it is unconditional — a safety property, not a truthfulness nicety.
      */
     const val REASON_UNBACKED_RESULT = "result-unbacked"
 
     /**
      * The BEAT's opener: strict on purpose and untouched by D20's repair. The beat plays while the
-     * mind is about to answer, so a number, bracket markup or an over-long line costs the beat
-     * rather than being spoken mid-thought (the turn/beat lane is frozen).
+     * mind is about to answer, so bracket markup, an over-long line or a claimed result costs the
+     * beat rather than being spoken mid-thought (the turn/beat lane is frozen). D29/#406: a number
+     * no longer costs it; the false-action-claim guard now runs here too, which can only refuse
+     * more lines, never fewer.
      *
      * A trailing ellipsis gives the voice a trailing-off prosody, so the cut into the mind's answer
      * sounds like a person continuing rather than being interrupted.
@@ -341,8 +330,8 @@ object ErSoulTurn {
         val line = raw.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
         val t = line.trim('"', '\'', '`', '*', '_', ' ', '-', '—', ':')
         if (t.isEmpty() || t.length > MAX_OPENER_CHARS) return null
-        if (numberRefusal(t, emptySet()) != null) return null
         if (hasMarkup(t)) return null
+        if (claimsResult(t)) return null
         val words = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty() || words.size > MAX_OPENER_WORDS) return null
         return speakable(t)
@@ -350,8 +339,8 @@ object ErSoulTurn {
 
     /**
      * D20: the numbers the client wrote into [directive] this run. The client composed them, so
-     * they are grounded and a line may speak one. There is no other voucher list — #218's wait is
-     * simply the number the working directive happens to carry.
+     * they are grounded. Since D29/#406 this is an OBSERVATION, not a voucher list: nothing is
+     * refused for being outside it.
      *
      * The runs are compared as written ("090" is not "90"), because the value the client offers is
      * the value the line must carry.
@@ -359,17 +348,12 @@ object ErSoulTurn {
     fun vouchedNumbers(directive: String): Set<String> = digitRuns(directive).toSet()
 
     /**
-     * Why [t]'s numbers cannot be spoken, or null when they can: at most ONE digit run, and only
-     * one the directive carried. Two numbers are refused even when both are grounded — a line with
-     * two numbers is a line doing arithmetic, which is the model's guess, not the client's fact
-     * (#218).
+     * #256's observation (D29/#406): the digit runs in a spoken [line] that the directive did not
+     * carry — numbers the model supplied itself. Logged, never refused; the measurement exists so
+     * we know what the unrestricted model does.
      */
-    private fun numberRefusal(t: String, vouched: Set<String>): String? {
-        val runs = digitRuns(t)
-        if (runs.isEmpty()) return null
-        if (runs.size == 1 && runs[0] in vouched) return null
-        return REASON_UNVOUCHED_NUMBER
-    }
+    fun unvouchedNumbers(line: String, vouched: Set<String>): List<String> =
+        digitRuns(line).filterNot { it in vouched }
 
     /** The digit runs in [t], left to right. A number is a run of digits. */
     private fun digitRuns(t: String): List<String> {

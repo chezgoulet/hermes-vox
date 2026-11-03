@@ -2744,6 +2744,12 @@ class MainActivity : AppCompatActivity() {
             val chained = !ok && !g.loadFailed
             VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
             if (!chained) runOnUiThread {
+                // #403 stage two: the first real load is the hardware check's second half. A
+                // failure demotes the Presence selection (off, never on); the Alpha panel says why.
+                if (HardwareCheck.noteFirstLoad(HardwareCheck.store(prefs), !g.loadFailed)) {
+                    VoxLog.d("event=hw-check stage=first-load ok=${!g.loadFailed} " +
+                        "demoted=${g.loadFailed}")
+                }
                 // The Settings row reads this verdict; nothing is announced on the main
                 // screen. Normal operation is not a degraded mode.
                 PresenceGate.modelCanStart = !g.loadFailed

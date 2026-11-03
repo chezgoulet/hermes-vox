@@ -117,9 +117,9 @@ and a face without adding a second brain:
   `DEVICE_VERIFY.md` for the log lines and the two honest limits.
 - **The reply, as words.** The answer scrolls under the being, locked to what has actually
   been spoken.
-- **Enhanced Realtime (alpha).** An on-device Gemma 4 E2B "soul" (LiteRT-LM, on the GPU)
-  takes the opening beat of every turn in the agent's own voice. It hears your tone and
-  hands over to Hermes for anything real.
+- **Presence (alpha).** An on-device Gemma 4 E2B layer (LiteRT-LM, on the GPU) takes the
+  opening beat of every turn in the agent's own voice. It hears your tone and hands over to
+  Hermes for anything real. Turn it on through **Settings → Alpha features**.
 - **Downloads that finish.** Models download in the background with pause and resume
   (HTTP range requests), survive network loss, and are sha256-checked before install.
 - **Stays lit.** The screen stays on while a call is open (switchable), and the power
@@ -127,18 +127,19 @@ and a face without adding a second brain:
 - **More than one person, one gateway.** An optional per-device entity scope gives each
   person their own memory on a shared gateway.
 
-## Voice modes
+## One operation, and Presence as a layer
 
-Settings → **Voice mode**:
+There is one way to talk: on-device STT, VAD and TTS with Hermes behind them, on a
+hands-free line with barge-in. It feels like a live call.
 
-1. **Realtime.** On-device STT, VAD and TTS with Hermes behind them, on a hands-free
-   line with barge-in. It feels like a live call.
-2. **Enhanced Realtime (alpha).** Realtime **plus** the on-device Gemma 4 E2B presence
-   layer: the soul greets you, speaks the first beat of each turn while Hermes thinks,
-   and answers small talk itself. Hermes can then stay silent (`<<SKIP>>`) instead of
-   answering twice. It needs the 2.6 GB presence model and a phone GPU.
+**Presence** is a layer on that, not a second mode. It is unfinished, so in 0.9.1 it sits
+behind **Settings → Alpha features** (off on a fresh install; Presence is the first set in
+the panel). With it on, the on-device Gemma 4 E2B model greets you, speaks the first beat
+of each turn while Hermes thinks, and answers small talk itself; Hermes can then stay
+silent (`<<SKIP>>`) instead of answering twice. It needs the 2.6 GB presence model and a
+phone with 8 GB of memory — first run checks, and says so if this phone falls short.
 
-**The entity is Hermes in both modes.** Only the foreground voice changes.
+**The entity is Hermes either way.** Only the foreground voice changes.
 
 ## The contract: Hermes decides, the soul expresses
 
@@ -180,7 +181,7 @@ the rails, and both carry the same signed APK.
    unauthenticated request with `401`.
 2. Download the three required models in **Settings → Voice models**: Silero VAD, Supertonic
    and Whisper base.en (about 290 MB in total). Parakeet (482 MB) and Gemma 4 E2B
-   (2.6 GB, for Enhanced Realtime) are optional.
+   (2.6 GB, for Presence) are optional.
 3. Tap the call button and talk.
 
 On the way through, Vox offers once to **teach your agent this app**: after the connection
@@ -264,7 +265,7 @@ Give two devices the same scope only when you *want* them to share one memory.
 - **A private network you control is assumed** — a VPN or tunnel such as Tailscale or
   Nebula. Vox suggests one but never requires a specific product.
 - **Your audio never leaves the phone** except as text to your own gateway. Speech
-  recognition, synthesis and the Enhanced Realtime tone listening all run on-device.
+  recognition, synthesis and Presence's tone listening all run on-device.
   The only other network destinations are the model downloads you start.
 - Logs are local-only, and transcript logging is off by default.
 

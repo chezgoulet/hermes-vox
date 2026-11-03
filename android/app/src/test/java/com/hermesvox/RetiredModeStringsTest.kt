@@ -68,6 +68,9 @@ class RetiredModeStringsTest {
         val offenders = mutableListOf<String>()
         for (f in filesUnder(sources, ".kt")) {
             if (f.name == "PresenceGate.kt") continue   // the migration input lives here
+            // #402: the Alpha gate's migration reads the same legacy key to tell an upgrade
+            // that had Presence running from a fresh install.
+            if (f.name == "AlphaGate.kt") continue
             val text = f.readText()
             for (token in listOf(
                 "MODE_ENHANCED", "MODE_REALTIME", "KEY_VOICE_MODE",
@@ -77,5 +80,22 @@ class RetiredModeStringsTest {
             }
         }
         assertEquals("retired mode wording left in Kotlin", emptyList<String>(), offenders)
+    }
+
+    /** #222 completes in 0.9.1: the retired name is gone from the app skill and from the
+     *  documents a user reads (the README, the privacy notice, the store listing). Release
+     *  notes and decisions are history and keep the name they were written with. */
+    @Test fun `the retired name is gone from the skill and the user-facing documents`() {
+        val repo = File("../..")
+        val userFacing = listOf(
+            File(repo, "skills/hermes-vox-app/SKILL.md"),
+            File(repo, "README.md"),
+            File(repo, "PRIVACY.md"),
+        ) + filesUnder(File(repo, "fastlane"), ".txt", ".md")
+        val offenders = userFacing.filter { it.isFile && it.readText().contains("Enhanced Realtime", ignoreCase = true) }
+            .map { it.path }
+        assertTrue("the skill and the README must exist where this test looks",
+            File(repo, "skills/hermes-vox-app/SKILL.md").isFile && File(repo, "README.md").isFile)
+        assertEquals("retired name in user-facing documents", emptyList<String>(), offenders)
     }
 }

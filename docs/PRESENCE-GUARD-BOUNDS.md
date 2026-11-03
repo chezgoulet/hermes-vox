@@ -4,6 +4,15 @@ The working lane's guard is [ErSoulTurn.workingLine][wl]/[workingReject][wr]. Th
 a measurement of what that guard refused over a plausible corpus; **D20** then changed the split.
 It is kept because D20 requires every remaining bound to name the failure it answers.
 
+**D29/#406 (2026-11-03): the no-new-numbers rule is dropped.** `digits-unvouched` is no longer a
+refusal anywhere — not in the working lane, not in the beat's opener — and the prompts no longer ban
+numbers. The **false-action-claim guard (`result-unbacked`) stays, unconditionally**, and now runs on
+the beat's opener too (it did not before; it can only refuse more beats). The client's own numbers are
+still computed (`ErSoulTurn.vouchedNumbers`) as the grounded side of an observation: a spoken number
+outside them is logged as `event=er-presence observe line=N numbers-unvouched=K`, and #256 measures
+what the unrestricted model does. The corpus now speaks **31** of 51 (the four digit lines moved to
+spoken). The sections below are the D20 record and describe the rule as it stood before D29.
+
 **Before D20 (measured 2026-10-20): the guard policed formatting.** 25 of 51 renders were refused,
 and 10 of those 25 (40%) were `too-many-words` — every 8-to-11-word line. An eleven-word line is
 not a lie, so D20 moved shape into repair: an over-long line is cut at a clause end and spoken,

@@ -126,7 +126,7 @@ Voice functionality uses models that you download into the app's **private stora
 - **Whisper (tiny/base/small)** and **Parakeet-TDT 0.6B (optional)** — on-device
   speech-to-text (sherpa-onnx runtime).
 - **Gemma 4 E2B (optional)** — the on-device "expression layer" used only by the
-  **Enhanced Realtime (alpha)** voice mode (`GemmaExpress.kt`, loaded via Google's
+  **Presence (alpha)** layer (`GemmaExpress.kt`, loaded via Google's
   LiteRT-LM engine). It runs entirely on your device, has no tool access, and generates
   conversational phrasing locally. Because of its separate license, it is **not bundled**
   with the app: it downloads separately from Hugging Face only if you choose to install it.

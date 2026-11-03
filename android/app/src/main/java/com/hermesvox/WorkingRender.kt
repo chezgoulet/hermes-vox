@@ -19,11 +19,11 @@ class WorkingRender(
     /** When the render was requested (the run's working state becoming known). */
     val requestedAtMs: Long,
     /**
-     * D20 (generalising #218): the digit runs the client wrote into this render's directive — the
-     * numbers the guard may accept in the line it returns. They travel with the render because the
-     * line was composed against that directive; delivery must not recompose it, or an honest line
-     * would be refused for drift. Empty when the directive carried no number, which vouches for
-     * nothing (a number the directive did not carry is still refused).
+     * D20 (generalising #218): the digit runs the client wrote into this render's directive. Since
+     * D29/#406 they gate nothing — they are the grounded side of #256's observation, so a spoken
+     * number outside them is logged as the model's own. They travel with the render because the
+     * line was composed against that directive; delivery must not recompose it, or the observation
+     * would drift. Empty when the directive carried no number.
      */
     val vouched: Set<String> = emptySet(),
 ) {
