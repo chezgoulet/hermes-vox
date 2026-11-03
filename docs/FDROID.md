@@ -7,8 +7,14 @@ which the inclusion policy allows. **This rail never holds a release** (docs/PLA
 
 ## What is in the repo
 
-- `scripts/build-sherpa-from-source.sh` — sherpa-onnx **v1.13.6 at commit
-  `1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911`** (a tag can move; the commit is checked),
+- `third_party/sherpa-onnx` — a git submodule pinned at sherpa-onnx **v1.13.6, commit
+  `1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911`**. A submodule rather than an fdroiddata
+  `srclibs:` entry: the pin lives in this repo's tree, so our release, CI and F-Droid's
+  rebuild (`submodules: true`) build one recorded commit, and nothing is cloned during the
+  build. Fresh checkout: `git submodule update --init --depth 1 third_party/sherpa-onnx`.
+- `scripts/build-sherpa-from-source.sh` — exports that submodule (`git archive`, so upstream's
+  in-tree build leaves it clean) and builds it with **NDK r28c** (`28.2.13676358`; it warns on
+  any other NDK, which could not reproduce our library),
   linked against **onnxruntime-android 1.27.0** from Maven Central (sha256-pinned), for
   `arm64-v8a` and `armeabi-v7a`. It stages `android/sherpa-src/{jniLibs,kotlin}` (gitignored):
   the JNI library per ABI and upstream's Kotlin API as source — what the prebuilt AAR carried
@@ -19,7 +25,11 @@ which the inclusion policy allows. **This rail never holds a release** (docs/PLA
 - `android/app/build.gradle`: with `-Phermesvox.sherpaSource=<dir>` the prebuilt AAR is not
   used — the staged JNI libraries and Kotlin sources are, and onnxruntime comes from the Gradle
   dependency `com.microsoft.onnxruntime:onnxruntime-android:1.27.0`. **Without the property the
-  build is unchanged** — the gate, CI, nightly and releases keep the prebuilt AAR.
+  build is unchanged** — the gate, CI and nightlies keep the prebuilt AAR
+  (`scripts/fetch-runtime.sh`, which now says on every run that it is the development runtime).
+- **Releases use path B** (`.github/workflows/release.yml`, both builds): submodule checkout,
+  NDK r28c, this script, `-Phermesvox.sherpaSource`. F-Droid's rebuild has to match the APK we
+  publish, so the release cannot be built from the prebuilt AAR any more.
 
 ```
 bash scripts/build-sherpa-from-source.sh
@@ -42,45 +52,27 @@ cd android && ./gradlew -Phermesvox.sherpaSource=../sherpa-src assembleRelease
   mapped, and the library is linked with `--build-id=none` (lld hashes the unstripped output,
   so the build-id was the last 20 bytes that differed).
 
+## What was verified (2026-11-03, the submodule build)
+
+- From `third_party/sherpa-onnx` on sasquatch (NDK r28c, CMake 3.28), with no
+  `android/app/libs/` present: arm64-v8a `3a8662e6…f634ca` — **the same bytes as the
+  2026-10-22 clone build** — and armeabi-v7a `d70b6f21…cd7e81`.
+- `./gradlew -Phermesvox.sherpaSource=../sherpa-src -Phermesvox.unsigned :app:assembleRelease`:
+  BUILD SUCCESSFUL. `hermes-vox-0.9.1.apk` (versionCode 147) carries the source-built
+  `libsherpa-onnx-jni.so` per ABI (same sha256 as staged), Maven's `libonnxruntime.so` +
+  `libonnxruntime4j_jni.so`, and `liblitertlm_jni.so` (arm64, Google Maven) — and no
+  `libsherpa-onnx-c-api.so`/`-cxx-api.so`, which only the prebuilt AAR carried.
+- `testReleaseUnitTest` on the source path: 1150 tests, 0 failures. `scripts/gate.sh`: green.
+- Not run: `release.yml`'s path-B steps on GitHub Actions, and the source-built APK on a device.
+
 ## The fdroiddata recipe (draft — not submitted)
 
-```yaml
-Categories:
-  - Connectivity
-License: GPL-3.0-only
-SourceCode: https://github.com/chezgoulet/hermes-vox
-IssueTracker: https://github.com/chezgoulet/hermes-vox/issues
-
-RepoType: git
-Repo: https://github.com/chezgoulet/hermes-vox
-
-Builds:
-  - versionName: <released versionName>
-    versionCode: <released versionCode>
-    commit: v<released tag>
-    subdir: android/app
-    sudo:
-      - apt-get update
-      - apt-get install -y cmake
-    gradle:
-      - yes
-    ndk: r28c
-    build:
-      - bash ../../scripts/build-sherpa-from-source.sh
-    gradleprops:
-      - hermesvox.sherpaSource=../sherpa-src
-      - hermesvox.unsigned
-
-AllowedAPKSigningKeys: 8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19
-Binaries: https://github.com/chezgoulet/hermes-vox/releases/download/v%v/hermes-vox-%v.apk
-
-AutoUpdateMode: Version
-UpdateCheckMode: Tags ^v[0-9.]+$
-```
-
-`AllowedAPKSigningKeys` is the SHA-256 of the certificate the GitHub releases are signed with
-(read from the 0.9.0.1 release APK with `apksigner verify --print-certs`; the nightlies carry
-the same one).
+[`docs/fdroiddata/com.hermesvox.yml`](fdroiddata/com.hermesvox.yml), in the same anatomy as
+Ozymandosis's: the pinned tag, `submodules: true`, `ndk: r28c`, the library built in `build:`
+(after the scanner), `Binaries:` pointing at our release asset, and `AllowedAPKSigningKeys` —
+the SHA-256 of the certificate the GitHub releases are signed with, read from the 0.9.0.3
+release APK with `apksigner verify --print-certs` (`8be7feed…dbbb19`; 0.9.0.1 and the
+nightlies carry the same one). Its `MaintainerNotes` carry the questions a reviewer will ask.
 
 ## Store metadata, and the unsigned build path
 

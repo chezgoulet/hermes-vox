@@ -8,7 +8,7 @@
 # Output (gitignored): android/sherpa-src/{jniLibs/<abi>/libsherpa-onnx-jni.so, kotlin/*.kt}
 # Use it:  cd android && ./gradlew -Phermesvox.sherpaSource=../sherpa-src assembleRelease
 #
-# Needs: git, cmake (3.22+), the Android NDK (ANDROID_NDK, default: the newest under
+# Needs: the third_party/sherpa-onnx submodule checked out, git, cmake (3.22+), the Android NDK (ANDROID_NDK, default: the newest under
 # $ANDROID_HOME/ndk). One ABI takes a few minutes on an 8-core host.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,19 +20,30 @@ ORT_SHA256=077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb
 ABIS="${SHERPA_ABIS:-arm64-v8a armeabi-v7a}"
 
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-export ANDROID_NDK="${ANDROID_NDK:-$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -n1)}"
-[ -d "$ANDROID_NDK" ] || { echo "build-sherpa: no NDK (set ANDROID_NDK)" >&2; exit 2; }
+# NDK r28c — the `ndk: r28c` of the fdroiddata recipe. A different NDK is a different compiler,
+# so a rebuild with it cannot match our library byte for byte. F-Droid's build sets
+# ANDROID_NDK_HOME to the NDK the recipe asked for.
+NDK_VERSION=28.2.13676358
+export ANDROID_NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VERSION}}"
+[ -d "$ANDROID_NDK" ] || { echo "build-sherpa: no NDK at $ANDROID_NDK — install ndk;$NDK_VERSION (r28c) or set ANDROID_NDK" >&2; exit 2; }
+grep -q "^Pkg.Revision = $NDK_VERSION" "$ANDROID_NDK/source.properties" 2>/dev/null \
+  || echo "build-sherpa: WARNING $ANDROID_NDK is not r28c ($NDK_VERSION); the library will not match the release" >&2
 
 WORK="${SHERPA_WORK:-$ROOT/android/.sherpa-build}"
 OUT="$ROOT/android/sherpa-src"
 mkdir -p "$WORK"
 
-# 1. sherpa-onnx at the pinned commit — a tag can move, a commit cannot.
-if [ ! -d "$WORK/src/.git" ]; then
-  git clone -q --depth 1 -b "$SHERPA_TAG" https://github.com/k2-fsa/sherpa-onnx.git "$WORK/src"
-fi
-got="$(git -C "$WORK/src" rev-parse HEAD)"
-[ "$got" = "$SHERPA_COMMIT" ] || { echo "build-sherpa: $SHERPA_TAG is $got, pinned $SHERPA_COMMIT — refusing" >&2; exit 1; }
+# 1. sherpa-onnx from the pinned submodule third_party/sherpa-onnx — the commit is recorded in
+#    this repo's tree, so fdroiddata's `submodules: true` checks out exactly what we build, with
+#    no network clone in the build step. The source is exported (git archive) into the work
+#    directory: upstream's scripts build inside the source tree, and the export keeps the
+#    submodule clean and the prefix-mapped path the same on every host.
+SUB="$ROOT/third_party/sherpa-onnx"
+got="$(git -C "$SUB" rev-parse HEAD 2>/dev/null || true)"
+[ -n "$got" ] || { echo "build-sherpa: $SUB is empty — run: git submodule update --init --depth 1 third_party/sherpa-onnx" >&2; exit 2; }
+[ "$got" = "$SHERPA_COMMIT" ] || { echo "build-sherpa: third_party/sherpa-onnx is $got, pinned $SHERPA_COMMIT ($SHERPA_TAG) — refusing" >&2; exit 1; }
+rm -rf "$WORK/src"; mkdir -p "$WORK/src"
+git -C "$SUB" archive --format=tar HEAD | tar -x -C "$WORK/src"
 
 # 2. onnxruntime from Maven Central, checksum-pinned.
 ORT="$WORK/ort-$ORT_VERSION"
