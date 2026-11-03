@@ -55,6 +55,39 @@ Measured on `0.9.1-nightly-2ed5714` (release-signed, versionCode 147):
 - idle PSS: 162 MB
 - one live call, three models warm: 640 MB, recorder `src:VOICE_COMMUNICATION`, not silenced
 
+### The presence layer's cost — measured on `0.9.1-nightly-ffaa5e6` (versionCode 147)
+
+The figures above are with the presence layer off. They are not the whole app, because the
+presence model (Gemma 4 E2B, 2.5 GB on disk) is loaded on every launch and, until now, never
+released while the process lives. `scripts/presence-cost.sh` measures that; the full trade-off
+and the raw runs are in `docs/PRESENCE-COST.md`, and the JSONL is committed under
+`presence-cost-results/`.
+
+- **idle PSS, presence on, n=10: median 2,709,607 KB (2,646 MB).**
+  Runs: 2,661,410 · 2,689,411 · 2,692,607 · 2,693,430 · 2,695,075 · 2,724,139 · 2,733,262 ·
+  2,734,712 · 2,775,809 · 2,784,463 KB.
+- **idle PSS, presence off, n=10: median 179,751 KB (176 MB).** So the resident layer costs
+  ~2,470 MB of PSS and drops MemAvailable by a median 2,237 MB.
+- **time to a warm presence: median 27,505 ms** (`event=presence-load phase=end ms=…`), range
+  27,353–28,830 ms. This is paid in the background after first frame, not before it.
+- **cold start (`am start -W` TotalTime), presence on, n=10: median 222 ms**
+  (204, 209, 220, 221, 222, 222, 230, 233, 234, 250). Presence off, same build, same session:
+  **median 172.5 ms** (166, 168, 170, 171, 172, 173, 174, 176, 177, 211). The 161 ms baseline
+  above is the earlier run on `2ed5714`; the like-for-like delta measured here is **+49.5 ms**.
+
+Two budgets above are therefore not held with the presence layer resident: **220 MB idle** is
+exceeded by an order of magnitude (2,646 MB) and the **1.5 GB whole-process ceiling** is exceeded
+at rest, before any call starts. Both figures are for the shipped default (layer on, load at
+launch, never released). They are recorded here as the gap that the flag-guarded options in
+`docs/PRESENCE-COST.md` exist to close — none of them is on by default.
+
+The three options, measured on a bench build in `docs/PRESENCE-COST.md` §2: **`hears=false` returns
+72.8 MB of 2,637 MB (2.76 %)** and is not worth the lost audio path; **deferred load** holds the app
+at **204 MB** but charges the load to the first call of every launch; **release while open at 2 min**
+returns **2,383,656 KB** (2,646 MB → 262 MB) and charges the reload only to a call that arrives after
+the idle window. The recommendation there is to turn on release while open and leave the other two
+off.
+
 Not yet measured, and therefore not yet claimable:
 
 - RTF and peak RSS with a local renderer co-resident (#179 — blocked on the 2.6 GB model download)

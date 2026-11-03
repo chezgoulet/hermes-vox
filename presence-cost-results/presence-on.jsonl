@@ -1,0 +1,10 @@
+{"run":1,"total_ms":204,"this_ms":null,"wait_ms":206,"pss_at_start_kb":1742320,"load_ms":28830,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2784463,"avail_before_mb":3124,"avail_after_mb":1081}
+{"run":2,"total_ms":220,"this_ms":null,"wait_ms":222,"pss_at_start_kb":1743036,"load_ms":28431,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2775809,"avail_before_mb":3210,"avail_after_mb":1132}
+{"run":3,"total_ms":250,"this_ms":null,"wait_ms":252,"pss_at_start_kb":1748905,"load_ms":27511,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2724139,"avail_before_mb":3354,"avail_after_mb":1127}
+{"run":4,"total_ms":221,"this_ms":null,"wait_ms":223,"pss_at_start_kb":1735584,"load_ms":28011,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2733262,"avail_before_mb":3382,"avail_after_mb":1120}
+{"run":5,"total_ms":234,"this_ms":null,"wait_ms":237,"pss_at_start_kb":1748375,"load_ms":27367,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2734712,"avail_before_mb":3368,"avail_after_mb":1100}
+{"run":6,"total_ms":222,"this_ms":null,"wait_ms":225,"pss_at_start_kb":1740645,"load_ms":27700,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2695075,"avail_before_mb":3365,"avail_after_mb":1038}
+{"run":7,"total_ms":222,"this_ms":null,"wait_ms":226,"pss_at_start_kb":1747245,"load_ms":27499,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2692607,"avail_before_mb":3335,"avail_after_mb":1106}
+{"run":8,"total_ms":209,"this_ms":null,"wait_ms":211,"pss_at_start_kb":1746045,"load_ms":27396,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2689411,"avail_before_mb":3325,"avail_after_mb":1094}
+{"run":9,"total_ms":233,"this_ms":null,"wait_ms":236,"pss_at_start_kb":1741979,"load_ms":27353,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2693430,"avail_before_mb":3293,"avail_after_mb":1059}
+{"run":10,"total_ms":230,"this_ms":null,"wait_ms":233,"pss_at_start_kb":1745747,"load_ms":27486,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2661410,"avail_before_mb":3334,"avail_after_mb":1053}

@@ -823,6 +823,49 @@ class SettingsActivity : AppCompatActivity() {
         }
         box.addView(delayRow)
 
+        // The three presence-cost arms (docs/PRESENCE-COST.md). Each is read at ENGINE LOAD,
+        // so changing one needs a reload to exist — except the release, which its timer reads.
+        // All three are off/absent by default: a phone with no pref behaves as 0.9.1.
+        var hearsOn = MemoryBudget.hears(prefs.getBoolean(MemoryBudget.PREF_HEARS, true))
+        val hearsSw = SwitchCompat(this).apply {
+            text = MemoryBudget.hearsLabel(hearsOn)
+            isChecked = hearsOn
+            setPadding(0, pad / 2, 0, 0)
+        }
+        box.addView(hearsSw)
+        hearsSw.setOnCheckedChangeListener { _, on -> hearsOn = on; hearsSw.text = MemoryBudget.hearsLabel(on) }
+
+        var lazyOn = !MemoryBudget.lazyLoad(prefs.getBoolean(MemoryBudget.PREF_LAZY_LOAD, false))
+        val lazySw = SwitchCompat(this).apply {
+            text = MemoryBudget.lazyLabel(lazyOn)
+            isChecked = lazyOn
+            setPadding(0, pad / 2, 0, 0)
+        }
+        box.addView(lazySw)
+        lazySw.setOnCheckedChangeListener { _, on -> lazyOn = on; lazySw.text = MemoryBudget.lazyLabel(on) }
+
+        var openMin = MemoryBudget.idleOpenMinutes(
+            prefs.getInt(MemoryBudget.PREF_IDLE_OPEN_MIN, 0))
+        val openRow = TextView(this).apply {
+            text = MemoryBudget.idleOpenLabel(openMin)
+            textSize = 15f
+            setPadding(0, pad, 0, 0)
+        }
+        box.addView(openRow)
+        openRow.setOnClickListener {
+            val choices = intArrayOf(0, 2, 5, 10, 30)
+            val labels = choices.map { MemoryBudget.idleOpenLabel(it) }.toTypedArray()
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("Release while open")
+                .setSingleChoiceItems(labels, choices.indexOf(openMin).coerceAtLeast(0)) { dd, which ->
+                    openMin = choices[which]
+                    openRow.text = MemoryBudget.idleOpenLabel(openMin)
+                    dd.dismiss()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         // The two release policies are alternatives, not a stack: whichever is picked last
         // turns the other off, so the arm that is measured is the arm that is shown.
         unloadSw.setOnCheckedChangeListener { _, on ->
@@ -856,10 +899,15 @@ class SettingsActivity : AppCompatActivity() {
                     .putInt(MemoryBudget.PREF_KV_TOKENS, choice)
                     .putBoolean(MemoryBudget.PREF_UNLOAD, unloadChecked && delayMin == 0)
                     .putInt(MemoryBudget.PREF_UNLOAD_DELAY, delayMin)
+                    .putBoolean(MemoryBudget.PREF_HEARS, hearsOn)
+                    .putBoolean(MemoryBudget.PREF_LAZY_LOAD, !lazyOn)
+                    .putInt(MemoryBudget.PREF_IDLE_OPEN_MIN, openMin)
                     .apply()
-                VoxLog.d("event=memory-budget kv=$choice unload=${unloadChecked && delayMin == 0} idleMin=$delayMin")
+                VoxLog.d("event=memory-budget kv=$choice unload=${unloadChecked && delayMin == 0} " +
+                    "idleMin=$delayMin hears=$hearsOn loadAtLaunch=$lazyOn idleOpenMin=$openMin")
                 Toast.makeText(this,
-                    "KV $choice · ${MemoryBudget.delayLabel(delayMin)} — KV applies on the next presence load",
+                    "KV $choice · ${MemoryBudget.delayLabel(delayMin)} · ${MemoryBudget.idleOpenLabel(openMin)} " +
+                        "— KV, hearing and load-at-launch apply on the next presence load",
                     Toast.LENGTH_LONG).show()
             }
             .setNegativeButton(android.R.string.cancel, null)

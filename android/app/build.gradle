@@ -47,6 +47,16 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Bench sibling (#presence-cost): -Phermesvox.benchSuffix=presencecost installs a
+            // DEBUGGABLE app with its own package id NEXT TO the release-signed nightly, so a
+            // measurement run can set its prefs (`scripts/presence-cost.sh pref`) and load a
+            // second copy of the model without touching the owner's install. Absent the
+            // property, debug is exactly what it was: com.hermesvox, debug-signed.
+            if (project.hasProperty('hermesvox.benchSuffix')) {
+                applicationIdSuffix ".${project.property('hermesvox.benchSuffix')}"
+            }
+        }
         release {
             minifyEnabled true
             shrinkResources false

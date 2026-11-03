@@ -96,4 +96,40 @@ class MemoryBudgetTest {
         assertEquals(1024, usable)
         assertEquals(7168, 8192 - SoulBudget.HEADROOM_TOKENS)
     }
+
+    // ---- the three presence-cost arms (docs/PRESENCE-COST.md) ------------------------------
+
+    @Test fun hearing_is_on_unless_the_bench_says_otherwise() {
+        // Absent pref = the shipped engine, audio encoder and all. A measurement arm is the
+        // ONLY thing that can turn the soul's ears off, and it cannot do it accidentally.
+        assertTrue(MemoryBudget.hears(null))
+        assertTrue(MemoryBudget.hears(true))
+        assertFalse(MemoryBudget.hears(false))
+        assertTrue(MemoryBudget.hearsLabel(true).contains("shipped"))
+        assertTrue(MemoryBudget.hearsLabel(false).contains("text only"))
+    }
+
+    @Test fun the_engine_loads_at_launch_unless_asked_to_defer() {
+        assertFalse(MemoryBudget.lazyLoad(null))     // absent = load at launch = today
+        assertFalse(MemoryBudget.lazyLoad(false))
+        assertTrue(MemoryBudget.lazyLoad(true))
+        assertTrue(MemoryBudget.lazyLabel(true).contains("shipped"))
+    }
+
+    @Test fun release_while_open_is_never_by_default_and_junk_cannot_arm_it() {
+        // The difference from unloadDelayMinutes: there is no default minute here. An arm that
+        // releases a resident engine has to be chosen, so absent/junk is "never", not "1 min".
+        assertEquals(0, MemoryBudget.idleOpenMinutes(null))
+        assertEquals(0, MemoryBudget.idleOpenMinutes(0))
+        assertEquals(0L, MemoryBudget.idleOpenMs(null))
+        assertEquals(0L, MemoryBudget.idleOpenMs(0))
+        for (junk in intArrayOf(-1, -60, MemoryBudget.MAX_DELAY_MINUTES + 1, Int.MIN_VALUE))
+            assertEquals("pref=$junk", 0, MemoryBudget.idleOpenMinutes(junk))
+        // and a chosen arm is exact
+        assertEquals(2, MemoryBudget.idleOpenMinutes(2))
+        assertEquals(120_000L, MemoryBudget.idleOpenMs(2))
+        assertEquals(30, MemoryBudget.idleOpenMinutes(30))
+        assertTrue(MemoryBudget.idleOpenLabel(0).contains("shipped"))
+        assertTrue(MemoryBudget.idleOpenLabel(5).contains("5 min"))
+    }
 }

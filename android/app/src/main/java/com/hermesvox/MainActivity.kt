@@ -663,6 +663,8 @@ class MainActivity : AppCompatActivity() {
 
     private var warmRetries = 0
     @Volatile private var callLive = false
+    /** One-shot log for the deferred-load arm: the state, not every resume. */
+    @Volatile private var deferLogged = false
     /** #373: the last state line the screen showed, so a recovered voice leg can put it
      *  back instead of inventing one. */
     private var lastStateLine = ""
@@ -2747,6 +2749,11 @@ class MainActivity : AppCompatActivity() {
                 PresenceGate.modelCanStart = !g.loadFailed
                 if (g.loadFailed) VoxLog.w("event=presence-unavailable reason=start-failed")
                 liveController?.presenceActive = presenceActive()
+                // Release while the app is open (MemoryBudget.PREF_IDLE_OPEN_MIN, default 0 =
+                // never): a load that finishes with no call live arms the same release the
+                // hangup path arms. A call start cancels it, so it can only fire when nothing
+                // wants the engine.
+                if (!callLive) g.armIdleWhileOpen()
             }
         }
     }
@@ -2760,7 +2767,20 @@ class MainActivity : AppCompatActivity() {
         PresenceGate.modelCanStart = (express as? GemmaExpress)?.loadFailed != true
         val presence = presenceActive()
         if (presence) {
-            ensurePresenceLoading()
+            // Deferred load (MemoryBudget.PREF_LAZY_LOAD, default off = today): the engine is
+            // NOT built at launch. It is built when a call starts — the only place the soul
+            // speaks — and the call path already knows how to wait for it and to offer a skip.
+            // Off, this branch is the old unconditional load.
+            val lazy = MemoryBudget.lazyLoad(prefs.getBoolean(MemoryBudget.PREF_LAZY_LOAD, false))
+            val g = express as? GemmaExpress
+            if (lazy && g != null && !g.available && !g.isLoading) {
+                if (!deferLogged) {
+                    deferLogged = true
+                    VoxLog.d("event=presence-deferred reason=launch — the model loads when a call starts")
+                }
+            } else {
+                ensurePresenceLoading()
+            }
         } else {
             // The layer is off (by choice, or because its model cannot run). The engine
             // has nothing to do; unload it. Off by default (MemoryBudget.release); the
