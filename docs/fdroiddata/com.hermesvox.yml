@@ -1,0 +1,90 @@
+Categories:
+  - Connectivity
+License: GPL-3.0-only
+AuthorName: Christopher Goulet
+SourceCode: https://github.com/chezgoulet/hermes-vox
+IssueTracker: https://github.com/chezgoulet/hermes-vox/issues
+Changelog: https://github.com/chezgoulet/hermes-vox/releases
+
+AutoName: Hermes Vox
+
+RepoType: git
+Repo: https://github.com/chezgoulet/hermes-vox.git
+# The reference binary for reproducible verification: the APK we publish. With this and
+# AllowedAPKSigningKeys, F-Droid compares its rebuild against ours and, when they match,
+# serves *our* signature, so an install from F-Droid, from Obtainium and from the release
+# page are one app.
+Binaries: https://github.com/chezgoulet/hermes-vox/releases/download/v%v/hermes-vox-%v.apk
+
+Builds:
+  - versionName: 0.9.1
+    versionCode: 147
+    commit: v0.9.1
+    subdir: android/app
+    # third_party/sherpa-onnx: the speech runtime's source, pinned by the superproject commit.
+    submodules: true
+    sudo:
+      - apt-get update
+      - apt-get install -y cmake
+    gradle:
+      - yes
+    # The encrypted prebuilt sherpa AAR (libs/) is used only by our nightlies; removing it
+    # here proves the build does not need it. The two directories in the submodule are
+    # upstream's demo apps and Java examples, each with a gradle-wrapper.jar; nothing in
+    # them is built.
+    prebuild:
+      - rm -rf ../../libs
+    scandelete:
+      - third_party/sherpa-onnx/android
+      - third_party/sherpa-onnx/java-api-examples
+    # In build:, not prebuild:, so the scanner has already run over the tree when the
+    # library is compiled. The script builds libsherpa-onnx-jni.so for arm64-v8a and
+    # armeabi-v7a with upstream's per-ABI scripts, links it against onnxruntime-android from
+    # Maven Central (sha256-pinned, and the same artifact the app takes as a Gradle
+    # dependency), and fails if the build path leaks into the library.
+    build:
+      - bash ../../scripts/build-sherpa-from-source.sh
+    gradleprops:
+      - hermesvox.sherpaSource=../sherpa-src
+      - hermesvox.unsigned
+    output: build/outputs/apk/release/hermes-vox-$$VERSION$$.apk
+    ndk: r28c
+
+AllowedAPKSigningKeys: 8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+CurrentVersion: 0.9.1
+CurrentVersionCode: 147
+
+MaintainerNotes: |
+  The app's only native code of its own is the sherpa-onnx speech runtime, and it is built
+  from source here: the submodule third_party/sherpa-onnx pins v1.13.6 (commit 1cb484af),
+  scripts/build-sherpa-from-source.sh runs upstream's build-android-<abi>.sh for each ABI,
+  and onnxruntime is com.microsoft.onnxruntime:onnxruntime-android from Maven Central, the
+  same route as Ramblr and Marmalade. The prebuilt sherpa AAR the earlier releases used is
+  not fetched.
+
+  sherpa-onnx's CMake downloads its C++ dependencies as source archives at configure time
+  (kaldi-native-fbank, kissfft, kaldi-decoder, kaldifst, openfst, eigen,
+  simple-sentencepiece, espeak-ng, piper-phonemize, nlohmann/json, asio, websocketpp, ...),
+  each with a pinned hash in upstream's cmake/*.cmake. No binary is downloaded: the
+  onnxruntime prebuilt that upstream would otherwise fetch is replaced by the Maven one
+  (SHERPA_ONNXRUNTIME_LIB_DIR). If the reviewer would rather have these as srclibs, we will
+  convert them.
+
+  litertlm-android (Google Maven, Apache-2.0) ships liblitertlm_jni.so for the on-device
+  presence model. It is a Maven dependency like onnxruntime-android.
+
+  Speech, voice and presence models are not in the APK; the app downloads them on first
+  use from GitHub releases (k2-fsa/sherpa-onnx) and Hugging Face.
+
+  Reproducible: the sherpa library is compiled with -ffile-prefix-map and linked with
+  --build-id=none, so it is byte-identical across build directories and clones. Our
+  release is built the same way (NDK r28c, this script, the unsigned path signed after),
+  and AllowedAPKSigningKeys is the SHA-256 of the certificate on the published APKs
+  (apksigner verify --print-certs, v0.9.0.3).
+
+  hermesvox.unsigned is the build's unsigned path (scripts/repro-check.sh uses it too):
+  a release build without our keystore fails on purpose rather than falling back to a
+  debug key.
