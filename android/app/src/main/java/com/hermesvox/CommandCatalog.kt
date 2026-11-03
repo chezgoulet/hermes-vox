@@ -95,10 +95,27 @@ object CommandCatalog {
             listOf("how", "what can i", "list", "help")),
     )
 
+    /**
+     * #370: the share row. It is deliberately **not** in [ALL]: "Share with agent" is an
+     * artifact action, not a slash command, so the catalogue's command invariants (names,
+     * groups, aliases, `/help`) stay true. It still uses the same row grammar, the same cost
+     * line and one of the six motions ([Category.CHOOSE] → pulse).
+     */
+    val SHARE: Command = Command(
+        name = "Share with agent",
+        aliases = emptyList(),
+        group = Group.CONVERSATION,
+        effect = "The clipboard, a file, or what another app shared",
+        cost = Cost("Nothing is sent until you confirm", risk = false),
+        category = Category.CHOOSE,
+        kind = Kind.CARD,
+        keywords = listOf("share", "file", "clipboard", "attach", "document", "send file"),
+    )
+
     /** The command a typed or spoken name means, by its name or an alias. */
     fun find(name: String): Command? {
         val n = name.trim().lowercase()
-        return ALL.firstOrNull { it.name == n || n in it.aliases }
+        return (ALL + SHARE).firstOrNull { it.name.lowercase() == n || n in it.aliases }
     }
 
     /** The catalogue in screen order: groups in [Group] order, commands in catalogue order. */
@@ -159,7 +176,7 @@ object CommandCatalog {
             }
             return s
         }
-        return ALL.map { it to score(it) }.filter { it.second > 0 }
+        return (ALL + SHARE).map { it to score(it) }.filter { it.second > 0 }
             .sortedByDescending { it.second }.map { it.first }
     }
 

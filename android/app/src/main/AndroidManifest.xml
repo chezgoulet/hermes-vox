@@ -59,14 +59,32 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- SPEC-conversational-bridge §B: one file can be shared to Vox. It is a share
-                 target only — the offer copies the stream into private staging and serves it
-                 once over the tailnet; nothing is uploaded and no new permission is asked
-                 for, because the sharing app already grants read on the stream it hands over.
-                 Text shares are ignored (paste covers them). -->
+            <!-- #370: Vox is a share target. Anything another app can hand over — a file, an
+                 image, a text block, a link — arrives at the confirmation card and is not
+                 sent until SEND. The offer copies the stream into private staging and serves
+                 it once over the tailnet; nothing is uploaded, and no new permission is asked
+                 for, because the sharing app already grants read on what it hands over.
+                 Multiple files are listed (so the share sheet still finds Vox) and refused in
+                 words until the "one per share" decision changes. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- Opening a file or a link with Vox is the same draft-and-confirm path. Only
+                 content/file schemes are registered: Vox is not a browser and must not appear
+                 as one for every http(s) link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>

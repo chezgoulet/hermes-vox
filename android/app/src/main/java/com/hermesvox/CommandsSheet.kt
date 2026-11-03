@@ -152,6 +152,9 @@ class CommandsSheet(
     private fun render(list: LinearLayout, d: Dialog, query: String) {
         list.removeAllViews(); chips.clear()
         if (query.isBlank()) {
+            // #370: the share row leads the screen. It is an artifact action, not a command,
+            // so it sits outside the catalogue's groups but uses the same row grammar.
+            list.addView(row(CommandCatalog.SHARE, d))
             val now = CommandCatalog.suggest(situation())
             if (now.isNotEmpty()) {
                 list.addView(header("Fits now"))
@@ -177,7 +180,10 @@ class CommandsSheet(
         }
         val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(TextView(act, null, 0, R.style.HvRowTitle).apply {
-            text = c.name; typeface = Typeface.MONOSPACE
+            text = c.name
+            // The share row is the one row that is not a typed command: plain type, not the
+            // terminal's monospace, so it does not read as `/share`.
+            typeface = if (c == CommandCatalog.SHARE) Typeface.DEFAULT_BOLD else Typeface.MONOSPACE
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         // The state slot. For a command that cannot report here, it says where to look.
         val chip = TextView(act, null, 0, R.style.HvRowAction).apply {
