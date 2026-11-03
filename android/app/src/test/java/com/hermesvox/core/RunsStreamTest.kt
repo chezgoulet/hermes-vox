@@ -562,4 +562,109 @@ data: {"event":"run.completed","seq":0,"output":"heard once"}
             assertEquals(2, runPosts(srv).size)
         }
     }
+
+    // ---- H3 (0.9.1 review): a lost events stream never walks away from the run ----
+
+    private fun fastRecovery(block: () -> Unit) {
+        val old = Streams.recoverBackoffMs
+        Streams.recoverBackoffMs = longArrayOf(10, 10, 10)
+        try { block() } finally { Streams.recoverBackoffMs = old }
+    }
+
+    /**
+     * A gateway whose events GET fails [failGets] times (a 502), whose status is [status],
+     * and whose stop answers [stopCode]. Later GETs finish the run.
+     */
+    private fun flakyRun(failGets: Int, status: String, stopCode: Int = 200): Pair<TestServer, MutableList<String>> {
+        val gets = AtomicInteger()
+        val log = Collections.synchronizedList(ArrayList<String>())
+        val srv = TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_h3","status":"started"}""")
+                r.method == "GET" && r.path.startsWith("/v1/runs/run_h3/events") -> {
+                    log.add("events")
+                    if (gets.incrementAndGet() <= failGets) w.send(502, "Bad Gateway", "{}")
+                    else {
+                        w.sse()
+                        w.write("""id: 0
+data: {"event":"run.completed","seq":0,"output":"recovered"}
+
+""")
+                    }
+                }
+                r.method == "GET" && r.path == "/v1/runs/run_h3" -> {
+                    log.add("status")
+                    if (status.isEmpty()) w.send(500, "Oops", "{}")
+                    else w.send(200, "OK", """{"run_id":"run_h3","status":"$status"}""")
+                }
+                r.method == "POST" && r.path.endsWith("/stop") -> {
+                    log.add("stop"); w.send(stopCode, "Stop", """{"status":"stopping"}""")
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }
+        return srv to log
+    }
+
+    @Test
+    fun `a lost events stream on a live run reattaches after reading its status`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 1, status = "running")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertEquals("", Json.str(done, "error"))
+                assertEquals("recovered", Json.str(done, "text"))
+                assertEquals(listOf("events", "status", "events"), log.toList())
+            }
+        }
+    }
+
+    /** Still parked on an approval and the events never come back: stop it, never neither. */
+    @Test
+    fun `a live run that cannot be followed is stopped`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 99, status = "waiting_for_approval")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertTrue(Json.str(done, "error").isNotEmpty())
+                assertEquals("stop", log.last())
+                assertEquals(1, log.count { it == "stop" })
+                assertEquals(3, log.count { it == "status" })
+                // The stop landed, so the run is known to end: no `run_end:"lost"`.
+                assertEquals(null, done["run_end"])
+            }
+        }
+    }
+
+    @Test
+    fun `a run the gateway reports finished is not stopped`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 99, status = "failed")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertTrue(Json.str(done, "error").isNotEmpty())
+                assertTrue(log.none { it == "stop" })
+                assertEquals(null, done["run_end"])
+            }
+        }
+    }
+
+    /** Neither the status nor the stop can be had: the run may outlive the turn. */
+    @Test
+    fun `an unreachable run is reported lost`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 99, status = "", stopCode = 503)
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertTrue(Json.str(done, "error").isNotEmpty())
+                assertEquals("lost", Json.str(done, "run_end"))
+                assertEquals(1, log.count { it == "stop" })
+            }
+        }
+    }
 }

@@ -126,4 +126,21 @@ class TurnBudgetTest {
         assertEquals(emptySet<String>(), TurnApprovalHold.keep(false, abandoned = false, cancelled = true, pending))
         assertEquals(emptySet<String>(), TurnApprovalHold.keep(false, abandoned = false, cancelled = false, emptyList()))
     }
+
+    /**
+     * H3 (0.9.1 review): a reader that fails ends its stream `done` too. That is not the
+     * run ending: with `run_end:"lost"` the card is held; a done poll without it means
+     * the run is over (it finished, failed, or the reader stopped it).
+     */
+    @Test
+    fun `a failed reader holds the card while its run may still be parked`() {
+        val pending = listOf(request())
+        val lost = TurnApprovalHold.runEnded(loopDone = true, readerRunEnd = "lost")
+        assertEquals(false, lost)
+        assertEquals(setOf("run-1"), TurnApprovalHold.keep(lost, abandoned = false, cancelled = false, pending))
+        val ended = TurnApprovalHold.runEnded(loopDone = true, readerRunEnd = "")
+        assertEquals(emptySet<String>(), TurnApprovalHold.keep(ended, abandoned = false, cancelled = false, pending))
+        // A loop that never saw done (the poll-abort path) knows nothing about the run.
+        assertEquals(false, TurnApprovalHold.runEnded(loopDone = false, readerRunEnd = ""))
+    }
 }

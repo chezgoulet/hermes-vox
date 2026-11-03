@@ -60,6 +60,13 @@ unscoped `/v1/responses` conversation did.
   request is sent once more; the gateway replays the original `run_id`
   (`Idempotency-Replayed: true`) instead of starting the turn twice, and that id is bound
   or stopped as usual — on a cancelled turn too.
+- **A lost events stream never walks away from the run** (0.9.1 review H3). After the
+  one immediate reattach, the reader reads `GET /v1/runs/{id}` (after 1 s, 2 s, 4 s): a
+  terminal status ends the turn, a live one (`running`, `waiting_for_approval`, …) is
+  reattached from the last seq. When the rounds are spent the run is **stopped**. Only
+  when neither the status nor the stop can be had does the done poll say
+  `run_end:"lost"` — and that, not the loop's `done` flag, is what keeps a pending
+  approval card on screen (`TurnApprovalHold.runEnded`).
 - `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
   scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
   nothing left to stop; nothing about the stop is ever thrown to the caller.

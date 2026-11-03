@@ -2119,6 +2119,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // approval is still answerable after the loop ends.
                 var done = false
                 var abandoned = false
+                var readerRunEnd = ""
                 // A new turn owns a new set of cards; an older held/arm card is not it.
                 synchronized(turnApprovalKeys) { turnApprovalKeys.clear() }
                 try {
@@ -2266,6 +2267,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         emitEvents(evts, t0, gen)
                         if (obj.optBoolean("done")) {
                             done = true
+                            readerRunEnd = obj.optString("run_end", "")   // H3: "lost" = the run may outlive the turn
                             val err = obj.optString("error", "")
                             val held = mindSkip.finish()
                             if (held.isNotBlank()) { streamFeed(held, gen); main.post { listener?.onDelta(held) } }
@@ -2349,7 +2351,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // rather than leaving a card that would 409 if tapped. A loop that ended
                 // while the run was STILL alive (lost stream, poll abort) is the exception:
                 // hold its card past the loop so a reattach can answer it.
-                val keep = TurnApprovalHold.keep(done, abandoned, genCancelled, turnApprovalPending())
+                // H3: key on what the reader knows about the RUN, not on the loop's done flag —
+                // a failed reader also ends done, while its run may still be parked on the card.
+                val keep = TurnApprovalHold.keep(TurnApprovalHold.runEnded(done, readerRunEnd),
+                    abandoned, genCancelled, turnApprovalPending())
                 if (keep.isNotEmpty()) {
                     heldApprovalRuns.addAll(keep)
                     VoxLog.d("event=approval-hold reason=answerable run=${keep.joinToString(",")}")
