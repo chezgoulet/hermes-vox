@@ -270,6 +270,20 @@ internal class ApprovalGate(val timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
         return dropped
     }
 
+    /**
+     * The turn ended, but the runs in [keep] outlive it: drop everything except their
+     * requests. #376's arm places its run outside any turn, so a turn finishing must not
+     * withdraw a card the phone can still answer.
+     */
+    @Synchronized
+    fun closeAllExcept(keep: Set<String>): List<ApprovalRequest> {
+        if (keep.isEmpty()) return closeAll()
+        val dropped = pending.filter { it.runId !in keep }
+        pending.removeAll(dropped)
+        dropped.forEach { remember(it.key()) }
+        return dropped
+    }
+
     private fun remember(key: String) {
         answered.add(key)
         // A long call with many approvals must not grow this set without bound. The
