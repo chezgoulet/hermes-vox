@@ -211,6 +211,15 @@ internal class ApprovalGate(val timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
     fun pendingCount(): Int = pending.size
 
     /**
+     * The pending requests whose keys are in [keys]. A turn uses this to ask about the
+     * cards IT raised: an older held card (or the debug arm's) must not pause the new
+     * turn's clock or be held on its behalf.
+     */
+    @Synchronized
+    fun pendingFor(keys: Set<String>): List<ApprovalRequest> =
+        if (keys.isEmpty()) emptyList() else pending.filter { it.key() in keys }
+
+    /**
      * Accepts [request] only while its run is alive. Returns the request as it will be
      * rendered (choices sanitised), or null when it was ignored as duplicate/ended.
      */

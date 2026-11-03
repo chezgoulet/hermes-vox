@@ -66,7 +66,8 @@ internal class StreamState {
      *  event — surfaced instead of a generic "ended without completion". */
     var failure = ""
     /** The `/v1/runs` id, once the run is admitted ("" on the responses route). A
-     *  barge-in needs it for `POST /v1/runs/{id}/stop`; nothing downstream reads it. */
+     *  barge-in needs it for `POST /v1/runs/{id}/stop`, and so does a turn that
+     *  abandons on deadline: closing the events GET leaves the run generating. */
     var runId = ""
     /** The last `seq` the runs stream delivered, so a reattach replays only the rest. */
     var lastSeq = -1L
@@ -258,6 +259,10 @@ internal object Streams {
 
     /** Test hook: is [id] still registered? */
     internal fun isRegistered(id: String): Boolean = synchronized(streams) { streams.containsKey(id) }
+
+    /** The gateway run id behind [id] ("" on the responses route or after retirement). */
+    fun runIdOf(id: String): String =
+        synchronized(streams) { streams[id]?.runId }.orEmpty()
 
     /**
      * The SSE consumer: POST stream:true, then frame and dispatch events into [st]

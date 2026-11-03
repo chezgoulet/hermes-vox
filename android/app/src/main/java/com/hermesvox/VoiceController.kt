@@ -17,6 +17,11 @@ import com.hermesvox.core.ApprovalRequest
 import com.hermesvox.core.ApprovalVoice
 import com.hermesvox.core.HermesSession
 import com.hermesvox.core.JsonException
+import com.hermesvox.core.StreamRoute
+import com.hermesvox.core.TurnAbandon
+import com.hermesvox.core.TurnApprovalHold
+import com.hermesvox.core.TurnBudget
+import com.hermesvox.core.TurnRoute
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -550,6 +555,19 @@ class VoiceController(private val context: Context, private val session: HermesS
      * not withdraw its request (see [closeApprovals]); "" when no arm is watching.
      */
     @Volatile private var armRunId = ""
+    /**
+     * Runs whose approval outlived the stream loop that raised it. A dropped socket is
+     * not a dead run: keeping the request here is what stops a later turn's
+     * `closeApprovals` from withdrawing a card the user can still answer. Removed when
+     * the run is re-read and found terminal (or on hangup).
+     */
+    private val heldApprovalRuns = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
+    /**
+     * The approval keys THIS turn's stream raised. The budget pauses only for a card
+     * whose run belongs to the current turn; a held or debug-arm card from earlier is
+     * not the agent's time to wait on.
+     */
+    private val turnApprovalKeys = LinkedHashSet<String>()
     /** The request whose card is on screen; "" when none. */
     @Volatile private var approvalShownKey = ""
     /** The request whose timeout is scheduled; "" when none. */
@@ -1443,6 +1461,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         recognizer?.destroy(); recognizer = null
         // #282: a hanging-up call withdraws any open approval — never answer a request
         // the user can no longer see. The gate's latch still refuses a late tap.
+        // A held card is withdrawn too: "held" means the TURN ended, not the call.
+        heldApprovalRuns.clear()
         closeApprovals("call-ended")
         resetApprovalCapture()
         // ER Phase 4: controller teardown kills the presence loop first — its
@@ -1619,13 +1639,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /** Called from the stream worker when an `approval.request` arrives. */
-    private fun approvalArrived(request: ApprovalRequest, runAlive: Boolean) {
+    private fun approvalArrived(request: ApprovalRequest, runAlive: Boolean, fromTurn: Boolean = false) {
         val accepted = approvalGate.offer(request, runAlive)
         if (accepted == null) {
             VoxLog.d("event=approval ignored reason=${if (!runAlive) "run-ended" else "duplicate"} " +
                 "run=${request.runId} request=${request.key()}")
             return
         }
+        // Only a card raised by the live turn may pause that turn's budget / be held
+        // for it; re-reads and the debug arm are not this turn's clock.
+        if (fromTurn) synchronized(turnApprovalKeys) { turnApprovalKeys.add(accepted.key()) }
         VoxLog.d("event=approval-request run=${accepted.runId} request=${accepted.key()} " +
             "choices=${accepted.choices.joinToString(",")} action=${accepted.action().take(180)}")
         main.post {
@@ -1661,6 +1684,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         main.removeCallbacks(approvalTimeout)
         approvalTimeoutKey = ""
         approvalShownKey = ""
+        // The request is decided, so this run no longer needs to be held past a loop end.
+        heldApprovalRuns.remove(answer.request.runId)
         VoxLog.d(answer.logLine())
         val prompt = promptOf(answer.request)
         main.post {
@@ -1685,9 +1710,13 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** The run ended: withdraw its requests rather than answering them. */
     private fun closeApprovals(reason: String) {
         // #376: the arm's run belongs to no turn. A turn finishing (or a call ending) must
-        // not withdraw a card the phone can still answer, so its run is kept.
-        val arm = armRunId
-        val dropped = if (arm.isEmpty()) approvalGate.closeAll() else approvalGate.closeAllExcept(setOf(arm))
+        // not withdraw a card the phone can still answer, so its run is kept. The same
+        // applies to a run whose stream was lost: [heldApprovalRuns] says its request is
+        // still answerable, and a later turn's completion must not sweep it away.
+        val keep = LinkedHashSet<String>()
+        synchronized(heldApprovalRuns) { keep.addAll(heldApprovalRuns) }
+        if (armRunId.isNotEmpty()) keep.add(armRunId)
+        val dropped = if (keep.isEmpty()) approvalGate.closeAll() else approvalGate.closeAllExcept(keep)
         if (dropped.isEmpty()) return
         main.removeCallbacks(approvalTimeout)
         approvalTimeoutKey = ""
@@ -1696,6 +1725,91 @@ class VoiceController(private val context: Context, private val session: HermesS
             VoxLog.d("event=approval ignored reason=$reason run=${request.runId} request=${request.key()}")
             main.post { listener?.onApprovalClosed(promptOf(request), reason) }
         }
+    }
+
+    /** True while the card on screen was raised by the CURRENT turn's stream. */
+    private fun turnApprovalWaiting(): Boolean {
+        val current = approvalGate.current() ?: return false
+        return synchronized(turnApprovalKeys) { current.key() in turnApprovalKeys }
+    }
+
+    /** This turn's still-pending requests (a held or arm card is not included). */
+    private fun turnApprovalPending(): List<ApprovalRequest> =
+        approvalGate.pendingFor(synchronized(turnApprovalKeys) { turnApprovalKeys.toSet() })
+
+    /**
+     * Re-reads a held run's status after its stream loop ended. If the gateway is still
+     * parked on the request, the card is re-bound (or kept) rather than withdrawn; if
+     * the run reached a terminal state, the held card is closed for good.
+     *
+     * The smallest version of the app-scoped holder: one read per loop exit. A
+     * continuous liveness watch / full reattach UI is left for the runs-route flip.
+     */
+    private fun recheckHeldApproval(runId: String) {
+        if (runId.isEmpty()) return
+        execSubmit {
+            val body = try {
+                session.armRunStatus(runId)
+            } catch (e: Exception) {
+                VoxLog.d("event=approval-recheck result=unreadable run=$runId err=${e.message?.take(120)}")
+                return@execSubmit
+            }
+            val status = ApprovalArm.statusOf(body)
+            if (status in ApprovalArm.TERMINAL_STATUSES) {
+                heldApprovalRuns.remove(runId)
+                val dropped = approvalGate.closeRun(runId)
+                if (dropped.isNotEmpty()) {
+                    VoxLog.d("event=approval-recheck result=run-ended run=$runId status=$status")
+                    main.removeCallbacks(approvalTimeout)
+                    approvalTimeoutKey = ""
+                    approvalShownKey = ""
+                    for (request in dropped) {
+                        main.post { listener?.onApprovalClosed(promptOf(request), "run-ended") }
+                    }
+                }
+                return@execSubmit
+            }
+            val request = try {
+                ApprovalArm.requestFromRunStatus(body)
+            } catch (_: JsonException) {
+                null
+            }
+            if (request != null) {
+                VoxLog.d("event=approval-recheck result=rebound run=$runId status=$status request=${request.key()}")
+                approvalArrived(request, runAlive = true)
+                main.post { showNextApproval() }
+            }
+        }
+    }
+
+    /**
+     * The turn ran out of AGENT time. Ask the route what abandoning means: close the
+     * socket on /v1/responses (which aborts the generation), or POST /stop on /v1/runs
+     * (where the socket is only a subscriber and the run would otherwise keep going).
+     */
+    private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget) {
+        // A runs stream's own id maps to its run; the approval request carries the same
+        // run id when the run was parked on a card.
+        val runId = session.runIdOf(streamId).ifEmpty { approvalGate.current()?.runId.orEmpty() }
+        VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=budget " +
+            "run=${runId.ifEmpty { "-" }} elapsedMs=${budget.elapsedMs()} " +
+            "pausedMs=${budget.pausedMs()} limitMs=${StreamPollGate.STREAM_TURN_TIMEOUT_MS}")
+        val stopped = TurnAbandon.perform(
+            route = route,
+            streamId = streamId,
+            runId = runId,
+            closeSocket = { id ->
+                try { session.cancelStream(id) } catch (e: Exception) {
+                    VoxLog.w("event=turn-abandon action=close-failed err=${e.message?.take(120)}")
+                }
+            },
+            stopRun = { id ->
+                try { session.stopRun(id) } catch (e: Exception) {
+                    VoxLog.w("event=turn-abandon action=stop-failed run=$id err=${e.message?.take(120)}")
+                }
+            },
+        )
+        VoxLog.d("event=turn-abandon-done route=${route.name.lowercase()} stopped=$stopped")
     }
 
     private fun promptOf(request: ApprovalRequest) = ApprovalPrompt(
@@ -1998,6 +2112,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // completion is a no-op. Declared OUTSIDE the try so the catch can resolve
                 // a fallback for a failure thrown mid-flight.
                 val terminal = StreamTurnTerminal()
+                // The route is fixed for the life of this turn: a settings flip must not
+                // change what abandoning an already-running turn means.
+                val route = StreamRoute.active
+                // Promoted out of the try so the finally can decide whether a pending
+                // approval is still answerable after the loop ends.
+                var done = false
+                var abandoned = false
+                // A new turn owns a new set of cards; an older held/arm card is not it.
+                synchronized(turnApprovalKeys) { turnApprovalKeys.clear() }
                 try {
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
@@ -2044,7 +2167,6 @@ class VoiceController(private val context: Context, private val session: HermesS
                 currentStream = sid
                 val firstByteAt = android.os.SystemClock.uptimeMillis()
                 var firstByteDone = false
-                var done = false
                 // H1: `tries` is now a poll-iteration counter for the diagnostics log
                 // lines ONLY — it is no longer the loop exit. The old `tries < 600` cap
                 // was an EVENT counter under active streaming (WaitStream returns the
@@ -2053,12 +2175,18 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var tries = 0
                 // 0.6.8: consecutive poll-error cap (the field poll-storm fix).
                 var pollErrors = 0
-                val deadline = android.os.SystemClock.uptimeMillis() + StreamPollGate.STREAM_TURN_TIMEOUT_MS
+                // The turn's one clock. It pauses while an approval is pending, so the
+                // human's decision time is not charged to the agent (see TurnBudget).
+                val budget = TurnBudget(now = { android.os.SystemClock.uptimeMillis() })
                 var lastEventAt = android.os.SystemClock.uptimeMillis()
                 var stall5 = false
                 var stall15 = false
-                while (StreamPollGate.keepPolling(done, android.os.SystemClock.uptimeMillis(), deadline)) {
+                while (true) {
                     val tick = android.os.SystemClock.uptimeMillis()
+                    // Idempotent: repeated true ticks pause once; repeated false ticks
+                    // resume once. The paused total accumulates, never resets.
+                    budget.approvalPending(turnApprovalWaiting(), tick)
+                    if (!budget.keepPolling(done, tick)) break
                     // D2: a barge-in during generation (before startStream returned) sets
                     // genCancelled; break so the turn's worker retires without settling a
                     // ghost reply (the gate was already released by bargeIn()).
@@ -2131,7 +2259,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // It was log-only, so a 15s provider hang looked exactly like rest.
                             // #282: an approval wait is the human's turn, not a stalled
                             // provider — the card is the signal, so no stall warning.
-                            val waiting = approvalGate.current() != null
+                            val waiting = turnApprovalWaiting()
                             if (!waiting && idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                             else if (!waiting && idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                         }
@@ -2188,7 +2316,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     tries++
                 }
                 if (genCancelled) { terminal.cancel(); endReply(gen, ReplyLedger.End.CANCELLED, "cancel"); VoxLog.d("turn interrupted during generation") }
-                else if (!done) throw Exception("timeout")
+                else if (!done) {
+                    // The agent's budget is spent. What that means is the route's call:
+                    // /v1/responses closes the socket; /v1/runs stops the run itself, so
+                    // it is never left working (or parked on an approval) with no client.
+                    abandoned = true
+                    abandonTurn(gen, sid, route, budget)
+                    throw Exception("timeout")
+                }
             } catch (e: Throwable) {
                 noteLiveFailure(e.message)   // K1: only a real auth rejection moves the live verdict
                 VoxLog.e("event=stream-turn-failed gen=$gen err=${e.message}")
@@ -2211,8 +2346,18 @@ class VoiceController(private val context: Context, private val session: HermesS
                 currentStream = null
                 turnInFlight = false
                 // #282: a request cannot be answered once its run is over; withdraw it
-                // rather than leaving a card that would 409 if tapped.
+                // rather than leaving a card that would 409 if tapped. A loop that ended
+                // while the run was STILL alive (lost stream, poll abort) is the exception:
+                // hold its card past the loop so a reattach can answer it.
+                val keep = TurnApprovalHold.keep(done, abandoned, genCancelled, turnApprovalPending())
+                if (keep.isNotEmpty()) {
+                    heldApprovalRuns.addAll(keep)
+                    VoxLog.d("event=approval-hold reason=answerable run=${keep.joinToString(",")}")
+                }
                 closeApprovals("run-ended")
+                // A stream loop that ended while its run was still alive held the card
+                // above; ask the gateway once whether that run is still parked or done.
+                for (runId in keep) recheckHeldApproval(runId)
                 // ---- ErHandoff: the turn is over ----
                 // One receipt per turn (a no-op when the submit already logged `ok=true`; it
                 // fires here when the submit itself threw) and, when the soul answered while the
@@ -2315,7 +2460,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (request == null) {
                         VoxLog.w("event=approval ignored reason=unreadable-event gen=$gen")
                     } else {
-                        approvalArrived(request, runAlive = !runEnded)
+                        approvalArrived(request, runAlive = !runEnded, fromTurn = true)
                     }
                 }
             }

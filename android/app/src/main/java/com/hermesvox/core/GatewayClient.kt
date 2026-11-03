@@ -109,11 +109,32 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         return body
     }
 
+    /**
+     * Abandons a runs-route turn: `POST /v1/runs/{id}/stop`. Closing the events
+     * subscription does not stop the run (it is only a subscriber), so a client that
+     * walks away after its own deadline must say so explicitly. 2xx/204 both mean the
+     * gateway accepted the stop; a non-2xx is surfaced for the field log.
+     */
+    fun stopRun(runId: String) {
+        val c = Entity.open("POST", Entity.url(baseURL, "/v1/runs/${segment(runId)}/stop"),
+            Entity.headers(apiKey, ""), TIMEOUT_MS, STOP_TIMEOUT_MS)
+        Entity.exchange(c, STOP_TIMEOUT_MS.toLong(), "hermes run stop") {
+            val code = c.responseCode
+            if (code != 200 && code != 202 && code != 204) {
+                throw HermesException("hermes run stop ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+            }
+            Entity.body(c)?.use { it.readBytes() }
+        }
+    }
+
     /** A path segment: run ids are ASCII today, but never concatenate untrusted text raw. */
     private fun segment(value: String): String =
         java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     companion object {
         const val TIMEOUT_MS = 20_000
+
+        /** A stop is a courtesy to the gateway, not a turn: never hold cleanup for long. */
+        const val STOP_TIMEOUT_MS = 5_000
     }
 }

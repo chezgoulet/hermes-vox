@@ -22,9 +22,19 @@ changed (`com.hermesvox.mobile.HermesSession` → `com.hermesvox.core.HermesSess
 ### The four fixes, and where they live now
 
 1. **Wall-clock turn deadline (H1).** It was always app-side: `StreamPollGate` and the
-   poll loop in `VoiceController` (120 s). Unchanged. Below it, the stream's **idle
-   watchdog** (60 s without a byte, keepalives included) is now the socket read
+   poll loop in `VoiceController` (120 s). `StreamPollGate` still owns the ceiling, but
+   the clock now measures **agent time** (`core/TurnBudget.kt`): it pauses while an
+   approval the turn itself raised is pending and accumulates that time across cards,
+   so a human reading a card does not spend the turn's budget. Below it, the stream's
+   **idle watchdog** (60 s without a byte, keepalives included) is now the socket read
    timeout, which also bounds the wait for response headers.
+
+   What it means to run out is now the route's call (`core/TurnAbandon.kt`) against the
+   one switch, `StreamRoute.active` (`core/TurnRoute.kt`): on `/v1/responses` the socket
+   is closed, because the SSE request *is* the generation; on `/v1/runs` the client
+   posts `POST /v1/runs/{id}/stop` as well, because the events GET is only a subscriber
+   and closing it leaves the run working. Either way a turn is never abandoned with a
+   run still alive behind it.
 2. **`/compress` rides the streamed chain (H2).** One chain head,
    `HermesSession.lastID`: every poll that carries a `response_id` moves it, and
    `turnStored` sends it as `previous_response_id` and replaces it with the reply's id.
