@@ -179,5 +179,57 @@ class Percentiles(unittest.TestCase):
         self.assertIsNone(pr.pct([], 0.5))
 
 
+
+class NamedBar(unittest.TestCase):
+    """#217: every row names what it measures, and a row with nothing to measure is unknown."""
+
+    def row(self, d, name):
+        return next(b for b in d["bar"] if b["name"] == name)
+
+    def test_every_row_names_its_measure_source_threshold_and_n(self):
+        d = pr.summarise(pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=lag")))
+        names = [b["name"] for b in d["bar"]]
+        self.assertEqual(names, ["speak-rate", "late", "repeats", "render-p95", "boundary"])
+        for b in d["bar"]:
+            for k in ("measures", "source", "threshold", "n"):
+                self.assertTrue(str(b[k]), f"{b['name']} has no {k}")
+        text = pr.report(pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=lag")))
+        self.assertIn("[er-presence line / skip]", text)
+
+    def test_repeats_are_counted_by_hash_within_a_run(self):
+        d = pr.summarise(pr.parse(log(
+            "event=er-presence line=2 interval=1 density=conversational kind=soul h=aaaa0001",
+            "event=er-presence line=3 interval=1 density=conversational kind=soul h=aaaa0001",
+            "event=er-presence stop reason=reply lines=3",
+            "event=er-presence line=2 interval=1 density=conversational kind=soul h=aaaa0001",
+        )))
+        self.assertEqual(d["repeats"], 1)
+        self.assertIs(self.row(d, "repeats")["verdict"], False)
+
+    def test_repeats_without_hashes_are_unknown_not_a_pass(self):
+        d = pr.summarise(pr.parse(log("event=er-presence line=2 interval=1 density=conversational kind=soul")))
+        self.assertIsNone(self.row(d, "repeats")["verdict"])
+
+    def test_a_working_render_inside_the_boundary_window_fails(self):
+        d = pr.summarise(pr.parse(log(
+            "event=er-soul kind=working decision=spoken chars=20 heard=false mood=- ms=900 boundaryMs=12000",
+            "event=er-soul kind=working decision=spoken chars=20 heard=false mood=- ms=900 boundaryMs=300",
+            "event=er-soul kind=turn decision=beat chars=20 heard=false mood=- ms=900 boundaryMs=50",
+        )))
+        b = self.row(d, "boundary")
+        self.assertEqual((b["value"], b["n"], b["verdict"]), (1, 2, False))
+
+    def test_no_turn_yet_is_not_a_boundary_sample(self):
+        d = pr.summarise(pr.parse(log(
+            "event=er-soul kind=working decision=spoken chars=20 heard=false mood=- ms=900 boundaryMs=-1",
+        )))
+        self.assertIsNone(self.row(d, "boundary")["verdict"])
+
+    def test_the_old_check_keys_survive_for_json_readers(self):
+        d = pr.summarise(pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=lag")))
+        for k in ("rate", "late", "p95"):
+            self.assertIn(k, d["checks"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

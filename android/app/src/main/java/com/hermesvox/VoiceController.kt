@@ -180,6 +180,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     // are measured from. pendingSpeechEndAt is handed over once, to the turn this segment
     // starts; a typed turn has no anchor and logs "-" for the speech-end fields.
     @Volatile private var pendingSpeechEndAt = 0L
+    /** #217: the last turn boundary (the caller's speech end), kept — not consumed. */
+    @Volatile private var lastSpeechEndAt = 0L
+
+    /** #217/D18: ms since the caller last stopped speaking (-1 = no turn yet this call). The
+     *  presence report reads it on every render: an aside rendering inside the reply's latency
+     *  budget spends the thing it exists to fill. */
+    fun msSinceSpeechEnd(): Long =
+        lastSpeechEndAt.let { if (it == 0L) -1L else android.os.SystemClock.uptimeMillis() - it }
     @Volatile private var pendingSttDecodeMs = -1L
     /** Per-turn copy of the anchor, so the streaming worker can close the timeline at
      *  "render done" without racing the next segment. */
@@ -411,7 +419,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 VoxLog.er("event=er-presence observe line=${slot.line} numbers-unvouched=${invented.size}")
             }
             synchronized(workingSaid) { workingSaid.add(line!!) }
-            erPresence.noteWorkingLine(slot, "soul")
+            erPresence.noteWorkingLine(slot, "soul", line!!)
             speakGlue(line!!, source = SOURCE_WORKING)
         }
     }
@@ -1097,6 +1105,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // The turn this segment is about to start is measured from the end of
                         // speech. Handed over here, consumed once in runStreamedTurn.
                         pendingSpeechEndAt = speechEndAt
+                        lastSpeechEndAt = speechEndAt
                         pendingSttDecodeMs = decodeMs
                     }
                     // #179: the RTF a live call actually pays. feedDecodeMs is the recogniser's

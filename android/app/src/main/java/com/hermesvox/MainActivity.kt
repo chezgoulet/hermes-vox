@@ -1315,6 +1315,8 @@ class MainActivity : AppCompatActivity() {
             // presence bar has no latency half — the field logs showed every other number
             // but this one.
             val renderStart = android.os.SystemClock.uptimeMillis()
+            // #217/D18: where the render started relative to the turn boundary.
+            val boundaryMs = c.msSinceSpeechEnd()
             orch.expressAsync(intent, directive, "warm", if (heard) wav else null) { glue ->
                 // The tone tag leads (when the soul heard the caller); the decision follows.
                 val (mood, rest) = VoiceMood.split(glue)
@@ -1326,7 +1328,7 @@ class MainActivity : AppCompatActivity() {
                     is ErSoulTurn.Outcome.Beat -> o.opener.length
                     else -> 0
                 }
-                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"} ms=${android.os.SystemClock.uptimeMillis() - renderStart}")
+                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"} ms=${android.os.SystemClock.uptimeMillis() - renderStart} boundaryMs=$boundaryMs")
                 cb(o, mood)
             }
         }

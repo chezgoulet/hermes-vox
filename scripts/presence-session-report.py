@@ -9,16 +9,21 @@ how many became lines, why the rest were refused, how far apart the lines landed
   python3 scripts/presence-session-report.py --json logcat.txt
   python3 scripts/presence-session-report.py --check logcat.txt   # exit 1 if the bar is missed
 
-The bar (docs/PLAN-0.9.2.md, "The instrument and the bar"; issue #217), applied to Conversational runs only:
-at least two thirds of offered slots speak, nothing lands after the reply, and render
-p95 stays under three seconds. Repeats need the line text, which only exists when
-Settings -> Log transcripts is on; the report says "unknown" rather than guessing.
+The bar (docs/PLAN-0.9.2.md, "The instrument and the bar"; issue #217). Every row names what
+it measures, the events it counts, the threshold, the value and the sample size; a row with
+no samples is "unknown", never a pass. The rows (docs/PRESENCE-TUNING-BAR.md):
+
+  speak-rate   spoken / offered working slots, Conversational runs     >= 2/3
+  late         turn renders dropped as late (er-soul-drop reason=late) == 0
+  repeats      a spoken line hash (h=) heard twice in one run          == 0
+  render-p95   er-soul ms=, nearest-rank p95                           <  3000 ms
+  boundary     working renders started < 700 ms after speech end (D18) == 0
 
 The event vocabulary is the app's, not this script's:
-  event=er-presence line=N interval=MS density=D kind=lag|soul
+  event=er-presence line=N interval=MS density=D kind=lag|soul [h=HASH]
   event=er-presence skip line=N reason=R density=D
   event=er-presence stop reason=R lines=N
-  event=er-soul kind=K decision=D chars=N heard=B mood=M [ms=N]
+  event=er-soul kind=K decision=D chars=N heard=B mood=M [ms=N] [boundaryMs=N]
   event=er-soul-drop reason=late ...
   event=er-render-skip|er-render-drop|er-render-preempt ...
 """
@@ -29,11 +34,11 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-LINE = re.compile(r"er-presence line=(\d+)(?: interval=(\d+))?(?: density=(\w+))?(?: kind=(\w+))?")
+LINE = re.compile(r"er-presence line=(\d+)(?: interval=(\d+))?(?: density=(\w+))?(?: kind=(\w+))?(?: h=([0-9a-f]+))?")
 SKIP = re.compile(r"er-presence skip line=(\d+)(?: reason=(\w+))?(?: density=(\w+))?")
 STOP = re.compile(r"er-presence stop reason=(\w+)(?: lines=(\d+))?")
 SOUL = re.compile(
-    r"er-soul kind=(\w+) decision=(\w+) chars=(\d+) heard=(true|false) mood=(\S+)(?: ms=(\d+))?"
+    r"er-soul kind=(\w+) decision=(\w+) chars=(\d+) heard=(true|false) mood=(\S+)(?: ms=(\d+))?(?: boundaryMs=(-?\d+))?"
 )
 SOUL_DROP = re.compile(r"er-soul-drop reason=(\w+)")
 # The guard's own verdict on a line it refused: emitted only on the working path, and only
@@ -43,6 +48,9 @@ RENDER = re.compile(r"event=er-render-(skip|drop|preempt)(?: reason=(\w+))?(?: i
 
 BAR_RATE = 2.0 / 3.0
 BAR_P95_MS = 3000
+# D18: speech-end to first audio is budgeted at 700 ms p50; an aside rendering inside that
+# window competes with the reply for the CPU it is meant to cover.
+BAR_BOUNDARY_MS = 700
 
 
 @dataclass
@@ -57,6 +65,7 @@ class Run:
     intervals: list[int] = field(default_factory=list)
     stop_reason: str | None = None
     lines_at_stop: int | None = None
+    hashes: list[str] = field(default_factory=list)
 
     def close(self, reason, lines):
         self.stop_reason = reason
@@ -73,6 +82,8 @@ class Session:
     decisions: dict[str, int] = field(default_factory=dict)
     guard_refusals: dict[str, int] = field(default_factory=dict)
     missing_ms: int = 0
+    # boundaryMs of each working render (the D18 window); -1 = no turn yet, skipped.
+    working_boundary: list[int] = field(default_factory=list)
 
     def run(self) -> Run:
         if not self.runs:
@@ -103,6 +114,8 @@ def parse(text: str) -> Session:
                 r.density = m.group(3)
             if m.group(4):
                 r.kinds.append(m.group(4))
+            if m.group(5):
+                r.hashes.append(m.group(5))
             continue
         if m := SKIP.search(raw):
             r = s.run()
@@ -122,6 +135,8 @@ def parse(text: str) -> Session:
                 s.renders.append(int(m.group(6)))
             else:
                 s.missing_ms += 1
+            if m.group(1) == "working" and m.group(7) is not None and int(m.group(7)) >= 0:
+                s.working_boundary.append(int(m.group(7)))
             continue
         if m := DETAIL.search(raw):
             # `why=-` is the guard saying it would have spoken the line; the skip was for a
@@ -176,11 +191,29 @@ def summarise(s: Session) -> dict:
     conv_spoken = sum(r.spoken for r in conv)
     rate = (conv_spoken / conv_slots) if conv_slots else None
     p95 = pct(s.renders, 0.95)
-    checks = {
-        "rate": None if rate is None else rate >= BAR_RATE,
-        "late": s.late == 0,
-        "p95": None if p95 is None else p95 < BAR_P95_MS,
-    }
+    hashed_runs = [r for r in runs if r.hashes]
+    repeats = sum(len(r.hashes) - len(set(r.hashes)) for r in hashed_runs)
+    inside = sum(1 for b in s.working_boundary if b < BAR_BOUNDARY_MS)
+    bar = [
+        _row("speak-rate", "spoken / offered working slots, Conversational runs",
+             "er-presence line / skip", ">= 2/3", rate, conv_slots,
+             None if rate is None else rate >= BAR_RATE),
+        _row("late", "turn renders that arrived after the reply and were dropped",
+             "er-soul-drop reason=late", "== 0", s.late, s.soul, s.late == 0),
+        _row("repeats", "spoken lines heard twice in one run (by line hash)",
+             "er-presence line … h=", "== 0", repeats if hashed_runs else None,
+             sum(len(r.hashes) for r in hashed_runs), None if not hashed_runs else repeats == 0),
+        _row("render-p95", "render latency, nearest-rank p95",
+             "er-soul … ms=", f"< {BAR_P95_MS} ms", p95, len(s.renders),
+             None if p95 is None else p95 < BAR_P95_MS),
+        _row("boundary", f"working renders started < {BAR_BOUNDARY_MS} ms after the caller stopped (D18)",
+             "er-soul kind=working … boundaryMs=", "== 0", inside if s.working_boundary else None,
+             len(s.working_boundary), None if not s.working_boundary else inside == 0),
+    ]
+    checks = {b["name"]: b["verdict"] for b in bar}
+    # Back-compatible keys for --json readers of the first version.
+    checks["rate"] = checks["speak-rate"]
+    checks["p95"] = checks["render-p95"]
     return {
         "runs": len(runs),
         "slots": slots,
@@ -200,9 +233,19 @@ def summarise(s: Session) -> dict:
         "render_events": s.render_events,
         "decisions": s.decisions,
         "conversational": {"slots": conv_slots, "spoken": conv_spoken},
+        "repeats": repeats if hashed_runs else None,
+        "working_boundary_ms": s.working_boundary,
+        "bar": bar,
         "checks": checks,
-        "passes_bar": all(v for v in checks.values() if v is not None) and any(v is not None for v in checks.values()),
+        "passes_bar": all(b["verdict"] for b in bar if b["verdict"] is not None)
+            and any(b["verdict"] is not None for b in bar),
     }
+
+
+def _row(name, measures, source, threshold, value, n, verdict):
+    """One bar row: what it measures, from which events, against what, and on how much."""
+    return {"name": name, "measures": measures, "source": source, "threshold": threshold,
+            "value": value, "n": n, "verdict": verdict}
 
 
 def fmt(v, unit="", nd=0):
@@ -239,12 +282,13 @@ def report(s: Session) -> str:
     if d["render_events"]:
         out.append("  render events        " + ", ".join(f"{k} {v}" for k, v in sorted(d["render_events"].items())))
     out.append("")
-    c = d["checks"]
-    out.append("  bar (Conversational)")
-    out.append(f"    two thirds of slots speak   {'PASS' if c['rate'] else 'FAIL' if c['rate'] is False else 'unknown (no slots)'}")
-    out.append(f"    nothing lands after reply   {'PASS' if c['late'] else 'FAIL'}")
-    out.append(f"    render p95 < 3 s            {'PASS' if c['p95'] else 'FAIL' if c['p95'] is False else 'unknown (no ms= in this build)'}")
-    out.append(f"    nothing repeats             unknown (needs Settings -> Log transcripts on)")
+    out.append("  bar — each row: what it measures, the events, threshold, value (n)")
+    for b in d["bar"]:
+        verdict = "PASS" if b["verdict"] else "FAIL" if b["verdict"] is False else "unknown"
+        v = b["value"]
+        shown = "—" if v is None else (f"{v*100:.0f}%" if b["name"] == "speak-rate" else f"{v}")
+        out.append(f"    {verdict:<8}{b['name']:<12}{shown:>8} {b['threshold']:<10} n={b['n']:<4} "
+                   f"{b['measures']}  [{b['source']}]")
     return "\n".join(out)
 
 
