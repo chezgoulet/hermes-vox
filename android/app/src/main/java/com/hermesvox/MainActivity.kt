@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             heardLine.text = ""; heardLine.contentDescription = null
         }.start()
     }
-    private val transcript = Transcript()
+    private val transcript = Transcript.Call.transcript   // #223: survives a recreate, in memory only
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
@@ -2048,6 +2048,7 @@ class MainActivity : AppCompatActivity() {
             appendConvo("You: $text")
             if (conversation.visibility != View.VISIBLE) showHeard(text)
         } }
+        override fun onReplyCut(heard: String) { runOnUiThread { appendReplyCut(heard) } }
         override fun onPresenceSpoke(text: String, source: String) { runOnUiThread {
             // #223: the Presence path's own speech — the soul's answer (the turn's reply)
             // and its asides (beats, working asides, fillers, greeting). Only lines that
@@ -2673,6 +2674,11 @@ class MainActivity : AppCompatActivity() {
     /** #223: the mind's reply, as it streams in — a reader does not wait for the turn to end. */
     private fun appendReplyDelta(text: String) {
         transcript.delta(text)
+        paintTranscript()
+    }
+    /** #223: the reply was cut; the transcript keeps what was heard, not what was written. */
+    private fun appendReplyCut(heard: String) {
+        transcript.replyCut(heard)
         paintTranscript()
     }
     /** #223: the turn is complete; the final text reconciles the streamed block. */

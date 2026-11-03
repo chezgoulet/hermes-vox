@@ -52,6 +52,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         fun onHeard(text: String) {}
         /** #281: a tool step started — the stream's `function_call` name and raw arguments. */
         fun onTool(name: String, arguments: String) {}
+        /** #223: the voiced reply was cut; [heard] is what the caller actually heard ("" =
+         *  nothing). Not called when the reply was never meant to be heard (speech off). */
+        fun onReplyCut(heard: String) {}
         /** #281: a tool step's result arrived — the `function_call_output` text. */
         fun onToolOutput(output: String) {}
         /** #223: a line the Presence layer voiced on its own — the soul's answer, a beat,
@@ -2768,6 +2771,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var liveReplyDone = 0L
     private val resumeSlot = Resume.Slot()
 
+    /** #223: the transcript keeps what was heard. Only when the voice was the channel and a
+     *  reply was live: a cut with speech off leaves the written reply as what was "said". */
+    private fun reportCut() {
+        if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PRESENCE)) return   // new behaviour: Alpha only
+        if (!speakEnabled() || !(turnInFlight || speaking || frozenChars != null)) return
+        val heard = frozenChars?.let { n -> synchronized(cursorLock) { spokenSb.toString() }.take(n) }.orEmpty()
+        main.post { listener?.onReplyCut(heard) }
+    }
+
     /** #243: a voice barge leaves a mark the next voice turn picks up; anything else clears it. */
     private fun markInterruption(reason: String) {
         if (reason !in Resume.BARGE_REASONS || !AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)) {
@@ -3107,6 +3119,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // was interrupted before saying.
         freezeCursor(reason)
         markInterruption(reason)
+        reportCut()
         stopTts()
         // #240: playback stops HERE, at the cancel — the track is paused inside stopTts — not
         // at any later acknowledgement; this is the cancel-to-silence figure.
