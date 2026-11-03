@@ -41,6 +41,22 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
     }
 
     /**
+     * The `POST /v1/runs` admission body. Same identity fields as [buildBody] — model,
+     * input and the per-request provider override — but no `stream` (the route is
+     * asynchronous: 202 `{run_id}`, then `GET /v1/runs/{run_id}/events`) and no
+     * `previous_response_id` (see [StreamRoute.chainHead]: the runs chain rides the
+     * session key, and a response-store snapshot would freeze it).
+     */
+    fun buildRunBody(input: String): ByteArray {
+        val body = synchronized(lock) {
+            linkedMapOf<String, Any?>("model" to model, "input" to input).apply {
+                if (provider.isNotEmpty()) put("provider", provider)
+            }
+        }
+        return Json.encode(body).toByteArray(Charsets.UTF_8)
+    }
+
+    /**
      * Sends one turn and returns the reply + the new response id. Pass the prior id
      * as [previousResponseId] to keep the server-side conversation across turns.
      */

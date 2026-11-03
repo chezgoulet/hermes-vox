@@ -1,0 +1,7 @@
+#! route runs
+id: 0
+data: {"event":"message.delta","run_id":"run_parity","timestamp":1762300000.0,"delta":"Partial answer","seq":0}
+
+id: 1
+data: {"event":"run.failed","run_id":"run_parity","timestamp":1762300000.1,"completed":false,"partial":true,"interrupted":false,"turn_exit_reason":"max_iterations","output":"Partial answer","seq":1}
+
