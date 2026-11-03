@@ -193,8 +193,9 @@ decision**:
 
 **What is enforced in code, and what is only asked.** Rule 3 ("substantive/factual/tool/planning
 questions escalate") lives in the *directive* — the model is asked to obey it. The code's guards are on
-the **beat** (`ErSoulTurn.opener`: no digits, no markup, ≤ 7 words → otherwise escalate silently) and on
-the **working lane** (`ErSoulTurn.judge`: no unvouched number, no unbacked result claim). A turn answer
+the **beat** (`ErSoulTurn.opener`: no markup, no claimed result, ≤ 7 words → otherwise escalate silently) and on
+the **working lane** (`ErSoulTurn.judge`: no unbacked result claim). D29/#406 dropped the no-new-numbers
+rule from both: a number is spoken, and an unvouched one is only logged (`numbers-unvouched=`) for #256. A turn answer
 (`Outcome.Spoken`) is **not** content-checked: it is spoken as written. That asymmetry is deliberate —
 the soul must be able to answer — but it is exactly why a factual turn can be answered locally with no
 error anywhere. See `ErSoulTurn.kt:283` (the guard) against `VoiceController.kt:1837` (the turn lane,

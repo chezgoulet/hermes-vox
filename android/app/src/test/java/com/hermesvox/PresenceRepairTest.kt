@@ -132,36 +132,16 @@ class PresenceRepairTest {
         assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs("Checking on it now"))
         // A refusal is silence, not a repair: the detail log carries the reason instead.
         assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs("I've booked it"))
-        assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs("It'll take 2 minutes"))
         assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs(ErSoulTurn.ESCALATE))
         assertEquals(emptyList<String>(), ErSoulTurn.workingRepairs(""))
     }
 
-    // ---- no new numbers ----
+    // ---- numbers (D29/#406: the no-new-numbers rule is dropped) ----
 
-    @Test fun a_number_the_directive_carried_is_spoken_and_the_same_number_twice_is_refused() {
-        val directive = ErSoulTurn.workingDirective("check the logs", null, emptyList(), 90L)
-        val vouched = ErSoulTurn.vouchedNumbers(directive)
-        assertEquals(setOf("90"), vouched)
-
-        assertEquals(
-            "We're about 90 seconds in...",
-            ErSoulTurn.workingLine("We're about 90 seconds in", emptyList(), vouched),
-        )
-        // #218's rule survives D20: two numbers are arithmetic, even when both are grounded.
-        assertEquals(
-            "digits-unvouched",
-            ErSoulTurn.workingReject("We're 90 seconds in, 90 to go", emptyList(), vouched),
-        )
-    }
-
-    @Test fun a_number_the_directive_did_not_carry_is_refused_as_digits_unvouched() {
-        val directive = ErSoulTurn.workingDirective("check the logs", null, emptyList(), 90L)
-        val vouched = ErSoulTurn.vouchedNumbers(directive)
-
-        assertEquals("digits-unvouched", ErSoulTurn.workingReject("It'll take 2 minutes", emptyList(), vouched))
-        assertNull(ErSoulTurn.workingLine("It'll take 2 minutes", emptyList(), vouched))
-        assertEquals("digits-unvouched", ErSoulTurn.REASON_UNVOUCHED_NUMBER)
+    @Test fun a_number_is_spoken_whether_or_not_the_directive_carried_it() {
+        assertEquals("We're about 90 seconds in...", ErSoulTurn.workingLine("We're about 90 seconds in"))
+        assertEquals("It'll take 2 minutes...", ErSoulTurn.workingLine("It'll take 2 minutes"))
+        assertNull(ErSoulTurn.workingReject("We're 90 seconds in, 90 to go"))
     }
 
     // ---- content: the result claim ----

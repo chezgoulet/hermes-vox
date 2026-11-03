@@ -356,7 +356,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /** Speak a working aside, or record why the slot passed in silence. [vouched] is the set of
-     *  numbers the render's directive carried (#218, generalised by D20) — the only ones allowed. */
+     *  numbers the render's directive carried — since D29/#406 an observation for #256 (a spoken
+     *  number outside it is logged, never refused). */
     private fun deliverWorkingLine(
         slot: ErPresence.Slot,
         gen: Long,
@@ -364,7 +365,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         said: List<String>,
         vouched: Set<String>,
     ) {
-        val line = ErSoulTurn.workingLine(outcome, said, vouched)
+        val line = ErSoulTurn.workingLine(outcome, said)
         main.post {
             val now = android.os.SystemClock.uptimeMillis()
             val skip = when {
@@ -383,7 +384,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // the refusal records its cause and the text (hidden unless transcripts are on,
                 // exactly as the er-glue lines do). `deltaMs` is the late witness: how far past
                 // the mind's first text the line came back (-1 = there was no first text).
-                val why = ErSoulTurn.workingReject(outcome, said, vouched)
+                val why = ErSoulTurn.workingReject(outcome, said)
                 val raw = (outcome as? ErSoulTurn.Outcome.Spoken)?.text
                 val delta = if (skip == "late") {
                     // -1: the skip was not the first-text rule (a new turn, or a dead cadence),
@@ -401,8 +402,14 @@ class VoiceController(private val context: Context, private val session: HermesS
             // D20: a line that survived shape repair is SPOKEN, and the log says what was changed
             // (`reason=cut / markup / fence / title / courtesy`). A refused line logs the detail
             // above instead, so the field can tell "shortened" from "silenced".
-            val repairs = ErSoulTurn.workingRepairs(outcome, said, vouched)
+            val repairs = ErSoulTurn.workingRepairs(outcome, said)
             if (repairs.isNotEmpty()) erPresence.noteWorkingRepair(slot, repairs.joinToString(","))
+            // #256 observation (D29/#406): a number the client did not supply is spoken, and
+            // counted here so the measurement can see what the unrestricted model does.
+            val invented = ErSoulTurn.unvouchedNumbers(line!!, vouched)
+            if (invented.isNotEmpty()) {
+                VoxLog.er("event=er-presence observe line=${slot.line} numbers-unvouched=${invented.size}")
+            }
             synchronized(workingSaid) { workingSaid.add(line!!) }
             erPresence.noteWorkingLine(slot, "soul")
             speakGlue(line!!, source = SOURCE_WORKING)
