@@ -1317,12 +1317,7 @@ class MainActivity : AppCompatActivity() {
                 // The tone tag leads (when the soul heard the caller); the decision follows.
                 val (mood, rest) = VoiceMood.split(glue)
                 val o = ErSoulTurn.parse(rest)
-                val decision = when (o) {
-                    is ErSoulTurn.Outcome.Spoken -> "answer"
-                    is ErSoulTurn.Outcome.Beat -> "beat"
-                    ErSoulTurn.Outcome.Escalate -> "escalate"
-                    ErSoulTurn.Outcome.Nothing -> "nothing"
-                }
+                val decision = ErSoulTurn.decisionName(o)
                 if (kind != ErSoulTurn.KIND_WORKING) ErTelemetry.soulDecision(decision)   // turn routing only
                 val chars = when (o) {
                     is ErSoulTurn.Outcome.Spoken -> o.text.length
