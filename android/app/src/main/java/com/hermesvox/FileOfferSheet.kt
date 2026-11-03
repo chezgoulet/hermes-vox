@@ -53,10 +53,14 @@ class FileOfferSheet(
         if (d.isShowing) return
         d.setOnDismissListener {
             // Closing is never a send. An offer that is still running is cancelled here,
-            // which stops the server and deletes the staged copy.
+            // which stops the server and deletes the staged copy; a copy still being read is
+            // cancelled too, and its result is discarded (MainActivity's staging guard).
             open = false
             dialog = null
-            if (share.state is FileShare.State.Offering || share.state is FileShare.State.Unreachable) {
+            if (share.state is FileShare.State.Offering ||
+                share.state is FileShare.State.Unreachable ||
+                share.state is FileShare.State.Reading
+            ) {
                 share.cancel()
             }
         }

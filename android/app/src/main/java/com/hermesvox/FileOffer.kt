@@ -23,9 +23,10 @@ import java.util.Locale
  * Two rules are load-bearing and are enforced here rather than in the UI:
  *
  *  * **the app never claims success on its own.** [Reply] only says what the agent said, and
- *    [collected] is reachable only when the transfer actually completed *and* the agent did
- *    not report a mismatch. A truncated fetch, a silent agent or an invented "kept it" cannot
- *    be turned into the success line by this file.
+ *    [collected] needs the transfer to have completed *and* the agent to have said it kept the
+ *    file. A truncated fetch or an invented "kept it" cannot be turned into the success line by
+ *    this file; a completed transfer the agent never acknowledged is reported by [FileShare]'s
+ *    expiry, which says exactly that (the agent never named a path) rather than guessing one.
  *  * **the contents never enter the transcript.** The turn for a big file carries name, size,
  *    type, hash and URL — no bytes. The inline fallback is the one place bytes travel, and
  *    the caller shows [transcriptLine] instead of the turn so the body is not repeated on
@@ -292,13 +293,22 @@ object FileOffer {
      * documented rather than clever — the app must never invent a failure, and must never
      * swallow a stated one. Negations ("no mismatch", "without a mismatch") are removed
      * before the test so a success sentence cannot be read as a failure.
+     *
+     * A keep needs **evidence** — a path, or a word that says the file was kept. An ordinary
+     * reply that happens to follow an offer ("Which file did you mean?") is [Reply.Silent]:
+     * "the agent said something" is not "the agent has the file", and the success line is
+     * only shown when the agent put it there in words. A *denied* keep ("nothing was kept")
+     * is silent too, never a collection.
      */
     fun readReply(text: String?): Reply {
         val body = text?.trim().orEmpty()
         if (body.isEmpty()) return Reply.Silent
         val positive = NEGATED.replace(body.lowercase(Locale.US), " ")
         if (MISMATCH.containsMatchIn(positive)) return Reply.Mismatch
-        return Reply.Kept(keptPath(body))
+        val path = keptPath(body)
+        if (path.isNotEmpty()) return Reply.Kept(path)
+        if (!KEPT.containsMatchIn(NOT_KEPT.replace(positive, " "))) return Reply.Silent
+        return Reply.Kept("")
     }
 
     /** `no mismatch`, `without mismatch`, `not a mismatch` are not a mismatch. */
@@ -321,6 +331,27 @@ object FileOffer {
             """different\s+file""" + "|" +
             """not\s+the\s+same\s+file""" +
             """)\b""",
+    )
+
+    /**
+     * A keep, said in the agent's own words, when it named no path: "kept it", "saved to
+     * memory", "written into the inbox". Deliberately short and literal — a wider net would
+     * read an ordinary sentence as a collection.
+     */
+    private val KEPT = Regex(
+        """\b(?:kept|saved|stored|filed|written|wrote|downloaded|placed)\b""" + "|" +
+            """\bin\s+(?:the\s+|my\s+)?inbox\b""" + "|" +
+            """\bhave\s+(?:it|the\s+file|the\s+notes)\b""" + "|" +
+            """\bit\s+is\s+mine\b""",
+    )
+
+    /** "nothing was kept", "I did not save it", "it was never stored" are not a keep. */
+    private val NOT_KEPT = Regex(
+        """\b(?:(?:nothing|none)\s+(?:was|were)\s+|(?:was|were)\s+not\s+|""" +
+            """(?:has|have|had)\s+not\s+been\s+|never\s+|not\s+|""" +
+            """(?:did\s+not|didn't|do\s+not|don't|could\s+not|couldn't)\s+)""" +
+            """(?:keep|kept|save|saved|store|stored|file|filed|write|written|wrote|download|downloaded|place|placed)\b""" +
+            """|\bnothing\s+was\s+kept\b""",
     )
 
     /**

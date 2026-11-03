@@ -147,7 +147,23 @@ class FileServer private constructor(
         if (served) return refuse(socket, "spent", status = 410)
         if (clock() >= expiresAtMs) return refuse(socket, "expired", status = 410)
         if (headers.containsKey("range")) return refuse(socket, "range", status = 416)
+        // Content-Length is a promise. If the copy is no longer the file we hashed, refuse it
+        // rather than hand the agent a body that cannot match the header — it would hang, and
+        // a half-response that looks complete is exactly what this flow must never produce.
+        if (!sourceIntact()) return refuse(socket, "source", status = 500)
         serve(socket, input)
+    }
+
+    /** True when the staged copy is still exactly [bytes] long and readable. */
+    private fun sourceIntact(): Boolean {
+        val onDisk = try {
+            if (file.isFile) file.length() else -1L
+        } catch (_: Throwable) {
+            -1L
+        }
+        if (onDisk == bytes) return true
+        note("event=file-offer error=size-changed expected=$bytes actual=$onDisk")
+        return false
     }
 
     /** The only successful response: the staged bytes, once, with their hash in a header. */
@@ -226,6 +242,7 @@ class FileServer private constructor(
             410 -> "gone\n"
             405 -> "method not allowed\n"
             416 -> "range not supported\n"
+            500 -> "the staged copy is not the file we hashed\n"
             else -> "not found\n"
         }
         val extra = if (status == 405) "Allow: GET\r\n" else ""
@@ -235,6 +252,7 @@ class FileServer private constructor(
                 410 -> "Gone"
                 405 -> "Method Not Allowed"
                 416 -> "Range Not Satisfiable"
+                500 -> "Internal Server Error"
                 else -> "Not Found"
             }
             out.write(
@@ -267,14 +285,18 @@ class FileServer private constructor(
 
     // ---- a bounded request reader ----
 
+    /**
+     * One CRLF- or LF-terminated line, at most [max] bytes kept. A longer line is *drained* to
+     * its end and truncated: the caller refuses it (it cannot match the token), and the rest of
+     * the over-long line is never re-read as if it were a header.
+     */
     private fun readLine(input: InputStream, max: Int): String? {
         val b = ByteArrayOutputStream()
         while (true) {
             val c = input.read()
             if (c < 0) return if (b.size() == 0) null else b.toString(Charsets.ISO_8859_1.name())
             if (c == '\n'.code) return b.toString(Charsets.ISO_8859_1.name()).trimEnd('\r')
-            if (b.size() >= max) return b.toString(Charsets.ISO_8859_1.name())
-            b.write(c)
+            if (b.size() < max) b.write(c)
         }
     }
 

@@ -433,17 +433,7 @@ class MainActivity : AppCompatActivity() {
                 val src = java.io.File(path)
                 if (!src.isFile) { setStatus("no such file", true); return@post }
                 fileOfferSheet.show()
-                fileShare.reading(src.name)
-                Thread({
-                    val r = FileStage.stageFile(this, src)
-                    runOnUiThread {
-                        when (r) {
-                            is FileStage.Result.Ok -> fileShare.begin(r.staged.offer, r.staged.file, r.staged.inlineText)
-                            is FileStage.Result.TooBig -> fileShare.refuse(r.line)
-                            is FileStage.Result.Failed -> fileShare.refuse(r.line)
-                        }
-                    }
-                }, "file-stage").start()
+                stageAndBegin(src.name) { FileStage.stageFile(this, src) }
             }
         }
         // #156: the device matrix needs to PUT the phone into each state and then fire
@@ -2156,6 +2146,9 @@ class MainActivity : AppCompatActivity() {
     /** The one flow for the screen. All decisions live in [FileOffer]/[FileShare]; this holds
      *  the three Android edges — the picker, the staging copy, and the ordinary turn send. */
     private var fileShareRef: FileShare? = null
+
+    /** Bumped for every staging run; a result from an older run is deleted, never offered. */
+    private var stageSeq = 0L
     private val fileShare: FileShare by lazy {
         FileShare(
             sendTurn = { text, transcript -> send(text, transcript = transcript) },
@@ -2201,14 +2194,29 @@ class MainActivity : AppCompatActivity() {
      */
     private fun offerUri(uri: android.net.Uri?) {
         if (uri == null) return
-        fileOfferSheet.show()
         val name = runCatching { FileStage.displayName(this, uri) }.getOrNull() ?: "file"
+        stageAndBegin(name) { FileStage.stage(this, uri) }
+    }
+
+    /**
+     * Copy and hash off the main thread, then start the offer — unless the world moved on.
+     * [stageSeq] is the guard: a copy that finishes after the sheet was closed, after another
+     * file was picked, or after the screen went away is **deleted** and never offered. Closing
+     * the sheet during the copy cancels [fileShare] to `Idle`, so the state check is what makes
+     * "closing is never a send" true for the slow path as well as the fast one.
+     */
+    private fun stageAndBegin(name: String, produce: () -> FileStage.Result) {
+        fileOfferSheet.show()
         fileShare.reading(name)
+        val mine = ++stageSeq
         Thread({
-            val result = FileStage.stage(this, uri)
+            val result = produce()
             runOnUiThread {
-                if (isFinishing || isDestroyed) {
-                    // The screen is gone: the copy must not outlive it.
+                val abandoned = mine != stageSeq ||
+                    fileShare.state !is FileShare.State.Reading ||
+                    isFinishing || isDestroyed
+                if (abandoned) {
+                    // The screen is gone or the offer was cancelled: the copy must not outlive it.
                     (result as? FileStage.Result.Ok)?.staged?.file?.delete()
                     return@runOnUiThread
                 }

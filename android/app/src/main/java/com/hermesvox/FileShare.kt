@@ -159,7 +159,10 @@ class FileShare(
             return
         }
         server = s
-        val turn = FileOffer.offerTurn(file, host, s.port, token, expiresAtSec)
+        // The turn names the address the socket actually bound to, not the string we looked
+        // up: for IPv6 those can differ in form (compression, scope) and the agent's curl
+        // must reach the listener we started.
+        val turn = FileOffer.offerTurn(file, bind.hostAddress ?: host, s.port, token, expiresAtSec)
         log("event=file-offer serving port=${s.port} expires=$expiresAtSec")
         sendTurn(turn, FileOffer.transcriptLine(file, inline = false))
         emit(State.Offering(file, expiresAtSec, plan.line))

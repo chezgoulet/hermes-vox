@@ -284,6 +284,49 @@ class FileServerTest {
         }
     }
 
+    // ---- the copy on disk must still be the file we hashed, and a hostile line cannot wedge it ----
+
+    @Test fun aStagedCopyThatChangedIsRefusedNotHalfServed() {
+        // Content-Length is a promise. If the copy is not the length we announced, sending it
+        // anyway would leave the agent waiting for bytes that never come and then calling a
+        // half-response a truncation — so the request is refused (500) instead.
+        val s = FileServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            token = token, file = file, bytes = body.size + 5L, mime = "text/plain",
+            sha256 = FileOffer.sha256(body),
+            expiresAtMs = System.currentTimeMillis() + 60_000,
+            log = { log.add(it) },
+        )
+        try {
+            val r = request(s.port)
+            assertEquals("a copy that is not the one we hashed is refused", 500, r.first)
+            assertFalse("nothing was served", s.served)
+            assertTrue(log.any { it.contains("error=size-changed") })
+        } finally {
+            s.close()
+        }
+    }
+
+    @Test fun anOverLongRequestLineIsRefusedAndDrained() {
+        // A 40 KB request line must be refused, and the part past the reader's limit must be
+        // drained with it — never re-read as if it were a header or a second request.
+        val s = start()
+        try {
+            val huge = "/" + "a".repeat(40_000)
+            Socket(InetAddress.getLoopbackAddress(), s.port).use { sock ->
+                sock.soTimeout = 5_000
+                sock.getOutputStream().write("GET $huge HTTP/1.1\r\nHost: h\r\n\r\n".toByteArray())
+                sock.getOutputStream().flush()
+                val status = readLine(BufferedInputStream(sock.getInputStream())) ?: ""
+                assertTrue("the over-long request is refused, got '$status'", status.startsWith("HTTP/1.1 4"))
+            }
+            // The single listener survived it and still serves the real request.
+            assertEquals(200, request(s.port).first)
+        } finally {
+            s.close()
+        }
+    }
+
     @Test fun aTruncatedFetchIsNotASuccessAndMayBeRetried() {
         // A body far larger than any socket buffer, so hanging up genuinely interrupts the
         // write instead of fitting into the kernel's buffer and "succeeding".

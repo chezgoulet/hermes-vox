@@ -330,8 +330,15 @@ class FileOfferTest {
     }
 
     @Test fun aNegatedMismatchIsNotAFailure() {
-        assertEquals(FileOffer.Reply.Kept(""), FileOffer.readReply("no mismatch — it is fine"))
-        assertEquals(FileOffer.Reply.Kept(""), FileOffer.readReply("verified, without a mismatch"))
+        // Neither sentence reports a keep, so neither is a collection — but neither may be read
+        // as a failure either.
+        assertFalse(
+            FileOffer.readReply("no mismatch — it is fine") is FileOffer.Reply.Mismatch,
+        )
+        assertFalse(
+            FileOffer.readReply("verified, without a mismatch") is FileOffer.Reply.Mismatch,
+        )
+        assertEquals(FileOffer.Reply.Silent, FileOffer.readReply("verified, without a mismatch"))
     }
 
     @Test fun theKeptPathIsReadFromTheReply() {
@@ -346,8 +353,38 @@ class FileOfferTest {
     }
 
     @Test fun aUrlInTheReplyIsNotAPath() {
-        val r = FileOffer.readReply("fetched http://100.64.0.7:49152/abc successfully")
-        assertEquals(FileOffer.Reply.Kept(""), r)
+        // A URL is not a path the agent kept, and "fetched" alone is not a keep: nothing is
+        // claimed from this reply.
+        assertEquals(
+            FileOffer.Reply.Silent,
+            FileOffer.readReply("fetched http://100.64.0.7:49152/abc successfully"),
+        )
+        assertEquals(
+            FileOffer.Reply.Kept("~/.hermes/inbox/abc"),
+            FileOffer.readReply("kept at ~/.hermes/inbox/abc (fetched from http://100.64.0.7:49152/abc)"),
+        )
+    }
+
+    @Test fun aReplyThatSaysNothingAboutTheFileClaimsNothing() {
+        // A reply is evidence, not a mood: a sentence that does not say the file was kept
+        // cannot become the success line, however friendly it is.
+        val replies = listOf(
+            "Which file did you mean?",
+            "Thanks — noted.",
+            "I see the offer, one moment.",
+            "Let me know if you need anything else.",
+        )
+        for (r in replies) assertEquals(r, FileOffer.Reply.Silent, FileOffer.readReply(r))
+    }
+
+    @Test fun aKeepWithoutAPathIsStillACollection() {
+        assertEquals(FileOffer.Reply.Kept(""), FileOffer.readReply("Got it and kept it."))
+        assertEquals(FileOffer.Reply.Kept(""), FileOffer.readReply("Saved into the inbox."))
+    }
+
+    @Test fun aDeniedKeepIsNotACollection() {
+        assertEquals(FileOffer.Reply.Silent, FileOffer.readReply("I could not save it after all."))
+        assertEquals(FileOffer.Reply.Silent, FileOffer.readReply("nothing was kept"))
     }
 
     @Test fun anEmptyReplySaysNothing() {

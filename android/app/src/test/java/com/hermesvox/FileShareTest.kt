@@ -125,6 +125,23 @@ class FileShareTest {
         assertTrue("the server is closed", f.openServer == null)
     }
 
+    @Test fun aReplyThatSaysNothingAboutTheFileDoesNotBecomeACollection() {
+        // The transfer completed, but "Which file did you mean?" is not a collection. The app
+        // says nothing new: the five-minute expiry is what resolves a silent agent, and it says
+        // it never named a path.
+        val (file, copy) = staged(body = ByteArray(1_000) { 1 })
+        val f = flow()
+        f.begin(file, copy, null)
+        assertEquals(200, fetch(f.openServer!!.port, tokenOf(sent.single().first)))
+        f.agentReplied("Which file did you mean?")
+        assertTrue("silence is not a collection", states.last() is FileShare.State.Offering)
+        expiry!!.invoke()
+        assertEquals(
+            "collected · meeting-notes.md (1.0 KB) · the agent did not say where it kept it",
+            (states.last() as FileShare.State.Collected).line,
+        )
+    }
+
     @Test fun theAgentSayingMismatchIsNeverSuccess() {
         val (file, copy) = staged(body = ByteArray(1_000) { 1 })
         val f = flow()
