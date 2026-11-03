@@ -345,22 +345,122 @@ data: {"event":"message.delta","run_id":"run_h","seq":0,"delta":"x"}
         }
     }
 
+    /** A runs gateway that answers every admission and finishes each run at once. */
+    private fun completingRuns(reply: String = "done"): TestServer {
+        val n = AtomicInteger()
+        return TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_${n.incrementAndGet()}","status":"started"}""")
+                r.method == "GET" && r.path.contains("/events") -> {
+                    w.sse()
+                    w.write("""id: 0
+data: {"event":"run.completed","seq":0,"output":"$reply"}
+
+""")
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }
+    }
+
+    private fun runBodies(srv: TestServer): List<JObj> =
+        srv.requests.filter { it.method == "POST" && it.path == "/v1/runs" }.map { Json.parse(it.body) as JObj }
+
     /**
-     * H2 on the runs route: /compress follows the streamed turns. It sends no stored
-     * chain head (the session key IS the conversation) and does not install one.
+     * H2 (0.9.1 review): the transcript is a client-owned `session_id` in the run body —
+     * the gateway ranks it above `X-Hermes-Session-Key`. Every turn of one conversation
+     * carries the same id, and the key still rides as the memory scope.
      */
     @Test
-    fun `a stored turn on a runs session chains by the session key`() = withRuns {
-        TestServer { r, w ->
-            w.send(200, "OK", """{"id":"resp_compress","output":[{"type":"message","content":[{"type":"output_text","text":"compacted"}]}]}""")
-        }.use { srv ->
+    fun `every run of a conversation carries the same client session id`() = withRuns {
+        completingRuns().use { srv ->
+            val s = session(srv)
+            drain(s, s.startStream("one"))
+            drain(s, s.voiceTurn("two"))
+            val ids = runBodies(srv).map { Json.str(it, "session_id") }
+            assertEquals(2, ids.size)
+            assertTrue(ids[0].startsWith("vox_"))
+            assertEquals(ids[0], ids[1])
+            assertEquals(s.conversationId(), ids[0])
+            for (r in srv.requests.filter { it.path == "/v1/runs" }) {
+                assertEquals("agent:vox:runs", r.header("X-Hermes-Session-Key"))
+            }
+        }
+    }
+
+    /**
+     * H2: `/new` (RESET_CHAIN → resetConversation) must start a new transcript on the
+     * runs route. Clearing the response head alone changed nothing the run sends, so the
+     * next run landed in the old conversation with its full history.
+     */
+    @Test
+    fun `a reset conversation files the next run under a new session id`() = withRuns {
+        completingRuns().use { srv ->
+            val s = session(srv)
+            drain(s, s.startStream("before"))
+            s.resetConversation()
+            drain(s, s.startStream("after"))
+            val ids = runBodies(srv).map { Json.str(it, "session_id") }
+            assertEquals(2, ids.size)
+            assertTrue(ids.all { it.isNotEmpty() })
+            assertTrue("the reset must rotate the transcript id", ids[0] != ids[1])
+            // The scope (memory) is unchanged across the reset: only the transcript rotates.
+            val keys = srv.requests.filter { it.path == "/v1/runs" }.map { it.header("X-Hermes-Session-Key") }.toSet()
+            assertEquals(setOf("agent:vox:runs"), keys)
+        }
+    }
+
+    @Test
+    fun `two sessions never share a transcript id`() {
+        val a = HermesSession("http://127.0.0.1:1", "k", "m")
+        val b = HermesSession("http://127.0.0.1:1", "k", "m")
+        assertTrue(a.conversationId() != b.conversationId())
+    }
+
+    /**
+     * H2 on the runs route: /compress follows the streamed turns into the SAME transcript.
+     * `/v1/responses` cannot address a body session_id, so the stored turn is a run too:
+     * same session_id, no stored chain head, and the run's output is the reply.
+     */
+    @Test
+    fun `a stored turn on a runs session rides the conversation's run session`() = withRuns {
+        completingRuns("compacted").use { srv ->
             val s = session(srv)
             s.lastID = "resp_stale"
+            drain(s, s.startStream("hi"))
             assertEquals("compacted", s.turnStored("/compress"))
-            val body = Json.parse(srv.requests.single().body) as JObj
-            assertEquals(null, body["previous_response_id"])
-            assertEquals("agent:vox:runs", srv.requests.single().header("X-Hermes-Session-Key"))
+            assertTrue(srv.requests.none { it.path == "/v1/responses" })
+            val bodies = runBodies(srv)
+            assertEquals(2, bodies.size)
+            assertEquals(Json.str(bodies[0], "session_id"), Json.str(bodies[1], "session_id"))
+            assertEquals(null, bodies[1]["previous_response_id"])
             assertEquals("resp_stale", s.lastID)
+        }
+    }
+
+    /** A stored run that never answers is stopped at its deadline, not left running. */
+    @Test
+    fun `a stored run past its deadline is stopped`() = withRuns {
+        val stopped = CountDownLatch(1)
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_slow","status":"started"}""")
+                r.method == "POST" && r.path.endsWith("/stop") -> {
+                    w.send(200, "OK", """{"status":"stopping"}"""); stopped.countDown()
+                }
+                r.method == "GET" -> { w.sse(); w.write(": keepalive\n\n"); w.holdUntilClientCloses(5000) }
+            }
+        }.use { srv ->
+            val client = ResponsesClient(srv.url, "testkey", "hermes-agent").also { it.setSessionKey("agent:vox:runs") }
+            try {
+                Streams.complete(client, "/compress", 300)
+                error("a silent run must not produce a reply")
+            } catch (e: HermesException) {
+                assertTrue(e.message!!.contains("no answer"))
+            }
+            assertTrue(stopped.await(3, TimeUnit.SECONDS))
         }
     }
 }

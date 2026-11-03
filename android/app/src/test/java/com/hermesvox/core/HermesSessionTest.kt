@@ -229,7 +229,7 @@ class HermesSessionTest {
     /** The port of entity_race_test: the app re-declares the scope from Settings while
      *  turns are in flight. Every request must carry one whole declared value. */
     @Test
-    fun `scope re-declaration during turns is consistent`() {
+    fun `scope re-declaration during turns is consistent`() = onResponses {
         TestServer { _, w -> w.send(200, "OK", okReply) }.use { srv ->
             val s = HermesSession(srv.url, "testkey", "m")
             val scopes = (0 until 8).map { "agent:vox:dev:member-$it" }

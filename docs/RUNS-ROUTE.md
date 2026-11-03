@@ -86,10 +86,16 @@ it already renders.
 Deliberate gaps:
 
 - **No response id.** A run has none (the terminal event carries `output`, `usage`,
-  `runtime`, not an id). The runs body therefore omits `previous_response_id` and the
-  chain rides `X-Hermes-Session-Key`, which Vox always stamps. `lastID` is left
-  untouched by a runs turn — it names a stored `/v1/responses` snapshot that a run
-  cannot advance.
+  `runtime`, not an id). The runs body therefore omits `previous_response_id`. The
+  conversation is a **client-owned `session_id`** in the body (0.9.1 review H2), which
+  the gateway ranks above `X-Hermes-Session-Key` (`api_server_runs.py`: body
+  `session_id` > response chain > declared key > `run_id`). The key stays the
+  long-term-memory scope; the `session_id` is the transcript. `HermesSession` makes one
+  per session object and rotates it in `resetConversation` (`RESET_CHAIN`), so `/new`,
+  a new call and a profile switch start a fresh transcript. A stored turn (`/compress`,
+  the VOX.md directive) rides `/v1/runs` with the same id, because `/v1/responses`
+  cannot address a body `session_id`. `lastID` is left untouched by a runs turn — it
+  names a stored `/v1/responses` snapshot that a run cannot advance.
 - **`tool.started` has no `args`.** The responses route carries the tool's raw JSON
   arguments; runs carries only the gateway's `preview` — the tool's primary argument as
   one line (`agent/display.py`, `build_tool_preview`). The tool marker lines and the tool
@@ -149,7 +155,9 @@ the conversation scope is not blank), or the turns ride responses and prove noth
    stored-turn path needs its own route-aware chain before the flip.
 7. A `clarify.request` (when a tool asks): the event reaches the app without being
    mistaken for an approval.
-8. `/new` on a scoped install: the next turn does not remember the last one. A runs turn
-   leaves no response id to delete, and the gateway resolves the declared key to the
-   same conversation on both routes — confirm the redial actually starts fresh.
+8. `/new` on a scoped install: the next turn does not remember the last one. Before
+   0.9.1's H2 fix it did: the run body carried no `session_id`, so the gateway resolved
+   the declared key to the same conversation. The run body now carries a client
+   `session_id` that `/new` rotates (pinned off-device by `RunsStreamTest`) — confirm on
+   the device that "what did I just say?" after `/new` gets no memory of the turn.
 9. An unscoped install: turns still ride `/v1/responses` and keep their conversation.

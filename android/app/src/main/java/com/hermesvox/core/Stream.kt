@@ -161,11 +161,14 @@ internal object Streams {
      * consumes the SSE into the SAME registered state [poll] drains, so the events
      * the app renders are the events the gateway sent.
      */
-    fun start(client: ResponsesClient, input: String, previousResponseId: String): String {
-        val st = StreamState()
+    fun start(client: ResponsesClient, input: String, previousResponseId: String): String =
         // Captured once: a settings flip mid-turn must not move a live stream between
         // routes (the reader thread would be half-way through one vocabulary).
-        val route = StreamRoute.routeFor(client.hasSessionKey())
+        start(client, input, previousResponseId, StreamRoute.routeFor(client.hasSessionKey())).first
+
+    private fun start(client: ResponsesClient, input: String, previousResponseId: String,
+                      route: TurnRoute): Pair<String, StreamState> {
+        val st = StreamState()
         val chainHead = StreamRoute.chainHead(route, previousResponseId)
         val (id, n) = synchronized(streams) {
             seq++
@@ -190,7 +193,35 @@ internal object Streams {
             // stays registered until the done poll drains it — no final-poll race.
             st.signal()
         }, "hermes-stream-$n").apply { isDaemon = true }.start()
-        return id
+        return id to st
+    }
+
+    /**
+     * H2 (0.9.1 review): a stored (non-streamed) turn on the runs route — `/compress`,
+     * the VOX.md directive, the skill install. It rides the same reader as a voice turn
+     * (same transcript `session_id`, same stop on the way out) and blocks for the reply.
+     * Past [timeoutMs] the run is stopped rather than left generating unheard.
+     */
+    fun complete(client: ResponsesClient, input: String, timeoutMs: Long): String {
+        val (id, st) = start(client, input, "", TurnRoute.RUNS)
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            synchronized(st.lock) {
+                if (st.done) {
+                    synchronized(streams) { streams.remove(id) }
+                    if (st.err.isNotEmpty()) throw HermesException(st.err)
+                    val reply = plainText(st.text.toString())
+                    if (reply.isEmpty()) throw HermesException("hermes run: no output in the run's answer")
+                    return reply
+                }
+            }
+            val left = deadline - System.currentTimeMillis()
+            if (left <= 0) {
+                cancel(id)
+                throw HermesException("hermes run: no answer within ${timeoutMs / 1000}s")
+            }
+            st.notify.poll(left, TimeUnit.MILLISECONDS)
+        }
     }
 
     /**
