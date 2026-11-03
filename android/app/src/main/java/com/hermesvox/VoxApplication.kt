@@ -25,5 +25,10 @@ class VoxApplication : Application() {
         // #403: stage one of the hardware check, once per install, before any model is fetched.
         // It records and advises; it never enables anything.
         HardwareCheck.runOnce(this, prefs)
+        // The VOX.md workflow is inert with Presence off (owner rule a), and the one-way
+        // migration of the pre-profile device-wide mirror is part of that workflow: an
+        // install that never turned Presence on keeps its file exactly where it is, and the
+        // next run with Presence on migrates it then.
+        if (PresenceGate.enabled(prefs)) VoxMirror.migrate(this)
     }
 }

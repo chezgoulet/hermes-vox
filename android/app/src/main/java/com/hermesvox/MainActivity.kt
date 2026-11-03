@@ -690,6 +690,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startCall() {
         skipPresenceThisCall = false; presenceWaitStartedAt = 0L
+        voxFailedFor = null      // each call gets its own first-call ask for the profile
         sampleResources()   // #191: the memory picture before the models warm, should the load kill us
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
@@ -752,7 +753,22 @@ class MainActivity : AppCompatActivity() {
         var presenceWanted = presenceActive()
         if (presenceWanted && (express as? GemmaExpress)?.isLoading != true)
             ensurePresenceLoading()
-        val soulReady = !presenceWanted || express.available || skipPresenceThisCall
+        // Owner rule (b): Presence speaks only on a document for THIS profile. With no
+        // valid mirror the first call asks the entity for one (the same resync path) and
+        // waits on it; if no ask can land, Presence stays quiet for this call rather than
+        // speaking a stale or empty soul. With Presence off, soulDocForPresence is never
+        // consulted and nothing is fetched (rule a).
+        var soulDoc = SoulDoc.ABSENT
+        if (presenceWanted) {
+            soulDoc = soulDocForPresence()
+            if (soulDoc == SoulDoc.ABSENT) {
+                presenceWanted = false
+                skipPresenceThisCall = true
+                VoxLog.w("event=presence-unavailable reason=vox-missing profile=${VoxMirror.activeProfile(prefs)}")
+            }
+        }
+        val soulReady = !presenceWanted || skipPresenceThisCall ||
+            (express.available && soulDoc == SoulDoc.READY)
         c.presenceActive = presenceWanted
         if (!c.isWarm() || !soulReady) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} presence=$presenceWanted")
@@ -764,7 +780,10 @@ class MainActivity : AppCompatActivity() {
                 // to start without it — one word for ~50 s is indistinguishable from a hang.
                 if (presenceWaitStartedAt == 0L && c.isWarm()) presenceWaitStartedAt = android.os.SystemClock.uptimeMillis()
                 val waited = if (presenceWaitStartedAt == 0L) 0L else android.os.SystemClock.uptimeMillis() - presenceWaitStartedAt
-                val pw = PresenceWait.line(c.isWarm(), !soulReady, waited)
+                // A wait on the profile's VOX.md says so: "Loading Presence" while the phone
+                // is asking the entity would be the wrong story.
+                val pw = PresenceWait.line(c.isWarm(), !soulReady, waited,
+                    vox = presenceWanted && soulDoc == SoulDoc.FETCHING)
                 if (pw == null) showPhase() else {
                     setStatus(pw, true)
                     if (PresenceWait.canSkip(c.isWarm(), !soulReady, waited)) {
@@ -781,11 +800,12 @@ class MainActivity : AppCompatActivity() {
             warmRetries = 0
             warmingNow = false
             if (::warming.isInitialized) warming.visibility = android.view.View.GONE
-            if (c.isWarm() && !express.available) {
-                // The voice pipeline is ready; only Presence never arrived. That is normal
-                // operation, not a failed call, and it is not announced as a mode: open the
-                // line without the layer. The Settings presence row still explains the state.
-                VoxLog.w("event=presence-unavailable reason=warm-timeout")
+            if (c.isWarm() && (!express.available || soulDoc != SoulDoc.READY)) {
+                // The voice pipeline is ready; only Presence never arrived — no model, or no
+                // document for this profile. That is normal operation, not a failed call, and
+                // it is not announced as a mode: open the line without the layer. The Settings
+                // presence row still explains the state.
+                VoxLog.w("event=presence-unavailable reason=${if (!express.available) "warm-timeout" else "vox-missing"}")
                 skipPresenceThisCall = true
                 presenceWanted = false
                 c.presenceActive = false
@@ -1366,6 +1386,97 @@ class MainActivity : AppCompatActivity() {
         canStart = (express as? GemmaExpress)?.loadFailed != true,
     )
 
+    // ---- The profile's VOX.md (owner rules a, b) ----
+    //
+    // One document per profile, keyed by Profiles.PREF_ACTIVE (VoxMirror). Presence speaks
+    // only on a document for the profile that is active NOW:
+    //   READY    — a valid mirror exists; the soul may speak.
+    //   FETCHING — there is none, and the first call is asking the entity for one (the same
+    //              resync path Settings uses). Presence waits; the wait line names it.
+    //   ABSENT   — no mirror and no ask in flight (Presence off, not connected, or the ask
+    //              already failed this call). Presence stays quiet.
+
+    private enum class SoulDoc { READY, FETCHING, ABSENT }
+
+    /** Profiles whose first-call ask is in flight, so two entry points cannot ask twice. */
+    private val voxFetching: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    /** The profile whose first-call ask failed this call (one attempt per profile per call). */
+    @Volatile private var voxFailedFor: String? = null
+
+    /** Resolve the active profile's document, starting the first-call ask when it is absent. */
+    private fun soulDocForPresence(): SoulDoc {
+        // Rule (a): with Presence off the workflow is inert — no migration, no read for the
+        // soul, no request. (The persona getter is the only other reader, and it is only
+        // reached from a loaded engine, which Presence-off unloads in handleModeUi.)
+        if (!PresenceGate.enabled(prefs)) return SoulDoc.ABSENT
+        // Rule (b), first half: the pre-profile device-wide mirror joins the active profile
+        // once, before we decide it is missing (idempotent; safe to call every call start).
+        VoxMirror.migrate(this)
+        val profile = VoxMirror.activeProfile(prefs)
+        return when (VoxSync.plan(true, VoxMirror.read(filesDir, profile))) {
+            VoxSync.Need.READY -> SoulDoc.READY
+            else -> {
+                if (voxFailedFor == profile) return SoulDoc.ABSENT
+                startVoxFetch(profile)
+                if (voxFetching.contains(profile)) SoulDoc.FETCHING else SoulDoc.ABSENT
+            }
+        }
+    }
+
+    /**
+     * Rule (b): the first call on a profile with no mirror asks the entity for one, through
+     * the existing resync flow (VoxSync.obtain → VoxSoul.resync validates the reply).
+     * Off the UI thread; one attempt per profile per call; no dialog, no toast.
+     *
+     * On success the warm model is re-primed on the new document (VoxSync wrote it, and the
+     * persona getter reads the active profile's file), so the first turn is spoken by the
+     * entity whose soul just arrived. On failure nothing is written and Presence stays quiet.
+     */
+    private fun startVoxFetch(profile: String) {
+        if (!PresenceGate.enabled(prefs)) return              // rule (a)
+        if (voxFailedFor == profile || !voxFetching.add(profile)) return
+        val u = prefs.getString("url", "").orEmpty()
+        val k = storedKey()
+        if (u.isBlank() || GatewayKey.isMissing(k)) {
+            voxFetching.remove(profile); voxFailedFor = profile
+            VoxLog.w("event=vox-first-call profile=$profile phase=skip reason=not-connected")
+            return
+        }
+        val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        VoxLog.d("event=vox-first-call profile=$profile phase=start")
+        kotlin.concurrent.thread(isDaemon = true, name = "vox-first-call") {
+            val session = com.hermesvox.core.HermesSession(u, SecureStore.decrypt(k) ?: k, model)
+            // The profile is captured here, not re-read at write time: the document belongs
+            // to the entity that answered, even if the user switches during the ask.
+            val log: (String) -> Unit = { VoxLog.er(it) }
+            val a = VoxSync.obtain(filesDir, profile, presenceOn = true, log = log) { note ->
+                VoxSync.ask(session, note, log)
+            }
+            voxFetching.remove(profile)
+            if (!a.ready) voxFailedFor = profile
+            VoxLog.d("event=vox-first-call profile=$profile phase=end ready=${a.ready} reason=${a.reason ?: "-"}")
+            if (a.ready) (express as? GemmaExpress)?.reprime("vox-first-call")
+        }
+    }
+
+    /**
+     * Rule (c): on a profile switch with Presence on, the warm model must hold the NEW
+     * profile's document, not merely have it on disk. [GemmaExpress.reprime] rebuilds the
+     * rolling conversation on the active persona and pays its prefill now; the next render
+     * — the switch's first turn, or the next call's greeting — is the new entity in its own
+     * voice. With no mirror yet for the new profile, the conversation is only closed: the
+     * call gate fetches the document before Presence may speak.
+     */
+    private fun switchPresenceProfile() {
+        val profile = VoxMirror.activeProfile(prefs)
+        VoxMirror.migrate(this)
+        val mirrored = VoxSync.plan(true, VoxMirror.read(filesDir, profile)) == VoxSync.Need.READY
+        voxFailedFor = null              // the profile just left must not silence the new one
+        (express as? GemmaExpress)?.reprime("profile-switch")
+        VoxLog.d("event=presence-profile profile=$profile mirrored=$mirrored")
+    }
+
     // Hold a wake lock while the hands-free line is open so it isn't Dozed.
     private var voiceWake: android.os.PowerManager.WakeLock? = null
     private fun acquireVoiceWake() {
@@ -1725,6 +1836,9 @@ class MainActivity : AppCompatActivity() {
         LatencyStats.resetSessionTurns()
         clearConversationUi()
         connectFromPrefs()
+        // Rule (c): a switch with Presence on re-primes the warm model on the new profile's
+        // document, so the next render is the new entity — not the one just left.
+        if (PresenceGate.enabled(prefs)) switchPresenceProfile()
         VoxLog.d("event=profile-switch profiles=${synced.size} callEnded=$wasLive")
         setStatus(if (wasLive) "Call ended · ${p.name} · new conversation" else "${p.name} · new conversation", true)
     }
