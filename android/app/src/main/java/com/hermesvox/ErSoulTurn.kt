@@ -580,6 +580,18 @@ object ErSoulTurn {
     }
 
     /**
+     * The decision's name in the log vocabulary — ONE mapping, used by the render site
+     * (`event=er-soul decision=`) and by the handoff receipt ([ErHandoff.receipt]), so the two
+     * lines can never disagree about what the soul chose.
+     */
+    fun decisionName(o: Outcome): String = when (o) {
+        is Outcome.Spoken -> "answer"
+        is Outcome.Beat -> "beat"
+        Outcome.Escalate -> "escalate"
+        Outcome.Nothing -> "nothing"
+    }
+
+    /**
      * The same-text guard: has this line already been said inside [windowMs]?
      *
      * The 09-10 field session spoke ONE sentence seven times in thirty-nine seconds. The defect

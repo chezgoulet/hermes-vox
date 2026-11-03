@@ -170,6 +170,95 @@ read being one or the other.
 
 ---
 
+## The handoff: how ER decides, and how to read a session for swallowed turns
+
+0.9.1 shipped Presence/ER with a release-gating report: *"it swallowed my question — the soul
+answered something, and Hermes never did."* The layer is supposed to answer (that is the point), so
+the question is narrow: **can a substantive turn end with neither voice answering, and can that be
+seen afterwards?**
+
+### The decision rule, in code
+
+One render per turn. `ErSoulTurn.directive(callerText)` (`android/app/src/main/java/com/hermesvox/ErSoulTurn.kt`)
+asks the soul one question — *greeting/smalltalk/feeling → one short line; a fact, a tool, a real-world
+action, a plan, or any doubt → the escalate token plus two to six words* — and **its output is the
+decision**:
+
+| output | `Outcome` | what happens |
+|---|---|---|
+| a line | `Spoken` | the soul's turn. The mind is still submitted, and is *told* the voice answered (`ErDrift.epilogue`), so it may reply `<<SKIP>>` |
+| `<<ESCALATE>>` + words | `Beat` | the mind's turn; the soul opens it |
+| `<<ESCALATE>>` alone | `Escalate` | the mind's turn, silently |
+| blank / unavailable | `Nothing` | the mind's turn |
+
+**What is enforced in code, and what is only asked.** Rule 3 ("substantive/factual/tool/planning
+questions escalate") lives in the *directive* — the model is asked to obey it. The code's guards are on
+the **beat** (`ErSoulTurn.opener`: no digits, no markup, ≤ 7 words → otherwise escalate silently) and on
+the **working lane** (`ErSoulTurn.judge`: no unvouched number, no unbacked result claim). A turn answer
+(`Outcome.Spoken`) is **not** content-checked: it is spoken as written. That asymmetry is deliberate —
+the soul must be able to answer — but it is exactly why a factual turn can be answered locally with no
+error anywhere. See `ErSoulTurn.kt:283` (the guard) against `VoiceController.kt:1837` (the turn lane,
+which never calls it).
+
+### The two new lines
+
+| line | meaning | read it as |
+|---|---|---|
+| `event=er-handoff gen=N ok=true\|false reason=… soul=answer\|beat\|escalate\|nothing askChars=N` | **the receipt**: exactly one per turn. `ok=true` = the gateway accepted the turn and returned a stream id; `ok=false` = the mind never saw it, and `reason=` says which path dropped it (`suppressed-inflight`, `cancelled-before-submit`, `stopped`, `no-stream`) | `ok=false` is a swallowed turn. `ok=true` answers the reporter's question — *it got through* |
+| `event=er-swallow gen=N mind=skipped\|not-submitted cls=mind askChars=N soulChars=N` | the no-silent-swallow rule: the soul answered **and** the caller heard no mind. `mind=skipped` = the mind saw the turn, was told the voice answered, and replied `<<SKIP>>`; `mind=not-submitted` = it never saw it | not a failure. The **rate** of these is the number that decides whether the escalate rule needs teeth |
+
+`askChars` is a length, never the caller's text, so the line is safe with transcript logging off.
+`soul=-` means the soul was not consulted (presence off, a typed turn) or its decision did not land
+before the submit (the measured-slow path, where `SoulGate.waitMs` is zero) — a subsequent
+`event=er-soul` line is then the decision that arrived too late to be part of the handoff.
+
+The old `event=er-handoff` (the TTS track handoff between a beat and the mind's stream) is now
+**`event=er-audio-handoff`** — same fields, renamed because the name now means the mind's receipt.
+
+### Reading a session
+
+```bash
+# every turn that should have reached the mind, and whether it did
+grep -E 'event=er-(handoff|swallow)' session.log
+
+# the reporter's shape: soul answers, mind skips
+grep -c 'event=er-soul kind=turn decision=answer' session.log     # denominator: soul-owned turns
+grep -c 'event=er-swallow' session.log                            # numerator: nobody answered
+grep -E 'event=er-(soul|handoff|swallow|mind-skip|soul-drop)' session.log | less   # one turn at a time
+```
+
+The other drops, unchanged, are in the same vocabulary: `er-soul-drop reason=late` (the decision lost
+to the mind's first token — the mind was not told, so it answers), `reason=undeliverable`,
+`reason=mind-already-replying` / `already-answered` (the voice was live first), `event=er-mind-skip`
+(the mind honoured the skip). A `er-soul-drop` is never by itself a swallow — the receipt and the
+swallow line are what settle it.
+
+### The guard: proposed, not added
+
+The instruction for 0.9.1 is to instrument before restraining. A hard guard ("a turn answer
+containing a question mark or a digit is refused and escalated") would be a keyword rule in the
+decision path — the pattern the design deleted after 174 substrings failed three times in one
+afternoon (`docs/DESIGN-enhanced-realtime-voice.md` §DECISION). The honest sequence:
+
+1. Ship the receipt. Any device session then answers *"did the mind get the turn?"* mechanically.
+2. Count `er-swallow` against `er-soul decision=answer`. If the rate is non-trivial **and** the
+   swallows cluster on factual turns (`askChars` is the only proxy today — `cls=mind` is constant,
+   because a backchannel never reaches the soul), the guard to propose is a **turn-lane content
+   check** reusing `ErSoulTurn.judge` — not a lexer: refuse `Spoken` when the *mind's own* directive
+   would call it a fact, and escalate instead. That is a one-place change with a tested primitive
+   already in the file.
+
+Until that rate exists, the code records the swallow rather than preventing it.
+
+### Known artifact when reading the log
+
+A sanctioned `<<SKIP>>` currently settles through the **empty-reply** branch
+(`VoiceController.kt:2102` — `terminal.fail("empty-reply")`), so `er-mind-skip` and
+`event=turn outcome=empty-reply` co-occur on a healthy soul-answered turn. Read them together; the
+`empty-reply` is not evidence of a broken gateway in that pair.
+
+---
+
 ## The record
 
 - `docs/DESIGN-enhanced-realtime-voice.md` — the architecture, the contract, the specialist review,
