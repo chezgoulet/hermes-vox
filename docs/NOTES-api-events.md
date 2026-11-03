@@ -78,3 +78,11 @@ this build. That is the upstream hook above, unchanged. The deterministic stand-
 to prove the phone half is [`scripts/approval-harness.py`](../scripts/approval-harness.py);
 it emits the same event and records the POST. Once the gateway ships the hook, the same
 code path runs with no app change.
+
+## The `/v1/runs` turn reader (behind a switch)
+
+The app now has a second stream reader for `/v1/runs`, feeding the same `StreamState`
+and the same event vocabulary as the responses reader. It ships **off**:
+`StreamRoute.active` in `core/TurnRoute.kt` is `TurnRoute.RESPONSES`. Why the route
+exists, the full event mapping, the `message.interim` finding and the pre-flip device
+checks are in [`docs/RUNS-ROUTE.md`](RUNS-ROUTE.md).
