@@ -26,7 +26,7 @@ class RunsStreamTest {
         }
     }
 
-    /** A run has no response id: the route is only taken with a declared scope. */
+    /** A scoped session: the key rides as the memory scope beside the run's session_id. */
     private fun session(srv: TestServer) =
         HermesSession(srv.url, "testkey", "hermes-agent").also { it.setSessionKey("agent:vox:runs") }
 
@@ -192,28 +192,27 @@ data: {"event":"run.completed","run_id":"run_c","seq":0,"completed":true,"partia
     }
 
     /**
-     * With no declared scope the gateway keys a run's session by its own run id, so
-     * every turn would start a new conversation. Such an install stays on the responses
-     * route — chained by previous_response_id — even with the runs route active.
+     * 0.9.1 H2: an unscoped install used to be held on the responses route, because with
+     * neither a key nor a session id the gateway files each run under its own run id and
+     * every turn would start a new conversation. The run body's client `session_id` keeps
+     * the conversation without a scope, so the unscoped install runs too — sending no
+     * session key at all, and the same transcript id on each turn.
      */
     @Test
-    fun `with no session key a turn stays on the responses route`() = withRuns {
-        TestServer { r, w ->
-            if (r.method == "POST" && r.path == "/v1/responses") {
-                w.sse()
-                w.write("""event: response.completed
-data: {"type":"response.completed","response":{"id":"resp_k","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"kept"}]}]}}
-
-""")
-            } else w.send(500, "Wrong Route", "{}")
-        }.use { srv ->
+    fun `with no session key a turn rides runs and keeps its conversation`() = withRuns {
+        completingRuns("kept").use { srv ->
             val s = HermesSession(srv.url, "testkey", "hermes-agent")
             s.lastID = "resp_prev"
-            drain(s, s.startStream("hi"))
-            val r = srv.requests.single()
-            assertEquals("/v1/responses", r.path)
-            assertEquals("resp_prev", Json.str(Json.parse(r.body) as JObj, "previous_response_id"))
-            assertEquals("resp_k", s.lastID)
+            drain(s, s.startStream("one"))
+            drain(s, s.startStream("two"))
+            val runs = srv.requests.filter { it.method == "POST" && it.path == "/v1/runs" }
+            assertEquals(2, runs.size)
+            assertTrue(srv.requests.none { it.path == "/v1/responses" })
+            for (r in srv.requests) assertEquals("", r.header(Entity.SESSION_KEY_HEADER))
+            val ids = runs.map { Json.str(Json.parse(it.body) as JObj, "session_id") }
+            assertTrue(ids[0].isNotEmpty())
+            assertEquals(ids[0], ids[1])
+            assertEquals(null, (Json.parse(runs[0].body) as JObj)["previous_response_id"])
         }
     }
 

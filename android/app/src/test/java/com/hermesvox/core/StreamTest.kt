@@ -15,6 +15,17 @@ import java.util.concurrent.TimeUnit
  */
 class StreamTest {
 
+    /** This class pins the `/v1/responses` reader; the shipped route is runs, which
+     *  every install now takes (0.9.1 H2), so the route is set for each test. */
+    private var routeBefore = StreamRoute.active
+
+    @org.junit.Before
+    fun pinResponsesRoute() { routeBefore = StreamRoute.active; StreamRoute.active = TurnRoute.RESPONSES }
+
+    @org.junit.After
+    fun restoreRoute() { StreamRoute.active = routeBefore }
+
+
     private fun session(srv: TestServer) = HermesSession(srv.url, "testkey", "hermes-agent")
 
     private fun obj(json: String) = Json.parse(json) as JObj

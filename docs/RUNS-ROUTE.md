@@ -31,22 +31,19 @@ internal object StreamRoute {
 `Streams.start` and `HermesSession.turnStored` read `routeFor` once per turn; tests
 set and restore `active`. Nothing above `HermesSession` knows the route exists.
 
-## The scope requirement
+## The scope requirement (lifted in 0.9.1, H2)
 
-A run has no response id, so its only chain is the declared `X-Hermes-Session-Key`.
-With no key the gateway keys the run's session by its own `run_id`
+A run has no response id. With neither a declared `X-Hermes-Session-Key` nor a body
+`session_id` the gateway keys the run's session by its own `run_id`
 (`api_server_runs.py`: `session_id = selected_session_id or run_id`) — every turn would
-be a new conversation. The scope is **blank by default** (Onboarding, `SessionScope`),
-so the claim this document used to make — "Vox always stamps" the key — was false.
+be a new conversation. Until the 0.9.1 review this kept an unscoped install (the scope is
+**blank by default**: Onboarding, `SessionScope`) on `/v1/responses`, with no approval
+card.
 
-The rule: **runs needs a scope; without one the turn stays on responses.** Losing the
-approval card for an unscoped install is a gap; losing the conversation would be a
-regression. Whether onboarding should declare a scope by default (which would put every
-install on the approval route) is the owner's call and is not made here.
-
-A stored turn (`/compress`, the soul turn, the skill install) follows the same route:
-on a runs session it sends no `previous_response_id` and installs no head, so it
-compacts the conversation the runs wrote — not a stale stored snapshot.
+The run body now carries the session's own client `session_id` (see the gaps below), so
+the conversation no longer depends on the scope. **Every install rides runs.** The scope
+only decides long-term memory: with no key, memory follows the transcript, exactly as an
+unscoped `/v1/responses` conversation did.
 
 ## The barge-in (#404)
 
@@ -160,4 +157,5 @@ the conversation scope is not blank), or the turns ride responses and prove noth
    the declared key to the same conversation. The run body now carries a client
    `session_id` that `/new` rotates (pinned off-device by `RunsStreamTest`) — confirm on
    the device that "what did I just say?" after `/new` gets no memory of the turn.
-9. An unscoped install: turns still ride `/v1/responses` and keep their conversation.
+9. An unscoped install: turns ride `/v1/runs` with no `X-Hermes-Session-Key`, carry the
+   same body `session_id` each turn, and keep their conversation ("what did I just say?").

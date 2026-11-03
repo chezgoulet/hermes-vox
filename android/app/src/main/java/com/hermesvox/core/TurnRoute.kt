@@ -27,7 +27,8 @@ internal enum class TurnRoute { RESPONSES, RUNS }
  * phone, whose barge-in stops the run itself (`POST /v1/runs/{id}/stop`) rather than
  * only closing a subscriber. Tests flip it and restore it.
  *
- * A turn rides [active] only when it can keep its conversation — see [routeFor].
+ * Every install rides [active]: since 0.9.1's H2 fix a run keeps its conversation by the
+ * client-owned body `session_id`, with or without a declared scope — see [routeFor].
  */
 internal object StreamRoute {
 
@@ -35,20 +36,19 @@ internal object StreamRoute {
     var active: TurnRoute = TurnRoute.RUNS
 
     /**
-     * The route a turn actually takes. A run has no response id, so its only chain is
-     * the declared `X-Hermes-Session-Key`: with no key the gateway keys the run's
-     * session by its own `run_id` (`api_server_runs.py`, `session_id = … or run_id`),
-     * and every turn would start a fresh conversation. Blank is the default scope, so
-     * an undeclared install stays on [TurnRoute.RESPONSES], which chains by
-     * `previous_response_id` — losing the approval card is a gap; losing the
-     * conversation would be a regression.
+     * The route a turn actually takes: [active]. A run has no response id, and it used
+     * to need a declared `X-Hermes-Session-Key` to keep its conversation (with neither a
+     * key nor a session id the gateway files a run under its own `run_id`), so an
+     * unscoped install was held on [TurnRoute.RESPONSES]. The run body now carries the
+     * session's own `session_id` ([ResponsesClient.setConversationId]), which the
+     * gateway ranks first, so the scope only decides long-term memory, not the route.
      */
-    fun routeFor(hasSessionKey: Boolean): TurnRoute =
-        if (active == TurnRoute.RUNS && !hasSessionKey) TurnRoute.RESPONSES else active
+    @Suppress("UNUSED_PARAMETER")
+    fun routeFor(hasSessionKey: Boolean): TurnRoute = active
 
     /**
      * The chain head a turn rides. `/v1/runs` has no response id: a run is chained by
-     * its session (`X-Hermes-Session-Key`, required for the route by [routeFor]), never
+     * its client `session_id` (and the declared `X-Hermes-Session-Key` scope), never
      * by `previous_response_id`. Sending the Responses chain head on this route would pin
      * every run to the same response-store snapshot, so the runs body omits it — and so
      * does a stored turn (`/compress`) on a session that runs, so it compacts the
