@@ -1145,6 +1145,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (!continuous) try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
+                    // #242: a segment opened by a barge carries the interrupting words. With
+                    // turn-taking on, what they ARE decides what happens: a listening sound
+                    // continues the cut reply, a word or two stops and listens (no turn), a
+                    // sentence is a new turn. Without it every carry is a turn, as before.
+                    if (seeded != null && AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)) {
+                        val kind = Overlap.classify(cleaned)
+                        val nowAt = android.os.SystemClock.uptimeMillis()
+                        val proceed = when (kind) {
+                            Overlap.Kind.NEW_TURN -> true
+                            Overlap.Kind.BACKCHANNEL -> resumeSlot.continueAfterBackchannel(nowAt)
+                            Overlap.Kind.BARGE -> false
+                        }
+                        VoxLog.d("event=overlap class=${kind.name.lowercase()} words=${Overlap.words(cleaned)} " +
+                            "turn=$proceed resumable=${resumeSlot.has(nowAt)} " +
+                            "text=${if (logTranscripts()) cleaned.take(60) else "<hidden>"}")
+                        if (!proceed) {
+                            main.post {
+                                listener?.onState("listening")
+                                listener?.onLog(if (kind == Overlap.Kind.BARGE) "// you cut in — listening" else "// (listening)")
+                            }
+                            if (!continuous) try { r.stop() } catch (_: Throwable) {}
+                            continue
+                        }
+                    }
                     // HARD SPEAK-GATE: block until the reply AND its speech finish.
                     turnDone = java.util.concurrent.CountDownLatch(1)
                     val latch = turnDone

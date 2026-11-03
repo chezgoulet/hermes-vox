@@ -89,16 +89,45 @@ object Resume {
             "changes or ends that task, drop it.] "
     }
 
+    /**
+     * #242: the caller's barge was only a listening sound. Nothing was asked: carry on from the
+     * cut. Null when there is nothing left to say — then the sound needs no turn at all.
+     */
+    fun continuation(m: Mark, nowMs: Long): String? {
+        if (nowMs - m.atMs > TTL_MS) return null
+        if (m.unsaid.isEmpty() && m.finished) return null
+        val said = if (m.heard.isEmpty()) "nothing yet"
+            else "\"" + (if (m.heard.length > HEARD_TAIL_CHARS) "…" + m.heard.takeLast(HEARD_TAIL_CHARS).trimStart() else m.heard) + "\""
+        val rest = if (m.unsaid.isEmpty()) "" else " You still had to say: \"" +
+            (if (m.unsaid.length > UNSAID_CHARS) m.unsaid.take(UNSAID_CHARS).trimEnd() + "…" else m.unsaid) + "\"."
+        return "[The caller only made a listening sound while you were talking — they asked nothing. " +
+            "They heard you say: $said.$rest Carry on from exactly there. Do not repeat what they " +
+            "heard, do not answer the sound, and do not start over.] "
+    }
+
     /** One mark, used once. Thread-safe: the cut lands on main, the turn on the executor. */
     class Slot {
         private var mark: Mark? = null
-        @Synchronized fun put(m: Mark?) { mark = m }
-        @Synchronized fun clear() { mark = null }
+        private var continuing = false
+        @Synchronized fun put(m: Mark?) { mark = m; continuing = false }
+        @Synchronized fun clear() { mark = null; continuing = false }
+        @Synchronized fun has(nowMs: Long): Boolean = mark?.let { nowMs - it.atMs <= TTL_MS } ?: false
+
+        /** #242: the next turn continues the cut reply instead of answering an interjection.
+         *  False when there is nothing to continue (no mark, stale, or nothing unsaid). */
+        @Synchronized fun continueAfterBackchannel(nowMs: Long): Boolean {
+            val m = mark ?: return false
+            if (continuation(m, nowMs) == null) return false
+            continuing = true
+            return true
+        }
+
         /** The directive for the next voice turn, consuming the mark either way. */
         @Synchronized fun take(nowMs: Long): Pair<Mark, String>? {
             val m = mark ?: return null
-            mark = null
-            val d = directive(m, nowMs) ?: return null
+            val cont = continuing
+            mark = null; continuing = false
+            val d = (if (cont) continuation(m, nowMs) else directive(m, nowMs)) ?: return null
             return m to d
         }
     }
