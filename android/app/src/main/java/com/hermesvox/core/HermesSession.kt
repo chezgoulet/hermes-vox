@@ -139,6 +139,17 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      *  the run is stopped with `POST /v1/runs/{id}/stop`. Never throws for the stop. */
     fun cancelStream(streamID: String) = Streams.cancel(streamID)
 
+    /** The gateway run id behind a runs-route stream ("" on the responses route or
+     *  once the stream has retired). The turn lifecycle needs it to stop a run it
+     *  can no longer follow. */
+    fun runIdOf(streamID: String): String = Streams.runIdOf(streamID)
+
+    /** Stops a runs-route run at the gateway: `POST /v1/runs/{id}/stop`. */
+    fun stopRun(runId: String) {
+        if (runId.isEmpty()) return
+        gateway.stopRun(runId)
+    }
+
     // ---- Approvals (#282): the answer to an `approval.request` run event ----
 
     /**
