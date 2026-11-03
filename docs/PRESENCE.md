@@ -49,6 +49,12 @@ VOX.md has two halves, and the distinction is the safety model:
 The phone never pushes identity back, because a phone should not be able to silently rewrite your
 agent's soul. A bad VOX.md is caught at generation, on the gateway, before it is ever mirrored.
 
+**It is one document per profile, and the workflow only exists while Presence is on.** The phone keeps
+`filesDir/vox/<profile>/VOX.md`, keyed by the active profile's name; the warm model reads the active
+profile's file on every render and is re-primed when you switch, so the being that greets you is the
+one you switched to. The pre-profile `filesDir/vox/VOX.md` is migrated into the active profile's slot
+once. With Presence off, nothing fetches, mirrors, prompts for or reports on VOX.md.
+
 Why the agent writes it rather than the user: it knows its own memory and relationship better than
 any generic template, and the distillation is the one task only it is qualified to do.
 

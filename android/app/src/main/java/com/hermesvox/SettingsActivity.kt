@@ -429,19 +429,34 @@ class SettingsActivity : AppCompatActivity() {
 
     /** ER Phase 3: the VOX.md bridge row. Resync = PULL the gateway agent's
      *  voice-export over the same directive turn /compress uses, validate,
-     *  mirror locally. Pull-only invariant: the device never pushes identity. */
+     *  mirror locally. Pull-only invariant: the device never pushes identity.
+     *  Owner rule (a): with Presence off this whole surface is inert — the rows are
+     *  not shown, and nothing is fetched, mirrored, prompted for or reported. */
     private fun bindVoxRow() {
         findViewById<LinearLayout>(R.id.row_vox).setOnClickListener { resyncVox() }
         // 0.6.2: view the mirror — what the on-device soul actually reads.
         findViewById<LinearLayout>(R.id.row_vox_view).setOnClickListener {
+            if (!PresenceGate.enabled(prefs)) return@setOnClickListener
+            val profile = VoxMirror.activeProfile(prefs)
             val doc = VoxMirror.read(this)
             AlertDialog.Builder(this)
-                .setTitle("Mirrored VOX.md")
+                .setTitle(if (profile.isBlank()) "Mirrored VOX.md" else "Mirrored VOX.md · $profile")
                 .setMessage(doc?.take(2000) ?: "Not mirrored yet — Resync VOX.md pulls it from the entity.")
                 .setPositiveButton("OK", null).show()
         }
         bindErControls()
-        refreshVoxVal()
+        refreshVoxRows()
+    }
+
+    /** Rule (a), on screen: the VOX.md rows exist only while Presence is on. Off hides
+     *  them and reports nothing about the mirror (it is not deleted — turning Presence
+     *  back on finds the active profile's document where it was). */
+    private fun refreshVoxRows() {
+        val on = PresenceGate.enabled(prefs)
+        val v = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<android.view.View>(R.id.row_vox)?.visibility = v
+        findViewById<android.view.View>(R.id.row_vox_view)?.visibility = v
+        if (on) refreshVoxVal()
     }
 
     /** 0.6.2: the presence runtime controls — every tunable the presence layer reads,
@@ -543,6 +558,11 @@ class SettingsActivity : AppCompatActivity() {
         sw.isChecked = PresenceGate.chosen(prefs)
         sw.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(PresenceGate.KEY_PRESENCE_ENABLED, checked).apply()
+            // Rule (a): the VOX.md workflow appears and disappears with this switch. Turning
+            // it ON is also when the pre-profile device-wide mirror is migrated, so the
+            // document the user already had is the one the active profile starts with.
+            if (checked) VoxMirror.migrate(this)
+            refreshVoxRows()
             refreshPresenceRow()
             if (!checked) return@setOnCheckedChangeListener
             if (!ModelCatalog.isInstalled(this, "gemma-e2b")) {
@@ -615,30 +635,48 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refreshVoxVal() {
         val v = findViewById<TextView>(R.id.set_vox_val) ?: return
+        // Rule (a): with Presence off the app does not report on VOX.md at all.
+        if (!PresenceGate.enabled(prefs)) { v.text = ""; return }
+        val profile = VoxMirror.activeProfile(prefs)
         v.text = when (val m = VoxSoul.mirrorStatus(VoxMirror.read(this))) {
-            is VoxSoul.Mirror.Present -> if (m.name.isBlank()) "mirrored" else "mirrored · ${m.name}"
-            is VoxSoul.Mirror.Absent -> "not mirrored"
+            is VoxSoul.Mirror.Present ->
+                "mirrored" + (if (m.name.isBlank()) "" else " · ${m.name}") +
+                    (if (profile.isBlank()) "" else " · $profile")
+            is VoxSoul.Mirror.Absent ->
+                if (profile.isBlank()) "not mirrored" else "not mirrored for $profile — tap to pull it"
         }
     }
 
-    /** ER Phase 3 bootstrap: first switch-on of Presence. When no valid mirror exists,
-     *  pull VOX.md right away (the resync flow) and surface the honest state if it
-     *  fails — the soul "can't find its voice" is a visible condition, never a silent
-     *  proceed. */
+    /** ER Phase 3 bootstrap: first switch-on of Presence. When the ACTIVE PROFILE has no
+     *  valid mirror, pull VOX.md right away (the resync flow) and surface the honest state
+     *  if it fails — the soul "can't find its voice" is a visible condition, never a silent
+     *  proceed. With Presence off this does not run at all (owner rule a). */
     private fun maybeBootstrapVox() {
+        if (!PresenceGate.enabled(prefs)) return
+        VoxMirror.migrate(this)
         if (VoxSoul.mirrorStatus(VoxMirror.read(this)) is VoxSoul.Mirror.Present) return
+        val profile = VoxMirror.activeProfile(prefs)
         AlertDialog.Builder(this)
             .setTitle("Presence — meet your entity's voice")
             .setMessage(
                 "Presence is the being on the phone: it speaks asides in your agent's " +
-                "own voice while the mind works. It needs VOX.md — your agent's " +
-                "voice-export, authored by the agent itself.\n\nPull it from the gateway now?")
+                    "own voice while the mind works. It needs VOX.md — your agent's " +
+                    "voice-export, authored by the agent itself" +
+                    (if (profile.isBlank()) "" else ", for the profile \"$profile\"") +
+                    ".\n\nPull it from the gateway now?")
             .setPositiveButton("Pull VOX.md") { _, _ -> resyncVox() }
             .setNegativeButton("Later", null)
             .show()
     }
 
     private fun resyncVox(retryNote: String? = null) {
+        // Rule (a): every entry point is inert with Presence off. This is the last line of
+        // defence — the row is hidden — and it means no dialog, no toast, no request.
+        if (!PresenceGate.enabled(prefs)) return
+        VoxMirror.migrate(this)
+        // The profile is captured BEFORE the turn: the document belongs to the entity that
+        // answered, even if the user switches while the ask is in flight.
+        val profile = VoxMirror.activeProfile(prefs)
         val u = prefs.getString("url", "").orEmpty()
         val k = prefs.getString("key", "").orEmpty()
         if (u.isBlank() || GatewayKey.isMissing(k)) {
@@ -654,53 +692,33 @@ class SettingsActivity : AppCompatActivity() {
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
             val s = com.hermesvox.core.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
-            // 0.6.2: a retry rides the SAME server-side chain (previous_response_id
-            // inside turnStored), so the entity still has its prior attempt in
-            // context — the corrective note lands with the entity already knowing
-            // the format it just got wrong.
-            val directive = if (retryNote != null) "$retryNote\n\n${VoxSoul.AUTHOR_DIRECTIVE}" else VoxSoul.AUTHOR_DIRECTIVE
-            val reply = try { s.turnStored(directive) } catch (e: Throwable) {
-                VoxLog.w("event=vox-resync-failed err=${e.message?.take(120)}"); null
-            }
             // #220: one call does extract → repair → validate, so a document that arrives
             // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
             // instead of costing the user a second button press. The retry below stays as
-            // the fallback for a reply that really has no document in it.
-            val outcome = VoxSoul.resync(reply)
-            val document = when (outcome) {
-                is VoxSoul.Outcome.Accepted -> outcome.document
-                is VoxSoul.Outcome.Repaired -> outcome.document
-                is VoxSoul.Outcome.Rejected -> null
-            }
-            // 0.6.7: capture WHAT the entity actually said (first ~240 chars,
-            // sanitized for a dialog) so a failed sync is diagnosable from the
-            // screenshot — "empty document" alone told us nothing.
-            val replyEvidence = reply?.trim()
-                ?.replace(Regex("\\s+"), " ")
-                ?.take(240)
-                ?.ifBlank { "(reply was blank)" }
-                ?: "(no reply)"
-            val verdict = when (outcome) {
-                is VoxSoul.Outcome.Accepted -> "ok"
-                is VoxSoul.Outcome.Repaired -> "ok repaired=${outcome.repairs.joinToString("; ")}"
-                is VoxSoul.Outcome.Rejected -> "invalid: ${outcome.reason}"
-            }
-            VoxLog.er("event=vox-resync doc=${document?.length ?: 0} result=$verdict reply=$replyEvidence")
-            val wrote = document != null && VoxMirror.write(this, document)
+            // the fallback for a reply that really has no document in it. VoxSync.refetch is
+            // the same path the first-call ask uses, so the two cannot drift.
+            val a = VoxSync.refetch(filesDir, profile, presenceOn = PresenceGate.enabled(prefs),
+                retryNote = retryNote, log = { VoxLog.er(it) },
+                ask = { note -> VoxSync.ask(s, note, { VoxLog.er(it) }) })
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
-                if (wrote) {
-                    refreshVoxVal()
+                refreshVoxVal()
+                if (a.need == VoxSync.Need.OFF) return@runOnUiThread   // Presence went off mid-ask
+                if (a.ready) {
                     Toast.makeText(this, "VOX.md synced from the entity", Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                refreshVoxVal()
-                if (document == null) {
-                    val reason = (outcome as VoxSoul.Outcome.Rejected).reason
+                val reason = a.reason ?: "the sync did not complete"
+                val replyEvidence = a.reply?.trim()
+                    ?.replace(Regex("\\s+"), " ")
+                    ?.take(240)
+                    ?.ifBlank { "(reply was blank)" }
+                    ?: "(no reply)"
+                if (a.outcome is VoxSoul.Outcome.Rejected) {
                     AlertDialog.Builder(this)
                         .setTitle("VOX.md sync failed")
                         .setMessage(
-                            if (reply.isNullOrBlank())
+                            if (a.reply.isNullOrBlank())
                                 "The entity didn't answer (connection?). Check /health and try again."
                             else "The entity's reply wasn't a usable VOX.md: $reason. " +
                                 "It said: \"$replyEvidence\". Its next attempt rides the same " +
@@ -1157,6 +1175,7 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
             // #224/#222: Presence says whether it is on, and if it cannot be, why.
             refreshPresenceRow()
+            refreshVoxRows()   // rule (a): the VOX.md rows follow the Presence switch
             findViewById<TextView>(R.id.set_presence_grpval)?.text =
                 if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE))
                     "Alpha · select Presence in Alpha features at the top"

@@ -46,11 +46,15 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private val modelFile get() = File(context.filesDir, "models/gemma-e2b/gemma-4-E2B-it.litertlm")
 
     /**
-     * The soul prompt (ER Phases 2-4): the mirrored VOX.md, when a valid one
-     * exists, IS the persona — the agent's own distilled identity (Contract +
-     * Soul) wrapped by the voice-not-mind prelude. Without a mirror, the
-     * built-in generic persona holds the line (ER degrades, never breaks).
-     * Read per generation: a Resync takes effect without a reload.
+     * The soul prompt (ER Phases 2-4): the ACTIVE PROFILE's mirrored VOX.md, when a valid
+     * one exists, IS the persona — the agent's own distilled identity (Contract + Soul)
+     * wrapped by the voice-not-mind prelude. Without a mirror, the built-in generic persona
+     * holds the line (ER degrades, never breaks).
+     *
+     * Read per generation, from `filesDir/vox/<active profile>/VOX.md` (VoxMirror.file):
+     * a Resync or a profile switch takes effect without a reload. The warm conversation is
+     * rebuilt when this string changes — see [generateWarm] — and a switch re-primes it
+     * eagerly through [reprime] so the new entity is the one the next render speaks as.
      */
     private val persona: String
         get() = VoxSoul.soulPrompt(VoxMirror.read(context) ?: "")
@@ -522,6 +526,35 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private fun closeSoul() {
         try { soulConv?.close() } catch (_: Throwable) {}
         soulConv = null; soulConvPersona = null
+    }
+
+    /**
+     * Re-prime the warm model on the persona of the profile that is active NOW.
+     *
+     * WHAT THE ENGINE ACTUALLY DOES (owner rule c). The persona is not re-sent per render:
+     * [generateWarm] prefills it into ONE rolling conversation when that conversation is
+     * created, and recreates the conversation only when the persona string differs
+     * (`soulConvPersona != p`). So a profile switch does change the persona — but only on
+     * the NEXT render, and that render pays the whole prefill inside the caller's turn.
+     *
+     * This closes the old entity's conversation and pays the prefill here instead, off the
+     * UI thread, so the warm model holds the new profile's document before the next render
+     * (the switch's own turn, or the next call's greeting) and cannot answer as the old
+     * entity. When the new profile has no mirror yet, the conversation is only closed: the
+     * call gate fetches the document first and never lets Presence speak an empty soul.
+     *
+     * A no-op load path: if the engine is not loaded, the next [load] primes with whatever
+     * document the active profile has by then.
+     */
+    fun reprime(reason: String) {
+        if (llm == null) { synchronized(genLock) { closeSoul() }; return }
+        kotlin.concurrent.thread(isDaemon = true, name = "soul-reprime") {
+            synchronized(genLock) { closeSoul() }
+            val ms = timed { generateWarm(PRIME_DIRECTIVE) }
+            VoxLog.d(
+                "event=soul-reprime reason=$reason profile=${VoxMirror.activeProfile(context)} " +
+                    "personaChars=${persona.length} primeMs=$ms")
+        }
     }
 
     /** Stop the render in flight (a turn decision is pre-empting a narration). Its output is

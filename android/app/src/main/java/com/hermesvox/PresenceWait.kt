@@ -24,11 +24,19 @@ object PresenceWait {
     const val SKIP_HINT = "tap to start without it"
 
     /** The status line while warming. [voiceReady]: STT, TTS and VAD are loaded, so only
-     *  Presence is pending. Null = the ordinary warming pill (the voice itself is loading). */
-    fun line(voiceReady: Boolean, waitingOnPresence: Boolean, waitedMs: Long): String? {
+     *  Presence is pending. Null = the ordinary warming pill (the voice itself is loading).
+     *  [vox]: the presence model is up but the ACTIVE profile has no VOX.md yet and the
+     *  first call is asking the entity for one (owner rule b), so the line names that
+     *  instead of implying the model is still loading. */
+    fun line(voiceReady: Boolean, waitingOnPresence: Boolean, waitedMs: Long, vox: Boolean = false): String? {
         if (!voiceReady || !waitingOnPresence) return null
         val s = waitedMs / 1000
-        val base = if (s < 3) "Loading Presence…" else "Loading Presence · $s s"
+        val base = when {
+            vox && s < 3 -> "Presence · asking the entity for its VOX.md…"
+            vox -> "Presence · asking for VOX.md · $s s"
+            s < 3 -> "Loading Presence…"
+            else -> "Loading Presence · $s s"
+        }
         return if (waitedMs >= OFFER_SKIP_MS) "$base · $SKIP_HINT" else base
     }
 

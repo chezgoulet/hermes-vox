@@ -25,4 +25,15 @@ class PresenceWaitTest {
         assertTrue(PresenceWait.canSkip(true, true, 50_000))
         assertFalse("not while the voice itself loads", PresenceWait.canSkip(false, true, 50_000))
     }
+
+    @Test fun aWaitOnTheProfilesVoxMdSaysSo() {
+        // Owner rule (b): the model is up; what Presence is missing is the ACTIVE profile's
+        // document, and the line must not claim the model is still loading.
+        assertEquals("Presence · asking the entity for its VOX.md…", PresenceWait.line(true, true, 1_000, vox = true))
+        assertEquals("Presence · asking for VOX.md · 12 s", PresenceWait.line(true, true, 12_400, vox = true))
+        assertEquals("Presence · asking for VOX.md · 20 s · tap to start without it",
+            PresenceWait.line(true, true, PresenceWait.OFFER_SKIP_MS, vox = true))
+        // The ordinary load line is untouched when no document is pending.
+        assertEquals("Loading Presence…", PresenceWait.line(true, true, 1_000, vox = false))
+    }
 }
