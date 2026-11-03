@@ -594,3 +594,35 @@ The KV cache is not part of this decision. Measured against a ~2 GB engine it is
 total; 4096 is inside the device's noise floor; 2048 halves the soul's usable memory for ~300 MB;
 and a cache configuration LiteRT-LM has not seen costs a one-off ~31 s first load, because its
 cache is keyed by it. The shipped cache stays 8192.
+
+## D28 — The milestones, re-aligned
+
+Set 2026-11-03. **Supersedes D24's sentence "Presence remains 0.9.2 and waits until 0.9.1 is
+genuinely good"**, and the "Not in 0.9.1" list in `docs/PLAN-0.9.1.md` as it stood.
+
+The pre-release architecture review found that the documents described a release that no longer
+existed: D24, the plan and the roadmap all placed Presence in 0.9.2, while 0.9.1 was already
+shipping the layer — the handoff receipt, the per-profile soul, the cost controls — and the
+owner had said publicly that the layer ships in 0.9.1 under the name Presence. A reviewer
+reading the documents faithfully reported the fiction back.
+
+**The distinction the documents failed to draw:** 0.9.1 ships the **layer**; 0.9.2 makes it the
+**product**.
+
+- `0.9.x` is beta. `0.9.1` stays open and absorbs work until the owner signs it off. `0.9.2` and
+  `0.9.3` are the next beta milestones. `1.0` is GA, when the owner says so, with no feature
+  bucket attached to it. Version scheme: `(GA major).(features).(point).(fixes)`.
+- **One gate for everything unfinished: Enable Alpha Features.** Off on a fresh install. Gates
+  Presence, continuous capture and semantic endpointing, and anything else marked alpha as it
+  lands; the settings it covers are dimmed and unreachable when it is off.
+- **The hardware check advises, never enables.** A cheap RAM/free-memory gate at first run, then
+  a real load attempt on the first call that can demote the choice. If the phone cannot carry
+  Presence it stays off, with one line saying why and where to turn it on.
+- **First run (#230) and the retirement of the mode vocabulary (#222) move into 0.9.1**, because
+  a default now has to be decided at first run.
+- **Profiles** ship in 0.9.1 and switching must be flawless; **per-profile settings** are 0.9.2.
+- "Enhanced Realtime" is retired as vocabulary. **Presence remains the public name**; Alpha
+  Features is the gate, not the name.
+
+`docs/MILESTONES.md` is the authoritative map. Where this decision and any older document
+disagree, this decision and that document win.

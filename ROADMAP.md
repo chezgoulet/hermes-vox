@@ -7,6 +7,14 @@ with the items below still open.
 
 **Status keys:** `[x]` shipped · `[ ]` in progress / planned · `[?]` open question · `[-]` deferred.
 
+## Milestones
+
+**The map lives in [`docs/MILESTONES.md`](docs/MILESTONES.md) and decision D28 (2026-11-03).**
+In short: `0.9.x` is beta, `0.9.1` stays open until the owner signs it, `0.9.2`/`0.9.3` are the
+next beta milestones, and `1.0` is GA when the owner says so. 0.9.1 ships the **Presence layer**
+behind the Alpha gate; 0.9.2 makes it the **product**. Sections below are kept as the working
+record for each release's content and are subordinate to that map.
+
 ## Direction (set 2026-10-19; release shape amended 2026-10-21)
 
 - **Android only.** Desktop and iOS are out of scope; the Go core that a desktop
@@ -262,9 +270,10 @@ no truncation report without a named cause; matrix and baseline recorded on both
 
 ---
 
-## `0.9.2` — Presence
+## `0.9.2` — Presence as the product
 
-**The claim:** Presence is the product, not a mode. One selector retired, one name, on by default —
+**The claim:** the layer shipped in 0.9.1 behind the Alpha gate; this release makes it the
+product — on by default, the selector gone, the behaviours designed. One selector retired, one name, on by default —
 and the conversation behaves: it acknowledges while you speak, it yields when you interrupt, it
 resumes where it was, and it does not say a thing nobody asked for.
 
