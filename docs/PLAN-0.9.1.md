@@ -157,18 +157,19 @@ carries the process and its gotchas.
 
 Superseded on 2026-11-03 by **D28** and `docs/MILESTONES.md`. The short form:
 
-**In 0.9.1** — the loop and its surfaces (the state audit, operations, discovery, the commands
-screen, the settings split, light mode, the being's look controls, the entity named by the host);
-**approvals natively**, which means the turn stream moves onto the route that carries
-`approval.request` (§10 above); **profiles from the host**, with switching flawless and
-per-profile settings explicitly out; **share with agent** and Vox as a share target; **the
-transcript scrolls back**; **Presence as a feature behind the Alpha gate**; **VOX.md per profile**,
-presence-gated; **the presence cost controls, dormant**; **the turn budget** with its approval
-pause; **first run (#230)** and **the retirement of the mode vocabulary (#222)**.
+**In 0.9.1 — everything in flight, behind the Alpha gate where it is unfinished.** The loop and
+its surfaces (the state audit, operations, discovery, the commands screen, the settings split,
+light mode, the being's look controls, the entity named by the host); **approvals natively**, which
+means the turn stream moves onto the route that carries `approval.request` (§10 above); **profiles
+from the host** with switching flawless; **share with agent** and Vox as a share target; **the
+transcript scrolls back**; **Presence** — the layer *and* its behaviours: asides and backchannels,
+resume after an interruption, overlap classification, the tuning bar, the Presence transcript, the
+invention measurement, and a fresh pass on the directive and rails; **VOX.md per profile**; **the
+presence cost controls, dormant**; **the turn budget**; **first run (#230)**; **the retirement of
+the mode vocabulary (#222)**.
 
 Carried without a number — done here if achievable, otherwise closed wherever they close: #191,
 #202, #208, #179, #165, #249.
 
-**Not in 0.9.1** — Presence *as the product* (asides and backchannels, resume, overlap
-classification, the tuning bar, the Presence transcript, per-profile settings, the invention
-measurement, a fresh pass on the directive and rails) — that is **0.9.2**.
+**Not in 0.9.1** — **per-profile settings** (voice, model, look). That is the one deferred item,
+and 0.9.2 is where it lands, together with the Alpha gate opening for Presence: on by default.
