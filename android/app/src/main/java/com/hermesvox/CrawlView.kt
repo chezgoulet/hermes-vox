@@ -219,7 +219,13 @@ class CrawlView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (dragging) captureAnchor()
-                val next = scroll.release()
+                // A cancelled gesture (the system took the touch) is not a decision to
+                // stay in the trail: go back to live exactly as the tap does.
+                val next = if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    scroll.beginReturn(); scroll.state
+                } else {
+                    scroll.release()
+                }
                 if (next == CrawlScroll.State.RETURNING) startReturn() else invalidate()
                 if (!dragging && event.actionMasked == MotionEvent.ACTION_UP) performClick()
                 dragging = false
