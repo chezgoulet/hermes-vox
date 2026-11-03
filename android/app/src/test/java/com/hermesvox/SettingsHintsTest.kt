@@ -229,6 +229,8 @@ class SettingsHintsTest {
         val BEFORE_AND_AFTER_SPLIT_PREF_KEYS: Set<String> = setOf(
             // #402: the one key added deliberately since the split — the Alpha master switch.
             "AlphaGate.KEY_MASTER",
+            // #245: the acknowledgement rate, behind the Alpha turn-taking set.
+            "Backchannel.KEY_RATE",
             "AvatarView.KEY_SHAPE_LISTENING",
             "AvatarView.KEY_SHAPE_SPEAKING",
             "AvatarView.KEY_SHAPE_THINKING",

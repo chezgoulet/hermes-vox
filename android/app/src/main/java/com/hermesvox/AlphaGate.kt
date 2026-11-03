@@ -44,6 +44,13 @@ object AlphaGate {
                 "semantic endpointing judges when you have finished instead of waiting out a " +
                 "silence. Both switches live in Hearing.",
         ),
+        TURN_TAKING(
+            "alpha_set_turn_taking", "Turn-taking",
+            "The being keeps up with you mid-conversation: a soft acknowledgement while you talk " +
+                "at length, a quick word to stop it told apart from a new question, and the " +
+                "thread picked up after you cut in. Needs continuous listening for the " +
+                "acknowledgements.",
+        ),
     }
 
     /** What the gate reads, narrow enough for an in-memory fake. */

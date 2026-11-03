@@ -822,6 +822,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     VoxLog.w("event=endpoint-semantic skip reason=no-continuous-capture")
                 VoxLog.d("event=capture-continuous on=$continuous partialMs=${ContinuousCapture.cadenceMs(continuous)} " +
                     "semantic=${semantic?.eagerness?.key ?: "off"}")
+                // #245 — acknowledgements while the caller talks. Turn-taking set only, and only
+                // on continuous capture: a pause inside an utterance is not observable at 900 ms.
+                val turnTaking = AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)
+                val ackRate = if (turnTaking && continuous) Backchannel.Rate.of(prefString(Backchannel.KEY_RATE, Backchannel.DEFAULT.key))
+                    else Backchannel.Rate.OFF
+                val ackLedger = Backchannel.Ledger()
+                if (turnTaking && !continuous) VoxLog.w("event=backchannel skip reason=no-continuous-capture")
+                var ackRotate = 0
                 // The partial cadence, call-scoped: the legacy 900 ms clock runs from the mic
                 // opening (unchanged), and continuous capture restarts it at each segment's
                 // first sample (there is nothing to decode before a segment exists).
@@ -925,7 +933,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // not a fixed 64ms. A short read (a partial buffer) would make
                         // silence accrue faster than wall-clock and cut the user off
                         // mid-sentence when the pause threshold fired early.
-                        if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        // #245: for a beat after an acknowledgement its own sound (and echo) is not
+                        // the caller — it may not reset the pause, or the clip would push the
+                        // endpoint back. The frames are still kept below.
+                        val ackMuted = spoke && Backchannel.vadMuted(android.os.SystemClock.uptimeMillis(), ackLedger)
+                        if (spoke && !ackMuted) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
                         if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
@@ -949,6 +961,18 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 }
                             }
                         } else if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
+                        if (ackRate != Backchannel.Rate.OFF && inSpeech) {
+                            val at = android.os.SystemClock.uptimeMillis()
+                            val hyp = latestPartial.get()?.takeIf { it.segId == segId }?.text.orEmpty()
+                            val moment = Backchannel.Moment(at, speechStartAt, silentMs.toLong(), silenceMs.toLong(),
+                                hyp, semantic?.verdict(silentMs.toLong(), at), speaking || glueSpeaking || turnInFlight)
+                            if (Backchannel.tryFire(moment, ackRate, ackLedger)) {
+                                val clip = ErClips.clipFor("warm", ackRotate++)
+                                val played = ErClips.play(context, clip)
+                                VoxLog.d("event=backchannel fired=$played clip=$clip rate=${ackRate.key} " +
+                                    "talkMs=${at - speechStartAt} pauseMs=$silentMs recent=${ackLedger.recent(at)}")
+                            }
+                        }
                         // B2 (revised): the old maxMs break chopped a long continuous
                         // utterance mid-sentence ("The app is." + a "That" fragment).
                         // EndpointRule never chops a still-talking speaker: past maxMs

@@ -203,8 +203,23 @@ class SettingsActivity : AppCompatActivity() {
         gate(R.id.row_er_hears, presence)
         gate(R.id.row_mic_continuous, listening)
         gate(R.id.row_mic_semantic, listening)
+        gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
         if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
         refreshGrpVals()
+    }
+
+    /** #245: the acknowledgement rate — Off / Sparse / Normal, one tap to the next. Behind the
+     *  turn-taking set; the row is dimmed and takes no tap without it. */
+    private fun bindBackchannelRate() {
+        val value = findViewById<TextView>(R.id.set_backchannel_val) ?: return
+        fun show() { value.text = Backchannel.Rate.of(prefs.getString(Backchannel.KEY_RATE, null)).label }
+        show()
+        findViewById<android.view.View>(R.id.row_backchannel)?.setOnClickListener {
+            val all = Backchannel.Rate.entries
+            val now = Backchannel.Rate.of(prefs.getString(Backchannel.KEY_RATE, null))
+            prefs.edit().putString(Backchannel.KEY_RATE, all[(now.ordinal + 1) % all.size].key).apply()
+            show()
+        }
     }
 
     private fun gate(id: Int, allowed: Boolean) {
@@ -1460,6 +1475,7 @@ class SettingsActivity : AppCompatActivity() {
         bindMicToggle(R.id.set_continuous_capture, ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
         bindMicToggle(R.id.set_semantic_endpoint, SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
         bindMicToggle(R.id.set_tts_voice_usage, "tts_voice_usage", false)   // D2: engine default OFF (field A/B)
+        bindBackchannelRate()
 
         bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
             0.1f, 0.9f, 0.05f, 0.5f) { "%.2f".format(it) }
