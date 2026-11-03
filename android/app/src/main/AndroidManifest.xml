@@ -59,6 +59,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- SPEC-conversational-bridge §B: one file can be shared to Vox. It is a share
+                 target only — the offer copies the stream into private staging and serves it
+                 once over the tailnet; nothing is uploaded and no new permission is asked
+                 for, because the sharing app already grants read on the stream it hands over.
+                 Text shares are ignored (paste covers them). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
         <!-- #329: the digital-assistant entry point. Handling android.intent.action.ASSIST

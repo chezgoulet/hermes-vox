@@ -362,6 +362,8 @@ class MainActivity : AppCompatActivity() {
         // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
         // second one). Deferred like the harness so the intent never runs inside dispatch.
         if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
+        // §B: a file shared to Vox while the call screen is already up.
+        handleShareIntent(intent)
     }
 
     /**
@@ -422,6 +424,18 @@ class MainActivity : AppCompatActivity() {
             else cm?.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
         }
         if (intent.getBooleanExtra("open_paste", false)) showPaste()
+        // §B: the file offer, driven from a script. A system picker cannot be driven by adb,
+        // so the harness stages a path the app can already read (push it with `run-as`).
+        // Debug-only (the FLAG_DEBUGGABLE guard above); inert in a release build.
+        intent.getStringExtra("offer_file")?.let { path ->
+            mainHandler.post {
+                if (missingKeyPrompt()) return@post
+                val src = java.io.File(path)
+                if (!src.isFile) { setStatus("no such file", true); return@post }
+                fileOfferSheet.show()
+                stageAndBegin(src.name) { FileStage.stageFile(this, src) }
+            }
+        }
         // #156: the device matrix needs to PUT the phone into each state and then fire
         // a cue. There is no shell command for the ringer mode on this build, so the
         // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
@@ -602,6 +616,10 @@ class MainActivity : AppCompatActivity() {
         if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
         refreshModelsGate()   // #6/#12: first-run empty state / warning pill
         wireButtons()
+        // §B: a staged copy from a process that died is never served; a share that started
+        // this activity is offered once the connection exists.
+        FileStage.sweep(this)
+        handleShareIntent(intent)
         startAvatarLoop()
         applyParticlePrefs()
         stageEntrance()
@@ -1567,6 +1585,9 @@ class MainActivity : AppCompatActivity() {
         const val VOICE_HOLD_MS = 400L    // audible-audio hold across inter-phrase synth gaps
         const val QUIET_MS = 12000L       // rest this long -> widen from IDLE into DRIFT
 
+        /** §B: the system file picker's request code (ACTION_OPEN_DOCUMENT). */
+        const val REQ_FILE = 3271
+
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
         @Volatile var session: HermesSession? = null
@@ -1717,13 +1738,18 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
         findViewById<Button>(R.id.paste).setOnClickListener { showPaste() }
+        findViewById<Button>(R.id.file).setOnClickListener { showFiles() }
         findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
     }
 
     /** #327: [pasted] marks a clipboard turn. It is sent exactly like typed text; only
      *  what the transcript and the console repeat changes (a paste can be enormous, and
-     *  the clipboard's contents must never reach a log line). */
-    private fun send(text: String, pasted: Boolean = false) {
+     *  the clipboard's contents must never reach a log line).
+     *
+     *  §B: [transcript] overrides the conversation line for a file turn. The turn carries the
+     *  offer (name, size, hash, URL) or — for the inline fallback — the body itself; the
+     *  transcript shows only the metadata, so a file's contents never enter it. */
+    private fun send(text: String, pasted: Boolean = false, transcript: String? = null) {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
@@ -1733,7 +1759,7 @@ class MainActivity : AppCompatActivity() {
         // A paste is text, not a command: the same word typed is a command, pasted is
         // sent to the agent as-is (the command sheet's grammar is unchanged).
         if (!pasted && CompressCommand.matches(text)) { compressContext(); return }
-        appendConvo(if (pasted) ClipboardPaste.transcriptLine(text) else "You: $text")
+        appendConvo(transcript ?: if (pasted) ClipboardPaste.transcriptLine(text) else "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             wireSoul(it)
@@ -1889,6 +1915,10 @@ class MainActivity : AppCompatActivity() {
             if (liveController?.voiceWillSpeak() != true) cues?.play(CueSynth.Cue.REPLY_READY)
             if (!revealActive) reply.setText(replyBuf)
             appendReplyFinal(finalText)
+            // §B: only the agent can say the bytes did not match. Its reply settles the
+            // file's state; the app never turns silence into success. Guarded by the ref so
+            // an ordinary conversation never constructs the flow.
+            fileShareRef?.agentReplied(finalText)
         } }
         override fun onError(msg: String) { runOnUiThread {
             // a cut or failed turn ends its step; a failed turn outranks a held step failure
@@ -2110,6 +2140,112 @@ class MainActivity : AppCompatActivity() {
     }
     private val pasteSheet by lazy { PasteSheet(this, pasteFlow) }
     private fun showPaste() = pasteSheet.show()
+
+    // ---- SPEC-conversational-bridge §B: a file offered by the phone, fetched by the agent ----
+
+    /** The one flow for the screen. All decisions live in [FileOffer]/[FileShare]; this holds
+     *  the three Android edges — the picker, the staging copy, and the ordinary turn send. */
+    private var fileShareRef: FileShare? = null
+
+    /** Bumped for every staging run; a result from an older run is deleted, never offered. */
+    private var stageSeq = 0L
+    private val fileShare: FileShare by lazy {
+        FileShare(
+            sendTurn = { text, transcript -> send(text, transcript = transcript) },
+            onState = { s -> mainHandler.post { fileOfferSheet.render(s) } },
+            log = { VoxLog.d(it) },
+        ).also { fileShareRef = it }
+    }
+    private val fileOfferSheet: FileOfferSheet by lazy { FileOfferSheet(this, fileShare) { pickFile() } }
+
+    private fun showFiles() {
+        if (missingKeyPrompt()) return
+        if (session == null) { setStatus("Connect first", true); return }
+        fileOfferSheet.show()
+    }
+
+    /** The system picker. ACTION_OPEN_DOCUMENT needs no permission and hands back a readable
+     *  URI; the copy into private staging is [FileStage]'s job. */
+    private fun pickFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQ_FILE)
+        } catch (_: Throwable) {
+            setStatus("No file picker on this device", true)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_FILE) return
+        if (resultCode != RESULT_OK) return
+        @Suppress("DEPRECATION")
+        offerUri(data?.data)
+    }
+
+    /**
+     * Stage [uri] off the main thread (a 90 MB share takes a moment to hash), then hand the
+     * result to the flow. The sheet is open before the copy starts so the wait is a stated
+     * line rather than a frozen screen.
+     */
+    private fun offerUri(uri: android.net.Uri?) {
+        if (uri == null) return
+        val name = runCatching { FileStage.displayName(this, uri) }.getOrNull() ?: "file"
+        stageAndBegin(name) { FileStage.stage(this, uri) }
+    }
+
+    /**
+     * Copy and hash off the main thread, then start the offer — unless the world moved on.
+     * [stageSeq] is the guard: a copy that finishes after the sheet was closed, after another
+     * file was picked, or after the screen went away is **deleted** and never offered. Closing
+     * the sheet during the copy cancels [fileShare] to `Idle`, so the state check is what makes
+     * "closing is never a send" true for the slow path as well as the fast one.
+     */
+    private fun stageAndBegin(name: String, produce: () -> FileStage.Result) {
+        fileOfferSheet.show()
+        fileShare.reading(name)
+        val mine = ++stageSeq
+        Thread({
+            val result = produce()
+            runOnUiThread {
+                val abandoned = mine != stageSeq ||
+                    fileShare.state !is FileShare.State.Reading ||
+                    isFinishing || isDestroyed
+                if (abandoned) {
+                    // The screen is gone or the offer was cancelled: the copy must not outlive it.
+                    (result as? FileStage.Result.Ok)?.staged?.file?.delete()
+                    return@runOnUiThread
+                }
+                when (result) {
+                    is FileStage.Result.Ok ->
+                        fileShare.begin(result.staged.offer, result.staged.file, result.staged.inlineText)
+                    is FileStage.Result.TooBig -> fileShare.refuse(result.line)
+                    is FileStage.Result.Failed -> fileShare.refuse(result.line)
+                }
+            }
+        }, "file-stage").start()
+    }
+
+    /**
+     * A share from another app lands here: ACTION_SEND with one stream. Text shares are not
+     * file offers and are ignored (paste already covers them). Deferred to the main thread
+     * because onNewIntent runs inside dispatch.
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_SEND) return
+        @Suppress("DEPRECATION")
+        val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM) ?: return
+        intent.removeExtra(Intent.EXTRA_STREAM)   // one share is one offer, not one per dispatch
+        mainHandler.post {
+            if (missingKeyPrompt()) return@post
+            if (session == null) { setStatus("Connect first", true); return@post }
+            offerUri(uri)
+        }
+    }
 
     /** The clipboard's first text item, or null when there is nothing to paste. A clip
      *  that holds something else (an image, a URI) is not text and is reported as empty.
@@ -2536,6 +2672,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)   // the loop reposts itself — never outlive the view
+        // §B: the screen owns the offer. Leaving it stops the server and deletes the staged
+        // copy — the spec's "deleted however the flow ends" includes this one.
+        fileShareRef?.close()
         cues?.release()                           // #156: free the cue AudioTrack with the surface
         cues = null
         if (active === this) active = null
