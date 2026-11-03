@@ -463,7 +463,7 @@ object VoxSoul {
         "under about twenty words. Say it as a person would say it out loud.\n\n" +
         "When the turn is the mind's, reply with " + ErSoulTurn.ESCALATE + " followed by the two to " +
         "six words you would naturally say out loud as you start to think about it — the breath " +
-        "before an answer, never the answer itself, never a fact or a number. The mind's real " +
+        "before an answer, never the answer itself. The mind's real " +
         "answer follows your words directly. Never write a sentence explaining that you cannot " +
         "answer — the token IS how you hand over, and the phone speaks whatever else you write.\n\n" +
         "You remember this call: do not repeat a line or an opener you have already used.\n\n" +

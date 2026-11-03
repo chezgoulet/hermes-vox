@@ -498,6 +498,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  guard) would leave the caller with silence. */
     private fun canDeliverSoulLine(text: String): Boolean {
         if (!erPresenceOn || glueBlocked()) return false
+        // M2: mirrors [speakGlue]'s claim guard, so a refused answer is never recorded as the
+        // soul having answered (the mind would be told it did, and could stay quiet).
+        if (ErSoulTurn.claimsResult(text)) return false
         val now = android.os.SystemClock.uptimeMillis()
         return synchronized(recentGlue) { !ErSoulTurn.isRepeat(text, recentGlue.filter { now - it.second <= ErSoulTurn.REPEAT_WINDOW_MS }, now) }
     }
@@ -3064,6 +3067,16 @@ class VoiceController(private val context: Context, private val session: HermesS
         // "this spoke, from here". App-generated text only (never the user's words), so it
         // is safe beside the log_transcripts privacy backstop.
         VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} text=${text.take(120)}")
+        // M2 (0.9.1 review): D29's false-action-claim guard, on EVERY lane. It used to run
+        // only in the working lane and the beat opener, so the tool narration ("I've deleted
+        // that for you", rendered the moment a tool starts), the soul's own answer and the
+        // greeting were spoken unchecked. Every Presence line funnels through here, so the
+        // guard sits once, before the repeat guard and the arbiter. Nothing the glue says is
+        // backed by the mind, so no lane — critical included — may claim a result.
+        if (ErSoulTurn.claimsResult(text)) {
+            VoxLog.er("event=er-glue-reject reason=result-unbacked source=$source")
+            return
+        }
         // 0.8/M3c: the SAME-TEXT guard. The 09-10 field session spoke ONE sentence seven times
         // in thirty-nine seconds through the per-tool-event narration path. The defect was never
         // the count of utterances — a person says three different things while working — it was
