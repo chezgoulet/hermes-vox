@@ -1989,7 +1989,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                         heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe(),
                         soulAnswered = answered)
                 } else ""
-                val turnText = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
+                val drifted = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
+                // #243: a voice turn after a barge carries where the cut landed, once.
+                val resume = if (voiceTurn && AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING))
+                    resumeSlot.take(android.os.SystemClock.uptimeMillis()) else null
+                if (resume != null) VoxLog.d("event=resume-offer heardChars=${resume.first.heard.length} " +
+                    "unsaidChars=${resume.first.unsaid.length} ageMs=${android.os.SystemClock.uptimeMillis() - resume.first.atMs}")
+                val turnText = if (resume != null) resume.second + drifted else drifted
                 val sid = if (voiceTurn) session.voiceTurn(turnText) else session.startStream(text)
                 VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn")
                 // THE RECEIPT (the reporter's check): one line per turn proving the mind was
@@ -2069,6 +2075,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // authoritative snapshot, so a failure at ANY later point falls back
                         // to everything the entity actually wrote. Ignored once terminal.
                         terminal.assembled(MindSkip.strip(obj.optString("text", "")))
+                        // #243: what the entity has written so far, for the interruption record.
+                        liveReply = gen to terminal.text()
+                        if (doneNow) liveReplyDone = gen
                         // K1: real events off the wire = the LIVE channel is authorized.
                         // The conn-test probe defers to this (liveAuthState).
                         if ((evts?.length() ?: 0) > 0) noteLiveAuthorized()
@@ -2721,6 +2730,27 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  so the display must leave it dim instead of completing the sentence for the entity. */
     fun speechFrozen(): Boolean = frozenChars != null
 
+    /** #243: the reply as a record — the assembled text of the live turn and whether it was done. */
+    @Volatile private var liveReply: Pair<Long, String> = 0L to ""
+    @Volatile private var liveReplyDone = 0L
+    private val resumeSlot = Resume.Slot()
+
+    /** #243: a voice barge leaves a mark the next voice turn picks up; anything else clears it. */
+    private fun markInterruption(reason: String) {
+        if (reason !in Resume.BARGE_REASONS || !AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)) {
+            resumeSlot.clear(); return
+        }
+        val (gen, assembled) = liveReply
+        val spoken = synchronized(cursorLock) { spokenSb.toString() }
+        val heardChars = frozenChars ?: 0
+        val mark = Resume.mark(spoken, heardChars, if (gen == replyGen) assembled else "",
+            liveReplyDone == replyGen, android.os.SystemClock.uptimeMillis())
+        resumeSlot.put(mark)
+        if (mark != null) VoxLog.d("event=resume-mark reason=$reason heardChars=${mark.heard.length} " +
+            "unsaidChars=${mark.unsaid.length} finished=${mark.finished}" +
+            (if (logTranscripts()) " cut=\"…${mark.heard.takeLast(40)}\"" else ""))
+    }
+
     /** Cancel (hush/barge/stop): capture where the voice actually got to and hold it. */
     private fun freezeCursor(reason: String) {
         if (frozenChars != null) return
@@ -3043,6 +3073,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // down). The unspoken tail is never revealed: you don't show words the entity
         // was interrupted before saying.
         freezeCursor(reason)
+        markInterruption(reason)
         stopTts()
         // #240: playback stops HERE, at the cancel — the track is paused inside stopTts — not
         // at any later acknowledgement; this is the cancel-to-silence figure.
