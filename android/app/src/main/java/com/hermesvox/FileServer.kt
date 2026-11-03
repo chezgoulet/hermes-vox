@@ -56,7 +56,14 @@ class FileServer private constructor(
     /** `http://<host>:<port>/<token>` — the capability URL, as the turn carries it. */
     val url: String = FileOffer.url(server.inetAddress.hostAddress ?: "", port, token)
 
-    /** True once one complete response has been written. */
+    /**
+     * True from the instant the one response starts leaving the socket, and until it is known
+     * not to have completed. It is latched *before* the first byte goes out — never after —
+     * because the requester can read the status line as soon as it arrives, and a caller that
+     * asks "was this served?" after a completed fetch must never be told no. A write that
+     * aborts (or a body shorter than the announced length) clears it again: that is not a
+     * transfer.
+     */
     @Volatile var served: Boolean = false
         private set
 
@@ -179,6 +186,12 @@ class FileServer private constructor(
             .append("Connection: close\r\n")
             .append("\r\n")
         try {
+            // Latch the transfer *before* the first byte of it leaves this socket. The client
+            // can read the status line the moment it arrives — before the body is written, and
+            // long before this method returns — and a reply that arrives after a completed
+            // fetch must never be answered "no transfer reached us". So the record of the
+            // transfer has to exist no later than the bytes that prove it.
+            served = true
             out.write(head.toString().toByteArray(Charsets.US_ASCII))
             var sent = 0L
             file.inputStream().use { src ->
@@ -192,16 +205,19 @@ class FileServer private constructor(
             }
             out.flush()
             if (sent != bytes) {
+                // Announced a length we could not deliver: this was never a transfer, and the
+                // offer may still be fetched until it expires.
+                served = false
                 note("event=file-offer error=short-source sent=$sent bytes=$bytes")
                 return
             }
-            served = true
             note("event=file-offer served bytes=$bytes sha256=$sha256")
             try { onTransfer() } catch (_: Throwable) { }
             transferred.countDown()
         } catch (_: IOException) {
             // The client went away mid-body. Not a completed transfer: the staged file stays
             // and the offer may be fetched again until it expires.
+            served = false
             note("event=file-offer error=aborted")
         } finally {
             // Drain whatever the client still had in flight, so closing the socket does not

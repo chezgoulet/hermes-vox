@@ -126,6 +126,41 @@ class FileServerTest {
         }
     }
 
+    @Test fun theTransferIsRecordedBeforeTheResponseIsReadable() {
+        // The ordering this pins: `served` is true by the time the client can see the response.
+        // A body far larger than the socket buffers means the write is still in progress — the
+        // status line is readable — when the client asks. With the latch taken after the flush
+        // this read false, and the agent's confirmation arriving at that instant was dismissed
+        // as "no transfer reached us" by FileShare for a transfer that had just happened.
+        val big = File.createTempFile("offer-order-", ".bin")
+        val bigBytes = ByteArray(4 * 1024 * 1024) { (it * 17 and 0xFF).toByte() }
+        big.writeBytes(bigBytes)
+        val s = FileServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            token = token, file = big, bytes = bigBytes.size.toLong(), mime = "application/octet-stream",
+            sha256 = FileOffer.sha256(bigBytes),
+            expiresAtMs = System.currentTimeMillis() + 300_000,
+            log = { log.add(it) },
+        )
+        try {
+            Socket(InetAddress.getLoopbackAddress(), s.port).use { sock ->
+                sock.soTimeout = 10_000
+                sock.getOutputStream().write("GET /$token HTTP/1.1\r\nHost: h\r\n\r\n".toByteArray())
+                sock.getOutputStream().flush()
+                val input = BufferedInputStream(sock.getInputStream())
+                assertTrue(readLine(input)!!.startsWith("HTTP/1.1 200"))
+                assertTrue("the transfer is recorded no later than the bytes that prove it", s.served)
+                // Drain the body, so the one response completes rather than aborting.
+                val buf = ByteArray(64 * 1024)
+                while (input.read(buf) >= 0) { /* discard */ }
+            }
+            assertTrue("the transfer completes", s.awaitTransfer(5_000))
+        } finally {
+            s.close()
+            big.delete()
+        }
+    }
+
     @Test fun theTransferCallbackFiresOnceAndOnlyOnce() {
         var transfers = 0
         val s = start(onTransfer = { transfers++ })
