@@ -36,8 +36,10 @@ through `release.yml` (builds twice from `main` and compares payload hashes) aft
 ### Surfaces
 - **The line** (#281): one plain-language line saying what is running and on what; long jobs show
   movement without inventing a percentage; failures name what failed.
-- **Paste** (#327): read → preview (head plus real character count) → **SEND**; the measured limit is
-  1,000,000 characters and truncation is always visible.
+- **Share with agent** (#370): the clipboard and any file become a named artifact — a URL is a
+  `.txt`, an image stays an image — and another app can hand Vox a file. The card names the file,
+  its type and its size; nothing is sent until it is confirmed. The file itself is offered by
+  #386's tailnet mechanism, not uploaded.
 - **Assistant role** (#329): Vox can hold `android.app.role.ASSISTANT`. The role is ours; the
   side-button long-press mapping belongs to the device maker.
 - **Commands screen** (#226): the app's own identity, grouped by what a command does, with real
