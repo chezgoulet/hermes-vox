@@ -95,9 +95,12 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     fun voiceTurn(text: String): String = Streams.start(responses, ResponsesClient.USER_TURN_PREFIX + text, lastID)
 
     /**
-     * Begins a streamed turn (/v1/responses stream:true, chained off the head) and
-     * returns a stream id. Drain with [pollStreamJSON]; end with [cancelStream]
-     * (barge-in) or let it complete (the done poll carries the reply + response_id).
+     * Begins a streamed turn (the route in [StreamRoute], chained off the head) and
+     * returns a stream id. On the responses route that is `/v1/responses stream:true`;
+     * on the runs route it is `POST /v1/runs` + `GET /v1/runs/{id}/events`, chained by
+     * the session key because a run has no response id. Drain with [pollStreamJSON];
+     * end with [cancelStream] (barge-in) or let it complete (the done poll carries the
+     * reply + response_id).
      */
     fun startStream(text: String): String = Streams.start(responses, text, lastID)
 
@@ -106,6 +109,9 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      * {"done","error"(done only),"events","response_id","text","transcript"}. Any
      * response_id it carries becomes the chain head. The done poll retires the
      * stream; polling a retired id throws.
+     *
+     * A runs-route turn carries no response_id, so it leaves the head alone and the
+     * conversation continues on `X-Hermes-Session-Key` — see [StreamRoute.chainHead].
      */
     fun pollStreamJSON(streamID: String): String {
         val r = Streams.poll(streamID)

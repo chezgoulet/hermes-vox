@@ -1,0 +1,13 @@
+#! route runs
+id: 0
+data: {"event":"run.started","run_id":"run_parity","timestamp":1762300000.0,"seq":0}
+
+id: 1
+data: {"event":"clarify.request","run_id":"run_parity","timestamp":1762300000.1,"prompt_id":"clr_1","execution_generation":3,"question":"Which branch should I cut from?","choices":["main","feat/runs-route"],"multi_select":false,"seq":1}
+
+id: 2
+data: {"event":"message.delta","run_id":"run_parity","timestamp":1762300000.2,"delta":"Which branch should I cut from?","seq":2}
+
+id: 3
+data: {"event":"run.completed","run_id":"run_parity","timestamp":1762300000.3,"completed":true,"partial":false,"interrupted":false,"output":"Which branch should I cut from?","usage":{},"runtime":{},"seq":3}
+
