@@ -7,6 +7,51 @@ exactly as an entity might emit it (prose, fences, CRLF and all), and
 the file exists, the verdict matches the table below, and the reason or repair text
 names the thing that was missing or removed.
 
+## The workflow is per profile — and only runs with Presence on
+
+The mirror is no longer one device-wide file. Each profile owns its own document:
+
+- **Where.** `filesDir/vox/<profile>/VOX.md`. The profile is identified by
+  `Profiles.PREF_ACTIVE` — the saved profile's **name**, the field the app already treats as
+  "the active connection" (it is what the switcher marks, what `Profiles.headerLabel` prints
+  beside the agent's name, and what a switch writes). The name is the right key because two
+  profiles can share one gateway URL and still be different entities (each `/p/<name>` has
+  its own key and scope). The name is encoded into one filesystem-safe directory component
+  (`VoxMirror.dirName`): `[A-Za-z0-9_-]` passes through, every other UTF-8 byte becomes
+  `%XX`, so the mapping is injective and no profile name can escape `vox/`. An install that
+  has never saved a profile uses the `@` bucket.
+- **Frame.** `GemmaExpress.persona` reads the ACTIVE profile's file on every render, and the
+  warm LiteRT-LM conversation is rebuilt when that persona string changes; a profile switch
+  re-primes it eagerly (`GemmaExpress.reprime`) so the next render is the new entity, not the
+  one just left.
+- **Migration.** The pre-profile `filesDir/vox/VOX.md` becomes the active profile's file on
+  the first run with Presence on, once. The copy is verified and the legacy file is removed
+  only after it lands; an existing per-profile mirror is never overwritten, and a failed copy
+  leaves the original where it was (`VoxMirror.migrate`, pinned by `VoxMirrorTest`).
+- **First call per profile.** With Presence on, a profile with no valid mirror gets one
+  before Presence may speak: the first call asks the entity over the same directive turn
+  (`VoxSync.obtain` → `VoxSync.ask` → `VoxSoul.resync`), and only a document the validator
+  accepts is written. If the ask fails, nothing is written, Presence stays quiet for that
+  call, and the Settings row says "not mirrored for <profile>".
+- **Presence off.** With Presence off nothing fetches, mirrors, prompts for or reports on
+  VOX.md — the Settings rows are hidden and no request is made.
+
+**What did not change.** The document's format and the validator are exactly as they were:
+the Contract bytes, the no-memory rule and the refusal of a `Memory` section are untouched,
+and a document that fails validation is still never written (the reason is shown verbatim).
+The corpus below therefore still describes every reply the client can receive.
+
+## What a device session must show
+
+1. A fresh install with one profile and Presence on: the first call waits with
+   "Presence · asking the entity for its VOX.md…", then speaks as the entity.
+2. Two profiles populated from the host, each with Presence on: switching profiles and
+   calling again greets you in the NEW profile's voice — and the second call does not ask
+   again for a mirror it already has.
+3. Presence off: Settings shows no VOX.md rows, and a call makes no request on its behalf.
+4. Upgrade from a build before this change: the old working mirror is still what the soul
+   speaks, with no re-authoring needed.
+
 The entity in the corpus is **Cinder**, invented for these fixtures. No real entity,
 person or machine appears in the corpus, and no credential that works: the one secret
 case is a made-up `sk-` string, present precisely so the validator can refuse it.
