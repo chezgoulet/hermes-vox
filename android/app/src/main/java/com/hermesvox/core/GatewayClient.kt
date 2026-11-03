@@ -73,6 +73,42 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         }
     }
 
+    /**
+     * #376: places a run on the approval lane and returns its id. The ordinary turn path
+     * is `/v1/responses`, which on gateway 0.22.6 does not bridge approval requests at all;
+     * `/v1/runs` does, and answers them through the same run id — see [ApprovalArm].
+     *
+     * Debug-only by construction: the only caller is the FLAG_DEBUGGABLE arm.
+     */
+    fun startRun(input: String): String {
+        val body = Json.encode(linkedMapOf<String, Any?>("input" to input)).toByteArray(Charsets.UTF_8)
+        val c = Entity.open("POST", Entity.url(baseURL, "/v1/runs"),
+            Entity.headers(apiKey, "") + ("Content-Type" to "application/json"),
+            TIMEOUT_MS, TIMEOUT_MS)
+        return Entity.exchange(c, TIMEOUT_MS.toLong(), "hermes run") {
+            Entity.send(c, body)
+            val code = c.responseCode
+            if (code != 200 && code != 202) {
+                throw HermesException("hermes run ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+            }
+            val raw = Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+            val runId = try {
+                Json.str(Json.parse(raw, allowTrailing = true) as? JObj, "run_id")
+            } catch (e: JsonException) {
+                throw HermesException("hermes run: unreadable body: ${e.message}")
+            }
+            if (runId.isEmpty()) throw HermesException("hermes run: no run_id in response")
+            runId
+        }
+    }
+
+    /** #376: the raw `GET /v1/runs/{id}` body — status, `pending_controls`, `approval`. */
+    fun runStatus(runId: String): String {
+        val (code, body) = get("/v1/runs/${segment(runId)}")
+        if (code != 200) throw HermesException("hermes run status $code: $body")
+        return body
+    }
+
     /** A path segment: run ids are ASCII today, but never concatenate untrusted text raw. */
     private fun segment(value: String): String =
         java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")

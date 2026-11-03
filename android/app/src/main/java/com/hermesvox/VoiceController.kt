@@ -11,10 +11,12 @@ import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import com.hermesvox.core.ApprovalAnswer
+import com.hermesvox.core.ApprovalArm
 import com.hermesvox.core.ApprovalGate
 import com.hermesvox.core.ApprovalRequest
 import com.hermesvox.core.ApprovalVoice
 import com.hermesvox.core.HermesSession
+import com.hermesvox.core.JsonException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -478,6 +480,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     // deny, a duplicate answer is a local no-op). This class owns the Android edges:
     // the card callback, the scheduler, and the existing microphone path.
     private val approvalGate = ApprovalGate()
+    /**
+     * #376: the run the debug-only arm placed. It belongs to no turn, so a turn ending must
+     * not withdraw its request (see [closeApprovals]); "" when no arm is watching.
+     */
+    @Volatile private var armRunId = ""
     /** The request whose card is on screen; "" when none. */
     @Volatile private var approvalShownKey = ""
     /** The request whose timeout is scheduled; "" when none. */
@@ -1424,6 +1431,77 @@ class VoiceController(private val context: Context, private val session: HermesS
         return true
     }
 
+    /**
+     * #376: the debug-only approval arm. The run has already been placed (see
+     * [ApprovalArm]); this watches its status until the gateway parks it on an approval and
+     * then feeds that request into exactly the same surface a stream event does — the same
+     * gate, the same card, the same `event=approval …` line, the same timeout.
+     *
+     * The request is read from `GET /v1/runs/{id}` rather than an SSE stream because the
+     * run lane parks the request in the run's own state; the card must outlive the poller,
+     * and it does — [ApprovalGate] owns it from [approvalArrived] on.
+     *
+     * Reachable only from the FLAG_DEBUGGABLE intent harness.
+     */
+    fun armApproval(runId: String) {
+        if (runId.isEmpty()) return
+        armRunId = runId
+        VoxLog.d("event=approval-arm run=$runId watch=run-status")
+        execSubmit { watchArmRun(runId) }
+    }
+
+    /** Polls one arm run. Runs on the controller executor (blocking HTTP is not main). */
+    private fun watchArmRun(runId: String) {
+        val t0 = android.os.SystemClock.uptimeMillis()
+        var lastStatus = ""
+        var readErrors = 0
+        while (!stopped && android.os.SystemClock.uptimeMillis() - t0 < ApprovalArm.WATCH_MS) {
+            val body = try {
+                session.armRunStatus(runId)
+            } catch (e: Exception) {
+                // A durable run id outlives a restart or a transient 5xx; retry until the
+                // deadline instead of abandoning a card the gateway may still raise.
+                if (readErrors++ == 0) {
+                    VoxLog.w("event=approval-arm-status-failed run=$runId err=${e.message?.take(120)}")
+                }
+                sleepArm()
+                continue
+            }
+            readErrors = 0
+            val status = ApprovalArm.statusOf(body)
+            val request = try {
+                ApprovalArm.requestFromRunStatus(body)
+            } catch (e: JsonException) {
+                VoxLog.w("event=approval-arm-unreadable run=$runId err=${e.message?.take(120)}")
+                null
+            }
+            if (request != null) {
+                // The run is still alive by definition: the gateway is parked on the request.
+                VoxLog.d("event=approval-arm run=$runId status=$status requested=true")
+                main.post { approvalArrived(request, runAlive = true) }
+                return
+            }
+            if (status != lastStatus) {
+                lastStatus = status
+                VoxLog.d("event=approval-arm run=$runId status=$status requested=false")
+            }
+            if (status in ApprovalArm.TERMINAL_STATUSES) {
+                VoxLog.d("event=approval-arm-end run=$runId status=$status requested=false")
+                return
+            }
+            sleepArm()
+        }
+        VoxLog.w("event=approval-arm-timeout run=$runId watched_ms=${ApprovalArm.WATCH_MS}")
+    }
+
+    private fun sleepArm() {
+        try {
+            Thread.sleep(ApprovalArm.POLL_MS)
+        } catch (_: InterruptedException) {
+            // Tearing down: the next loop condition ends the watch.
+        }
+    }
+
     /** Called from the stream worker when an `approval.request` arrives. */
     private fun approvalArrived(request: ApprovalRequest, runAlive: Boolean) {
         val accepted = approvalGate.offer(request, runAlive)
@@ -1490,7 +1568,10 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /** The run ended: withdraw its requests rather than answering them. */
     private fun closeApprovals(reason: String) {
-        val dropped = approvalGate.closeAll()
+        // #376: the arm's run belongs to no turn. A turn finishing (or a call ending) must
+        // not withdraw a card the phone can still answer, so its run is kept.
+        val arm = armRunId
+        val dropped = if (arm.isEmpty()) approvalGate.closeAll() else approvalGate.closeAllExcept(setOf(arm))
         if (dropped.isEmpty()) return
         main.removeCallbacks(approvalTimeout)
         approvalTimeoutKey = ""

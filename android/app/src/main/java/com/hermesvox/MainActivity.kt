@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.hermesvox.core.ApprovalArm
 import com.hermesvox.core.ApprovalChoices
 import com.hermesvox.core.HermesSession
 
@@ -416,6 +417,17 @@ class MainActivity : AppCompatActivity() {
         // would reject, nor one silently rewritten into a different identity.
         if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
         if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
+        // #376: the approval arm — a run the phone places whose ONLY purpose is to make
+        // Hermes ask for a sign-off, so the card can be exercised at all. Debug-only (the
+        // FLAG_DEBUGGABLE guard above), inert in a release build, and never a shipped
+        // surface: acceptance runs arm it with `--es arm approval` (see
+        // docs/APPROVALS-ACCEPTANCE.md). `arm_prompt` overrides the default command.
+        intent.getStringExtra("arm")?.let { what ->
+            if (what.equals("approval", ignoreCase = true)) {
+                connectFromPrefs()
+                armApproval(intent.getStringExtra("arm_prompt"))
+            }
+        }
         // #327: the device matrix needs the clipboard in a known state and the paste
         // sheet open, which no shell command can do on this Android. Debug-only (the
         // FLAG_DEBUGGABLE guard above), inert in a release build, and never logged.
@@ -1775,6 +1787,41 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * #376: the debug-only approval arm. Places one run on the gateway's `/v1/runs` lane
+     * (the lane that can carry an approval) and hands the controller a watcher; the card,
+     * the voice answer and the timeout are the SAME ones a real request uses.
+     *
+     * Reachable only through [handleDebugHarness], which is gated on FLAG_DEBUGGABLE, so
+     * this cannot run in a release install. The prompt is [ApprovalArm.PROMPT] — a
+     * harmless recursive delete of an empty temp directory, which the gateway's own
+     * policy must flag before anything runs.
+     */
+    private fun armApproval(prompt: String?) {
+        if (missingKeyPrompt()) return
+        val s = session ?: run { setStatus("Connect first", true); return }
+        val input = prompt?.takeIf { it.isNotBlank() } ?: ApprovalArm.PROMPT
+        VoxLog.d("event=approval-arm-request prompt=${input.replace('\n', ' ').take(160)}")
+        setStatus("Arming an approval…", true)
+        Thread({
+            try {
+                val runId = s.startArmRun(input)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val c = liveController ?: VoiceController(applicationContext, s).also {
+                        liveController = it
+                        wireSoul(it)
+                    }
+                    c.attachListeners(listener)
+                    c.armApproval(runId)
+                }
+            } catch (e: Exception) {
+                VoxLog.w("event=approval-arm-failed err=${e.message?.take(160)}")
+                runOnUiThread { setStatus("Arm failed: ${e.message?.take(80)}", true) }
+            }
+        }, "approval-arm").start()
     }
 
     /** §B: [transcript] overrides the conversation line for a file turn. The turn carries the

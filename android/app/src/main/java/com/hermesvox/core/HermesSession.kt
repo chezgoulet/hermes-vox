@@ -137,6 +137,20 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
         gateway.answerApproval(runId, choice, requestId, executionGeneration)
     }
 
+    // ---- #376: the debug-only approval arm ----
+
+    /**
+     * Places a run whose only purpose is to raise an approval ([ApprovalArm]) and returns
+     * its id. The approval is then read from the run's status, not from this call — the
+     * model has to reach the flagged command first.
+     *
+     * Blocks. Reachable only from the FLAG_DEBUGGABLE intent harness.
+     */
+    internal fun startArmRun(input: String): String = gateway.startRun(input)
+
+    /** The raw `GET /v1/runs/{id}` body the arm polls. Blocks. */
+    internal fun armRunStatus(runId: String): String = gateway.runStatus(runId)
+
     /** Starts a NEW conversation: drops the chain head. The gateway-side history
      *  remains until its own retention clears it. */
     fun resetConversation() {
