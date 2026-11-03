@@ -1,0 +1,10 @@
+{"run":1,"total_ms":211,"this_ms":null,"wait_ms":213,"pss_at_start_kb":172511,"load_ms":null,"arm":"none","pss_loaded_kb":180798,"avail_before_mb":3314,"avail_after_mb":3237}
+{"run":2,"total_ms":174,"this_ms":null,"wait_ms":178,"pss_at_start_kb":172568,"load_ms":null,"arm":"none","pss_loaded_kb":179405,"avail_before_mb":3295,"avail_after_mb":3241}
+{"run":3,"total_ms":170,"this_ms":null,"wait_ms":173,"pss_at_start_kb":176910,"load_ms":null,"arm":"none","pss_loaded_kb":184163,"avail_before_mb":3262,"avail_after_mb":3251}
+{"run":4,"total_ms":166,"this_ms":null,"wait_ms":168,"pss_at_start_kb":172701,"load_ms":null,"arm":"none","pss_loaded_kb":179860,"avail_before_mb":3275,"avail_after_mb":3260}
+{"run":5,"total_ms":172,"this_ms":null,"wait_ms":174,"pss_at_start_kb":172517,"load_ms":null,"arm":"none","pss_loaded_kb":179380,"avail_before_mb":3287,"avail_after_mb":3232}
+{"run":6,"total_ms":177,"this_ms":null,"wait_ms":179,"pss_at_start_kb":172510,"load_ms":null,"arm":"none","pss_loaded_kb":179748,"avail_before_mb":3244,"avail_after_mb":3244}
+{"run":7,"total_ms":168,"this_ms":null,"wait_ms":170,"pss_at_start_kb":172412,"load_ms":null,"arm":"none","pss_loaded_kb":183834,"avail_before_mb":3266,"avail_after_mb":3246}
+{"run":8,"total_ms":171,"this_ms":null,"wait_ms":174,"pss_at_start_kb":172816,"load_ms":null,"arm":"none","pss_loaded_kb":179754,"avail_before_mb":3283,"avail_after_mb":3231}
+{"run":9,"total_ms":173,"this_ms":null,"wait_ms":175,"pss_at_start_kb":172710,"load_ms":null,"arm":"none","pss_loaded_kb":179574,"avail_before_mb":3302,"avail_after_mb":3270}
+{"run":10,"total_ms":176,"this_ms":null,"wait_ms":180,"pss_at_start_kb":172411,"load_ms":null,"arm":"none","pss_loaded_kb":179519,"avail_before_mb":3292,"avail_after_mb":3265}

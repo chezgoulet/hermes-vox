@@ -1,0 +1,1 @@
+{"run":1,"total_ms":370,"this_ms":null,"wait_ms":372,"pss_at_start_kb":2137071,"load_ms":5834,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2647586,"avail_before_mb":3699,"avail_after_mb":1482}

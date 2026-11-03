@@ -1,0 +1,10 @@
+{"run":1,"total_ms":623,"this_ms":null,"wait_ms":625,"pss_at_start_kb":1400170,"load_ms":7013,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2700219,"avail_before_mb":3923,"avail_after_mb":1743}
+{"run":2,"total_ms":428,"this_ms":null,"wait_ms":432,"pss_at_start_kb":2263055,"load_ms":5666,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2691716,"avail_before_mb":3926,"avail_after_mb":1709}
+{"run":3,"total_ms":426,"this_ms":null,"wait_ms":428,"pss_at_start_kb":2237325,"load_ms":5602,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2710011,"avail_before_mb":3920,"avail_after_mb":1693}
+{"run":4,"total_ms":435,"this_ms":null,"wait_ms":437,"pss_at_start_kb":2260285,"load_ms":5633,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2698090,"avail_before_mb":3876,"avail_after_mb":1695}
+{"run":5,"total_ms":431,"this_ms":null,"wait_ms":438,"pss_at_start_kb":2260787,"load_ms":5530,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2705294,"avail_before_mb":3925,"avail_after_mb":1662}
+{"run":6,"total_ms":497,"this_ms":null,"wait_ms":499,"pss_at_start_kb":2466189,"load_ms":5628,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2708659,"avail_before_mb":3881,"avail_after_mb":1627}
+{"run":7,"total_ms":431,"this_ms":null,"wait_ms":433,"pss_at_start_kb":2231433,"load_ms":5744,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2698205,"avail_before_mb":3867,"avail_after_mb":1591}
+{"run":8,"total_ms":440,"this_ms":null,"wait_ms":442,"pss_at_start_kb":2448749,"load_ms":5540,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2700486,"avail_before_mb":3830,"avail_after_mb":1634}
+{"run":9,"total_ms":443,"this_ms":null,"wait_ms":446,"pss_at_start_kb":2205982,"load_ms":5734,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2704012,"avail_before_mb":3839,"avail_after_mb":1610}
+{"run":10,"total_ms":434,"this_ms":null,"wait_ms":439,"pss_at_start_kb":2416857,"load_ms":5636,"arm":"backend=gpu hears=true kv=8192","pss_loaded_kb":2700411,"avail_before_mb":3840,"avail_after_mb":1639}
