@@ -1783,6 +1783,19 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
+     * M1 (0.9.1 review): the stream loop's cancelled exits retire THEIR OWN stream. A
+     * barge-in cancels [currentStream], which is assigned only after startStream returns;
+     * one landing in that window cancelled nothing (or the previous turn's stream), and the
+     * loop then left without a cancel — on /v1/runs the run generated on, tools included,
+     * and the StreamState was never retired. `Streams.cancel` is idempotent, so a stream
+     * the barge-in did reach makes this a no-op.
+     */
+    private fun cancelOwnStream(sid: String) {
+        if (sid.isBlank()) return
+        try { session.cancelStream(sid) } catch (_: Exception) {}
+    }
+
+    /**
      * The turn ran out of AGENT time. Ask the route what abandoning means: close the
      * socket on /v1/responses (which aborts the generation), or POST /stop on /v1/runs
      * (where the socket is only a subscriber and the run would otherwise keep going).
@@ -2193,6 +2206,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // ghost reply (the gate was already released by bargeIn()).
                     // #240: a cut reply is dead for good, even after the next turn resets genCancelled.
                     if (genCancelled || replies.isDead(gen)) {
+                        cancelOwnStream(sid)   // M1: the barge-in may have missed this stream
                         terminal.cancel()
                         endReply(gen, ReplyLedger.End.CANCELLED, if (genCancelled) "cancel" else "reply-dead")
                         break
@@ -2317,7 +2331,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (done) break
                     tries++
                 }
-                if (genCancelled) { terminal.cancel(); endReply(gen, ReplyLedger.End.CANCELLED, "cancel"); VoxLog.d("turn interrupted during generation") }
+                if (genCancelled) { cancelOwnStream(sid); terminal.cancel(); endReply(gen, ReplyLedger.End.CANCELLED, "cancel"); VoxLog.d("turn interrupted during generation") }
                 else if (!done) {
                     // The agent's budget is spent. What that means is the route's call:
                     // /v1/responses closes the socket; /v1/runs stops the run itself, so
