@@ -3,9 +3,11 @@ package com.hermesvox
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.charset.StandardCharsets
 import java.security.DigestOutputStream
 import java.security.MessageDigest
 
@@ -64,9 +66,20 @@ object FileStage {
         }
     }
 
-    /** Stage a shared or picked URI. */
-    fun stage(context: Context, uri: Uri, sizeHint: Long? = null): Result {
-        val name = displayName(context, uri) ?: uri.lastPathSegment?.substringAfterLast('/')
+    /**
+     * Stage a shared or picked URI. [nameOverride] is used when the app generated the name
+     * itself (a clipboard image becomes `clipboard-<when>.png`); a provider's display name is
+     * only a name either way — the copy is written under a random temp name.
+     */
+    fun stage(
+        context: Context,
+        uri: Uri,
+        sizeHint: Long? = null,
+        nameOverride: String? = null,
+    ): Result {
+        val name = nameOverride?.takeIf { it.isNotBlank() }
+            ?: displayName(context, uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "file"
         val mime = context.contentResolver.getType(uri)?.takeIf { it.isNotBlank() }
             ?: "application/octet-stream"
@@ -96,6 +109,27 @@ object FileStage {
         } catch (_: Throwable) {
             Result.Failed("the file could not be read · nothing was sent")
         }
+    }
+
+    /**
+     * Stage a string as a real text file (#370). The clipboard and a text share both use this
+     * so a URL, a code block or a screenshot's OCR text travels as an artifact with a name,
+     * a type and a size — never as a pasted string in a hidden field.
+     *
+     * The bytes are UTF-8 and the cap is the same one every other file meets; the copy is
+     * still written under a random temp name, so the generated display name cannot become a
+     * path.
+     */
+    fun stageText(
+        context: Context,
+        name: String,
+        text: String,
+        mime: String = "text/plain",
+    ): Result {
+        val bytes = text.toByteArray(StandardCharsets.UTF_8)
+        if (bytes.size.toLong() > FileOffer.MAX_BYTES) return tooBig(bytes.size.toLong())
+        val out = newTarget(context) ?: return Result.Failed(OUT_OF_SPACE)
+        return copyInto(ByteArrayInputStream(bytes), out, name, mime)
     }
 
     /**

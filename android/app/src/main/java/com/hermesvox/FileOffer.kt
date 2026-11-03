@@ -216,12 +216,14 @@ object FileOffer {
     }
 
     /**
-     * The conversation line for a file turn. Deliberately metadata only: for the inline
-     * fallback the bytes *did* go to the agent, but repeating them on screen would put the
-     * body in the transcript — and for a served file there are no bytes here at all.
+     * The conversation's card for a file turn (#370). Name, type and size — deliberately
+     * metadata only: for the inline fallback the bytes *did* go to the agent, but repeating
+     * them on screen would put the body in the transcript — and for a served file there are
+     * no bytes here at all.
      */
     fun transcriptLine(file: File, inline: Boolean): String =
-        "You: shared ${file.name} (${size(file.bytes)})" + if (inline) " inline" else ""
+        "You: shared ${file.name} · ${file.mime} · ${size(file.bytes)}" +
+            if (inline) " · inline" else ""
 
     // ---- the state the user sees ----
 

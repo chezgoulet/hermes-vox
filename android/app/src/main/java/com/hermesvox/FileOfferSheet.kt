@@ -21,7 +21,7 @@ import androidx.core.content.ContextCompat
  *  * `the agent received a different file than we sent · nothing was kept`
  *
  * The decisions are in [FileOffer] and [FileShare]; this class is the Android skin, like
- * [PasteSheet]. It never sends anything itself: the only calls it makes are the picker and
+ * [ShareSheet]. It never sends anything itself: the only calls it makes are the picker and
  * [FileShare]'s actions, and every line it shows came from a state the flow produced.
  */
 class FileOfferSheet(

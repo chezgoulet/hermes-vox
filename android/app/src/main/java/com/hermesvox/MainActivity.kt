@@ -423,17 +423,21 @@ class MainActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT >= 28) cm?.clearPrimaryClip()
             else cm?.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
         }
-        if (intent.getBooleanExtra("open_paste", false)) showPaste()
+        // #370: the share sheet, with the clipboard in whatever state the harness set above.
+        // `open_paste` is kept as an alias so the old device-matrix scripts still land here.
+        if (intent.getBooleanExtra("open_share", false) || intent.getBooleanExtra("open_paste", false)) {
+            showShare()
+        }
         // §B: the file offer, driven from a script. A system picker cannot be driven by adb,
         // so the harness stages a path the app can already read (push it with `run-as`).
-        // Debug-only (the FLAG_DEBUGGABLE guard above); inert in a release build.
+        // Debug-only (the FLAG_DEBUGGABLE guard above); inert in a release build. It stops on
+        // the confirmation card like every other entry point.
         intent.getStringExtra("offer_file")?.let { path ->
             mainHandler.post {
                 if (missingKeyPrompt()) return@post
                 val src = java.io.File(path)
                 if (!src.isFile) { setStatus("no such file", true); return@post }
-                fileOfferSheet.show()
-                stageAndBegin(src.name) { FileStage.stageFile(this, src) }
+                stageDraft(src.name, ShareSurface.Source.PICKER) { FileStage.stageFile(this, src) }
             }
         }
         // #156: the device matrix needs to PUT the phone into each state and then fire
@@ -1737,29 +1741,38 @@ class MainActivity : AppCompatActivity() {
     private fun wireButtons() {
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
-        findViewById<Button>(R.id.paste).setOnClickListener { showPaste() }
-        findViewById<Button>(R.id.file).setOnClickListener { showFiles() }
-        findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
+        // #370: one commands entry (⌘). Sharing lives inside its sheet, not beside it.
+        findViewById<View>(R.id.commands).setOnClickListener { showCommands() }
     }
 
-    /** #327: [pasted] marks a clipboard turn. It is sent exactly like typed text; only
-     *  what the transcript and the console repeat changes (a paste can be enormous, and
-     *  the clipboard's contents must never reach a log line).
-     *
-     *  §B: [transcript] overrides the conversation line for a file turn. The turn carries the
+    /**
+     * #370: a typed `/` opens the commands sheet wherever this activity has the keyboard.
+     * The dialogs are separate windows, so a slash typed in the sheet's own search box never
+     * reaches this method; on the main screen it is the same entry as the ⌘ button.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_UP &&
+            event.keyCode == android.view.KeyEvent.KEYCODE_SLASH &&
+            !event.isCtrlPressed && !event.isAltPressed
+        ) {
+            showCommands()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** §B: [transcript] overrides the conversation line for a file turn. The turn carries the
      *  offer (name, size, hash, URL) or — for the inline fallback — the body itself; the
-     *  transcript shows only the metadata, so a file's contents never enter it. */
-    private fun send(text: String, pasted: Boolean = false, transcript: String? = null) {
+     *  transcript shows only the card (name, type, size), so a file's contents never enter it. */
+    private fun send(text: String, transcript: String? = null) {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
         // K2: typing /compress (or /compact) is the same native command as picking it
         // from the commands sheet — status feedback + the gateway's answer in a card,
         // instead of the word disappearing into the turn as ordinary conversation.
-        // A paste is text, not a command: the same word typed is a command, pasted is
-        // sent to the agent as-is (the command sheet's grammar is unchanged).
-        if (!pasted && CompressCommand.matches(text)) { compressContext(); return }
-        appendConvo(transcript ?: if (pasted) ClipboardPaste.transcriptLine(text) else "You: $text")
+        if (CompressCommand.matches(text)) { compressContext(); return }
+        appendConvo(transcript ?: "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             wireSoul(it)
@@ -1767,7 +1780,7 @@ class MainActivity : AppCompatActivity() {
             LatencyStats.resetSessionTurns()   // C3: first-use controller = fresh session
         }
         c.attachListeners(listener)
-        c.sendText(text, pasted = pasted)
+        c.sendText(text)
     }
 
     private val listener = object : VoiceController.Listener {
@@ -2132,36 +2145,55 @@ class MainActivity : AppCompatActivity() {
     private var callTurns = 0L
     private fun showCommands() = commandsSheet.show()
 
-    /** #327: paste → preview → send. The decision (empty, cap, dropped count, and the
-     *  rule that a read never sends) is pure JVM in ClipboardPaste/PasteFlow; this holds
-     *  the two Android edges — the clipboard read and the turn send. */
-    private val pasteFlow by lazy {
-        PasteFlow(readClipboard = { readClipboard() }, send = { send(it, pasted = true) })
+    // ---- #370: share with agent — the clipboard, a file, or another app's share ----
+    //
+    // The artifact is the unit. The clipboard is not pasted text: it is a real file with a
+    // generated name. Another app's share is not sent on arrival: it lands on the same
+    // confirmation card as a picked file, and only SEND hands it to the #386 mechanism.
+
+    /** The chooser and the confirmation. It never sends; SEND hands the draft to [FileShare]. */
+    private val shareSheet by lazy {
+        ShareSheet(
+            act = this,
+            onClipboard = { shareClipboard() },
+            onPick = { pickFile() },
+            onSend = { staged -> beginStaged(staged) },
+            onCancel = { stageSeq++ },
+        )
     }
-    private val pasteSheet by lazy { PasteSheet(this, pasteFlow) }
-    private fun showPaste() = pasteSheet.show()
 
-    // ---- SPEC-conversational-bridge §B: a file offered by the phone, fetched by the agent ----
-
-    /** The one flow for the screen. All decisions live in [FileOffer]/[FileShare]; this holds
-     *  the three Android edges — the picker, the staging copy, and the ordinary turn send. */
-    private var fileShareRef: FileShare? = null
-
-    /** Bumped for every staging run; a result from an older run is deleted, never offered. */
-    private var stageSeq = 0L
-    private val fileShare: FileShare by lazy {
-        FileShare(
-            sendTurn = { text, transcript -> send(text, transcript = transcript) },
-            onState = { s -> mainHandler.post { fileOfferSheet.render(s) } },
-            log = { VoxLog.d(it) },
-        ).also { fileShareRef = it }
-    }
-    private val fileOfferSheet: FileOfferSheet by lazy { FileOfferSheet(this, fileShare) { pickFile() } }
-
-    private fun showFiles() {
+    private fun showShare() {
         if (missingKeyPrompt()) return
         if (session == null) { setStatus("Connect first", true); return }
-        fileOfferSheet.show()
+        shareSheet.show()
+    }
+
+    /**
+     * The clipboard, rendered as a file. Text — a URL, a path, a code block — becomes a
+     * `.txt`; a URI (an image) keeps its bytes and takes its extension from the mime. An
+     * empty or unreadable clip is a stated refusal, never an empty send.
+     */
+    private fun shareClipboard() {
+        val cm = getSystemService(android.content.ClipboardManager::class.java)
+        val clip = try { cm?.primaryClip } catch (_: Throwable) { null }
+        val item = if (clip != null && clip.itemCount > 0) clip.getItemAt(0) else null
+        val text = item?.text?.toString()
+        val uri = item?.uri
+        val mime = uri?.let { runCatching { contentResolver.getType(it) }.getOrNull() }
+        val plan = ShareSurface.clipboardPlan(text, mime, uri != null, System.currentTimeMillis())
+        when (plan.kind) {
+            ShareSurface.ClipKind.TEXT ->
+                stageDraft(plan.name, ShareSurface.Source.CLIPBOARD) {
+                    FileStage.stageText(this, plan.name, plan.text.orEmpty(), plan.mime)
+                }
+            ShareSurface.ClipKind.URI -> {
+                val u = uri ?: run { shareSheet.refuse(ShareSurface.EMPTY_CLIPBOARD); return }
+                stageDraft(plan.name, ShareSurface.Source.CLIPBOARD) {
+                    FileStage.stage(this, u, nameOverride = plan.name)
+                }
+            }
+            ShareSurface.ClipKind.EMPTY -> shareSheet.refuse(plan.line)
+        }
     }
 
     /** The system picker. ACTION_OPEN_DOCUMENT needs no permission and hands back a readable
@@ -2184,77 +2216,151 @@ class MainActivity : AppCompatActivity() {
         if (requestCode != REQ_FILE) return
         if (resultCode != RESULT_OK) return
         @Suppress("DEPRECATION")
-        offerUri(data?.data)
+        draftUri(data?.data, ShareSurface.Source.PICKER)
     }
 
     /**
-     * Stage [uri] off the main thread (a 90 MB share takes a moment to hash), then hand the
-     * result to the flow. The sheet is open before the copy starts so the wait is a stated
-     * line rather than a frozen screen.
+     * Stage a URI as a draft. The provider's display name is used when it has one; otherwise
+     * the name is generated from the mime. The name is passed through to the copy so the card
+     * and the turn cannot disagree about what was shared.
      */
-    private fun offerUri(uri: android.net.Uri?) {
-        if (uri == null) return
-        val name = runCatching { FileStage.displayName(this, uri) }.getOrNull() ?: "file"
-        stageAndBegin(name) { FileStage.stage(this, uri) }
+    private fun draftUri(uri: android.net.Uri?, source: ShareSurface.Source) {
+        if (uri == null) { shareSheet.refuse(ShareSurface.NOTHING_SHARED); return }
+        val name = runCatching { FileStage.displayName(this, uri) }.getOrNull()?.takeIf { it.isNotBlank() }
+        val mime = runCatching { contentResolver.getType(uri) }.getOrNull()
+            ?.takeIf { it.isNotBlank() } ?: ShareSurface.BINARY_MIME
+        val shown = name ?: ShareSurface.sharedName(mime, System.currentTimeMillis())
+        stageDraft(shown, source) { FileStage.stage(this, uri, nameOverride = shown) }
+    }
+
+    /** A shared text block (or a viewed link) becomes a real `.txt`, never a hidden string. */
+    private fun draftText(text: String, source: ShareSurface.Source) {
+        if (text.isBlank()) { shareSheet.refuse(ShareSurface.NOTHING_SHARED); return }
+        val now = System.currentTimeMillis()
+        val name = if (source == ShareSurface.Source.LINK) ShareSurface.linkName(now)
+            else ShareSurface.textName(ShareSurface.SHARED, now)
+        stageDraft(name, source) { FileStage.stageText(this, name, text) }
     }
 
     /**
-     * Copy and hash off the main thread, then start the offer — unless the world moved on.
-     * [stageSeq] is the guard: a copy that finishes after the sheet was closed, after another
-     * file was picked, or after the screen went away is **deleted** and never offered. Closing
-     * the sheet during the copy cancels [fileShare] to `Idle`, so the state check is what makes
-     * "closing is never a send" true for the slow path as well as the fast one.
+     * Copy and hash off the main thread, then **wait** on the confirmation card. [stageSeq]
+     * is the guard: a copy that finishes after the sheet was closed, after another item was
+     * chosen, or after the screen went away is deleted and never offered. Closing is never a
+     * send, including on the slow path.
      */
-    private fun stageAndBegin(name: String, produce: () -> FileStage.Result) {
-        fileOfferSheet.show()
-        fileShare.reading(name)
+    private fun stageDraft(
+        name: String,
+        source: ShareSurface.Source,
+        produce: () -> FileStage.Result,
+    ) {
+        if (missingKeyPrompt()) return
+        if (session == null) { setStatus("Connect first", true); return }
+        shareSheet.showReading(name)
         val mine = ++stageSeq
         Thread({
             val result = produce()
             runOnUiThread {
                 val abandoned = mine != stageSeq ||
-                    fileShare.state !is FileShare.State.Reading ||
+                    !shareSheet.isShowing() ||
                     isFinishing || isDestroyed
                 if (abandoned) {
-                    // The screen is gone or the offer was cancelled: the copy must not outlive it.
                     (result as? FileStage.Result.Ok)?.staged?.file?.delete()
                     return@runOnUiThread
                 }
                 when (result) {
-                    is FileStage.Result.Ok ->
-                        fileShare.begin(result.staged.offer, result.staged.file, result.staged.inlineText)
-                    is FileStage.Result.TooBig -> fileShare.refuse(result.line)
-                    is FileStage.Result.Failed -> fileShare.refuse(result.line)
+                    is FileStage.Result.Ok -> shareSheet.showReady(result.staged, source)
+                    is FileStage.Result.TooBig -> shareSheet.refuse(result.line)
+                    is FileStage.Result.Failed -> shareSheet.refuse(result.line)
                 }
             }
-        }, "file-stage").start()
+        }, "share-stage").start()
+    }
+
+    /** The confirmed draft becomes an offer: the #386 flow takes the copy from here. */
+    private fun beginStaged(staged: FileStage.Staged) {
+        fileOfferSheet.show()
+        fileShare.begin(staged.offer, staged.file, staged.inlineText)
+    }
+
+    // ---- SPEC-conversational-bridge §B: a file offered by the phone, fetched by the agent ----
+
+    /** The one flow for the screen. All decisions live in [FileOffer]/[FileShare]; this holds
+     *  the three Android edges — the picker, the staging copy, and the ordinary turn send. */
+    private var fileShareRef: FileShare? = null
+
+    /** Bumped for every staging run; a result from an older run is deleted, never offered. */
+    private var stageSeq = 0L
+    private val fileShare: FileShare by lazy {
+        FileShare(
+            sendTurn = { text, transcript -> send(text, transcript = transcript) },
+            onState = { s -> mainHandler.post { fileOfferSheet.render(s) } },
+            log = { VoxLog.d(it) },
+        ).also { fileShareRef = it }
+    }
+    private val fileOfferSheet: FileOfferSheet by lazy {
+        FileOfferSheet(this, fileShare) { showShare() }
     }
 
     /**
-     * A share from another app lands here: ACTION_SEND with one stream. Text shares are not
-     * file offers and are ignored (paste already covers them). Deferred to the main thread
-     * because onNewIntent runs inside dispatch.
+     * A share from another app lands here. Every entry point (ACTION_SEND, SEND_MULTIPLE,
+     * VIEW) stages and then **confirms** on the same card; none of them sends on arrival.
+     * Deferred to the main thread because onNewIntent runs inside dispatch.
      */
     private fun handleShareIntent(intent: Intent?) {
-        if (intent == null || intent.action != Intent.ACTION_SEND) return
-        @Suppress("DEPRECATION")
-        val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM) ?: return
-        intent.removeExtra(Intent.EXTRA_STREAM)   // one share is one offer, not one per dispatch
-        mainHandler.post {
-            if (missingKeyPrompt()) return@post
-            if (session == null) { setStatus("Connect first", true); return@post }
-            offerUri(uri)
-        }
+        if (intent == null) return
+        val action = intent.action
+        if (action != Intent.ACTION_SEND &&
+            action != Intent.ACTION_SEND_MULTIPLE &&
+            action != Intent.ACTION_VIEW
+        ) return
+        mainHandler.post { routeShareIntent(intent) }
     }
 
-    /** The clipboard's first text item, or null when there is nothing to paste. A clip
-     *  that holds something else (an image, a URI) is not text and is reported as empty.
-     *  Never logged: clipboard contents do not belong in a log or a crash report. */
-    private fun readClipboard(): String? {
-        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
-        val clip = try { cm.primaryClip } catch (_: Throwable) { null } ?: return null
-        if (clip.itemCount == 0) return null
-        return clip.getItemAt(0)?.text?.toString()
+    private fun routeShareIntent(intent: Intent) {
+        if (missingKeyPrompt()) return
+        if (session == null) { setStatus("Connect first", true); return }
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                // One share is one offer, not one per dispatch.
+                intent.removeExtra(Intent.EXTRA_STREAM)
+                intent.removeExtra(Intent.EXTRA_TEXT)
+                when {
+                    uri != null -> draftUri(uri, ShareSurface.Source.SHARE)
+                    !text.isNullOrBlank() -> draftText(text, ShareSurface.Source.SHARE)
+                    else -> shareSheet.refuse(ShareSurface.NOTHING_SHARED)
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val uris = intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                intent.removeExtra(Intent.EXTRA_STREAM)
+                val files = uris?.filterNotNull().orEmpty()
+                val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                intent.removeExtra(Intent.EXTRA_TEXT)
+                when {
+                    files.size == 1 -> draftUri(files[0], ShareSurface.Source.SHARE)
+                    files.size > 1 -> shareSheet.refuse(ShareSurface.multipleLine(files.size))
+                    !text.isNullOrBlank() -> draftText(text, ShareSurface.Source.SHARE)
+                    else -> shareSheet.refuse(ShareSurface.NOTHING_SHARED)
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data
+                intent.data = null
+                val scheme = uri?.scheme?.lowercase()
+                when {
+                    uri == null -> shareSheet.refuse(ShareSurface.NOTHING_SHARED)
+                    scheme == "content" || scheme == "file" ->
+                        draftUri(uri, ShareSurface.Source.SHARE)
+                    scheme == "http" || scheme == "https" ->
+                        draftText(uri.toString(), ShareSurface.Source.LINK)
+                    else -> shareSheet.refuse(ShareSurface.unsupportedView(scheme))
+                }
+            }
+        }
     }
 
     private fun runCommand(c: CommandCatalog.Command, finished: (Boolean) -> Unit) {
@@ -2270,6 +2376,9 @@ class MainActivity : AppCompatActivity() {
             finished(ok)
         }
         when (c.name) {
+            // #370: an artifact action, not a slash command. The verb is CHOOSE → pulse,
+            // inherited from the closed six-verb grammar; the card is the share sheet.
+            CommandCatalog.SHARE.name -> { showShare(); done(true) }
             "/models" -> showModelChooser()
             "/health" -> showHealthCard()
             CompressCommand.NAME -> compressContext(done)
