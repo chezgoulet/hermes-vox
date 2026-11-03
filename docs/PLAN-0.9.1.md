@@ -161,3 +161,41 @@ carries the process and its gotchas.
 - **Continuity, the household, the store rail** — **1.0**.
 - **Entity calls, remote control of the interface, wake word** — unnumbered and community-led
   (#268).
+
+## 10. The approval route — required before the cut
+
+Added 2026-11-03, after the acceptance run and the approval-arm investigation.
+
+**The finding.** The app's turns ride `POST /v1/responses`. That route carries **no approval
+notifier** on gateway 0.22.6: `_handle_responses` spawns the agent without
+`approval_notify_callback`, so a dangerous-command ask is dropped and resolves from
+`approvals.unattended_mode` — deny — without emitting anything. The capability exists; it is
+wired on `POST /v1/runs` and on streaming `chat/completions`, which register a notifier and
+emit `approval.request`. So the gap is the client's choice of route, not the platform's
+coverage.
+
+**The rule for this release.** 0.9.1 does not ship while the phone cannot see an approval on
+the turn path a user actually uses. A debug-only arm that proves the card is test tooling, not
+a shipped mechanism.
+
+**Required, in this order.**
+
+1. **A runs reader beside the existing one**, producing the same result types the twelve
+   downstream consumers already see, so nothing above it knows which route answered.
+2. **Fixtures for the runs vocabulary** — a normal reply, a tool run, an error, an incomplete
+   turn, an approval request, and the interim commentary the presence asides depend on.
+3. **A cross-route parity test**: the same turn in both vocabularies renders identically —
+   same text, same end event, same tool lines, same asides. The port without this test is a
+   leap, and this is the most scarred path in the app (#240, #202, #328, #330).
+4. **The flip**, behind one switch, after parity is green.
+5. **A device pass**: approve and deny by touch, deny by voice, a timeout that resolves to no,
+   a barge-in that reaches the run as `POST /stop`, and a dropped connection that reattaches
+   via `GET /v1/runs/{id}/events`.
+
+**Blocking unknown.** If the interim commentary has no runs event, the migration would lose
+the asides — the layer this release is about. That stops the work and gets reported rather
+than worked around.
+
+**What the route buys beyond approvals:** a barge-in the run learns about, `clarify.request`,
+and replay on reconnect — three improvements to the turn lifecycle that the responses route
+cannot express.
