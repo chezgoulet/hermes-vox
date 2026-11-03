@@ -254,6 +254,21 @@
             android:textSize="12sp"
             android:letterSpacing="0.08"
             android:contentDescription="Paste from clipboard" />
+        <!-- SPEC-conversational-bridge §B: offer one file to the agent. It sits beside
+             PASTE because it is the same kind of act — hand the agent something — and it
+             never uploads: the agent fetches from this phone over the tailnet. -->
+        <Button
+            android:id="@+id/file"
+            style="@style/HvGhostButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_button_ghost"
+            android:paddingHorizontal="12dp"
+            android:text="FILE"
+            android:textColor="@color/hv_text"
+            android:textSize="12sp"
+            android:letterSpacing="0.08"
+            android:contentDescription="Offer a file to the agent" />
         <Button
             android:id="@+id/commands"
             style="@style/HvGhostButton"
