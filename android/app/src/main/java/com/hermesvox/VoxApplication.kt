@@ -19,5 +19,8 @@ class VoxApplication : Application() {
         // key that PresenceGate.migrate is about to write.
         AlphaGate.migrate(prefs, presenceModelInstalled = ModelCatalog.isInstalled(this, "gemma-e2b"))
         PresenceGate.migrate(prefs)
+        // #403: stage one of the hardware check, once per install, before any model is fetched.
+        // It records and advises; it never enables anything.
+        HardwareCheck.runOnce(this, prefs)
     }
 }

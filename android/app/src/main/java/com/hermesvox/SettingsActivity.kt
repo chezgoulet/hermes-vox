@@ -178,7 +178,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun alphaPanel() = AlphaPanel(this, prefs, ::alphaAdvice) { refreshAlpha() }.show()
 
     /** The hardware check's advice for a set, shown in the panel (#403). Null when there is none. */
-    private fun alphaAdvice(set: AlphaGate.FeatureSet): String? = null
+    private fun alphaAdvice(set: AlphaGate.FeatureSet): String? = when (set) {
+        AlphaGate.FeatureSet.PRESENCE -> HardwareCheck.advice(HardwareCheck.store(prefs))
+        else -> null
+    }
 
     /**
      * Dim and disable every alpha surface the gate does not allow — dimmed, not hidden, and a
