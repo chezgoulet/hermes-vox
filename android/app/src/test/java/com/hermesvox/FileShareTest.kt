@@ -89,7 +89,7 @@ class FileShareTest {
         assertTrue("the sentence follows the marker", turn.contains("\n" + FileOffer.OFFER_SENTENCE))
         assertFalse("no bytes in the turn", turn.contains(body.decodeToString()))
         assertFalse("no bytes in the transcript", transcript.contains(body.decodeToString()))
-        assertEquals("You: shared meeting-notes.md (5.0 KB)", transcript)
+        assertEquals("You: shared meeting-notes.md · text/markdown · 5.0 KB", transcript)
     }
 
     @Test fun theTokenIsNeverLogged() {
@@ -198,7 +198,7 @@ class FileShareTest {
         assertTrue(turn.contains("a small note"))
         assertTrue(turn.lineSequence().first().contains("inline=1"))
         assertFalse(turn.contains("url="))
-        assertEquals("You: shared note.txt (13 bytes) inline", transcript)
+        assertEquals("You: shared note.txt · text/markdown · 13 bytes · inline", transcript)
         assertFalse("no staged copy is kept for an inline turn", copy.exists())
     }
 
