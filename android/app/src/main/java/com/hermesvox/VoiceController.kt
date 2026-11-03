@@ -801,15 +801,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // rebuilt line relearns. See EchoFloor and docs/BARGE-WHY-0.7-WORKED.md.
                 val echoFloor = EchoFloor()
                 // #228 — continuous capture, read ONCE per call: the recorder stays open and
-                // the live stream is fed every 100 ms instead of every 900 ms. Off by default,
-                // so an ordinary call behaves exactly as it did.
+                // the live stream is fed every 100 ms instead of every 900 ms. Behind the Alpha
+                // gate (#402/D29): its switch defaults on, but nothing runs unless the tester has
+                // turned Alpha on and selected continuous listening.
                 val liveStt = stt as? LiveStt
-                val continuousOn = micBool(ContinuousCapture.KEY, false)
+                val listeningAlpha = AlphaGate.allows(context, AlphaGate.FeatureSet.CONTINUOUS_LISTENING)
+                val continuousOn = listeningAlpha && micBool(ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
                 val continuous = ContinuousCapture.active(continuousOn, liveStt != null)
                 // #229 — semantic endpointing, its own switch, and it engages only on fresh
                 // partials: its thresholds are fitted to 100 ms frames, so without continuous
                 // capture a "stable" partial is a quarter-second-old fact.
-                val semanticOn = micBool(SemanticEndpoint.KEY, false)
+                val semanticOn = listeningAlpha && micBool(SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
                 val semantic = if (ContinuousCapture.semanticReady(semanticOn, continuous))
                     EndpointWatch(SemanticEndpoint.Eagerness.of(
                         prefString(SemanticEndpoint.KEY_EAGERNESS, SemanticEndpoint.Eagerness.BALANCED.key)))

@@ -47,6 +47,7 @@ class SettingsActivity : AppCompatActivity() {
         bindAssistant()
         bindSectionRestoreRows()
         bindAppSkill()
+        bindAlpha()
         applyHints()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
         openSectionFromIntent()
@@ -92,7 +93,10 @@ class SettingsActivity : AppCompatActivity() {
     /** WS1: open a nested sub-view (hide the group list, show the section container). */
     /** A banner action may name the section it wants opened. */
     private fun openSectionFromIntent() {
-        intent?.getStringExtra("section")?.let { showSection(it) }
+        intent?.getStringExtra("section")
+            // #402: a banner cannot open what the Alpha gate keeps unreachable.
+            ?.takeUnless { it == SECTION_PRESENCE && !AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE) }
+            ?.let { showSection(it) }
     }
 
     private fun showSection(section: String) {
@@ -150,6 +154,65 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
         findViewById<android.view.View>(R.id.row_grp_assistant)?.setOnClickListener { showSection(SECTION_ASSISTANT) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
+    }
+
+    // ---- #402/D29: the Alpha gate --------------------------------------------------------
+
+    /** The master switch at the very top of Settings, off by default. Turning it on slides out
+     *  the panel of feature sets; tapping the row reopens it. Turning it off dims everything
+     *  alpha again — the selections are kept, so turning it back on restores the same sets. */
+    private fun bindAlpha() {
+        val sw = findViewById<SwitchCompat>(R.id.sw_alpha_master) ?: return
+        sw.isChecked = AlphaGate.masterOn(AlphaGate.reader(prefs))
+        sw.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(AlphaGate.KEY_MASTER, on).apply()
+            refreshAlpha()
+            if (on) alphaPanel()
+        }
+        findViewById<android.view.View>(R.id.row_grp_alpha)?.setOnClickListener {
+            if (AlphaGate.masterOn(AlphaGate.reader(prefs))) alphaPanel() else sw.isChecked = true
+        }
+        refreshAlpha()
+    }
+
+    private fun alphaPanel() = AlphaPanel(this, prefs, ::alphaAdvice) { refreshAlpha() }.show()
+
+    /** The hardware check's advice for a set, shown in the panel (#403). Null when there is none. */
+    private fun alphaAdvice(set: AlphaGate.FeatureSet): String? = null
+
+    /**
+     * Dim and disable every alpha surface the gate does not allow — dimmed, not hidden, and a
+     * disabled row takes no tap, so it is unreachable. The rows are the Presence group row and
+     * the Hearing rows that only mean something with Presence or continuous listening.
+     */
+    private fun refreshAlpha() {
+        val r = AlphaGate.reader(prefs)
+        val master = AlphaGate.masterOn(r)
+        findViewById<TextView>(R.id.set_alpha_grpval)?.text = if (!master)
+            "Off · unfinished features stay out of the way"
+        else {
+            val n = AlphaGate.selectedCount(r)
+            "On · $n of ${AlphaGate.FeatureSet.entries.size} selected — tap to choose"
+        }
+        val presence = AlphaGate.allows(r, AlphaGate.FeatureSet.PRESENCE)
+        val listening = AlphaGate.allows(r, AlphaGate.FeatureSet.CONTINUOUS_LISTENING)
+        gate(R.id.row_grp_presence, presence)
+        gate(R.id.row_er_hears, presence)
+        gate(R.id.row_mic_continuous, listening)
+        gate(R.id.row_mic_semantic, listening)
+        if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
+        refreshGrpVals()
+    }
+
+    private fun gate(id: Int, allowed: Boolean) {
+        val v = findViewById<android.view.View>(id) ?: return
+        v.alpha = if (allowed) 1f else ALPHA_DIM
+        setEnabledDeep(v, allowed)
+    }
+
+    private fun setEnabledDeep(v: android.view.View, on: Boolean) {
+        v.isEnabled = on
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) setEnabledDeep(v.getChildAt(i), on)
     }
 
     /** #329: the assistant row opens a section, not a dialog — the state, the request, the
@@ -431,7 +494,7 @@ class SettingsActivity : AppCompatActivity() {
      *  on it. */
     private fun bindPresenceEnabled() {
         val sw = findViewById<SwitchCompat>(R.id.sw_presence_enabled)
-        sw.isChecked = PresenceGate.enabled(prefs)
+        sw.isChecked = PresenceGate.chosen(prefs)
         sw.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(PresenceGate.KEY_PRESENCE_ENABLED, checked).apply()
             refreshPresenceRow()
@@ -1047,7 +1110,10 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
             // #224/#222: Presence says whether it is on, and if it cannot be, why.
             refreshPresenceRow()
-            findViewById<TextView>(R.id.set_presence_grpval)?.text = when (presenceState()) {
+            findViewById<TextView>(R.id.set_presence_grpval)?.text =
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE))
+                    "Alpha · select Presence in Alpha features at the top"
+                else when (presenceState()) {
                 PresenceGate.State.ON ->
                     if (prefs.getBoolean("er_presence", true))
                         "On · " + PresenceCadence.resolve(
@@ -1383,11 +1449,13 @@ class SettingsActivity : AppCompatActivity() {
         bindMicToggle(R.id.set_mic_aec, "mic_aec", true)
         bindMicToggle(R.id.set_ns_extra, "ns_extra", true)
         bindMicToggle(R.id.set_partial_stt, "partial_stt", true)
-        // #228 / #229: both ship off. Continuous capture keeps the mic open and reads the
-        // streaming recogniser every 100 ms; the semantic endpointer is a judgement that only
-        // engages once those partials exist, behind its own switch because the two fail apart.
-        bindMicToggle(R.id.set_continuous_capture, ContinuousCapture.KEY, false)
-        bindMicToggle(R.id.set_semantic_endpoint, SemanticEndpoint.KEY, false)
+        // #228 / #229: both default on (D29) and both sit behind the Alpha gate (#402) — the
+        // rows are dimmed and unreachable until continuous listening is selected there.
+        // Continuous capture keeps the mic open and reads the streaming recogniser every 100 ms;
+        // the semantic endpointer is a judgement that only engages once those partials exist,
+        // behind its own switch because the two fail apart.
+        bindMicToggle(R.id.set_continuous_capture, ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
+        bindMicToggle(R.id.set_semantic_endpoint, SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
         bindMicToggle(R.id.set_tts_voice_usage, "tts_voice_usage", false)   // D2: engine default OFF (field A/B)
 
         bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
@@ -1998,9 +2066,10 @@ class SettingsActivity : AppCompatActivity() {
                 .putInt("vad_min_speech_ms", 300)
                 .putInt("vad_max_ms", 15000)
                 .putBoolean("partial_stt", true)
-                // #228/#229: both ship OFF; restore puts them back that way.
-                .putBoolean(ContinuousCapture.KEY, false)
-                .putBoolean(SemanticEndpoint.KEY, false)
+                // #228/#229: both default ON behind the Alpha gate (D29); restore puts them back
+                // that way. Restoring never touches the gate itself.
+                .putBoolean(ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
+                .putBoolean(SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
                 .putString(SemanticEndpoint.KEY_EAGERNESS, SemanticEndpoint.Eagerness.BALANCED.key)
                 .putBoolean("mic_aec", true)
                 .putBoolean("ns_extra", true)
@@ -2097,6 +2166,8 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private companion object {
+        /** #402: how a gated alpha row is dimmed — visibly there, plainly not available. */
+        const val ALPHA_DIM = 0.38f
         const val GROUP_MIC = "mic"
         const val GROUP_STT = "stt"
         const val GROUP_TTS = "tts"

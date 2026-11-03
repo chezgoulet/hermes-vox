@@ -9,8 +9,10 @@ package com.hermesvox
  * keeps reading it), but the recogniser had nothing to say between partials: its hypothesis was
  * read at most four times a second, and no hypothesis existed before the VAD opened a segment.
  *
- * Continuous capture changes two things, both behind [KEY] — off by default, so a call behaves
- * exactly as it did and a user can run continuous capture with the existing 800 ms endpointing:
+ * Continuous capture changes two things, both behind [KEY]. D29/#402: the switch defaults ON,
+ * and the whole feature sits behind the Alpha gate ([AlphaGate.FeatureSet.CONTINUOUS_LISTENING]),
+ * so a call without Alpha behaves exactly as it did. A tester can still run continuous capture
+ * with the existing 800 ms endpointing by turning semantic endpointing off:
  *
  *  1. **The cadence.** The live stream is fed and its partial read every [PARTIAL_MS], and that
  *     starts at the segment's first sample rather than 900 ms in. This is the signal #229's
@@ -26,16 +28,17 @@ package com.hermesvox
  * (a cheap [StreamingTranscriber.reset]) is what keeps the decoding state bounded and a turn's
  * text its own. "Continuous" is about the mic and the cadence, not about one endless hypothesis.
  *
- * Cost is the reason this ships off: a recogniser reading continuously is a different power
+ * Cost is the reason this sits behind Alpha: a recogniser reading continuously is a different power
  * profile from one reading between turns, and #228's own precondition is a measured budget. The
  * ten-minute co-residency run (#179) records CPU, RSS and thermal with it on, and the battery
  * figure stays pending because USB power cannot show it (docs/BASELINE.md).
  */
 object ContinuousCapture {
 
-    /** The switch: `continuous_capture`. Off by default — #228 ships it beside, not instead of,
-     *  the existing endpointing. */
+    /** The switch: `continuous_capture`. On by default (D29), but read only behind the Alpha
+     *  gate — #228 ships it beside, not instead of, the existing endpointing. */
     const val KEY = "continuous_capture"
+    const val DEFAULT_ON = true
 
     /** How often the live stream is fed and its partial read. #229 needs fresh partials about
      *  every 100 ms; the bench that chose its thresholds also replays at 100 ms frames. */

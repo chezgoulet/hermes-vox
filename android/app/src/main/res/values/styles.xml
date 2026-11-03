@@ -58,4 +58,9 @@
         <item name="android:letterSpacing">0.06</item>
         <item name="android:textAllCaps">false</item>
     </style>
+    <!-- #402: the Alpha panel's slide-out. -->
+    <style name="HvSlideFromEnd">
+        <item name="android:windowEnterAnimation">@anim/slide_in_end</item>
+        <item name="android:windowExitAnimation">@anim/slide_out_end</item>
+    </style>
 </resources>

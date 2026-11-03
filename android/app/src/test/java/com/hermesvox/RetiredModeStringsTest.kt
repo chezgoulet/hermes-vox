@@ -68,6 +68,9 @@ class RetiredModeStringsTest {
         val offenders = mutableListOf<String>()
         for (f in filesUnder(sources, ".kt")) {
             if (f.name == "PresenceGate.kt") continue   // the migration input lives here
+            // #402: the Alpha gate's migration reads the same legacy key to tell an upgrade
+            // that had Presence running from a fresh install.
+            if (f.name == "AlphaGate.kt") continue
             val text = f.readText()
             for (token in listOf(
                 "MODE_ENHANCED", "MODE_REALTIME", "KEY_VOICE_MODE",
