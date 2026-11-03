@@ -75,6 +75,14 @@ internal class StreamState {
     var stopAction: (() -> Unit)? = null
 
     /**
+     * H4 (0.9.1 review): this turn's `Idempotency-Key` for `POST /v1/runs`. One per turn,
+     * fixed for its life, so a retried admission is the SAME request: the gateway answers
+     * an identical retry with the original `run_id` (`Idempotency-Replayed: true`) rather
+     * than starting a second run.
+     */
+    val idempotencyKey: String = "vox-" + java.util.UUID.randomUUID().toString().replace("-", "")
+
+    /**
      * The push-side wake (#39): each buffered event, and the terminal done, offers a
      * token so a waiting poller wakes the moment data lands instead of sleeping a
      * fixed tick. Capacity 1 coalesces a burst into one wake; the poll drains the
@@ -438,23 +446,60 @@ internal object Streams {
      * the admission finish — bounded by the idle timeout, on this daemon reader, with the
      * stream already retired — so [consumeRuns] can stop the run it names. A failure on
      * a cancelled turn is nobody's error: it returns "" rather than throwing.
+     *
+     * H4 (0.9.1 review): the same hole exists without a barge-in. When the reply is lost
+     * AFTER the body went out (a reset, or no 202 before the idle timeout) the gateway
+     * may already be running the turn. The request carries the turn's
+     * [StreamState.idempotencyKey], and exactly one identical retry is made: a replay
+     * answers with the original `run_id`, which is then bound — or stopped, if the turn
+     * was cancelled meanwhile — like any other. The retry is made on a cancelled turn
+     * too, because it is the only way to learn the id that stops the run.
      */
     private fun admitRun(client: ResponsesClient, body: ByteArray, st: StreamState): String {
         if (st.cancelled) return ""
+        var retried = false
+        while (true) {
+            try {
+                return admitOnce(client, body, st)
+            } catch (lost: AdmissionLost) {
+                if (!retried) { retried = true; continue }
+                if (st.cancelled) return ""
+                val e = lost.cause
+                if (e is SocketTimeoutException) throw HermesException(STALLED)
+                throw e
+            }
+        }
+    }
+
+    /** The reply to an admission whose body had gone out was lost: retry once ([admitRun]). */
+    private class AdmissionLost(override val cause: IOException) : Exception(cause)
+
+    /** Observes each admission attempt (the idempotency key it carried). Tests only. */
+    @Volatile
+    internal var admitAttempt: ((String) -> Unit)? = null
+
+    private fun admitOnce(client: ResponsesClient, body: ByteArray, st: StreamState): String {
+        try { admitAttempt?.invoke(st.idempotencyKey) } catch (_: Exception) {}
         val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/runs"),
-            client.entityHeaders() + ("Content-Type" to "application/json"),
+            client.entityHeaders() + mapOf("Content-Type" to "application/json",
+                "Idempotency-Key" to st.idempotencyKey),
             CONNECT_TIMEOUT_MS, idleTimeoutMs)
         try {
             c.doOutput = true
             c.setFixedLengthStreamingMode(body.size)
-            val code = try {
+            try {
                 c.connect()
-                c.outputStream.use { it.write(body) }
-                c.responseCode
             } catch (e: IOException) {
+                // Nothing reached the gateway: no run exists, so this is the turn's error.
                 if (st.cancelled) return ""
                 if (e is SocketTimeoutException) throw HermesException(STALLED)
                 throw e
+            }
+            val code = try {
+                c.outputStream.use { it.write(body) }
+                c.responseCode
+            } catch (e: IOException) {
+                throw AdmissionLost(e)
             }
             // 202 is the documented admission; 200 is accepted by older builds.
             if (code != 200 && code != 202) {
@@ -464,8 +509,7 @@ internal object Streams {
             val raw = try {
                 c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
             } catch (e: IOException) {
-                if (st.cancelled) return ""
-                throw e
+                throw AdmissionLost(e)
             }
             val runId = try {
                 Json.str(Json.parse(raw, allowTrailing = true) as? JObj, "run_id")

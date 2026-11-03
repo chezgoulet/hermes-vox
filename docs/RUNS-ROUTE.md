@@ -54,6 +54,12 @@ unscoped `/v1/responses` conversation did.
   already have made the run; cutting it would lose the only id that can stop it. The
   admission finishes (bounded by the idle timeout, on the daemon reader, with the stream
   already retired) and the run it names is stopped; no events are subscribed for it.
+- **A lost admission reply is retried once** (0.9.1 review H4). Each turn carries one
+  `Idempotency-Key` (`StreamState.idempotencyKey`). When the reply to a sent
+  `POST /v1/runs` is lost (a reset, or no 202 before the idle timeout), the identical
+  request is sent once more; the gateway replays the original `run_id`
+  (`Idempotency-Replayed: true`) instead of starting the turn twice, and that id is bound
+  or stopped as usual — on a cancelled turn too.
 - `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
   scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
   nothing left to stop; nothing about the stop is ever thrown to the caller.

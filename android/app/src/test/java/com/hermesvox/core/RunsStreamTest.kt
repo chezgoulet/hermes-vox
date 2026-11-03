@@ -462,4 +462,104 @@ data: {"event":"run.completed","seq":0,"output":"$reply"}
             assertTrue(stopped.await(3, TimeUnit.SECONDS))
         }
     }
+
+    // ---- H4 (0.9.1 review): a lost 202 is retried once, under the same key ----
+
+    private fun runPosts(srv: TestServer) = srv.requests.filter { it.method == "POST" && it.path == "/v1/runs" }
+
+    /**
+     * The admission reached the gateway and its reply was lost. The one retry is the
+     * identical request — same body, same Idempotency-Key — so the gateway replays the
+     * original run id instead of starting the turn twice, and the turn completes.
+     */
+    @Test
+    fun `a lost admission reply is retried once with the same idempotency key`() = withRuns {
+        val posts = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    if (posts.incrementAndGet() == 1) w.drop()
+                    else w.send(202, "Accepted", """{"run_id":"run_once","status":"started"}""")
+                r.method == "GET" && r.path.startsWith("/v1/runs/run_once/events") -> {
+                    w.sse()
+                    w.write("""id: 0
+data: {"event":"run.completed","seq":0,"output":"heard once"}
+
+""")
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }.use { srv ->
+            val s = session(srv)
+            val done = drain(s, s.startStream("hi"))
+            assertEquals("", Json.str(done, "error"))
+            assertEquals("heard once", Json.str(done, "text"))
+            val p = runPosts(srv)
+            assertEquals(2, p.size)
+            val key = p[0].header("Idempotency-Key")
+            assertTrue(key.isNotEmpty() && key.length <= 255 && key.all { it.code in 33..126 })
+            assertEquals(key, p[1].header("Idempotency-Key"))
+            assertEquals(p[0].body, p[1].body)
+        }
+    }
+
+    @Test
+    fun `each turn carries its own idempotency key`() = withRuns {
+        completingRuns().use { srv ->
+            val s = session(srv)
+            drain(s, s.startStream("one"))
+            drain(s, s.startStream("two"))
+            val keys = runPosts(srv).map { it.header("Idempotency-Key") }
+            assertEquals(2, keys.size)
+            assertTrue(keys.all { it.isNotEmpty() })
+            assertTrue(keys[0] != keys[1])
+        }
+    }
+
+    /** Exactly one retry: a second lost reply fails the turn, with no third POST. */
+    @Test
+    fun `a second lost admission reply fails the turn`() = withRuns {
+        TestServer { r, w ->
+            if (r.method == "POST" && r.path == "/v1/runs") w.drop() else w.send(404, "Not Found", "{}")
+        }.use { srv ->
+            val s = session(srv)
+            val done = drain(s, s.startStream("hi"))
+            assertTrue(Json.str(done, "error").isNotEmpty())
+            assertEquals(2, runPosts(srv).size)
+        }
+    }
+
+    /**
+     * A barge-in while the admission reply is in flight, and that reply is lost. The retry
+     * still goes out — it is the only way to learn the id — and the replayed run is
+     * stopped, not left generating unheard.
+     */
+    @Test
+    fun `a replayed run of a cancelled turn is stopped`() = withRuns {
+        val stopped = CountDownLatch(1)
+        val stopPaths = Collections.synchronizedList(ArrayList<String>())
+        val sidRef = java.util.concurrent.atomic.AtomicReference<String>()
+        val sessionRef = java.util.concurrent.atomic.AtomicReference<HermesSession>()
+        val posts = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" -> if (posts.incrementAndGet() == 1) {
+                    val deadline = System.currentTimeMillis() + 3000
+                    while (sidRef.get() == null && System.currentTimeMillis() < deadline) Thread.sleep(5)
+                    sessionRef.get().cancelStream(sidRef.get())   // the barge-in
+                    w.drop()
+                } else w.send(202, "Accepted", """{"run_id":"run_orphan","status":"started"}""")
+                r.method == "POST" && r.path.endsWith("/stop") -> {
+                    stopPaths.add(r.path); w.send(200, "OK", """{"status":"stopping"}"""); stopped.countDown()
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }.use { srv ->
+            val s = session(srv).also { sessionRef.set(it) }
+            sidRef.set(s.startStream("hi"))
+            assertTrue(stopped.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf("/v1/runs/run_orphan/stop"), stopPaths.toList())
+            assertEquals(2, runPosts(srv).size)
+        }
+    }
 }
