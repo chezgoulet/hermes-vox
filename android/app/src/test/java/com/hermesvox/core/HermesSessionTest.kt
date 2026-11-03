@@ -143,7 +143,7 @@ class HermesSessionTest {
     }
 
     @Test
-    fun `deleteLastResponse deletes the head and is a no-op without one`() {
+    fun `deleteLastResponse deletes the head and is a no-op without one`() = onResponses {
         TestServer { r, w ->
             if (r.method == "DELETE") w.send(204, "No Content", "") else w.send(200, "OK", okReply)
         }.use { srv ->
@@ -251,5 +251,13 @@ class HermesSessionTest {
         assertTrue(p.startsWith("[Voice input"))
         assertTrue(p.endsWith("] "))
         assertFalse(p.contains("\n"))
+    }
+
+    /** The responses chain contract, pinned to its route: with the shipped runs route
+     *  a scoped session keeps no response head (RunsStreamTest covers that side). */
+    private fun onResponses(block: () -> Unit) {
+        val old = StreamRoute.active
+        StreamRoute.active = TurnRoute.RESPONSES
+        try { block() } finally { StreamRoute.active = old }
     }
 }

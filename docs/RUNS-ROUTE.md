@@ -1,7 +1,9 @@
-# The `/v1/runs` turn route (behind a switch)
+# The `/v1/runs` turn route
 
-Status: **built and proven, not shipped.** `StreamRoute.active` is
-`TurnRoute.RESPONSES`; no user-visible behaviour changes until that one line flips.
+Status: **the default (#404), device pass outstanding.** `StreamRoute.active` is
+`TurnRoute.RUNS` for every install that declares a conversation scope; an install with
+a blank scope stays on `/v1/responses` (see *The scope requirement*). The cut waits on
+the device pass below (D29).
 
 ## Why
 
@@ -20,12 +22,46 @@ dropped socket can reattach to.
 ```kotlin
 internal object StreamRoute {
     @Volatile
-    var active: TurnRoute = TurnRoute.RESPONSES   // <-- the flip
+    var active: TurnRoute = TurnRoute.RUNS        // #404
+    fun routeFor(hasSessionKey: Boolean): TurnRoute =
+        if (active == TurnRoute.RUNS && !hasSessionKey) TurnRoute.RESPONSES else active
 }
 ```
 
-`Streams.start` reads it once per turn and picks the reader; tests set and restore it.
-Nothing above `HermesSession` knows the route exists.
+`Streams.start` and `HermesSession.turnStored` read `routeFor` once per turn; tests
+set and restore `active`. Nothing above `HermesSession` knows the route exists.
+
+## The scope requirement
+
+A run has no response id, so its only chain is the declared `X-Hermes-Session-Key`.
+With no key the gateway keys the run's session by its own `run_id`
+(`api_server_runs.py`: `session_id = selected_session_id or run_id`) — every turn would
+be a new conversation. The scope is **blank by default** (Onboarding, `SessionScope`),
+so the claim this document used to make — "Vox always stamps" the key — was false.
+
+The rule: **runs needs a scope; without one the turn stays on responses.** Losing the
+approval card for an unscoped install is a gap; losing the conversation would be a
+regression. Whether onboarding should declare a scope by default (which would put every
+install on the approval route) is the owner's call and is not made here.
+
+A stored turn (`/compress`, the soul turn, the skill install) follows the same route:
+on a runs session it sends no `previous_response_id` and installs no head, so it
+compacts the conversation the runs wrote — not a stale stored snapshot.
+
+## The barge-in (#404)
+
+- The run id and its stop are bound **atomically** with the cancel check
+  (`StreamState.bindRun`): a barge-in landing at any instant either sees the stop or is
+  seen by the reader — never neither.
+- A barge-in **does not cut the admission**. Once `POST /v1/runs` is sent the gateway may
+  already have made the run; cutting it would lose the only id that can stop it. The
+  admission finishes (bounded by the idle timeout, on the daemon reader, with the stream
+  already retired) and the run it names is stopped; no events are subscribed for it.
+- `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
+  scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
+  nothing left to stop; nothing about the stop is ever thrown to the caller.
+- `RunsStreamTest` pins each of these; `LiveGatewayTest` asserts the stop reaches the
+  (fake) gateway on a barge-in.
 
 ## The mapping (runs wire → app vocabulary → consumer)
 
@@ -55,8 +91,11 @@ Deliberate gaps:
   untouched by a runs turn — it names a stored `/v1/responses` snapshot that a run
   cannot advance.
 - **`tool.started` has no `args`.** The responses route carries the tool's raw JSON
-  arguments; runs carries only the gateway's `preview`. The tool marker lines and the
-  tool name are identical; the detail text is not (see `RouteParityTest`).
+  arguments; runs carries only the gateway's `preview` — the tool's primary argument as
+  one line (`agent/display.py`, `build_tool_preview`). The tool marker lines and the tool
+  name are identical; the detail text is not (see `RouteParityTest`). The operations line
+  keeps its subject on both: `Operations.step` reads a non-JSON argument as that preview
+  (`date`, a URL → its host, a path → its file).
 
 ## The interim commentary finding
 
@@ -90,9 +129,10 @@ reachable. The provenance line is in `testdata/stream/README.md`.
 dropped socket reattaches at `last_seq`, the body carries no chain head, and clarify
 arrives as its own event.
 
-## Before flipping the default
+## The device pass (the cut gate)
 
-The parity proof is off-device. A device pass still needs:
+The parity proof is off-device. Run every check on a **scoped** install (Settings →
+the conversation scope is not blank), or the turns ride responses and prove nothing:
 
 1. One live voice turn on the runs route: text streams, TTS starts on the first delta,
    the reply settles once.
@@ -109,3 +149,7 @@ The parity proof is off-device. A device pass still needs:
    stored-turn path needs its own route-aware chain before the flip.
 7. A `clarify.request` (when a tool asks): the event reaches the app without being
    mistaken for an approval.
+8. `/new` on a scoped install: the next turn does not remember the last one. A runs turn
+   leaves no response id to delete, and the gateway resolves the declared key to the
+   same conversation on both routes — confirm the redial actually starts fresh.
+9. An unscoped install: turns still ride `/v1/responses` and keep their conversation.
