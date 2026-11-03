@@ -88,6 +88,19 @@ internal class StreamState {
 
     fun signal() { notify.offer(Unit) }
 
+    /**
+     * Binds the admitted run and its stop in ONE step with the cancel check (#404). A
+     * barge-in reads [stopAction] under [lock]; were the id written outside it, a cancel
+     * landing between the write and the check could see neither the stop nor be seen by
+     * the reader, and the run would generate on with nobody listening. True = the turn
+     * was already cancelled, so the caller must stop the run itself.
+     */
+    fun bindRun(id: String, stop: () -> Unit): Boolean = synchronized(lock) {
+        runId = id
+        stopAction = stop
+        cancelled
+    }
+
     /** Registers the live connection; false if the turn was already cancelled. */
     fun attach(c: HttpURLConnection): Boolean = synchronized(lock) {
         if (cancelled) false else { conn = c; true }
@@ -151,7 +164,7 @@ internal object Streams {
         val st = StreamState()
         // Captured once: a settings flip mid-turn must not move a live stream between
         // routes (the reader thread would be half-way through one vocabulary).
-        val route = StreamRoute.active
+        val route = StreamRoute.routeFor(client.hasSessionKey())
         val chainHead = StreamRoute.chainHead(route, previousResponseId)
         val (id, n) = synchronized(streams) {
             seq++
@@ -344,10 +357,8 @@ internal object Streams {
      */
     private fun consumeRuns(client: ResponsesClient, input: String, st: StreamState) {
         val runId = admitRun(client, client.buildRunBody(input), st)
-        if (runId.isEmpty()) return   // cancelled during admission
-        st.runId = runId
-        st.stopAction = { stopRun(client, runId) }
-        if (st.cancelled) { stopRun(client, runId); return }
+        if (runId.isEmpty()) return   // cancelled before the run was requested
+        if (st.bindRun(runId) { stopRun(client, runId) }) { stopRun(client, runId); return }
         // The responses route opens with response.created; the app's "answering" log
         // marker must not depend on which route the turn took.
         emitCreated(st)
@@ -381,22 +392,27 @@ internal object Streams {
         finishTurn(st)
     }
 
-    /** `POST /v1/runs` — 202 `{run_id}`. Throws the gateway's own refusal. */
+    /**
+     * `POST /v1/runs` — 202 `{run_id}`. Throws the gateway's own refusal.
+     *
+     * A barge-in does NOT abort this request (#404). Once the body is sent the gateway
+     * may already have admitted the run; cutting the connection then would lose the only
+     * id that can stop it, and the run would generate unheard (and hold any approval it
+     * raises). So a cancel before the request goes out skips it, and a cancel after lets
+     * the admission finish — bounded by the idle timeout, on this daemon reader, with the
+     * stream already retired — so [consumeRuns] can stop the run it names. A failure on
+     * a cancelled turn is nobody's error: it returns "" rather than throwing.
+     */
     private fun admitRun(client: ResponsesClient, body: ByteArray, st: StreamState): String {
+        if (st.cancelled) return ""
         val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/runs"),
             client.entityHeaders() + ("Content-Type" to "application/json"),
             CONNECT_TIMEOUT_MS, idleTimeoutMs)
-        if (!st.attach(c)) return ""
         try {
             c.doOutput = true
             c.setFixedLengthStreamingMode(body.size)
-            try {
-                c.connect()
-            } catch (e: IOException) {
-                if (st.cancelled) return ""
-                throw e
-            }
             val code = try {
+                c.connect()
                 c.outputStream.use { it.write(body) }
                 c.responseCode
             } catch (e: IOException) {
@@ -406,15 +422,22 @@ internal object Streams {
             }
             // 202 is the documented admission; 200 is accepted by older builds.
             if (code != 200 && code != 202) {
+                if (st.cancelled) return ""
                 throw HermesException("hermes run ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
             }
-            val raw = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            val raw = try {
+                c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            } catch (e: IOException) {
+                if (st.cancelled) return ""
+                throw e
+            }
             val runId = try {
                 Json.str(Json.parse(raw, allowTrailing = true) as? JObj, "run_id")
             } catch (e: JsonException) {
+                if (st.cancelled) return ""
                 throw HermesException("hermes run: unreadable body: ${e.message}")
             }
-            if (runId.isEmpty()) throw HermesException("hermes run: no run_id in response")
+            if (runId.isEmpty() && !st.cancelled) throw HermesException("hermes run: no run_id in response")
             return runId
         } finally {
             c.disconnect()
@@ -473,19 +496,40 @@ internal object Streams {
         st.signal()
     }
 
-    /** Barge-in on /v1/runs: the subscriber closing is not the run stopping. */
+    /**
+     * Barge-in on /v1/runs: the subscriber closing is not the run stopping. Posted with
+     * the stream's own authenticated headers (bearer + session key), off-thread.
+     *
+     * The answer is never the caller's error. 200 `stopping` is the stop; a run that
+     * already finished answers 200 with its terminal status, 404 `run_not_found` (the
+     * record aged out) or 409 `run_not_active` (another gateway process) — all mean
+     * there is nothing left to stop. Any other answer, or no answer, is the same to the
+     * caller: the turn is already retired and the mic is already the user's. The
+     * outcome goes to [stopOutcome] so it can be observed, never thrown.
+     */
     private fun stopRun(client: ResponsesClient, runId: String) {
         Thread({
-            try {
+            val outcome = try {
                 val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/runs/${segment(runId)}/stop"),
                     client.entityHeaders(), CONNECT_TIMEOUT_MS, GatewayClient.TIMEOUT_MS)
-                c.responseCode
-                c.disconnect()
-            } catch (_: Exception) {
-                // A missed stop is not a turn failure: the subscriber is already gone.
+                try { stopVerdict(c.responseCode) } finally { c.disconnect() }
+            } catch (e: Exception) {
+                "unreachable: ${e.javaClass.simpleName}"
             }
+            try { stopOutcome?.invoke(runId, outcome) } catch (_: Exception) {}
         }, "hermes-run-stop").apply { isDaemon = true }.start()
     }
+
+    /** What a `/stop` answer means for a cancelled turn: never an error. */
+    internal fun stopVerdict(code: Int): String = when (code) {
+        in 200..299 -> "stopped"
+        404, 409 -> "already finished"
+        else -> "ignored $code"
+    }
+
+    /** Observes each barge-in stop (run id, verdict). Diagnostics and tests only. */
+    @Volatile
+    internal var stopOutcome: ((String, String) -> Unit)? = null
 
     /** A path segment: run ids are server-generated hex, but never concatenate raw. */
     private fun segment(value: String): String =

@@ -29,6 +29,10 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
 
     fun entityHeaders(): Map<String, String> = Entity.headers(apiKey, synchronized(lock) { sessionKey })
 
+    /** Whether this install declares a conversation scope — the only chain a run has
+     *  (see [StreamRoute.routeFor]). */
+    fun hasSessionKey(): Boolean = synchronized(lock) { sessionKey.isNotBlank() }
+
     /** The request body; provider and previous_response_id only when set. */
     fun buildBody(input: String, previousResponseId: String, stream: Boolean): ByteArray {
         val body = synchronized(lock) {

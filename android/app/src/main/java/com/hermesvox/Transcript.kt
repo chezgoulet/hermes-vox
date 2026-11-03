@@ -21,6 +21,17 @@ package com.hermesvox
  */
 class Transcript(private val maxChars: Int = MAX_CHARS) {
 
+    /**
+     * #223: the call's transcript outlives the activity. A rotation or a theme change recreates
+     * MainActivity, and a transcript held on the activity came back empty — the reader lost what
+     * was said at exactly the moment they turned the phone to read it. It lives here instead:
+     * process memory only, never written to disk, cleared with the conversation.
+     */
+    object Call {
+        val transcript = Transcript()
+    }
+
+
     private val buf = StringBuilder()
     /** Start (at the [AGENT] label) of the still-streaming reply block; -1 = none. */
     private var replyStart = -1
@@ -71,6 +82,22 @@ class Transcript(private val maxChars: Int = MAX_CHARS) {
         clampHead()
     }
 
+    /**
+     * The reply was CUT (a barge, a hush, a stop) while the voice was the channel: the open
+     * block is revised in place to what the caller actually heard, marked as cut. Text the
+     * entity wrote but the voice never reached is not "what was said" and does not stay. With
+     * no open block (the reply already settled, or an aside closed it) nothing is rewritten —
+     * a revision only ever touches the block that is still the reply in progress.
+     */
+    fun replyCut(heard: String) {
+        if (replyStart < 0 || replyEnd != buf.length) return
+        buf.setLength(replyStart)
+        val said = heard.trim()
+        buf.append(AGENT).append(if (said.isEmpty()) CUT_BEFORE_SPEAKING else "$said$CUT")
+        closeReply()
+        trimAndClamp()
+    }
+
     /** The turn is complete: the final text replaces the streamed block. */
     fun replyFinal(text: String) {
         if (replyStart >= 0 && replyEnd == buf.length) {
@@ -110,6 +137,9 @@ class Transcript(private val maxChars: Int = MAX_CHARS) {
         /** A voiced line that is not the turn's answer: the middle dot keeps the turn
          *  labels ("You:" / "Agent:") meaningful without pretending this is a turn. */
         const val ASIDE = "· "
+        /** Appended to a reply the caller cut off: what follows it was never said. */
+        const val CUT = " — (interrupted)"
+        const val CUT_BEFORE_SPEAKING = "(interrupted before it spoke)"
         /** The one Presence source that is the turn's reply, not an aside. */
         const val SOURCE_SOUL_ANSWER = "soul-answer"
     }

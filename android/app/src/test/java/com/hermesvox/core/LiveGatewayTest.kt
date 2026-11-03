@@ -88,9 +88,13 @@ class LiveGatewayTest {
 
     private fun assertStoredTurn(s: HermesSession) {
         s.ping()
+        val before = s.lastID
         val reply = s.turnStored("Health probe. Reply with exactly: vox-live-turn-ok")
         assertTrue(reply, reply.contains("vox-live-turn-ok"))
-        assertTrue(s.lastID, s.lastID.startsWith("resp_"))
+        // #404: on a session whose turns run, the stored turn chains by the session key
+        // and installs no response head; on the responses route it does.
+        if (s.route() == TurnRoute.RESPONSES) assertTrue(s.lastID, s.lastID.startsWith("resp_"))
+        else assertEquals("a runs session keeps no response head", before, s.lastID)
     }
 
     private fun assertChainRecalls(s: HermesSession) {
@@ -107,7 +111,8 @@ class LiveGatewayTest {
         assertTrue("no output_text.delta", "response.output_text.delta" in types)
         assertEquals("", Json.str(done, "error"))
         assertTrue(Json.str(done, "text"), Json.str(done, "text").contains("vox-live-stream-ok"))
-        assertTrue(Json.str(done, "response_id").isNotEmpty())
+        // A run has no response id; the conversation rides the session key.
+        if (s.route() == TurnRoute.RESPONSES) assertTrue(Json.str(done, "response_id").isNotEmpty())
     }
 
     private fun assertToolProgress(s: HermesSession) {
@@ -126,15 +131,25 @@ class LiveGatewayTest {
         s.cancelStream(sid)
         assertTrue(System.currentTimeMillis() - start < 2000)
         assertTrue(!Streams.isRegistered(sid))
+        // On the runs route closing the subscriber is not the run stopping: the run
+        // itself must be told (#404). The fake records it; a real gateway is checked on
+        // the device pass (docs/RUNS-ROUTE.md, check 3).
+        val f = fake
+        if (s.route() == TurnRoute.RUNS && f != null) {
+            val deadline = System.currentTimeMillis() + 3000
+            while (f.stops.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            assertTrue("the barge-in never stopped the run", f.stops.isNotEmpty())
+        }
     }
 
     private fun assertCompressChain(s: HermesSession) {
         drain(s, s.voiceTurn("Remember the codeword: amber-heron-3. Reply ok."))
         val head = s.lastID
-        assertTrue(head.isNotEmpty())
+        val responses = s.route() == TurnRoute.RESPONSES
+        if (responses) assertTrue(head.isNotEmpty())
         s.turnStored("Reply with just the codeword I gave you.")
             .let { assertTrue("chain broken: $it", it.contains("amber-heron-3")) }
-        assertTrue("the stored reply's id is the new head", s.lastID != head)
+        if (responses) assertTrue("the stored reply's id is the new head", s.lastID != head)
     }
 
     // ---- the cases as CI runs them ----
@@ -177,8 +192,9 @@ class LiveGatewayTest {
      */
     @Test
     fun `the harness fails when the fake truncates the stream`() {
-        FakeGateway(FakeGateway.Faults.TRUNCATED_STREAM).use { broken ->
-            val s = HermesSession(broken.url, FAKE_KEY, "hermes-agent")
+        // Both routes: a session with no scope rides responses, a scoped one runs.
+        for (scope in listOf("", "agent:vox:live-suite")) FakeGateway(FakeGateway.Faults.TRUNCATED_STREAM).use { broken ->
+            val s = HermesSession(broken.url, FAKE_KEY, "hermes-agent").also { it.setSessionKey(scope) }
             val failure = try {
                 assertStreamShape(s)
                 null

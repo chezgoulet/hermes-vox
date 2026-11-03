@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -165,5 +166,46 @@ class TranscriptTest {
         assertEquals("", t.text)
         t.heard("again")
         assertEquals("You: again", t.text)
+    }
+
+    // ---- #223: it holds what was said ---------------------------------------
+
+    @Test fun a_cut_reply_keeps_what_was_heard_and_drops_what_was_not() {
+        val t = Transcript()
+        t.heard("how do I turn it on")
+        t.delta("First, open the settings. Second, choose Hearing. Third, flip it.")
+        t.replyCut("First, open the settings.")
+        assertEquals("You: how do I turn it on\nAgent: First, open the settings." + Transcript.CUT, t.text)
+    }
+
+    @Test fun a_cut_before_the_first_word_says_so() {
+        val t = Transcript()
+        t.heard("hi")
+        t.delta("Hello there, how")
+        t.replyCut("")
+        assertEquals("You: hi\nAgent: " + Transcript.CUT_BEFORE_SPEAKING, t.text)
+    }
+
+    @Test fun a_cut_never_rewrites_a_settled_reply_or_an_aside() {
+        val t = Transcript()
+        t.heard("hi"); t.delta("Hello."); t.replyFinal("Hello.")
+        t.replyCut("Hel")
+        assertEquals("You: hi\nAgent: Hello.", t.text)
+        t.delta("Half a sen"); t.presence("one moment", "presence-hold")
+        t.replyCut("Half")
+        assertTrue(t.text.endsWith("Agent: Half a sen\n· one moment"))
+    }
+
+    @Test fun the_next_turn_after_a_cut_is_its_own_block() {
+        val t = Transcript()
+        t.heard("hi"); t.delta("Long answer"); t.replyCut("Long")
+        t.heard("wait, what about tomorrow"); t.delta("Tomorrow is clear.")
+        t.replyFinal("Tomorrow is clear.")
+        assertEquals("You: hi\nAgent: Long" + Transcript.CUT +
+            "\nYou: wait, what about tomorrow\nAgent: Tomorrow is clear.", t.text)
+    }
+
+    @Test fun the_call_transcript_outlives_any_one_activity() {
+        assertSame(Transcript.Call.transcript, Transcript.Call.transcript)
     }
 }

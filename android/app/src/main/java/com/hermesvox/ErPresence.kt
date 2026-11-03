@@ -211,7 +211,7 @@ class ErPresence(
                 }
                 slot?.let { s ->
                     if (s.line > 1) onWorkingSlot?.invoke(s)
-                    else if (o.state == ErFillers.State.LAG_ACK) noteWorkingLine(s, "lag")
+                    else if (o.state == ErFillers.State.LAG_ACK) noteWorkingLine(s, "lag", o.speak.orEmpty())
                     else noteWorkingSkip(s, "lag-not-said")
                 }
                 if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
@@ -279,9 +279,12 @@ class ErPresence(
     /** Is the run [runId] still accepting lines (no reply, barge or call end since)? */
     fun cadenceLive(runId: Long): Boolean = synchronized(cadenceLock) { runId != 0L && run.startedAt == runId }
 
-    /** A line of the run was voiced — the field log's proof that the gap was held. */
-    fun noteWorkingLine(slot: Slot, kind: String) =
-        VoxLog.er("event=er-presence line=${slot.line} interval=${slot.intervalMs} density=${slot.density.key} kind=$kind")
+    /** A line of the run was voiced — the field log's proof that the gap was held. #217: `h=` is
+     *  a short hash of the line ([lineHash]) so the session report can count repeats without the
+     *  line's text (which only appears with Log transcripts on). */
+    fun noteWorkingLine(slot: Slot, kind: String, text: String = "") =
+        VoxLog.er("event=er-presence line=${slot.line} interval=${slot.intervalMs} density=${slot.density.key} kind=$kind" +
+            (if (text.isNotBlank()) " h=${lineHash(text)}" else ""))
 
     /** A slot passed in silence, and why (the soul chose silence, the reply landed first, …). */
     fun noteWorkingSkip(slot: Slot, reason: String) =
@@ -327,4 +330,12 @@ class ErPresence(
         }
     }
     @Volatile private var stallVoicedFor = 0L
+}
+
+/** #217: eight hex digits naming a spoken line, case- and punctuation-blind — "Still on it." and
+ *  "still on it" are the same line, which is what a repeat is to a listener. */
+internal fun lineHash(text: String): String {
+    val folded = text.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+    val crc = java.util.zip.CRC32().apply { update(folded.toByteArray(Charsets.UTF_8)) }
+    return "%08x".format(crc.value)
 }

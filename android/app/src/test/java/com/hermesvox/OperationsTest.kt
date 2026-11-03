@@ -41,7 +41,9 @@ class OperationsTest {
 
     @Test fun unknownToolIsHumanisedFromItsName() {
         assertEquals("Using github: list issues", Operations.running(Operations.step("mcp_github_list_issues", "{}"), 0))
-        assertEquals("Using home assistant", Operations.running(Operations.step("home_assistant", "not json"), 0))
+        assertEquals("Using home assistant", Operations.running(Operations.step("home_assistant", ""), 0))
+        // #404: free text is the runs route's preview of the primary argument — a subject.
+        assertEquals("Using home assistant · lights off", Operations.running(Operations.step("home_assistant", "lights off"), 0))
         // An identifier must still read as words, even when no table knows the tool.
         assertEquals("Using some new tool", Operations.running(Operations.step("some_new_tool", "{}"), 0))
         assertEquals("Using odd server do the thing", Operations.running(Operations.step("odd.server-do_the.thing", "{}"), 0))
@@ -117,5 +119,20 @@ class OperationsTest {
     @Test fun failedLineSaysWhatFailedAndWhy() {
         val s = Operations.step("mcp_gmail_send", "{}")
         assertEquals("✕ Sending an email failed — permission denied", Operations.failed(s, "permission denied"))
+    }
+
+    /** #404: the runs route's tool.started carries a text preview, not JSON arguments.
+     *  The line must keep its subject either way. */
+    @Test
+    fun `a runs preview names the subject the arguments would have`() {
+        assertEquals(Operations.running(Operations.step("terminal", """{"command":"date"}"""), 0),
+            Operations.running(Operations.step("terminal", "date"), 0))
+        assertEquals(Operations.running(Operations.step("read_file", """{"path":"/srv/notes/notes.md"}"""), 0),
+            Operations.running(Operations.step("read_file", "/srv/notes/notes.md"), 0))
+        assertEquals(Operations.running(Operations.step("web_extract", """{"url":"https://www.example.org/a/b"}"""), 0),
+            Operations.running(Operations.step("web_extract", "https://www.example.org/a/b"), 0))
+        // An unparseable JSON-looking blob is not a subject.
+        assertEquals(Operations.running(Operations.step("terminal", ""), 0),
+            Operations.running(Operations.step("terminal", "{broken"), 0))
     }
 }

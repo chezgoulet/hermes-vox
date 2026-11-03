@@ -52,6 +52,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         fun onHeard(text: String) {}
         /** #281: a tool step started — the stream's `function_call` name and raw arguments. */
         fun onTool(name: String, arguments: String) {}
+        /** #223: the voiced reply was cut; [heard] is what the caller actually heard ("" =
+         *  nothing). Not called when the reply was never meant to be heard (speech off). */
+        fun onReplyCut(heard: String) {}
         /** #281: a tool step's result arrived — the `function_call_output` text. */
         fun onToolOutput(output: String) {}
         /** #223: a line the Presence layer voiced on its own — the soul's answer, a beat,
@@ -180,6 +183,14 @@ class VoiceController(private val context: Context, private val session: HermesS
     // are measured from. pendingSpeechEndAt is handed over once, to the turn this segment
     // starts; a typed turn has no anchor and logs "-" for the speech-end fields.
     @Volatile private var pendingSpeechEndAt = 0L
+    /** #217: the last turn boundary (the caller's speech end), kept — not consumed. */
+    @Volatile private var lastSpeechEndAt = 0L
+
+    /** #217/D18: ms since the caller last stopped speaking (-1 = no turn yet this call). The
+     *  presence report reads it on every render: an aside rendering inside the reply's latency
+     *  budget spends the thing it exists to fill. */
+    fun msSinceSpeechEnd(): Long =
+        lastSpeechEndAt.let { if (it == 0L) -1L else android.os.SystemClock.uptimeMillis() - it }
     @Volatile private var pendingSttDecodeMs = -1L
     /** Per-turn copy of the anchor, so the streaming worker can close the timeline at
      *  "render done" without racing the next segment. */
@@ -411,7 +422,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 VoxLog.er("event=er-presence observe line=${slot.line} numbers-unvouched=${invented.size}")
             }
             synchronized(workingSaid) { workingSaid.add(line!!) }
-            erPresence.noteWorkingLine(slot, "soul")
+            erPresence.noteWorkingLine(slot, "soul", line!!)
             speakGlue(line!!, source = SOURCE_WORKING)
         }
     }
@@ -822,6 +833,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     VoxLog.w("event=endpoint-semantic skip reason=no-continuous-capture")
                 VoxLog.d("event=capture-continuous on=$continuous partialMs=${ContinuousCapture.cadenceMs(continuous)} " +
                     "semantic=${semantic?.eagerness?.key ?: "off"}")
+                // #245 — acknowledgements while the caller talks. Turn-taking set only, and only
+                // on continuous capture: a pause inside an utterance is not observable at 900 ms.
+                val turnTaking = AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)
+                val ackRate = if (turnTaking && continuous) Backchannel.Rate.of(prefString(Backchannel.KEY_RATE, Backchannel.DEFAULT.key))
+                    else Backchannel.Rate.OFF
+                val ackLedger = Backchannel.Ledger()
+                if (turnTaking && !continuous) VoxLog.w("event=backchannel skip reason=no-continuous-capture")
+                var ackRotate = 0
                 // The partial cadence, call-scoped: the legacy 900 ms clock runs from the mic
                 // opening (unchanged), and continuous capture restarts it at each segment's
                 // first sample (there is nothing to decode before a segment exists).
@@ -925,7 +944,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // not a fixed 64ms. A short read (a partial buffer) would make
                         // silence accrue faster than wall-clock and cut the user off
                         // mid-sentence when the pause threshold fired early.
-                        if (spoke) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        // #245: for a beat after an acknowledgement its own sound (and echo) is not
+                        // the caller — it may not reset the pause, or the clip would push the
+                        // endpoint back. The frames are still kept below.
+                        val ackMuted = spoke && Backchannel.vadMuted(android.os.SystemClock.uptimeMillis(), ackLedger)
+                        if (spoke && !ackMuted) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
                         if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
@@ -949,6 +972,18 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 }
                             }
                         } else if (inSpeech && silentMs > silenceMs) break      // pause -> utterance complete
+                        if (ackRate != Backchannel.Rate.OFF && inSpeech) {
+                            val at = android.os.SystemClock.uptimeMillis()
+                            val hyp = latestPartial.get()?.takeIf { it.segId == segId }?.text.orEmpty()
+                            val moment = Backchannel.Moment(at, speechStartAt, silentMs.toLong(), silenceMs.toLong(),
+                                hyp, semantic?.verdict(silentMs.toLong(), at), speaking || glueSpeaking || turnInFlight)
+                            if (Backchannel.tryFire(moment, ackRate, ackLedger)) {
+                                val clip = ErClips.clipFor("warm", ackRotate++)
+                                val played = ErClips.play(context, clip)
+                                VoxLog.d("event=backchannel fired=$played clip=$clip rate=${ackRate.key} " +
+                                    "talkMs=${at - speechStartAt} pauseMs=$silentMs recent=${ackLedger.recent(at)}")
+                            }
+                        }
                         // B2 (revised): the old maxMs break chopped a long continuous
                         // utterance mid-sentence ("The app is." + a "That" fragment).
                         // EndpointRule never chops a still-talking speaker: past maxMs
@@ -1073,6 +1108,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // The turn this segment is about to start is measured from the end of
                         // speech. Handed over here, consumed once in runStreamedTurn.
                         pendingSpeechEndAt = speechEndAt
+                        lastSpeechEndAt = speechEndAt
                         pendingSttDecodeMs = decodeMs
                     }
                     // #179: the RTF a live call actually pays. feedDecodeMs is the recogniser's
@@ -1120,6 +1156,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                             "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
                         if (!continuous) try { r.stop() } catch (_: Throwable) {}
                         continue
+                    }
+                    // #242: a segment opened by a barge carries the interrupting words. With
+                    // turn-taking on, what they ARE decides what happens: a listening sound
+                    // continues the cut reply, a word or two stops and listens (no turn), a
+                    // sentence is a new turn. Without it every carry is a turn, as before.
+                    if (seeded != null && AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)) {
+                        val kind = Overlap.classify(cleaned)
+                        val nowAt = android.os.SystemClock.uptimeMillis()
+                        val proceed = when (kind) {
+                            Overlap.Kind.NEW_TURN -> true
+                            Overlap.Kind.BACKCHANNEL -> resumeSlot.continueAfterBackchannel(nowAt)
+                            Overlap.Kind.BARGE -> false
+                        }
+                        VoxLog.d("event=overlap class=${kind.name.lowercase()} words=${Overlap.words(cleaned)} " +
+                            "turn=$proceed resumable=${resumeSlot.has(nowAt)} " +
+                            "text=${if (logTranscripts()) cleaned.take(60) else "<hidden>"}")
+                        if (!proceed) {
+                            main.post {
+                                listener?.onState("listening")
+                                listener?.onLog(if (kind == Overlap.Kind.BARGE) "// you cut in — listening" else "// (listening)")
+                            }
+                            if (!continuous) try { r.stop() } catch (_: Throwable) {}
+                            continue
+                        }
                     }
                     // HARD SPEAK-GATE: block until the reply AND its speech finish.
                     turnDone = java.util.concurrent.CountDownLatch(1)
@@ -1965,7 +2025,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                         heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe(),
                         soulAnswered = answered)
                 } else ""
-                val turnText = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
+                val drifted = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
+                // #243: a voice turn after a barge carries where the cut landed, once.
+                val resume = if (voiceTurn && AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING))
+                    resumeSlot.take(android.os.SystemClock.uptimeMillis()) else null
+                if (resume != null) VoxLog.d("event=resume-offer heardChars=${resume.first.heard.length} " +
+                    "unsaidChars=${resume.first.unsaid.length} ageMs=${android.os.SystemClock.uptimeMillis() - resume.first.atMs}")
+                val turnText = if (resume != null) resume.second + drifted else drifted
                 val sid = if (voiceTurn) session.voiceTurn(turnText) else session.startStream(text)
                 VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn")
                 // THE RECEIPT (the reporter's check): one line per turn proving the mind was
@@ -2045,6 +2111,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // authoritative snapshot, so a failure at ANY later point falls back
                         // to everything the entity actually wrote. Ignored once terminal.
                         terminal.assembled(MindSkip.strip(obj.optString("text", "")))
+                        // #243: what the entity has written so far, for the interruption record.
+                        liveReply = gen to terminal.text()
+                        if (doneNow) liveReplyDone = gen
                         // K1: real events off the wire = the LIVE channel is authorized.
                         // The conn-test probe defers to this (liveAuthState).
                         if ((evts?.length() ?: 0) > 0) noteLiveAuthorized()
@@ -2697,6 +2766,36 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  so the display must leave it dim instead of completing the sentence for the entity. */
     fun speechFrozen(): Boolean = frozenChars != null
 
+    /** #243: the reply as a record — the assembled text of the live turn and whether it was done. */
+    @Volatile private var liveReply: Pair<Long, String> = 0L to ""
+    @Volatile private var liveReplyDone = 0L
+    private val resumeSlot = Resume.Slot()
+
+    /** #223: the transcript keeps what was heard. Only when the voice was the channel and a
+     *  reply was live: a cut with speech off leaves the written reply as what was "said". */
+    private fun reportCut() {
+        if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PRESENCE)) return   // new behaviour: Alpha only
+        if (!speakEnabled() || !(turnInFlight || speaking || frozenChars != null)) return
+        val heard = frozenChars?.let { n -> synchronized(cursorLock) { spokenSb.toString() }.take(n) }.orEmpty()
+        main.post { listener?.onReplyCut(heard) }
+    }
+
+    /** #243: a voice barge leaves a mark the next voice turn picks up; anything else clears it. */
+    private fun markInterruption(reason: String) {
+        if (reason !in Resume.BARGE_REASONS || !AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING)) {
+            resumeSlot.clear(); return
+        }
+        val (gen, assembled) = liveReply
+        val spoken = synchronized(cursorLock) { spokenSb.toString() }
+        val heardChars = frozenChars ?: 0
+        val mark = Resume.mark(spoken, heardChars, if (gen == replyGen) assembled else "",
+            liveReplyDone == replyGen, android.os.SystemClock.uptimeMillis())
+        resumeSlot.put(mark)
+        if (mark != null) VoxLog.d("event=resume-mark reason=$reason heardChars=${mark.heard.length} " +
+            "unsaidChars=${mark.unsaid.length} finished=${mark.finished}" +
+            (if (logTranscripts()) " cut=\"…${mark.heard.takeLast(40)}\"" else ""))
+    }
+
     /** Cancel (hush/barge/stop): capture where the voice actually got to and hold it. */
     private fun freezeCursor(reason: String) {
         if (frozenChars != null) return
@@ -3019,6 +3118,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // down). The unspoken tail is never revealed: you don't show words the entity
         // was interrupted before saying.
         freezeCursor(reason)
+        markInterruption(reason)
+        reportCut()
         stopTts()
         // #240: playback stops HERE, at the cancel — the track is paused inside stopTts — not
         // at any later acknowledgement; this is the cancel-to-silence figure.

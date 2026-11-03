@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             heardLine.text = ""; heardLine.contentDescription = null
         }.start()
     }
-    private val transcript = Transcript()
+    private val transcript = Transcript.Call.transcript   // #223: survives a recreate, in memory only
     private val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
@@ -837,6 +837,7 @@ class MainActivity : AppCompatActivity() {
         CommRoute.select(this)
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
+        CallQuiet.begin(this, prefs)   // #325: off by default, Alpha only, restores what it changed
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
@@ -853,6 +854,7 @@ class MainActivity : AppCompatActivity() {
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
         callLive = false
+        CallQuiet.end(this, prefs)
         mainHandler.removeCallbacks(routeRebuildTask)
         callHandler.removeCallbacks(callTicker)
         clearOperation()
@@ -1315,6 +1317,8 @@ class MainActivity : AppCompatActivity() {
             // presence bar has no latency half — the field logs showed every other number
             // but this one.
             val renderStart = android.os.SystemClock.uptimeMillis()
+            // #217/D18: where the render started relative to the turn boundary.
+            val boundaryMs = c.msSinceSpeechEnd()
             orch.expressAsync(intent, directive, "warm", if (heard) wav else null) { glue ->
                 // The tone tag leads (when the soul heard the caller); the decision follows.
                 val (mood, rest) = VoiceMood.split(glue)
@@ -1326,7 +1330,7 @@ class MainActivity : AppCompatActivity() {
                     is ErSoulTurn.Outcome.Beat -> o.opener.length
                     else -> 0
                 }
-                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"} ms=${android.os.SystemClock.uptimeMillis() - renderStart}")
+                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"} ms=${android.os.SystemClock.uptimeMillis() - renderStart} boundaryMs=$boundaryMs")
                 cb(o, mood)
             }
         }
@@ -2046,6 +2050,7 @@ class MainActivity : AppCompatActivity() {
             appendConvo("You: $text")
             if (conversation.visibility != View.VISIBLE) showHeard(text)
         } }
+        override fun onReplyCut(heard: String) { runOnUiThread { appendReplyCut(heard) } }
         override fun onPresenceSpoke(text: String, source: String) { runOnUiThread {
             // #223: the Presence path's own speech — the soul's answer (the turn's reply)
             // and its asides (beats, working asides, fillers, greeting). Only lines that
@@ -2671,6 +2676,11 @@ class MainActivity : AppCompatActivity() {
     /** #223: the mind's reply, as it streams in — a reader does not wait for the turn to end. */
     private fun appendReplyDelta(text: String) {
         transcript.delta(text)
+        paintTranscript()
+    }
+    /** #223: the reply was cut; the transcript keeps what was heard, not what was written. */
+    private fun appendReplyCut(heard: String) {
+        transcript.replyCut(heard)
         paintTranscript()
     }
     /** #223: the turn is complete; the final text reconciles the streamed block. */

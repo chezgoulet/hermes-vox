@@ -503,7 +503,7 @@ object ErSoulTurn {
      * "you're all set". "I am checking", "still working", "almost there" and "I'll keep you posted"
      * are not claims of a result and pass.
      */
-    private fun claimsResult(t: String): Boolean = DONE_CLAIM.containsMatchIn(t)
+    internal fun claimsResult(t: String): Boolean = DONE_CLAIM.containsMatchIn(t)
 
     private val DONE_CLAIM = Regex(
         "(?i)\\b(?:" +

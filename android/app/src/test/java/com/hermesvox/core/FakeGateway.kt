@@ -23,6 +23,10 @@ import java.util.concurrent.atomic.AtomicInteger
  *                                     → response.completed, with the tool-progress
  *                                     item shapes when the turn asks for a tool
  *   DELETE /v1/responses/{id}         the /new reset
+ *   POST /v1/runs                     202 {run_id} (#404, the shipped route)
+ *   GET  /v1/runs/{id}/events         the same turn in the runs vocabulary:
+ *                                     message.delta, tool.started/completed, run.completed
+ *   POST /v1/runs/{id}/stop           the barge-in; recorded in [stops]
  *   GET  /api/model/options           the catalog shape GatewayClient returns raw
  *
  * The event names and field shapes are copied from the testdata/stream SSE fixtures
@@ -30,9 +34,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * `item.arguments`, `item.output[].text`, `item_id`, `delta`, and
  * `response.id`/`response.status`.
  *
- * The one piece of server state it models is the server-side chain: a response id
- * is the handle to the conversation state that produced it, so a request carrying
- * previous_response_id sees the codeword planted earlier on that chain. That is
+ * The one piece of server state it models is the conversation, with the gateway's own
+ * precedence: a `previous_response_id` chain, else the `X-Hermes-Session-Key` declared
+ * conversation, else a fresh one. So a request carrying previous_response_id sees the
+ * codeword planted earlier on that chain, and a run (which has no response id) sees the
+ * codeword planted earlier under its session key. That is
  * what the suite's chain and /compress cases actually assert; the fake is not an
  * agent and does not try to be one.
  *
@@ -61,6 +67,12 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     private val seq = AtomicInteger()
     /** response id → the codeword remembered at that point in its chain. */
     private val chains = ConcurrentHashMap<String, String>()
+    /** declared session key → the codeword remembered in that conversation. */
+    private val conversations = ConcurrentHashMap<String, String>()
+    /** run id → its input, until its events are read. */
+    private val runs = ConcurrentHashMap<String, String>()
+    /** Run ids a barge-in stopped, in order. */
+    val stops: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
 
     init {
         server.executor = pool
@@ -68,6 +80,7 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
         server.createContext("/v1/models") { ex -> guarded(ex) { models(ex) } }
         server.createContext("/api/model/options") { ex -> guarded(ex) { modelOptions(ex) } }
         server.createContext("/v1/responses") { ex -> guarded(ex) { responses(ex) } }
+        server.createContext("/v1/runs") { ex -> guarded(ex) { runsRoute(ex) } }
         server.start()
     }
 
@@ -122,14 +135,100 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
         val prev = Json.str(req, "previous_response_id")
         val stream = (req["stream"] as? JBool)?.value ?: false
 
-        // Server-side chain: the previous id selects the state this turn continues.
-        val remembered = chains[prev].orEmpty()
-        val codeword = CODEWORD.find(input)?.groupValues?.get(1) ?: remembered
+        val codeword = remember(ex, prev, input)
         val id = "resp_fake_${seq.incrementAndGet()}"
         chains[id] = codeword
 
         if (stream) sse(ex, id, input) else stored(ex, id, input, codeword)
     }
+
+    /** The gateway's precedence: the response chain, else the declared conversation. */
+    private fun remember(ex: HttpExchange, prev: String, input: String): String {
+        val key = ex.requestHeaders.getFirst(Entity.SESSION_KEY_HEADER).orEmpty()
+        val remembered = if (prev.isNotEmpty()) chains[prev].orEmpty() else conversations[key].orEmpty()
+        val codeword = CODEWORD.find(input)?.groupValues?.get(1) ?: remembered
+        if (key.isNotEmpty()) conversations[key] = codeword
+        return codeword
+    }
+
+    // ---- the runs route ----
+
+    private fun runsRoute(ex: HttpExchange) {
+        val path = ex.requestURI.path.removeSuffix("/")
+        when {
+            ex.requestMethod == "POST" && path == "/v1/runs" -> admit(ex)
+            ex.requestMethod == "POST" && path.endsWith("/stop") -> {
+                val id = path.removePrefix("/v1/runs/").removeSuffix("/stop")
+                stops.add(id)
+                json(ex, 200, """{"run_id":"$id","status":"stopping"}""")
+            }
+            ex.requestMethod == "GET" && path.endsWith("/events") ->
+                runEvents(ex, path.removePrefix("/v1/runs/").removeSuffix("/events"))
+            else -> reject(ex, 405)
+        }
+    }
+
+    private fun admit(ex: HttpExchange) {
+        val raw = ex.requestBody.use { it.readBytes().toString(Charsets.UTF_8) }
+        val req = try { Json.parse(raw) as? JObj } catch (_: JsonException) { null }
+            ?: return rejectJson(ex, 400, "request body is not a JSON object")
+        if (req["previous_response_id"] != null) return rejectJson(ex, 400, "a run carries no response chain")
+        val input = Json.str(req, "input")
+        // A run with no declared key would be keyed by its own id: a fresh conversation.
+        remember(ex, "", input)
+        val id = "run_fake_${seq.incrementAndGet()}"
+        runs[id] = input
+        json(ex, 202, """{"run_id":"$id","status":"started"}""")
+    }
+
+    private fun runEvents(ex: HttpExchange, id: String) {
+        val input = runs.remove(id) ?: return rejectJson(ex, 404, "run not found: $id")
+        ex.responseHeaders.add("Content-Type", "text/event-stream")
+        ex.sendResponseHeaders(200, 0)
+        val out = ex.responseBody
+        var n = 0
+        fun run(name: String, fields: String) {
+            val sep = if (fields.isEmpty()) "" else ","
+            out.write("data: {\"event\":\"$name\",\"run_id\":\"$id\",\"seq\":${n++}$sep$fields}\n\n"
+                .toByteArray(Charsets.UTF_8))
+            out.flush()
+        }
+        run("run.started", "")
+        if (faults == Faults.TRUNCATED_STREAM) {
+            run("message.delta", """"delta":"vox-live-"""")
+            return
+        }
+        val text: String
+        when {
+            input.contains("echo vox-tool-stream-live", ignoreCase = true) -> {
+                run("tool.started", """"tool":"terminal","preview":"echo vox-tool-stream-live","tool_call_id":"call_1"""")
+                run("tool.completed", """"tool":"terminal","duration":0.1,"error":false,"tool_call_id":"call_1","preview":"vox-tool-stream-live"""")
+                text = "vox-tool-stream-live"
+                run("message.delta", """"delta":"$text"""")
+            }
+            input.contains("Count from 1 to 400", ignoreCase = true) -> {
+                for (i in 1..400) {
+                    if (id in stops) break
+                    run("message.delta", """"delta":"${jsonStringBody("$i\n")}"""")
+                    try { Thread.sleep(25) } catch (_: InterruptedException) { return }
+                }
+                run("run.cancelled", """"completed":false,"partial":false,"interrupted":true""")
+                return
+            }
+            else -> {
+                text = if (input.contains("vox-live-stream-ok")) "vox-live-stream-ok"
+                    else storedReply(input, conversationsFor(ex))
+                val pivot = if (text.length > 4) 4 else text.length
+                for (part in listOf(text.substring(0, pivot), text.substring(pivot))) {
+                    if (part.isNotEmpty()) run("message.delta", """"delta":"${jsonStringBody(part)}"""")
+                }
+            }
+        }
+        run("run.completed", """"completed":true,"partial":false,"interrupted":false,"output":"${jsonStringBody(text)}"""")
+    }
+
+    private fun conversationsFor(ex: HttpExchange): String =
+        conversations[ex.requestHeaders.getFirst(Entity.SESSION_KEY_HEADER).orEmpty()].orEmpty()
 
     // ---- stored turn ----
 

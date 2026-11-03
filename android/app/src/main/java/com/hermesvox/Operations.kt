@@ -97,7 +97,7 @@ object Operations {
             ?: if (tool.startsWith("browser_")) Verb("Using the browser", "Used the browser") else null
             ?: domainVerb(tool, args)
             ?: humanised(tool)
-        return Step(tool, verb.doing, verb.done, target(tool, args))
+        return Step(tool, verb.doing, verb.done, target(tool, args) ?: previewTarget(tool, arguments))
     }
 
     /**
@@ -182,8 +182,9 @@ object Operations {
         return Verb("Using $what", "Used $what")
     }
 
-    private fun target(tool: String, args: JObj?): String {
-        if (args == null) return ""
+    /** The subject named by JSON arguments; null when there were none to read. */
+    private fun target(tool: String, args: JObj?): String? {
+        if (args == null) return null
         for (k in TARGET_KEYS) {
             val n = args[k] ?: continue
             val v = when (n) {
@@ -198,6 +199,26 @@ object Operations {
         }
         return ""
     }
+
+    /**
+     * The subject when the producer sent a display preview rather than JSON arguments.
+     * The `/v1/runs` route (#404) carries no arguments on `tool.started`, only the
+     * gateway's `preview` — the tool's primary argument as one line of text (`date`,
+     * `https://example.org/a`, `/srv/notes.md`). It is the same fact the arguments would
+     * have named, so the line keeps its subject on either route.
+     */
+    private fun previewTarget(tool: String, preview: String): String {
+        val t = preview.trim()
+        if (t.isEmpty() || t.startsWith("{")) return ""
+        val key = when {
+            t.contains("://") -> "url"
+            tool in FILE_TOOLS -> "path"
+            else -> ""
+        }
+        return oneLine(shorten(key, t), TARGET_CHARS)
+    }
+
+    private val FILE_TOOLS = setOf("read_file", "write_file", "patch")
 
     /** A URL is named by its host and a path by its file: the part a person recognises. */
     private fun shorten(key: String, v: String): String = when (key) {

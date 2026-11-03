@@ -203,8 +203,51 @@ class SettingsActivity : AppCompatActivity() {
         gate(R.id.row_er_hears, presence)
         gate(R.id.row_mic_continuous, listening)
         gate(R.id.row_mic_semantic, listening)
+        gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
+        gate(R.id.row_call_quiet, AlphaGate.allows(r, AlphaGate.FeatureSet.QUIET_CALLS))
         if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
         refreshGrpVals()
+    }
+
+    /** #245: the acknowledgement rate — Off / Sparse / Normal, one tap to the next. Behind the
+     *  turn-taking set; the row is dimmed and takes no tap without it. */
+    private fun bindBackchannelRate() {
+        val value = findViewById<TextView>(R.id.set_backchannel_val) ?: return
+        fun show() { value.text = Backchannel.Rate.of(prefs.getString(Backchannel.KEY_RATE, null)).label }
+        show()
+        findViewById<android.view.View>(R.id.row_backchannel)?.setOnClickListener {
+            val all = Backchannel.Rate.entries
+            val now = Backchannel.Rate.of(prefs.getString(Backchannel.KEY_RATE, null))
+            prefs.edit().putString(Backchannel.KEY_RATE, all[(now.ordinal + 1) % all.size].key).apply()
+            show()
+        }
+    }
+
+    /**
+     * #325: off by default. Switching it on asks for Do Not Disturb access — the one moment the
+     * request makes sense — and the status line says whether the call will actually be silenced.
+     */
+    private fun bindCallQuiet() {
+        val sw = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.set_call_quiet) ?: return
+        sw.isChecked = prefs.getBoolean(CallQuiet.KEY, CallQuiet.DEFAULT_ON)
+        refreshCallQuiet()
+        sw.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(CallQuiet.KEY, on).apply()
+            if (on && !CallQuiet.granted(this)) {
+                try { startActivity(CallQuiet.accessIntent()) } catch (_: Throwable) {}
+            }
+            refreshCallQuiet()
+        }
+    }
+
+    private fun refreshCallQuiet() {
+        val status = findViewById<TextView>(R.id.set_call_quiet_status) ?: return
+        val on = prefs.getBoolean(CallQuiet.KEY, CallQuiet.DEFAULT_ON)
+        status.text = when {
+            !on -> "Off — notifications behave as they always do"
+            CallQuiet.granted(this) -> "On — Do Not Disturb (your exceptions) while a call is open"
+            else -> "Needs Do Not Disturb access — switch off and on to ask again"
+        }
     }
 
     private fun gate(id: Int, allowed: Boolean) {
@@ -1077,6 +1120,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshCallQuiet()   // #325: back from the Do Not Disturb access screen
         resumed = true
         // A download may have finished while the store was open; the Settings
         // warning must clear (or appear) the moment we come back.
@@ -1460,6 +1504,8 @@ class SettingsActivity : AppCompatActivity() {
         bindMicToggle(R.id.set_continuous_capture, ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
         bindMicToggle(R.id.set_semantic_endpoint, SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
         bindMicToggle(R.id.set_tts_voice_usage, "tts_voice_usage", false)   // D2: engine default OFF (field A/B)
+        bindBackchannelRate()
+        bindCallQuiet()
 
         bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
             0.1f, 0.9f, 0.05f, 0.5f) { "%.2f".format(it) }

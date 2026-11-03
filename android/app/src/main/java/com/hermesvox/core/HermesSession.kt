@@ -78,10 +78,18 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      * session's head (H2), and returns the reply. The reply's id becomes the new head.
      */
     fun turnStored(text: String): String {
-        val res = responses.response(text, lastID)
-        lastID = res.responseId
+        // #404: on a session whose turns ride /v1/runs the conversation is the declared
+        // session key, not a response chain — chaining off a stored id would compact a
+        // stale snapshot instead of what the runs wrote. The stored turn follows the
+        // streamed turns' route so H2's "one chain" still holds.
+        val route = route()
+        val res = responses.response(text, StreamRoute.chainHead(route, lastID))
+        if (route == TurnRoute.RESPONSES) lastID = res.responseId
         return res.reply
     }
+
+    /** The route this session's turns take now ([StreamRoute.routeFor]). */
+    internal fun route(): TurnRoute = StreamRoute.routeFor(responses.hasSessionKey())
 
     // ---- Streamed turns: the SSE events as they arrive ----
 
@@ -126,8 +134,9 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      */
     fun waitStream(streamID: String, deadlineMs: Long): Boolean = Streams.wait(streamID, deadlineMs)
 
-    /** Aborts an in-flight streamed turn (barge-in): closes the connection, which
-     *  aborts the gateway's generation, and retires the stream. */
+    /** Aborts an in-flight streamed turn (barge-in) and retires the stream. On the
+     *  responses route closing the connection aborts the generation; on the runs route
+     *  the run is stopped with `POST /v1/runs/{id}/stop`. Never throws for the stop. */
     fun cancelStream(streamID: String) = Streams.cancel(streamID)
 
     // ---- Approvals (#282): the answer to an `approval.request` run event ----
