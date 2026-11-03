@@ -632,3 +632,63 @@ deferred.
 
 `docs/MILESTONES.md` is the authoritative map. Where this decision and any older document
 disagree, this decision and that document win.
+
+## D29 — The open questions, settled before the rest of 0.9.1 is built
+
+Set 2026-11-03, in a structured interrogation after the milestone re-alignment (D28). Each of
+these was open in `docs/0.9.1-SCOPE.md` §13 or blocked a lane; none is left to be discovered in
+code review.
+
+**#325 — silence notifications while the app is open.** Build it, as a setting, **off by default**.
+Not on by default: the app does not decide on the user's behalf that a call outranks a message.
+
+**#252 — command parity or the phone-call identity.** **Full command parity in-app.** The commands
+screen stays the inventory it is; hanging up and calling back is a convenience, not the model.
+This settles the question the plan said must not be deferred.
+
+**Continuous capture and semantic endpointing (#228, #229).** Their preferences default **on**, and
+both sit **behind the Alpha gate** — so "on at the cut" means on for anyone who enables Alpha and
+selects the set. The release is gated on the features being tested in that state.
+
+**The hardware check.** Bar: **8 GB total RAM**, with a free-memory floor at first run. It runs at
+**first run for everyone**, and its advice is shown in the Alpha panel when the user opens it — it
+never enables anything.
+
+**The route flip (PLAN §10).** **The cut waits** if parity and the device pass are not clean.
+Approvals on the real turn path are a gate, not a target.
+
+**#191 — the presence crash.** **Close it**, with the non-reproduction recorded: presence loaded in
+35.6 s on `0.9.1-nightly-f8dca26` and survived a 30-minute soak with the full stack resident.
+
+**#208 — the second handset.** **Carry it.** The behaviour matrix stays single-device and says so.
+
+**What signing 0.9.1 means.** The acceptance run passes on a device, by voice, with no regressions,
+**and every milestone issue is closed.**
+
+**The presence directive and rails.** **Drop the no-new-numbers rule now** and keep only the
+false-action-claim guard. The invention measurement (#256) still runs, as **observation**, so we
+know what the unrestricted model does — but it no longer gates the rule.
+
+**The budgets.** Continuous capture ships on, so **battery, thermal and RSS are re-measured with it
+on, and the cut holds to the numbers.**
+
+**#165 — the store rail.** **It is 0.9.1 work and the release waits for it**, with the bar at the
+app being **listed in F-Droid**: the recipe reproducible, a merge request against a released tag,
+and the listing granted. This puts the critical path through their review, which we do not
+control — recorded as the deliberate cost of the decision.
+
+**#202 and #208's closure.** Each closes **with its limitation recorded** — #202's cause unproven
+because it needs an ear, #208 single-device — and both statements go in the release notes.
+
+**#249 — the render budget.** **Measure and report; it does not gate.**
+
+**#251 — ambient cues.** **In 0.9.1**, built as it is, and it gets an acceptance card.
+
+**The Alpha gate, as a surface.** A master **Alpha features** toggle at the very top of Settings,
+off by default. Enabling it presents a **slide-out listing the individual feature sets marked
+alpha, with Presence at the top**, so a tester can take one without taking all. With the master
+off, everything alpha is dimmed and unreachable. It is a deliberate back door for testers, not a
+buried switch.
+
+**The release notes.** Presence is **announced** — named, described as a layer you turn on through
+Alpha, and honest about being unfinished. It is not buried, and it is not oversold.
