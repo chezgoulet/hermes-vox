@@ -35,6 +35,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
             context.getSharedPreferences("hv", Context.MODE_PRIVATE)
                 .getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
 
+    /** Whether THIS load builds the audio encoder (MemoryBudget.PREF_HEARS, default true).
+     *  Off is the "the soul speaks, it does not listen" arm: the engine comes up text-only and
+     *  `hears` is false for the session, so a caller's audio is never sent to it either. */
+    private val hearingEnabled: Boolean
+        get() = MemoryBudget.hears(
+            context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+                .getBoolean(MemoryBudget.PREF_HEARS, true))
+
     private val modelFile get() = File(context.filesDir, "models/gemma-e2b/gemma-4-E2B-it.litertlm")
 
     /**
@@ -187,9 +195,19 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // Each accelerator is tried WITH the audio encoder first (the soul hears the caller's
         // tone), then text-only: a model file or device without a working audio path must cost
         // the soul its ears, never its voice.
-        val attempts: List<Triple<String, () -> Backend, Boolean>> = listOf(
+        //
+        // The audio encoder and its adapter are two of the bundle's sections (`static_audio_encoder`
+        // -> XNNPack on the CPU, `audio_adapter`), and the layer only EXPRESSES: the caller's words
+        // arrive as text from the gateway and the mic belongs to the call's own recogniser. So
+        // "does presence need ears" is a measurement, not a guess, and it is measured by building
+        // the engine without them (MemoryBudget.PREF_HEARS, default true = today's behaviour).
+        val withAudioAttempts = listOf(
             Triple("gpu", { Backend.GPU() }, true), Triple("gpu", { Backend.GPU() }, false),
             Triple("cpu", { Backend.CPU() }, true), Triple("cpu", { Backend.CPU() }, false))
+        val deafAttempts = listOf(
+            Triple("gpu", { Backend.GPU() }, false), Triple("cpu", { Backend.CPU() }, false))
+        val attempts: List<Triple<String, () -> Backend, Boolean>> =
+            if (hearingEnabled) withAudioAttempts else deafAttempts
         var lastError: Throwable? = null
         for ((name, backend, withAudio) in attempts) {
             try {
@@ -253,6 +271,8 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // stale arm would log a second `presence-unload` after the next load.
         idleArmed = false
         try { idleHandler.removeCallbacks(idleTask) } catch (_: Throwable) {}
+        openIdleArmed = false
+        try { idleHandler.removeCallbacks(openIdleTask) } catch (_: Throwable) {}
         loaded = false
         val freed = try {
             synchronized(genLock) {
@@ -328,10 +348,50 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      *  the pending release. Logged, because "the release never happened" must be explainable
      *  from the field log rather than look like a timer that silently died. */
     fun cancelIdleUnload(reason: String) {
+        cancelIdleWhileOpen(reason)
         if (!idleArmed) return
         idleArmed = false
         idleHandler.removeCallbacks(idleTask)
         VoxLog.d("event=presence-unload-cancel reason=$reason")
+    }
+
+    // ---- Release while the app is open (MemoryBudget.PREF_IDLE_OPEN_MIN) ------------------
+    //
+    // The arm above only exists once a call has ended: an app launched and then left on a desk
+    // never arms anything, and the measured result is a loaded engine held at ~2.7 GB PSS for
+    // as long as the process lives (docs/PRESENCE-COST.md). This arm is the same release, armed
+    // by "no call is live" instead of "a call just ended".
+    //
+    // Off by default: [MemoryBudget.idleOpenMinutes] is 0 for an absent pref, so a phone with no
+    // pref behaves exactly as 0.9.1. Off means no timer is posted at all.
+
+    @Volatile private var openIdleArmed = false
+
+    private val openIdleTask = Runnable {
+        openIdleArmed = false
+        VoxLog.d("event=presence-unload-due reason=idle-open")
+        unloadAsync("idle-open")
+    }
+
+    /** Arm the open-idle release. Called when a load finishes and no call is live; a no-op
+     *  unless the pref names a delay, so today's behaviour costs one pref read. */
+    fun armIdleWhileOpen() {
+        val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val minutes = MemoryBudget.idleOpenMinutes(prefs.getInt(MemoryBudget.PREF_IDLE_OPEN_MIN, 0))
+        if (minutes <= 0 || !loaded) return
+        idleHandler.removeCallbacks(openIdleTask)
+        openIdleArmed = true
+        VoxLog.d("event=presence-idle-open-arm minutes=$minutes")
+        idleHandler.postDelayed(openIdleTask, MemoryBudget.idleOpenMs(minutes))
+    }
+
+    /** Nothing to release, or a call wants the engine: drop the timer. Logged when it was armed,
+     *  so the field log can explain an arm that never fired. */
+    fun cancelIdleWhileOpen(reason: String) {
+        if (!openIdleArmed) return
+        openIdleArmed = false
+        idleHandler.removeCallbacks(openIdleTask)
+        VoxLog.d("event=presence-idle-open-cancel reason=$reason")
     }
 
     /** Never on the caller's thread: endCall() runs on main, and closing the Engine frees

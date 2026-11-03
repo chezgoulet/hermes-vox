@@ -244,6 +244,12 @@ class SettingsHintsTest {
             "MemoryBudget.PREF_KV_TOKENS",
             "MemoryBudget.PREF_UNLOAD",
             "MemoryBudget.PREF_UNLOAD_DELAY",
+            // The three presence-cost arms (docs/PRESENCE-COST.md). Added deliberately: the
+            // screen now shows them, so it binds them, and this list is what stops a row from
+            // being moved or renamed without anyone noticing.
+            "MemoryBudget.PREF_HEARS",
+            "MemoryBudget.PREF_LAZY_LOAD",
+            "MemoryBudget.PREF_IDLE_OPEN_MIN",
             "ModelCatalog.KEY_SOURCE",
             "ModelCatalog.KEY_STT_BACKEND",
             "ModelCatalog.KEY_STT_MODEL",

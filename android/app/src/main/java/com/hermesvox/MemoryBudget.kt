@@ -27,6 +27,32 @@ object MemoryBudget {
     const val PREF_UNLOAD_DELAY = "presence_unload_delay_min"
 
     /**
+     * `hv` pref: bring the engine up WITH its audio encoder. **Shipped default true, because
+     * that is what the brain does today** (`GemmaExpress.initEngine` tries the audio path
+     * first and falls back to text-only only if it cannot start). The soul's ears are what
+     * cost the `static_audio_encoder` + `audio_adapter` models and their XNNPack weight
+     * caches; off, they are never built. Measured cost is in docs/PRESENCE-COST.md.
+     */
+    const val PREF_HEARS = "presence_hears"
+
+    /**
+     * `hv` pref: load the presence model at launch. **Shipped default true** — the engine is
+     * resident from the first resume, which is today's behaviour. False is the deferred arm:
+     * nothing loads until a call starts, so the app idles at ~170 MB and the call pays the
+     * load (the call path already gates on `soulReady` and offers a skip after a wait).
+     */
+    const val PREF_LAZY_LOAD = "presence_lazy_load"
+
+    /**
+     * `hv` pref (minutes): release the engine after this long with **no live call while the
+     * app stays open**. 0 = never, and **0 is shipped**: the existing [PREF_UNLOAD_DELAY] arm
+     * only arms on hangup, so an app left open on the table keeps the ~2.7 GB forever
+     * (docs/PRESENCE-COST.md, "at rest"). This is the arm that closes that hole; the reload it
+     * charges is the same cold load a process death pays.
+     */
+    const val PREF_IDLE_OPEN_MIN = "presence_idle_open_min"
+
+    /**
      * Shipped idle-release delay: **one minute after hangup** (D27). Long enough that a redial
      * inside the window finds the engine warm — the measured reload is 5.6–7.7 s — and short
      * enough that a phone which is not being used gets ~1.75 GB back.
@@ -45,6 +71,23 @@ object MemoryBudget {
      *  minute), so a corrupt or hand-edited pref cannot remove the release or invent a schedule. */
     fun unloadDelayMinutes(pref: Int): Int =
         if (pref in 0..MAX_DELAY_MINUTES) pref else DELAY_DEFAULT
+
+    /**
+     * The "release while the app is open" delay, in minutes. **Absent, 0 and junk all mean
+     * never**, which is the shipped behaviour: unlike [unloadDelayMinutes] there is no default
+     * minute to fall back to, because this arm is not on until someone turns it on.
+     */
+    fun idleOpenMinutes(pref: Int?): Int =
+        if (pref != null && pref in 1..MAX_DELAY_MINUTES) pref else 0
+
+    /** The same value as a timer delay. 0 means "do not arm a timer". */
+    fun idleOpenMs(pref: Int?): Long = idleOpenMinutes(pref) * 60_000L
+
+    /** Whether the engine is built with its audio encoder. Absent pref = yes (shipped). */
+    fun hears(pref: Boolean?): Boolean = pref ?: true
+
+    /** Whether the engine loads at launch. Absent pref = yes (shipped). */
+    fun lazyLoad(pref: Boolean?): Boolean = pref ?: false
 
     /** The same value as a timer delay. 0 means "do not arm a timer". */
     fun unloadDelayMs(pref: Int): Long = unloadDelayMinutes(pref) * 60_000L
@@ -69,6 +112,21 @@ object MemoryBudget {
         "$tokens tokens" + if (tokens == KV_DEFAULT) "  (shipped)" else ""
 
     fun unloadLabel(on: Boolean): String = "Unload on hangup: " + if (on) "on" else "off (shipped)"
+
+    /** The hearing arm's row label. Off is the measurement arm: the engine is built text-only. */
+    fun hearsLabel(on: Boolean): String =
+        "Hearing (audio encoder): " + if (on) "on (shipped)" else "off — text only"
+
+    /** The deferred-load arm's row label. Off is "load at launch", the shipped behaviour. */
+    fun lazyLabel(on: Boolean): String =
+        "Load at launch: " + if (on) "on (shipped)" else "off — load when a call starts"
+
+    /** The release-while-open row label. 0 is "never", the shipped behaviour. */
+    fun idleOpenLabel(minutes: Int): String {
+        val m = idleOpenMinutes(minutes)
+        return if (m == 0) "Release while open: never (shipped)"
+        else "Release while open: $m min with no call"
+    }
 
     fun delayLabel(minutes: Int): String {
         val m = unloadDelayMinutes(minutes)
