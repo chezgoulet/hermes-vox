@@ -51,6 +51,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var avatar: AvatarView
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var replyBuf = ""
+    // #368: the crawl's finished-line ring (bounded) and the turn id that keeps a soul
+    // answer from being recorded twice when the mind echoes it. The in-flight reply is
+    // still replyBuf; it is sealed into this ring when the turn's speech is done.
+    private val crawlHistory = CrawlHistory()
+    private var turnSeq = 0L
     private var sseBuf = "// stream log — watch the agent work"
     private var toolCount = 0
     // #281: the step the agent is running now, and a failed step's line held to the next turn.
@@ -142,14 +147,21 @@ class MainActivity : AppCompatActivity() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)
         val c = liveController
+        val shown: String
         if (c != null && c.speechFrozen()) {
             // Cut (hush/barge/stop): the boundary stays exactly where the voice stopped —
             // the unspoken tail is left dim and is NEVER auto-completed.
             val txt = c.transcriptText()
+            shown = if (txt.isNotBlank()) txt else replyBuf
             if (txt.isNotBlank()) reply.setText(txt, c.speechCursor())
         } else {
+            shown = replyBuf
             reply.setText(replyBuf)   // spoken through to the end -> the full reply, plainly
         }
+        // #368: what was said (all of it, or the frozen part after a cut) becomes the
+        // trail's newest line. The live slot is cleared so the same words are not drawn
+        // twice; the document is unchanged in place, so the reader sees no jump.
+        sealLiveReply(shown)
     }
 
     // ---- 0.5.0-previewB: the presence-motion scheduler -----------------------
@@ -1664,6 +1676,10 @@ class MainActivity : AppCompatActivity() {
     private fun clearConversationUi() {
         revealActive = false; mainHandler.removeCallbacks(revealTask)
         replyBuf = ""
+        // #368: a new conversation ends the trail too — old replies must not survive a
+        // reset, and a scroll position into them would be a trap.
+        crawlHistory.clear(); turnSeq = 0L
+        reply.setHistory(""); reply.resetScroll()
         reply.setText("")
         transcript.clear()
         convoText.setText("")
@@ -1819,6 +1835,7 @@ class MainActivity : AppCompatActivity() {
         // from the commands sheet — status feedback + the gateway's answer in a card,
         // instead of the word disappearing into the turn as ordinary conversation.
         if (CompressCommand.matches(text)) { compressContext(); return }
+        turnSeq++   // #368: a typed turn is a new trail chapter
         appendConvo(transcript ?: "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
@@ -1973,7 +1990,10 @@ class MainActivity : AppCompatActivity() {
             // #156: "reply ready" is a cue only when no speech will follow — otherwise
             // the voice IS the signal, and a cue must never run into TTS (D7).
             if (liveController?.voiceWillSpeak() != true) cues?.play(CueSynth.Cue.REPLY_READY)
-            if (!revealActive) reply.setText(replyBuf)
+            // #368: no speech to wait for -> the reply is finished now; move it into the
+            // trail. With speech, stopReveal() seals it when the voice has finished (or is
+            // frozen by a cut), so the screen is never left with a duplicate.
+            if (!revealActive) { reply.setText(replyBuf); sealLiveReply(replyBuf) }
             appendReplyFinal(finalText)
             // §B: only the agent can say the bytes did not match. Its reply settles the
             // file's state; the app never turns silence into success. Guarded by the ref so
@@ -2023,6 +2043,7 @@ class MainActivity : AppCompatActivity() {
         override fun onHeard(text: String) { runOnUiThread {
             lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false   // #251: input
             callTurns++   // #284: the caller has spoken; no stuck hint this call
+            turnSeq++   // #368: a new spoken turn; a repeated "yes" is not a duplicate
             // Conversation mode already IS a transcript: the words go there, in memory
             // only (the transcript is never persisted). Presence mode gets the fading line.
             appendConvo("You: $text")
@@ -2032,6 +2053,12 @@ class MainActivity : AppCompatActivity() {
             // #223: the Presence path's own speech — the soul's answer (the turn's reply)
             // and its asides (beats, working asides, fillers, greeting). Only lines that
             // were actually voiced reach here, so the transcript is what was heard.
+            // #368: the same funnel feeds the crawl's trail. The soul's answer IS the
+            // turn's reply; every other source is an aside. Recording here (once, when
+            // voiced) is what keeps a scroll from losing or duplicating a Presence line.
+            val kind = if (source == Transcript.SOURCE_SOUL_ANSWER)
+                CrawlHistory.Kind.REPLY else CrawlHistory.Kind.ASIDE
+            if (crawlHistory.add(text, kind, turnSeq)) reply.setHistory(crawlHistory.text())
             appendPresence(text, source)
         } }
         override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
@@ -2638,7 +2665,7 @@ class MainActivity : AppCompatActivity() {
         val conv = prefs.getString("layout_mode", "presence") == "conversation"
         conversation.visibility = if (conv) View.VISIBLE else View.GONE
         reply.visibility = if (conv) View.GONE else View.VISIBLE
-        if (conv) { convoText.text = transcript.text; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
+        if (conv) { reply.resetScroll(); convoText.text = transcript.text; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
     }
     private fun appendConvo(line: String) {
         transcript.line(line)
@@ -2846,5 +2873,21 @@ class MainActivity : AppCompatActivity() {
     private fun refreshHeaderFromRegistry() {
         if (!::agentName.isInitialized) return
         agentName.text = headerLabel(prefs.getString("model", "hermes-agent").orEmpty())
+    }
+
+    /**
+     * #368: the live reply becomes the trail's newest line. The live slot is cleared in
+     * the same frame, so the same words are not drawn twice; `CrawlDocument` keeps the
+     * on-screen shape unchanged (history + gap + live becomes history + gap + nothing).
+     *
+     * [text] is what was actually shown, not necessarily the streamed final: a barge
+     * seals the frozen part that was on screen, which is what the caller can re-read.
+     */
+    private fun sealLiveReply(text: String) {
+        replyBuf = ""
+        reply.setText("")
+        if (text.isBlank()) return
+        crawlHistory.add(text, CrawlHistory.Kind.REPLY, turnSeq)
+        reply.setHistory(crawlHistory.text())
     }
 }
