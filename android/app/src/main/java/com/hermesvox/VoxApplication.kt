@@ -18,6 +18,9 @@ class VoxApplication : Application() {
         // #402: the Alpha gate first — it tells an upgrade from a fresh install by the Presence
         // key that PresenceGate.migrate is about to write.
         AlphaGate.migrate(prefs, presenceModelInstalled = ModelCatalog.isInstalled(this, "gemma-e2b"))
+        // #325: a quiet call the last process did not live to end is ended now — a crash must
+        // never leave the phone in Do Not Disturb.
+        CallQuiet.recover(this, prefs)
         PresenceGate.migrate(prefs)
         // #403: stage one of the hardware check, once per install, before any model is fetched.
         // It records and advises; it never enables anything.

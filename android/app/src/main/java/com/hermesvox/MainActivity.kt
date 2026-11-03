@@ -837,6 +837,7 @@ class MainActivity : AppCompatActivity() {
         CommRoute.select(this)
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
+        CallQuiet.begin(this, prefs)   // #325: off by default, Alpha only, restores what it changed
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
@@ -853,6 +854,7 @@ class MainActivity : AppCompatActivity() {
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
         callLive = false
+        CallQuiet.end(this, prefs)
         mainHandler.removeCallbacks(routeRebuildTask)
         callHandler.removeCallbacks(callTicker)
         clearOperation()

@@ -41,6 +41,7 @@ object SettingsHints {
         "row_mic_partial" to "May start the agent at a pause that sounds final",
         "row_mic_continuous" to "Keeps the mic and the recogniser running for the whole call",
         "row_mic_semantic" to "Ends your turn on a judgement, not a fixed pause",
+        "row_call_quiet" to "Do Not Disturb while a call is open, restored when you hang up",
         "row_backchannel" to "A soft mm-hm while you talk at length; tap to change how often",
         "row_mic_voicecall" to "Routes audio like a phone call, so echo cancelling works better",
         "row_mic_vad" to "How loud speech must be to count; raise it in a noisy room",

@@ -51,6 +51,12 @@ object AlphaGate {
                 "thread picked up after you cut in. Needs continuous listening for the " +
                 "acknowledgements.",
         ),
+        QUIET_CALLS(
+            "alpha_set_quiet_calls", "Quiet calls",
+            "Silences notifications while a call is open, using your phone's Do Not Disturb with " +
+                "your own exceptions, and puts things back when you hang up. Off until you turn " +
+                "it on in Hearing; asks for Do Not Disturb access then.",
+        ),
     }
 
     /** What the gate reads, narrow enough for an in-memory fake. */

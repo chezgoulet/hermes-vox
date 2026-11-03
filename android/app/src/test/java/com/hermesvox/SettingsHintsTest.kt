@@ -231,6 +231,8 @@ class SettingsHintsTest {
             "AlphaGate.KEY_MASTER",
             // #245: the acknowledgement rate, behind the Alpha turn-taking set.
             "Backchannel.KEY_RATE",
+            // #325: silence notifications during a call, off by default, behind Alpha.
+            "CallQuiet.KEY",
             "AvatarView.KEY_SHAPE_LISTENING",
             "AvatarView.KEY_SHAPE_SPEAKING",
             "AvatarView.KEY_SHAPE_THINKING",

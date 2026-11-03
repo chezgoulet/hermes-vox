@@ -117,6 +117,9 @@ class ManifestShareTest {
                 "android.permission.WAKE_LOCK",
                 "android.permission.ACCESS_NETWORK_STATE",
                 "android.permission.POST_NOTIFICATIONS",
+                // #325: Do Not Disturb during a call — not for sharing; granted by the user in
+                // system settings only when they switch the setting on.
+                "android.permission.ACCESS_NOTIFICATION_POLICY",
                 "android.permission.FOREGROUND_SERVICE",
                 "android.permission.FOREGROUND_SERVICE_MICROPHONE",
                 "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
