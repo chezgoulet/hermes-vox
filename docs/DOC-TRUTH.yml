@@ -1,0 +1,64 @@
+# Invariants the design documents assert, each checked against the code.
+#
+# Why: prose is unverified by nature, and that is how `docs/DECISIONS.md` came to
+# say "Presence remains 0.9.2" while the milestone said otherwise. A document that
+# states a fact about the code now has to name a pattern that proves it, so drift
+# fails the gate instead of shipping.
+#
+# Each entry:
+#   id      short name, shown on failure
+#   says    a literal phrase that must still appear in `doc` (the claim's home)
+#   doc     the document making the claim (relative to the repo root)
+#   file    the source of truth (relative to the repo root)
+#   match   a Python regex that must match somewhere in `file`
+#   absent  optional regex that must NOT match in `file`
+#
+# Run: python3 scripts/check-doc-truth.py
+
+- id: turn-route-default
+  says: "the default (#404)"
+  doc: docs/RUNS-ROUTE.md
+  file: android/app/src/main/java/com/hermesvox/core/TurnRoute.kt
+  match: 'var active: TurnRoute = TurnRoute\.RUNS'
+
+- id: presence-behind-alpha-gate
+  says: "Alpha features"
+  doc: docs/PRESENCE.md
+  file: android/app/src/main/java/com/hermesvox/PresenceGate.kt
+  match: 'AlphaGate\.allows\('
+
+- id: alpha-gate-off-by-default
+  says: "off by default"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
+  match: 'DEFAULT_MASTER\s*=\s*false'
+
+- id: version-name
+  says: "0.9.1"
+  doc: docs/MILESTONES.md
+  file: android/app/build.gradle
+  match: 'versionName\s+"0\.9\.1"'
+
+- id: claim-guard-every-lane
+  says: "false-action-claim"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/VoiceController.kt
+  match: 'claimsResult\('
+
+- id: approval-whole-utterance
+  says: "approve"
+  doc: docs/APPROVALS-ACCEPTANCE.md
+  file: android/app/src/main/java/com/hermesvox/core/Approval.kt
+  match: 'MAX_WORDS'
+
+- id: runs-idempotency
+  says: "Idempotency-Key"
+  doc: docs/RUNS-ROUTE.md
+  file: android/app/src/main/java/com/hermesvox/core/Stream.kt
+  match: 'Idempotency-Key'
+
+- id: session-id-rotation
+  says: "session_id"
+  doc: docs/RUNS-ROUTE.md
+  file: android/app/src/main/java/com/hermesvox/core/HermesSession.kt
+  match: 'session_?[Ii]d|sessionId'

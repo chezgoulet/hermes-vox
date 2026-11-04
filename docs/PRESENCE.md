@@ -8,6 +8,10 @@ It is on by default. It is not a second agent, and it does not know anything the
 
 ---
 
+**Availability (0.9.1).** Presence is alpha: it runs only when **Alpha features** is on in
+Settings and the Presence set is selected — the gate is `AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE)` in `PresenceGate`. With the gate off, everything Presence
+owns is dimmed and unreachable.
+
 ## The problem it answers
 
 The question that started it, in the maintainer's words on 2026-09-07: a user builds an agent with
