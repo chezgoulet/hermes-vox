@@ -30,6 +30,18 @@ class AlphaGateTest {
         assertFalse(keys.contains(AlphaGate.KEY_MASTER))
     }
 
+    /** 0.9.1 soak: the panel states the trade it asks for, in measured round numbers. */
+    @Test fun the_panel_says_what_presence_and_continuous_listening_cost() {
+        assertTrue(P.blurb, P.blurb.contains("While a call is live it holds about 3 GB of memory."))
+        assertTrue(L.blurb, L.blurb.contains("Costs about 300 MB more memory during a call."))
+        // Each cost lives on its own set: Presence does not claim the listening, nor the reverse.
+        assertFalse(P.blurb.contains("300 MB"))
+        assertFalse(L.blurb.contains("3 GB"))
+        // The panel row shows the blurb itself, so this is the text on screen.
+        val panel = File("src/main/java/com/hermesvox/AlphaPanel.kt").readText()
+        assertTrue(panel.contains("this.text = set.blurb"))
+    }
+
     @Test fun a_fresh_install_reaches_nothing_alpha() {
         val s = Fake()
         AlphaGate.migrate(s, presenceModelInstalled = false)

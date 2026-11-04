@@ -36,13 +36,15 @@ object AlphaGate {
             "alpha_set_presence", "Presence",
             "The being on the phone: it speaks its own short lines while your agent works, in " +
                 "your agent's voice. Needs its on-device model (about 2.6 GB) and a phone with " +
-                "8 GB of memory. Unfinished, and honest about it.",
+                "8 GB of memory. While a call is live it holds about 3 GB of memory. Unfinished, " +
+                "and honest about it.",
         ),
         CONTINUOUS_LISTENING(
             "alpha_set_continuous_listening", "Continuous listening",
             "Continuous capture keeps the microphone open and reads the recogniser every 100 ms; " +
                 "semantic endpointing judges when you have finished instead of waiting out a " +
-                "silence. Both switches live in Hearing.",
+                "silence. Costs about 300 MB more memory during a call. Both switches live in " +
+                "Hearing.",
         ),
         TURN_TAKING(
             "alpha_set_turn_taking", "Turn-taking",

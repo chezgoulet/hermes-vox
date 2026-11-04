@@ -14,6 +14,7 @@ import com.hermesvox.core.ApprovalAnswer
 import com.hermesvox.core.ApprovalArm
 import com.hermesvox.core.ApprovalGate
 import com.hermesvox.core.ApprovalRequest
+import com.hermesvox.core.ApprovalNudge
 import com.hermesvox.core.ApprovalVoice
 import com.hermesvox.core.HermesSession
 import com.hermesvox.core.JsonException
@@ -573,6 +574,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val turnApprovalKeys = LinkedHashSet<String>()
     /** The request whose card is on screen; "" when none. */
     @Volatile private var approvalShownKey = ""
+    /** 0.9.1 soak: "say approve or no", at most once per card. */
+    private val approvalNudge = ApprovalNudge()
     /** The request whose timeout is scheduled; "" when none. */
     @Volatile private var approvalTimeoutKey = ""
     private val approvalTimeout = Runnable {
@@ -1564,10 +1567,35 @@ class VoiceController(private val context: Context, private val session: HermesS
      */
     fun approvalVoice(text: String): Boolean {
         val request = approvalGate.current() ?: return false
-        val choice = ApprovalVoice.resolve(text, request.choices) ?: return false
+        val choice = ApprovalVoice.resolve(text, request.choices) ?: run {
+            if (text.isNotBlank()) approvalNoAnswer(request)
+            return false
+        }
         val answer = approvalGate.answer(request.key(), choice, "voice") ?: return true
         submitApproval(answer)
         return true
+    }
+
+    /**
+     * 0.9.1 soak: an utterance arrived while [request]'s card is up and it was not an answer.
+     * Say what the card can hear, once for this card, and only into silence. This never
+     * answers: the gate is not touched, so the card stays up and its timeout still runs.
+     */
+    private fun approvalNoAnswer(request: ApprovalRequest) {
+        val key = request.key()
+        main.post {
+            if (approvalGate.current()?.key() != key) return@post   // answered or replaced meanwhile
+            val busy = glueBlocked() || glueSpeaking
+            when (approvalNudge.onNoAnswer(key, busy)) {
+                ApprovalNudge.Outcome.SPEAK -> {
+                    VoxLog.d(ApprovalNudge.logLine(key))
+                    speakGlue(ApprovalNudge.LINE, source = SOURCE_APPROVAL_PROMPT)
+                }
+                ApprovalNudge.Outcome.BUSY ->
+                    VoxLog.d("event=approval-prompt-skip request=$key reason=voice-busy")
+                ApprovalNudge.Outcome.ALREADY -> {}
+            }
+        }
     }
 
     /**
@@ -1670,6 +1698,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         val key = request.key()
         if (key == approvalShownKey) return
         approvalShownKey = key
+        approvalNudge.reset()   // a new card on screen: its own one prompt
         approvalTimeoutKey = key
         val prompt = promptOf(request)
         listener?.onApproval(prompt)
@@ -1687,6 +1716,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         main.removeCallbacks(approvalTimeout)
         approvalTimeoutKey = ""
         approvalShownKey = ""
+        approvalNudge.reset()
         // The request is decided, so this run no longer needs to be held past a loop end.
         heldApprovalRuns.remove(answer.request.runId)
         VoxLog.d(answer.logLine())
@@ -1724,6 +1754,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         main.removeCallbacks(approvalTimeout)
         approvalTimeoutKey = ""
         approvalShownKey = ""
+        approvalNudge.reset()
         for (request in dropped) {
             VoxLog.d("event=approval ignored reason=$reason run=${request.runId} request=${request.key()}")
             main.post { listener?.onApprovalClosed(promptOf(request), reason) }
@@ -1769,6 +1800,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.removeCallbacks(approvalTimeout)
                     approvalTimeoutKey = ""
                     approvalShownKey = ""
+                    approvalNudge.reset()
                     for (request in dropped) {
                         main.post { listener?.onApprovalClosed(promptOf(request), "run-ended") }
                     }
@@ -1897,6 +1929,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                         "text=${if (logTranscripts()) said.take(80) else "<hidden>"}")
                     if (choice != null) {
                         approvalGate.answer(request.key(), choice, "voice")?.let { submitApproval(it) }
+                    } else {
+                        approvalNoAnswer(request)
                     }
                 }
             } finally {
@@ -3629,6 +3663,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
          *  the mark that lets the reply's first audio cut it without the beat's wait. */
         const val SOURCE_WORKING = "soul-working"
+        /** 0.9.1 soak: the once-per-card "say approve or no". */
+        const val SOURCE_APPROVAL_PROMPT = "approval-prompt"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */
