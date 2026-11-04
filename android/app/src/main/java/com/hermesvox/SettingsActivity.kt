@@ -1501,6 +1501,32 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 .show()
         }
+        // #421 steps 3–4: the phone as an MCP server. The owner needs three facts to point his
+        // gateway at it — the address, the token, and the exact snippet — so they live behind this
+        // row rather than in a log (a credential in a log is a credential in every bug report).
+        findViewById<LinearLayout>(R.id.row_phone_mcp).setOnClickListener {
+            val url = PhoneMcp.currentUrl()
+            val token = PhoneMcp.token(this)
+            val host = url?.substringAfter("http://")?.substringBefore(':').orEmpty()
+            val snippet = PhoneMcpConfig.snippet(host.ifEmpty { "<tailnet-ip>" }, token)
+            val message = buildString {
+                append("The mind can act on this phone only while a call is live.\n\n")
+                if (url == null) append("Status: not listening (start a call, and be on Tailscale).\n\n")
+                else append("Address: ").append(url).append("\n\n")
+                append("Token: ").append(token).append("\n\n")
+                append("Add this to the gateway's ~/.hermes/config.yaml:\n\n").append(snippet)
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Phone MCP")
+                .setMessage(message)
+                .setPositiveButton("Copy config") { _, _ ->
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("vox-mcp", snippet))
+                    android.widget.Toast.makeText(this, "config copied", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Close", null)
+                .show()
+        }
     }
 
     /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default ON since 0.8). The flag it
