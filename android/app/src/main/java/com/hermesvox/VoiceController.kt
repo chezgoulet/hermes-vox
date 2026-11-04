@@ -2107,10 +2107,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // ends before then makes the prewarm bail on its gen check.
         main.postDelayed({ prewarmWorkingLine(gen) }, ErFillers.LAG_AFTER_MS)
         listener?.onState("thinking")
-        // ER Phase 7: the mind sees what the soul already said this turn (the
-        // drift-sync epilogue rides the user text — cache-safe per-turn channel).
-        // NOTE: applied BEFORE the onLog line, so the console shows what the
-        // gateway actually received.
+        // ER Phase 7: the mind sees what the soul already said this turn.
+        // A2: the drift-sync rides the request instructions, not the user text.
         // #327: a paste can be a megabyte of someone's clipboard. Its body never reaches
         // the console (or the file log, which mirrors the console) even when "log spoken
         // transcript" is on — only its size does.
@@ -2145,11 +2143,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
                 VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
-                // ER Phase 1: VOICE-originated turns carry the phone-call voice
-                // prefix ("the agent knows it's on a call" — spoken register). Typed sends stay
-                // prefix-free: a typed message may legitimately ask for code blocks / deep work.
-                // sendText() passes fromVoice=false; both STT loops pass true.
-                // D30: no wait on the soul — the turn is submitted immediately (waitMs = 0).
+                // A2 (2026-11-04 review, F4): a VOICE turn tells the mind it is on a call
+                // through the request's ephemeral `instructions`, never by rewriting the
+                // caller's words. Typed sends carry none: a typed message may legitimately
+                // ask for code blocks / deep work. sendText() passes fromVoice=false; both
+                // STT loops pass true. D30: nothing waits on the soul — the beat renders
+                // beside this submit, not in front of it.
                 if (genCancelled) {
                     // Nothing will be sent: the receipt says the mind never saw this turn.
                     noteHandoff(gen, false, ErHandoff.REASON_CANCELLED,
@@ -2157,19 +2156,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                     endReply(gen, ReplyLedger.End.CANCELLED); return@execSubmit
                 }
                 val heardMood = synchronized(soulTurn) { soulTurn.mood }
-                val drift = if (voiceTurn) {
-                    ErDrift.epilogue(erPresence.drainSoulActions(),
-                        heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe())
-                } else ""
-                val drifted = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
+                // A2: the soul-sync is part of the request's instructions, not of the caller's
+                // words. The transcript the agent keeps therefore reads like a conversation.
+                val sync = if (voiceTurn) ErDrift.sync(erPresence.drainSoulActions(),
+                    heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe()) else ""
                 // #243: a voice turn after a barge carries where the cut landed, once.
                 val resume = if (voiceTurn && AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING))
                     resumeSlot.take(android.os.SystemClock.uptimeMillis()) else null
                 if (resume != null) VoxLog.d("event=resume-offer heardChars=${resume.first.heard.length} " +
                     "unsaidChars=${resume.first.unsaid.length} ageMs=${android.os.SystemClock.uptimeMillis() - resume.first.atMs}")
-                val turnText = if (resume != null) resume.second + drifted else drifted
-                val sid = if (voiceTurn) session.voiceTurn(turnText) else session.startStream(text)
-                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn")
+                val turnText = if (resume != null) resume.second + text else text
+                // The voice turn's request: the register + presence context in `instructions`
+                // (ephemeral, never stored), and the reasoning effort the user chose (default
+                // low — a voice turn wants the fast answer, not the deepest one).
+                val instructions = if (voiceTurn) VoiceTurn.instructions(sync) else ""
+                val reasoning = if (voiceTurn)
+                    com.hermesvox.core.ResponsesClient.reasoningOption(
+                        prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT))
+                else null
+                val sid = if (voiceTurn) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)
+                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn reasoning=${prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT)}")
                 // THE RECEIPT (the reporter's check): one line per turn proving the mind was
                 // handed the turn, with the soul's decision that preceded it.
                 val handed = sid.isNotBlank()

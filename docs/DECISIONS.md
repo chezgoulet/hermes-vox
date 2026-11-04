@@ -725,3 +725,38 @@ A claim that a turn was answered is now a claim about what the caller heard.
 the voice to answer more of the small talk — is a separate question, tracked with the other Presence
 controls. If it returns, it returns as *policy over what the client does*, never as an instruction
 telling a 2B model to stay quiet.
+
+## D31 — The mind is talked to through the API, not through the user's words
+
+Set 2026-11-04, with D30, on the evidence of the Presence review
+(`docs/reviews/PRESENCE-REVIEW-2026-11-04.md`, F4 and §5.3).
+
+**The decision.** A voice turn sends the mind its framing in the request's **ephemeral
+`instructions`** — the voice register, the soul-sync, and what the phone is doing — and a per-request
+**reasoning effort** (`model_options.reasoning`, defaulting to *low*). The caller's utterance is sent
+byte-exact as `input`. The anti-tool clause is deleted.
+
+**Why.** Three faults in one string. The voice prefix was *inside the user's message*, so it entered
+the agent's stored session history, was replayed through `previous_response_id`, was visible to
+memory and session search, and grew the context by about a hundred tokens a turn — the agent
+remembered a protocol instead of a conversation. It told the mind **not to use its tools** ("Answer
+from what you know; do NOT do exhaustive tool work…"), which is exactly the clause that turns "what's
+a used 4090 going for" into a stale guess or a refusal, and made Presence measurably worse than
+Realtime — same agent, same gateway — on the questions people actually ask a voice assistant. And
+parts of it were simply false by 0.6.7 (the app no longer says "let me think" before it answers).
+
+**What it rests on.** The gateway already supports both fields on `/v1/responses` and `/v1/runs`:
+`instructions` maps to `ephemeral_system_prompt`, which is appended to the system prompt at API time
+and never written to the transcript (`api_server_response_admissions.py`), and `model_options` is
+decoded per request (`_runtime_options_from_model_options`, `_request_reasoning_config`). No gateway
+change, no new endpoint, no model change.
+
+**The two risks, stated.** *Inheritance:* a chained request that omits `instructions` inherits the
+previous turn's value, so **every** request sends the field — empty on typed turns, which clears it.
+*Providers that ignore reasoning* simply behave as today; the setting is an optimisation, never a
+correctness requirement.
+
+**What it commits us to.** Protocol text never rides the user's message again. When the phone needs
+to tell the mind something (the register, the soul's lines, the phone's state, what the phone just
+did), it goes in `instructions`. And the mind keeps every capability it has: a voice turn is not a
+lesser turn.

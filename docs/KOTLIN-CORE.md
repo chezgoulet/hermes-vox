@@ -11,7 +11,7 @@ changed (`com.hermesvox.mobile.HermesSession` → `com.hermesvox.core.HermesSess
 | Go (deleted) | Kotlin | Notes |
 |---|---|---|
 | `mobile/session.go` `HermesSession` | `core/HermesSession.kt` | Same method names and shapes. Methods throw `HermesException` (a gateway answer) or `IOException` (transport) where gomobile threw `Exception`. `waitStream` takes a `Long` (gomobile mapped Go `int` to `long`). |
-| `voice/responses.go`, `voice/ping.go` | `core/ResponsesClient.kt` | Request body, the voice prefix (`USER_TURN_PREFIX`), stored turn, ping. |
+| `voice/responses.go`, `voice/ping.go` | `core/ResponsesClient.kt` | Request body (including the per-request `instructions` and `model_options.reasoning` a voice turn sends), stored turn, ping. |
 | `voice/stream.go` | `core/Stream.kt` | The SSE framer, event dispatch, poll/wait/cancel registry, `plainText`. |
 | `voice/gateway.go` | `core/GatewayClient.kt` | `/api/model/options`, `/v1/health`, `DELETE /v1/responses/{id}`. |
 | `voice/entity.go` | `core/Entity.kt` | URL joining, bearer + `X-Hermes-Session-Key`, bounded error bodies, per-exchange deadline. |

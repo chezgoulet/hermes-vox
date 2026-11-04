@@ -183,13 +183,18 @@ internal object Streams {
      * consumes the SSE into the SAME registered state [poll] drains, so the events
      * the app renders are the events the gateway sent.
      */
-    fun start(client: ResponsesClient, input: String, previousResponseId: String): String =
+    fun start(
+        client: ResponsesClient,
+        input: String,
+        previousResponseId: String,
+        options: RequestOptions = RequestOptions(),
+    ): String =
         // Captured once: a settings flip mid-turn must not move a live stream between
         // routes (the reader thread would be half-way through one vocabulary).
-        start(client, input, previousResponseId, StreamRoute.routeFor(client.hasSessionKey())).first
+        start(client, input, previousResponseId, StreamRoute.routeFor(client.hasSessionKey()), options).first
 
     private fun start(client: ResponsesClient, input: String, previousResponseId: String,
-                      route: TurnRoute): Pair<String, StreamState> {
+                      route: TurnRoute, options: RequestOptions): Pair<String, StreamState> {
         val st = StreamState()
         val chainHead = StreamRoute.chainHead(route, previousResponseId)
         val (id, n) = synchronized(streams) {
@@ -200,8 +205,8 @@ internal object Streams {
         }
         Thread({
             val err = try {
-                if (route == TurnRoute.RUNS) consumeRuns(client, input, st)
-                else consume(client, input, chainHead, st)
+                if (route == TurnRoute.RUNS) consumeRuns(client, input, st, options)
+                else consume(client, input, chainHead, st, options)
                 ""
             } catch (e: Exception) {
                 e.message ?: e.javaClass.name
@@ -225,7 +230,9 @@ internal object Streams {
      * Past [timeoutMs] the run is stopped rather than left generating unheard.
      */
     fun complete(client: ResponsesClient, input: String, timeoutMs: Long): String {
-        val (id, st) = start(client, input, "", TurnRoute.RUNS)
+        // A stored turn is not a voice turn: it sends the empty instructions explicitly, which
+        // is what clears an inherited voice register on a chained conversation (A2/F4).
+        val (id, st) = start(client, input, "", TurnRoute.RUNS, RequestOptions())
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {
             synchronized(st.lock) {
@@ -328,8 +335,9 @@ internal object Streams {
      * until the body ends. Throws the turn's failure; returns normally on a
      * completed turn (or a cancelled one — nobody is left to read the outcome).
      */
-    private fun consume(client: ResponsesClient, input: String, previousResponseId: String, st: StreamState) {
-        val body = client.buildBody(input, previousResponseId, true)
+    private fun consume(client: ResponsesClient, input: String, previousResponseId: String,
+                        st: StreamState, options: RequestOptions) {
+        val body = client.buildBody(input, previousResponseId, true, options.instructions, options.reasoning)
         val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/responses"),
             client.entityHeaders() + mapOf("Content-Type" to "application/json", "Accept" to "text/event-stream"),
             CONNECT_TIMEOUT_MS, idleTimeoutMs)
@@ -419,8 +427,8 @@ internal object Streams {
      * suppression the responses writer applies to commentary items: text that already
      * went out as answer deltas must not be replayed as a second aside.
      */
-    private fun consumeRuns(client: ResponsesClient, input: String, st: StreamState) {
-        val runId = admitRun(client, client.buildRunBody(input), st)
+    private fun consumeRuns(client: ResponsesClient, input: String, st: StreamState, options: RequestOptions) {
+        val runId = admitRun(client, client.buildRunBody(input, options.instructions, options.reasoning), st)
         if (runId.isEmpty()) return   // cancelled before the run was requested
         if (st.bindRun(runId) { stopRun(client, runId) }) { stopRun(client, runId); return }
         // The responses route opens with response.created; the app's "answering" log

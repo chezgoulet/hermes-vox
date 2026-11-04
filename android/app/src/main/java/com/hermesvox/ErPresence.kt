@@ -124,7 +124,7 @@ class ErPresence(
 
     /**
      * The soul spoke a line of its own this window — a beat or a full answer. Recorded for the
-     * mind's soul-sync (synchronously, so it is in the epilogue the mind's turn carries), and it
+     * mind's soul-sync (synchronously, so it is in the instructions the mind's turn carries), and it
      * IS the window's presence: the nonverbal preamble must not also play, and the first-word
      * metric starts here.
      */

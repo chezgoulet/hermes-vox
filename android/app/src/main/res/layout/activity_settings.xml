@@ -1396,6 +1396,25 @@
 
                 <!-- How often the entity speaks while the mind works (PresenceCadence). -->
                 <LinearLayout
+                    android:id="@+id/row_er_reasoning"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Reasoning effort on a voice call (lower answers faster)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_er_reasoning_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Low"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_er_density"
                     style="@style/HvRow"
                     android:layout_width="match_parent"

@@ -4,6 +4,21 @@ package com.hermesvox.core
 internal data class ResponseResult(val reply: String, val responseId: String)
 
 /**
+ * A2 (2026-11-04 Presence review, F4): the per-request extras that ride the wire but never the
+ * conversation — the ephemeral `instructions` (the voice register, the soul-sync, the phone's
+ * state) and the per-request reasoning effort. Both are absent from the agent's stored
+ * transcript and memory, which is the point: protocol text belongs in the request, not in the
+ * caller's mouth.
+ *
+ * The default is "no instructions, no override" — a typed turn sends exactly that (as an
+ * explicit empty string on the wire, which clears any instructions inherited down the chain).
+ */
+internal data class RequestOptions(
+    val instructions: String = "",
+    val reasoning: Map<String, Any?>? = null,
+)
+
+/**
  * Talks to the Hermes /v1/responses endpoint — the server-side-conversation path.
  * The entity keeps its full history (incl. tool calls) on the server via
  * previous_response_id, so the app doesn't manage context. A provider+model can
@@ -45,12 +60,34 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
      *  (see [StreamRoute.routeFor]). */
     fun hasSessionKey(): Boolean = synchronized(lock) { sessionKey.isNotBlank() }
 
-    /** The request body; provider and previous_response_id only when set. */
-    fun buildBody(input: String, previousResponseId: String, stream: Boolean): ByteArray {
+    /**
+     * The request body; provider and previous_response_id only when set.
+     *
+     * A2 (2026-11-04 Presence review, F4): [instructions] is the request's EPHEMERAL system
+     * prompt — the voice register, the soul-sync and (B1) what the phone is doing. It is sent
+     * on every request, even empty, because the gateway inherits the previous turn's
+     * `instructions` when a chained request omits the field
+     * (`api_server_response_admissions.py`: `if instructions is None: instructions =
+     * stored.get('instructions')`), so a typed turn after a voice turn must say "" explicitly
+     * or it would inherit the voice register. [reasoning] is the per-request
+     * `model_options.reasoning` override ([reasoningOption]); null sends nothing.
+     *
+     * The caller's words stay in `input`, byte-exact: protocol text never rides the user's
+     * message, so the agent's own transcript and memory read like a conversation.
+     */
+    fun buildBody(
+        input: String,
+        previousResponseId: String,
+        stream: Boolean,
+        instructions: String = "",
+        reasoning: Map<String, Any?>? = null,
+    ): ByteArray {
         val body = synchronized(lock) {
             linkedMapOf<String, Any?>("model" to model, "input" to input, "stream" to stream).apply {
+                put("instructions", instructions)
                 if (provider.isNotEmpty()) put("provider", provider)
                 if (previousResponseId.isNotEmpty()) put("previous_response_id", previousResponseId)
+                if (reasoning != null) put("model_options", linkedMapOf("reasoning" to reasoning))
             }
         }
         return Json.encode(body).toByteArray(Charsets.UTF_8)
@@ -64,12 +101,22 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
      * would freeze the chain). The conversation is the client-owned `session_id`
      * ([setConversationId], H2): without it the gateway files the run under the latest
      * session the key declared, and "new conversation" would keep the old history.
+     *
+     * [instructions] and [reasoning] mean exactly what they do on [buildBody]; the runs
+     * admission accepts both (`api_server_runs.py` passes `instructions` as the ephemeral
+     * system prompt and `model_options` through as the run's runtime options).
      */
-    fun buildRunBody(input: String): ByteArray {
+    fun buildRunBody(
+        input: String,
+        instructions: String = "",
+        reasoning: Map<String, Any?>? = null,
+    ): ByteArray {
         val body = synchronized(lock) {
             linkedMapOf<String, Any?>("model" to model, "input" to input).apply {
+                put("instructions", instructions)
                 if (provider.isNotEmpty()) put("provider", provider)
                 if (conversationId.isNotEmpty()) put("session_id", conversationId)
+                if (reasoning != null) put("model_options", linkedMapOf("reasoning" to reasoning))
             }
         }
         return Json.encode(body).toByteArray(Charsets.UTF_8)
@@ -113,18 +160,26 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
         const val PING_TIMEOUT_MS = 10_000
 
         /**
-         * The ER Phase 1 voice-mode signal: a live-call-local instruction prepended to
-         * each VOICE turn's user text (client-side, in voiceTurn). It is ordinary user
-         * text, so the per-conversation prompt cache stays intact and it reaches the
-         * model on any stock gateway. Wording is locked by
-         * docs/BUILD-ER-enhanced-realtime.md Phase 1 and the 0.6.4 presence-cadence
-         * tuning (the app speaks its own "let me think"; the model must not re-state
-         * it, and it greets back before diving in). ErVoicePrefixTest pins it.
+         * A2 (2026-11-04 Presence review, F4): the per-request reasoning effort for a voice
+         * turn, as `model_options.reasoning` — the gateway's own shape
+         * (`api_server.py` `_runtime_options_from_model_options`,
+         * `api_server_request_options._request_reasoning_config`):
+         * `{"enabled":true,"effort":"low"}` or `{"enabled":false}`.
+         *
+         * [setting] is the user's choice: `off`, or one of `low` / `medium` / `high`. Blank or
+         * unknown means the default, which is [DEFAULT_EFFORT] — a voice turn wants the fast
+         * answer, and the user can change it in Settings. Providers that ignore reasoning
+         * options simply behave as before.
          */
-        const val USER_TURN_PREFIX = "[Voice input — the app adds its own spoken acknowledgments like \"let me think\" while you work, so do NOT re-state that you are thinking or working. Greet the caller naturally first if they greet you. Then respond conversationally, 2-4 sentences. " +
-            "Speak plainly, no code or markdown. Answer from what you know; do NOT do " +
-            "exhaustive tool work or re-audit your own docs/state unless the caller " +
-            "explicitly asks.] "
+        const val DEFAULT_EFFORT = "low"
+        private val EFFORTS = setOf("minimal", "low", "medium", "high", "xhigh", "max")
+
+        fun reasoningOption(setting: String?): Map<String, Any?> {
+            val s = setting?.trim()?.lowercase().orEmpty()
+            if (s == "off" || s == "none") return linkedMapOf("enabled" to false)
+            val effort = if (s in EFFORTS) s else DEFAULT_EFFORT
+            return linkedMapOf("enabled" to true, "effort" to effort)
+        }
 
         /** Every output_text of every message output item, in order, plus the id. */
         fun parseResponse(raw: String): ResponseResult {

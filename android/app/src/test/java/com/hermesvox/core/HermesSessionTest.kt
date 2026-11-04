@@ -1,5 +1,6 @@
 package com.hermesvox.core
 
+import com.hermesvox.VoiceTurn
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -257,11 +258,12 @@ class HermesSessionTest {
     }
 
     @Test
-    fun `voice prefix contract`() {
-        val p = ResponsesClient.USER_TURN_PREFIX
-        assertTrue(p.startsWith("[Voice input"))
-        assertTrue(p.endsWith("] "))
-        assertFalse(p.contains("\n"))
+    fun `the voice register is the caller-visible contract, not user text`() {
+        // A2/F4: the register is a request field now (core.StreamTest pins the wire). What the
+        // session promises is that `voiceTurn` takes it as an argument rather than prepending
+        // anything to the caller's words — there is no prefix constant left to leak.
+        assertTrue(VoiceTurn.REGISTER.contains("phone call"))
+        assertFalse(VoiceTurn.REGISTER.contains("exhaustive tool work"))
     }
 
     /** The responses chain contract, pinned to its route: with the shipped runs route

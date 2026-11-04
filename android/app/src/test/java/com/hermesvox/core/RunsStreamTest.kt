@@ -376,7 +376,7 @@ data: {"event":"run.completed","seq":0,"output":"$reply"}
         completingRuns().use { srv ->
             val s = session(srv)
             drain(s, s.startStream("one"))
-            drain(s, s.voiceTurn("two"))
+            drain(s, s.voiceTurn("two", "You are speaking out loud on a phone call.", null))
             val ids = runBodies(srv).map { Json.str(it, "session_id") }
             assertEquals(2, ids.size)
             assertTrue(ids[0].startsWith("vox_"))

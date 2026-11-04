@@ -156,7 +156,7 @@ internal object StreamReplay {
 
     /** The VoiceController loop: wait, poll, until done (or barge in). */
     fun turn(s: HermesSession, fx: Fixture, text: String, voice: Boolean): Map<String, Any?> {
-        val sid = if (voice) s.voiceTurn(text) else s.startStream(text)
+        val sid = if (voice) s.voiceTurn(text, "You are speaking out loud on a phone call.", null) else s.startStream(text)
         val events = ArrayList<Any?>()
         val snapshots = ArrayList<Any?>()
         val deadline = System.currentTimeMillis() + TURN_BUDGET_MS
