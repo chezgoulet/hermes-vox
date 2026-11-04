@@ -242,6 +242,9 @@ object PhoneMcp {
                         lastRequestAt = at
                     },
                     onInitialize = { at -> recordHandshake(app, at) },
+                    // The grants, read per request: the enum the gateway lists must lose a group
+                    // the owner turns off, without restarting the listener or the call.
+                    grants = PhoneGrantStore.source(app),
                 )
                 server = s
                 VoxLog.d("event=phone-mcp start url=${s.url} port=${s.port}")
