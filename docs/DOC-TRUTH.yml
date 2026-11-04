@@ -146,3 +146,47 @@
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/LocalActions.kt
   match: 'setStreamVolume'
+
+# ---- #429 step 1: capability grants, the schema and the audit ----
+
+- id: phone-grants-default-off
+  says: "Every group defaults to Off."
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
+  match: 'val DEFAULT: State = State\.OFF'
+
+- id: phone-grants-one-registry
+  says: "The groups are defined once"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
+  match: 'val GROUPS: List<Group> = listOf\('
+
+- id: phone-schema-follows-grants
+  says: "advertised `enum`"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'PhoneGrants\.advertised\(grants\)'
+
+- id: phone-not-granted-refusal
+  says: "not_granted"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'NOT_GRANTED = "not_granted"'
+
+- id: phone-grants-read-at-call-time
+  says: "read on every `tools/call` and"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrantStore.kt
+  match: 'PhoneGrants\.Source \{ group -> state\(app, group\) \}'
+
+- id: phone-audit-refusals
+  says: "refusals included"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
+  match: 'audit\(result, arguments, nowEpoch\)'
+
+- id: phone-allow-tier-zero-only
+  says: "Allow is a Tier 0 word."
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
+  match: 'if \(state == State\.ALLOW && !permits\(group\.tier, state\)\) State\.ASK'

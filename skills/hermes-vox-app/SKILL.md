@@ -64,7 +64,7 @@ being and its asides
 | 5 | TTS | on-device | Supertonic (recommended), Piper, or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:123 `defaultTts`) |
 | 6 | Presence (optional) | on-device | Gemma 4 E2B via LiteRT-LM on the GPU; speaks asides in the agent's mirrored voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:105 `gemma-e2b`) |
 | 7 | Avatar + words | on-device | GPU-drawn being and the speech-locked crawl | (docs/ARCHITECTURE.md:145 `6,000 stateless particles`) |
-| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume and notes: the caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:357 `fun registry(`) |
+| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume and notes: the caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:379 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:78 `val GROUPS: List<Group> = listOf(`) |
 
 Only leg 4 is a network peer. Barge-in cancels the stream rather than leaving it running
 (docs/ARCHITECTURE.md:67 `closing the stream aborts the generation`).
@@ -685,7 +685,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=er-barge-fire` | A staged barge was fired; `hold=staged frames=` | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3411 `er-barge-fire`) |
 | `event=er-barge-verdict` | What the verdict classifier decided about the interrupting words | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3422 `er-barge-verdict`) |
 | `event=local-action` | The phone took the utterance itself (timer / alarm / do-not-disturb / volume) with no network round trip: `kind=`, `ok=`, `registry=`, and `event=local-action ring kind=` when a timer fires | `ok=false` = the phone could not do it and said so (a missing DND permission is named); the utterance then never reached the mind, which is `er-handoff reason=local-action` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2040 `event=local-action kind=`) |
-| `event=phone-mcp` | The mind acting on the phone: `start url=… port=` when a call opens the listener, `stop served=N` on hangup, `action=<timer/alarm/dnd/volume/note/undo> ok=true id=…` per call, `refused reason=no-token / unknown-tool`, `unavailable reason=no-tailnet / bind`, `token-store=failed session-only=true` | `ok=false` with a `reason=` is the phone refusing truthfully (no DND access, tier 2, bad arguments). `refused reason=no-token` = a client without the bearer token probed the port | (android/app/src/main/java/com/hermesvox/PhoneMcp.kt:247 `event=phone-mcp start`) |
+| `event=phone-mcp` | The mind acting on the phone: `start url=… port=` when a call opens the listener, `stop served=N` on hangup, `action=<timer/alarm/dnd/volume/note/undo> ok=true id=…` per call, `refused reason=no-token / unknown-tool`, `unavailable reason=no-tailnet / bind`, `token-store=failed session-only=true` | `ok=false` with a `reason=` is the phone refusing truthfully (no DND access, tier 2, bad arguments). `refused reason=no-token` = a client without the bearer token probed the port | (android/app/src/main/java/com/hermesvox/PhoneMcp.kt:250 `event=phone-mcp start`) |
 | `event=er-handoff` | **The receipt**: one line per turn proving the mind received it. `ok=true\|false`, `reason=voice-turn / text-turn / suppressed-inflight / cancelled-before-submit / stopped / no-stream`, `soul=`, `askChars=` | `ok=false` = the mind never saw the turn. `reason=suppressed-inflight` is not a lost utterance: the words are queued (`event=er-pending`) and submitted when the current turn settles. Since D30 the mind is never told the voice answered, so no `soul=answer` response is invited | (android/app/src/main/java/com/hermesvox/ErHandoff.kt:55 `event=$EVENT gen=$gen ok=$ok`) |
 | `event=er-audio-handoff` | The mind's reply cut in over the soul; `waitedMs=`, `cut=` | Large `waitedMs` = the turn waited on a slow render | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2840 `er-audio-handoff`) |
 | `event=er-presence line=` | A mid-run aside was voiced; `line=`, `interval=`, `density=`, `kind=lag / soul` | — | (android/app/src/main/java/com/hermesvox/ErPresence.kt:318 `er-presence line=`) |
@@ -995,10 +995,12 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   user says "it doesn't wake on Hey Hermes", the answer is "it cannot, by design yet".
 - **No local mind.** The app never reasons, calls tools or stores long-term memory; Gemma
   only expresses (android/app/src/main/java/com/hermesvox/VoxExpress.kt:7 `Gemma NEVER runs the agentic stream`).
-- **No consequential action from the agent.** The phone's MCP tool executes tier 0 and tier 1
-  only (timer, alarm, do-not-disturb, volume, note, undo, status); share/message/call/delete are
-  refused with `approval-required` and stay on the gateway's approval surface
-  (android/app/src/main/java/com/hermesvox/PhoneTool.kt:183 `PhoneTiers.APPROVAL ->`).
+- **No consequential action from the agent.** The phone's MCP tool offers only the capability
+  groups the owner has granted, and every group starts Off; Tier 0 actions may be Allow, Tier 1
+  stops at Ask, and Tier 2 is refused with `approval-required` and stays on the gateway's approval
+  surface. A call naming an action whose group is Off is refused with `not_granted` and the action
+  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:275 `PhoneTiers.APPROVAL ->`)
+  (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:163 `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by
   itself, and a skill the owner disabled for the API server stays off
