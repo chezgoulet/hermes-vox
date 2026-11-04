@@ -40,20 +40,24 @@ object VoxSheet {
     /**
      * The header row: an optional "←" (a step back inside the sheet), the title, and "✕".
      * The title is an accessibility heading; both marks take focus and say what they do.
-     * Returns the title view so a sheet that changes level can retitle it.
+     * Returns the title (a sheet that changes level retitles it) and the back mark, if any (a
+     * sheet shows it only below its first level).
      */
+    class Header(val title: TextView, val back: View?)
+
     fun header(
         root: LinearLayout,
         title: String,
         closeLabel: String,
         onClose: () -> Unit,
         back: Pair<String, () -> Unit>? = null,
-    ): TextView {
+    ): Header {
         val c = root.context
         val row = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        if (back != null) row.addView(mark(c, "←", back.first, back.second).apply {
-            setPadding(dp(c, 4), dp(c, 6), dp(c, 12), dp(c, 6))
-        })
+        val backMark = back?.let { (label, onBack) ->
+            mark(c, "←", label, onBack).apply { setPadding(dp(c, 4), dp(c, 6), dp(c, 12), dp(c, 6)) }
+        }
+        backMark?.let { row.addView(it) }
         val t = TextView(c, null, 0, R.style.TextVox_Title).apply {
             text = title
             maxLines = 1
@@ -63,7 +67,7 @@ object VoxSheet {
         row.addView(t, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row.addView(mark(c, "✕", closeLabel, onClose))
         root.addView(row)
-        return t
+        return Header(t, backMark)
     }
 
     private fun mark(c: Context, glyph: String, label: String, onTap: () -> Unit) =

@@ -183,8 +183,12 @@ object ModelChoices {
         return s.trim()
     }
 
+    /** Context windows are named the way their makers name them: 131072 is "128k", a
+     *  power-of-two k; a round decimal figure (200000) stays decimal. */
     private fun contextLabel(tokens: Int): String = when {
-        tokens >= 1_000_000 -> "${tokens / 1_000_000}M context"
+        tokens >= 1_048_576 && tokens % 1_048_576 == 0 -> "${tokens / 1_048_576}M context"
+        tokens >= 1_000_000 && tokens % 1_000_000 == 0 -> "${tokens / 1_000_000}M context"
+        tokens >= 1_024 && tokens % 1_024 == 0 -> "${tokens / 1_024}k context"
         tokens >= 1_000 -> "${tokens / 1_000}k context"
         else -> "$tokens context"
     }

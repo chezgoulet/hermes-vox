@@ -65,10 +65,13 @@ class VerbMark(context: Context, private val verb: CommandMotion.Verb, tint: Int
                     dot(cx + r * k * cos(t).toFloat(), cy + r * k * sin(t).toFloat(), d * (1.2f + 1.6f * k), (255 * (1.1f - k * 0.6f)).toInt().coerceAtMost(255))
                 }
             }
-            CommandMotion.Verb.RING -> {           // ripples outward from a source
-                dot(cx, cy, r * 0.16f)
-                circle(r * 0.5f)
-                circle(r, 120)
+            CommandMotion.Verb.RING -> {           // ripples reaching out from a source, one way
+                val sx = cx - r * 0.7f
+                dot(sx, cy, r * 0.2f)
+                for ((k, a) in listOf(0.75f to 255, 1.35f to 140)) {
+                    arc.set(sx - r * k, cy - r * k, sx + r * k, cy + r * k)
+                    stroke.alpha = a; c.drawArc(arc, -48f, 96f, false, stroke); stroke.alpha = 255
+                }
             }
             CommandMotion.Verb.SETTLE -> {         // come to rest: a point on a level line
                 val y = cy + r * 0.45f

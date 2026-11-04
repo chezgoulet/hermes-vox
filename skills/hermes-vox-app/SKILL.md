@@ -119,7 +119,7 @@ The bar is 8 GB of total RAM, read as the phone's marketed size
 floor of 3 GB (android/app/src/main/java/com/hermesvox/HardwareCheck.kt:36 `FREE_FLOOR_MB`).
 The first call that loads Presence is the second stage: a failed load switches the Presence set
 off and says so in the Alpha panel
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2846 `event=hw-check stage=first-load`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2848 `event=hw-check stage=first-load`).
 It only advises: the verdict appears in the Alpha panel under Presence and, when the phone falls
 short, in first run with where to turn it on. It never selects anything.
 
@@ -318,9 +318,9 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 Those seven (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue, and a
 command added without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
-(android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt:59 `everyCommandBelongsToALabelledGroup`).
+(android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt:61 `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the seven names above
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2572 `when (c.name)`), and no build of
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2574 `when (c.name)`), and no build of
 this tree has ever had a handler for one. Files arrive a different way: the **Share with agent**
 row inside the commands sheet, or sharing one to Vox from another app, offers it to the agent —
 see *Share with agent* below. Do not invent a `/file` command; do not say files are impossible
@@ -338,7 +338,7 @@ targets (android/app/src/main/java/com/hermesvox/AvatarView.kt:209 `fun setPause
 (inspect), pulse (choose), converge (compress), scatter (start over), ring (reconnect), settle
 (help) — held while it runs; it ends in a bloom when it worked and in the hourglass, in the
 waiting colour, when it failed (android/app/src/main/java/com/hermesvox/CommandMotion.kt:43 `fun verbFor`).
-The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:2569 `event=command-motion`).
+The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:2571 `event=command-motion`).
 
 **Finding a command.** The commands screen has a search box that matches what a person wants
 ("it's slow", "can't reach it", "start over"), not only command names
@@ -353,7 +353,7 @@ the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java
 The main action row has the call glyph and **one** commands entry, `⌘` (U+2318). It is drawn
 as a local vector path, so it never depends on a system font shipping the glyph, and its label
 is still "Commands". Typing `/` on the main screen opens the same sheet
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:1900 `fun dispatchKeyEvent`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:1902 `fun dispatchKeyEvent`).
 
 The first row inside that sheet is **Share with agent**. It is an artifact action, not a slash
 command: it sits outside the seven-command catalogue, inherits the row grammar and the CHOOSE →
@@ -363,7 +363,7 @@ with the file's name, type and size
 (android/app/src/main/java/com/hermesvox/ShareSheet.kt:29 `class ShareSheet`). Nothing is sent
 until SEND. An incoming `ACTION_SEND`, `ACTION_SEND_MULTIPLE` or `ACTION_VIEW` lands on that
 same card; the share target is not a licence to send on arrival
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2513 `fun routeShareIntent`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2515 `fun routeShareIntent`).
 
 The clipboard is rendered as a **file**, never as pasted text. A URL or any other string
 becomes `clipboard-2026-11-02T14-31.txt`; an image keeps its bytes and becomes
@@ -469,9 +469,9 @@ Do not send a user hunting for these.
   ignore it and always decode English (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:165 `stt_language`).
   This tree never writes it either, so multilingual models always auto-detect.
 - `provider` — the per-request provider override, written when a model is picked from the
-  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:2607 `putString("provider"`).
+  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:2609 `putString("provider"`).
 - `agent_name` — the label above the being; read with the model id as its fallback
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1809 `agent_name`). It is written only
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1811 `agent_name`). It is written only
   from a verified host answer (`data[0].id`), by onboarding's connect and Settings → Entity's
   on-open refresh (android/app/src/main/java/com/hermesvox/HostEntity.kt:62 `fun parse`), never
   by free text.
@@ -479,7 +479,7 @@ Do not send a user hunting for these.
   `er_presence_density` (android/app/src/main/java/com/hermesvox/PresenceCadence.kt:36 `LEGACY_PREF`).
   Nothing writes it any more.
 - `presence` — a second narration gate read alongside `er_presence` when a tool call wants a
-  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:2085 `"presence", true`).
+  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:2087 `"presence", true`).
   Read with a default of true and never written by this tree, so treat it as permanently on.
 
 ---
@@ -523,7 +523,7 @@ that is not here, this list is stale: add it with a reference.
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
 | `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:875 `call-end`) |
-| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2961 `activity-stop`) |
+| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2963 `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:33 `fg-service start`) |
 | `event=fg-service-start` | The mic foreground service was requested | `event=fg-service-start-failed err=` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:87 `fg-service-start ok`) |
 | `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1490 `wake acquired`) |
@@ -873,7 +873,7 @@ Debug / crash log → Share full log).
   reads "On, but the model cannot start on this device — Presence stays off here"
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:640 `cannot start on this device`),
   and the log carries `event=presence-unavailable reason=start-failed`
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2852 `presence-unavailable`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2854 `presence-unavailable`).
 - **Cause:** the LiteRT-LM engine could not initialise on this GPU, and the CPU path is the
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:88 `1.8s`); there is also a recorded

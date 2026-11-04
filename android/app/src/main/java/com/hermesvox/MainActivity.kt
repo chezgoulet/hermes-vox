@@ -1806,7 +1806,9 @@ class MainActivity : AppCompatActivity() {
 
     /** The header: the agent's name, and the active profile's once there is a choice. */
     private fun headerLabel(model: String): String {
-        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { model }
+        // With no entity name yet, the model names the header — as words, not its route id
+        // (`deepseek-v4-flash` reads "DeepSeek V4 Flash", the same name the switcher shows).
+        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { ModelChoices.displayName(model) }
         val list = profiles.list()
         val active = profiles.activeName()
         VoiceService.title = if (list.size < 2 || active.isBlank()) "Hermes Vox" else "Hermes Vox · $active"

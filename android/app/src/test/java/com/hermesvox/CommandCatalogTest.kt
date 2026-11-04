@@ -24,7 +24,9 @@ class CommandCatalogTest {
 
     @Test fun everyRowStatesItsEffectInPlainWords() {
         for (c in CommandCatalog.ALL) {
-            assertTrue(c.name, c.effect.length in 10..52)   // one line at the row's width
+            // One line at the row's width: 46 characters fit beside the mark on a 1080-wide
+            // screen at the default font scale (the emulator capture of this pass); 50 wrapped.
+            assertTrue("${c.name}: ${c.effect.length} chars", c.effect.length in 10..48)
             assertTrue(c.name, !c.effect.contains('/'))   // the effect, not another command's name
             // The screen's register is the person's: no subsystem, no identifier, no jargon.
             for (word in listOf("SSE", "HTTP", "gateway-", "api/", "_id", "LLM"))

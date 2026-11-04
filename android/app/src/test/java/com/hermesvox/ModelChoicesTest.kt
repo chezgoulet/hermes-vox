@@ -78,6 +78,15 @@ class ModelChoicesTest {
         assertEquals(ModelChoices.Category.CODE, c("gpt-5", listOf("code")))
     }
 
+    @Test fun contextIsNamedTheWayItsMakersNameIt() {
+        fun ctx(n: Int) = ModelChoices.parse(
+            "{\"providers\":[{\"slug\":\"x\",\"models\":[{\"id\":\"m\",\"context_length\":$n}]}]}", "", "")
+            .first().models.first().context
+        assertEquals("128k context", ctx(131072))
+        assertEquals("200k context", ctx(200000))
+        assertEquals("1M context", ctx(1048576))
+    }
+
     @Test fun sizesAreReadOnlyWhenTheNameStatesOne() {
         assertEquals("30B · 3B active", ModelChoices.sizeOf("qwen3:30b-a3b"))
         assertEquals("E2B", ModelChoices.sizeOf("gemma-4-e2b"))

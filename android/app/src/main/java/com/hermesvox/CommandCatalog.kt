@@ -63,7 +63,7 @@ object CommandCatalog {
 
     val ALL: List<Command> = listOf(
         Command(CompressCommand.NAME, listOf(CompressCommand.ALIAS), Group.CONVERSATION,
-            effect = "Fold a long thread into a summary to keep it quick",
+            effect = "Fold a long thread into a summary",
             cost = Cost("Older detail survives only in the summary", risk = false),
             category = Category.CONDENSE, kind = Kind.INLINE,
             listOf("slow", "too long", "summarize", "summarise", "shorten", "memory full", "context")),

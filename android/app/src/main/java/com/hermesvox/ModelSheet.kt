@@ -48,6 +48,7 @@ class ModelSheet(
     private var providers: List<ModelChoices.Provider> = emptyList()
     private var query = ""
     private lateinit var title: TextView
+    private var backMark: View? = null
     private lateinit var crumb: TextView
     private lateinit var search: EditText
     private lateinit var list: LinearLayout
@@ -60,7 +61,9 @@ class ModelSheet(
         if (dialog?.isShowing == true) return
         val d = VoxSheet.dialog(act)
         val root = VoxSheet.root(act)
-        title = VoxSheet.header(root, "MODELS", "Close models", { d.dismiss() })
+        val head = VoxSheet.header(root, "MODELS", "Close models", { d.dismiss() }, back = "Back" to { up(); Unit })
+        title = head.title
+        backMark = head.back
         crumb = TextView(act, null, 0, R.style.HvRowValue).apply { setPadding(0, dp(6), 0, 0) }
         root.addView(crumb)
         search = EditText(act).apply {
@@ -130,6 +133,8 @@ class ModelSheet(
         list.removeAllViews()
         val l = level
         search.visibility = if (l == Level.Providers) View.VISIBLE else View.GONE
+        // The way back is shown only where there is somewhere to go back to.
+        backMark?.visibility = if (l is Level.Categories || l is Level.Models) View.VISIBLE else View.GONE
         title.text = when (l) {
             is Level.Categories -> l.p.name.uppercase()
             is Level.Models -> l.p.name.uppercase()
@@ -167,6 +172,12 @@ class ModelSheet(
         if (providers.isEmpty()) { list.addView(note("The gateway lists no models.")); return }
         for (p in providers) {
             val drill = p.models.isNotEmpty()
+            // A provider with nothing to choose and no sign-in on the gateway is said, not
+            // offered: choosing it would route every turn to a provider that cannot answer.
+            if (!drill && p.signedIn == false) {
+                list.addView(row(p.name, ModelChoices.providerLine(p), null, drill = false, enabled = false) {})
+                continue
+            }
             list.addView(row(p.name, ModelChoices.providerLine(p), if (p.current) "in use" else null, drill) {
                 when {
                     !drill -> pick(p, null)   // the gateway lists no models: choose the provider itself
@@ -205,7 +216,8 @@ class ModelSheet(
 
     /** A row in the commands sheet's grammar: title, one optional line, an optional state
      *  chip, and "›" when the tap goes one level deeper rather than choosing. */
-    private fun row(title: String, line: String?, chip: String?, drill: Boolean, onTap: () -> Unit): View {
+    private fun row(title: String, line: String?, chip: String?, drill: Boolean,
+                    enabled: Boolean = true, onTap: () -> Unit): View {
         val r = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -213,7 +225,7 @@ class ModelSheet(
             background = ContextCompat.getDrawable(act, R.drawable.bg_command_row)
             setPadding(dp(14), dp(12), dp(14), dp(12))
             minimumHeight = dp(56)
-            setOnClickListener { onTap() }
+            if (enabled) setOnClickListener { onTap() } else { isClickable = false; isFocusable = false; alpha = 0.55f }
             // One announcement per row, in reading order; "›" is said as "opens".
             contentDescription = listOfNotNull(title, line, chip, if (drill) "opens" else null).joinToString(", ")
         }
