@@ -168,6 +168,44 @@ internal object ApprovalVoice {
             .trim()
 }
 
+/**
+ * 0.9.1 soak: the no-answer must not be a silent dead end. Since H1, [ApprovalVoice.resolve]
+ * returns null for anything that is not a plain answer, which left "I'm not sure" doing
+ * nothing at all. The caller is now told, ONCE per card, what the card can hear.
+ *
+ * This is only the latch. It never touches [ApprovalGate]: it cannot approve, deny or time
+ * out a request, and the card stays up whatever it decides. A busy voice skips the prompt
+ * (it is never queued behind a reply) and does not spend the latch.
+ */
+internal class ApprovalNudge {
+
+    enum class Outcome { SPEAK, ALREADY, BUSY }
+
+    private var prompted = ""
+
+    /** A non-answer arrived while the card [key] is up. */
+    @Synchronized
+    fun onNoAnswer(key: String, voiceBusy: Boolean): Outcome {
+        if (key.isEmpty() || key == prompted) return Outcome.ALREADY
+        if (voiceBusy) return Outcome.BUSY
+        prompted = key
+        return Outcome.SPEAK
+    }
+
+    /** The card was answered, replaced or timed out. */
+    @Synchronized
+    fun reset() { prompted = "" }
+
+    companion object {
+        /** Four words on purpose: an echo of it is longer than any answer, so it can never
+         *  resolve to a choice. */
+        const val LINE = "say approve or no"
+
+        /** No transcript, no command: the request id and why. */
+        fun logLine(key: String): String = "event=approval-prompt request=$key reason=not-an-answer"
+    }
+}
+
 /** The words the surface uses. Kept pure so the wording is pinned by tests. */
 internal object ApprovalCopy {
 

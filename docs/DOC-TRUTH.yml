@@ -51,6 +51,12 @@
   file: android/app/src/main/java/com/hermesvox/core/Approval.kt
   match: 'MAX_WORDS'
 
+- id: approval-prompt-once
+  says: "say approve or no"
+  doc: docs/APPROVALS-ACCEPTANCE.md
+  file: android/app/src/main/java/com/hermesvox/core/Approval.kt
+  match: 'if \(key\.isEmpty\(\) \|\| key == prompted\) return Outcome\.ALREADY'
+
 - id: runs-idempotency
   says: "Idempotency-Key"
   doc: docs/RUNS-ROUTE.md

@@ -208,6 +208,23 @@ arm request: the arm's run outlives the turn). Say "no":
 # event=approval-sent run=run_… request=req_… choice=deny
 ```
 
+**Not an answer, by voice** — with the card up, say something that is not a plain
+answer ("I'm not sure", "where does that go"). The card must stay up, nothing is
+posted, and the app says **"say approve or no"** once. Say a second non-answer: it is
+not said again. Then answer normally (or tap) — the card resolves as usual.
+
+```
+# event=approval-voice capture=segment matched=false
+# event=approval-prompt request=req_… reason=not-an-answer
+# event=approval-voice capture=segment matched=false        (second non-answer: no prompt)
+```
+
+The prompt is never spoken over a reply that is already speaking: if the voice is busy
+the device logs `event=approval-prompt-skip request=req_… reason=voice-busy` and stays
+silent, and the next non-answer may prompt instead. It never approves, never denies,
+and never stops the 290 s timeout. A new card (answered, replaced or timed out first)
+gets its own one prompt.
+
 **Left to time out** — do nothing for 290 s:
 
 ```
@@ -311,6 +328,7 @@ proves the stream parser and the same three answers, but again not the real poli
 | T41 — the card appears at all | Arm (§2.2) | `event=approval-request run=… request=… choices=…` | run status `waiting_for_approval` |
 | T42b — no by touch | Tap **NO** | `event=approval decision=deny choice=deny … cause=touch` | one `POST …/approval` `choice=deny`; command did not run |
 | T43 — no by voice | Say "no" during a call | `event=approval decision=deny choice=deny … cause=voice` | same, one POST |
+| T43b — not an answer | Say "I'm not sure" twice during a call | one `event=approval-prompt request=… reason=not-an-answer`, no `event=approval decision=` | no POST; card still up |
 | T44 — timeout denies | Wait 290 s | `event=approval decision=timeout choice=deny … cause=timeout` | one `choice=deny` (`deny`, not `approve`) |
 | T45 — nothing proceeds unanswered | The above, checked on the host | `event=approval-sent … choice=deny` | `/tmp/vox-approval-arm` still exists; agent reports the denial |
 
