@@ -692,3 +692,36 @@ buried switch.
 
 **The release notes.** Presence is **announced** — named, described as a layer you turn on through
 Alpha, and honest about being unfinished. It is not buried, and it is not oversold.
+## D30 — The soul is a companion, not a gatekeeper
+
+Set 2026-11-04, on the evidence of the Presence review (`docs/reviews/PRESENCE-REVIEW-2026-11-04.md`) and
+the field report it explains: *"faster, but sometimes no response is returned"*.
+
+**The decision.** The local Presence model no longer answers turns. Every voice turn goes to the mind
+immediately. The soul's job on a turn is the **beat** — two to six words, rendered and spoken to fill
+the silence while the mind works — and its full answers are kept for the greeting, where no mind turn
+competes. The `<<SKIP>>` offer is retired: the mind is never told the voice already answered.
+
+**Why.** The review traced the reporter's silence to four paths, all Presence-only, and the largest
+was this one: a soul render without an escalate token counted as *answered*, the mind was invited to
+reply `<<SKIP>>`, and an instruction-literal model obliged — so the caller heard a promise and then
+nothing. A second path could mark a turn answered before its line was ever played, which produced
+total silence with the receipt reading `ok=true`.
+
+**What it costs.** Smalltalk now gets a beat and then the mind's reply instead of one soul line. That
+retires the D16-era claim that the soul "answers the short turns", and it is the trade the owner
+accepted: a slightly chattier smalltalk in exchange for never swallowing a question.
+
+**What it buys.** 700–900 ms off every substantive turn (the deleted gate), and a turn model that
+cannot fail closed. The literature is unambiguous that a hesitation of that length already sits past
+the point where a listener reads meaning into a pause.
+
+**What replaces the safety the skip offer pretended to provide.** Delivery is recorded from
+*playback*, not from render; `er-handoff` keeps a per-turn receipt (`ok`, `reason`, `soul`,
+`askChars`); and the `er-mind-skip` / `er-swallow` events are gone with the mechanism they logged.
+A claim that a turn was answered is now a claim about what the caller heard.
+
+**What is not decided here.** Whether the posture is user-selectable — a setting for people who want
+the voice to answer more of the small talk — is a separate question, tracked with the other Presence
+controls. If it returns, it returns as *policy over what the client does*, never as an instruction
+telling a 2B model to stay quiet.

@@ -74,3 +74,9 @@
   doc: docs/RUNS-ROUTE.md
   file: android/app/src/main/java/com/hermesvox/core/HermesSession.kt
   match: 'session_?[Ii]d|sessionId'
+
+- id: d30-soul-is-a-companion
+  says: "D30"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/ErHandoff.kt
+  match: 'D30'
