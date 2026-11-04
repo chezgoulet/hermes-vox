@@ -24,7 +24,9 @@ class CommandCatalogTest {
 
     @Test fun everyRowStatesItsEffectInPlainWords() {
         for (c in CommandCatalog.ALL) {
-            assertTrue(c.name, c.effect.length in 10..52)   // one line at the row's width
+            // One line at the row's width: 46 characters fit beside the mark on a 1080-wide
+            // screen at the default font scale (the emulator capture of this pass); 50 wrapped.
+            assertTrue("${c.name}: ${c.effect.length} chars", c.effect.length in 10..48)
             assertTrue(c.name, !c.effect.contains('/'))   // the effect, not another command's name
             // The screen's register is the person's: no subsystem, no identifier, no jargon.
             for (word in listOf("SSE", "HTTP", "gateway-", "api/", "_id", "LLM"))
@@ -36,7 +38,19 @@ class CommandCatalogTest {
         val g = CommandCatalog.grouped()
         assertEquals(CommandCatalog.Group.values().toList(), g.map { it.first })
         assertTrue(g.all { it.second.isNotEmpty() })
-        assertEquals(CommandCatalog.ALL.size, g.sumOf { it.second.size })
+        assertEquals(CommandCatalog.ALL.count { it.listed }, g.sumOf { it.second.size })
+        // A header earns its place by grouping: no group on the sheet holds a single row.
+        assertTrue("a header over one row: $g", g.all { it.second.size >= 2 })
+    }
+
+    /** `/help` opens a copy of the sheet it would be listed on; the sheet does not list it,
+     *  but a typed or spoken "/help" and the search still reach it. */
+    @Test fun helpIsNotARowInsideTheHelp() {
+        val help = CommandCatalog.find("/help")!!
+        assertTrue(!help.listed)
+        assertTrue(CommandCatalog.grouped().none { (_, cs) -> help in cs })
+        assertTrue(help in CommandCatalog.search("help"))
+        assertEquals(listOf("/help"), CommandCatalog.ALL.filter { !it.listed }.map { it.name })
     }
 
     /**
@@ -46,13 +60,13 @@ class CommandCatalogTest {
      */
     @Test fun everyCommandBelongsToALabelledGroup() {
         val expected = mapOf(
-            "/new" to "Session",
-            "/models" to "Session",
-            "/clear" to "Conversation",
-            "/compress" to "Conversation",
-            "/reconnect" to "Connection",
-            "/health" to "Diagnostics",
-            "/help" to "Diagnostics",
+            "/compress" to "This conversation",
+            "/clear" to "This conversation",
+            "/new" to "This conversation",
+            "/models" to "The agent",
+            "/reconnect" to "The agent",
+            "/health" to "The agent",
+            "/help" to "The agent",
         )
         assertEquals(expected.keys, CommandCatalog.ALL.map { it.name }.toSet())
         for ((name, label) in expected) {
@@ -60,25 +74,37 @@ class CommandCatalogTest {
             assertTrue("$name has no group", c.group.label.isNotBlank())
             assertEquals("$name is under the wrong group", label, c.group.label)
         }
-        // The four groups are the screen's: named for what a person is doing, not a subsystem.
-        assertEquals(listOf("Conversation", "Connection", "Session", "Diagnostics"),
+        // The two groups are the screen's: what a person is acting on, not a subsystem.
+        assertEquals(listOf("This conversation", "The agent"),
             CommandCatalog.Group.values().map { it.label })
-        // And each command appears exactly once in the rendered list.
+        // And each listed command appears exactly once in the rendered list.
         val rendered = CommandCatalog.grouped().flatMap { it.second }.map { it.name }
-        assertEquals(CommandCatalog.ALL.size, rendered.size)
-        assertEquals(CommandCatalog.ALL.map { it.name }.toSet(), rendered.toSet())
+        val listed = CommandCatalog.ALL.filter { it.listed }.map { it.name }
+        assertEquals(listed.size, rendered.size)
+        assertEquals(listed.toSet(), rendered.toSet())
     }
 
-    @Test fun aCommandThatChangesSomethingSaysWhatItCosts() {
-        // The four that change the world carry a cost or a risk; the two that only ask do not.
-        for (name in listOf("/new", "/clear", "/compress", "/reconnect", "/models")) {
+    /**
+     * Only useful text: a second line says what is *lost*, and only a command that loses
+     * something has one. "/reconnect stays down if the gateway does not answer" restated the
+     * command; it is gone. The four that lose something keep their line.
+     */
+    @Test fun aCommandThatLosesSomethingSaysWhatAndNoOtherDoes() {
+        for (name in listOf("/new", "/clear", "/compress", "/models")) {
             val cost = CommandCatalog.find(name)!!.cost
-            assertTrue("$name changes something and must say what it costs", cost != null)
+            assertTrue("$name loses something and must say what", cost != null)
             assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)
             assertTrue("$name's cost has no line break", !cost.text.contains('\n'))
         }
-        for (name in listOf("/health", "/help"))
-            assertNull("$name only asks; it has no cost to declare", CommandCatalog.find(name)!!.cost)
+        for (name in listOf("/reconnect", "/health", "/help"))
+            assertNull("$name loses nothing; it has no cost line", CommandCatalog.find(name)!!.cost)
+        assertNull("the share row sends nothing by itself", CommandCatalog.SHARE.cost)
+    }
+
+    /** The row's mark is amber exactly when its cost line is: one fact, two signals. */
+    @Test fun theMarkTintIsTheRiskFact() {
+        for (c in CommandCatalog.ALL + CommandCatalog.SHARE)
+            assertEquals(c.name, c.cost?.risk == true, CommandCatalog.tint(c) == CommandCatalog.Tint.RISK)
     }
 
     /**
@@ -88,7 +114,7 @@ class CommandCatalogTest {
      */
     @Test fun onlyTheIrreversibleCommandsAreDrawnAsRisks() {
         val risks = CommandCatalog.ALL.filter { it.cost?.risk == true }.map { it.name }
-        assertEquals(listOf("/new", "/clear"), risks)
+        assertEquals(listOf("/clear", "/new"), risks)
         // And a risk's line says what cannot come back, in words — the colour alone is not
         // the message, because colour is the first thing a colour-blind person loses.
         for (c in CommandCatalog.ALL) {
@@ -100,7 +126,7 @@ class CommandCatalogTest {
 
     @Test fun inlineCommandsAreTheOnesThatRunInPlace() {
         val inline = CommandCatalog.ALL.filter { it.kind == CommandCatalog.Kind.INLINE }.map { it.name }
-        assertEquals(listOf("/new", "/clear", "/compress", "/reconnect"), inline)
+        assertEquals(listOf("/compress", "/clear", "/new", "/reconnect"), inline)
     }
 
     /**
@@ -121,13 +147,13 @@ class CommandCatalogTest {
         assertEquals("still working…",
             CommandCatalog.stateText(clear, CommandCatalog.RunState.RUNNING, Operations.LONG_MS))
 
-        // A card command cannot report a state on the row: it says so, always.
+        // A card command cannot report a state on the row, so the row says nothing at all —
+        // never a fake state, and never "opens a card" (a line saying what the tap does).
         for (name in listOf("/health", "/models", "/help")) {
             val c = CommandCatalog.find(name)!!
             assertTrue("$name runs in a card", !CommandCatalog.reportsOnRow(c))
             for (s in CommandCatalog.RunState.values())
-                assertEquals("$name must not fake a state", CommandCatalog.IN_CARD,
-                    CommandCatalog.stateText(c, s, 60_000L))
+                assertEquals("$name must not fake a state", "", CommandCatalog.stateText(c, s, 60_000L))
         }
         for (c in CommandCatalog.ALL) {
             for (s in CommandCatalog.RunState.values()) {

@@ -19,17 +19,16 @@ class SettingsHintsTest {
     private val document = DocumentBuilderFactory.newInstance()
         .newDocumentBuilder().parse(layoutFile)
 
-    /** The four #224 sections, plus the home list and the sections the issue left alone. */
+    /** The sections after the UI/UX pass: Transcription folded into Hearing, the sound cues
+     *  into Voice & sounds, Appearance & Layout and Being into one Appearance, and Voice
+     *  models is the store itself (its home row opens it). */
     private val sections = linkedMapOf(
         "grp_list" to "Settings home",
         "sec_speech" to "Hearing",
-        "sec_tts" to "Voice",
+        "sec_tts" to "Voice & sounds",
         "sec_presence" to "Presence",
-        "sec_visuals" to "Being",
+        "sec_visuals" to "Appearance",
         "sec_entity" to "Entity & Connection",
-        "sec_stt" to "Transcription (STT)",
-        "sec_models" to "Voice models",
-        "sec_appearance" to "Appearance & Layout",
         "sec_about" to "About & Diagnostics",
         "sec_assistant" to "Be the phone's assistant",   // #329
     )
@@ -126,7 +125,8 @@ class SettingsHintsTest {
     }
 
     @Test fun theSectionsAreNamedByWhatTheUserChanges() {
-        for (t in listOf("Hearing", "Voice", "Presence", "Being")) assertTrue(t, layout.contains("android:text=\"$t\""))
+        for (t in listOf("Hearing", "Voice &amp; sounds", "Presence", "Appearance", "Being"))
+            assertTrue(t, layout.contains("android:text=\"$t\""))
         assertTrue(!layout.contains("android:text=\"Visuals\""))
         assertTrue(!layout.contains("android:text=\"Spoken replies\""))
     }
@@ -138,6 +138,8 @@ class SettingsHintsTest {
             "row_mic_semantic", "row_mic_voicecall", "row_mic_vad", "row_mic_silence",
             "row_mic_early", "row_mic_min_speech", "row_mic_max", "row_mic_voicecall",
             "row_er_hears",
+            // The recogniser is how it hears you: one place to look, not two.
+            "row_stt", "row_stt_model", "row_stt_threads", "row_test_stt_conn",
         )) assertTrue("$r should be in Hearing", r in hearing)
 
         val presence = rowsIn("sec_presence")
@@ -148,19 +150,24 @@ class SettingsHintsTest {
         assertFalse("row_er_hears is a hearing setting now", "row_er_hears" in presence)
     }
 
-    @Test fun beingKeepsTheParticleControlsAndVoiceKeepsTheTtsRows() {
-        val being = rowsIn("sec_visuals")
+    /** The owner's ask: "Being" is not separate from the appearance settings. The theme, the
+     *  layout and the being drawn on them are one section; the sounds are with the voice. */
+    @Test fun appearanceHoldsTheScreenAndTheBeingAndVoiceHoldsTheSounds() {
+        val appearance = rowsIn("sec_visuals")
         for (r in listOf(
+            "row_theme", "row_layout", "row_keep_screen_on",
             "row_visual_category", "row_visual_energy", "row_visual_glow", "row_visual_density",
             "row_visual_speed", "row_visual_trail", "row_visual_hue", "row_particle_theme",
-            "row_particle_cycle", "row_sound_cues", "row_cue_scope", "row_cue_ping", "row_cue_idle",
-        )) assertTrue("$r should be in Being", r in being)
-        for (r in listOf("row_mic_aec", "row_er_hears", "row_tts", "row_er_density"))
-            assertFalse("$r does not belong in Being", r in being)
+            "row_particle_cycle",
+        )) assertTrue("$r should be in Appearance", r in appearance)
+        for (r in listOf("row_mic_aec", "row_er_hears", "row_tts", "row_er_density", "row_sound_cues"))
+            assertFalse("$r does not belong in Appearance", r in appearance)
 
         val voice = rowsIn("sec_tts")
-        for (r in listOf("row_tts", "row_tts_speaker", "row_voice", "row_speak"))
-            assertTrue("$r should be in Voice", r in voice)
+        for (r in listOf("row_tts", "row_tts_speaker", "row_voice", "row_speak",
+            "row_sound_cues", "row_sound_cue_level", "row_sound_cues_silent", "row_cue_scope",
+            "row_cue_ping", "row_cue_idle"))
+            assertTrue("$r should be in Voice & sounds", r in voice)
         for (r in listOf("row_er_density", "row_er_echo", "row_mic_vad"))
             assertFalse("$r does not belong in Voice", r in voice)
     }
@@ -184,7 +191,7 @@ class SettingsHintsTest {
     @Test fun advancedRowsSitBehindOneCollapsedDisclosurePerSection() {
         val disclosures = mapOf(
             "sec_speech" to ("row_mic_advanced" to "adv_mic_panel"),
-            "sec_visuals" to ("row_being_advanced" to "adv_being_panel"),
+            "sec_visuals" to ("row_being_advanced" to "adv_being_panel"),   // Appearance
             "sec_presence" to ("row_presence_advanced" to "adv_presence_panel"),
         )
         for ((section, pair) in disclosures) {
@@ -224,6 +231,51 @@ class SettingsHintsTest {
         }.toSet() - setOf("key", "prefKey", "it", "default")   // helper parameters, not keys
     }
 
+    /**
+     * The UI/UX pass's grouping, pinned. The home list runs in the order a person sets the app
+     * up — who it talks to, how it hears, how it speaks, how it looks, the phone, the insides —
+     * and every home row reaches its settings in one step.
+     */
+    @Test fun theHomeListRunsInSetUpOrderAndEachRowIsOneStep() {
+        val home = allElements.filter { sectionOf(it) == "grp_list" }
+            .mapNotNull { it.id() }.filter { it.startsWith("row_grp_") }
+        assertEquals(listOf("row_grp_alpha", "row_grp_entity", "row_grp_speech", "row_grp_wake",
+            "row_grp_tts", "row_grp_models", "row_grp_presence", "row_grp_visuals",
+            "row_grp_assistant", "row_grp_about"), home)
+        val source = activityFile.readText()
+        // Voice models is the store: its row opens it, there is no section in between.
+        assertTrue(source.contains("R.id.row_grp_models)?.setOnClickListener { openModelsStore() }"))
+        assertFalse("a one-row section is back", "sec_models" in ids)
+        // Every other home row opens a section whose title is that row's own label.
+        for (s in listOf("row_grp_entity", "row_grp_speech", "row_grp_tts", "row_grp_presence",
+            "row_grp_visuals", "row_grp_assistant", "row_grp_about"))
+            assertTrue("$s has no section", source.contains("R.id.$s)"))
+    }
+
+    /** One restore per section — two "Restore defaults" rows in one section is clutter, and a
+     *  person cannot tell which one resets what. */
+    @Test fun eachSectionHasExactlyOneRestoreRow() {
+        for (sec in sections.keys - "grp_list" - "sec_assistant") {
+            // `row_reset` is "New conversation", not a restore.
+            val restores = rowsIn(sec).filter { it.startsWith("row_restore_") || (it.endsWith("_reset") && it != "row_reset") }
+            assertEquals("$sec restores: $restores", 1, restores.size)
+        }
+    }
+
+    /** Sections with more than one block name their blocks, as headings a screen reader can
+     *  jump between. */
+    @Test fun mergedSectionsNameTheirBlocks() {
+        for ((sec, heads) in mapOf(
+            "sec_speech" to listOf("hdr_listening", "hdr_recognition"),
+            "sec_tts" to listOf("hdr_speaking", "hdr_sound_cues"),
+            "sec_visuals" to listOf("hdr_screen", "hdr_being"),
+        )) for (h in heads) {
+            val e = ids[h] ?: error("$h is missing")
+            assertEquals("$h is in the wrong section", sec, sectionOf(e))
+            assertEquals("$h is not a heading", "true", e.getAttribute("android:accessibilityHeading"))
+        }
+    }
+
     private companion object {
         /** Captured from the screen before the four-way split (and identical after it). */
         val BEFORE_AND_AFTER_SPLIT_PREF_KEYS: Set<String> = setOf(
@@ -256,7 +308,8 @@ class SettingsHintsTest {
             "MemoryBudget.PREF_HEARS",
             "MemoryBudget.PREF_LAZY_LOAD",
             "MemoryBudget.PREF_IDLE_OPEN_MIN",
-            "ModelCatalog.KEY_SOURCE",
+            // ModelCatalog.KEY_SOURCE left deliberately (UI/UX pass): the one-row "Voice models"
+            // section and its restore are gone; the store's own "Use default" resets the source.
             "ModelCatalog.KEY_STT_BACKEND",
             "ModelCatalog.KEY_STT_MODEL",
             "ModelCatalog.KEY_STT_STREAM_MODEL",

@@ -47,7 +47,7 @@ class FileOfferSheet(
     }
 
     private fun paint(state: FileShare.State) {
-        val d = dialog ?: Dialog(act, R.style.Theme_HermesVox).also { dialog = it }
+        val d = dialog ?: VoxSheet.dialog(act).also { dialog = it }
         d.setContentView(build(state))
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         if (d.isShowing) return
@@ -68,25 +68,8 @@ class FileOfferSheet(
     }
 
     private fun build(state: FileShare.State): View {
-        val root = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(color(R.color.hv_bg))
-            setPadding(dp(18), dp(18), dp(18), dp(18))
-        }
-        val header = LinearLayout(act).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(TextView(act, null, 0, R.style.TextVox_Title).apply { text = "FILE" },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(TextView(act, null, 0, R.style.HvRowAction).apply {
-            text = "✕"
-            contentDescription = "Close file offer"
-            textSize = 20f
-            setPadding(dp(12), dp(6), dp(4), dp(6))
-            setOnClickListener { dialog?.dismiss() }
-        })
-        root.addView(header)
+        val root = VoxSheet.root(act)
+        VoxSheet.header(root, "FILE", "Close file offer", { dialog?.dismiss() })
 
         root.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
             text = line(state)

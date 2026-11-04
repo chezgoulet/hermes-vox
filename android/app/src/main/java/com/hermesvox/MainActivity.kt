@@ -1806,7 +1806,9 @@ class MainActivity : AppCompatActivity() {
 
     /** The header: the agent's name, and the active profile's once there is a choice. */
     private fun headerLabel(model: String): String {
-        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { model }
+        // With no entity name yet, the model names the header — as words, not its route id
+        // (`deepseek-v4-flash` reads "DeepSeek V4 Flash", the same name the switcher shows).
+        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { ModelChoices.displayName(model) }
         val list = profiles.list()
         val active = profiles.activeName()
         VoiceService.title = if (list.size < 2 || active.isBlank()) "Hermes Vox" else "Hermes Vox · $active"
@@ -2583,73 +2585,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** /models — native chooser from the REAL gateway catalog (GET /api/model/options).
-     *  Selecting a model sets the app model+provider prefs that the /v1/responses
-     *  client sends per request (the blessed LIGHT PATH) — the gateway overrides the
-     *  entity's inference backend, while the entity's memory/skills/context stay. */
+    /** /models — the model switcher (UI/UX pass): the REAL gateway catalog (GET
+     *  /api/model/options) fanned out provider → category → model in [ModelSheet], on the
+     *  app's ground, instead of a stock list of raw strings. Selecting a model sets the app
+     *  model+provider prefs that the /v1/responses client sends per request (the blessed
+     *  LIGHT PATH) — the gateway overrides the entity's inference backend, while the entity's
+     *  memory/skills/context stay. */
     private fun showModelChooser() {
         val s = session ?: run { setStatus("Connect first", true); return }
-        setStatus("Loading gateway models…", true)
-        kotlin.concurrent.thread {
-            val raw = try { s.modelOptions() } catch (e: Throwable) { null }
-            runOnUiThread {
-                setStatus(getString(R.string.hv_connected), false)
-                if (raw.isNullOrBlank()) { toast("Couldn't reach the model catalog"); return@runOnUiThread }
-                val providers = org.json.JSONObject(raw).optJSONArray("providers") ?: return@runOnUiThread
-                val labels = mutableListOf<String>(); val ids = mutableListOf<String>(); val provs = mutableListOf<String>()
-                for (p in 0 until providers.length()) {
-                    val prov = providers.optJSONObject(p) ?: continue
-                    val pname = prov.optString("name").ifEmpty { prov.optString("slug") }
-                    val cur = prov.optBoolean("is_current", false)
-                    val auth = prov.optString("source", "")
-                    val models = prov.optJSONArray("models")
-                    if (models == null || models.length() == 0) {
-                        labels += ((if (cur) "* " else "") + pname + " - " + prov.optInt("total_models", 0) + " models")
-                        ids += prov.optString("slug"); provs += prov.optString("slug")
-                    } else {
-                        for (m in 0 until models.length()) {
-                            // The live gateway /api/model/options returns model IDs as plain
-                            // STRINGS (e.g. "minimax-m3", "kimi-k3"); other builds may return
-                            // model OBJECTS ({id,slug,name}). Read both shapes so the chooser
-                            // renders the real models instead of silently dropping them (the
-                            // old optJSONObject-only path yielded an empty list for every
-                            // configured provider).
-                            val entry = models.opt(m)
-                            val mLabel: String
-                            val mId: String
-                            if (entry is String) { mLabel = entry; mId = entry }
-                            else if (entry is org.json.JSONObject) {
-                                mLabel = entry.optString("name").ifEmpty { entry.optString("id").ifEmpty { entry.optString("slug") } }
-                                mId = entry.optString("id").ifEmpty { entry.optString("slug").ifEmpty { entry.optString("name") } }
-                            } else continue
-                            labels += ((if (cur) "* " else "") + pname + " - " + mLabel + (if (auth.isNotBlank()) " ($auth)" else ""))
-                            ids += mId; provs += prov.optString("slug")
-                        }
-                    }
-                }
-                if (labels.isEmpty()) { toast("No models in catalog"); return@runOnUiThread }
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Gateway models (choose your agent's brain)")
-                    .setSingleChoiceItems(labels.toTypedArray(), 0) { d, which ->
-                        d.dismiss()
-                        val modelId = ids[which]; val prov = provs[which]
-                        // Persist the choice so it survives restart; then set it on the
-                        // LIVE session so the next turn sends provider+model per request.
-                        prefs.edit().putString("model", modelId).putString("provider", prov).apply()
-                        val ok = try {
-                            s.setModel(modelId); s.setProvider(prov); true
-                        } catch (e: Throwable) { false }
-                        runOnUiThread {
-                            toast(if (ok) "Model set -> $prov/$modelId" else "Couldn't set the model")
-                            s.resetConversation()   // re-init the session under the new backend
-                            LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
-                            sesModel = modelId; sesProvider = prov
-                            agentName.text = headerLabel(modelId)
-                        }
-                    }
-                    .setNegativeButton("Cancel", null).show()
-            }
-        }
+        ModelSheet(this,
+            load = { s.modelOptions() },
+            current = { prefs.getString("model", "").orEmpty() to prefs.getString("provider", "").orEmpty() },
+        ) { p, m -> applyModelChoice(s, p, m) }.show()
+    }
+
+    private fun applyModelChoice(s: HermesSession, p: ModelChoices.Provider, m: ModelChoices.Model?) {
+        // A provider the gateway lists no models for is chosen as itself (its slug as the
+        // model route) — the behaviour the stock chooser had for that case.
+        val modelId = m?.id ?: p.slug
+        val prov = p.slug
+        // Persist the choice so it survives restart; then set it on the LIVE session so the
+        // next turn sends provider+model per request.
+        prefs.edit().putString("model", modelId).putString("provider", prov).apply()
+        val ok = try { s.setModel(modelId); s.setProvider(prov); true } catch (e: Throwable) { false }
+        if (!ok) { setStatus("Couldn't switch the model", true); return }
+        s.resetConversation()   // re-init the session under the new backend
+        LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
+        sesModel = modelId; sesProvider = prov
+        agentName.text = headerLabel(modelId)
+        // The outcome on the status line, in words: the model's name, not "prov/id".
+        setStatus(ModelChoices.switchedLine(p, m), true)
+        VoxLog.d("event=model-switch provider=$prov model=$modelId")
     }
 
     /** /health — native health card (GET /v1/health). */
@@ -2658,14 +2624,18 @@ class MainActivity : AppCompatActivity() {
         kotlin.concurrent.thread {
             val raw = try { s.gatewayHealth() } catch (e: Throwable) { null }
             runOnUiThread {
-                val card = if (raw.isNullOrBlank()) "Health: unreachable\n(debug: check network + address)"
-                            else try {
-                                val o = org.json.JSONObject(raw)
-                                "Status: " + o.optString("status", "?") +
-                                "\nVersion: " + o.optString("version", o.optString("service_version", "?"))
-                            } catch (e: Throwable) { "Health: ok\n$raw" }
+                // In words: whether the agent answered, and which version answered. No "?" for a
+                // missing field and no "(debug: …)" — a missing version is simply not said.
+                val (title, card) = if (raw.isNullOrBlank())
+                    "The agent did not answer" to "The gateway could not be reached. Check the network and the address in Settings › Entity & Connection."
+                else try {
+                    val o = org.json.JSONObject(raw)
+                    val status = o.optString("status").ifBlank { "answering" }
+                    val version = o.optString("version").ifBlank { o.optString("service_version") }
+                    "The agent is $status" to (if (version.isBlank()) "It answered, without a version." else "Version $version")
+                } catch (e: Throwable) { "The agent answered" to raw.take(400) }
                 androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Agent health").setMessage(card).setPositiveButton("OK", null).show()
+                    .setTitle(title).setMessage(card).setPositiveButton("OK", null).show()
             }
         }
     }

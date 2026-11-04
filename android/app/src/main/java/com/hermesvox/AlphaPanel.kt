@@ -3,7 +3,6 @@ package com.hermesvox
 import android.app.Dialog
 import android.content.SharedPreferences
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -11,7 +10,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
 
 /**
  * #402/D29: the Alpha panel — the slide-out that lists the feature sets marked alpha, Presence
@@ -32,23 +30,8 @@ class AlphaPanel(
 
     fun show() {
         val d = Dialog(act, R.style.Theme_HermesVox)
-        val root = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(color(R.color.hv_bg))
-            setPadding(dp(18), dp(18), dp(18), dp(18))
-        }
-        val header = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(TextView(act, null, 0, R.style.TextVox_Title).apply {
-            text = "ALPHA FEATURES"
-            ViewCompat.setAccessibilityHeading(this, true)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(TextView(act, null, 0, R.style.HvRowAction).apply {
-            text = "✕"; contentDescription = "Close alpha features"; textSize = 20f
-            isFocusable = true; isClickable = true
-            setPadding(dp(12), dp(6), dp(4), dp(6))
-            setOnClickListener { d.dismiss() }
-        })
-        root.addView(header)
+        val root = VoxSheet.root(act)
+        VoxSheet.header(root, "ALPHA FEATURES", "Close alpha features", { d.dismiss() })
         root.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
             text = "Unfinished features, for testers. Each set stays off until you select it, " +
                 "and turning Alpha features off stops all of them."
@@ -65,12 +48,7 @@ class AlphaPanel(
             setGravity(Gravity.END)
             setWindowAnimations(R.style.HvSlideFromEnd)
         }
-        d.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN &&
-                (keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == KeyEvent.KEYCODE_BACK)) {
-                d.dismiss(); true
-            } else false
-        }
+        VoxSheet.keys(d)
         d.setOnDismissListener { onChange() }
         d.show()
     }

@@ -8,7 +8,6 @@ import android.os.SystemClock
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -19,7 +18,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
 
 /**
  * The commands screen (#226): the app's own components on the app's own ground — the OLED
@@ -28,9 +26,14 @@ import androidx.core.view.ViewCompat
  * command was invoked.
  *
  * An inline command runs in place and the sheet stays open so its outcome can be read; a
- * card command (a chooser, a status card) closes the sheet and opens its own view, so its row
- * says [CommandCatalog.IN_CARD] instead of faking a spinner. Inline commands run one at a
- * time; a second tap while one runs is queued, not dropped.
+ * card command (a chooser, a status card) closes the sheet and opens its own view — its row
+ * shows no state at all rather than a spinner it cannot back, and no "opens a card" line
+ * either: the tap says where it went. Inline commands run one at a time; a second tap while
+ * one runs is queued, not dropped.
+ *
+ * Each row leads with its [VerbMark] — the still frame of the motion the being makes for
+ * that kind of command (#227) — so the screen is themed by what each command does, in the
+ * being's own vocabulary, not by decoration. The sheet stands on [VoxSheet].
  *
  * The state is words, never motion or a percentage — the same rule as the operations line
  * (#281), which owns what "still working" means. [CommandCatalog.stateText] is the grammar.
@@ -62,24 +65,9 @@ class CommandsSheet(
         // A finished command's outcome belongs to that visit; the next opening starts clean.
         // A command still running stays "running" — it really is.
         state.entries.removeIf { it.value != CommandCatalog.RunState.RUNNING }
-        val d = Dialog(act, R.style.Theme_HermesVox)
-        val root = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(color(R.color.hv_bg))
-            setPadding(dp(18), dp(18), dp(18), dp(18))
-        }
-        val header = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(TextView(act, null, 0, R.style.TextVox_Title).apply {
-            text = "COMMANDS"
-            ViewCompat.setAccessibilityHeading(this, true)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(TextView(act, null, 0, R.style.HvRowAction).apply {
-            text = "✕"; contentDescription = "Close commands"; textSize = 20f
-            isFocusable = true; isClickable = true
-            setPadding(dp(12), dp(6), dp(4), dp(6))
-            setOnClickListener { d.dismiss() }
-        })
-        root.addView(header)
+        val d = VoxSheet.dialog(act)
+        val root = VoxSheet.root(act)
+        VoxSheet.header(root, "COMMANDS", "Close commands", { d.dismiss() })
         // #284: a search that teaches — find a command by what you want to do.
         val search = EditText(act).apply {
             hint = "What do you want to do?"
@@ -106,12 +94,7 @@ class CommandsSheet(
         d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         // Keyboard: Escape and Back both close, and the sheet opens with focus on the sheet
         // itself — not in the search box, which would raise the IME over the list.
-        d.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN &&
-                (keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == KeyEvent.KEYCODE_BACK)) {
-                d.dismiss(); true
-            } else false
-        }
+        VoxSheet.keys(d)
         search.setOnEditorActionListener { _, _, _ -> focusFirstRow(list); true }
         d.setOnDismissListener {
             handler.removeCallbacksAndMessages(null)
@@ -141,12 +124,8 @@ class CommandsSheet(
         }
     }
 
-    private fun header(text: String) = TextView(act, null, 0, R.style.TextVox_Tag).apply {
-        this.text = text.uppercase()
-        setPadding(0, dp(18), 0, dp(6))
-        // A screen reader can jump between groups instead of walking every row.
-        ViewCompat.setAccessibilityHeading(this, true)
-    }
+    // A screen reader can jump between groups instead of walking every row.
+    private fun header(text: String) = VoxSheet.subhead(act, text)
 
     /** The list: what fits now, then every group — or, while searching, the matches best first. */
     private fun render(list: LinearLayout, d: Dialog, query: String) {
@@ -173,42 +152,50 @@ class CommandsSheet(
 
     private fun row(c: CommandCatalog.Command, d: Dialog, chipKey: String = c.name): View {
         val r = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             isClickable = true; isFocusable = true
             background = drawable(R.drawable.bg_command_row)
             setPadding(dp(14), dp(12), dp(14), dp(12))
+            minimumHeight = dp(56)
         }
-        val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        top.addView(TextView(act, null, 0, R.style.HvRowTitle).apply {
+        // The command's kind, drawn as the being draws it; amber only when something is lost.
+        val tint = color(if (CommandCatalog.tint(c) == CommandCatalog.Tint.RISK) R.color.hv_warn else R.color.hv_cyan)
+        r.addView(VerbMark(act, CommandMotion.verbFor(c.category), tint),
+            LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(14) })
+        val words = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        words.addView(TextView(act, null, 0, R.style.HvRowTitle).apply {
             text = c.name
             // The share row is the one row that is not a typed command: plain type, not the
             // terminal's monospace, so it does not read as `/share`.
             typeface = if (c == CommandCatalog.SHARE) Typeface.DEFAULT_BOLD else Typeface.MONOSPACE
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        // The state slot. For a command that cannot report here, it says where to look.
-        val chip = TextView(act, null, 0, R.style.HvRowAction).apply {
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        }
-        chips[chipKey] = chip
-        top.addView(chip)
-        r.addView(top)
-        r.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-            text = c.effect; setTextColor(color(R.color.hv_text))
-            setPadding(0, dp(4), 0, 0)
         })
-        // What it spends or risks, only when the command has one. Amber means irreversible
-        // (the thing is gone afterwards); a spend the command can undo is quiet, so the
-        // colour stays a fact about the command rather than a mood over the whole screen.
+        words.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+            text = c.effect; setTextColor(color(R.color.hv_text))
+        })
+        // What it loses, only when it loses something. Amber means irreversible (the thing is
+        // gone afterwards); a loss the command accepts by design is quiet, so the colour
+        // stays a fact about the command rather than a mood over the whole screen.
         c.cost?.let { cost ->
-            r.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+            words.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
                 text = cost.text
                 setTextColor(color(if (cost.risk) R.color.hv_warn else R.color.hv_text_dim))
-                setPadding(0, dp(2), 0, 0)
             })
         }
-        paint(chipKey)
+        r.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        // The state slot — only a command that runs here has one.
+        if (CommandCatalog.reportsOnRow(c)) {
+            val chip = TextView(act, null, 0, R.style.HvRowAction).apply {
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                background = drawable(R.drawable.bg_chip)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            }
+            chips[chipKey] = chip
+            r.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dp(8) })
+            paint(chipKey)
+        }
         r.setOnClickListener { tap(c, d) }
         return LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
@@ -262,22 +249,8 @@ class CommandsSheet(
         val elapsed = if (s == CommandCatalog.RunState.RUNNING)
             SystemClock.elapsedRealtime() - (startedAt[name] ?: SystemClock.elapsedRealtime()) else 0L
         chip.text = CommandCatalog.stateText(c, s, elapsed)
-        chip.visibility = when {
-            !CommandCatalog.reportsOnRow(c) -> View.VISIBLE   // always says where its state is
-            s == CommandCatalog.RunState.IDLE -> View.INVISIBLE
-            else -> View.VISIBLE
-        }
-        // "opens a card" is information about the row, not a live state — nothing to announce.
-        if (!CommandCatalog.reportsOnRow(c)) {
-            chip.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_NONE
-            chip.background = null
-            // Quiet information, not a state chip: sentence case, smaller, dim.
-            chip.isAllCaps = false
-            chip.textSize = 12f
-            chip.setTextColor(color(R.color.hv_text_dim))
-            return
-        }
-        chip.background = drawable(R.drawable.bg_chip)
+        // Idle has nothing to say, so it takes no room from the words beside it.
+        chip.visibility = if (s == CommandCatalog.RunState.IDLE) View.GONE else View.VISIBLE
         chip.setTextColor(when (s) {
             CommandCatalog.RunState.DONE -> color(R.color.hv_cmd_done)
             CommandCatalog.RunState.FAILED -> color(R.color.hv_cmd_failed)
