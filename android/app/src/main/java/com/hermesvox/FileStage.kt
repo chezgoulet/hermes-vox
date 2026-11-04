@@ -50,6 +50,54 @@ object FileStage {
         data class Failed(val line: String) : Result()
     }
 
+    /** What a URI into our own private storage is refused with. */
+    const val PRIVATE_URI =
+        "that is Vox's own private file · nothing was sent"
+
+    /**
+     * L4 (0.9.1 review): a URI that resolves inside THIS app's private storage is refused.
+     *
+     * Android would happily let another app hand Vox `file:///data/data/com.hermesvox/…`
+     * (or a `content://` URI for Vox's own provider) and have Vox read it with its own
+     * rights — a confused deputy for the app's keys, database and staged files. The
+     * check is on the canonical path, so `../` and symlinks cannot dodge it, and on the
+     * authority, so our FileProvider cannot be asked to serve what it protects.
+     *
+     * Pure: [canonicalPath] and [dataDir] are already resolved by the caller.
+     */
+    fun privateUriRefusal(
+        scheme: String?,
+        authority: String?,
+        canonicalPath: String?,
+        dataDir: String?,
+        packageName: String,
+    ): String? {
+        when (scheme?.lowercase()) {
+            "content", "android.resource" -> {
+                val a = authority.orEmpty().lowercase()
+                val own = packageName.lowercase()
+                if (a == own || a.startsWith("$own.")) return PRIVATE_URI
+            }
+            "file" -> {
+                if (canonicalPath.isNullOrBlank() || dataDir.isNullOrBlank()) return null
+                val root = dataDir.trimEnd(File.separatorChar)
+                if (canonicalPath == root || canonicalPath.startsWith(root + File.separator)) return PRIVATE_URI
+            }
+        }
+        return null
+    }
+
+    /** The Android edge: resolve the URI's canonical path (when it has one) and refuse. */
+    fun privateUriRefusal(context: Context, uri: Uri): String? = privateUriRefusal(
+        scheme = uri.scheme,
+        authority = uri.authority,
+        canonicalPath = if (uri.scheme.equals("file", ignoreCase = true)) {
+            runCatching { File(uri.path ?: "").canonicalPath }.getOrNull()
+        } else null,
+        dataDir = runCatching { File(context.applicationInfo.dataDir).canonicalPath }.getOrNull(),
+        packageName = context.packageName,
+    )
+
     /** The private staging directory; created on demand. */
     fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
 
@@ -77,6 +125,7 @@ object FileStage {
         sizeHint: Long? = null,
         nameOverride: String? = null,
     ): Result {
+        privateUriRefusal(context, uri)?.let { return Result.Failed(it) }
         val name = nameOverride?.takeIf { it.isNotBlank() }
             ?: displayName(context, uri)
             ?: uri.lastPathSegment?.substringAfterLast('/')
@@ -100,6 +149,14 @@ object FileStage {
      * the path must already be readable by the app, so it adds no permission.
      */
     fun stageFile(context: Context, src: File, mimeHint: String? = null): Result {
+        // L4: the same private-storage refusal as a shared file:// path, by canonical path.
+        privateUriRefusal(
+            scheme = "file",
+            authority = null,
+            canonicalPath = runCatching { src.canonicalPath }.getOrNull(),
+            dataDir = runCatching { File(context.applicationInfo.dataDir).canonicalPath }.getOrNull(),
+            packageName = context.packageName,
+        )?.let { return Result.Failed(it) }
         if (!src.isFile) return Result.Failed("the file could not be read · nothing was sent")
         if (src.length() > FileOffer.MAX_BYTES) return tooBig(src.length())
         val mime = mimeHint ?: guessMime(src.name)

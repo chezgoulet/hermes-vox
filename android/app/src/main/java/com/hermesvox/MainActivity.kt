@@ -2330,6 +2330,9 @@ open class MainActivity : AppCompatActivity() {
      */
     private fun draftUri(uri: android.net.Uri?, source: ShareSurface.Source) {
         if (uri == null) { shareSheet.refuse(ShareSurface.NOTHING_SHARED); return }
+        // L4 (0.9.1 review): never read a URI that points into this app's own private
+        // storage. Another app can hand us one; our own rights would do the reading.
+        FileStage.privateUriRefusal(this, uri)?.let { shareSheet.refuse(it); return }
         val name = runCatching { FileStage.displayName(this, uri) }.getOrNull()?.takeIf { it.isNotBlank() }
         val mime = runCatching { contentResolver.getType(uri) }.getOrNull()
             ?.takeIf { it.isNotBlank() } ?: ShareSurface.BINARY_MIME
