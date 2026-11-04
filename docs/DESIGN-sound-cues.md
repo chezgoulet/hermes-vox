@@ -67,7 +67,8 @@ strong two-beat / two heavier beats).
 
 ## Settings
 
-`Settings → Being` (in 0.9.1; *Spoken replies* before #224):
+`Settings → Voice & sounds → Sound cues` (since the UI/UX pass; `Settings → Being` in 0.9.1;
+*Spoken replies* before #224):
 
 - **Sound cues** (default **on** for a new install) with a **preview** button. The
   preview reports what the policy decided, because on a vibrate-only, DND or muted

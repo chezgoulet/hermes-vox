@@ -25,4 +25,12 @@
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>
     </style>
+    <!-- A block header inside a Settings section (Listening / Recognition, Speaking /
+         Sound cues, Screen / Being): the same tag face the commands sheet uses for its
+         groups, so a section reads as named blocks, not one long list. -->
+    <style name="HvSubhead" parent="TextVox.Tag">
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingStart">4dp</item>
+    </style>
 </resources>

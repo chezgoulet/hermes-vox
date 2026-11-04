@@ -100,38 +100,43 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showSection(section: String) {
-        currentSection = section
-        findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.GONE
-        val ids = mapOf(
-            SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
-            SECTION_STT to R.id.sec_stt, SECTION_TTS to R.id.sec_tts,
-            SECTION_MODELS to R.id.sec_models, SECTION_APPEARANCE to R.id.sec_appearance,
-            SECTION_VISUALS to R.id.sec_visuals, SECTION_ABOUT to R.id.sec_about,
-            SECTION_ASSISTANT to R.id.sec_assistant,
-            SECTION_PRESENCE to R.id.sec_presence)
-        ids.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
-        findViewById<android.view.View>(ids[section]!!).visibility = android.view.View.VISIBLE
-        findViewById<android.widget.ScrollView>(R.id.settings_scroll).scrollTo(0, 0)
-        findViewById<TextView>(R.id.set_title).text = when (section) {
-            // #224: named by what the user is changing, not by which subsystem owns the pref.
-            SECTION_ENTITY -> "Entity & Connection"; SECTION_SPEECH -> "Hearing"
-            SECTION_STT -> "Transcription (STT)"; SECTION_TTS -> "Voice"
-            SECTION_PRESENCE -> "Presence"
-            SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Layout"
-            SECTION_VISUALS -> "Being"; SECTION_ASSISTANT -> "The assistant role"
-            else -> "About & Diagnostics"
+        // UI/UX pass: the model store is its own screen, and the home row is its door — one
+        // step, not a section holding a single "open the store" row.
+        if (section == SECTION_MODELS) { openModelsStore(); return }
+        // Transcription folded into Hearing and the screen settings into Appearance: an old
+        // link (a banner, the debug harness) still lands where those rows live now.
+        val target = when (section) {
+            SECTION_STT -> SECTION_SPEECH
+            SECTION_APPEARANCE -> SECTION_VISUALS
+            else -> section
         }
+        currentSection = target
+        findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.GONE
+        SECTION_VIEWS.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
+        findViewById<android.view.View>(SECTION_VIEWS.getValue(target)).visibility = android.view.View.VISIBLE
+        val scroll = findViewById<android.widget.ScrollView>(R.id.settings_scroll)
+        scroll.scrollTo(0, 0)
+        if (section == SECTION_STT) scroll.post {
+            findViewById<android.view.View>(R.id.hdr_recognition)?.let { scroll.scrollTo(0, it.top) }
+        }
+        // #224: named by what the user is changing — and by the same words as the home row
+        // that opened it, read from that row, so the two cannot drift apart.
+        findViewById<TextView>(R.id.set_title).text = sectionTitle(target)
         syncPreview()   // #225: the being only renders while its own section is open
+    }
+
+    /** The home row's own label for [section] (its first line; the hint is not part of it). */
+    private fun sectionTitle(section: String): String {
+        val row = SECTION_HOME_ROWS[section] ?: return "Settings"
+        return findViewById<android.view.ViewGroup>(row)?.let { firstTitle(it) }
+            ?.text?.toString()?.substringBefore('\n') ?: "Settings"
     }
 
     /** WS1: return to the Settings home (group list). */
     private fun showGroupList() {
         currentSection = null
         findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.VISIBLE
-        val ids = listOf(R.id.sec_entity, R.id.sec_speech, R.id.sec_stt, R.id.sec_tts,
-            R.id.sec_models, R.id.sec_appearance, R.id.sec_visuals, R.id.sec_about,
-            R.id.sec_assistant, R.id.sec_presence)
-        ids.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
+        SECTION_VIEWS.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<TextView>(R.id.set_title).text = "Settings"
         // Subtitles are a summary of what changed while inside a section.
         refreshModelsVal()
@@ -141,16 +146,14 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun bindGroups() {
-        findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { showSection(SECTION_MODELS) }
+        findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { openModelsStore() }
         findViewById<android.view.View>(R.id.row_grp_entity)?.setOnClickListener { showSection(SECTION_ENTITY) }
         findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
-        findViewById<android.view.View>(R.id.row_grp_stt)?.setOnClickListener { showSection(SECTION_STT) }
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
         findViewById<android.view.View>(R.id.row_grp_presence)?.setOnClickListener { showSection(SECTION_PRESENCE) }
         findViewById<android.view.View>(R.id.row_grp_wake)?.setOnClickListener {
             startActivity(android.content.Intent(this, WakeEnrolActivity::class.java))
         }
-        findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
         findViewById<android.view.View>(R.id.row_grp_assistant)?.setOnClickListener { showSection(SECTION_ASSISTANT) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
@@ -326,9 +329,8 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun bindSectionRestoreRows() {
         bindRestoreRow(R.id.row_restore_entity, GROUP_ENTITY, "Entity & Connection")
-        bindRestoreRow(R.id.row_restore_models, GROUP_MODELS, "Voice models")
-        bindRestoreRow(R.id.row_restore_appearance, GROUP_APPEARANCE, "Appearance & Layout")
-        bindRestoreRow(R.id.row_restore_visuals, GROUP_VISUALS, "Being")
+        // One section, one restore: Appearance resets the screen and the being together.
+        bindRestoreRow(R.id.row_restore_visuals, GROUP_VISUALS, "Appearance")
         bindRestoreRow(R.id.row_restore_presence, GROUP_PRESENCE, "Presence")
         bindRestoreRow(R.id.row_restore_about, GROUP_ABOUT, "About & Diagnostics")
     }
@@ -883,7 +885,6 @@ class SettingsActivity : AppCompatActivity() {
         // #112 reset scopes: every setting belongs to exactly ONE group. Presence
         // resets with GROUP_PRESENCE (row_restore_presence) and the voice register
         // resets with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice").
-        bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "Transcription")
         bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "Voice")
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
@@ -905,9 +906,6 @@ class SettingsActivity : AppCompatActivity() {
         // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens
         // this dialog is byte-for-byte 0.9.1 in its memory behaviour.
         dbl.setOnLongClickListener { memoryBudgetDialog(); true }
-        findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
-            startActivity(android.content.Intent(this, ModelsActivity::class.java))
-        }
         refreshModelsVal()
         bindSttRemote()
 
@@ -1142,12 +1140,11 @@ class SettingsActivity : AppCompatActivity() {
         }
         val color = ContextCompat.getColor(this,
             if (complete) R.color.hv_text_dim else R.color.hv_warn)
-        listOf(R.id.set_models_val, R.id.set_models_grpval).forEach { id ->
+        listOf(R.id.set_models_grpval).forEach { id ->
             findViewById<TextView>(id)?.let { v ->
                 v.text = text
                 v.setTextColor(color)
-                // The row itself still opens the Voice models sub-view (source +
-                // reset). The warning line is the direct shortcut to the store.
+                // The row opens the store; the warning line says so too, for a reader.
                 v.isClickable = !complete
                 v.isFocusable = !complete
                 v.contentDescription = if (complete) null else "$text. Opens Voice models."
@@ -1198,10 +1195,10 @@ class SettingsActivity : AppCompatActivity() {
                 connectionLine(prefs.getString("url", "").orEmpty())
             // "Mic & Barge-in" owns the input side only; Presence has its own row.
             findViewById<TextView>(R.id.set_speech_grpval)?.text =
-                "Barge-in ${onOff(prefs.getBoolean("duplex", true))} · AEC ${onOff(prefs.getBoolean("mic_aec", true))}"
-            findViewById<TextView>(R.id.set_stt_grpval)?.text =
-                sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
-            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
+                "Barge-in ${onOff(prefs.getBoolean("duplex", true))} · " +
+                    sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
+            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this)) +
+                " · cues ${onOff(prefs.getBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED))}"
             // #224/#222: Presence says whether it is on, and if it cannot be, why.
             refreshPresenceRow()
             refreshVoxRows()   // rule (a): the VOX.md rows follow the Presence switch
@@ -1222,10 +1219,9 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.set_wake_grpval)?.text =
                 "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
                 "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
-            findViewById<TextView>(R.id.set_appearance_grpval)?.text =
-                label("theme", "system") + " · " + label("layout_mode", "presence")
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
-                VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
+                label("theme", "system") + " · " + label("layout_mode", "presence") + " · " +
+                    VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
             findViewById<TextView>(R.id.set_about_grpval)?.text =
                 getString(R.string.app_name) + " " + versionName()
             // #329: the role's real state, read from Android (never remembered in a pref).
@@ -1456,7 +1452,7 @@ class SettingsActivity : AppCompatActivity() {
     /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default ON since 0.8). The flag it
      *  controls is a plain WINDOW flag (FLAG_KEEP_SCREEN_ON) MainActivity arms at
      *  call start and clears at the call teardown — no permission, no WAKE_LOCK.
-     *  Bound here + re-bound by restore-defaults (GROUP_APPEARANCE). */
+     *  Bound here + re-bound by restore-defaults (GROUP_VISUALS — Appearance). */
     private fun bindKeepScreenOn() {
         findViewById<SwitchCompat>(R.id.set_keep_screen_on).apply {
             isChecked = prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
@@ -1572,16 +1568,27 @@ class SettingsActivity : AppCompatActivity() {
         bindIntSeekBar(R.id.set_seek_barge_level, R.id.set_mic_barge_level_val, "barge_level_only_ms",
             0, 800, 50, BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()) { "${it} ms" }
 
-        findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
-            restoreDefaults(GROUP_MIC)
-            Toast.makeText(this, "Hearing defaults restored", Toast.LENGTH_SHORT).show()
-        }
+        // Hearing holds the recogniser now, so its one restore covers both scopes.
+        bindRestoreRow(R.id.row_mic_reset, GROUP_MIC, "Hearing", GROUP_STT)
     }
 
-    private fun bindRestoreRow(rowId: Int, group: String, label: String) {
+    /**
+     * A section's restore row. It asks first: restoring cannot be undone, and the row is one
+     * stray tap at the bottom of a list a thumb scrolls through (the same rule as the commands
+     * sheet, where only the irreversible commands are drawn as risks).
+     */
+    private fun bindRestoreRow(rowId: Int, group: String, label: String, vararg more: String) {
         findViewById<android.view.View>(rowId).setOnClickListener {
-            restoreDefaults(group)
-            Toast.makeText(this, "$label defaults restored", Toast.LENGTH_SHORT).show()
+            AlertDialog.Builder(this)
+                .setTitle("Restore $label defaults?")
+                .setMessage("Every setting in $label goes back to how the app shipped. This cannot be undone.")
+                .setPositiveButton("Restore") { _, _ ->
+                    restoreDefaults(group)
+                    more.forEach { restoreDefaults(it) }
+                    Toast.makeText(this, "$label defaults restored", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Keep", null)
+                .show()
         }
     }
 
@@ -2189,6 +2196,13 @@ class SettingsActivity : AppCompatActivity() {
                 e.remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
                     .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
                     .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
+                // UI/UX pass: the cues live in "Voice & sounds" now, and their restore scope with them.
+                e.putBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
+                    .putBoolean(CuePolicy.PREF_SILENT, CuePolicy.DEFAULT_SILENT)
+                    .putInt(CuePolicy.PREF_LEVEL, CuePolicy.DEFAULT_LEVEL)
+                    .putString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE)
+                    .putBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING)
+                    .putInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)
             }
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
@@ -2207,11 +2221,12 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(PresenceCadence.PREF, PresenceCadence.DEFAULT.key)
                 .putFloat("er_echo_skip_ms", 700f)
                 .putString("er_presence_voice", "sounds")
-            GROUP_APPEARANCE -> e
+            // UI/UX pass: Appearance is one section — the screen, then the being on it — so
+            // its one restore covers both.
+            GROUP_VISUALS -> e
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
                 .putBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
-            GROUP_VISUALS -> e
                 .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
                 .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling
                 .putFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY)
@@ -2227,26 +2242,19 @@ class SettingsActivity : AppCompatActivity() {
                 .remove(AvatarView.KEY_SHAPE_SPEAKING)
                 .remove(AvatarView.KEY_SHAPE_LISTENING)
                 .remove(AvatarView.KEY_SHAPE_THINKING)
-                // #224: the cues moved to Being, and their restore scope with them.
-                .putBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
-                .putBoolean(CuePolicy.PREF_SILENT, CuePolicy.DEFAULT_SILENT)
-                .putInt(CuePolicy.PREF_LEVEL, CuePolicy.DEFAULT_LEVEL)
-                .putString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE)
-                .putBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING)
-                .putInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)
             GROUP_ABOUT -> e
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)
                 .putBoolean("debug_log", false)
-            GROUP_MODELS -> e.putString(ModelCatalog.KEY_SOURCE, ModelCatalog.DEFAULT_SOURCE)   // source only; files untouched
         }
         e.apply()
         when (group) {
             GROUP_MIC -> bindMicSettings()
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
-            GROUP_APPEARANCE -> bindKeepScreenOn()
-            GROUP_VISUALS -> { bindVisuals(); bindSoundCues() }   // #224: the cue rows live in Being now
-            GROUP_TTS -> bindFlows()   // 0.6.5: re-read the speak toggle after restore
+            // The theme is applied, not just written: a restore that left the screen dark
+            // under a "Follow the phone" label would be a lie until the next launch.
+            GROUP_VISUALS -> { bindVisuals(); bindKeepScreenOn(); refreshFlowVals(); applyTheme("system") }
+            GROUP_TTS -> { bindFlows(); bindSoundCues() }   // 0.6.5 speak toggle; the cue rows live here now
             GROUP_PRESENCE -> { refreshFlowVals(); bindErControls(); refreshGrpVals() }
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
@@ -2271,13 +2279,11 @@ class SettingsActivity : AppCompatActivity() {
         // #112: no GROUP_VOICE / GROUP_MODE — the voice register folds into GROUP_TTS
         // and Presence has its own GROUP_PRESENCE scope, so each setting has ONE reset scope.
         const val GROUP_ENTITY = "entity"
-        const val GROUP_APPEARANCE = "appearance"
         const val GROUP_VISUALS = "visuals"
         const val GROUP_PRESENCE = "presence"
         /** #225: how long the preview holds each state before the next. */
         const val PREVIEW_STATE_MS = 2800L
         const val GROUP_ABOUT = "about"
-        const val GROUP_MODELS = "models"
 
         const val SECTION_ENTITY = "entity"
         const val SECTION_SPEECH = "speech"
@@ -2289,6 +2295,21 @@ class SettingsActivity : AppCompatActivity() {
         const val SECTION_ABOUT = "about"
         const val SECTION_PRESENCE = "presence"
         const val SECTION_ASSISTANT = "assistant"
+
+        /** The section containers, by section. Transcription, Voice models and the old
+         *  Appearance & Layout section have none of their own any more (see [showSection]). */
+        val SECTION_VIEWS = mapOf(
+            SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
+            SECTION_TTS to R.id.sec_tts, SECTION_PRESENCE to R.id.sec_presence,
+            SECTION_VISUALS to R.id.sec_visuals, SECTION_ASSISTANT to R.id.sec_assistant,
+            SECTION_ABOUT to R.id.sec_about)
+
+        /** The home row that opens each section; its label is the section's title. */
+        val SECTION_HOME_ROWS = mapOf(
+            SECTION_ENTITY to R.id.row_grp_entity, SECTION_SPEECH to R.id.row_grp_speech,
+            SECTION_TTS to R.id.row_grp_tts, SECTION_PRESENCE to R.id.row_grp_presence,
+            SECTION_VISUALS to R.id.row_grp_visuals, SECTION_ASSISTANT to R.id.row_grp_assistant,
+            SECTION_ABOUT to R.id.row_grp_about)
 
         /** #329: the system's assistant-role dialog (distinct from REQ_MIC_CALL in MainActivity). */
         const val REQ_ASSISTANT = 102

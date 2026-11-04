@@ -16,8 +16,8 @@ object SettingsHints {
     const val MAX_CHARS = 72
 
     val EXEMPT = setOf(
-        "row_restore_entity", "row_mic_reset", "row_stt_reset", "row_tts_reset",
-        "row_restore_presence", "row_restore_models", "row_restore_appearance",
+        "row_restore_entity", "row_mic_reset", "row_tts_reset",
+        "row_restore_presence",
         "row_restore_visuals", "row_restore_about",
         "row_mic_advanced",      // the disclosure chip itself
         "row_being_advanced",    // the disclosure chip itself
@@ -74,7 +74,6 @@ object SettingsHints {
         "row_vox" to "Fetches the agent's own description of its voice from the gateway",
         "row_vox_view" to "Shows what Presence reads about the agent's voice",
         // Voice models
-        "row_models" to "Download or remove the voice models",
         // Appearance & Layout
         "row_theme" to "Light, dark, or follow the phone",
         "row_layout" to "The being, or a readable transcript",
