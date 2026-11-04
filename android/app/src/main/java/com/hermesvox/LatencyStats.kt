@@ -23,7 +23,13 @@ object LatencyStats {
     private val speechToAudio = ArrayList<Long>()
     private val speechToRender = ArrayList<Long>()
     private val sttDecode = ArrayList<Long>()
+    // The session copy of speech-to-audio. The ring above is the rolling 8-turn window the
+    // per-turn log uses; it is cleared on every eighth emit, which makes it the wrong source
+    // for a diagnostic summary copied at the end of a call. This ring is cleared only where
+    // the session is (resetSessionTurns), so the block's e2 is the call's own p50.
+    private val sessionSpeechToAudio = ArrayList<Long>()
     private const val MAX = 128L
+    private const val SESSION_MAX = 512
     private var turns = 0L
     // C3 session hygiene (measurement only — NO truncation/summarization behavior):
     // turns counted since the last resetConversation / new call, surfaced on every
@@ -54,7 +60,10 @@ object LatencyStats {
     fun pushSpeechToText(ms: Long) { synchronized(lock) { speechToText.add(ms); trim(speechToText); turnSpeechToText = ms } }
 
     /** speech_end → the first AUDIBLE audio write (the same seam as [pushFirstAudio]). */
-    fun pushSpeechToAudio(ms: Long) { synchronized(lock) { speechToAudio.add(ms); trim(speechToAudio); turnSpeechToAudio = ms } }
+    fun pushSpeechToAudio(ms: Long) = synchronized(lock) {
+        speechToAudio.add(ms); trim(speechToAudio); turnSpeechToAudio = ms
+        sessionSpeechToAudio.add(ms); trimSession(sessionSpeechToAudio)
+    }
 
     /** speech_end → the reply's last audio chunk finished playing ("render done"). */
     fun pushSpeechToRender(ms: Long) { synchronized(lock) { speechToRender.add(ms); trim(speechToRender); turnSpeechToRender = ms } }
@@ -65,13 +74,28 @@ object LatencyStats {
     fun pushSttDecode(ms: Long) { synchronized(lock) { sttDecode.add(ms); trim(sttDecode); turnSttDecode = ms } }
 
     private fun trim(l: ArrayList<Long>) { while (l.size > MAX) l.removeAt(0) }
+    private fun trimSession(l: ArrayList<Long>) { while (l.size > SESSION_MAX) l.removeAt(0) }
 
     /** Zero the per-session turn count. Called by the host beside every
-     *  session.resetConversation() (a new call / new conversation). */
-    fun resetSessionTurns() { synchronized(lock) { sessionTurns = 0L } }
+     *  session.resetConversation() (a new call / new conversation).
+     *
+     *  This is also where the mind-work counters (ErTelemetry) start a new session: the
+     *  diagnostic summary reports the call, not the process, so its `turns`,
+     *  `answered_by_voice` and `escalated` numbers share this boundary. */
+    fun resetSessionTurns() {
+        synchronized(lock) { sessionTurns = 0L; sessionSpeechToAudio.clear() }
+        ErTelemetry.beginSession()
+    }
 
     /** #284: turns since the last reset — when a conversation is long enough to offer /compress. */
     fun sessionTurns(): Long = synchronized(lock) { sessionTurns }
+
+    /** The session's speech-end → first audible reply-word p50, or null before the first
+     *  measured turn. This is E2 in the Presence report block; it never substitutes a zero
+     *  for "not measured". */
+    fun sessionSpeechToAudioP50(): Long? = synchronized(lock) {
+        if (sessionSpeechToAudio.isEmpty()) null else pct(sessionSpeechToAudio, 0.50)
+    }
 
     fun log(label: String, outcome: String, gen: Long) {
         summaryLines(label, outcome, gen).forEach { VoxLog.d(it) }
@@ -113,8 +137,10 @@ object LatencyStats {
         synchronized(lock) {
             firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear()
             speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear()
+            sessionSpeechToAudio.clear()
             turns = 0; sessionTurns = 0
         }
+        ErTelemetry.beginSession()
     }
 
     private fun pct(l: List<Long>, p: Double): Long { if (l.isEmpty()) return 0L; val s = l.sorted(); return s[(s.size - 1).toDouble().times(p).toInt()] }

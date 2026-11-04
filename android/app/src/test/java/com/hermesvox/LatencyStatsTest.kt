@@ -2,6 +2,7 @@ package com.hermesvox
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -90,6 +91,19 @@ class LatencyStatsTest {
         LatencyStats.resetSessionTurns()   // what MainActivity does beside resetConversation
         val again = LatencyStats.summaryLines("turn", "stream-done", 4L)
         assertTrue(again[0], again[0].contains("session_turns=1"))
+    }
+
+    @Test fun session_e2_survives_the_rolling_window_and_resets_with_the_session() {
+        LatencyStats.reset()
+        assertNull("nothing measured is null, not 0", LatencyStats.sessionSpeechToAudioP50())
+        for (v in listOf(2000L, 4000L, 3000L)) LatencyStats.pushSpeechToAudio(v)
+        assertEquals(3000L, LatencyStats.sessionSpeechToAudioP50())
+        // Eight emits clear the per-turn rolling window; the call's own number stays.
+        repeat(8) { LatencyStats.summaryLines("turn", "stream-done", it.toLong()) }
+        assertArrayEquals(IntArray(9) { 0 }, LatencyStats.windowCounts())
+        assertEquals(3000L, LatencyStats.sessionSpeechToAudioP50())
+        LatencyStats.resetSessionTurns()   // a new call
+        assertNull(LatencyStats.sessionSpeechToAudioP50())
     }
 
     @Test fun speech_end_fields_ride_the_same_turn_line_and_clear() {
