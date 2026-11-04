@@ -14,6 +14,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -199,6 +200,58 @@ class Cli(unittest.TestCase):
             self.assertEqual(2, data["missing"]["e1_p50_ms"])
             self.assertEqual([102, 104],
                              [i["number"] for i in data["unacknowledged"]])
+
+
+class DailyCadence(unittest.TestCase):
+    """The digest is allowed to be quiet: same numbers, no post. The rehearsal writes its own
+    snapshot, rolling history and hash, so a dry run cannot consume the real change."""
+
+    def run_daily(self, state):
+        env = dict(os.environ)
+        env["PRESENCE_REPORTS_STATE"] = state
+        return subprocess.run(
+            ["bash", str(HERE / "presence-reports-daily.sh"),
+             "--fixture", str(FIXTURE), "--dry-run"],
+            cwd=ROOT, env=env, capture_output=True, text=True, check=False,
+        )
+
+    def test_first_run_would_post_and_the_second_is_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first = self.run_daily(tmp)
+            self.assertEqual(0, first.returncode, first.stderr)
+            self.assertIn("numbers changed", first.stdout)
+            self.assertIn("--dry-run", first.stdout)
+            self.assertIn("Unacknowledged reports (2)", first.stdout)
+
+            second = self.run_daily(tmp)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertIn("numbers unchanged", second.stdout)
+            self.assertNotIn("digest worth posting", second.stdout)
+
+            rolling = Path(tmp) / "rolling.dry-run.csv"
+            self.assertTrue(rolling.exists())
+            self.assertFalse((Path(tmp) / "rolling.csv").exists(),
+                             "a rehearsal must not write the real history")
+            lines = rolling.read_text(encoding="utf-8").splitlines()
+            # header + two groups on each of the two runs
+            self.assertEqual(5, len(lines))
+            self.assertTrue(lines[0].startswith("snapshot_utc,preset,device,reports"))
+
+    def test_an_empty_label_never_posts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty = Path(tmp) / "empty.json"
+            empty.write_text("[]", encoding="utf-8")
+            env = dict(os.environ)
+            env["PRESENCE_REPORTS_STATE"] = tmp
+            out = subprocess.run(
+                ["bash", str(HERE / "presence-reports-daily.sh"),
+                 "--fixture", str(empty), "--dry-run"],
+                cwd=ROOT, env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(0, out.returncode, out.stderr)
+            self.assertIn("no reports — no digest posted", out.stdout)
+            self.assertFalse((Path(tmp) / "last.sha256.dry-run").exists())
+            self.assertFalse((Path(tmp) / "rolling.dry-run.csv").exists())
 
 
 if __name__ == "__main__":
