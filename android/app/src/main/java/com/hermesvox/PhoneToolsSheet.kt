@@ -119,10 +119,11 @@ class PhoneToolsSheet(
         body(
             col,
             if (firstRun)
-                "Your agent can set timers and change volume on this phone. It cannot read your " +
-                    "messages or make calls."
+                "Choose what your agent may do on this phone. Every capability group starts Off, " +
+                    "and an Off group is absent from its tool list — it cannot even try."
             else
-                "Let your agent set timers and change volume on this phone — and nothing else.",
+                "Choose what your agent may do on this phone. Only the groups you grant appear in " +
+                    "its tool list; turning one off takes effect on the next call.",
         )
         body(
             col,
@@ -130,6 +131,50 @@ class PhoneToolsSheet(
                 "listening socket the rest of the time.",
             dim = true,
         )
+
+        // #429 step 1: the same registry the schema is built from. The screen cannot promise a
+        // capability the tool does not offer, because both read PhoneGrants.
+        val states = PhoneGrantStore.states(act)
+        col.addView(VoxSheet.subhead(act, "Capabilities"))
+        body(
+            col,
+            "Off hides a group from your agent. Ask lets it try, and every use waits for you. " +
+                "Allow runs it instantly and reports it in Recent actions — and Allow is offered " +
+                "for instant, reversible groups only. ${PhoneToolsView.grantSummary(states)}.",
+            dim = true,
+        )
+        body(
+            col,
+            "Approval cards arrive with the capabilities that need them. Until then an Ask action " +
+                "is refused with a reason, never run, and the refusal is recorded below.",
+            dim = true,
+        )
+        for ((tier, groups) in PhoneGrants.byTier()) {
+            col.addView(VoxSheet.subhead(act, PhoneGrants.tierLabel(tier)))
+            body(col, PhoneGrants.tierLine(tier), dim = true)
+            for (g in groups) grantRow(col, g, states[g.id] ?: PhoneGrants.DEFAULT)
+        }
+
+        // #429 step 1: what the agent actually did, refusals included. This is the record the
+        // owner checks the agent's claims against.
+        col.addView(VoxSheet.subhead(act, "Recent actions"))
+        val audit = PhoneAuditStore.entries(act)
+        if (audit.isEmpty()) {
+            body(
+                col,
+                "Nothing yet. Every call your agent makes — including a refusal — appears here " +
+                    "with its time, arguments and outcome.",
+                dim = true,
+            )
+        } else {
+            body(
+                col,
+                "Newest first. Arguments are summarised, never copied: a note's text is shown as " +
+                    "its length. Tap an action that carries an undo to reverse it.",
+                dim = true,
+            )
+            for (entry in audit.asReversed().take(AUDIT_ROWS)) auditRow(col, entry)
+        }
 
         val status = PhoneMcp.status(act)
         val now = System.currentTimeMillis()
@@ -272,6 +317,129 @@ class PhoneToolsSheet(
 
     private var manualOpen = false
 
+    /**
+     * One capability group: its name, what it lets the agent do, the warning where the consequence
+     * is not obvious, and the states its tier permits. Allow is rendered only where the registry
+     * permits it, so the control and the policy cannot disagree.
+     */
+    private fun grantRow(col: LinearLayout, group: PhoneGrants.Group, state: PhoneGrants.State) {
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(10), 0, dp(8))
+            contentDescription = "${group.label}: ${state.label}. ${group.lets}"
+        }
+        box.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { text = group.label })
+        box.addView(TextView(act, null, 0, R.style.HvRowValue).apply { text = group.lets })
+        box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+            text = PhoneToolsView.grantMeaning(state)
+            setTextColor(color(R.color.hv_text_dim))
+        })
+        if (!group.built) {
+            box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+                text = "Nothing on this phone yet — your choice is kept for when the capability lands."
+                setTextColor(color(R.color.hv_text_dim))
+            })
+        }
+        group.warning?.let { warning ->
+            box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+                text = warning
+                setTextColor(color(R.color.hv_warn))
+            })
+        }
+        val controls = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        for (choice in PhoneGrants.statesFor(group.tier)) {
+            controls.addView(stateButton(group, choice, choice == state))
+        }
+        box.addView(controls)
+        PhoneToolsView.allowAbsent(group.tier)?.let { why ->
+            box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+                text = why
+                setTextColor(color(R.color.hv_text_dim))
+            })
+        }
+        col.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun stateButton(group: PhoneGrants.Group, state: PhoneGrants.State, selected: Boolean): Button =
+        Button(act, null, 0, R.style.HvGhostButton).apply {
+            text = state.label
+            contentDescription = "${group.label}: ${state.label}" + if (selected) " (selected)" else ""
+            setTextColor(color(if (selected) R.color.hv_bg else R.color.hv_text))
+            background = ContextCompat.getDrawable(
+                act,
+                if (selected) R.drawable.bg_button_primary else R.drawable.bg_button_ghost,
+            )
+            minWidth = dp(72)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setOnClickListener {
+                if (!selected) {
+                    PhoneGrantStore.set(act, group, state)
+                    paint()
+                }
+            }
+        }
+
+    /** One audit row. An undoable row is the tap target; a refusal is a row like any other. */
+    private fun auditRow(col: LinearLayout, entry: PhoneAudit.Entry) {
+        val undoable = entry.undoId != null
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setBackgroundColor(color(R.color.hv_surface))
+            if (undoable) {
+                isClickable = true
+                isFocusable = true
+                contentDescription = "${PhoneToolsView.auditHeadline(entry)}, " +
+                    "${PhoneToolsView.outcomeLine(entry)}. Double tap to undo."
+                setOnClickListener { undoEntry(entry) }
+            }
+        }
+        box.addView(TextView(act, null, 0, R.style.HvRowTitle).apply {
+            text = PhoneToolsView.auditHeadline(entry)
+        })
+        box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+            text = PhoneToolsView.argumentsLine(entry.arguments)
+        })
+        val outcome = TextView(act, null, 0, R.style.HvRowValue).apply {
+            text = buildString {
+                append(PhoneToolsView.outcomeLine(entry))
+                if (undoable) append(" · tap to undo")
+            }
+            setTextColor(
+                color(
+                    when {
+                        entry.ok -> R.color.hv_ok
+                        entry.outcome == PhoneReason.NOT_GRANTED || entry.outcome == PhoneReason.APPROVAL ->
+                            R.color.hv_warn
+                        else -> R.color.hv_danger
+                    }
+                )
+            )
+        }
+        box.addView(outcome)
+        col.addView(
+            box,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(6) },
+        )
+    }
+
+    /** The owner's Undo tap. The result is the same shape the agent gets, so the toast is true. */
+    private fun undoEntry(entry: PhoneAudit.Entry) {
+        val id = entry.undoId ?: return
+        val result = PhoneAuditStore.undo(act, id)
+        val line = if (result.ok) {
+            "Undone · ${result.facts["undone"] ?: entry.action}"
+        } else {
+            "Could not undo · ${result.reason ?: "no undo"}"
+        }
+        Toast.makeText(act, line, Toast.LENGTH_SHORT).show()
+        paint()
+    }
+
     private fun setUpAgent() {
         val status = PhoneMcp.status(act)
         val host = hostOrPlaceholder(status)
@@ -389,6 +557,9 @@ class PhoneToolsSheet(
     }
 
     companion object {
+        /** How many Recent actions rows the sheet renders. The store keeps [PhoneAudit.MAX]. */
+        private const val AUDIT_ROWS = 20
+
         @Volatile private var current: PhoneToolsSheet? = null
 
         /** Called from an activity's onResume, so a grant made in system settings is visible at once. */

@@ -119,6 +119,45 @@ class PhoneMcpWiringTest {
         assertTrue("the sheet states the listener's lifetime", sheet.contains("only while a call is"))
     }
 
+    // ---- #429 step 1: one registry, read live ----
+
+    @Test fun the_schema_the_screen_and_the_engine_read_the_same_registry() {
+        val tool = File("src/main/java/com/hermesvox/PhoneTool.kt").readText()
+        val grants = File("src/main/java/com/hermesvox/PhoneGrants.kt").readText()
+        val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
+        val local = File("src/main/java/com/hermesvox/LocalActions.kt").readText()
+        val engine = File("src/main/java/com/hermesvox/PhoneEngine.kt").readText()
+
+        assertTrue("the enum is built from the registry", tool.contains("PhoneGrants.advertised(grants)"))
+        assertTrue("the tool description names what is on", tool.contains("PhoneGrants.stateOf(grants, it) != PhoneGrants.State.OFF"))
+        assertTrue("the engine reads grants at dispatch", engine.contains("PhoneTool.parse(arguments, grants)"))
+        assertTrue("the engine is handed the live store", local.contains("PhoneGrantStore.source(app)"))
+        assertTrue("the screen writes through the same store", sheet.contains("PhoneGrantStore.set(act, group, state)"))
+        assertTrue("the screen groups rows by tier", sheet.contains("PhoneGrants.byTier()"))
+        assertTrue("the registry is the only group list", grants.contains("val GROUPS: List<Group> = listOf("))
+    }
+
+    @Test fun the_server_reads_the_grants_per_request_not_once_at_start() {
+        assertTrue("the server is handed a source", server.contains("private val grants: PhoneGrants.Source"))
+        assertTrue("tools/list builds the schema now", server.contains("PhoneTool.schema(grants)"))
+        assertTrue(
+            "the app passes the live store, not a snapshot",
+            mcp.contains("grants = PhoneGrantStore.source(app)"),
+        )
+    }
+
+    @Test fun the_recent_actions_list_records_refusals_and_can_undo() {
+        val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
+        val local = File("src/main/java/com/hermesvox/LocalActions.kt").readText()
+        val auditStore = File("src/main/java/com/hermesvox/PhoneAuditStore.kt").readText()
+        assertTrue("the sheet has the list", sheet.contains("Recent actions"))
+        assertTrue("a row can be undone", sheet.contains("PhoneAuditStore.undo(act, id)"))
+        assertTrue("the engine audits every dispatch", local.contains("PhoneAuditStore.record"))
+        assertTrue("refusals are entries too", local.contains("PhoneAudit.entry(at, args, result)"))
+        assertTrue("the store persists the list", auditStore.contains("PhoneAudit.encode(kept)"))
+        assertTrue("an undo with no live engine says expired", auditStore.contains("PhoneReason.EXPIRED"))
+    }
+
     @Test fun no_exact_alarm_permission_is_declared_or_needed() {
         val manifest = File("src/main/AndroidManifest.xml").readText()
         assertFalse(manifest.contains("uses-permission android:name=\"android.permission.SCHEDULE_EXACT_ALARM\""))

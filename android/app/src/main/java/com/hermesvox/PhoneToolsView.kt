@@ -88,4 +88,50 @@ object PhoneToolsView {
         ms < 3_600_000L -> "${ms / 60_000L}m"
         else -> "${ms / 3_600_000L}h"
     }
+
+    // ---- capabilities and the audit (#429 step 1) ----
+
+    /** "4 of 12 groups on" — the one number that says how much has been granted. */
+    fun grantSummary(states: Map<String, PhoneGrants.State>): String =
+        "${states.values.count { it != PhoneGrants.State.OFF }} of ${states.size} groups on"
+
+    /** What a state means, in the row the owner is about to change. */
+    fun grantMeaning(state: PhoneGrants.State): String = when (state) {
+        PhoneGrants.State.OFF -> "Off hides it from your agent’s tool list."
+        PhoneGrants.State.ASK -> "Ask lets your agent try; every use waits for you."
+        PhoneGrants.State.ALLOW -> "Allow runs it instantly, and it is reported below."
+    }
+
+    /** Why Allow is absent for a group, or null when it is offered. */
+    fun allowAbsent(tier: Int): String? = when (tier) {
+        PhoneTiers.INSTANT -> null
+        PhoneTiers.REPORTED -> "Allow is not offered here: you see the result, so you stay in the loop."
+        else -> "Allow is not offered here: this is consequential, so every use is a card."
+    }
+
+    /** The HH:mm an action happened, in the phone's own time zone. */
+    fun clockTime(atEpochMs: Long): String {
+        val c = java.util.Calendar.getInstance().apply { timeInMillis = atEpochMs }
+        val h = c.get(java.util.Calendar.HOUR_OF_DAY)
+        val m = c.get(java.util.Calendar.MINUTE)
+        return (if (h < 10) "0" else "") + h + ":" + (if (m < 10) "0" else "") + m
+    }
+
+    /** One line of arguments as the audit stored them: never a body, never a secret. */
+    fun argumentsLine(arguments: Map<String, String>): String =
+        if (arguments.isEmpty()) "no arguments"
+        else arguments.entries.joinToString(" · ") { "${it.key}=${it.value}" }
+
+    /** The outcome as the owner reads it; the reason stays visible because it is the claim's check. */
+    fun outcomeLine(entry: PhoneAudit.Entry): String = when {
+        entry.ok -> "done"
+        entry.outcome == PhoneReason.NOT_GRANTED -> "refused · not granted"
+        entry.outcome == PhoneReason.APPROVAL -> "refused · needs your approval"
+        entry.outcome == PhoneReason.PERMISSION -> "refused · permission not granted"
+        else -> "refused · ${entry.outcome}"
+    }
+
+    /** The audit row's first line: time and action. */
+    fun auditHeadline(entry: PhoneAudit.Entry): String =
+        "${clockTime(entry.atEpochMs)}  ${entry.action}"
 }
