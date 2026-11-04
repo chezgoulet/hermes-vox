@@ -73,8 +73,8 @@ otherwise they close in whatever release closes them.
 A living milestone, not a promise. What it holds today:
 
 - **Presence on by default.** The Alpha gate opens for Presence: it stops being opt-in.
-- **Per-profile settings** — voice, model and look, the things still device-wide. The one item
-  carried out of 0.9.1 by decision.
+- **Whatever the 0.9.1 run teaches us.** Nothing is carried forward by decision any more: the one
+  item held back — per-profile settings — moved into 0.9.1 on 2026-11-04.
 
 What else lands there is decided by what the 0.9.1 acceptance run and real use turn up. Expect new
 features to be wanted, expect some of them to be the ones we have not thought of yet, and expect
