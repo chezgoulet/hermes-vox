@@ -796,3 +796,28 @@ building yet. This is a command syntax, not a language judgement — the inversi
 halves: anything the phone does to itself is reported there, so the mind never contradicts the phone
 or asks for what it already knows. MCP tools and the veto tiers (#421's later steps) stay out of this
 lane; they are the mind's tools, not the phone's.
+
+## D33 — Refinement belongs to the milestone that commits the feature
+
+Set 2026-11-04, after the owner corrected a deferral: Presence's tool use had been written up as
+0.9.2 work, and it is not.
+
+**The decision.** When a milestone commits to a feature, the **deepest refinement of that feature
+belongs to that milestone**. A feature is not finished when its first working version lands.
+Deciding what it actually *is* — its design, its edges, the shape a careful review would give it —
+is the work the milestone promised. Deferring that to the next number is how a feature ships as a
+sketch and stays one.
+
+**What this does not mean.** Polish of things already shipped still gets no number: the rough edge
+found in use is fixed when it is found, and it does not wait for a milestone to be planned. The
+distinction is between *deciding a feature* and *improving a shipped one*.
+
+**Consequence for 0.9.1.** Presence's tool use — the mind's ongoing context of what the phone is
+doing, the phone's own capabilities executed instantly and reported as context, the mind's
+direction of those capabilities with results, and its veto — is 0.9.1 scope, with a build order:
+context block, local intent grammar, MCP server, tiers and veto. It sits in `MILESTONES.md` and
+`0.9.1-SCOPE.md` alongside the other Presence work rather than after it.
+
+**Why it matters beyond this release.** A milestone whose features are only "built" is a version
+number, not a commitment. The rule exists so that the depth of thinking we do is the depth we
+promised at the moment we promised it.
