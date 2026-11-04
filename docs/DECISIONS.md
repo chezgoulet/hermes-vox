@@ -864,6 +864,15 @@ until it rings, dnd/volume until superseded or ten minutes, a note for a day.
 refusal carries a reason and no success fact. A claim in the mind's reply is therefore traceable to a
 result it was given, which is the false-action-claim guard applied to the phone's own claims first.
 
+**How it is set up (#421 step 5).** The owner is not handed a YAML block. The app composes one
+ordinary turn — server name, tailnet URL, bearer token, tool name, what the phone can and cannot do —
+and sends it through the existing session, so the agent edits its own configuration and the change is
+visible in the conversation and the sheet. The turn is idempotent by content: an existing `vox` entry
+is updated in place, never duplicated. **Connected is not the agent's word**: the phone says it only
+after its own server has seen an authenticated MCP `initialize`, and the proof is tied to the token
+in force, so rotation clears it. The config block survives as a disclosed manual fallback for an
+agent that cannot edit its own config.
+
 **What it costs, stated.** The token and the tailnet are the boundary, and both are the owner's to
 keep (`docs/MCP-PHONE.md`). The server is up only while a call is, so the gateway's first call after
 a call begins may pay a connect, and with the call down the tool is simply absent. Tool schemas ride

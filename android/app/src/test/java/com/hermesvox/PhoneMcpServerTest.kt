@@ -192,6 +192,47 @@ class PhoneMcpServerTest {
         assertNotNull(obj(r)["result"])
     }
 
+    @Test fun only_an_authenticated_initialize_is_the_handshake_the_phone_records() {
+        val seen = ArrayList<Long>()
+        server.close()
+        server = PhoneMcpServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            tokenProvider = { token },
+            handler = { "{}" },
+            port = 0,
+            log = { log.add(it) },
+            onInitialize = { seen.add(it) },
+        )
+
+        request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")
+        assertTrue("an unauthenticated initialize is not a connection", seen.isEmpty())
+        request(bearer = token.reversed(), body = """{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")
+        assertTrue("a wrong token is not a connection", seen.isEmpty())
+
+        rpc("initialize", """{"protocolVersion":"2025-06-18"}""")
+        assertEquals("one authenticated initialize is the evidence", 1, seen.size)
+        rpc("tools/list")
+        assertEquals("tools/list is not a handshake", 1, seen.size)
+    }
+
+    @Test fun rotating_the_token_invalidates_the_old_one_on_the_next_request() {
+        var current = token
+        val fresh = "fedcba9876543210fedcba9876543210"
+        server.close()
+        server = PhoneMcpServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            tokenProvider = { current },
+            handler = { "{}" },
+            port = 0,
+            log = { log.add(it) },
+        )
+
+        assertEquals(200, rpc("tools/list").status)
+        current = fresh
+        assertEquals("the old credential stops working at rotation", 401, rpc("tools/list").status)
+        assertEquals(200, request(bearer = fresh, body = """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""").status)
+    }
+
     // ---- tools ----
 
     @Test fun tools_list_is_one_phone_tool_with_the_decided_schema() {

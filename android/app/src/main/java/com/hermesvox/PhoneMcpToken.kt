@@ -34,6 +34,19 @@ object PhoneMcpToken {
     }
 
     /**
+     * A short, non-reversible tag for a token, used only to tie an observed handshake to the
+     * credential it was made with. It must never be logged or shown: it is derived from the secret,
+     * so it stays out of every user-facing line just as the token does.
+     */
+    fun fingerprint(token: String): String {
+        if (token.isEmpty()) return ""
+        val digest = MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+        val sb = StringBuilder(16)
+        for (i in 0 until 8) sb.append("%02x".format(digest[i].toInt() and 0xFF))
+        return sb.toString()
+    }
+
+    /**
      * Constant-time comparison. False for an empty presented value, an empty expected value, or any
      * difference — including a length difference, which is compared without early return.
      */

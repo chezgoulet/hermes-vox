@@ -59,9 +59,21 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class PhoneMcpServer private constructor(
     private val server: ServerSocket,
-    private val token: String,
+    /**
+     * Read on every request, not captured once: rotating the token in Settings invalidates the
+     * old credential immediately without closing the listener.
+     */
+    private val tokenProvider: () -> String,
     private val handler: PhoneToolHandler,
     private val log: (String) -> Unit,
+    /** (method + path, wall-clock millis) — the setup sheet's "last request" line. */
+    private val onRequest: (String, Long) -> Unit,
+    /**
+     * Seen a valid `initialize` from an authenticated client. This is the *only* evidence the
+     * setup sheet accepts for **Connected** (#421 step 5): the gateway really connected, rather
+     * than the agent merely saying it edited its config.
+     */
+    private val onInitialize: (Long) -> Unit,
 ) : AutoCloseable {
 
     /** The port the OS gave us (a fixed one in the app: the gateway's config names it). */
@@ -117,6 +129,7 @@ class PhoneMcpServer private constructor(
             val input = BufferedInputStream(socket.getInputStream())
             val heads = readHeaders(input) ?: return
             val (method, target, headers) = heads
+            try { onRequest("$method $target", System.currentTimeMillis()) } catch (_: Throwable) { }
             val authorized = authorized(headers["authorization"])
             if (!authorized) {
                 // Log the shape, never the credential.
@@ -181,6 +194,12 @@ class PhoneMcpServer private constructor(
         val id = jsonId(idNode)
         val method = (o["method"] as? JStr)?.value.orEmpty()
         if (method.isEmpty()) return 200 to rpcError(id, -32600, "invalid request: no method")
+        // The handshake is the proof of connection. It is recorded here, after authentication and
+        // before the reply, so a client that is turned away by the token never marks the phone
+        // connected.
+        if (method == "initialize") {
+            try { onInitialize(System.currentTimeMillis()) } catch (_: Throwable) { }
+        }
         val params = o["params"] as? JObj
 
         // A notification has no id. The client sends `notifications/initialized`; nothing is owed
@@ -334,7 +353,7 @@ class PhoneMcpServer private constructor(
         val presented = header?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }
             ?.substring("Bearer ".length)?.trim()
             .orEmpty()
-        return PhoneMcpToken.matches(presented, token)
+        return PhoneMcpToken.matches(presented, tokenProvider())
     }
 
     private fun respond(
@@ -403,13 +422,34 @@ class PhoneMcpServer private constructor(
             handler: PhoneToolHandler,
             port: Int = PORT,
             log: (String) -> Unit = {},
+        ): PhoneMcpServer = start(
+            bind = bind,
+            tokenProvider = { token },
+            handler = handler,
+            port = port,
+            log = log,
+        )
+
+        /**
+         * Bind one address and start serving, reading the bearer from [tokenProvider] per request.
+         * [bind] must be a single address — the tailnet one — and an any-local address is refused
+         * here, not left to the caller's discipline.
+         */
+        fun start(
+            bind: InetAddress,
+            tokenProvider: () -> String,
+            handler: PhoneToolHandler,
+            port: Int = PORT,
+            log: (String) -> Unit = {},
+            onRequest: (String, Long) -> Unit = { _, _ -> },
+            onInitialize: (Long) -> Unit = {},
         ): PhoneMcpServer {
             require(!bind.isAnyLocalAddress) { "refusing to bind 0.0.0.0 / :: — pick the tailnet address" }
-            require(token.isNotEmpty()) { "a bearer token is required" }
+            require(tokenProvider().isNotEmpty()) { "a bearer token is required" }
             val socket = ServerSocket()
             socket.reuseAddress = true
             socket.bind(InetSocketAddress(bind, port), 8)
-            return PhoneMcpServer(socket, token, handler, log)
+            return PhoneMcpServer(socket, tokenProvider, handler, log, onRequest, onInitialize)
         }
 
         /** Converts a JSON object into the plain map the tool layer reads. */

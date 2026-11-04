@@ -287,7 +287,7 @@ exactly as before. The grammar claims the whole utterance or none of it.
 
 ---
 
-## The mind's own actions: one MCP tool, and a result (#421 steps 3–4)
+## The mind's own actions: one MCP tool, and a result (#421 steps 3–5)
 
 The lane above is the caller's. The mind needs its own, and it cannot be the same wire: a timer the
 caller asked for must be running before a streamed turn would have connected, while a timer the
@@ -318,10 +318,12 @@ dnd and volume until superseded or ten minutes, a note for a day.
 through it — so the `local_actions:` line the presence context sends and the `status` the mind asks
 for are the same memory. The world the mind reads about and the world it acts on cannot drift apart.
 
-The gateway needs one `mcp_servers` entry to see the tool; `docs/MCP-PHONE.md` has the exact config,
-the token handling, the offline behaviour and the security reasoning. **Nothing here is deployed for
-the owner**: the phone shows its own address and token in Settings → About & Diagnostics, and the
-snippet is his to paste.
+The gateway needs one `mcp_servers` entry to see the tool, and the owner is not asked to write it.
+**Set up with my agent** sends one ordinary turn asking the agent to add the entry to its own
+configuration, and the sheet waits for the phone's own server to see the MCP handshake before it says
+**Connected**. The agent's reply is shown either way; a config block remains as a disclosed manual
+fallback. `docs/MCP-PHONE.md` has the exact turn, the state machine, the token handling, the
+permissions and the security reasoning.
 
 ---
 
