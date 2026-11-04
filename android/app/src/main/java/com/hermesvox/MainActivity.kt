@@ -1897,10 +1897,14 @@ class MainActivity : AppCompatActivity() {
         // memory. Blank = undeclared (the gateway's per-transcript default),
         // which is what every install did before this setting existed.
         val sc = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
-        if (u.isBlank()) return
+        if (u.isBlank()) { PhoneSetupStore.attach(null); return }
         // C0: no user-entered key -> surface the Settings prompt (never connect
         // with an empty auth / baked fallback).
-        if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
+        if (GatewayKey.isMissing(k)) {
+            PhoneSetupStore.attach(null)
+            setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
+            return
+        }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
             // The provider is a per-request override the client sends (the blessed LIGHT
             // PATH) and the scope is stamped on every entity request; both are declared by
@@ -1914,6 +1918,9 @@ class MainActivity : AppCompatActivity() {
             }, m)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
+        // #421 step 5: the setup sheet sends its turn through THIS session when one is live, so
+        // the agent's own configuration change is part of the same conversation chain.
+        PhoneSetupStore.attach(session)
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
         // gateway to actually answer.

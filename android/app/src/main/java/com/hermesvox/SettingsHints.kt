@@ -104,6 +104,7 @@ object SettingsHints {
         "row_logtranscripts" to "Writes what you said into the log; off by default",
         "row_debuglog" to "A more detailed log file, for reporting a bug",
         "row_debug" to "View, copy or share the log",
+        "row_phone_mcp" to "Ask your agent to add this phone, and see whether it connected",
     )
 
     /**

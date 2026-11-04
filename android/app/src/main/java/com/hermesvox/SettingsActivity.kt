@@ -1228,6 +1228,16 @@ class SettingsActivity : AppCompatActivity() {
         // elsewhere) and restart the preview only if the Being section is the one on screen.
         bindBeingPreview()
         syncPreview()
+        PhoneToolsSheet.refreshOpen()   // #421: a DND grant made in system settings shows at once
+        refreshPhoneMcpVal()
+    }
+
+    /** The row's short state; "connected" is only ever the handshake, never the agent's reply. */
+    private fun refreshPhoneMcpVal() {
+        runCatching {
+            findViewById<TextView>(R.id.set_phone_mcp_val).text =
+                PhoneToolsView.rowValue(PhoneSetupStore.state(this))
+        }
     }
 
     /** #225: the preview stops at onPause, not at onDestroy — a backgrounded Settings screen
@@ -1501,6 +1511,13 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 .show()
         }
+        // #421 steps 3–5: the phone as an MCP server. The setup path is a turn to the agent, not a
+        // block the owner pastes; this row opens the one sheet that composes it, shows the agent's
+        // reply, waits for the phone's own handshake, and keeps the manual config as a fallback.
+        findViewById<LinearLayout>(R.id.row_phone_mcp).setOnClickListener {
+            PhoneToolsSheet(this, session = PhoneSetupStore.session(this)).show()
+        }
+        refreshPhoneMcpVal()
     }
 
     /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default ON since 0.8). The flag it

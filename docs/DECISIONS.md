@@ -821,3 +821,62 @@ context block, local intent grammar, MCP server, tiers and veto. It sits in `MIL
 **Why it matters beyond this release.** A milestone whose features are only "built" is a version
 number, not a commitment. The rule exists so that the depth of thinking we do is the depth we
 promised at the moment we promised it.
+
+## D34 — The mind acts on the phone through one MCP tool, and every action returns a result
+
+Set 2026-11-04, on #421's third comment and steps 3–4.
+
+**The decision.** The phone runs a small **MCP server on the tailnet** exposing **one** tool,
+`phone`, with an action enum (`timer`, `alarm`, `dnd`, `volume`, `note`, `undo`, `status`). Every call
+returns what actually happened; Tier 2 actions are refused and routed to the gateway's existing
+approval surface. The user-initiated lane (D32) is untouched: it still executes on the phone with no
+round trip.
+
+**Why MCP and not a directive in the reply.** A directive is fire-and-forget: the mind says "timer,
+five minutes" and never learns whether it started. #421 rejected that shape. MCP gives the mind a
+schema, a result and an error surface, and Hermes already speaks it — nothing is patched, no protocol
+is invented.
+
+**Why one tool and not eight.** The schema rides on every turn the gateway offers it on. One tool
+with a required `action` costs a fraction of eight and is easier for a model to call correctly.
+
+**Why the two initiators stay separate.** A timer the caller asked for must be running before a
+streamed turn could have opened its connection; routing it through MCP would add a network hop to the
+fastest thing in the app. A timer the mind asked for must return a result, because the mind is the one
+acting. Same engine, same registry, different wire — and the registry is the single source of truth,
+so the context block and the `status` action cannot disagree.
+
+**The tiers, as implemented.**
+- **Tier 0** (timer, alarm, dnd, volume, status, undo): executes immediately, reversible, private.
+- **Tier 1** (note): executes immediately, is reported to the mind on the next turn through the
+  presence context, and is undoable.
+- **Tier 2** (share, message, call, email, delete, purchase, launch, send): **never executed from the
+  phone's MCP surface.** An MCP call carries no run id, so the phone cannot mint an approval card, and
+  a second approval surface inside the MCP server is what #421 rules out. The result says
+  `approval-required`; the consequential path is the gateway's own approval surface, and
+  `trust: untrusted` puts *every* phone call behind it for an owner who wants that.
+
+**Undo is part of the result, not a second protocol.** Every reversible action names its own undo in
+its result (`{"action":"undo","id":"timer-3"}`) and the undo lives for the action's lifetime: a timer
+until it rings, dnd/volume until superseded or ten minutes, a note for a day.
+
+**The invariant.** `ok:true` is only ever rendered after the platform performed the action, and a
+refusal carries a reason and no success fact. A claim in the mind's reply is therefore traceable to a
+result it was given, which is the false-action-claim guard applied to the phone's own claims first.
+
+**How it is set up (#421 step 5).** The owner is not handed a YAML block. The app composes one
+ordinary turn — server name, tailnet URL, bearer token, tool name, what the phone can and cannot do —
+and sends it through the existing session, so the agent edits its own configuration and the change is
+visible in the conversation and the sheet. The turn is idempotent by content: an existing `vox` entry
+is updated in place, never duplicated. **Connected is not the agent's word**: the phone says it only
+after its own server has seen an authenticated MCP `initialize`, and the proof is tied to the token
+in force, so rotation clears it. The config block survives as a disclosed manual fallback for an
+agent that cannot edit its own config.
+
+**What it costs, stated.** The token and the tailnet are the boundary, and both are the owner's to
+keep (`docs/MCP-PHONE.md`). The server is up only while a call is, so the gateway's first call after
+a call begins may pay a connect, and with the call down the tool is simply absent. Tool schemas ride
+on every turn the server is offered on; `status` exists so the mind asks instead of remembering.
+
+**What it does not decide.** Whether the soul ever gets tools (it does not — its job is the beat,
+D30), and whether a user wants a setting to change the tier table. Both stay open.

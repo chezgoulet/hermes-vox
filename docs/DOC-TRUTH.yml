@@ -80,3 +80,69 @@
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/ErHandoff.kt
   match: 'D30'
+
+- id: phone-mcp-single-tool
+  says: "with an action enum"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'const val NAME = "phone"'
+
+- id: phone-mcp-tailnet-only
+  says: "tailnet"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
+  match: 'isAnyLocalAddress'
+
+- id: phone-tier-two-never-executes
+  says: "never executes"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'PhoneTiers\.APPROVAL ->'
+
+- id: phone-undo-lifetime
+  says: "the undo lives for the action's lifetime"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
+  match: 'fun undo\('
+
+- id: phone-setup-is-a-turn
+  says: "The setup path is a turn, not a block to paste."
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
+  match: 'fun prompt\(host: String, token: String'
+
+- id: phone-setup-idempotent
+  says: "It is idempotent by content."
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
+  match: 'Do not add a second'
+
+- id: phone-connected-on-handshake
+  says: "The app verifies locally, never on the agent's word."
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
+  match: 'method == "initialize"'
+
+- id: phone-dnd-is-special-access
+  says: "This is a *special* access"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
+  match: 'dndGranted'
+
+- id: phone-no-exact-alarm
+  says: "Timer and alarm need no exact-alarm permission."
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/AndroidManifest.xml
+  absent: 'uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"'
+
+- id: phone-listener-lifetime
+  says: "The listener is up exactly while a call is"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/VoiceController.kt
+  match: 'PhoneMcp\.start\(context\)'
+
+- id: phone-volume-permission
+  says: "`MODIFY_AUDIO_SETTINGS`"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
+  match: 'setStreamVolume'

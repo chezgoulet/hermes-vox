@@ -25,8 +25,14 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- #325: Do Not Disturb during a call, only when the user turns it on and grants access. -->
+    <!-- #325/#421: Do Not Disturb is a SPECIAL access, not a runtime grant: the user gives it on
+         Android's own screen. The phone shows whether it is granted and opens that screen; an
+         action that needs it refuses with reason=permission. -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- #421: deliberately NO SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM. Timers and alarms use
+         AlarmManager's OnAlarmListener form, which the exact-alarm restriction exempts; the
+         Clock app's intents were rejected because they cannot return a verifiable result or an
+         undo. See docs/MCP-PHONE.md, "Permissions". -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Model downloads keep running with the Models screen closed (ModelDownloadService). -->

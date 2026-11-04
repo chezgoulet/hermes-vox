@@ -2387,6 +2387,26 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_phone_mcp"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Phone as an MCP server (agent control)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_phone_mcp_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="view"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_restore_about"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
