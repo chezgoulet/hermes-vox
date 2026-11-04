@@ -436,29 +436,22 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** One greeting per call. Reset in [stop] so the next call opens the same way. */
     @Volatile private var soulGreeted = false
     @Volatile private var soulSpokeThisTurn = false
-    /** The current turn's skip filter (inactive unless the soul answered the turn). */
-    @Volatile private var mindSkip = MindSkip.Filter(false)
 
-    /** One turn's soul/mind sequencing state; guarded by its own monitor. */
+    /** One turn's soul state; guarded by its own monitor. D30: the soul no longer gates the mind,
+     *  so this is bookkeeping for the receipt and the field log only. */
     private class SoulTurnState {
-        val decided = java.util.concurrent.CountDownLatch(1)
-        var submitted = false
-        var answered = false
         var mood: VoiceMood? = null
         /** The soul's own decision, in the log vocabulary ([ErSoulTurn.decisionName]). */
         var decision: String = "-"
-        /** Length of the line the soul chose to say (0 for escalate/nothing). */
-        var soulChars: Int = 0
+        /** D30: the beat was AUDIBLE — set from the TTS start callback, never on render. */
+        var played = false
     }
 
-    // ---- ErHandoff: one receipt and one swallow line per turn, never two ----
+    // ---- ErHandoff: one receipt per turn, never two ----
     // The turn paths race (a cancel, a submit failure and the finally can all reach the same
     // gen), so the log line is latched by gen rather than trusted to one caller.
     private val handoffLock = Any()
     private var handoffNotedGen = -1L
-    private var swallowNotedGen = -1L
-    /** The gen whose mind reply was nothing but the skip token — the caller heard no mind. */
-    @Volatile private var mindSkipSilentGen = -1L
 
     /**
      * The handoff receipt: did the mind receive this turn? Exactly one line per gen — first
@@ -472,35 +465,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         VoxLog.er(ErHandoff.receipt(gen, ok, reason, soul, askChars))
     }
 
-    /**
-     * The no-silent-swallow rule: the soul answered and the caller heard no mind. Emitted once per
-     * gen, as a decision (see [ErHandoff.swallow]) — the rate, not a fault.
-     */
-    private fun noteSwallow(
-        gen: Long,
-        soulAnswered: Boolean,
-        submitted: Boolean,
-        cls: ErIntent.Class,
-        askChars: Int,
-        soulChars: Int,
-    ) {
-        val line = ErHandoff.swallow(
-            gen, soulAnswered, submitted, mindSkipSilentGen == gen, cls, askChars, soulChars,
-        ) ?: return
-        synchronized(handoffLock) {
-            if (swallowNotedGen == gen) return
-            swallowNotedGen = gen
-        }
-        VoxLog.er(line)
-    }
-
-    /** Would a soul line be heard right now? Checked BEFORE the mind is told the voice answered —
-     *  telling it so and then dropping the line (voice off, a reply still playing, the same-text
-     *  guard) would leave the caller with silence. */
+    /** Would a working aside be heard right now? The same gates [speakGlue] applies — voice
+     *  off, a reply still playing, the claim guard, the same-text guard — checked first so the
+     *  slot records why it passed in silence instead of handing a doomed line to the glue. */
     private fun canDeliverSoulLine(text: String): Boolean {
         if (!erPresenceOn || glueBlocked()) return false
-        // M2: mirrors [speakGlue]'s claim guard, so a refused answer is never recorded as the
-        // soul having answered (the mind would be told it did, and could stay quiet).
         if (ErSoulTurn.claimsResult(text)) return false
         val now = android.os.SystemClock.uptimeMillis()
         return synchronized(recentGlue) { !ErSoulTurn.isRepeat(text, recentGlue.filter { now - it.second <= ErSoulTurn.REPEAT_WINDOW_MS }, now) }
@@ -2030,9 +1999,6 @@ class VoiceController(private val context: Context, private val session: HermesS
             releaseTurnGate(turnGen, "suppressed-inflight"); return
         }
         val voiceTurn = fromVoice && presenceActive
-        // The safety class of the caller's utterance, as ErIntent sees it. Only the receipt and
-        // the swallow line read it; routing is still the soul's ([ErSoulTurn]).
-        val turnCls = if (voiceTurn) ErIntent.classify(text).cls else ErIntent.Class.MIND
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
         // runtime are user-togglable in Settings (er_semantic_barge / er_presence).
         // erSemanticBarge=false → presence voice turns always cancel on a barge;
@@ -2053,16 +2019,12 @@ class VoiceController(private val context: Context, private val session: HermesS
             val presenceTarget = if (erPresenceOn) erPresence else erPresence.silentProxy
             openerRoute = presenceTarget.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
         }
-        // THE SOUL DECIDES — FIRST. One render at turn start carrying the caller's line; its OUTPUT
-        // is the routing decision: an answer (small talk — the soul's own turn), a BEAT (the mind's
-        // turn, opened by the soul with a few generated words), or nothing. The mind's submit waits
-        // for that decision for a bounded, adaptive moment (SoulGate) so the mind can be TOLD what
-        // the voice did: that it already answered (the mind may then reply MindSkip.TOKEN and stay
-        // silent — no double answer), or which opener it used (so the mind never repeats it). The
-        // wait is not dead air: the beat plays through it. A decision that lands after the submit
-        // may only speak a beat — the mind was not told about a late answer.
+        // D30 — THE SOUL IS A COMPANION, NOT A GATEKEEPER. Every voice turn goes to the mind at
+        // once; nothing waits on the soul and the mind is never told the voice answered. The soul's
+        // one render at turn start asks for the BEAT — two to six words while the mind starts — or
+        // silence. The beat races the mind: it is dropped if the mind's first text (or its voice)
+        // gets there first, which is correct — the answer is what the caller is waiting for.
         soulSpokeThisTurn = false
-        mindSkipSilentGen = -1L
         workingAsk = text; mindTool = null
         workingWarm = null
         synchronized(workingSaid) { workingSaid.clear() }
@@ -2072,47 +2034,35 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (voiceTurn && erPresenceOn && decide != null && openerRoute == ErIntent.Route.ACK_AND_YIELD) {
             val heardAudio = if (prefsGetBoolean(SoulAudio.PREF, true)) turnAudio else null
             decide(ErSoulTurn.KIND_TURN, text, null, heardAudio) { o, mood ->
-                val (line, isBeat) = when (o) {
-                    is ErSoulTurn.Outcome.Spoken -> o.text to false
-                    is ErSoulTurn.Outcome.Beat -> o.opener to true
-                    else -> null to false
-                }
-                var speak = false
+                val beat = ErSoulTurn.turnBeat(o)
                 synchronized(soulTurn) {
-                    // Record the decision before it is delivered: a soul answer that is then
-                    // dropped for being late is still the decision the mind was told about, and
-                    // the receipt has to say what the soul chose.
                     soulTurn.decision = ErSoulTurn.decisionName(o)
-                    if (o is ErSoulTurn.Outcome.Spoken) soulTurn.soulChars = o.text.length
-                    // The tone the soul heard: it steers this turn's delivery, and it rides to the
-                    // mind in the epilogue when it lands before the submit.
+                    // The tone the soul heard steers this turn's delivery.
                     if (mood != null && gen == turnGen) {
                         soulTurn.mood = mood
                         (tts as? SherpaTts)?.mood = mood
                         VoxLog.er("event=er-mood mood=${mood.name.lowercase()} gen=$gen")
                     }
-                    if (line != null && gen == turnGen && !genCancelled &&
-                        (!soulTurn.submitted || SoulGate.lateMaySpeak(isBeat)) && canDeliverSoulLine(line)) {
-                        speak = true
-                        if (!isBeat) soulTurn.answered = true
-                        erPresence.noteSoulSpoke(if (isBeat) "beat" else "answer", line, android.os.SystemClock.uptimeMillis())
-                    } else if (line != null) {
-                        VoxLog.er("event=er-soul-drop reason=${if (soulTurn.submitted) "late" else "undeliverable"} beat=$isBeat gen=$gen")
-                    }
-                    soulTurn.decided.countDown()
                 }
-                if (speak) main.post {
-                    if (!turnInFlight || gen != turnGen) return@post
+                // A render that answered instead of opening is not spoken: the mind is answering.
+                if (beat == null && o is ErSoulTurn.Outcome.Spoken)
+                    VoxLog.er("event=er-soul-drop reason=not-a-beat gen=$gen")
+                if (beat != null) main.post {
+                    if (!turnInFlight || gen != turnGen || genCancelled) return@post
                     if (soulSpokeThisTurn || firstTextLatch || speaking) {
-                        VoxLog.er("event=er-soul-drop reason=${if (soulSpokeThisTurn) "already-answered" else "mind-already-replying"} gen=$gen")
+                        // The beat lost the race to the mind — correct, the answer is what was asked.
+                        VoxLog.er("event=er-soul-drop reason=${if (soulSpokeThisTurn) "already-spoke" else "late"} gen=$gen")
                         return@post
                     }
                     soulSpokeThisTurn = true
-                    speakGlue(line!!, source = if (isBeat) "soul-beat" else Transcript.SOURCE_SOUL_ANSWER)
+                    speakGlue(beat, source = "soul-beat") {
+                        // D30: "the soul spoke" is recorded when the caller can HEAR it, not on render.
+                        synchronized(soulTurn) { soulTurn.played = true }
+                        erPresence.noteSoulSpoke("beat", beat, android.os.SystemClock.uptimeMillis())
+                        VoxLog.er("event=er-soul-played kind=beat gen=$gen")
+                    }
                 }
             }
-        } else {
-            soulTurn.decided.countDown()
         }
         turnInFlight = true
         voiceState.arm()        // #60: re-arm exactly-once for this turn (via VoiceLoopState)
@@ -2183,27 +2133,20 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // mode) — model/provider ids are config, not user content.
                 VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
                 // ER Phase 1: VOICE-originated turns carry the phone-call voice
-                // prefix ("the agent knows it's on a call" — anti-tool-spiral +
-                // spoken register). Typed sends stay prefix-free: a typed
-                // message may legitimately ask for code blocks / deep work.
+                // prefix ("the agent knows it's on a call" — spoken register). Typed sends stay
+                // prefix-free: a typed message may legitimately ask for code blocks / deep work.
                 // sendText() passes fromVoice=false; both STT loops pass true.
-                // Wait (bounded, adaptive) for the soul's decision, then tell the mind the truth
-                // about the turn. Submitted + answered are read under the same lock the decision
-                // writes them, so an answer is either in the epilogue or never spoken.
-                val waitMs = if (voiceTurn) SoulGate.waitMs(ErTelemetry.renderP50()) else 0L
-                if (waitMs > 0) soulTurn.decided.await(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                // D30: no wait on the soul — the turn is submitted immediately (waitMs = 0).
                 if (genCancelled) {
                     // Nothing will be sent: the receipt says the mind never saw this turn.
                     noteHandoff(gen, false, ErHandoff.REASON_CANCELLED,
                         synchronized(soulTurn) { soulTurn.decision }, text.length)
                     endReply(gen, ReplyLedger.End.CANCELLED); return@execSubmit
                 }
-                val (answered, heardMood) = synchronized(soulTurn) { soulTurn.submitted = true; soulTurn.answered to soulTurn.mood }
-                mindSkip = MindSkip.Filter(answered)
+                val heardMood = synchronized(soulTurn) { soulTurn.mood }
                 val drift = if (voiceTurn) {
                     ErDrift.epilogue(erPresence.drainSoulActions(),
-                        heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe(),
-                        soulAnswered = answered)
+                        heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe())
                 } else ""
                 val drifted = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
                 // #243: a voice turn after a barge carries where the cut landed, once.
@@ -2296,7 +2239,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // #6: keep the terminal's assembled text in step with the gateway's
                         // authoritative snapshot, so a failure at ANY later point falls back
                         // to everything the entity actually wrote. Ignored once terminal.
-                        terminal.assembled(MindSkip.strip(obj.optString("text", "")))
+                        terminal.assembled(obj.optString("text", ""))
                         // #243: what the entity has written so far, for the interruption record.
                         liveReply = gen to terminal.text()
                         if (doneNow) liveReplyDone = gen
@@ -2326,16 +2269,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             done = true
                             readerRunEnd = obj.optString("run_end", "")   // H3: "lost" = the run may outlive the turn
                             val err = obj.optString("error", "")
-                            val held = mindSkip.finish()
-                            if (held.isNotBlank()) { streamFeed(held, gen); main.post { listener?.onDelta(held) } }
-                            val finalText = MindSkip.strip(obj.optString("text", ""))
-                            if (mindSkip.skipped && finalText.isBlank()) {
-                                // The caller heard no mind this turn — remember it for the swallow
-                                // line the turn's end emits (the two together are the swallow).
-                                mindSkipSilentGen = gen
-                                ErTelemetry.mindSkipped()
-                                VoxLog.er("event=er-mind-skip gen=$gen — the voice's answer stood")
-                            }
+                            val finalText = obj.optString("text", "")
                             // 0.6.8: reply text in the log (when transcript logging is on)
                             // — the "replies with a previous message" field report needs
                             // the actual reply text to prove replay vs topical drift.
@@ -2422,21 +2356,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 for (runId in keep) recheckHeldApproval(runId)
                 // ---- ErHandoff: the turn is over ----
                 // One receipt per turn (a no-op when the submit already logged `ok=true`; it
-                // fires here when the submit itself threw) and, when the soul answered while the
-                // mind stayed out of the turn, one swallow line. Read under the same lock the
-                // decision writes, so the pair is the turn's, not a later turn's.
-                var submittedNow = false
-                var answeredNow = false
-                var soulCharsNow = 0
-                var soulDecision = "-"
-                synchronized(soulTurn) {
-                    submittedNow = soulTurn.submitted
-                    answeredNow = soulTurn.answered
-                    soulCharsNow = soulTurn.soulChars
-                    soulDecision = soulTurn.decision
-                }
+                // fires here when the submit itself threw).
+                val soulDecision = synchronized(soulTurn) { soulTurn.decision }
                 noteHandoff(gen, false, ErHandoff.REASON_NO_STREAM, soulDecision, text.length)
-                noteSwallow(gen, answeredNow, submittedNow, turnCls, text.length, soulCharsNow)
                 // ER Phase 4/5: the mind has answered (or failed) — the presence
                 // window closes; the reply's speech owns the floor now.
                 if (erActive || erMindLive) {
@@ -2485,9 +2407,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     }
                 }
                 "response.output_text.delta" -> {
-                    // MindSkip: when the voice already answered, hold the reply's first characters
-                    // until they can be told apart from the skip token, which must never be heard.
-                    val d = mindSkip.feed(e.optString("delta"))
+                    val d = e.optString("delta")
                     if (d.isNotBlank()) {
                         // C4 K1: push firstTEXT once per turn (time from launch to the first
                         // text delta) — the OLD firstAudio site was a lie (it measured text).
@@ -2618,15 +2538,8 @@ class VoiceController(private val context: Context, private val session: HermesS
      * reply uses — listener.onReply (transcript) + settleReply (TTS + turn settlement).
      * Called at most once per turn: [StreamTurnTerminal] has already latched FALLBACK,
      * so a late chunk or a second failure cannot reach here again.
-     *
-     * A failure can land while MindSkip.Filter is still holding the reply's opening
-     * characters (it holds the start until it can rule out the skip token). Release
-     * that hold first, exactly as the done branch does, or a short fallback reply
-     * would settle with nothing queued for the streaming voice.
      */
     private fun deliverFallback(action: StreamAction.Fallback, gen: Long) {
-        val held = mindSkip.finish()
-        if (held.isNotBlank()) { streamFeed(held, gen); main.post { listener?.onDelta(held) } }
         VoxLog.w("event=stream-fallback gen=$gen reason=${action.reason} chars=${action.chars}")
         main.post { settleReply(action.text, gen) }
     }
@@ -3098,7 +3011,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
-    fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified") {
+    fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified",
+                  onPlayed: (() -> Unit)? = null) {
         if (text.isBlank()) return
         // 0.8/M3: RECORD the glue text and its source. The 09-10 field session produced a
         // 60-character spoken line during the mind-work window that matched no ErFillers
@@ -3177,7 +3091,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         main.post { listener?.onPresenceSpoke(text, source) }
         main.post {
             val seq = speakSeq.incrementAndGet()
-            val took = ttsHost?.speak(text) { _ ->
+            // D30: [onPlayed] fires from the TTS start callback — the line is audible — so a line
+            // dropped anywhere after this point (a stop during synthesis, no engine) is never
+            // recorded as heard.
+            val took = ttsHost?.speak(text, { try { onPlayed?.invoke() } catch (_: Throwable) {} }) { _ ->
                 if (speakSeq.get() == seq) {
                     glueSpeaking = false
                     // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the

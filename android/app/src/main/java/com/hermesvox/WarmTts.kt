@@ -54,6 +54,18 @@ interface VoxTts {
         speak(text) { onDone(TtsOutcome(TtsEnd.SPOKEN)) }
     }
 
+    /**
+     * D30: speak, say when the audio STARTED, and say how it ended. [onStart] is the moment the
+     * line becomes audible — the only honest witness that the caller heard it (a line can be
+     * dropped after it was handed over: a stop during synthesis, a cut, no engine). It fires at
+     * most once, never after [onDone]. The default (fakes, engines that cannot see the start)
+     * reports the start at dispatch, which is the old approximation.
+     */
+    fun speakReporting(text: String, onStart: () -> Unit, onDone: (TtsOutcome) -> Unit) {
+        onStart()
+        speakReporting(text, onDone)
+    }
+
     /** True when this engine can synth+play chunks sequentially (reply-streaming TTS). */
     val supportsStreaming: Boolean get() = false
     /** Blocking synth+play on the caller's thread; false if unsupported / not warm. */
@@ -128,7 +140,10 @@ class SystemTts(private val context: Context) : VoxTts {
      * listener: an engine that goes away without a callback must end the utterance
      * (FAILED, code=timeout) instead of latching the call.
      */
-    override fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) {
+    override fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) =
+        speakReporting(text, {}, onDone)
+
+    override fun speakReporting(text: String, onStart: () -> Unit, onDone: (TtsOutcome) -> Unit) {
         // A new utterance flushes the old one (QUEUE_FLUSH below). End the old one here,
         // as INTERRUPTED, so its watchdog cannot later blame the engine for a silence the
         // new utterance caused.
@@ -164,7 +179,9 @@ class SystemTts(private val context: Context) : VoxTts {
         watchdog = wd
         currentFinish = { out -> finish(out) }
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
+            override fun onStart(utteranceId: String?) {
+                if (utteranceId == id && !done.get()) onStart()
+            }
             override fun onDone(utteranceId: String?) {
                 if (utteranceId == id) finish(TtsOutcome(TtsEnd.SPOKEN))
             }

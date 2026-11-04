@@ -90,7 +90,10 @@ internal class TtsEngineHost(
      * [onDone] is NOT called, and the caller must settle its own state (the reply still
      * ends; a failed output leg never blocks a turn, #330).
      */
-    fun speak(text: String, onDone: (TtsOutcome) -> Unit): Boolean {
+    fun speak(text: String, onDone: (TtsOutcome) -> Unit): Boolean = speak(text, {}, onDone)
+
+    /** [speak], plus [onStart] at the moment the line becomes audible (see [VoxTts.speakReporting]). */
+    fun speak(text: String, onStart: () -> Unit, onDone: (TtsOutcome) -> Unit): Boolean {
         val e: VoxTts
         val engineToken: String
         synchronized(lock) {
@@ -114,7 +117,7 @@ internal class TtsEngineHost(
                     "reason=${state.note.ifBlank { "ok" }}"
             )
         }
-        e.speakReporting(text) { out ->
+        e.speakReporting(text, onStart) { out ->
             when (out.end) {
                 TtsEnd.SPOKEN -> {}
                 // A deliberate cut (barge / hush / hang-up / a newer utterance) is not a
