@@ -17,11 +17,11 @@ import javax.crypto.spec.GCMParameterSpec
 object SecureStore {
     private const val ALIAS = "hv_api_key"
 
-    private fun key(): SecretKey {
+    private fun key(alias: String = ALIAS): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        (ks.getKey(alias, null) as? SecretKey)?.let { return it }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        gen.init(KeyGenParameterSpec.Builder(ALIAS,
+        gen.init(KeyGenParameterSpec.Builder(alias,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -30,11 +30,11 @@ object SecureStore {
     }
 
     /** Encrypt a value for storage. Returns null on failure (caller keeps plaintext). */
-    fun encrypt(plaintext: String): String? {
+    fun encrypt(plaintext: String, alias: String = ALIAS): String? {
         if (plaintext.isBlank()) return plaintext
         return try {
             val c = Cipher.getInstance("AES/GCM/NoPadding")
-            c.init(Cipher.ENCRYPT_MODE, key())
+            c.init(Cipher.ENCRYPT_MODE, key(alias))
             val iv = c.iv
             val ct = c.doFinal(plaintext.toByteArray(Charsets.UTF_8))
             Base64.encodeToString(iv, Base64.NO_WRAP) + ":" + Base64.encodeToString(ct, Base64.NO_WRAP)
@@ -42,14 +42,14 @@ object SecureStore {
     }
 
     /** Decrypt a stored value. A legacy (unencrypted, no ':') value returns as-is. */
-    fun decrypt(stored: String): String? {
+    fun decrypt(stored: String, alias: String = ALIAS): String? {
         if (!stored.contains(":")) return stored   // legacy plaintext
         return try {
             val (ivB64, ctB64) = stored.split(":", limit = 2)
             val iv = Base64.decode(ivB64, Base64.NO_WRAP)
             val ct = Base64.decode(ctB64, Base64.NO_WRAP)
             val c = Cipher.getInstance("AES/GCM/NoPadding")
-            c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
+            c.init(Cipher.DECRYPT_MODE, key(alias), GCMParameterSpec(128, iv))
             String(c.doFinal(ct), Charsets.UTF_8)
         } catch (e: Exception) { null }
     }
