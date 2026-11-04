@@ -27,6 +27,12 @@
   file: android/app/src/main/java/com/hermesvox/PresenceGate.kt
   match: 'AlphaGate\.allows\('
 
+- id: presence-cost-stated
+  says: "about 3 GB of memory"
+  doc: docs/PRESENCE.md
+  file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
+  match: 'While a call is live it holds about 3 GB of memory\.'
+
 - id: alpha-gate-off-by-default
   says: "off by default"
   doc: docs/DECISIONS.md

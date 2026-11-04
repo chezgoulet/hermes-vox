@@ -145,6 +145,10 @@ is refused.
   is the user's own gateway.
 - **Not always listening.** Presence runs inside a call the user placed. The wake word is a separate,
   unnumbered idea.
+- **Not free.** The 0.9.1 soak measured a live call with Presence at about 3.1 GB resident;
+  continuous capture, a separate alpha set, adds roughly 300 MB. The Alpha panel states both on
+  the sets themselves ("about 3 GB of memory", "about 300 MB more memory"), because that is the
+  trade the user is asked to make.
 - **Not a personality generator.** It projects an identity the agent authored; it does not invent one.
 
 ---

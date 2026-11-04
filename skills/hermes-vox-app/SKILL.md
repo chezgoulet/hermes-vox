@@ -109,7 +109,7 @@ What the build does:
 So: a fresh install has Presence **off**, because Alpha features is off
 (android/app/src/main/java/com/hermesvox/AlphaGate.kt:28 `DEFAULT_MASTER = false`). An install
 upgraded from a build where Presence was running keeps it: the master is turned on with the
-Presence set selected (android/app/src/main/java/com/hermesvox/AlphaGate.kt:108 `fun migrate`).
+Presence set selected (android/app/src/main/java/com/hermesvox/AlphaGate.kt:110 `fun migrate`).
 Do not tell a user Presence is a mode.
 
 **The hardware check (#403).** At first run, for everyone, the app records total RAM and free
@@ -144,8 +144,8 @@ older build still sees the old names.
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
 | Alpha features | `alpha_features` | false | The master gate for everything unfinished. Off: every alpha row is dimmed and takes no tap, and nothing alpha runs. Turning it on slides out the panel of feature sets | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:27 `KEY_MASTER = "alpha_features"`) |
-| Presence (set) | `alpha_set_presence` | false | Listed first in the panel. Lets Presence run (its own switch then applies) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:36 `"alpha_set_presence"`) |
-| Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:42 `"alpha_set_continuous_listening"`) |
+| Presence (set) | `alpha_set_presence` | false | Listed first in the panel. Lets Presence run (its own switch then applies). Its description states the cost: about 3 GB of memory while a call is live | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:36 `"alpha_set_presence"`) |
+| Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29). Its description states about 300 MB more memory during a call | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:43 `"alpha_set_continuous_listening"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
 dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
