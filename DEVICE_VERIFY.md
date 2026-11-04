@@ -44,8 +44,11 @@ to keep it working:
 
    then enter `https://<machine>.<tailnet>.ts.net` as the entity endpoint. The
    certificate is issued by the tailnet CA; the app trusts user-installed CAs for
-   entity endpoints (Settings → Security → Trust device certificates), so no
-   rebuild and no cleartext.
+   **ts.net endpoints only** (Settings → Security → Trust device certificates), so
+   no rebuild and no cleartext. The anchor is deliberately not trusted for every
+   host: a user CA is exactly what a work proxy or a hostile profile would use.
+   A LAN gateway with a self-signed certificate is no longer trusted — use a
+   certificate the system store trusts, or `tailscale serve`.
 2. **Put any HTTPS terminator in front of it** — Caddy, Traefik with a real
    certificate, or Cloudflare Tunnel — and enter that HTTPS URL.
 
@@ -185,7 +188,9 @@ a second or two while the models warm, then the line opens and it goes.
 ## Troubleshooting
 
 - **"Can't reach the gateway"** — check the network/tailnet and the endpoint;
-  `/v1/models` must answer. Plain `http://` is refused except for `*.ts.net` names.
+  `/v1/models` must answer. Plain `http://` is refused except for `*.ts.net` names,
+  and even those are refused while Tailscale is not connected: with the tunnel down
+  the name is answered by whatever network the phone is on.
 - **"Preparing your voice…" stays up** — a required model is missing or still
   downloading (Settings → Voice models).
 - **A model download stalls** — it resumes by itself when the network returns; the

@@ -419,9 +419,16 @@ class SettingsActivity : AppCompatActivity() {
                         Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
                     }
+                    // M4 (0.9.1 review): a plain-HTTP endpoint is refused while the
+                    // tunnel is down, before anything is saved or sent.
+                    val u = eurl.text.toString().trim()
+                    com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
+                        Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
-                    prefs.edit().putString("url", eurl.text.toString().trim())
+                    prefs.edit().putString("url", u)
                         .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
                     refreshEntityVal()

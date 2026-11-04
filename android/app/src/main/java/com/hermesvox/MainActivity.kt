@@ -1762,6 +1762,9 @@ open class MainActivity : AppCompatActivity() {
         // C0: no user-entered key -> surface the Settings prompt (never connect
         // with an empty auth / baked fallback).
         if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
+        // M4 (0.9.1 review): never dial plain HTTP while Tailscale is down. The request
+        // path enforces this too; here the pill says why instead of failing on the first turn.
+        com.hermesvox.core.CleartextPolicy.refusal(u)?.let { setStatus(it, true); return }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
             // The provider is a per-request override the client sends (the blessed LIGHT
             // PATH) and the scope is stamped on every entity request; both are declared by

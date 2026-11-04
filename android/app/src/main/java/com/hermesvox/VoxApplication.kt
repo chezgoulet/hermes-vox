@@ -15,6 +15,9 @@ class VoxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("hv", MODE_PRIVATE)
+        // M4 (0.9.1 review): the cleartext rule asks the tailnet detector live, and fails
+        // closed until this process has installed it.
+        com.hermesvox.core.CleartextPolicy.tunnelUp = { Tailnet.address() != null }
         // #402: the Alpha gate first — it tells an upgrade from a fresh install by the Presence
         // key that PresenceGate.migrate is about to write.
         AlphaGate.migrate(prefs, presenceModelInstalled = ModelCatalog.isInstalled(this, "gemma-e2b"))
