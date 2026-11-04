@@ -498,6 +498,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  guard) would leave the caller with silence. */
     private fun canDeliverSoulLine(text: String): Boolean {
         if (!erPresenceOn || glueBlocked()) return false
+        // M2: mirrors [speakGlue]'s claim guard, so a refused answer is never recorded as the
+        // soul having answered (the mind would be told it did, and could stay quiet).
+        if (ErSoulTurn.claimsResult(text)) return false
         val now = android.os.SystemClock.uptimeMillis()
         return synchronized(recentGlue) { !ErSoulTurn.isRepeat(text, recentGlue.filter { now - it.second <= ErSoulTurn.REPEAT_WINDOW_MS }, now) }
     }
@@ -1727,11 +1730,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
-    /** True while the card on screen was raised by the CURRENT turn's stream. */
-    private fun turnApprovalWaiting(): Boolean {
-        val current = approvalGate.current() ?: return false
-        return synchronized(turnApprovalKeys) { current.key() in turnApprovalKeys }
-    }
+    /**
+     * True while the CURRENT turn's run has a request pending — on screen or queued.
+     *
+     * L2 (0.9.1 review): this used to ask only about the card heading the queue. With a held
+     * or arm card first, this turn's own parked request sat second: the budget never paused
+     * and the turn expired at 120 s while its card was not even on screen.
+     */
+    private fun turnApprovalWaiting(): Boolean = turnApprovalPending().isNotEmpty()
 
     /** This turn's still-pending requests (a held or arm card is not included). */
     private fun turnApprovalPending(): List<ApprovalRequest> =
@@ -1783,14 +1789,30 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
+     * M1 (0.9.1 review): the stream loop's cancelled exits retire THEIR OWN stream. A
+     * barge-in cancels [currentStream], which is assigned only after startStream returns;
+     * one landing in that window cancelled nothing (or the previous turn's stream), and the
+     * loop then left without a cancel — on /v1/runs the run generated on, tools included,
+     * and the StreamState was never retired. `Streams.cancel` is idempotent, so a stream
+     * the barge-in did reach makes this a no-op.
+     */
+    private fun cancelOwnStream(sid: String) {
+        if (sid.isBlank()) return
+        try { session.cancelStream(sid) } catch (_: Exception) {}
+    }
+
+    /**
      * The turn ran out of AGENT time. Ask the route what abandoning means: close the
      * socket on /v1/responses (which aborts the generation), or POST /stop on /v1/runs
      * (where the socket is only a subscriber and the run would otherwise keep going).
      */
     private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget) {
-        // A runs stream's own id maps to its run; the approval request carries the same
-        // run id when the run was parked on a card.
-        val runId = session.runIdOf(streamId).ifEmpty { approvalGate.current()?.runId.orEmpty() }
+        // A runs stream's own id maps to its run. L1 (0.9.1 review): there is no fallback.
+        // The id is empty only while the admission is in flight, and the card heading the
+        // queue then may be an earlier turn's held card or the arm's — stopping it would
+        // stop another turn's run. Closing this turn's own stream is enough: the cancel and
+        // the admission meet in `StreamState.bindRun`, which stops the run once it is named.
+        val runId = session.runIdOf(streamId)
         VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=budget " +
             "run=${runId.ifEmpty { "-" }} elapsedMs=${budget.elapsedMs()} " +
             "pausedMs=${budget.pausedMs()} limitMs=${StreamPollGate.STREAM_TURN_TIMEOUT_MS}")
@@ -2119,6 +2141,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // approval is still answerable after the loop ends.
                 var done = false
                 var abandoned = false
+                var readerRunEnd = ""
                 // A new turn owns a new set of cards; an older held/arm card is not it.
                 synchronized(turnApprovalKeys) { turnApprovalKeys.clear() }
                 try {
@@ -2192,6 +2215,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // ghost reply (the gate was already released by bargeIn()).
                     // #240: a cut reply is dead for good, even after the next turn resets genCancelled.
                     if (genCancelled || replies.isDead(gen)) {
+                        cancelOwnStream(sid)   // M1: the barge-in may have missed this stream
                         terminal.cancel()
                         endReply(gen, ReplyLedger.End.CANCELLED, if (genCancelled) "cancel" else "reply-dead")
                         break
@@ -2266,6 +2290,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         emitEvents(evts, t0, gen)
                         if (obj.optBoolean("done")) {
                             done = true
+                            readerRunEnd = obj.optString("run_end", "")   // H3: "lost" = the run may outlive the turn
                             val err = obj.optString("error", "")
                             val held = mindSkip.finish()
                             if (held.isNotBlank()) { streamFeed(held, gen); main.post { listener?.onDelta(held) } }
@@ -2315,7 +2340,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     if (done) break
                     tries++
                 }
-                if (genCancelled) { terminal.cancel(); endReply(gen, ReplyLedger.End.CANCELLED, "cancel"); VoxLog.d("turn interrupted during generation") }
+                if (genCancelled) { cancelOwnStream(sid); terminal.cancel(); endReply(gen, ReplyLedger.End.CANCELLED, "cancel"); VoxLog.d("turn interrupted during generation") }
                 else if (!done) {
                     // The agent's budget is spent. What that means is the route's call:
                     // /v1/responses closes the socket; /v1/runs stops the run itself, so
@@ -2349,7 +2374,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // rather than leaving a card that would 409 if tapped. A loop that ended
                 // while the run was STILL alive (lost stream, poll abort) is the exception:
                 // hold its card past the loop so a reattach can answer it.
-                val keep = TurnApprovalHold.keep(done, abandoned, genCancelled, turnApprovalPending())
+                // H3: key on what the reader knows about the RUN, not on the loop's done flag —
+                // a failed reader also ends done, while its run may still be parked on the card.
+                val keep = TurnApprovalHold.keep(TurnApprovalHold.runEnded(done, readerRunEnd),
+                    abandoned, genCancelled, turnApprovalPending())
                 if (keep.isNotEmpty()) {
                     heldApprovalRuns.addAll(keep)
                     VoxLog.d("event=approval-hold reason=answerable run=${keep.joinToString(",")}")
@@ -3042,9 +3070,22 @@ class VoiceController(private val context: Context, private val session: HermesS
         // 60-character spoken line during the mind-work window that matched no ErFillers
         // entry, and the log could not say who had spoken it — the text was never written.
         // That turned a bug into a mystery. One line here turns "something spoke" into
-        // "this spoke, from here". App-generated text only (never the user's words), so it
-        // is safe beside the log_transcripts privacy backstop.
-        VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} text=${text.take(120)}")
+        // "this spoke, from here". L5 (0.9.1 review): the text is NOT only app-generated —
+        // Gemma's acknowledgements and narration are written from the caller's words
+        // ("checking your bank balance") — so it rides the log_transcripts backstop like
+        // every other line that carries what was said. Source and length always log.
+        VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} " +
+            "text=${if (logTranscripts()) text.take(120) else "<hidden>"}")
+        // M2 (0.9.1 review): D29's false-action-claim guard, on EVERY lane. It used to run
+        // only in the working lane and the beat opener, so the tool narration ("I've deleted
+        // that for you", rendered the moment a tool starts), the soul's own answer and the
+        // greeting were spoken unchecked. Every Presence line funnels through here, so the
+        // guard sits once, before the repeat guard and the arbiter. Nothing the glue says is
+        // backed by the mind, so no lane — critical included — may claim a result.
+        if (ErSoulTurn.claimsResult(text)) {
+            VoxLog.er("event=er-glue-reject reason=result-unbacked source=$source")
+            return
+        }
         // 0.8/M3c: the SAME-TEXT guard. The 09-10 field session spoke ONE sentence seven times
         // in thirty-nine seconds through the per-tool-event narration path. The defect was never
         // the count of utterances — a person says three different things while working — it was

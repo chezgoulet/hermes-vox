@@ -28,8 +28,13 @@ class ApprovalTransportTest {
     private val posted = LinkedBlockingQueue<Pair<String, String>>()
     private val answered = CountDownLatch(1)
 
+    private var routeBefore = StreamRoute.active
+
     @Before
     fun start() {
+        // The fake serves the turn on /v1/responses; every install now runs (0.9.1 H2).
+        routeBefore = StreamRoute.active
+        StreamRoute.active = TurnRoute.RESPONSES
         server = HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0)
         pool = Executors.newCachedThreadPool { r -> Thread(r, "approval-fake").apply { isDaemon = true } }
         server.executor = pool
@@ -40,6 +45,7 @@ class ApprovalTransportTest {
 
     @After
     fun stop() {
+        StreamRoute.active = routeBefore
         server.stop(0)
         pool.shutdownNow()
     }

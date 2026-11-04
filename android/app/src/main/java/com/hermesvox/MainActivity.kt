@@ -1446,7 +1446,9 @@ class MainActivity : AppCompatActivity() {
         val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
         VoxLog.d("event=vox-first-call profile=$profile phase=start")
         kotlin.concurrent.thread(isDaemon = true, name = "vox-first-call") {
-            val session = com.hermesvox.core.HermesSession(u, SecureStore.decrypt(k) ?: k, model)
+            // M6: the profile's own scope and provider, exactly as connectFromPrefs declares
+            // them — a bare session asked unscoped, on the gateway's default provider.
+            val session = EntitySession.build(u, SecureStore.decrypt(k) ?: k, { prefs.getString(it, "").orEmpty() }, model)
             // The profile is captured here, not re-read at write time: the document belongs
             // to the entity that answered, even if the user switches during the ask.
             val log: (String) -> Unit = { VoxLog.er(it) }
@@ -1859,14 +1861,16 @@ class MainActivity : AppCompatActivity() {
         // with an empty auth / baked fallback).
         if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
-            session = HermesSession(u, k, m)
-            // The provider is a per-request override the /v1/responses client sends
-            // (the blessed LIGHT PATH) — set it after construction so streamed and
-            // stored turns both forward the chosen gateway backend.
-            session?.setProvider(p)
-            // Same shape for the declared scope: the session stamps it on every
-            // entity request (/v1/models, /v1/responses).
-            session?.setSessionKey(sc)
+            // The provider is a per-request override the client sends (the blessed LIGHT
+            // PATH) and the scope is stamped on every entity request; both are declared by
+            // EntitySession, the one builder every caller uses (M6).
+            session = EntitySession.build(u, k, { key ->
+                when (key) {
+                    EntitySession.PREF_PROVIDER -> p
+                    SessionScope.PREF -> sc
+                    else -> prefs.getString(key, "").orEmpty()
+                }
+            }, m)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
         // The pill used to assert "Connected" the instant a session OBJECT existed —

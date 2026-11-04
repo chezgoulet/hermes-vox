@@ -7,7 +7,9 @@ It is kept because D20 requires every remaining bound to name the failure it ans
 **D29/#406 (2026-11-03): the no-new-numbers rule is dropped.** `digits-unvouched` is no longer a
 refusal anywhere — not in the working lane, not in the beat's opener — and the prompts no longer ban
 numbers. The **false-action-claim guard (`result-unbacked`) stays, unconditionally**, and now runs on
-the beat's opener too (it did not before; it can only refuse more beats). The client's own numbers are
+the beat's opener too (it did not before; it can only refuse more beats). Since the 0.9.1 review (M2)
+it also runs once inside `speakGlue`, so the tool narration, the soul's answer and the greeting are
+guarded as well (`event=er-glue-reject reason=result-unbacked source=…`). The client's own numbers are
 still computed (`ErSoulTurn.vouchedNumbers`) as the grounded side of an observation: a spoken number
 outside them is logged as `event=er-presence observe line=N numbers-unvouched=K`, and #256 measures
 what the unrestricted model does. The corpus now speaks **31** of 51 (the four digit lines moved to

@@ -691,7 +691,8 @@ class SettingsActivity : AppCompatActivity() {
         // Off the UI thread: the directive turn is a real /v1/responses call
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
-            val s = com.hermesvox.core.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
+            // M6: declared like the live session (scope + provider), not a bare one.
+            val s = EntitySession.build(u, SecureStore.decrypt(k) ?: k, { prefs.getString(it, "").orEmpty() })
             // #220: one call does extract → repair → validate, so a document that arrives
             // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
             // instead of costing the user a second button press. The retry below stays as

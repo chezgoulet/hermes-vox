@@ -18,6 +18,7 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
     private var model = model
     private var provider = ""
     private var sessionKey = ""
+    private var conversationId = ""
 
     fun setModel(model: String) = synchronized(lock) { this.model = model }
 
@@ -26,6 +27,17 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
 
     /** The X-Hermes-Session-Key scope ("" = the gateway's per-transcript default). */
     fun setSessionKey(scope: String) = synchronized(lock) { this.sessionKey = scope }
+
+    /**
+     * H2 (0.9.1 review): the client-owned transcript id a run is filed under — the body
+     * `session_id` on `/v1/runs`, which the gateway ranks above `X-Hermes-Session-Key`
+     * (`api_server_runs.py`: body session_id > response chain > declared key > run_id).
+     * The key stays the long-term-memory scope; this id is the conversation, and
+     * [HermesSession.resetConversation] rotates it. "" sends none.
+     */
+    fun setConversationId(id: String) = synchronized(lock) { this.conversationId = id }
+
+    fun conversationId(): String = synchronized(lock) { conversationId }
 
     fun entityHeaders(): Map<String, String> = Entity.headers(apiKey, synchronized(lock) { sessionKey })
 
@@ -48,13 +60,16 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
      * The `POST /v1/runs` admission body. Same identity fields as [buildBody] — model,
      * input and the per-request provider override — but no `stream` (the route is
      * asynchronous: 202 `{run_id}`, then `GET /v1/runs/{run_id}/events`) and no
-     * `previous_response_id` (see [StreamRoute.chainHead]: the runs chain rides the
-     * session key, and a response-store snapshot would freeze it).
+     * `previous_response_id` (see [StreamRoute.chainHead]: a response-store snapshot
+     * would freeze the chain). The conversation is the client-owned `session_id`
+     * ([setConversationId], H2): without it the gateway files the run under the latest
+     * session the key declared, and "new conversation" would keep the old history.
      */
     fun buildRunBody(input: String): ByteArray {
         val body = synchronized(lock) {
             linkedMapOf<String, Any?>("model" to model, "input" to input).apply {
                 if (provider.isNotEmpty()) put("provider", provider)
+                if (conversationId.isNotEmpty()) put("session_id", conversationId)
             }
         }
         return Json.encode(body).toByteArray(Charsets.UTF_8)

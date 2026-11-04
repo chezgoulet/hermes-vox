@@ -31,22 +31,19 @@ internal object StreamRoute {
 `Streams.start` and `HermesSession.turnStored` read `routeFor` once per turn; tests
 set and restore `active`. Nothing above `HermesSession` knows the route exists.
 
-## The scope requirement
+## The scope requirement (lifted in 0.9.1, H2)
 
-A run has no response id, so its only chain is the declared `X-Hermes-Session-Key`.
-With no key the gateway keys the run's session by its own `run_id`
+A run has no response id. With neither a declared `X-Hermes-Session-Key` nor a body
+`session_id` the gateway keys the run's session by its own `run_id`
 (`api_server_runs.py`: `session_id = selected_session_id or run_id`) — every turn would
-be a new conversation. The scope is **blank by default** (Onboarding, `SessionScope`),
-so the claim this document used to make — "Vox always stamps" the key — was false.
+be a new conversation. Until the 0.9.1 review this kept an unscoped install (the scope is
+**blank by default**: Onboarding, `SessionScope`) on `/v1/responses`, with no approval
+card.
 
-The rule: **runs needs a scope; without one the turn stays on responses.** Losing the
-approval card for an unscoped install is a gap; losing the conversation would be a
-regression. Whether onboarding should declare a scope by default (which would put every
-install on the approval route) is the owner's call and is not made here.
-
-A stored turn (`/compress`, the soul turn, the skill install) follows the same route:
-on a runs session it sends no `previous_response_id` and installs no head, so it
-compacts the conversation the runs wrote — not a stale stored snapshot.
+The run body now carries the session's own client `session_id` (see the gaps below), so
+the conversation no longer depends on the scope. **Every install rides runs.** The scope
+only decides long-term memory: with no key, memory follows the transcript, exactly as an
+unscoped `/v1/responses` conversation did.
 
 ## The barge-in (#404)
 
@@ -57,6 +54,19 @@ compacts the conversation the runs wrote — not a stale stored snapshot.
   already have made the run; cutting it would lose the only id that can stop it. The
   admission finishes (bounded by the idle timeout, on the daemon reader, with the stream
   already retired) and the run it names is stopped; no events are subscribed for it.
+- **A lost admission reply is retried once** (0.9.1 review H4). Each turn carries one
+  `Idempotency-Key` (`StreamState.idempotencyKey`). When the reply to a sent
+  `POST /v1/runs` is lost (a reset, or no 202 before the idle timeout), the identical
+  request is sent once more; the gateway replays the original `run_id`
+  (`Idempotency-Replayed: true`) instead of starting the turn twice, and that id is bound
+  or stopped as usual — on a cancelled turn too.
+- **A lost events stream never walks away from the run** (0.9.1 review H3). After the
+  one immediate reattach, the reader reads `GET /v1/runs/{id}` (after 1 s, 2 s, 4 s): a
+  terminal status ends the turn, a live one (`running`, `waiting_for_approval`, …) is
+  reattached from the last seq. When the rounds are spent the run is **stopped**. Only
+  when neither the status nor the stop can be had does the done poll say
+  `run_end:"lost"` — and that, not the loop's `done` flag, is what keeps a pending
+  approval card on screen (`TurnApprovalHold.runEnded`).
 - `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
   scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
   nothing left to stop; nothing about the stop is ever thrown to the caller.
@@ -86,10 +96,16 @@ it already renders.
 Deliberate gaps:
 
 - **No response id.** A run has none (the terminal event carries `output`, `usage`,
-  `runtime`, not an id). The runs body therefore omits `previous_response_id` and the
-  chain rides `X-Hermes-Session-Key`, which Vox always stamps. `lastID` is left
-  untouched by a runs turn — it names a stored `/v1/responses` snapshot that a run
-  cannot advance.
+  `runtime`, not an id). The runs body therefore omits `previous_response_id`. The
+  conversation is a **client-owned `session_id`** in the body (0.9.1 review H2), which
+  the gateway ranks above `X-Hermes-Session-Key` (`api_server_runs.py`: body
+  `session_id` > response chain > declared key > `run_id`). The key stays the
+  long-term-memory scope; the `session_id` is the transcript. `HermesSession` makes one
+  per session object and rotates it in `resetConversation` (`RESET_CHAIN`), so `/new`,
+  a new call and a profile switch start a fresh transcript. A stored turn (`/compress`,
+  the VOX.md directive) rides `/v1/runs` with the same id, because `/v1/responses`
+  cannot address a body `session_id`. `lastID` is left untouched by a runs turn — it
+  names a stored `/v1/responses` snapshot that a run cannot advance.
 - **`tool.started` has no `args`.** The responses route carries the tool's raw JSON
   arguments; runs carries only the gateway's `preview` — the tool's primary argument as
   one line (`agent/display.py`, `build_tool_preview`). The tool marker lines and the tool
@@ -149,7 +165,10 @@ the conversation scope is not blank), or the turns ride responses and prove noth
    stored-turn path needs its own route-aware chain before the flip.
 7. A `clarify.request` (when a tool asks): the event reaches the app without being
    mistaken for an approval.
-8. `/new` on a scoped install: the next turn does not remember the last one. A runs turn
-   leaves no response id to delete, and the gateway resolves the declared key to the
-   same conversation on both routes — confirm the redial actually starts fresh.
-9. An unscoped install: turns still ride `/v1/responses` and keep their conversation.
+8. `/new` on a scoped install: the next turn does not remember the last one. Before
+   0.9.1's H2 fix it did: the run body carried no `session_id`, so the gateway resolved
+   the declared key to the same conversation. The run body now carries a client
+   `session_id` that `/new` rotates (pinned off-device by `RunsStreamTest`) — confirm on
+   the device that "what did I just say?" after `/new` gets no memory of the turn.
+9. An unscoped install: turns ride `/v1/runs` with no `X-Hermes-Session-Key`, carry the
+   same body `session_id` each turn, and keep their conversation ("what did I just say?").

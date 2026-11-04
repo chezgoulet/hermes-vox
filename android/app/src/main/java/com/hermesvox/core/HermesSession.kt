@@ -29,6 +29,18 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     @Volatile
     internal var lastID: String = ""
 
+    init {
+        responses.setConversationId(newConversationId())
+    }
+
+    /**
+     * H2 (0.9.1 review): the transcript a runs-route turn is filed under — sent as the
+     * `/v1/runs` body `session_id` on every streamed and stored turn, and rotated by
+     * [resetConversation]. Client-owned and in memory, exactly like [lastID]: a new
+     * call, `/new`, a profile switch and a fresh session object all start a new one.
+     */
+    fun conversationId(): String = responses.conversationId()
+
     /** The model route for every request (/models chooser). */
     fun setModel(model: String) = responses.setModel(model)
 
@@ -83,8 +95,14 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
         // stale snapshot instead of what the runs wrote. The stored turn follows the
         // streamed turns' route so H2's "one chain" still holds.
         val route = route()
+        // H2 (0.9.1 review): on the runs route the conversation is the body session_id,
+        // which `/v1/responses` cannot address — so the stored turn rides `/v1/runs` too
+        // and blocks for the run's answer, landing in the transcript the voice turns use.
+        if (route == TurnRoute.RUNS) {
+            return Streams.complete(responses, text, ResponsesClient.RESPONSE_TIMEOUT_MS.toLong())
+        }
         val res = responses.response(text, StreamRoute.chainHead(route, lastID))
-        if (route == TurnRoute.RESPONSES) lastID = res.responseId
+        lastID = res.responseId
         return res.reply
     }
 
@@ -177,9 +195,16 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     /** The raw `GET /v1/runs/{id}` body the arm polls. Blocks. */
     internal fun armRunStatus(runId: String): String = gateway.runStatus(runId)
 
-    /** Starts a NEW conversation: drops the chain head. The gateway-side history
-     *  remains until its own retention clears it. */
+    /** Starts a NEW conversation: drops the chain head and rotates the runs transcript
+     *  id (H2), so the next run is filed under a session with no history. The
+     *  gateway-side history remains until its own retention clears it. */
     fun resetConversation() {
         lastID = ""
+        responses.setConversationId(newConversationId())
+    }
+
+    private companion object {
+        /** Visible ASCII and path-safe (the gateway files sessions by id). */
+        fun newConversationId(): String = "vox_" + java.util.UUID.randomUUID().toString().replace("-", "")
     }
 }

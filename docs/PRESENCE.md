@@ -202,9 +202,12 @@ questions escalate") lives in the *directive* — the model is asked to obey it.
 the **beat** (`ErSoulTurn.opener`: no markup, no claimed result, ≤ 7 words → otherwise escalate silently) and on
 the **working lane** (`ErSoulTurn.judge`: no unbacked result claim). D29/#406 dropped the no-new-numbers
 rule from both: a number is spoken, and an unvouched one is only logged (`numbers-unvouched=`) for #256. A turn answer
-(`Outcome.Spoken`) is **not** content-checked: it is spoken as written. That asymmetry is deliberate —
+(`Outcome.Spoken`) is otherwise **not** content-checked: it is spoken as written. That asymmetry is deliberate —
 the soul must be able to answer — but it is exactly why a factual turn can be answered locally with no
-error anywhere. See `ErSoulTurn.kt:283` (the guard) against `VoiceController.kt:1837` (the turn lane,
+error anywhere. The one exception is D29's false-action-claim guard, which since the 0.9.1 review (M2)
+runs on **every** lane, once, inside `speakGlue` (`event=er-glue-reject reason=result-unbacked
+source=…`): the soul's answer, the greeting, the tool narration, the beat and the working lane. A soul
+answer it would refuse is not recorded as answered, so the mind still speaks. See `ErSoulTurn.kt:283` (the guard) against `VoiceController.kt:1837` (the turn lane,
 which never calls it).
 
 ### The two new lines

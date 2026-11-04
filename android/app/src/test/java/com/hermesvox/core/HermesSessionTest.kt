@@ -13,6 +13,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class HermesSessionTest {
 
+    /** This class pins the `/v1/responses` reader; the shipped route is runs, which
+     *  every install now takes (0.9.1 H2), so the route is set for each test. */
+    private var routeBefore = StreamRoute.active
+
+    @org.junit.Before
+    fun pinResponsesRoute() { routeBefore = StreamRoute.active; StreamRoute.active = TurnRoute.RESPONSES }
+
+    @org.junit.After
+    fun restoreRoute() { StreamRoute.active = routeBefore }
+
+
     private val okReply = """{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"the voice of Hermes"}]}]}"""
 
     private fun body(r: TestServer.Request) = Json.parse(r.body) as JObj
@@ -229,7 +240,7 @@ class HermesSessionTest {
     /** The port of entity_race_test: the app re-declares the scope from Settings while
      *  turns are in flight. Every request must carry one whole declared value. */
     @Test
-    fun `scope re-declaration during turns is consistent`() {
+    fun `scope re-declaration during turns is consistent`() = onResponses {
         TestServer { _, w -> w.send(200, "OK", okReply) }.use { srv ->
             val s = HermesSession(srv.url, "testkey", "m")
             val scopes = (0 until 8).map { "agent:vox:dev:member-$it" }

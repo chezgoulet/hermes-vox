@@ -94,17 +94,31 @@ internal class TurnBudget(
  * a turn whose stream was merely lost may not. In that last case the request is held
  * past the loop so the card survives a reattach, and the controller re-reads the run
  * when it can. Pure so the rule is pinned off-device.
+ *
+ * H3 (0.9.1 review): the loop's `done` flag is NOT "the run ended". A reader that fails
+ * also finishes the stream `done`, with an error, and keying on the flag withdrew a card
+ * whose run was still parked on it. The rule keys on [runEnded] — what the reader knows
+ * about the RUN — instead.
  */
 internal object TurnApprovalHold {
 
+    /**
+     * Whether the turn's run is known to be over. [loopDone] is the poll loop's done
+     * flag; [readerRunEnd] is the done poll's `run_end` ("lost" when the runs reader
+     * failed and could neither confirm the run ended nor stop it — see
+     * [StreamState.runEnd]). A loop that never saw done (a poll abort) knows nothing.
+     */
+    fun runEnded(loopDone: Boolean, readerRunEnd: String): Boolean =
+        loopDone && readerRunEnd != StreamState.RUN_LOST
+
     /** The run ids whose cards must survive this loop exit (empty = withdraw all). */
     fun keep(
-        done: Boolean,
+        runEnded: Boolean,
         abandoned: Boolean,
         cancelled: Boolean,
         pending: List<ApprovalRequest>,
     ): Set<String> {
-        if (done || abandoned || cancelled || pending.isEmpty()) return emptySet()
+        if (runEnded || abandoned || cancelled || pending.isEmpty()) return emptySet()
         return pending.mapNotNull { it.runId.takeIf { runId -> runId.isNotEmpty() } }.toSet()
     }
 }

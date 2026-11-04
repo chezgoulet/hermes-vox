@@ -100,45 +100,72 @@ internal object ApprovalChoices {
  * Hands-free answers while a request is up. "Approve" and "no" are the two the
  * owner asked for; a positive answer takes the LEAST privilege the gateway offered
  * (once → session → always). It never invents a choice the event did not list.
+ *
+ * H1 (0.9.1 review): the WHOLE normalised utterance must be one of a short list of
+ * answers (at most [MAX_WORDS] words). It is never a phrase search over a sentence: a
+ * substring search let "I'm not sure" approve on `sure`, and "where does that go" on
+ * `go`. Anything else — a question, a negation that is not a plain no, thinking aloud —
+ * is no answer at all (null), so the card stays up and the owner is asked again. That
+ * is deliberately not a deny either: only a plain no denies.
  */
 internal object ApprovalVoice {
 
-    private val DENY = listOf(
-        "no", "nope", "nah", "deny", "denied", "reject", "cancel", "stop", "never",
-        "block", "don t", "do not", "not now", "don't",
+    /** Plain refusals, matched as the whole utterance. */
+    private val DENY = setOf(
+        "no", "nope", "nah", "no thanks", "no thank you", "deny", "denied", "deny it",
+        "reject", "reject it", "cancel", "cancel that", "cancel it", "stop", "stop it",
+        "never", "block", "block it", "don't", "do not", "not now", "no don't",
+        "don't approve", "do not approve", "no don't approve", "don't do it", "no stop",
     )
-    private val APPROVE = listOf(
-        "approve", "approved", "approves", "yes", "yeah", "yep", "ok", "okay",
-        "allow", "allowed", "proceed", "go ahead", "go", "sure", "confirm",
-        "confirmed", "do it",
+
+    /** Plain approvals, matched as the whole utterance. No bare soft words: `sure`, `ok`,
+     *  `okay`, `go` and `allow` are said while thinking far more often than as a yes. */
+    private val APPROVE = setOf(
+        "approve", "approved", "approve it", "approve once", "approve that",
+        "yes", "yes approve", "yes approve it", "yes please", "yes do it",
+        "do it", "go ahead", "proceed", "confirm", "confirmed",
     )
+
+    /** Any of these makes a non-deny utterance no answer (re-prompt), never a yes. */
+    private val NEGATION = setOf(
+        "not", "no", "don't", "dont", "never", "nope", "nah", "can't", "cannot", "won't",
+        "wouldn't", "shouldn't", "isn't", "doesn't", "without",
+    )
+
+    /** An utterance that opens like a question is a question, whatever follows. */
+    private val QUESTION = setOf(
+        "what", "what's", "whats", "where", "why", "how", "who", "which", "when", "is",
+        "are", "does", "did", "can", "could", "should", "would", "will", "wait",
+    )
+
+    private const val MAX_WORDS = 3
 
     /** The gateway choices that count as a yes, least privilege first. */
     private val POSITIVE = listOf("once", "session", "always")
 
     /**
-     * Maps a recognised utterance to an offered choice, or null when it is neither a
-     * yes nor a no. A denial wins when both appear ("no, don't approve").
+     * Maps a recognised utterance to an offered choice, or null when it is not an
+     * answer (the owner is asked again).
      */
     fun resolve(text: String, choices: List<String>): String? {
+        if (text.contains('?')) return null
         val said = normalize(text)
         if (said.isEmpty()) return null
-        if (DENY.any { hasPhrase(said, it) }) return "deny"
-        if (APPROVE.any { hasPhrase(said, it) }) return POSITIVE.firstOrNull { it in choices }
+        val words = said.split(' ')
+        if (words.size > MAX_WORDS) return null
+        if (words.first() in QUESTION) return null
+        if (said in DENY) return "deny"
+        if (words.any { it in NEGATION }) return null
+        if (said in APPROVE) return POSITIVE.firstOrNull { it in choices }
         return null
     }
 
     private fun normalize(text: String): String =
         text.lowercase()
+            .replace('\u2019', '\'')
             .replace(Regex("[^a-z0-9' ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
-
-    /** Word-boundary match, so "no" does not fire inside "notify" and "ok" not inside "token". */
-    private fun hasPhrase(said: String, phrase: String): Boolean {
-        val pattern = "(^| )" + Regex.escape(phrase) + "( |$)"
-        return Regex(pattern).containsMatchIn(said)
-    }
 }
 
 /** The words the surface uses. Kept pure so the wording is pinned by tests. */

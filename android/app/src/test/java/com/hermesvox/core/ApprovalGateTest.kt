@@ -119,6 +119,59 @@ class ApprovalGateTest {
         assertNull(ApprovalVoice.resolve("token bucket", listOf("once", "deny")))
     }
 
+    // ---- H1 (0.9.1 review): thinking aloud is never a yes -------------------
+
+    private val all = listOf("once", "session", "always", "deny")
+
+    @Test
+    fun `I'm not sure does not approve`() {
+        assertNull(ApprovalVoice.resolve("I'm not sure", all))
+        assertNull(ApprovalVoice.resolve("I’m not sure.", all))
+        assertNull(ApprovalVoice.resolve("not sure", all))
+    }
+
+    @Test
+    fun `okay what is that does not approve`() {
+        assertNull(ApprovalVoice.resolve("okay what is that", all))
+        assertNull(ApprovalVoice.resolve("OK, what does that command do?", all))
+    }
+
+    @Test
+    fun `where does that go does not approve`() {
+        assertNull(ApprovalVoice.resolve("where does that go", all))
+        assertNull(ApprovalVoice.resolve("where does that go?", all))
+    }
+
+    @Test
+    fun `bare soft words are not an approval`() {
+        for (soft in listOf("sure", "ok", "okay", "go", "allow", "yeah sure", "ok go")) {
+            assertNull(soft, ApprovalVoice.resolve(soft, all))
+        }
+    }
+
+    @Test
+    fun `an approval inside a longer sentence is not an approval`() {
+        assertNull(ApprovalVoice.resolve("yes but first tell me what it does", all))
+        assertNull(ApprovalVoice.resolve("I would approve that later", all))
+        assertNull(ApprovalVoice.resolve("do it?", all))
+        assertNull(ApprovalVoice.resolve("don't know, approve?", all))
+    }
+
+    @Test
+    fun `a negation that is not a plain no re-prompts rather than denies`() {
+        assertNull(ApprovalVoice.resolve("not yet", all))
+        assertNull(ApprovalVoice.resolve("no I'm not sure", all))
+        assertEquals("deny", ApprovalVoice.resolve("No.", all))
+        assertEquals("deny", ApprovalVoice.resolve("not now", all))
+    }
+
+    @Test
+    fun `plain approvals still approve`() {
+        for (yes in listOf("Approve.", "yes", "Yes, approve.", "approve once", "do it", "go ahead")) {
+            assertEquals(yes, "once", ApprovalVoice.resolve(yes, all))
+        }
+    }
+
     // ---- safety: timeout is no ----------------------------------------------
 
     @Test
@@ -232,5 +285,20 @@ class ApprovalGateTest {
         val accepted = gate.offer(approval, runAlive = true)!!
         assertEquals(listOf("deny"), accepted.choices)
         assertNull(gate.answer(accepted.key(), "once", "touch"))
+    }
+
+    // ---- L2 (0.9.1 review): a turn's card behind an older one still counts ------
+
+    @Test
+    fun `a turn's request queued behind a held card is still pending for that turn`() {
+        val gate = ApprovalGate()
+        val held = ApprovalRequest("run-old", "req-old", "rm a", "", "", listOf("once", "deny"))
+        val mine = ApprovalRequest("run-new", "req-new", "rm b", "", "", listOf("once", "deny"))
+        gate.offer(held, runAlive = true)
+        gate.offer(mine, runAlive = true)
+        // The card on screen is the older one...
+        assertEquals("req-old", gate.current()!!.key())
+        // ...but this turn's own request is pending, which is what pauses its budget.
+        assertEquals(listOf("req-new"), gate.pendingFor(setOf("req-new")).map { it.key() })
     }
 }

@@ -26,7 +26,7 @@ class RunsStreamTest {
         }
     }
 
-    /** A run has no response id: the route is only taken with a declared scope. */
+    /** A scoped session: the key rides as the memory scope beside the run's session_id. */
     private fun session(srv: TestServer) =
         HermesSession(srv.url, "testkey", "hermes-agent").also { it.setSessionKey("agent:vox:runs") }
 
@@ -192,28 +192,27 @@ data: {"event":"run.completed","run_id":"run_c","seq":0,"completed":true,"partia
     }
 
     /**
-     * With no declared scope the gateway keys a run's session by its own run id, so
-     * every turn would start a new conversation. Such an install stays on the responses
-     * route — chained by previous_response_id — even with the runs route active.
+     * 0.9.1 H2: an unscoped install used to be held on the responses route, because with
+     * neither a key nor a session id the gateway files each run under its own run id and
+     * every turn would start a new conversation. The run body's client `session_id` keeps
+     * the conversation without a scope, so the unscoped install runs too — sending no
+     * session key at all, and the same transcript id on each turn.
      */
     @Test
-    fun `with no session key a turn stays on the responses route`() = withRuns {
-        TestServer { r, w ->
-            if (r.method == "POST" && r.path == "/v1/responses") {
-                w.sse()
-                w.write("""event: response.completed
-data: {"type":"response.completed","response":{"id":"resp_k","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"kept"}]}]}}
-
-""")
-            } else w.send(500, "Wrong Route", "{}")
-        }.use { srv ->
+    fun `with no session key a turn rides runs and keeps its conversation`() = withRuns {
+        completingRuns("kept").use { srv ->
             val s = HermesSession(srv.url, "testkey", "hermes-agent")
             s.lastID = "resp_prev"
-            drain(s, s.startStream("hi"))
-            val r = srv.requests.single()
-            assertEquals("/v1/responses", r.path)
-            assertEquals("resp_prev", Json.str(Json.parse(r.body) as JObj, "previous_response_id"))
-            assertEquals("resp_k", s.lastID)
+            drain(s, s.startStream("one"))
+            drain(s, s.startStream("two"))
+            val runs = srv.requests.filter { it.method == "POST" && it.path == "/v1/runs" }
+            assertEquals(2, runs.size)
+            assertTrue(srv.requests.none { it.path == "/v1/responses" })
+            for (r in srv.requests) assertEquals("", r.header(Entity.SESSION_KEY_HEADER))
+            val ids = runs.map { Json.str(Json.parse(it.body) as JObj, "session_id") }
+            assertTrue(ids[0].isNotEmpty())
+            assertEquals(ids[0], ids[1])
+            assertEquals(null, (Json.parse(runs[0].body) as JObj)["previous_response_id"])
         }
     }
 
@@ -345,22 +344,327 @@ data: {"event":"message.delta","run_id":"run_h","seq":0,"delta":"x"}
         }
     }
 
+    /** A runs gateway that answers every admission and finishes each run at once. */
+    private fun completingRuns(reply: String = "done"): TestServer {
+        val n = AtomicInteger()
+        return TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_${n.incrementAndGet()}","status":"started"}""")
+                r.method == "GET" && r.path.contains("/events") -> {
+                    w.sse()
+                    w.write("""id: 0
+data: {"event":"run.completed","seq":0,"output":"$reply"}
+
+""")
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }
+    }
+
+    private fun runBodies(srv: TestServer): List<JObj> =
+        srv.requests.filter { it.method == "POST" && it.path == "/v1/runs" }.map { Json.parse(it.body) as JObj }
+
     /**
-     * H2 on the runs route: /compress follows the streamed turns. It sends no stored
-     * chain head (the session key IS the conversation) and does not install one.
+     * H2 (0.9.1 review): the transcript is a client-owned `session_id` in the run body —
+     * the gateway ranks it above `X-Hermes-Session-Key`. Every turn of one conversation
+     * carries the same id, and the key still rides as the memory scope.
      */
     @Test
-    fun `a stored turn on a runs session chains by the session key`() = withRuns {
-        TestServer { r, w ->
-            w.send(200, "OK", """{"id":"resp_compress","output":[{"type":"message","content":[{"type":"output_text","text":"compacted"}]}]}""")
-        }.use { srv ->
+    fun `every run of a conversation carries the same client session id`() = withRuns {
+        completingRuns().use { srv ->
+            val s = session(srv)
+            drain(s, s.startStream("one"))
+            drain(s, s.voiceTurn("two"))
+            val ids = runBodies(srv).map { Json.str(it, "session_id") }
+            assertEquals(2, ids.size)
+            assertTrue(ids[0].startsWith("vox_"))
+            assertEquals(ids[0], ids[1])
+            assertEquals(s.conversationId(), ids[0])
+            for (r in srv.requests.filter { it.path == "/v1/runs" }) {
+                assertEquals("agent:vox:runs", r.header("X-Hermes-Session-Key"))
+            }
+        }
+    }
+
+    /**
+     * H2: `/new` (RESET_CHAIN → resetConversation) must start a new transcript on the
+     * runs route. Clearing the response head alone changed nothing the run sends, so the
+     * next run landed in the old conversation with its full history.
+     */
+    @Test
+    fun `a reset conversation files the next run under a new session id`() = withRuns {
+        completingRuns().use { srv ->
+            val s = session(srv)
+            drain(s, s.startStream("before"))
+            s.resetConversation()
+            drain(s, s.startStream("after"))
+            val ids = runBodies(srv).map { Json.str(it, "session_id") }
+            assertEquals(2, ids.size)
+            assertTrue(ids.all { it.isNotEmpty() })
+            assertTrue("the reset must rotate the transcript id", ids[0] != ids[1])
+            // The scope (memory) is unchanged across the reset: only the transcript rotates.
+            val keys = srv.requests.filter { it.path == "/v1/runs" }.map { it.header("X-Hermes-Session-Key") }.toSet()
+            assertEquals(setOf("agent:vox:runs"), keys)
+        }
+    }
+
+    @Test
+    fun `two sessions never share a transcript id`() {
+        val a = HermesSession("http://127.0.0.1:1", "k", "m")
+        val b = HermesSession("http://127.0.0.1:1", "k", "m")
+        assertTrue(a.conversationId() != b.conversationId())
+    }
+
+    /**
+     * H2 on the runs route: /compress follows the streamed turns into the SAME transcript.
+     * `/v1/responses` cannot address a body session_id, so the stored turn is a run too:
+     * same session_id, no stored chain head, and the run's output is the reply.
+     */
+    @Test
+    fun `a stored turn on a runs session rides the conversation's run session`() = withRuns {
+        completingRuns("compacted").use { srv ->
             val s = session(srv)
             s.lastID = "resp_stale"
+            drain(s, s.startStream("hi"))
             assertEquals("compacted", s.turnStored("/compress"))
-            val body = Json.parse(srv.requests.single().body) as JObj
-            assertEquals(null, body["previous_response_id"])
-            assertEquals("agent:vox:runs", srv.requests.single().header("X-Hermes-Session-Key"))
+            assertTrue(srv.requests.none { it.path == "/v1/responses" })
+            val bodies = runBodies(srv)
+            assertEquals(2, bodies.size)
+            assertEquals(Json.str(bodies[0], "session_id"), Json.str(bodies[1], "session_id"))
+            assertEquals(null, bodies[1]["previous_response_id"])
             assertEquals("resp_stale", s.lastID)
+        }
+    }
+
+    /** A stored run that never answers is stopped at its deadline, not left running. */
+    @Test
+    fun `a stored run past its deadline is stopped`() = withRuns {
+        val stopped = CountDownLatch(1)
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_slow","status":"started"}""")
+                r.method == "POST" && r.path.endsWith("/stop") -> {
+                    w.send(200, "OK", """{"status":"stopping"}"""); stopped.countDown()
+                }
+                r.method == "GET" -> { w.sse(); w.write(": keepalive\n\n"); w.holdUntilClientCloses(5000) }
+            }
+        }.use { srv ->
+            val client = ResponsesClient(srv.url, "testkey", "hermes-agent").also { it.setSessionKey("agent:vox:runs") }
+            try {
+                Streams.complete(client, "/compress", 300)
+                error("a silent run must not produce a reply")
+            } catch (e: HermesException) {
+                assertTrue(e.message!!.contains("no answer"))
+            }
+            assertTrue(stopped.await(3, TimeUnit.SECONDS))
+        }
+    }
+
+    // ---- H4 (0.9.1 review): a lost 202 is retried once, under the same key ----
+
+    private fun runPosts(srv: TestServer) = srv.requests.filter { it.method == "POST" && it.path == "/v1/runs" }
+
+    /**
+     * The admission reached the gateway and its reply was lost. The one retry is the
+     * identical request — same body, same Idempotency-Key — so the gateway replays the
+     * original run id instead of starting the turn twice, and the turn completes.
+     */
+    @Test
+    fun `a lost admission reply is retried once with the same idempotency key`() = withRuns {
+        val posts = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    if (posts.incrementAndGet() == 1) w.drop()
+                    else w.send(202, "Accepted", """{"run_id":"run_once","status":"started"}""")
+                r.method == "GET" && r.path.startsWith("/v1/runs/run_once/events") -> {
+                    w.sse()
+                    w.write("""id: 0
+data: {"event":"run.completed","seq":0,"output":"heard once"}
+
+""")
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }.use { srv ->
+            val s = session(srv)
+            val done = drain(s, s.startStream("hi"))
+            assertEquals("", Json.str(done, "error"))
+            assertEquals("heard once", Json.str(done, "text"))
+            val p = runPosts(srv)
+            assertEquals(2, p.size)
+            val key = p[0].header("Idempotency-Key")
+            assertTrue(key.isNotEmpty() && key.length <= 255 && key.all { it.code in 33..126 })
+            assertEquals(key, p[1].header("Idempotency-Key"))
+            assertEquals(p[0].body, p[1].body)
+        }
+    }
+
+    @Test
+    fun `each turn carries its own idempotency key`() = withRuns {
+        completingRuns().use { srv ->
+            val s = session(srv)
+            drain(s, s.startStream("one"))
+            drain(s, s.startStream("two"))
+            val keys = runPosts(srv).map { it.header("Idempotency-Key") }
+            assertEquals(2, keys.size)
+            assertTrue(keys.all { it.isNotEmpty() })
+            assertTrue(keys[0] != keys[1])
+        }
+    }
+
+    /** Exactly one retry: a second lost reply fails the turn, with no third POST. */
+    @Test
+    fun `a second lost admission reply fails the turn`() = withRuns {
+        TestServer { r, w ->
+            if (r.method == "POST" && r.path == "/v1/runs") w.drop() else w.send(404, "Not Found", "{}")
+        }.use { srv ->
+            val s = session(srv)
+            val done = drain(s, s.startStream("hi"))
+            assertTrue(Json.str(done, "error").isNotEmpty())
+            assertEquals(2, runPosts(srv).size)
+        }
+    }
+
+    /**
+     * A barge-in while the admission reply is in flight, and that reply is lost. The retry
+     * still goes out — it is the only way to learn the id — and the replayed run is
+     * stopped, not left generating unheard.
+     */
+    @Test
+    fun `a replayed run of a cancelled turn is stopped`() = withRuns {
+        val stopped = CountDownLatch(1)
+        val stopPaths = Collections.synchronizedList(ArrayList<String>())
+        val sidRef = java.util.concurrent.atomic.AtomicReference<String>()
+        val sessionRef = java.util.concurrent.atomic.AtomicReference<HermesSession>()
+        val posts = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" -> if (posts.incrementAndGet() == 1) {
+                    val deadline = System.currentTimeMillis() + 3000
+                    while (sidRef.get() == null && System.currentTimeMillis() < deadline) Thread.sleep(5)
+                    sessionRef.get().cancelStream(sidRef.get())   // the barge-in
+                    w.drop()
+                } else w.send(202, "Accepted", """{"run_id":"run_orphan","status":"started"}""")
+                r.method == "POST" && r.path.endsWith("/stop") -> {
+                    stopPaths.add(r.path); w.send(200, "OK", """{"status":"stopping"}"""); stopped.countDown()
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }.use { srv ->
+            val s = session(srv).also { sessionRef.set(it) }
+            sidRef.set(s.startStream("hi"))
+            assertTrue(stopped.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf("/v1/runs/run_orphan/stop"), stopPaths.toList())
+            assertEquals(2, runPosts(srv).size)
+        }
+    }
+
+    // ---- H3 (0.9.1 review): a lost events stream never walks away from the run ----
+
+    private fun fastRecovery(block: () -> Unit) {
+        val old = Streams.recoverBackoffMs
+        Streams.recoverBackoffMs = longArrayOf(10, 10, 10)
+        try { block() } finally { Streams.recoverBackoffMs = old }
+    }
+
+    /**
+     * A gateway whose events GET fails [failGets] times (a 502), whose status is [status],
+     * and whose stop answers [stopCode]. Later GETs finish the run.
+     */
+    private fun flakyRun(failGets: Int, status: String, stopCode: Int = 200): Pair<TestServer, MutableList<String>> {
+        val gets = AtomicInteger()
+        val log = Collections.synchronizedList(ArrayList<String>())
+        val srv = TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_h3","status":"started"}""")
+                r.method == "GET" && r.path.startsWith("/v1/runs/run_h3/events") -> {
+                    log.add("events")
+                    if (gets.incrementAndGet() <= failGets) w.send(502, "Bad Gateway", "{}")
+                    else {
+                        w.sse()
+                        w.write("""id: 0
+data: {"event":"run.completed","seq":0,"output":"recovered"}
+
+""")
+                    }
+                }
+                r.method == "GET" && r.path == "/v1/runs/run_h3" -> {
+                    log.add("status")
+                    if (status.isEmpty()) w.send(500, "Oops", "{}")
+                    else w.send(200, "OK", """{"run_id":"run_h3","status":"$status"}""")
+                }
+                r.method == "POST" && r.path.endsWith("/stop") -> {
+                    log.add("stop"); w.send(stopCode, "Stop", """{"status":"stopping"}""")
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }
+        return srv to log
+    }
+
+    @Test
+    fun `a lost events stream on a live run reattaches after reading its status`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 1, status = "running")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertEquals("", Json.str(done, "error"))
+                assertEquals("recovered", Json.str(done, "text"))
+                assertEquals(listOf("events", "status", "events"), log.toList())
+            }
+        }
+    }
+
+    /** Still parked on an approval and the events never come back: stop it, never neither. */
+    @Test
+    fun `a live run that cannot be followed is stopped`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 99, status = "waiting_for_approval")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertTrue(Json.str(done, "error").isNotEmpty())
+                assertEquals("stop", log.last())
+                assertEquals(1, log.count { it == "stop" })
+                assertEquals(3, log.count { it == "status" })
+                // The stop landed, so the run is known to end: no `run_end:"lost"`.
+                assertEquals(null, done["run_end"])
+            }
+        }
+    }
+
+    @Test
+    fun `a run the gateway reports finished is not stopped`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 99, status = "failed")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertTrue(Json.str(done, "error").isNotEmpty())
+                assertTrue(log.none { it == "stop" })
+                assertEquals(null, done["run_end"])
+            }
+        }
+    }
+
+    /** Neither the status nor the stop can be had: the run may outlive the turn. */
+    @Test
+    fun `an unreachable run is reported lost`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 99, status = "", stopCode = 503)
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startStream("hi"))
+                assertTrue(Json.str(done, "error").isNotEmpty())
+                assertEquals("lost", Json.str(done, "run_end"))
+                assertEquals(1, log.count { it == "stop" })
+            }
         }
     }
 }
