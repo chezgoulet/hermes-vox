@@ -80,3 +80,27 @@
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/ErHandoff.kt
   match: 'D30'
+
+- id: phone-mcp-single-tool
+  says: "with an action enum"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'const val NAME = "phone"'
+
+- id: phone-mcp-tailnet-only
+  says: "tailnet"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
+  match: 'isAnyLocalAddress'
+
+- id: phone-tier-two-never-executes
+  says: "never executes"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'PhoneTiers\.APPROVAL ->'
+
+- id: phone-undo-lifetime
+  says: "the undo lives for the action's lifetime"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
+  match: 'fun undo\('
