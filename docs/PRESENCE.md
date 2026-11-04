@@ -223,6 +223,52 @@ question (#251), with the owner's read being one or the other.
 
 ---
 
+## Local actions: the four things the phone does by itself (#421 step 2)
+
+Some requests cannot wait for a gateway. "Set a timer for five minutes" has to be running before a
+streamed turn would even have opened its connection, so it is matched by a **deterministic grammar,
+not a model** (`LocalActionGrammar`) and taken on the phone: the action runs, the caller hears one
+short line, and the registry the presence context reports is updated so the mind can answer
+follow-ups ("how long left?").
+
+**Four actions, Tier 0 only — reversible, private, nothing outward-facing:**
+
+| action | what it sounds like | how |
+|---|---|---|
+| timer | "Timer set for 5 minutes." | `AlarmManager.setExact(…, OnAlarmListener)`; rings through this app |
+| alarm | "Alarm set for 7:30 am." | the same at a wall-clock time (`RTC_WAKEUP`), next occurrence |
+| do not disturb | "Do not disturb on." | `NotificationManager.setInterruptionFilter` |
+| volume | "Volume 62 percent." | `AudioManager.setStreamVolume` (media stream) |
+
+**What each one costs, precisely**, because the honest answer decides what ships:
+
+- **timer and alarm need no permission.** The exact-alarm restriction (`SCHEDULE_EXACT_ALARM`) does
+  not apply to the `OnAlarmListener` form, so the manifest is unchanged and the user is never asked.
+  The trade is stated rather than hidden: the listener lives in this process, so the timer rings
+  while the app is alive — which it is during a call (the voice service is foreground). A timer that
+  must outlive the process would need a broadcast receiver **plus** the "Alarms & reminders" special
+  access, and that is deliberately not this step. An alarm set this way rings through Vox; it is not
+  added to the system Clock app, because that intent launches another app's UI and the caller would
+  have to confirm it — outward-facing, and unverifiable from here.
+- **Do Not Disturb needs the user's policy access.** `ACCESS_NOTIFICATION_POLICY` is already declared
+  for #325's quiet calls, but the grant itself is a special access only the user can give in system
+  settings. Without it the phone says exactly that — *"I can't change do-not-disturb, the phone
+  hasn't given me permission."* What the permission buys: the caller could say "do not disturb on"
+  and have it honoured without leaving the call to visit Settings.
+- **volume needs no permission**, but some devices refuse a stream change while Do Not Disturb owns
+  the audio, which is reported as a failure rather than swallowed.
+
+**The confirmation must be true** (the false-action-claim guard's premise, applied to the phone's own
+actions): a failure has its own words and names what failed. Nothing here claims a result it did not
+produce.
+
+**When it does not match, nothing changes.** A compound or ambiguous sentence ("set a timer for five
+minutes and then email Bob"), a question that merely contains the words ("what does do not disturb
+do"), or any utterance with a letter outside A–Z — English only for now — falls through to the mind
+exactly as before. The grammar claims the whole utterance or none of it.
+
+---
+
 ## The handoff: how ER decides, and how to read a session for swallowed turns
 
 0.9.1 shipped Presence/ER with a release-gating report: *"it swallowed my question — the soul

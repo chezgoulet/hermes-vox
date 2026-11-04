@@ -120,15 +120,54 @@ a second or two while the models warm, then the line opens and it goes.
    accelerator did not come up: the app still works (the CPU fallback is deliberate),
    but the fast path is not live. The Pixel 9's Tensor NPU is not usable (no model is
    compiled for it), and the x86_64 emulator cannot load the model at all.
-5. **The soul's numbers** — `express-probe … warm=`, `soul(beat= … mind-skip=)`,
-   `hears=true`, `event=soul-heard ms=`.
-6. **Voice CPU threads** — Settings → Transcription (STT) → "Voice CPU threads". `Auto` derives Whisper
+5. **The soul's numbers** — `express-probe … warm=`, `soul(beat= …)`, `hears=true`,
+   `event=soul-heard ms=`, and `event=er-handoff ok=true` for every voice turn. (The
+   `mind-skip` counter is gone with the skip offer, D30: the mind always answers.)
+6. **The review's five fixes, one call** (2026-11-04 review; the turn-by-turn checks are
+   `docs/PRESENCE.md`):
+   - **A confirmation is an answer** — ask Hermes to write something to a file, then answer
+     "yes". You should hear a beat, then the answer. If you hear *"okay — take the time you
+     need"*, F5 has regressed.
+   - **A re-ask is never lost** — ask a question that makes Hermes use a tool (a price, the
+     weather), and while it works say *"and what about the second one?"*. The words must
+     come back as a turn when the first settles: `event=er-pending queued=true reason=hold`
+     then `submitted=true`. A `suppressed-inflight` receipt with no `er-pending` line is the
+     bug.
+   - **The mind may use its tools on a voice turn** — ask a price question. The console
+     must show `◆ tool:` lines; none means the anti-tool clause came back. The turn's
+     instructions carry the register and the presence block, and the caller's words are the
+     `input`, byte-exact (`grep reasoning=` in the log names the effort).
+   - **The working line is the mind's own** — during a long tool run the console shows
+     `// entity: …` and you should hear that line (`event=er-glue source=mind-commentary`),
+     not a guess about the tool.
+   - **No turn ends in silence** — put the phone in airplane mode mid-call, ask something,
+     and you must hear *"Sorry — I didn't get an answer back on that. Want me to try
+     again?"* (`event=repair reason=stream-lost`), not just a cue and a pill.
+7. **Local actions (#421 step 2)** — say each of these in a call, and read the log:
+   - *"set a timer for one minute"* → *"Timer set for 1 minute."*, `event=local-action
+     kind=timer ok=true`, and the timer actually rings (ringtone + notification) one minute
+     later. No network turn appears in the log.
+   - *"set an alarm for 7:30"* → the line names 7:30 am or pm correctly; the alarm rings
+     through Vox at that time (not the system Clock app — see D32).
+   - *"do not disturb on"* → *"Do not disturb on."* and the system DND icon appears. If
+     Do Not Disturb **access** has not been granted (Settings → Notifications → Do Not
+     Disturb access), the phone must say *"I can't change do-not-disturb, the phone hasn't
+     given me permission."* — never pretend.
+   - *"turn the volume up"* → *"Volume N percent."* with N the level after the change.
+   - *"what's the weather"* / *"set a timer for five minutes and then email Bob"* → neither
+     is a local action; both are ordinary turns.
+   - **Then ask a follow-up** — *"how long is left on that timer?"* — and the answer must
+     be right: that is B1's `local_actions:` block proving it reached the mind.
+8. **The presence context** — the turn's instructions carry `presence: soul=… last_line=…`,
+   `local_actions:` and `device: <time>, battery N%, online/offline, dnd=on/off`, under 200
+   characters, and never any of your spoken words.
+9. **Voice CPU threads** — Settings → Transcription (STT) → "Voice CPU threads". `Auto` derives Whisper
    = half the cores (2–4) and the voice = 2. The load logs prove what ran:
    `OfflineWhisperStt loaded: … threads=N cores=M` and `SherpaTts loaded: … threads=N`.
    The change lands on the next voice-model load.
-7. **Keep-awake** — the screen stays on during a call and times out normally after it
+10. **Keep-awake** — the screen stays on during a call and times out normally after it
    (Settings → Appearance & Layout).
-8. **A headset becomes the route (#149)** — pair a Bluetooth headset, open a call, and read
+11. **A headset becomes the route (#149)** — pair a Bluetooth headset, open a call, and read
    the log: `event=comm-route action=set ok=true type=BT_SCO` (or `BLE_HEADSET`) listing the
    devices it could see, and `event=comm-route action=cleared` when you hang up. Talk with
    the phone's own mic covered — what Hermes reports has to come from the headset. A USB or
@@ -157,4 +196,4 @@ a second or two while the models warm, then the line opens and it goes.
   (a headset connected for media only is not a microphone), and `action=set ok=false` means
   the route was refused. Check that Android's own dialer uses the headset mic — if it does
   not, the pairing is the problem, not the app. With hardware AEC/NS off, capture is a raw
-  phone mic by design (verify step 8).
+  phone mic by design (verify step 11).

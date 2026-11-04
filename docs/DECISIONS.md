@@ -760,3 +760,38 @@ correctness requirement.
 to tell the mind something (the register, the soul's lines, the phone's state, what the phone just
 did), it goes in `instructions`. And the mind keeps every capability it has: a voice turn is not a
 lesser turn.
+
+## D32 — The phone takes four actions by itself, and the mind is told what they were
+
+Set 2026-11-04, on #421 (Presence's tool use, steps 1 and 2).
+
+**The decision.** Presence gets a **local-action lane** for the handful of things that must be
+instant — **timer, alarm, do-not-disturb, volume** — matched by a deterministic grammar, executed on
+the phone with **no network round trip**, and recorded in a small registry that the voice turn's
+`instructions` report to the mind (`presence: … / local_actions: … / device: …`). Everything the
+grammar does not recognise falls through to the mind unchanged.
+
+**Why a grammar and not a model.** The value of the path is that it is already done when a streamed
+turn would still be connecting. A 2B model's judgement would put a render (1–3 s) in front of the
+fastest thing in the app, and the tool-use lane it would need is the one we are deliberately not
+building yet. This is a command syntax, not a language judgement — the inversion of the reason the
+174-substring classifier was deleted: that was a *classification* problem, and this is not.
+
+**The bounds, which are the decision.**
+- **Tier 0 only**: reversible, private, nothing outward-facing. No message, no call, no purchase, no
+  app launch. A later lane can add approval-gated actions; this one never needs one.
+- **User-initiated only**: nothing fires on a timer or on the agent's initiative.
+- **The confirmation must be true.** A failure says so; a missing permission is named as a missing
+  permission. The false-action-claim guard's premise applies to the phone's own claims first.
+- **English only, for now.** Any letter outside A–Z falls through, so no other language is half-parsed.
+- **The permission answer is part of the decision.** Timers and alarms use the `OnAlarmListener` form
+  of the exact alarm API, which needs **no** special access; the trade is that they ring while the
+  app's process is alive (it is, during a call). Do Not Disturb needs the user's policy access, which
+  the app does not ask for on the user's behalf — so a caller without it is told the truth instead.
+  An alarm that lives in the system Clock app would need an outward-facing intent and a confirmation
+  the phone cannot verify, and is not this lane.
+
+**What it commits us to.** The presence context in `instructions` is the contract between the two
+halves: anything the phone does to itself is reported there, so the mind never contradicts the phone
+or asks for what it already knows. MCP tools and the veto tiers (#421's later steps) stay out of this
+lane; they are the mind's tools, not the phone's.
