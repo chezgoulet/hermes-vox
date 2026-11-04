@@ -273,6 +273,23 @@ Every request sends `instructions`, **including an empty one on typed turns**: t
 the previous chained turn's value when the field is absent, so a typed turn after a voice turn must
 clear it explicitly.
 
+**The presence context** (`PresenceContext`, #421 step 1) is the block that tells the mind what the
+phone is doing, because the mind is remote and none of this is visible to it:
+
+```
+presence: soul=beat | speaking=false | last_line="On it."
+local_actions: timer(remaining=3m12s)
+device: 18:42, battery 62%, online, dnd=off
+```
+
+It is capped at **200 characters** and trimmed deterministically (the quoted line first, then the
+oldest action) so it can never crowd the register or the soul-sync out of a small model's context.
+It never carries transcript text: the caller's words reach the mind as `input`, once. `soul=` says
+which lane last spoke (beat / working / greeting / filler / quiet / off), `last_line` is that line,
+`local_actions` is the registry of actions the phone took itself (#421 step 2), and `device` is the
+clock, battery, connectivity and Do Not Disturb, all read without a permission the app does not
+already hold.
+
 The anti-tool clause that used to sit in the user's message — *"Answer from what you know; do NOT do
 exhaustive tool work or re-audit your own docs/state unless the caller explicitly asks"* — is
 deleted. It is the reason a price question got a guess instead of a lookup, and it made Presence

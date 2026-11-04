@@ -505,6 +505,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     // hold with content, or a turn suppressed by `turnInFlight`. One slot, newest wins; it is
     // submitted when the current turn settles ([runPendingTurn]), never discarded.
     private val pendingTurn = PendingTurn()
+    // B1 (#421): the last line the PHONE said, and which lane said it. The mind never hears the
+    // soul, so this is what its instructions report as `soul=` / `last_line=`.
+    @Volatile private var lastHeardLine = ""
+    @Volatile private var lastHeardSource = ""
     // 0.6.2 user-facing gates (Settings ER section): semantic barge scope +
     // soul presence. Read per turn (the Settings write is immediate).
     @Volatile private var erSemanticBarge = true
@@ -1996,6 +2000,43 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
+    /**
+     * B1 (#421 step 1): what the phone is doing, for the voice turn's `instructions`.
+     *
+     * Every fact here is cheap and readable without a permission we do not have: the local clock,
+     * the battery percentage, whether there is a validated network, whether Do Not Disturb is on,
+     * the presence layer's own state, and the registry of actions the phone took itself. Never
+     * transcript text — the caller's words reach the mind as `input`, once.
+     */
+    private fun presenceContextBlock(): String {
+        val now = java.util.Calendar.getInstance()
+        val clock = "%02d:%02d".format(now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE))
+        val battery = try {
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+        } catch (_: Throwable) { null }
+        val online = try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val caps = cm?.let { c -> c.activeNetwork?.let { c.getNetworkCapabilities(it) } }
+            caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } catch (_: Throwable) { false }
+        val dnd = try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            nm != null && nm.currentInterruptionFilter != android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+        } catch (_: Throwable) { false }
+        return PresenceContext.block(
+            soul = PresenceContext.soulToken(lastHeardSource, erPresenceOn && presenceActive),
+            speaking = speaking || glueSpeaking,
+            lastLine = lastHeardLine,
+            // B2 fills this registry (#421 step 2); empty is the honest state until then.
+            actions = emptyList(),
+            clock = clock,
+            battery = battery,
+            online = online,
+            dnd = dnd,
+        )
+    }
+
     // --- The streamed entity turn (REAL SSE) ---
     private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false, pasted: Boolean = false) {
         if (turnInFlight) {
@@ -2175,7 +2216,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // The voice turn's request: the register + presence context in `instructions`
                 // (ephemeral, never stored), and the reasoning effort the user chose (default
                 // low — a voice turn wants the fast answer, not the deepest one).
-                val instructions = if (voiceTurn) VoiceTurn.instructions(sync) else ""
+                val instructions = if (voiceTurn) VoiceTurn.instructions(sync, presenceContextBlock()) else ""
                 val reasoning = if (voiceTurn)
                     com.hermesvox.core.ResponsesClient.reasoningOption(
                         prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT))
@@ -3195,7 +3236,12 @@ class VoiceController(private val context: Context, private val session: HermesS
             // D30: [onPlayed] fires from the TTS start callback — the line is audible — so a line
             // dropped anywhere after this point (a stop during synthesis, no engine) is never
             // recorded as heard.
-            val took = ttsHost?.speak(text, { try { onPlayed?.invoke() } catch (_: Throwable) {} }) { _ ->
+            val took = ttsHost?.speak(text, {
+                // B1: the caller can hear it now, so the mind may be told about it.
+                lastHeardLine = text
+                lastHeardSource = source
+                try { onPlayed?.invoke() } catch (_: Throwable) {}
+            }) { _ ->
                 if (speakSeq.get() == seq) {
                     glueSpeaking = false
                     // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
