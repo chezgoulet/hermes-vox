@@ -68,47 +68,49 @@ class ProfileDialogs(
     @Volatile private var deferred: ProfilesAsk.AskKind? = null
 
     /** The switcher currently on screen, so an answer that lands late can still land visibly. */
-    private var open: AlertDialog? = null
+    private var open: ProfileSheet? = null
 
     /** The first use: the connection the app already has becomes the first profile, so the
-     *  user never re-enters it. Named after the agent. */
+     *  user never re-enters it. Named after the agent — and it starts out owning the device-wide
+     *  voice and look, which are, after all, what this phone is already doing. */
     private fun seeded(): List<Profiles.Profile> {
         val l = list()
         if (l.isNotEmpty() || prefs.getString(Profiles.K_URL, "").isNullOrBlank()) return l
         val name = prefs.getString(Profiles.K_AGENT, "").orEmpty().ifBlank { "Default" }.take(Profiles.NAME_MAX)
-        val first = Profiles.fromPrefs(name) { prefs.getString(it, "").orEmpty() }
+        val first = ProfileScope.adopt(
+            Profiles.fromPrefs(name) { prefs.getString(it, "").orEmpty() },
+            ScopedPrefs.reader(prefs),
+        )
         save(listOf(first))
         prefs.edit().putString(Profiles.PREF_ACTIVE, first.name).apply()
         return listOf(first)
     }
 
+    /** The switcher reads the cache instantly; it never asks. */
     fun showSwitcher() {
-        // #384: the switcher reads the cache instantly. It never asks — a switcher that
-        // waited on a model turn would be worse than typing the profile by hand.
         renderSwitcher()
     }
 
     private fun renderSwitcher() {
+        // One sheet at a time: a second tap on the command while it is open repaints it rather
+        // than stacking a dialog the user cannot see behind the first.
+        open?.takeIf { it.isShowing() }?.dismiss()
         val l = seeded()
         val active = activeName()
         val gone = this.gone
-        val rows = l.map { p ->
-            val mark = if (p.name.equals(active, ignoreCase = true)) "● " else "   "
-            mark + p.name + if (p.name in gone) " — unavailable" else ""
-        } + "+ Add a profile" + "Refresh from host"
-        val b = AlertDialog.Builder(activity)
-            .setTitle("Profiles")
-            .setItems(rows.toTypedArray()) { _, i ->
-                when {
-                    i < l.size -> if (!l[i].name.equals(active, ignoreCase = true)) onSwitch(l[i])
-                    i == l.size -> addProfile(l)
-                    else -> refreshFromHost(ProfilesAsk.AskKind.REFRESH)
-                }
-            }
-            .setNegativeButton("Close", null)
-        if (l.isNotEmpty()) b.setNeutralButton("Edit…") { _, _ -> pickToEdit(l) }
-        message()?.let { b.setMessage(it) }
-        open = b.show()
+        val sheet = ProfileSheet(
+            act = activity,
+            rows = { l.map { p ->
+                ProfileSheet.Row(p, p.name.equals(active, ignoreCase = true), p.name in gone)
+            } },
+            note = { message() },
+            onSwitch = { p -> if (!p.name.equals(activeName(), ignoreCase = true)) onSwitch(p) },
+            onAdd = { addProfile(list()) },
+            onEdit = { pickToEdit(list()) },
+            onRefresh = { refreshFromHost(ProfilesAsk.AskKind.REFRESH) },
+        )
+        open = sheet
+        sheet.show()
     }
 
     /** The one line under the list: freshness, a partial refresh, or a stated failure. */
@@ -243,7 +245,7 @@ class ProfileDialogs(
         val shown = open
         // Only redraw when the list or the line would actually differ: an unchanged answer
         // must not make the switcher flicker under the user's finger.
-        if (shown != null && shown.isShowing && (changed || before != result)) {
+        if (shown != null && shown.isShowing() && (changed || before != result)) {
             shown.dismiss()
             renderSwitcher()
         }
@@ -313,6 +315,15 @@ class ProfileDialogs(
                             agentName = editing?.agentName.orEmpty(),
                             scope = SessionScope.normalize(escope.text.toString()),
                             provider = editing?.provider.orEmpty(),
+                            // An edit changes the connection, never the profile's own voice and
+                            // look: those belong to it and are not on this form. Editing the
+                            // profile you are on keeps what is live — that *is* its own, and the
+                            // saved copy must not revert a change made in Settings.
+                            own = when {
+                                editing == null -> emptyMap()
+                                editing.name.equals(activeName(), ignoreCase = true) -> ScopedPrefs.capture(prefs)
+                                else -> editing.own
+                            },
                         )
                         save(Profiles.upsert(l, p, editing?.name ?: p.name))
                         onRegistryChanged()
