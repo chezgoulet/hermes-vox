@@ -214,6 +214,13 @@ No `Mcp-Session-Id` is issued, so the client never opens the GET stream: every c
 which is what a phone that can be backgrounded needs. The state that matters lives in the registry,
 not in a session.
 
+**Verified against the client this has to satisfy**, not only against the spec: the `mcp` SDK the
+Hermes runtime ships (`mcp/client/streamable_http.py`, protocol `2025-11-25` as of this build)
+connects to this server, negotiates the version, lists `phone`, gets `ok:true` from `status`, gets
+`approval-required` from `message`, and gets a `McpError` from a tool it does not serve. That run is
+the shape check: if the phone ever needs something this endpoint cannot say, the honest move is to
+report the shape, not to grow a second protocol.
+
 ---
 
 ## What a device pass should check
