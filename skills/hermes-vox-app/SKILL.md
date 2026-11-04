@@ -119,7 +119,7 @@ The bar is 8 GB of total RAM, read as the phone's marketed size
 floor of 3 GB (android/app/src/main/java/com/hermesvox/HardwareCheck.kt:36 `FREE_FLOOR_MB`).
 The first call that loads Presence is the second stage: a failed load switches the Presence set
 off and says so in the Alpha panel
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2842 `event=hw-check stage=first-load`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2846 `event=hw-check stage=first-load`).
 It only advises: the verdict appears in the Alpha panel under Presence and, when the phone falls
 short, in first run with where to turn it on. It never selects anything.
 
@@ -523,7 +523,7 @@ that is not here, this list is stale: add it with a reference.
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
 | `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:875 `call-end`) |
-| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2957 `activity-stop`) |
+| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2961 `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:33 `fg-service start`) |
 | `event=fg-service-start` | The mic foreground service was requested | `event=fg-service-start-failed err=` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:87 `fg-service-start ok`) |
 | `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1490 `wake acquired`) |
@@ -873,7 +873,7 @@ Debug / crash log → Share full log).
   reads "On, but the model cannot start on this device — Presence stays off here"
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:640 `cannot start on this device`),
   and the log carries `event=presence-unavailable reason=start-failed`
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2848 `presence-unavailable`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:2852 `presence-unavailable`).
 - **Cause:** the LiteRT-LM engine could not initialise on this GPU, and the CPU path is the
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:88 `1.8s`); there is also a recorded

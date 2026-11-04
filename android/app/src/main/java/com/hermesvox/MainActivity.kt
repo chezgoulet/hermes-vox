@@ -2622,14 +2622,18 @@ class MainActivity : AppCompatActivity() {
         kotlin.concurrent.thread {
             val raw = try { s.gatewayHealth() } catch (e: Throwable) { null }
             runOnUiThread {
-                val card = if (raw.isNullOrBlank()) "Health: unreachable\n(debug: check network + address)"
-                            else try {
-                                val o = org.json.JSONObject(raw)
-                                "Status: " + o.optString("status", "?") +
-                                "\nVersion: " + o.optString("version", o.optString("service_version", "?"))
-                            } catch (e: Throwable) { "Health: ok\n$raw" }
+                // In words: whether the agent answered, and which version answered. No "?" for a
+                // missing field and no "(debug: …)" — a missing version is simply not said.
+                val (title, card) = if (raw.isNullOrBlank())
+                    "The agent did not answer" to "The gateway could not be reached. Check the network and the address in Settings › Entity & Connection."
+                else try {
+                    val o = org.json.JSONObject(raw)
+                    val status = o.optString("status").ifBlank { "answering" }
+                    val version = o.optString("version").ifBlank { o.optString("service_version") }
+                    "The agent is $status" to (if (version.isBlank()) "It answered, without a version." else "Version $version")
+                } catch (e: Throwable) { "The agent answered" to raw.take(400) }
                 androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Agent health").setMessage(card).setPositiveButton("OK", null).show()
+                    .setTitle(title).setMessage(card).setPositiveButton("OK", null).show()
             }
         }
     }

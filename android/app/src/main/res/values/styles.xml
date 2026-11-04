@@ -58,6 +58,39 @@
         <item name="android:letterSpacing">0.06</item>
         <item name="android:textAllCaps">false</item>
     </style>
+    <!-- UI/UX pass: every AlertDialog in the app (pickers, confirmations, the health and
+         compress cards, the profile lists) on the app's own ground — its surface and corners
+         (bg_dialog), the display face for the title, the accent for the choice and the
+         buttons — instead of AppCompat's stock card. One theme, so no dialog can be missed. -->
+    <style name="ThemeOverlay.HermesVox.Dialog" parent="ThemeOverlay.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+        <item name="colorAccent">@color/hv_cyan</item>
+        <item name="colorControlActivated">@color/hv_cyan</item>
+        <item name="colorControlNormal">@color/hv_text_dim</item>
+        <item name="android:textColorPrimary">@color/hv_text</item>
+        <item name="android:textColorSecondary">@color/hv_text_dim</item>
+        <item name="android:textColorAlertDialogListItem">@color/hv_text</item>
+        <item name="android:windowTitleStyle">@style/HvDialogTitle</item>
+        <item name="buttonBarPositiveButtonStyle">@style/HvDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/HvDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/HvDialogButton</item>
+    </style>
+    <style name="HvDialogTitle" parent="RtlOverlay.DialogWindowTitle.AppCompat">
+        <item name="android:textAppearance">@style/HvDialogTitleText</item>
+    </style>
+    <style name="HvDialogTitleText" parent="TextAppearance.AppCompat.Title">
+        <item name="android:fontFamily">@font/rajdhani_semibold</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:letterSpacing">0.02</item>
+        <item name="android:textColor">@color/hv_text</item>
+    </style>
+    <style name="HvDialogButton" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">
+        <item name="android:textColor">@color/hv_cyan</item>
+        <item name="android:fontFamily">@font/rajdhani_semibold</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+
     <!-- #402: the Alpha panel's slide-out. -->
     <style name="HvSlideFromEnd">
         <item name="android:windowEnterAnimation">@anim/slide_in_end</item>

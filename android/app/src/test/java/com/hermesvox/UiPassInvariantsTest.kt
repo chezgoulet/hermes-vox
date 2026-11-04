@@ -23,4 +23,24 @@ class UiPassInvariantsTest {
         val dismiss = main.substringAfter("@+id/update_dismiss").substringBefore("/>")
         assertTrue("Got it is smaller than a finger", dismiss.contains("android:minHeight=\"48dp\""))
     }
+
+    /**
+     * Every AlertDialog stands on the app's ground: both themes name the one dialog theme, its
+     * card is the row surface, and every colour it draws text in is a token
+     * LightModeContrastTest already holds to 4.5:1 on that surface (its "row" ground).
+     */
+    @Test fun everyDialogUsesTheAppsDialogTheme() {
+        for (f in listOf("values/themes.xml", "values-night/themes.xml")) {
+            val theme = File("src/main/res/$f").readText()
+            assertTrue("$f has no dialog theme",
+                theme.contains("<item name=\"alertDialogTheme\">@style/ThemeOverlay.HermesVox.Dialog</item>"))
+        }
+        val styles = File("src/main/res/values/styles.xml").readText()
+        val overlay = styles.substringAfter("name=\"ThemeOverlay.HermesVox.Dialog\"").substringBefore("<!-- #402")
+        val colours = Regex("@color/(hv_[a-z_]+)").findAll(overlay).map { it.groupValues[1] }.toSet()
+        assertTrue("dialog colours $colours", colours.isNotEmpty() &&
+            colours.all { it in setOf("hv_text", "hv_text_dim", "hv_cyan") })
+        val card = File("src/main/res/drawable/bg_dialog.xml").readText()
+        assertTrue(card.contains("<solid android:color=\"@color/hv_surface\" />"))
+    }
 }
