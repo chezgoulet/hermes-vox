@@ -3070,9 +3070,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         // 60-character spoken line during the mind-work window that matched no ErFillers
         // entry, and the log could not say who had spoken it — the text was never written.
         // That turned a bug into a mystery. One line here turns "something spoke" into
-        // "this spoke, from here". App-generated text only (never the user's words), so it
-        // is safe beside the log_transcripts privacy backstop.
-        VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} text=${text.take(120)}")
+        // "this spoke, from here". L5 (0.9.1 review): the text is NOT only app-generated —
+        // Gemma's acknowledgements and narration are written from the caller's words
+        // ("checking your bank balance") — so it rides the log_transcripts backstop like
+        // every other line that carries what was said. Source and length always log.
+        VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} " +
+            "text=${if (logTranscripts()) text.take(120) else "<hidden>"}")
         // M2 (0.9.1 review): D29's false-action-claim guard, on EVERY lane. It used to run
         // only in the working lane and the beat opener, so the tool narration ("I've deleted
         // that for you", rendered the moment a tool starts), the soul's own answer and the
