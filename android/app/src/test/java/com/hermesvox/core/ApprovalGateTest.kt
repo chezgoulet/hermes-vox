@@ -286,4 +286,19 @@ class ApprovalGateTest {
         assertEquals(listOf("deny"), accepted.choices)
         assertNull(gate.answer(accepted.key(), "once", "touch"))
     }
+
+    // ---- L2 (0.9.1 review): a turn's card behind an older one still counts ------
+
+    @Test
+    fun `a turn's request queued behind a held card is still pending for that turn`() {
+        val gate = ApprovalGate()
+        val held = ApprovalRequest("run-old", "req-old", "rm a", "", "", listOf("once", "deny"))
+        val mine = ApprovalRequest("run-new", "req-new", "rm b", "", "", listOf("once", "deny"))
+        gate.offer(held, runAlive = true)
+        gate.offer(mine, runAlive = true)
+        // The card on screen is the older one...
+        assertEquals("req-old", gate.current()!!.key())
+        // ...but this turn's own request is pending, which is what pauses its budget.
+        assertEquals(listOf("req-new"), gate.pendingFor(setOf("req-new")).map { it.key() })
+    }
 }

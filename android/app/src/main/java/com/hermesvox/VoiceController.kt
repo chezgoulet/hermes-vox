@@ -1730,11 +1730,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
-    /** True while the card on screen was raised by the CURRENT turn's stream. */
-    private fun turnApprovalWaiting(): Boolean {
-        val current = approvalGate.current() ?: return false
-        return synchronized(turnApprovalKeys) { current.key() in turnApprovalKeys }
-    }
+    /**
+     * True while the CURRENT turn's run has a request pending — on screen or queued.
+     *
+     * L2 (0.9.1 review): this used to ask only about the card heading the queue. With a held
+     * or arm card first, this turn's own parked request sat second: the budget never paused
+     * and the turn expired at 120 s while its card was not even on screen.
+     */
+    private fun turnApprovalWaiting(): Boolean = turnApprovalPending().isNotEmpty()
 
     /** This turn's still-pending requests (a held or arm card is not included). */
     private fun turnApprovalPending(): List<ApprovalRequest> =
