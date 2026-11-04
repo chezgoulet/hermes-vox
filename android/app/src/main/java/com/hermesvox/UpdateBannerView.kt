@@ -45,9 +45,11 @@ internal object UpdateBannerView {
         val actions = root.findViewById<LinearLayout>(R.id.update_actions)
         actions.removeAllViews()
         for (alert in note.alerts) {
-            val b = Button(activity).apply {
+            // The app's own ghost button, not a stock grey Button on the card.
+            val b = Button(activity, null, 0, R.style.HvGhostButton).apply {
                 text = alert.label
-                isAllCaps = false
+                background = androidx.core.content.ContextCompat.getDrawable(activity, R.drawable.bg_button_ghost)
+                setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.hv_text))
                 setOnClickListener {
                     dismiss(activity, banner, prefs, currentVersion)
                     onAlert(alert)

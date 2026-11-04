@@ -40,11 +40,13 @@ person feels: confusing grouping → clutter → stock-looking → polish.
 | O1 | Onboarding | `activity_onboarding.xml` | Custom and on-ground; "Skip for now?" confirm is stock |
 | W1 | Wake enrolment | `activity_wake_enrol.xml` | On-ground; "Delete all recordings?" is stock |
 | VM1 | Voice model store | `ModelsActivity` | On-ground, grouped by role; licence dialog stock |
+| MS0 | What's-new card | `activity_main.xml` `update_banner` | **Found on the emulator, worst of all:** a long note pushes the being, the call controls and the card's own "GOT IT" off the screen with nothing to scroll — the app is unusable on the first launch after an upgrade; its action buttons are stock grey `Button`s |
 | MS1 | Main screen | `activity_main.xml` | Coherent; glyph buttons (⚙ ✆ /) have content descriptions; not changed |
 | T1 | Toasts | app-wide | Used for outcomes that have a home on screen (model set, catalog unreachable) |
 
 ## Ranking (worst first, by what a person feels)
 
+0. **Broken** — MS0 (the what's-new card swallows the screen).
 1. **Grouping** — S1–S7, S11 (settings re-grouped; Being + Appearance one section; hearing one section; the store one tap).
 2. **Clutter** — C1–C3 (commands: no "opens a card", two groups, risk lines only where something is lost, `/help` not listed in itself).
 3. **Stock-looking** — M1–M5 (the model switcher becomes ours: provider → category fan-out), S12/H1–H3/P1–P2/O1/W1/VM1 (one dialog theme for every AlertDialog in the app).

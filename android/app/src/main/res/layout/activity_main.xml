@@ -96,12 +96,22 @@
             android:layout_height="wrap_content"
             android:text="WHAT'S NEW" />
 
-        <TextView
-            android:id="@+id/update_body"
-            style="@style/TextVox.Body"
+        <!-- A long note scrolls inside the card instead of pushing the being, the call
+             controls and "Got it" off the screen (CappedScrollView). -->
+        <com.hermesvox.CappedScrollView
+            android:id="@+id/update_scroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp" />
+            android:layout_marginTop="6dp"
+            android:fadeScrollbars="false"
+            android:scrollbarStyle="outsideOverlay">
+
+            <TextView
+                android:id="@+id/update_body"
+                style="@style/TextVox.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </com.hermesvox.CappedScrollView>
 
         <LinearLayout
             android:id="@+id/update_actions"
@@ -116,8 +126,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="end"
-            android:layout_marginTop="8dp"
-            android:padding="6dp"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:paddingHorizontal="12dp"
+            android:focusable="true"
+            android:clickable="true"
             android:text="GOT IT" />
     </LinearLayout>
 
