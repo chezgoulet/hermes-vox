@@ -22,7 +22,7 @@ import com.hermesvox.core.HermesSession
  * VoiceController (streamed SSE turns) and renders the entity's real work.
  * First run routes to OnboardingActivity; subsequent launches auto-connect.
  */
-class MainActivity : AppCompatActivity() {
+open class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     // #282: the approval surface. The card exists for the decision; the state line
     // carries the waiting phase; the transcript keeps the timed-out request visible.
@@ -44,12 +44,12 @@ class MainActivity : AppCompatActivity() {
     // The mic-state pill is hidden while Connected (the quiet steady state); the
     // tour reveals it so its mark has a real control to point at, then restores.
     private var coachStatusWasVisible = false
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    protected val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
-    private lateinit var avatar: AvatarView
-    private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
+    protected lateinit var avatar: AvatarView
+    protected val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var replyBuf = ""
     // #368: the crawl's finished-line ring (bounded) and the turn id that keeps a soul
     // answer from being recorded twice when the mind echoes it. The in-flight reply is
@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
     private val transcript = Transcript.Call.transcript   // #223: survives a recreate, in memory only
-    private val express: VoxExpress = GemmaExpress(this)
+    protected val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
     // ---- 0.5.0-previewA: the speech-locked transcript reveal (display only) ----
@@ -182,7 +182,7 @@ class MainActivity : AppCompatActivity() {
     // suppression flag is fed from motionTick's `voicing` witness below — the real
     // audio-on-the-track signal with the inter-phrase hold — so a cue can never
     // land under the being's speech.
-    private var cues: SoundCuePlayer? = null
+    protected var cues: SoundCuePlayer? = null
     private var lastCueState = ""
     private var motionTool: String? = null
     // A signal that arrived DURING the flinch. bargeIn() posts onState("listening")
@@ -370,7 +370,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {
-        super.onNewIntent(intent); setIntent(intent); handleDebugHarness(intent)
+        super.onNewIntent(intent); setIntent(intent)
         // #329: the assist gesture, arriving at a call screen that already exists (the
         // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
         // second one). Deferred like the harness so the intent never runs inside dispatch.
@@ -398,143 +398,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** DEBUG-ONLY harness entry (inert when !isDebuggable). Lets the emulator
-     *  stress script configure the session + drive a text turn without fighting
-     *  onboarding/IME. Extras: url, model, key, scope, text. `scope` is applied
-     *  when PRESENT — an explicit empty string clears the declared scope, which
-     *  is how a script exercises the undeclared path; url/model/key stay
-     *  blank-means-ignore. NOT reachable in release (debuggable=false), so it
-     *  does NOT reopen the #1 intent-injection surface. */
-    private fun handleDebugHarness(intent: android.content.Intent?) {
-        if (intent == null) return
-        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
-        val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
-        val m = intent.getStringExtra("model"); val text = intent.getStringExtra("text")
-        val sc = intent.getStringExtra("scope")
-        if (!u.isNullOrBlank()) prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").apply()
-        if (!k.isNullOrBlank()) prefs.edit().putString("key", (SecureStore.encrypt(k) ?: k)).apply()
-        // The SAME rule the UI uses, so a script cannot store a scope the gateway
-        // would reject, nor one silently rewritten into a different identity.
-        if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
-        if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
-        // #376: the approval arm — a run the phone places whose ONLY purpose is to make
-        // Hermes ask for a sign-off, so the card can be exercised at all. Debug-only (the
-        // FLAG_DEBUGGABLE guard above), inert in a release build, and never a shipped
-        // surface: acceptance runs arm it with `--es arm approval` (see
-        // docs/APPROVALS-ACCEPTANCE.md). `arm_prompt` overrides the default command.
-        intent.getStringExtra("arm")?.let { what ->
-            if (what.equals("approval", ignoreCase = true)) {
-                connectFromPrefs()
-                armApproval(intent.getStringExtra("arm_prompt"))
-            }
-        }
-        // #327: the device matrix needs the clipboard in a known state and the paste
-        // sheet open, which no shell command can do on this Android. Debug-only (the
-        // FLAG_DEBUGGABLE guard above), inert in a release build, and never logged.
-        intent.getStringExtra("clipboard")?.let { body ->
-            getSystemService(android.content.ClipboardManager::class.java)
-                ?.setPrimaryClip(android.content.ClipData.newPlainText("paste-test", body))
-        }
-        // The same, from a file: a 5,000-character multi-line paste does not survive
-        // a shell argument cleanly. Debug-only, read once, never logged.
-        intent.getStringExtra("clipboard_file")?.let { path ->
-            val body = runCatching { java.io.File(path).readText() }.getOrNull()
-            if (body != null) getSystemService(android.content.ClipboardManager::class.java)
-                ?.setPrimaryClip(android.content.ClipData.newPlainText("paste-test", body))
-        }
-        if (intent.getBooleanExtra("clipboard_empty", false)) {
-            val cm = getSystemService(android.content.ClipboardManager::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= 28) cm?.clearPrimaryClip()
-            else cm?.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
-        }
-        // #370: the share sheet, with the clipboard in whatever state the harness set above.
-        // `open_paste` is kept as an alias so the old device-matrix scripts still land here.
-        if (intent.getBooleanExtra("open_share", false) || intent.getBooleanExtra("open_paste", false)) {
-            showShare()
-        }
-        // §B: the file offer, driven from a script. A system picker cannot be driven by adb,
-        // so the harness stages a path the app can already read (push it with `run-as`).
-        // Debug-only (the FLAG_DEBUGGABLE guard above); inert in a release build. It stops on
-        // the confirmation card like every other entry point.
-        intent.getStringExtra("offer_file")?.let { path ->
-            mainHandler.post {
-                if (missingKeyPrompt()) return@post
-                val src = java.io.File(path)
-                if (!src.isFile) { setStatus("no such file", true); return@post }
-                stageDraft(src.name, ShareSurface.Source.PICKER) { FileStage.stageFile(this, src) }
-            }
-        }
-        // #156: the device matrix needs to PUT the phone into each state and then fire
-        // a cue. There is no shell command for the ringer mode on this build, so the
-        // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
-        // SETTINGS + DND access for SILENT). Order matters and is deliberate: state
-        // first, the TTS-suppression witness next, and the cue LAST, all on the main
-        // thread, so one intent is one deterministic test. Debug-only by the
-        // FLAG_DEBUGGABLE guard above; inert in a release build.
-        intent.getStringExtra("ringer")?.let { mode ->
-            val am = getSystemService(android.media.AudioManager::class.java)
-            runCatching {
-                am?.ringerMode = when (mode.lowercase()) {
-                    "silent" -> android.media.AudioManager.RINGER_MODE_SILENT
-                    "vibrate" -> android.media.AudioManager.RINGER_MODE_VIBRATE
-                    else -> android.media.AudioManager.RINGER_MODE_NORMAL
-                }
-            }
-            VoxLog.d("event=harness ringer=$mode now=${am?.ringerMode}")
-        }
-        if (intent.hasExtra("cue_voice")) {
-            SoundCuePlayer.setVoiceActive(intent.getBooleanExtra("cue_voice", false))
-        }
-        intent.getStringExtra("cue")?.let { name ->
-            val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
-            if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
-        }
-        // #275: the screenshot pass needs the being in a named state and family without a
-        // gateway, a mic or a model download. Debug-only, like everything above. Extras:
-        // `category` (a VisualStyle token), `being` (listening|thinking|speaking|stalled).
-        // The status line is set to what is on screen so the capture is self-labelling.
-        intent.getStringExtra("category")?.let { cat ->
-            prefs.edit().putString(VisualStyle.KEY_CATEGORY, VisualStyle.of(cat).token).apply()
-            applyParticlePrefs()
-        }
-        intent.getStringExtra("being")?.let { want ->
-            if (this::avatar.isInitialized) {
-                val b = want.lowercase()
-                val st = if (b == "stalled") "waiting" else b
-                val work = if (st == "thinking") 0.7f else 0.15f
-                val a = if (st == "speaking") 0.55f else 0.2f
-                if (b == "stalled") {
-                    avatar.setPresent("thinking", null, work, a)
-                    avatar.setStall(true, 12_000L)
-                } else {
-                    avatar.setStall(false, 0L)
-                    avatar.setPresent(st, null, work, a)
-                }
-                val cat = prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)
-                setStatus("$st · ${VisualStyle.labelOf(cat)}", true)
-            }
-        }
-        // #226: the screenshot pass needs the commands sheet itself, on a screen where
-        // nothing else is in the way. Debug-only, like everything above. Extra: `sheet`.
-        if (intent.getBooleanExtra("sheet", false)) mainHandler.postDelayed({ showCommands() }, 600L)
-        // #225: the capture pass needs the Being section with its fine-look panel open, which
-        // no shell command can reach — SettingsActivity is not exported, and tapping through a
-        // screenshot run is not reproducible. Debug-only, like everything above. Extras:
-        // `settings` (the section to open: visuals…) plus the extras SettingsActivity's own
-        // harness reads (`being_advanced`, `preview_state`, `scroll_to`), forwarded verbatim.
-        intent.getStringExtra("settings")?.let { section ->
-            startActivity(android.content.Intent(this, SettingsActivity::class.java).apply {
-                if (section != "home") putExtra("section", section)
-                for (k in arrayOf("being_advanced", "preview_state", "scroll_to")) {
-                    intent.getStringExtra(k)?.let { putExtra(k, it) }
-                }
-            })
-            // One app screen at a time: leaving Main's own being running behind Settings would
-            // put a second renderer in the process and blur what a measurement is measuring.
-            finish()
-        }
-    }
-
     /** The installed version code, from the manifest (BuildConfig is not generated). */
     private fun currentVersionCode(): Int = try {
         val info = packageManager.getPackageInfo(packageName, 0)
@@ -546,8 +409,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
-        // defer past onCreate so the Activity views/session are initialized (harness turn)
-        mainHandler.postDelayed({ handleDebugHarness(intent) }, 800L)
         active = this
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
@@ -962,7 +823,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var statusOfferShown = false
-    private fun setStatus(text: String, show: Boolean) {
+    protected fun setStatus(text: String, show: Boolean) {
         if (statusOfferShown) { statusOfferShown = false; status.setOnClickListener(null) }   // #284: the offer goes with its line
         status.text = text
         status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
@@ -1714,7 +1575,7 @@ class MainActivity : AppCompatActivity() {
     // C0: no stored user key while an endpoint is set -> the connector must not
     // start and the user must add their key in Settings. Surfaces the clear
     // user-facing prompt (wording only — no new UI) instead of a silent no-op.
-    private fun missingKeyPrompt(): Boolean {
+    protected fun missingKeyPrompt(): Boolean {
         if (session != null) return false
         if (!GatewayKey.isMissing(storedKey())) return false
         setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
@@ -1791,7 +1652,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearConversationUi() {
+    protected fun clearConversationUi() {
         revealActive = false; mainHandler.removeCallbacks(revealTask)
         replyBuf = ""
         // #368: a new conversation ends the trail too — old replies must not survive a
@@ -1886,7 +1747,7 @@ class MainActivity : AppCompatActivity() {
         setStatus(if (wasLive) "Call ended · ${p.name} · new conversation" else "${p.name} · new conversation", true)
     }
 
-    private fun connectFromPrefs() {
+    protected fun connectFromPrefs() {
         val u = prefs.getString("url", "").orEmpty()
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
@@ -1954,12 +1815,13 @@ class MainActivity : AppCompatActivity() {
      * (the lane that can carry an approval) and hands the controller a watcher; the card,
      * the voice answer and the timeout are the SAME ones a real request uses.
      *
-     * Reachable only through [handleDebugHarness], which is gated on FLAG_DEBUGGABLE, so
-     * this cannot run in a release install. The prompt is [ApprovalArm.PROMPT] — a
+     * Reachable only through the debug harness ([com.hermesvox.DebugHarnessActivity], debug
+     * source set, protected by android.permission.DUMP), so this cannot run in a release
+     * install. The prompt is [ApprovalArm.PROMPT] — a
      * harmless recursive delete of an empty temp directory, which the gateway's own
      * policy must flag before anything runs.
      */
-    private fun armApproval(prompt: String?) {
+    protected fun armApproval(prompt: String?) {
         if (missingKeyPrompt()) return
         val s = session ?: run { setStatus("Connect first", true); return }
         val input = prompt?.takeIf { it.isNotBlank() } ?: ApprovalArm.PROMPT
@@ -1987,7 +1849,7 @@ class MainActivity : AppCompatActivity() {
     /** §B: [transcript] overrides the conversation line for a file turn. The turn carries the
      *  offer (name, size, hash, URL) or — for the inline fallback — the body itself; the
      *  transcript shows only the card (name, type, size), so a file's contents never enter it. */
-    private fun send(text: String, transcript: String? = null) {
+    protected fun send(text: String, transcript: String? = null) {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
@@ -2378,7 +2240,7 @@ class MainActivity : AppCompatActivity() {
     private var lastTurnFailed = false
     private var stuckShownThisCall = false
     private var callTurns = 0L
-    private fun showCommands() = commandsSheet.show()
+    protected fun showCommands() = commandsSheet.show()
 
     // ---- #370: share with agent — the clipboard, a file, or another app's share ----
     //
@@ -2397,7 +2259,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun showShare() {
+    protected fun showShare() {
         if (missingKeyPrompt()) return
         if (session == null) { setStatus("Connect first", true); return }
         shareSheet.show()
@@ -2483,7 +2345,7 @@ class MainActivity : AppCompatActivity() {
      * chosen, or after the screen went away is deleted and never offered. Closing is never a
      * send, including on the slow path.
      */
-    private fun stageDraft(
+    protected fun stageDraft(
         name: String,
         source: ShareSurface.Source,
         produce: () -> FileStage.Result,
@@ -2944,7 +2806,7 @@ class MainActivity : AppCompatActivity() {
     // Presence appearance: the visual CATEGORY (what the being is made of, in every
     // state) + the idle shape/theme + auto-cycle. Settings -> Visuals. This stays the
     // one controller: Settings only writes prefs, the feed applies them.
-    private fun applyParticlePrefs() {
+    protected fun applyParticlePrefs() {
         avatar.applyLookPrefs(prefs)   // #225: one reader for the main screen and the Settings preview
     }
 
