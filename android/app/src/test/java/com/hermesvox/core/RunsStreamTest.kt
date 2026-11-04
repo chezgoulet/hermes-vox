@@ -138,6 +138,81 @@ data: {"event":"run.completed","run_id":"run_r","seq":3,"completed":true,"partia
     }
 
     /**
+     * L3 (0.9.1 review): a reattach whose replay is truncated has a hole in the deltas.
+     * The accumulated text is then NOT the answer — `run.completed.output` is — so the
+     * turn speaks the terminal answer rather than the gapped prefix and suffix.
+     */
+    @Test
+    fun `a truncated replay falls back to the run's completed output`() = withRuns {
+        val attempt = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_t","status":"started"}""")
+                r.method == "GET" -> {
+                    w.sse()
+                    if (attempt.incrementAndGet() == 1) {
+                        w.write("""id: 0
+data: {"event":"message.delta","run_id":"run_t","seq":0,"delta":"The first "}
+
+""")
+                    } else {
+                        // The gateway no longer retains seq 1-4: say so, then replay 5 on.
+                        w.write("""data: {"event":"replay.truncated","run_id":"run_t","oldest_retained_seq":5}
+
+id: 5
+data: {"event":"message.delta","run_id":"run_t","seq":5,"delta":"last part."}
+
+id: 6
+data: {"event":"run.completed","run_id":"run_t","seq":6,"completed":true,"output":"The first and the last part."}
+
+""")
+                    }
+                }
+            }
+        }.use { srv ->
+            val s = session(srv)
+            val p = drain(s, s.startStream("hi"))
+            assertEquals("", Json.str(p, "error"))
+            assertEquals("the gapped deltas are not the answer",
+                "The first and the last part.", Json.str(p, "text"))
+        }
+    }
+
+    /** L3: no terminal text to fall back to is an honest failure, not a silent hole. */
+    @Test
+    fun `a truncated replay with no terminal text fails the turn`() = withRuns {
+        val attempt = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_t2","status":"started"}""")
+                r.method == "GET" -> {
+                    w.sse()
+                    if (attempt.incrementAndGet() == 1) {
+                        w.write("""id: 0
+data: {"event":"message.delta","run_id":"run_t2","seq":0,"delta":"partial "}
+
+""")
+                    } else {
+                        w.write("""data: {"event":"replay.truncated","run_id":"run_t2","oldest_retained_seq":5}
+
+id: 6
+data: {"event":"run.completed","run_id":"run_t2","seq":6,"completed":true,"output":""}
+
+""")
+                    }
+                }
+            }
+        }.use { srv ->
+            val s = session(srv)
+            val p = drain(s, s.startStream("hi"))
+            assertTrue(Json.str(p, "error").contains("truncated"))
+            assertTrue("a gapped turn is never reported as an answer", Json.str(p, "text").isEmpty())
+        }
+    }
+
+    /**
      * `/v1/runs` has no response id: chaining rides the session key. Sending the
      * Responses chain head as previous_response_id would pin every run to the same
      * response-store snapshot, so the runs body omits it — and a runs turn must not
