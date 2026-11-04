@@ -23,7 +23,7 @@ object CommandCatalog {
 
     /**
      * What the command is *for*, in the words a person uses — the groups the screen shows, in
-     * screen order. Two, not four: seven commands under four headers left two headers holding
+     * screen order. Two, not four: the commands under four headers left two headers holding
      * one row each, which is a heading per command, not a grouping. The label is what the
      * header prints, so a command cannot appear without one.
      */
@@ -82,6 +82,12 @@ object CommandCatalog {
             cost = Cost("Switching starts a fresh thread", risk = false),
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
+        Command("/profiles", emptyList(), Group.AGENT,
+            effect = "Talk to another of this host's agents",
+            cost = Cost("Switching starts a fresh conversation", risk = false),
+            category = Category.CHOOSE, kind = Kind.CARD,
+            listOf("profile", "agent", "another agent", "who am i talking to", "switch agent",
+                "connection", "home", "work")),
         Command("/reconnect", emptyList(), Group.AGENT,
             effect = "Reach the gateway again; a live call re-dials",
             cost = null,   // nothing is lost: the thread and the call both survive

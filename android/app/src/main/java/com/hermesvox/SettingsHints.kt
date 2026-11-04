@@ -29,6 +29,8 @@ object SettingsHints {
         // Entity & Connection
         "row_test_conn" to "Checks the address and key reach your Hermes gateway",
         "row_entity" to "Where your Hermes gateway is, and the key it expects",
+        // Per-profile pass: the model is chosen here, and it is this profile's.
+        "row_agent_model" to "The model the agent thinks with; tap to choose another",
         "row_reset" to "Starts a fresh conversation; ends a call that is live",
         "row_app_skill" to "So it can answer \"where is that setting?\" from the app's own notes",
         // The phone's assistant (#329)
@@ -103,4 +105,46 @@ object SettingsHints {
         "row_debuglog" to "A more detailed log file, for reporting a bug",
         "row_debug" to "View, copy or share the log",
     )
+
+    /**
+     * The rows whose value belongs to the **active profile**, not to the phone: its voice, its
+     * model and its look ([ProfileScope]). Each of these says so on its own row — "· profile
+     * home" — because a setting whose scope you have to discover by switching is a setting you
+     * will change in the wrong place.
+     *
+     * Deliberately not here: the connection (that *is* the profile), the Alpha gate, Presence's
+     * own switches, the screen (theme, layout, keep-screen-on), the microphone, the sound cues
+     * and everything else about the phone. `docs/PRESENCE.md` states the same list.
+     */
+    val SCOPED: Set<String> = setOf(
+        // voice
+        "row_tts", "row_tts_speaker", "row_voice",
+        // model
+        "row_agent_model",
+        // look
+        "row_visual_category", "row_visual_energy", "row_visual_glow", "row_visual_density",
+        "row_visual_speed", "row_visual_trail", "row_visual_hue", "row_visual_cycle_all",
+        "row_particle_theme", "row_particle_cycle",
+        "row_speak_shape", "row_listen_shape", "row_think_shape",
+    )
+
+    /** What the scope line says when no profile is active yet. */
+    const val THIS_PROFILE = "this profile"
+
+    /** The scope line for [row]: null for a device-wide row, so it says nothing at all. */
+    fun scope(row: String, profile: String): String? {
+        if (row !in SCOPED) return null
+        val name = profile.trim()
+        return (if (name.isEmpty()) THIS_PROFILE else "profile $name")
+    }
+
+    /** The whole second line of [row]'s title: its own statement, then which profile it is for. */
+    fun line(row: String, profile: String): String? {
+        val parts = listOfNotNull(HINTS[row], scope(row, profile))
+        return if (parts.isEmpty()) null else parts.joinToString(" · ")
+    }
+
+    /** The rows that carry a second line — hinted ones and the scoped rows that say what they do
+     *  in their own description ([EXEMPT], but still a profile's to change). */
+    val LINED: Set<String> get() = HINTS.keys + (SCOPED - HINTS.keys)
 }

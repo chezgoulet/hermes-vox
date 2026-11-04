@@ -73,8 +73,8 @@ otherwise they close in whatever release closes them.
 A living milestone, not a promise. What it holds today:
 
 - **Presence on by default.** The Alpha gate opens for Presence: it stops being opt-in.
-- **Per-profile settings** — voice, model and look, the things still device-wide. The one item
-  carried out of 0.9.1 by decision.
+- **Per-profile settings** — *landed early, in 0.9.1*: a profile carries its own voice, model and
+  look (`docs/PRESENCE.md`). This line stays as the record that it was carried here first.
 
 What else lands there is decided by what the 0.9.1 acceptance run and real use turn up. Expect new
 features to be wanted, expect some of them to be the ones we have not thought of yet, and expect
@@ -98,7 +98,7 @@ When the owner deems the product ready to leave beta. No feature list, no date.
 
 - **D24's** sentence *"Presence remains 0.9.2"* is **superseded** by D28.
 - **PLAN-0.9.1's** old "Not in 0.9.1" list is **superseded**: the Presence behaviours are in
-  0.9.1 behind the gate; only per-profile settings wait.
+  0.9.1 behind the gate, and per-profile settings landed there too.
 - **ROADMAP's** 0.9.2 section keeps its content links but not its claim that Presence arrives
   there; 0.9.2 is where the gate opens.
 - **Multi-profile** no longer sits under 1.0.

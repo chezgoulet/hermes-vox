@@ -171,8 +171,9 @@ the mode vocabulary (#222)**.
 Carried without a number — done here if achievable, otherwise closed wherever they close: #191,
 #202, #208, #179, #165, #249.
 
-**Not in 0.9.1** — **per-profile settings** (voice, model, look). That is the one deferred item,
-and 0.9.2 is where it lands, together with the Alpha gate opening for Presence: on by default.
+**Not in 0.9.1** — **per-profile settings** (voice, model, look) were deferred here and then
+landed in 0.9.1 anyway: a profile carries its own voice, model and look (`docs/PRESENCE.md`).
+0.9.2 keeps the other half of this line — the Alpha gate opening for Presence, on by default.
 
 ## 11. Decisions taken before the build
 

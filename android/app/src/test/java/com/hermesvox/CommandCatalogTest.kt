@@ -64,6 +64,9 @@ class CommandCatalogTest {
             "/clear" to "This conversation",
             "/new" to "This conversation",
             "/models" to "The agent",
+            // Per-profile pass: the switcher is a command, under The agent — it changes the
+            // agent you are talking to, not the thread.
+            "/profiles" to "The agent",
             "/reconnect" to "The agent",
             "/health" to "The agent",
             "/help" to "The agent",
@@ -90,7 +93,7 @@ class CommandCatalogTest {
      * command; it is gone. The four that lose something keep their line.
      */
     @Test fun aCommandThatLosesSomethingSaysWhatAndNoOtherDoes() {
-        for (name in listOf("/new", "/clear", "/compress", "/models")) {
+        for (name in listOf("/new", "/clear", "/compress", "/models", "/profiles")) {
             val cost = CommandCatalog.find(name)!!.cost
             assertTrue("$name loses something and must say what", cost != null)
             assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)

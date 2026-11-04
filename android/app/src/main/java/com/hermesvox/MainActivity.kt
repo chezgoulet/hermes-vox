@@ -637,6 +637,10 @@ class MainActivity : AppCompatActivity() {
         (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
             .addView(warming, 0)
 
+        // Per-profile pass: the one-time inheritance runs before anything reads a scoped pref,
+        // so the first load after the upgrade is the load that gives each profile its own voice
+        // and look. Idempotent (guarded by Profiles.PREF_SCOPED), and silent.
+        migrateScopedProfiles()
         connectFromPrefs()
         resumeLiveCallIfAny()
         // #329: launched by the assistant gesture (AssistActivity). After the session and any
@@ -1804,6 +1808,28 @@ class MainActivity : AppCompatActivity() {
     // #174: saved connections. The switcher lives on the header; a switch ends the call.
     private val profiles by lazy { ProfileDialogs(this, prefs, { switchProfile(it) }) { refreshHeaderFromRegistry() } }
 
+    /**
+     * The per-profile pass's one-time inheritance: a saved profile that has no voice or look of
+     * its own takes the device-wide values now, and from then on they are its own. Guarded by
+     * [Profiles.PREF_SCOPED] so a *later* device-wide change never overwrites a profile a second
+     * time — the bug this rule exists to prevent. With no profiles saved yet there is nothing to
+     * inherit; the first one is adopted from the live prefs when it is seeded.
+     */
+    private fun migrateScopedProfiles() {
+        if (prefs.getBoolean(Profiles.PREF_SCOPED, false)) return
+        val list = profiles.list()
+        if (list.isEmpty()) return
+        val migrated = ProfileScope.migrate(list, ScopedPrefs.reader(prefs))
+        prefs.edit().apply {
+            putBoolean(Profiles.PREF_SCOPED, true)
+            if (migrated != list) putString(Profiles.PREF_LIST, Profiles.encode(migrated))
+        }.apply()
+        if (migrated != list) {
+            refreshHeaderFromRegistry()
+            VoxLog.d("event=profile-scoped-migrate profiles=${migrated.size}")
+        }
+    }
+
     /** The header: the agent's name, and the active profile's once there is a choice. */
     private fun headerLabel(model: String): String {
         // With no entity name yet, the model names the header — as words, not its route id
@@ -1819,31 +1845,44 @@ class MainActivity : AppCompatActivity() {
      * #174/#371: make [p] the active connection. One line at a time is an invariant, so a
      * live call ends first; the session is rebuilt from the profile's prefs (a new
      * conversation), and this holds however [p] arrived — typed or host-populated.
+     *
+     * Per-profile pass: a switch is also what makes a profile *present* as itself. The live
+     * voice and look are recorded into the profile being left (so a change made while on it
+     * belongs to it), and the profile being entered writes its own — falling back to the
+     * device-wide value only where it has none, which is the one place that fallback lives.
      */
     private fun switchProfile(p: Profiles.Profile) {
         // Settings → Entity edits the live keys, so fold them back into the profile being
         // left before overwriting them; otherwise an edit made there is lost on the switch.
         val cur = profiles.activeName()
         val list = profiles.list()
+        val deviceWide = ScopedPrefs.reader(prefs)
         // (Not when the active profile itself was just edited: the saved edit is the newer one.)
-        val synced = if (cur.isNotBlank() && !cur.equals(p.name, ignoreCase = true) && Profiles.find(list, cur) != null)
-            Profiles.upsert(list, Profiles.fromPrefs(Profiles.find(list, cur)!!.name) { prefs.getString(it, "").orEmpty() })
-        else list
+        val synced = if (cur.isNotBlank() && !cur.equals(p.name, ignoreCase = true) && Profiles.find(list, cur) != null) {
+            val left = Profiles.find(list, cur)!!
+            Profiles.upsert(list, Profiles.fromPrefs(left.name) { prefs.getString(it, "").orEmpty() }
+                .copy(own = ProfileScope.capture(deviceWide)))
+        } else list
+        val incoming = ProfileScope.adopt(p, deviceWide)
+        val writes = ProfileScope.switchWrites(incoming, deviceWide)
         val wasLive = callLive
         if (ConversationReset.plan(ConversationReset.Trigger.PROFILE_SWITCH, wasLive).endCall) endCall()
         prefs.edit().apply {
-            putString(Profiles.PREF_LIST, Profiles.encode(synced))
-            for ((k, v) in Profiles.toPrefs(p)) putString(k, v)
-            putString(Profiles.PREF_ACTIVE, p.name)
+            putString(Profiles.PREF_LIST, Profiles.encode(Profiles.upsert(synced, incoming, p.name)))
+            ScopedPrefs.write(this, writes)
+            putString(Profiles.PREF_ACTIVE, incoming.name)
         }.apply()
         session?.resetConversation()   // the same url+key (two scopes on one gateway) keeps the object
         LatencyStats.resetSessionTurns()
         clearConversationUi()
         connectFromPrefs()
+        // The being is drawn from the prefs just written: re-read the look now, not at the next
+        // resume. Participation of a live call and the voice follow from the same write.
+        applyParticlePrefs()
         // Rule (c): a switch with Presence on re-primes the warm model on the new profile's
         // document, so the next render is the new entity — not the one just left.
         if (PresenceGate.enabled(prefs)) switchPresenceProfile()
-        VoxLog.d("event=profile-switch profiles=${synced.size} callEnded=$wasLive")
+        VoxLog.d("event=profile-switch profiles=${synced.size} callEnded=$wasLive scoped=${writes.size}")
         setStatus(if (wasLive) "Call ended · ${p.name} · new conversation" else "${p.name} · new conversation", true)
     }
 
@@ -2576,6 +2615,9 @@ class MainActivity : AppCompatActivity() {
             // inherited from the closed six-verb grammar; the card is the share sheet.
             CommandCatalog.SHARE.name -> { showShare(); done(true) }
             "/models" -> showModelChooser()
+            // Per-profile pass: the switcher is a command now — the commands sheet is where a
+            // person goes to change the agent, and this row opens it on the sheets' own scaffold.
+            "/profiles" -> { profiles.showSwitcher(); done(true) }
             "/health" -> showHealthCard()
             CompressCommand.NAME -> compressContext(done)
             "/new" -> newSession(onDone = done)
