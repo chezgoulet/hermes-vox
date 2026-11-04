@@ -29,4 +29,22 @@ object ErBargeGate {
         if (utterance.isNullOrBlank()) return Verdict.HOLD_MIND
         return if (ErIntent.isGenuineBarge(utterance)) Verdict.CANCEL_MIND else Verdict.HOLD_MIND
     }
+
+    /**
+     * F3 (2026-11-04 review): a HOLD that has WORDS the caller must not lose.
+     *
+     * A hold says "keep working on the current turn" — it never said "and forget what I just
+     * said", which is what the client did with it. Two kinds of utterance reach HOLD: the
+     * patient caller ("mm-hm", "take your time"), which is *meant* to be absorbed, and a
+     * re-ask, a correction or a follow-up ("what about the second one?"), which is a turn the
+     * caller is waiting for. Only the second is carried: an utterance with content — one the
+     * intent classifier does not read as a backchannel — is queued as the next turn
+     * ([PendingTurn]) instead of being discarded.
+     *
+     * Silence carries nothing: there is nothing to answer.
+     */
+    fun carries(utterance: String?): Boolean {
+        if (utterance.isNullOrBlank()) return false
+        return ErIntent.classify(utterance).route == ErIntent.Route.ACK_AND_YIELD
+    }
 }

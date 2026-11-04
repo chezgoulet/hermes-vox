@@ -127,6 +127,12 @@ is refused.
 - **It waits, but not for long.** The mind's submit waits for that decision for a bounded, adaptive
   moment — the measured render p50 plus 200 ms, capped at 900 ms, and zero when the soul is measured
   slow. The beat plays through the wait.
+- **It never loses what the caller says.** A backchannel spoken while the mind works ("mm-hm", "take
+  your time") is absorbed — that is what a hold is for. Anything with content is *queued*: one pending
+  slot, newest wins, submitted as the next turn when the current one settles, and dropped only when it
+  has gone stale (60 s) or the caller has started a newer turn themselves. `event=er-pending` is the
+  witness. A turn that arrives while another is still in flight takes the same queue instead of being
+  reported as `suppressed-inflight` and forgotten.
 - **It is gated in code, not trusted.** No digits the client did not supply. No claim of a result
   that does not exist. No second answer in a turn. No soul line after the mind's reply has begun. A
   line that is too long is repaired; a line that lies is refused.
@@ -222,7 +228,7 @@ which never calls it).
 
 | line | meaning | read it as |
 |---|---|---|
-| `event=er-handoff gen=N ok=true\|false reason=… soul=answer\|beat\|escalate\|nothing askChars=N` | **the receipt**: exactly one per turn. `ok=true` = the gateway accepted the turn and returned a stream id; `ok=false` = the mind never saw it, and `reason=` says which path dropped it (`suppressed-inflight`, `cancelled-before-submit`, `stopped`, `no-stream`) | `ok=false` is a swallowed turn. `ok=true` answers the reporter's question — *it got through* |
+| `event=er-handoff gen=N ok=true\|false reason=… soul=answer\|beat\|escalate\|nothing askChars=N` | **the receipt**: exactly one per turn. `ok=true` = the gateway accepted the turn and returned a stream id; `ok=false` = the mind never saw it, and `reason=` says which path dropped it (`suppressed-inflight`, `cancelled-before-submit`, `stopped`, `no-stream`) | `ok=false` names a turn the mind never saw. `suppressed-inflight` is no longer a lost turn: the words go to `event=er-pending` and are submitted when the current turn settles. A `cancelled-before-submit` or `no-stream` is the one to read |
 | `event=er-swallow gen=N mind=skipped\|not-submitted cls=mind askChars=N soulChars=N` | the no-silent-swallow rule: the soul answered **and** the caller heard no mind. `mind=skipped` = the mind saw the turn, was told the voice answered, and replied `<<SKIP>>`; `mind=not-submitted` = it never saw it | not a failure. The **rate** of these is the number that decides whether the escalate rule needs teeth |
 
 `askChars` is a length, never the caller's text, so the line is safe with transcript logging off.

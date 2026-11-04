@@ -499,6 +499,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     // stays open through a hold and retires normally). This witness says: the
     // release was a HOLD, the turn is ALIVE — settle it like an ordinary turn.
     @Volatile private var erHoldReleasedGen = -1L
+    /** F3: a retry is already scheduled for the queued turn (never two pending flush posts). */
+    @Volatile private var pendingFlushScheduled = false
+    // F3 (2026-11-04 review): the caller's words that arrived while a turn was in flight — a
+    // hold with content, or a turn suppressed by `turnInFlight`. One slot, newest wins; it is
+    // submitted when the current turn settles ([runPendingTurn]), never discarded.
+    private val pendingTurn = PendingTurn()
     // 0.6.2 user-facing gates (Settings ER section): semantic barge scope +
     // soul presence. Read per turn (the Settings write is immediate).
     @Volatile private var erSemanticBarge = true
@@ -1444,6 +1450,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // handler callbacks must never outlive the executor they feed.
         erActive = false; erPresence.stop("call-end")
         soulGreeted = false   // 0.8/M3c: the next call opens with a greeting too
+        pendingTurn.clear()   // F3: a hangup is not a reason to answer queued words after it
         // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
         // case; this one guarantees a hangup always closes the measurement out).
         if (presenceActive) VoxLog.er(ErTelemetry.line())
@@ -1993,11 +2000,17 @@ class VoiceController(private val context: Context, private val session: HermesS
     private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false, pasted: Boolean = false) {
         if (turnInFlight) {
             VoxLog.d("turn suppressed (in flight)")
-            // The caller spoke and the mind was never asked: the receipt says so, so the swallow
-            // is visible in the log rather than only in the caller's recollection.
+            // F3 (2026-11-04 review): the mind was never asked, so the receipt says so — but the
+            // words are NOT dropped. They go into the one pending slot and become the next turn
+            // when this one settles (newest wins: [PendingTurn]).
+            if (pendingTurn.offer(text, android.os.SystemClock.uptimeMillis()))
+                VoxLog.er("event=er-pending gen=$gen queued=true reason=${ErHandoff.REASON_SUPPRESSED} chars=${text.length}")
             noteHandoff(gen, false, ErHandoff.REASON_SUPPRESSED, "-", text.length)
             releaseTurnGate(turnGen, "suppressed-inflight"); return
         }
+        // A turn the caller just started by speaking is newer than anything queued: their own
+        // words supersede the queued echo of an earlier ones (the pending slot is "newest wins").
+        pendingTurn.clear()
         val voiceTurn = fromVoice && presenceActive
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
         // runtime are user-togglable in Settings (er_semantic_barge / er_presence).
@@ -2338,6 +2351,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                // F3: the mind's turn is over. If words were queued during it, they are next —
+                // runPendingTurn waits for this reply's voice to finish if it is still playing.
+                main.post { runPendingTurn() }
                 // #282: a request cannot be answered once its run is over; withdraw it
                 // rather than leaving a card that would 409 if tapped. A loop that ended
                 // while the run was STILL alive (lost stream, poll abort) is the exception:
@@ -3227,7 +3243,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 0.6.2: witness the release as a HOLD so the reply's settle
                         // doesn't mistake it for a cancel (the HOLD-drop fix).
                         erHoldReleasedGen = myGen
-                        if (erPresenceOn) {
+                        // F3 (2026-11-04 review): a hold with WORDS is not a backchannel. The
+                        // reviewer's field case — a re-ask, a correction, a follow-up spoken
+                        // during a 20-second lookup — used to be discarded here. It is queued
+                        // as the next turn instead; only the patient caller ("mm-hm") is
+                        // absorbed, which is what a hold is for.
+                        if (ErBargeGate.carries(said)) {
+                            val queued = pendingTurn.offer(said, android.os.SystemClock.uptimeMillis())
+                            VoxLog.er("event=er-pending gen=$myGen queued=$queued reason=hold chars=${said?.length ?: 0}")
+                        } else if (erPresenceOn) {
                             erPresence.onUserUtterance(said ?: "okay", android.os.SystemClock.uptimeMillis())
                         }
                         releaseTurnGate(myGen, "er-barge-hold")
@@ -3305,6 +3329,35 @@ class VoiceController(private val context: Context, private val session: HermesS
         // this the Phase-8 instrumentation had ZERO emit sites — every claim about
         // Presence was an impression. This is the line that makes the delta falsifiable.
         if (presenceActive && ErTelemetry.shouldEmit()) VoxLog.er(ErTelemetry.line())
+        // F3: this turn is over for the caller. If words were queued while it ran, they are the
+        // next turn — posted, so they start after this release is complete on every path.
+        main.post { runPendingTurn() }
+    }
+
+    /**
+     * F3 (2026-11-04 review): submit the queued utterance, if any, now that the previous turn
+     * has settled. Called from [releaseTurnGate] (the moment the floor is free) and never while
+     * a turn is still in flight: the words wait for the mind to finish, they do not interrupt it.
+     *
+     * The queue is one slot and [PendingTurn] expires it, so a long stall cannot make the phone
+     * answer a question the caller has forgotten. A turn the caller starts themselves clears
+     * the slot first — their own words are newer than the queued echo (see runStreamedTurn).
+     */
+    private fun runPendingTurn() {
+        if (stopped || !listening) return
+        // The floor must be free in BOTH senses: no mind turn, and no voice still playing (the
+        // HOLD path releases the gate while the mind keeps working, and the reply's tail outlives
+        // the stream loop). Retry shortly rather than dropping the words; the slot expires itself.
+        if (!PendingTurn.floorFree(turnInFlight, speaking, glueSpeaking, streamed && !sClosed)) {
+            if (pendingTurn.pending() && !pendingFlushScheduled) {
+                pendingFlushScheduled = true
+                main.postDelayed({ pendingFlushScheduled = false; runPendingTurn() }, PENDING_RETRY_MS)
+            }
+            return
+        }
+        val queued = pendingTurn.take(android.os.SystemClock.uptimeMillis()) ?: return
+        VoxLog.er("event=er-pending gen=$turnGen submitted=true chars=${queued.length}")
+        runStreamedTurn(queued, turnGen, fromVoice = true)
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
@@ -3580,6 +3633,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
          *  the mark that lets the reply's first audio cut it without the beat's wait. */
         const val SOURCE_WORKING = "soul-working"
+        /** F3: how often the queued turn is retried while the floor is busy. */
+        const val PENDING_RETRY_MS = 400L
         /** 0.9.1 soak: the once-per-card "say approve or no". */
         const val SOURCE_APPROVAL_PROMPT = "approval-prompt"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
