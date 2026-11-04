@@ -146,6 +146,8 @@ class PhoneEngineTest {
         assertEquals(PhoneReason.PERMISSION, r.reason)
         assertNull(r.id)
         assertTrue("the phone must not touch the filter it cannot change", fake.dndSets.isEmpty())
+        assertFalse("a refusal never claims the new state", r.toMap().containsKey("on"))
+        assertTrue("the refusal names the special access", r.detail!!.contains("do-not-disturb access"))
     }
 
     @Test fun dnd_reports_the_state_in_effect_and_undo_restores_the_previous_one() {
