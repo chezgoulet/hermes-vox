@@ -39,6 +39,13 @@ python3 scripts/test_invention_report.py 2>&1 | tail -3
 echo "== [2/6] app skill claims =="
 python3 scripts/check-skill-claims.py
 
+# The design documents make specific claims about the code. Until now nothing checked
+# them, which is how DECISIONS.md came to say "Presence remains 0.9.2" while the
+# milestone said otherwise. docs/DOC-TRUTH.yml names each claim, the document that
+# makes it and the pattern that proves it, so either side drifting fails here.
+echo "== [2b/6] design documents against the code =="
+python3 scripts/check-doc-truth.py
+
 echo "== [3/6] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
