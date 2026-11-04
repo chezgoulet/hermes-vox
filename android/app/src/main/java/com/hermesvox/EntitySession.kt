@@ -28,12 +28,20 @@ object EntitySession {
     fun scope(pref: (String) -> String): String = SessionScope.normalize(pref(SessionScope.PREF))
 
     /**
+     * A session from explicit values — a snapshot taken while the profile was known to be
+     * the active one. Use this off the UI thread: a lazy `pref` read after a switch would
+     * declare the NEW profile's scope on the OLD profile's ask.
+     */
+    fun of(url: String, key: String, model: String, provider: String, scope: String): HermesSession =
+        HermesSession(url, key, model.ifBlank { DEFAULT_MODEL }).apply {
+            setProvider(provider)
+            setSessionKey(SessionScope.normalize(scope))
+        }
+
+    /**
      * A session for [url] + [key] carrying the prefs' model, provider override and scope.
      * [model] overrides the prefs' model when the caller already resolved it.
      */
     fun build(url: String, key: String, pref: (String) -> String, model: String = model(pref)): HermesSession =
-        HermesSession(url, key, model).apply {
-            setProvider(pref(PREF_PROVIDER))
-            setSessionKey(scope(pref))
-        }
+        of(url, key, model, pref(PREF_PROVIDER), pref(SessionScope.PREF))
 }

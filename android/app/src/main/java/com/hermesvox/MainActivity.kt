@@ -1308,12 +1308,16 @@ open class MainActivity : AppCompatActivity() {
             VoxLog.w("event=vox-first-call profile=$profile phase=skip reason=not-connected")
             return
         }
-        val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        // M6: the profile's own values, captured NOW, while it is still the active profile.
+        // Reading prefs lazily inside the thread would let a switch mid-ask declare the new
+        // profile's scope/provider on this profile's document.
+        val model = prefs.getString(EntitySession.PREF_MODEL, EntitySession.DEFAULT_MODEL).orEmpty()
+            .ifBlank { EntitySession.DEFAULT_MODEL }
+        val provider = prefs.getString(EntitySession.PREF_PROVIDER, "").orEmpty()
+        val scope = prefs.getString(SessionScope.PREF, "").orEmpty()
         VoxLog.d("event=vox-first-call profile=$profile phase=start")
         kotlin.concurrent.thread(isDaemon = true, name = "vox-first-call") {
-            // M6: the profile's own scope and provider, exactly as connectFromPrefs declares
-            // them — a bare session asked unscoped, on the gateway's default provider.
-            val session = EntitySession.build(u, SecureStore.decrypt(k) ?: k, { prefs.getString(it, "").orEmpty() }, model)
+            val session = EntitySession.of(u, SecureStore.decrypt(k) ?: k, model, provider, scope)
             // The profile is captured here, not re-read at write time: the document belongs
             // to the entity that answered, even if the user switches during the ask.
             val log: (String) -> Unit = { VoxLog.er(it) }

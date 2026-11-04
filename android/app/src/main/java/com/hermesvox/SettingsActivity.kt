@@ -773,13 +773,18 @@ class SettingsActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
             return
         }
+        // M6: a snapshot of the profile's own values, taken before the turn. A lazy pref read
+        // inside the thread could see a different active profile after a switch.
+        val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        val provider = prefs.getString("provider", "").orEmpty()
+        val scope = prefs.getString(SessionScope.PREF, "").orEmpty()
         val label = findViewById<TextView>(R.id.set_vox_val)
         label.text = "asking the entity…"
         // Off the UI thread: the directive turn is a real /v1/responses call
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
             // M6: declared like the live session (scope + provider), not a bare one.
-            val s = EntitySession.build(u, SecureStore.decrypt(k) ?: k, { prefs.getString(it, "").orEmpty() })
+            val s = EntitySession.of(u, SecureStore.decrypt(k) ?: k, model, provider, scope)
             // #220: one call does extract → repair → validate, so a document that arrives
             // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
             // instead of costing the user a second button press. The retry below stays as
