@@ -62,6 +62,24 @@ once. With Presence off, nothing fetches, mirrors, prompts for or reports on VOX
 Why the agent writes it rather than the user: it knows its own memory and relationship better than
 any generic template, and the distillation is the one task only it is qualified to do.
 
+**What a profile carries, and what it does not.** Since the per-profile pass, a profile also owns
+*how the agent presents*: its **voice** (the TTS engine, the delivery register and that engine's
+speaker), its **model** (the route and provider it thinks with) and its **look** (the visual
+category and its scalars, the cycle switch, the resting shape and the three state shapes). Those
+live in the profile's own record and are applied by a switch, so the being, the next utterance and
+the next turn all belong to the agent you are talking to.
+
+Deliberately **not** per profile, and this list is the rule rather than a snapshot: the
+**connection** itself (address, key, scope — that *is* the profile), the **Alpha gate**, **Presence's
+own switches** (its on/off, its cadence, its asides, its narration voice, its reasoning effort), and
+**anything about the phone** — the theme, the screen layout, keep-screen-on, the microphone and
+hearing, the sound cues, the wake word. Presence is a layer over the phone the agent is on; it is
+not part of the agent.
+
+A profile that has never been edited has no values of its own and inherits the device-wide ones
+once, on first load; from then on they are its own. `ProfileScope` owns that rule, and
+`ProfileScopeTest` proves the migration, the fallback and what a switch writes.
+
 ---
 
 ## Where the idea came from

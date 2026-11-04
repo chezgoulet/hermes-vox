@@ -56,7 +56,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** #224: one line under each row's title saying what it changes (SettingsHints). */
     private fun applyHints() {
-        for ((name, _) in SettingsHints.HINTS) {
+        for (name in SettingsHints.LINED) {
             val id = resources.getIdentifier(name, "id", packageName)
             val row = findViewById<android.view.ViewGroup>(id) ?: continue
             val title = firstTitle(row) ?: continue
@@ -64,13 +64,21 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Put [SettingsHints]' line under a title that another refresh may have just rewritten. */
+    /** The profile these scoped rows apply to (per-profile pass). */
+    private fun activeProfileName(): String =
+        Profiles.activeName { prefs.getString(it, "").orEmpty() }
+
+    /**
+     * Put [SettingsHints]' line under a title that another refresh may have just rewritten, and
+     * — for a row whose setting is the active profile's — say which profile that is, in the same
+     * line. One screen, scoped: there is no second settings screen per profile.
+     */
     private fun applyHint(rowName: String, title: TextView) {
-        val hint = SettingsHints.HINTS[rowName] ?: return
+        val line = SettingsHints.line(rowName, activeProfileName()) ?: return
         val dim = ContextCompat.getColor(this, R.color.hv_text_dim)
         // The head is the row's own label, never a hint stacked on a previous one.
         val head = title.text.toString().substringBefore('\n')
-        val s = android.text.SpannableString("$head\n$hint")
+        val s = android.text.SpannableString("$head\n$line")
         s.setSpan(android.text.style.RelativeSizeSpan(0.82f), head.length + 1, s.length, 0)
         s.setSpan(android.text.style.ForegroundColorSpan(dim), head.length + 1, s.length, 0)
         title.text = s
@@ -427,6 +435,48 @@ class SettingsActivity : AppCompatActivity() {
         }
         refreshEntityVal()
         bindVoxRow()
+        bindAgentModel()
+    }
+
+    /**
+     * The agent's model, for this profile (per-profile pass). It used to be reachable only by
+     * typing `/models` on the call screen; it belongs beside the connection, because which model
+     * the agent thinks with is part of which agent you are talking to. The row opens the same
+     * [ModelSheet] the command does — one switcher, two doors.
+     */
+    private fun bindAgentModel() {
+        findViewById<LinearLayout>(R.id.row_agent_model)?.setOnClickListener { pickAgentModel() }
+        refreshAgentModel()
+    }
+
+    /** The route, as words: "DeepSeek V4 Flash" rather than `deepseek-v4-flash`. */
+    private fun refreshAgentModel() {
+        findViewById<TextView>(R.id.set_agent_model_val)?.text =
+            ModelChoices.displayName(prefs.getString("model", "").orEmpty().ifBlank { "hermes-agent" })
+    }
+
+    private fun pickAgentModel() {
+        val s = MainActivity.session ?: run {
+            Toast.makeText(this, "Connect to your gateway first", Toast.LENGTH_LONG).show(); return
+        }
+        ModelSheet(this,
+            load = { s.modelOptions() },
+            current = { prefs.getString("model", "").orEmpty() to prefs.getString("provider", "").orEmpty() },
+        ) { p, m ->
+            // Choose it on the live session so the NEXT turn uses it, and persist it so a switch,
+            // a restart and the switcher's own line agree. This is this profile's model.
+            val modelId = m?.id ?: p.slug
+            prefs.edit().putString("model", modelId).putString("provider", p.slug).apply()
+            val ok = try { s.setModel(modelId); s.setProvider(p.slug); true } catch (_: Throwable) { false }
+            if (!ok) {
+                Toast.makeText(this, "Couldn't switch the model", Toast.LENGTH_LONG).show()
+            } else {
+                s.resetConversation()
+                LatencyStats.resetSessionTurns()
+                refreshAgentModel()
+                Toast.makeText(this, ModelChoices.switchedLine(p, m), Toast.LENGTH_SHORT).show()
+            }
+        }.show()
     }
 
     /** ER Phase 3: the VOX.md bridge row. Resync = PULL the gateway agent's
@@ -1170,6 +1220,10 @@ class SettingsActivity : AppCompatActivity() {
         // warning must clear (or appear) the moment we come back.
         refreshModelsVal()
         refreshGrpVals()
+        // The profile can have been switched elsewhere; a scoped row must name the one that is
+        // active now, not the one that was active when this screen was built.
+        applyHints()
+        refreshAgentModel()
         // #225: re-read the look (a theme change recreates the screen; a pref may have moved
         // elsewhere) and restart the preview only if the Being section is the one on screen.
         bindBeingPreview()

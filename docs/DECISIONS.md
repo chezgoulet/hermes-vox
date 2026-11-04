@@ -608,8 +608,9 @@ reading the documents faithfully reported the fiction back.
 
 **The distinction the documents failed to draw, and the owner's correction to it:** 0.9.1 ships
 the **layer and its behaviours**, all behind the Alpha gate; 0.9.2 is where **the gate opens** for
-Presence — on by default — and where **per-profile settings** land. Only that one feature item is
-deferred.
+Presence — on by default. (The one feature item this decision also deferred, **per-profile
+settings**, has since landed in 0.9.1: a profile carries its own voice, model and look — see
+`docs/PRESENCE.md` and `ProfileScope`.)
 
 - `0.9.x` is beta. `0.9.1` stays open and absorbs work until the owner signs it off. `0.9.2` and
   `0.9.3` are the next beta milestones. `1.0` is GA, when the owner says so, with no feature
@@ -622,8 +623,8 @@ deferred.
   Presence it stays off, with one line saying why and where to turn it on.
 - **First run (#230) and the retirement of the mode vocabulary (#222) move into 0.9.1**, because
   a default now has to be decided at first run.
-- **Profiles** ship in 0.9.1 and switching must be flawless; **per-profile settings** are the one
-  deferred item, and land in 0.9.2.
+- **Profiles** ship in 0.9.1 and switching must be flawless; **per-profile settings** (a
+  profile's own voice, model and look) also landed in 0.9.1 rather than waiting for 0.9.2.
 - **The Presence behaviours** — asides and backchannels, resume, overlap classification, the
   tuning bar, the Presence transcript, the invention measurement, and a fresh pass on the
   directive and rails — are **0.9.1 work, behind the Alpha gate**, not deferred.
