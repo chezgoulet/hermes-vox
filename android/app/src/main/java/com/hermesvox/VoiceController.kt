@@ -1804,9 +1804,12 @@ class VoiceController(private val context: Context, private val session: HermesS
      * (where the socket is only a subscriber and the run would otherwise keep going).
      */
     private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget) {
-        // A runs stream's own id maps to its run; the approval request carries the same
-        // run id when the run was parked on a card.
-        val runId = session.runIdOf(streamId).ifEmpty { approvalGate.current()?.runId.orEmpty() }
+        // A runs stream's own id maps to its run. L1 (0.9.1 review): there is no fallback.
+        // The id is empty only while the admission is in flight, and the card heading the
+        // queue then may be an earlier turn's held card or the arm's — stopping it would
+        // stop another turn's run. Closing this turn's own stream is enough: the cancel and
+        // the admission meet in `StreamState.bindRun`, which stops the run once it is named.
+        val runId = session.runIdOf(streamId)
         VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=budget " +
             "run=${runId.ifEmpty { "-" }} elapsedMs=${budget.elapsedMs()} " +
             "pausedMs=${budget.pausedMs()} limitMs=${StreamPollGate.STREAM_TURN_TIMEOUT_MS}")
