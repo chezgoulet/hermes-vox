@@ -5,30 +5,31 @@ package com.hermesvox
  *
  * The stock list said `/compress` and nothing else; a person had to know the command to use
  * it. Each entry here states its effect in plain language, names the group a person would
- * look under (conversation, connection, session, diagnostics — never the subsystem that does
- * the work), states its cost or risk when it has one, and declares a [Category] — the closed
+ * look under (this conversation, the agent — never the subsystem that does the work), states
+ * what it loses when it loses something, and declares a [Category] — the closed
  * vocabulary the being animates a command from (#227), so a new command inherits its motion
  * by saying what kind of thing it does.
  *
  * It also says how a command can report itself. A command that runs in place reports
- * queued / running / done / failed on its own row; one that opens a card says so, because
- * its progress is in the card and the row must not pretend (no spinner, no invented
- * percentage — the same rule as the operations line, #281).
+ * queued / running / done / failed on its own row; one that opens a card reports nothing on
+ * the row — the card is its report, and the tap itself says where it went. (#226 printed
+ * "opens a card" on every such row; the owner's rule is no helper line that says what the
+ * control already says.) No spinner, no invented percentage — the same rule as the
+ * operations line, #281.
  *
  * Pure JVM, so the catalogue's copy and its rules are proven off-device.
  */
 object CommandCatalog {
 
     /**
-     * What the command is *for*, in the words a person uses — the four groups the screen
-     * shows, in screen order. The label is what the header prints, so a command cannot
-     * appear without one.
+     * What the command is *for*, in the words a person uses — the groups the screen shows, in
+     * screen order. Two, not four: seven commands under four headers left two headers holding
+     * one row each, which is a heading per command, not a grouping. The label is what the
+     * header prints, so a command cannot appear without one.
      */
     enum class Group(val label: String) {
-        CONVERSATION("Conversation"),
-        CONNECTION("Connection"),
-        SESSION("Session"),
-        DIAGNOSTICS("Diagnostics"),
+        CONVERSATION("This conversation"),
+        AGENT("The agent"),
     }
 
     /** What a command does to the world, in the being's terms (#227). */
@@ -47,52 +48,56 @@ object CommandCatalog {
         val group: Group,
         /** What it does, in one line. */
         val effect: String,
-        /** What it spends or risks, in one line — null when it only asks and changes
-         *  nothing. [Cost.risk] is true only when something is lost and cannot be brought
-         *  back, so the row's warning colour means "irreversible", not "unpleasant". */
+        /** What it loses, in one line — null when nothing is lost. [Cost.risk] is true only
+         *  when something is gone for good, so the row's warning colour means
+         *  "irreversible", not "unpleasant". */
         val cost: Cost?,
         val category: Category,
         val kind: Kind,
         /** #284: the words a person uses for what they want, not for the command. */
         val keywords: List<String> = emptyList(),
+        /** Whether the sheet lists it. `/help` answers a typed or spoken "/help", but on the
+         *  sheet it would be a row that opens a copy of the sheet. Search still finds it. */
+        val listed: Boolean = true,
     )
 
     val ALL: List<Command> = listOf(
-        Command("/new", emptyList(), Group.SESSION,
-            effect = "Start fresh — the agent forgets this thread",
-            cost = Cost("Cannot be undone; a live call is re-dialled", risk = true),
-            category = Category.CLEAR, kind = Kind.INLINE,
-            listOf("start over", "fresh", "new topic", "forget", "begin again")),
+        Command(CompressCommand.NAME, listOf(CompressCommand.ALIAS), Group.CONVERSATION,
+            effect = "Fold a long thread into a summary to keep it quick",
+            cost = Cost("Older detail survives only in the summary", risk = false),
+            category = Category.CONDENSE, kind = Kind.INLINE,
+            listOf("slow", "too long", "summarize", "summarise", "shorten", "memory full", "context")),
         Command("/clear", listOf("/reset"), Group.CONVERSATION,
-            effect = "Clear the screen; the agent keeps its copy",
+            effect = "Clear the screen; the agent keeps the thread",
             cost = Cost("The screen's copy cannot be brought back", risk = true),
             category = Category.CLEAR, kind = Kind.INLINE,
             listOf("wipe", "clean", "erase", "screen")),
-        Command(CompressCommand.NAME, listOf(CompressCommand.ALIAS), Group.CONVERSATION,
-            effect = "Compact a long conversation so it stays quick",
-            cost = Cost("Costs one turn; the agent keeps the summary", risk = false),
-            category = Category.CONDENSE, kind = Kind.INLINE,
-            listOf("slow", "too long", "summarize", "summarise", "shorten", "memory full", "context")),
-        Command("/reconnect", emptyList(), Group.CONNECTION,
-            effect = "Reach the gateway again and re-dial a call",
-            cost = Cost("Stays down if the gateway does not answer", risk = false),
+        Command("/new", emptyList(), Group.CONVERSATION,
+            effect = "Start a fresh thread; the agent forgets this one",
+            cost = Cost("This thread cannot be brought back", risk = true),
+            category = Category.CLEAR, kind = Kind.INLINE,
+            listOf("start over", "fresh", "new topic", "forget", "begin again")),
+        Command("/models", emptyList(), Group.AGENT,
+            effect = "Choose the model the agent thinks with",
+            cost = Cost("Switching starts a fresh thread", risk = false),
+            category = Category.CHOOSE, kind = Kind.CARD,
+            listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
+        Command("/reconnect", emptyList(), Group.AGENT,
+            effect = "Reach the gateway again; a live call re-dials",
+            cost = null,   // nothing is lost: the thread and the call both survive
             category = Category.CONNECT, kind = Kind.INLINE,
             listOf("offline", "not working", "can't reach", "cannot reach", "disconnected", "retry", "stuck", "frozen")),
-        Command("/health", listOf("/status"), Group.DIAGNOSTICS,
+        Command("/health", listOf("/status"), Group.AGENT,
             effect = "Whether the agent is up, and its version",
             cost = null,   // it asks and reports; nothing changes
             category = Category.INSPECT, kind = Kind.CARD,
             listOf("is it working", "server", "gateway", "up", "down", "version", "status")),
-        Command("/models", emptyList(), Group.SESSION,
-            effect = "Choose which model the agent thinks with",
-            cost = Cost("Switching starts a fresh thread", risk = false),
-            category = Category.CHOOSE, kind = Kind.CARD,
-            listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
-        Command("/help", emptyList(), Group.DIAGNOSTICS,
+        Command("/help", emptyList(), Group.AGENT,
             effect = "What each command does",
             cost = null,
             category = Category.INFORM, kind = Kind.CARD,
-            listOf("how", "what can i", "list", "help")),
+            listOf("how", "what can i", "list", "help"),
+            listed = false),
     )
 
     /**
@@ -106,7 +111,7 @@ object CommandCatalog {
         aliases = emptyList(),
         group = Group.CONVERSATION,
         effect = "The clipboard, a file, or what another app shared",
-        cost = Cost("Nothing is sent until you confirm", risk = false),
+        cost = null,   // nothing is sent from this row; the share card asks before anything goes
         category = Category.CHOOSE,
         kind = Kind.CARD,
         keywords = listOf("share", "file", "clipboard", "attach", "document", "send file"),
@@ -118,9 +123,11 @@ object CommandCatalog {
         return (ALL + SHARE).firstOrNull { it.name.lowercase() == n || n in it.aliases }
     }
 
-    /** The catalogue in screen order: groups in [Group] order, commands in catalogue order. */
-    fun grouped(): List<Pair<Group, List<Command>>> =
-        Group.values().map { g -> g to ALL.filter { it.group == g } }.filter { it.second.isNotEmpty() }
+    /** The sheet in screen order: groups in [Group] order, listed commands in catalogue order.
+     *  [all] includes the unlisted ones (the /help card is written from every command). */
+    fun grouped(all: Boolean = false): List<Pair<Group, List<Command>>> =
+        Group.values().map { g -> g to ALL.filter { it.group == g && (all || it.listed) } }
+            .filter { it.second.isNotEmpty() }
 
     /** Whether the row can report this command's own progress. A card command's work happens
      *  in the view it opens, so its row says where to look instead of showing a state it
@@ -137,17 +144,13 @@ object CommandCatalog {
         FAILED("failed"),
     }
 
-    /** What a row says when the command's progress is not on the row at all: it opens a
-     *  card, and the card is where you see what happened. */
-    const val IN_CARD = "opens a card"
-
     /**
      * The words in a row's state slot. A long-running command says "still working…" after
      * [Operations.LONG_MS] — the same move as the operations line (#281): the first change is
      * the indeterminate phrase, never a number that claims progress.
      */
     fun stateText(c: Command, s: RunState, elapsedMs: Long = 0L): String = when {
-        !reportsOnRow(c) -> IN_CARD
+        !reportsOnRow(c) -> ""   // the card it opens is the report; the row stays quiet
         s == RunState.RUNNING && elapsedMs >= Operations.LONG_MS -> "still working…"
         else -> s.label
     }
@@ -189,6 +192,11 @@ object CommandCatalog {
 
     /** The commands that fit now, shown first on the screen — the interface revealing what
      *  became relevant (#284). Never more than two, and nothing when nothing fits. */
+    /** How a row tints its verb mark: the warning colour for a command that loses something
+     *  for good (the same fact as its amber cost line), the accent otherwise. */
+    enum class Tint { ACCENT, RISK }
+    fun tint(c: Command): Tint = if (c.cost?.risk == true) Tint.RISK else Tint.ACCENT
+
     fun suggest(s: Situation): List<Command> = when {
         !s.connected || s.lastTurnFailed -> listOfNotNull(find("/reconnect"), find("/health"))
         s.sessionTurns >= COMPRESS_AFTER_TURNS -> listOfNotNull(find(CompressCommand.NAME))
@@ -196,7 +204,7 @@ object CommandCatalog {
     }
 
     /** The /help card, written from the catalogue so the two cannot disagree. */
-    fun helpText(): String = grouped().joinToString("\n\n") { (g, cmds) ->
+    fun helpText(): String = grouped(all = true).joinToString("\n\n") { (g, cmds) ->
         g.label + "\n" + cmds.joinToString("\n") { c ->
             (listOf(c.name) + c.aliases).joinToString(" ") + " — " + c.effect
         }

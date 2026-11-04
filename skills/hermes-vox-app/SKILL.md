@@ -291,32 +291,34 @@ declaration is what makes the app eligible
 
 ### Commands (the `/` button on the main screen)
 
-Grouped by what a person is doing — Conversation, Connection, Session, Diagnostics — never by the
-subsystem that does the work (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:27 `enum class Group`).
-Each row states its effect in one line and, when the command has one, what it spends or risks in a
-second line (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:53 `val cost`).
+Grouped by what a person is acting on — **This conversation** and **The agent** — never by the
+subsystem that does the work (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:30 `enum class Group`). Each row leads with a mark drawn from
+the being's six-verb motion grammar for that kind of command, amber only when something is lost
+for good (android/app/src/main/java/com/hermesvox/VerbMark.kt:22 `class VerbMark`). Each row
+states its effect in one line and, only when the command loses something, what it loses in a
+second line (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:54 `val cost`). `/help` is not listed on the sheet (it would open a copy of the
+sheet); a typed "/help" and the search still reach it (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:61 `val listed`).
 
 A command that runs in place shows *queued / running… / done / failed* on the row where it was
-tapped, instead of a toast (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:132 `enum class RunState`).
+tapped, instead of a toast (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:139 `enum class RunState`).
 Past two seconds the word becomes "still working…" and never a number that pretends to be
-progress (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:149 `fun stateText`). A command
-that opens its own card says "opens a card" rather than showing a state it cannot see
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:128 `fun reportsOnRow`).
+progress (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:152 `fun stateText`). A command that opens its own card shows no state on its row —
+the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:135 `fun reportsOnRow`).
 
-| Command | Group | What it does | Cost or risk | Reference |
+| Command | Group | What it does | What it loses | Reference |
 |---|---|---|---|---|
-| `/new` | Session | A fresh conversation; the agent forgets this thread. Ends and re-dials a live call | Cannot be undone | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:62 `Start fresh`) |
-| `/clear` | Conversation | (also `/reset`) Clears the screen; the agent keeps its copy, and a live call is re-dialled | The screen's copy is gone for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:67 `Clear the screen`) |
-| `/compress` | Conversation | (also `/compact`) Asks the agent to compact a long conversation | Costs one turn; the agent keeps the summary | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:72 `Compact a long conversation`) |
-| `/reconnect` | Connection | Reaches the gateway again and re-dials a live call | The call stays down if the gateway does not answer | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:77 `Reach the gateway again`) |
-| `/health` | Diagnostics | (also `/status`) Whether the agent is up, and its version | none — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:82 `Whether the agent is up`) |
-| `/models` | Session | Choose which model the agent thinks with | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:87 `Choose which model`) |
-| `/help` | Diagnostics | The list, with these same lines | none — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:92 `What each command does`) |
+| `/compress` | This conversation | (also `/compact`) Asks the agent to fold a long thread into a summary | Older detail survives only in the summary | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:66 `Fold a long thread`) |
+| `/clear` | This conversation | (also `/reset`) Clears the screen; the agent keeps the thread, and a live call is re-dialled | The screen's copy, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:71 `Clear the screen`) |
+| `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | This thread, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:76 `Start a fresh thread`) |
+| `/models` | The agent | Opens the model switcher: provider → category → model | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:81 `Choose the model`) |
+| `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:86 `Reach the gateway again`) |
+| `/health` | The agent | (also `/status`) Whether the agent is up, and its version | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:91 `Whether the agent is up`) |
+| `/help` | The agent (not listed on the sheet) | The list, with these same lines | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:96 `What each command does`) |
 
 Those seven (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue, and a
 command added without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
-(android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt:47 `everyCommandBelongsToALabelledGroup`).
+(android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt:59 `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the seven names above
 (android/app/src/main/java/com/hermesvox/MainActivity.kt:2572 `when (c.name)`), and no build of
 this tree has ever had a handler for one. Files arrive a different way: the **Share with agent**
@@ -340,9 +342,9 @@ The log says which: `event=command-motion` (android/app/src/main/java/com/hermes
 
 **Finding a command.** The commands screen has a search box that matches what a person wants
 ("it's slow", "can't reach it", "start over"), not only command names
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:162 `fun search`), and leads with what fits the moment —
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:165 `fun search`), and leads with what fits the moment —
 *reconnect* and *health* after a failed turn, *compress* in a long conversation
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:192 `fun suggest`). A failed turn's line on the main screen
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt:200 `fun suggest`). A failed turn's line on the main screen
 ends "tap to reconnect" and does it; on a caller's first three calls, twenty silent seconds bring
 the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java/com/hermesvox/Discovery.kt:17 `STUCK_AFTER_MS`).
 
@@ -355,7 +357,7 @@ is still "Commands". Typing `/` on the main screen opens the same sheet
 
 The first row inside that sheet is **Share with agent**. It is an artifact action, not a slash
 command: it sits outside the seven-command catalogue, inherits the row grammar and the CHOOSE →
-pulse motion (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:104 `val SHARE`). It
+pulse motion (android/app/src/main/java/com/hermesvox/CommandCatalog.kt:109 `val SHARE`). It
 opens a chooser — the clipboard, or any file on the device — and then **one confirmation card**
 with the file's name, type and size
 (android/app/src/main/java/com/hermesvox/ShareSheet.kt:29 `class ShareSheet`). Nothing is sent
@@ -568,7 +570,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=settle-drop` | A settled reply was not spoken because it was cancelled or already voiced | Both reasons are protective; a drop with no cut means a double-settle bug | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2665 `settle-drop`) |
 | `event=stream-fallback` | The stream failed **after** assembling text; the text is spoken non-streamed instead of lost | Any — the reply is degraded | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2730 `stream-fallback`) |
 | `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2693 `compress-failed`) |
-| `event=command` | A command from the commands screen changed state: `name=`, `state=queued / running / done / failed`; `queued` carries `behind=` the command it waits for | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:226 `event=command name=`) |
+| `event=command` | A command from the commands screen changed state: `name=`, `state=queued / running / done / failed`; `queued` carries `behind=` the command it waits for | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:223 `event=command name=`) |
 | `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2693 `compress-failed`) |
 | `event=turn` | One line per settled turn with latency fields and `outcome=` | Cut outcomes: `reply-error`, `stream-lost`, `empty-reply`, `stopped`, `hush`, `barge-in`, `focus-loss`, `suppressed-inflight`; healthy: `stream-done`, `speak-done`, `text-only` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2889 `stream-done`) |
 | `event=turn-skip` † | A second settle for the same epoch was suppressed | Repeats = a double-settle path | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3501 `turn-skip`) |
