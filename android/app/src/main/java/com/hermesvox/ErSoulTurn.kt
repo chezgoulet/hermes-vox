@@ -427,6 +427,24 @@ object ErSoulTurn {
      * dropped instead. The clause end is kept inside the text (a comma is dropped, a full stop
      * kept) so the spoken line ends where a person would pause.
      */
+    /**
+     * F8 (2026-11-04 review): the mind's own progress narration, as a spoken working line.
+     *
+     * The gateway streams `phase=commentary` text — the mind saying in its own words what it is
+     * doing — and the app used to log it and nothing else while the soul guessed about the same
+     * tool. This turns that paragraph into the one line the phone can say: whitespace collapsed,
+     * cut to the beat's budget at a clause end ([fitToBound]), or null when there is nothing
+     * speakable in it.
+     *
+     * It is NOT a soul render, so the content guards that apply to one are not applied here: the
+     * text is the mind's own, and [ErSoulTurn.claimsResult] still runs over it in the glue.
+     */
+    fun commentaryLine(raw: String?): String? {
+        val t = raw?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+        if (t.isEmpty()) return null
+        return fitToBound(t)
+    }
+
     fun fitToBound(text: String): String? = fitToBound(text, null)
 
     private fun fitToBound(text: String, repairs: MutableList<String>?): String? {

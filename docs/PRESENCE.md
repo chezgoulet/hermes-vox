@@ -109,7 +109,7 @@ conversation history keeps it from repeating. The mind is *told* what the voice 
 soul-sync note. *(The `<<SKIP>>` reply this step added was retired by D30; the sync moved out of the
 user's message into the request's `instructions` by D31.)*
 
-**2026-11-04 — the companion, and the API contract.** The Presence review (`docs/reviews/PRESENCE-REVIEW-2026-11-04.md`)
+**2026-11-04 — the companion, the words that are kept, and the words that are said.** The Presence review (`docs/reviews/PRESENCE-REVIEW-2026-11-04.md`)
 traced the field report *"faster, but sometimes no response"* to four Presence-only paths, and three
 changes came out of it. D30 retired the skip offer and the gate that held the mind's submit: the soul
 is a companion that opens a turn, never a gatekeeper that answers it. The same week, two mechanical
@@ -118,7 +118,9 @@ arrives while another is in flight, both queue into the next turn instead of van
 mind is talked to through the API** — the voice register and the soul-sync ride the request's
 ephemeral `instructions` instead of being glued onto the caller's message, with the anti-tool clause
 deleted and a per-request reasoning effort (default low). The agent's own transcript now reads like a
-conversation, and a price question gets looked up.
+conversation, and a price question gets looked up. Three smaller quality findings went with them:
+a confirmation is answered as a turn rather than acknowledged with a non-sequitur; the mind's own
+`commentary` is the working line instead of a 2B's guess about it; and no turn ends in silence.
 
 **October 2026 — the name, and the guard's premise questioned.** D16 retired the two-mode framing:
 "Enhanced Realtime" is not a mode, it is Presence, a layer on normal operation, on by default. D17
@@ -139,6 +141,19 @@ is refused.
 - **It never makes the mind wait.** The turn is submitted the moment the caller stops speaking; the
   beat renders beside it and is dropped if the mind's first token gets there first. That is D30: the
   soul no longer holds the turn it used to hold for 700-900 ms.
+- **A confirmation is an answer, not a backchannel.** "Want me to write those points to a markdown
+  file?" → "Yes." used to be met with *"okay — take the time you need"* — the patient-caller line,
+  spoken at turn start, where "yes" is the turn. Now the phone says nothing of its own at turn
+  start (the soul may open with a beat); the hold line survives only for a backchannel spoken
+  *while* the mind works, which is what it was written for (F5).
+- **The mind narrates its own work.** When the gateway streams `phase=commentary` — "Let me search
+  for recent listings" — that line is spoken as the working line, through the same guards as any
+  other aside. It used to go to the dev console while a 2B guessed at the same tool from its name
+  (F8).
+- **No turn ends in silence.** A lost stream, a gateway error or an empty reply speaks one short
+  repair — *"Sorry — I didn't get an answer back on that. Want me to try again?"* — instead of a cue
+  and a pill nobody driving can read. A turn the caller cut is not repaired: they know they cut it
+  (F9, `event=repair`).
 - **It never loses what the caller says.** A backchannel spoken while the mind works ("mm-hm", "take
   your time") is absorbed — that is what a hold is for. Anything with content is *queued*: one pending
   slot, newest wins, submitted as the next turn when the current one settles, and dropped only when it
