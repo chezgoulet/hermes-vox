@@ -143,7 +143,8 @@ class LiveGatewayTest {
     }
 
     private fun assertCompressChain(s: HermesSession) {
-        drain(s, s.voiceTurn("Remember the codeword: amber-heron-3. Reply ok."))
+        drain(s, s.voiceTurn("Remember the codeword: amber-heron-3. Reply ok.",
+            "You are speaking out loud on a phone call.", null))
         val head = s.lastID
         val responses = s.route() == TurnRoute.RESPONSES
         if (responses) assertTrue(head.isNotEmpty())

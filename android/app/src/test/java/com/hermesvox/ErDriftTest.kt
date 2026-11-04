@@ -5,40 +5,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * ErDrift — the context-drift sync (Phase 7). Under test: the epilogue rides
- * the user text (cache-safe, gateway-agnostic), is EMPTY when there is
- * nothing to sync (non-ER turns byte-identical), never carries facts the
- * mind could adopt as its own answers, and instructs non-repetition.
+ * ErDrift — the context-drift sync (Phase 7, reshaped by A2/F4). Under test: the sync rides the
+ * request's ephemeral `instructions` (never the caller's message), is EMPTY when there is
+ * nothing to sync, never carries facts the mind could adopt as its own answers, and instructs
+ * non-repetition.
  */
 class ErDriftTest {
 
     @Test fun empty_when_nothing_to_sync() {
-        assertEquals("", ErDrift.epilogue(emptyList(), ErDrift.Vibe()))
+        assertEquals("", ErDrift.sync(emptyList(), ErDrift.Vibe()))
     }
 
-    @Test fun epilogue_carries_the_soul_log() {
+    @Test fun the_sync_carries_the_soul_log() {
         val actions = listOf(
             ErDrift.SoulAction(1L, "ack", "Let me think —"),
             ErDrift.SoulAction(2L, "lag", "my mind's a bit slow right now, give me a sec"))
-        val e = ErDrift.epilogue(actions, ErDrift.Vibe())
-        assertTrue(e.contains("soul-sync:"))
+        val e = ErDrift.sync(actions, ErDrift.Vibe())
+        assertTrue(e.contains("already said to the caller"))
         assertTrue(e.contains("ack=\"Let me think —\""))
         assertTrue(e.contains("lag=\"my mind's a bit slow"))
-        assertTrue(e.contains("do not repeat or contradict"))
+        assertTrue(e.lowercase().contains("do not repeat or contradict"))
     }
 
-    @Test fun epilogue_carries_the_vibe_when_off_neutral() {
-        val e = ErDrift.epilogue(emptyList(), ErDrift.Vibe(mood = "frustrated", energy = "low"))
+    @Test fun the_sync_carries_the_vibe_when_off_neutral() {
+        val e = ErDrift.sync(emptyList(), ErDrift.Vibe(mood = "frustrated", energy = "low"))
         assertTrue(e.contains("mood=frustrated"))
         assertTrue(e.contains("energy=low"))
     }
 
-    @Test fun no_soul_actions_no_vibe_no_epilogue_noise() {
+    @Test fun no_soul_actions_no_vibe_no_sync_noise() {
         // Actions present but vibe neutral -> log only. Vibe off-neutral but no
-        // actions -> vibe only. Both empty -> empty (byte-identical turn).
-        val logOnly = ErDrift.epilogue(listOf(ErDrift.SoulAction(1L, "ack", "Let me think —")), ErDrift.Vibe())
-        assertTrue(logOnly.contains("soul already said"))
-        assertTrue(!logOnly.contains("user vibe"))
+        // actions -> vibe only. Both empty -> empty (the turn's instructions are then
+        // the voice register alone).
+        val logOnly = ErDrift.sync(listOf(ErDrift.SoulAction(1L, "ack", "Let me think —")), ErDrift.Vibe())
+        assertTrue(logOnly.contains("already said to the caller"))
+        assertTrue(!logOnly.contains("mood="))
     }
 
     @Test fun vibe_updates_from_classifier_routes() {
@@ -56,11 +57,15 @@ class ErDriftTest {
         assertEquals("line 30", ErDrift.cap(many).last().text)
     }
 
-    @Test fun epilogue_is_single_line_and_bracketed() {
+    @Test fun the_sync_is_system_prompt_prose_not_an_envelope() {
+        // A2: this is a paragraph of instructions now, not a bracketed blob in the user's
+        // message — no bracket envelope, no protocol tag, no "user vibe:" shorthand.
         val actions = listOf(ErDrift.SoulAction(1L, "ack", "Let me think —"))
-        val e = ErDrift.epilogue(actions, ErDrift.Vibe(mood = "warm"))
-        assertTrue(e.startsWith(" [soul-sync:"))
-        assertTrue(e.endsWith("]"))
+        val e = ErDrift.sync(actions, ErDrift.Vibe(mood = "warm"))
+        assertTrue(e.startsWith("The phone's voice"))
+        assertTrue(e.endsWith("."))
+        assertTrue(!e.contains("soul-sync:"))
+        assertTrue(!e.startsWith(" ["))
         assertEquals(0, Regex("\n").findAll(e).count())
     }
 }

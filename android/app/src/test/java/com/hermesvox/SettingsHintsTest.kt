@@ -278,6 +278,8 @@ class SettingsHintsTest {
             "VisualStyle.KEY_SPEED",
             "VisualStyle.KEY_TRAIL",
             "VoxThreads.PREF",
+            // A2/F4: the voice turn's reasoning effort (model_options.reasoning), default low.
+            "VoiceTurn.PREF_REASONING",
             "barge_grace_ms",
             "barge_level_only_ms",
             "barge_rms_min",

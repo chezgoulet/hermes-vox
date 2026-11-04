@@ -15,19 +15,19 @@ class SoulSequencingTest {
 
     // ---- D30: the mind is never told the voice answered ----
 
-    @Test fun the_epilogue_never_offers_the_mind_a_skip() {
+    @Test fun the_sync_never_offers_the_mind_a_skip() {
         // Even an action logged as an answer (an old soul line still in the ring) is synced as
         // context only: the mind answers the question itself, always.
-        val e = ErDrift.epilogue(listOf(ErDrift.SoulAction(0, "answer", "Hey! Good to hear you.")), ErDrift.Vibe())
+        val e = ErDrift.sync(listOf(ErDrift.SoulAction(0, "answer", "Hey! Good to hear you.")), ErDrift.Vibe())
         assertFalse(e, e.contains("SKIP"))
         assertFalse(e, e.contains("already answered"))
-        assertTrue(e, e.contains("do not repeat or contradict the soul's lines; answer the question itself"))
+        assertTrue(e, e.lowercase().contains("do not repeat or contradict those lines; answer the question itself"))
     }
 
     @Test fun a_beat_is_synced_but_the_mind_still_answers() {
-        val e = ErDrift.epilogue(listOf(ErDrift.SoulAction(0, "beat", "Hmm, good one...")), ErDrift.Vibe())
+        val e = ErDrift.sync(listOf(ErDrift.SoulAction(0, "beat", "Hmm, good one...")), ErDrift.Vibe())
         assertTrue(e.contains("beat=\"Hmm, good one...\""))
-        assertTrue(e.contains("answer the question itself"))
+        assertTrue(e.lowercase().contains("answer the question itself"))
     }
 
     // ---- SoulBudget: the warm conversation rotates before the KV cache fills ----

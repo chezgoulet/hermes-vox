@@ -112,13 +112,18 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     // ---- Streamed turns: the SSE events as they arrive ----
 
     /**
-     * Begins a streamed VOICE turn: [startStream] with the phone-call voice prefix
-     * ([ResponsesClient.USER_TURN_PREFIX]) in front of the user text. ER Phase 1, "the
-     * agent knows it's on a call": the prefix is a per-turn user-message prefix (as
-     * the Hermes CLI's voice mode does), never a persisted instruction, so the prompt
-     * cache stays intact and it works on any stock gateway.
+     * Begins a streamed VOICE turn: the caller's words, byte-exact, plus the per-request
+     * ephemeral [instructions] and the voice turn's reasoning effort ([reasoning]).
+     *
+     * A2 (2026-11-04 Presence review, F4): the voice register used to be a prefix glued onto
+     * the user's message, with an anti-tool clause in it. That polluted the agent's own
+     * transcript and memory with protocol text and told the mind not to look things up, which
+     * is why a price question got a guess. Both now ride `instructions`, which the gateway
+     * appends to the system prompt for this request only
+     * (`ephemeral_system_prompt`) and never persists.
      */
-    fun voiceTurn(text: String): String = Streams.start(responses, ResponsesClient.USER_TURN_PREFIX + text, lastID)
+    fun voiceTurn(input: String, instructions: String, reasoning: Map<String, Any?>?): String =
+        Streams.start(responses, input, lastID, RequestOptions(instructions, reasoning))
 
     /**
      * Begins a streamed turn (the route in [StreamRoute], chained off the head) and

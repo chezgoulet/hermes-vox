@@ -725,3 +725,73 @@ A claim that a turn was answered is now a claim about what the caller heard.
 the voice to answer more of the small talk — is a separate question, tracked with the other Presence
 controls. If it returns, it returns as *policy over what the client does*, never as an instruction
 telling a 2B model to stay quiet.
+
+## D31 — The mind is talked to through the API, not through the user's words
+
+Set 2026-11-04, with D30, on the evidence of the Presence review
+(`docs/reviews/PRESENCE-REVIEW-2026-11-04.md`, F4 and §5.3).
+
+**The decision.** A voice turn sends the mind its framing in the request's **ephemeral
+`instructions`** — the voice register, the soul-sync, and what the phone is doing — and a per-request
+**reasoning effort** (`model_options.reasoning`, defaulting to *low*). The caller's utterance is sent
+byte-exact as `input`. The anti-tool clause is deleted.
+
+**Why.** Three faults in one string. The voice prefix was *inside the user's message*, so it entered
+the agent's stored session history, was replayed through `previous_response_id`, was visible to
+memory and session search, and grew the context by about a hundred tokens a turn — the agent
+remembered a protocol instead of a conversation. It told the mind **not to use its tools** ("Answer
+from what you know; do NOT do exhaustive tool work…"), which is exactly the clause that turns "what's
+a used 4090 going for" into a stale guess or a refusal, and made Presence measurably worse than
+Realtime — same agent, same gateway — on the questions people actually ask a voice assistant. And
+parts of it were simply false by 0.6.7 (the app no longer says "let me think" before it answers).
+
+**What it rests on.** The gateway already supports both fields on `/v1/responses` and `/v1/runs`:
+`instructions` maps to `ephemeral_system_prompt`, which is appended to the system prompt at API time
+and never written to the transcript (`api_server_response_admissions.py`), and `model_options` is
+decoded per request (`_runtime_options_from_model_options`, `_request_reasoning_config`). No gateway
+change, no new endpoint, no model change.
+
+**The two risks, stated.** *Inheritance:* a chained request that omits `instructions` inherits the
+previous turn's value, so **every** request sends the field — empty on typed turns, which clears it.
+*Providers that ignore reasoning* simply behave as today; the setting is an optimisation, never a
+correctness requirement.
+
+**What it commits us to.** Protocol text never rides the user's message again. When the phone needs
+to tell the mind something (the register, the soul's lines, the phone's state, what the phone just
+did), it goes in `instructions`. And the mind keeps every capability it has: a voice turn is not a
+lesser turn.
+
+## D32 — The phone takes four actions by itself, and the mind is told what they were
+
+Set 2026-11-04, on #421 (Presence's tool use, steps 1 and 2).
+
+**The decision.** Presence gets a **local-action lane** for the handful of things that must be
+instant — **timer, alarm, do-not-disturb, volume** — matched by a deterministic grammar, executed on
+the phone with **no network round trip**, and recorded in a small registry that the voice turn's
+`instructions` report to the mind (`presence: … / local_actions: … / device: …`). Everything the
+grammar does not recognise falls through to the mind unchanged.
+
+**Why a grammar and not a model.** The value of the path is that it is already done when a streamed
+turn would still be connecting. A 2B model's judgement would put a render (1–3 s) in front of the
+fastest thing in the app, and the tool-use lane it would need is the one we are deliberately not
+building yet. This is a command syntax, not a language judgement — the inversion of the reason the
+174-substring classifier was deleted: that was a *classification* problem, and this is not.
+
+**The bounds, which are the decision.**
+- **Tier 0 only**: reversible, private, nothing outward-facing. No message, no call, no purchase, no
+  app launch. A later lane can add approval-gated actions; this one never needs one.
+- **User-initiated only**: nothing fires on a timer or on the agent's initiative.
+- **The confirmation must be true.** A failure says so; a missing permission is named as a missing
+  permission. The false-action-claim guard's premise applies to the phone's own claims first.
+- **English only, for now.** Any letter outside A–Z falls through, so no other language is half-parsed.
+- **The permission answer is part of the decision.** Timers and alarms use the `OnAlarmListener` form
+  of the exact alarm API, which needs **no** special access; the trade is that they ring while the
+  app's process is alive (it is, during a call). Do Not Disturb needs the user's policy access, which
+  the app does not ask for on the user's behalf — so a caller without it is told the truth instead.
+  An alarm that lives in the system Clock app would need an outward-facing intent and a confirmation
+  the phone cannot verify, and is not this lane.
+
+**What it commits us to.** The presence context in `instructions` is the contract between the two
+halves: anything the phone does to itself is reported there, so the mind never contradicts the phone
+or asks for what it already knows. MCP tools and the veto tiers (#421's later steps) stay out of this
+lane; they are the mind's tools, not the phone's.

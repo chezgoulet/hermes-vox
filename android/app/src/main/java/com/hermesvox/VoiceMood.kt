@@ -9,7 +9,7 @@ package com.hermesvox
  *    its turn render can tag the caller's tone — `{calm}`, `{warm}`, `{lively}` or `{tense}` —
  *    ahead of its answer or beat. A transcript alone cannot carry a sigh, a laugh or irritation.
  *  - ANSWER it: the tag steers the voice's delivery (speed and pause length on the on-device
- *    voice) and rides to the mind as the vibe in the soul-sync epilogue.
+ *    voice) and rides to the mind as the vibe in the request instructions.
  *
  * The mapping is deliberately conservative: a tense caller gets a steadier, slower voice (never a
  * mirrored tension), a lively caller a slightly brisker one. The tag is a hint — absent or unknown

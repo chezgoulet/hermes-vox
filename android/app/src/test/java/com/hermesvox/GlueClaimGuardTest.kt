@@ -80,7 +80,11 @@ class GlueClaimGuardTest {
             assertTrue(src, Regex("speakGlue\\([^\\n]*$src").containsMatchIn(vc))
         }
         assertTrue(main.contains("speakGlue(said, source = \"tool-narration\")"))
-        assertTrue(presence.contains("speakGlue(\"okay — take the time you need\", \"presence-hold\")"))
+        // F5: the hold line is still voiced through the glue (never straight to the engine), and
+        // it is now chosen by the one pure rule that also keeps it away from a turn start.
+        assertTrue(presence.contains("speakGlue(it, \"presence-hold\")"))
+        assertTrue(presence.contains("HOLD_LINE"))
+        assertTrue(vc.contains("speakGlue(fitted, source = SOURCE_COMMENTARY)"))
     }
 
     // ---- D29: the prompt no longer bans numbers --------------------------------

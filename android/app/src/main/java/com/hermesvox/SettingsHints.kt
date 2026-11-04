@@ -70,6 +70,7 @@ object SettingsHints {
         "row_er_voice" to "Silent, sounds (mm, a breath) or short spoken lines",
         "row_er_density" to "How often Presence speaks during a long task",
         "row_er_echo" to "Ignores the mic briefly after Presence speaks, so it can't hear itself",
+        "row_er_reasoning" to "How hard the mind thinks on a voice turn; lower answers sooner",
         "row_vox" to "Fetches the agent's own description of its voice from the gateway",
         "row_vox_view" to "Shows what Presence reads about the agent's voice",
         // Voice models

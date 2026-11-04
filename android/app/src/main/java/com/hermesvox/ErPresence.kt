@@ -92,7 +92,35 @@ class ErPresence(
      *  speak before the reply" — the ER-delta numerator. Reset per window. */
     @Volatile private var spokeThisWindow = false
 
-    /** The user finished an utterance — classify it and open the window.
+    /**
+     * A3 / F5 (2026-11-04 review): the caller has just spoken a TURN — classify it and open the
+     * window, and never speak a canned line.
+     *
+     * The field's best moment was "want me to write those points to a markdown file?" → "yes" →
+     * *"okay — take the time you need"*. The backchannel list was built for the patient caller
+     * *during* the mind's work, and it was being applied at turn start, so a confirmation got a
+     * non-sequitur and no beat. At turn start the caller's words are an ANSWER: they are the
+     * mind's lane, the soul may open it with a beat, and the phone says nothing else.
+     *
+     * [onUserUtterance] keeps its meaning for real interruptions (a backchannel spoken while the
+     * mind works), which is the one place the hold line belongs.
+     */
+    fun onTurnStart(text: String, nowMs: Long): ErIntent.Route {
+        spokeThisWindow = false
+        firstWordSeen = false
+        val d = ErIntent.classify(text)
+        lastRoute = d.route
+        ErTelemetry.classify(d.route)
+        startWindow(nowMs)
+        // Null by construction (see [autoLine]): a turn start is the mind's, and the soul's
+        // contribution is the beat, not an acknowledgment.
+        autoLine(d.route, atTurnStart = true)?.let { speakGlue(it, "presence-turn-start") }
+        VoxLog.er("er:intent=${d.cls.name.lowercase()} route=turn-start lane=mind")
+        return d.route
+    }
+
+    /**
+     * The user finished an utterance — classify it and open the window.
      *  fromVoice=true only (typed sends never trigger presence). Returns the
      *  route for the caller's log line. */
     fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
@@ -104,9 +132,13 @@ class ErPresence(
         when (d.route) {
             ErIntent.Route.HOLD_ONLY -> {
                 // The patient user. No escalation, no filler; a soft in-register
-                // ack (P3, cuttable by a real barge) at most.
-                speakGlue("okay — take the time you need", "presence-hold")
-                spokeThisWindow = true
+                // ack (P3, cuttable by a real barge) at most. This is the ONLY moment the phone
+                // acknowledges on its own — see [autoLine]: at turn start the same words are an
+                // answer, not a backchannel (F5).
+                autoLine(d.route, atTurnStart = false)?.let {
+                    speakGlue(it, "presence-hold")
+                    spokeThisWindow = true
+                }
                 VoxLog.er("er:intent=backchannel route=hold")
             }
             ErIntent.Route.ACK_AND_YIELD -> {
@@ -124,7 +156,7 @@ class ErPresence(
 
     /**
      * The soul spoke a line of its own this window — a beat or a full answer. Recorded for the
-     * mind's soul-sync (synchronously, so it is in the epilogue the mind's turn carries), and it
+     * mind's soul-sync (synchronously, so it is in the instructions the mind's turn carries), and it
      * IS the window's presence: the nonverbal preamble must not also play, and the first-word
      * metric starts here.
      */
@@ -330,6 +362,29 @@ class ErPresence(
         }
     }
     @Volatile private var stallVoicedFor = 0L
+
+    companion object {
+        /** The line for the patient caller — the one thing the phone says on its own. */
+        const val HOLD_LINE = "okay — take the time you need"
+
+        /**
+         * A3 / F5 (2026-11-04 review): what Presence says by itself, given the classifier's route
+         * and the moment.
+         *
+         * At TURN START: nothing. The caller's words are the answer to whatever was asked, so
+         * "yes" is a turn, not a backchannel — the canned "okay — take the time you need" answered
+         * a confirmation with a non-sequitur and is deleted. The soul may still open the turn with
+         * a beat, which is a render, not a line from this list.
+         *
+         * DURING the mind's work: the hold line, for the patient caller only. That is what the
+         * list was written for.
+         */
+        fun autoLine(route: ErIntent.Route, atTurnStart: Boolean): String? = when {
+            atTurnStart -> null
+            route == ErIntent.Route.HOLD_ONLY -> HOLD_LINE
+            else -> null
+        }
+    }
 }
 
 /** #217: eight hex digits naming a spoken line, case- and punctuation-blind — "Still on it." and

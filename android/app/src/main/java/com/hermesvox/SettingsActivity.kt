@@ -468,6 +468,34 @@ class SettingsActivity : AppCompatActivity() {
         val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
 
         bindPresenceEnabled()
+        // A2: how hard the mind thinks on a voice turn. The gateway takes it per request
+        // (model_options.reasoning), so this needs no model change and no restart: the next
+        // turn runs at the chosen effort. Low is the default because a spoken turn is waiting.
+        val rowReasoning = findViewById<android.view.View>(R.id.row_er_reasoning)
+        val tvReasoning = findViewById<TextView>(R.id.set_er_reasoning_val)
+        fun reasoningLabel(token: String) = when (token) {
+            "off" -> "Off"
+            "medium" -> "Medium"
+            "high" -> "High"
+            else -> "Low"
+        }
+        val reasoningTokens = arrayOf("off", "low", "medium", "high")
+        tvReasoning.text = reasoningLabel(prefs.getString(VoiceTurn.PREF_REASONING, "low") ?: "low")
+        rowReasoning.setOnClickListener {
+            val cur = prefs.getString(VoiceTurn.PREF_REASONING, "low") ?: "low"
+            AlertDialog.Builder(this)
+                .setTitle("Reasoning effort on a voice call")
+                .setSingleChoiceItems(
+                    arrayOf("Off (fastest)", "Low", "Medium", "High (deepest)"),
+                    reasoningTokens.indexOf(cur).coerceAtLeast(0)
+                ) { d, which ->
+                    prefs.edit().putString(VoiceTurn.PREF_REASONING, reasoningTokens[which]).apply()
+                    tvReasoning.text = reasoningLabel(reasoningTokens[which])
+                    d.dismiss()
+                    Toast.makeText(this, "Voice turns now reason at ${reasoningTokens[which]} effort", Toast.LENGTH_SHORT).show()
+                }
+                .show()
+        }
         swPresence.isChecked = prefs.getBoolean("er_presence", true)
         swPresence.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean("er_presence", checked).apply()

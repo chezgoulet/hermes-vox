@@ -499,6 +499,19 @@ class VoiceController(private val context: Context, private val session: HermesS
     // stays open through a hold and retires normally). This witness says: the
     // release was a HOLD, the turn is ALIVE — settle it like an ordinary turn.
     @Volatile private var erHoldReleasedGen = -1L
+    /** F3: a retry is already scheduled for the queued turn (never two pending flush posts). */
+    @Volatile private var pendingFlushScheduled = false
+    // F3 (2026-11-04 review): the caller's words that arrived while a turn was in flight — a
+    // hold with content, or a turn suppressed by `turnInFlight`. One slot, newest wins; it is
+    // submitted when the current turn settles ([runPendingTurn]), never discarded.
+    private val pendingTurn = PendingTurn()
+    // B2 (#421): the phone's own actions — timer, alarm, do-not-disturb, volume. Created on first
+    // use so a probe-only controller never touches the alarm/audio services.
+    private val localActions: LocalActions by lazy { LocalActions(context) }
+    // B1 (#421): the last line the PHONE said, and which lane said it. The mind never hears the
+    // soul, so this is what its instructions report as `soul=` / `last_line=`.
+    @Volatile private var lastHeardLine = ""
+    @Volatile private var lastHeardSource = ""
     // 0.6.2 user-facing gates (Settings ER section): semantic barge scope +
     // soul presence. Read per turn (the Settings write is immediate).
     @Volatile private var erSemanticBarge = true
@@ -1444,6 +1457,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // handler callbacks must never outlive the executor they feed.
         erActive = false; erPresence.stop("call-end")
         soulGreeted = false   // 0.8/M3c: the next call opens with a greeting too
+        pendingTurn.clear()   // F3: a hangup is not a reason to answer queued words after it
         // 0.8/M1: the session's final ER numbers (the periodic emit covers the live
         // case; this one guarantees a hangup always closes the measurement out).
         if (presenceActive) VoxLog.er(ErTelemetry.line())
@@ -1989,14 +2003,99 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
+    /**
+     * B2 (#421 step 2): take a recognised local action instead of a mind turn.
+     *
+     * The utterance never becomes a stream: the action runs, the caller hears one short, TRUE line,
+     * and the registry B1 reports is updated so the mind can answer follow-ups about it ("how long
+     * left?"). The turn's gate is released by [speak]'s completion, exactly like a reply's, so the
+     * mic reopens when the confirmation has finished rather than over the top of it.
+     *
+     * The receipt says `reason=local-action`: the mind did not see this turn, by design — the phone
+     * did it. `ok=false` would otherwise read as a swallowed turn in the field log.
+     */
+    private fun takeLocalAction(text: String, intent: LocalActionGrammar.Intent, gen: Long) {
+        // The turn's gate, armed here because this turn never reaches the stream body that
+        // normally arms it: the confirmation's completion releases it (as a reply's would), and
+        // the capture loop's drain is waiting on the same latch.
+        turnInFlight = true
+        voiceState.arm()
+        listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
+        val outcome = localActions.run(intent)
+        VoxLog.d("event=local-action kind=${intent.kind} ok=${outcome.ok} " +
+            "registry=\"${localActions.registry().joinToString(",")}\" " +
+            "text=${if (logTranscripts()) text.take(80) else "<hidden>"}")
+        noteHandoff(gen, false, ErHandoff.REASON_LOCAL_ACTION, "-", text.length)
+        listener?.onLog("// local: ${if (outcome.ok) "done" else "refused or failed"}")
+        main.post {
+            // The confirmation is the turn's answer: it belongs in the transcript, and it is
+            // spoken on the authoritative path so the mic does not reopen into the middle of it.
+            listener?.onReply(outcome.line)
+            turnInFlight = false   // the action is done; only its one line is still playing
+            if (shouldSpeak()) speak(outcome.line, gen)
+            else { listener?.onState("idle"); releaseTurnGate(gen, "local-action") }
+        }
+        // The presence window belongs to the mind's work; there is none here.
+        erActive = false; erMindLive = false
+        turnUtterance = null
+    }
+
+    /**
+     * B1 (#421 step 1): what the phone is doing, for the voice turn's `instructions`.
+     *
+     * Every fact here is cheap and readable without a permission we do not have: the local clock,
+     * the battery percentage, whether there is a validated network, whether Do Not Disturb is on,
+     * the presence layer's own state, and the registry of actions the phone took itself. Never
+     * transcript text — the caller's words reach the mind as `input`, once.
+     */
+    private fun presenceContextBlock(): String {
+        val now = java.util.Calendar.getInstance()
+        val clock = "%02d:%02d".format(now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE))
+        val battery = try {
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+        } catch (_: Throwable) { null }
+        val online = try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val caps = cm?.let { c -> c.activeNetwork?.let { c.getNetworkCapabilities(it) } }
+            caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } catch (_: Throwable) { false }
+        val dnd = try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            nm != null && nm.currentInterruptionFilter != android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+        } catch (_: Throwable) { false }
+        return PresenceContext.block(
+            soul = PresenceContext.soulToken(lastHeardSource, erPresenceOn && presenceActive),
+            speaking = speaking || glueSpeaking,
+            lastLine = lastHeardLine,
+            actions = localActions.registry(),
+            clock = clock,
+            battery = battery,
+            online = online,
+            dnd = dnd,
+        )
+    }
+
     // --- The streamed entity turn (REAL SSE) ---
     private fun runStreamedTurn(text: String, gen: Long, fromVoice: Boolean = false, pasted: Boolean = false) {
         if (turnInFlight) {
             VoxLog.d("turn suppressed (in flight)")
-            // The caller spoke and the mind was never asked: the receipt says so, so the swallow
-            // is visible in the log rather than only in the caller's recollection.
+            // F3 (2026-11-04 review): the mind was never asked, so the receipt says so — but the
+            // words are NOT dropped. They go into the one pending slot and become the next turn
+            // when this one settles (newest wins: [PendingTurn]).
+            if (pendingTurn.offer(text, android.os.SystemClock.uptimeMillis()))
+                VoxLog.er("event=er-pending gen=$gen queued=true reason=${ErHandoff.REASON_SUPPRESSED} chars=${text.length}")
             noteHandoff(gen, false, ErHandoff.REASON_SUPPRESSED, "-", text.length)
             releaseTurnGate(turnGen, "suppressed-inflight"); return
+        }
+        // A turn the caller just started by speaking is newer than anything queued: their own
+        // words supersede the queued echo of an earlier ones (the pending slot is "newest wins").
+        pendingTurn.clear()
+        // B2 (#421 step 2): an utterance the local grammar recognises is taken on the phone NOW,
+        // with no network round trip. Everything else falls through untouched.
+        if (fromVoice && !pasted) {
+            val local = LocalActionGrammar.parse(text)
+            if (local != null) { takeLocalAction(text, local, gen); return }
         }
         val voiceTurn = fromVoice && presenceActive
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
@@ -2012,12 +2111,17 @@ class VoiceController(private val context: Context, private val session: HermesS
         // 0.6.2: erPresenceOn=false (Settings "Soul presence" off) → the
         // classifier + drift log still run (the mind's sync stays honest) but
         // ErPresence speaks nothing (the speakGlue lambda becomes a no-op).
-        var openerRoute: ErIntent.Route? = null
+        // A3 / F5 (2026-11-04 review): at TURN START the caller's words are an ANSWER to the
+        // last question, so "yes" is not a backchannel to acknowledge — it is the turn. The canned
+        // "okay — take the time you need" used to answer "want me to write those points to a
+        // markdown file?", and that answer is gone: the window opens, nothing is spoken, and the
+        // soul gets its usual chance at the beat. (The hold line still exists for a backchannel
+        // spoken WHILE the mind works — that one really is the patient caller.)
         if (voiceTurn) {
             erActive = true
             erMindLive = true
             val presenceTarget = if (erPresenceOn) erPresence else erPresence.silentProxy
-            openerRoute = presenceTarget.onUserUtterance(text, android.os.SystemClock.uptimeMillis())
+            presenceTarget.onTurnStart(text, android.os.SystemClock.uptimeMillis())
         }
         // D30 — THE SOUL IS A COMPANION, NOT A GATEKEEPER. Every voice turn goes to the mind at
         // once; nothing waits on the soul and the mind is never told the voice answered. The soul's
@@ -2031,7 +2135,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         (tts as? SherpaTts)?.mood = VoiceMood.WARM   // a heard mood applies to the turn it was heard in
         val soulTurn = SoulTurnState()
         val decide = soulDecide
-        if (voiceTurn && erPresenceOn && decide != null && openerRoute == ErIntent.Route.ACK_AND_YIELD) {
+        // D30 + F5: every turn may be opened by a beat, whatever the caller's phrasing was.
+        if (voiceTurn && erPresenceOn && decide != null) {
             val heardAudio = if (prefsGetBoolean(SoulAudio.PREF, true)) turnAudio else null
             decide(ErSoulTurn.KIND_TURN, text, null, heardAudio) { o, mood ->
                 val beat = ErSoulTurn.turnBeat(o)
@@ -2094,10 +2199,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // ends before then makes the prewarm bail on its gen check.
         main.postDelayed({ prewarmWorkingLine(gen) }, ErFillers.LAG_AFTER_MS)
         listener?.onState("thinking")
-        // ER Phase 7: the mind sees what the soul already said this turn (the
-        // drift-sync epilogue rides the user text — cache-safe per-turn channel).
-        // NOTE: applied BEFORE the onLog line, so the console shows what the
-        // gateway actually received.
+        // ER Phase 7: the mind sees what the soul already said this turn.
+        // A2: the drift-sync rides the request instructions, not the user text.
         // #327: a paste can be a megabyte of someone's clipboard. Its body never reaches
         // the console (or the file log, which mirrors the console) even when "log spoken
         // transcript" is on — only its size does.
@@ -2132,11 +2235,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // R2: metadata-only provenance (dd: logcat full, file only in debug
                 // mode) — model/provider ids are config, not user content.
                 VoxLog.dd("event=start-stream gen=$gen model=${prefString("model", "hermes-agent")} provider=${prefString("provider", "")}")
-                // ER Phase 1: VOICE-originated turns carry the phone-call voice
-                // prefix ("the agent knows it's on a call" — spoken register). Typed sends stay
-                // prefix-free: a typed message may legitimately ask for code blocks / deep work.
-                // sendText() passes fromVoice=false; both STT loops pass true.
-                // D30: no wait on the soul — the turn is submitted immediately (waitMs = 0).
+                // A2 (2026-11-04 review, F4): a VOICE turn tells the mind it is on a call
+                // through the request's ephemeral `instructions`, never by rewriting the
+                // caller's words. Typed sends carry none: a typed message may legitimately
+                // ask for code blocks / deep work. sendText() passes fromVoice=false; both
+                // STT loops pass true. D30: nothing waits on the soul — the beat renders
+                // beside this submit, not in front of it.
                 if (genCancelled) {
                     // Nothing will be sent: the receipt says the mind never saw this turn.
                     noteHandoff(gen, false, ErHandoff.REASON_CANCELLED,
@@ -2144,19 +2248,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                     endReply(gen, ReplyLedger.End.CANCELLED); return@execSubmit
                 }
                 val heardMood = synchronized(soulTurn) { soulTurn.mood }
-                val drift = if (voiceTurn) {
-                    ErDrift.epilogue(erPresence.drainSoulActions(),
-                        heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe())
-                } else ""
-                val drifted = if (drift.isNotEmpty() && !text.contains("[soul-sync:")) text + drift else text
+                // A2: the soul-sync is part of the request's instructions, not of the caller's
+                // words. The transcript the agent keeps therefore reads like a conversation.
+                val sync = if (voiceTurn) ErDrift.sync(erPresence.drainSoulActions(),
+                    heardMood?.let { ErDrift.Vibe(mood = it.vibeMood, energy = it.vibeEnergy) } ?: ErDrift.Vibe()) else ""
                 // #243: a voice turn after a barge carries where the cut landed, once.
                 val resume = if (voiceTurn && AlphaGate.allows(context, AlphaGate.FeatureSet.TURN_TAKING))
                     resumeSlot.take(android.os.SystemClock.uptimeMillis()) else null
                 if (resume != null) VoxLog.d("event=resume-offer heardChars=${resume.first.heard.length} " +
                     "unsaidChars=${resume.first.unsaid.length} ageMs=${android.os.SystemClock.uptimeMillis() - resume.first.atMs}")
-                val turnText = if (resume != null) resume.second + drifted else drifted
-                val sid = if (voiceTurn) session.voiceTurn(turnText) else session.startStream(text)
-                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn")
+                val turnText = if (resume != null) resume.second + text else text
+                // The voice turn's request: the register + presence context in `instructions`
+                // (ephemeral, never stored), and the reasoning effort the user chose (default
+                // low — a voice turn wants the fast answer, not the deepest one).
+                val instructions = if (voiceTurn) VoiceTurn.instructions(sync, presenceContextBlock()) else ""
+                val reasoning = if (voiceTurn)
+                    com.hermesvox.core.ResponsesClient.reasoningOption(
+                        prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT))
+                else null
+                val sid = if (voiceTurn) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)
+                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn reasoning=${prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT)}")
                 // THE RECEIPT (the reporter's check): one line per turn proving the mind was
                 // handed the turn, with the soul's decision that preceded it.
                 val handed = sid.isNotBlank()
@@ -2219,8 +2330,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                                     is StreamAction.Fallback -> deliverFallback(action, gen)
                                     is StreamAction.Failure -> main.post {
                                         listener?.onError("hermes: the voice stream was lost (connection or gateway restart). Try again.")
-                                        listener?.onState("idle")
-                                        releaseTurnGate(gen, "stream-lost")
+                                        // F9: a car hears the repair; the pill is unread.
+                                        if (!speakRepair(gen, "stream-lost")) {
+                                            listener?.onState("idle")
+                                            releaseTurnGate(gen, "stream-lost")
+                                        }
                                     }
                                     else -> {}   // None: already terminal; Completed: unreachable
                                 }
@@ -2287,8 +2401,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                                         stopStreaming()   // abort: close the streaming worker + release the track
                                         main.post {
                                             listener?.onError("hermes: $err")
-                                            listener?.onState("idle")
-                                            releaseTurnGate(gen, "reply-error")
+                                            if (!speakRepair(gen, "reply-error")) {
+                                                listener?.onState("idle")
+                                                releaseTurnGate(gen, "reply-error")
+                                            }
                                         }
                                     }
                                     else -> {}                // None (already terminal) / Completed (unreachable)
@@ -2301,7 +2417,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 terminal.fail("empty-reply")   // nothing assembled: still an error
                                 endReply(gen, ReplyLedger.End.FAILED, "empty-reply")   // #240 rule 1
                                 stopStreaming()   // empty reply: still close the streaming worker
-                                main.post { listener?.onState("idle"); releaseTurnGate(gen, "empty-reply") }
+                                // F9: an empty reply is not a sanctioned skip any more (D30),
+                                // so it ends with words rather than silence.
+                                main.post {
+                                    if (!speakRepair(gen, "empty-reply")) {
+                                        listener?.onState("idle"); releaseTurnGate(gen, "empty-reply")
+                                    }
+                                }
                             }
                         }
                     }
@@ -2328,8 +2450,10 @@ class VoiceController(private val context: Context, private val session: HermesS
                         stopStreaming()
                         main.post {
                             listener?.onError("hermes: ${e.message}")
-                            listener?.onState("idle")
-                            releaseTurnGate(gen, reason)
+                            if (!speakRepair(gen, reason)) {
+                                listener?.onState("idle")
+                                releaseTurnGate(gen, reason)
+                            }
                         }
                     }
                     StreamAction.None -> {}   // cancelled, or the fallback already delivered
@@ -2338,6 +2462,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                // F3: the mind's turn is over. If words were queued during it, they are next —
+                // runPendingTurn waits for this reply's voice to finish if it is still playing.
+                main.post { runPendingTurn() }
                 // #282: a request cannot be answered once its run is over; withdraw it
                 // rather than leaving a card that would 409 if tapped. A loop that ended
                 // while the run was STILL alive (lost stream, poll abort) is the exception:
@@ -2425,12 +2552,18 @@ class VoiceController(private val context: Context, private val session: HermesS
                         main.post { listener?.onDelta(d); bumpSpeakLevel() }
                     }
                 }
-                // Mid-turn commentary (phase=commentary): the entity narrating its
-                // progress. The connector never puts it in `delta`, so it is not
-                // spoken as the answer; the dev log shows it once, when the item closes.
+                // Mid-turn commentary (phase=commentary): the entity narrating its progress.
+                // The connector never puts it in `delta`, so it is not the answer.
+                // F8 (2026-11-04 review): it IS the best working line there is — grounded, in the
+                // agent's own voice, free — so it is spoken through the glue funnel (claim guard,
+                // repeat guard, arbiter and transcript all apply) instead of being thrown away
+                // while a 2B rendered guesses about what the mind was doing.
                 "response.output_item.done" -> {
                     val c = e.optString("commentary")
-                    if (c.isNotBlank()) main.post { listener?.onLog("// entity: ${c.replace("\n", " ").take(160)}") }
+                    if (c.isNotBlank()) main.post {
+                        listener?.onLog("// entity: ${c.replace("\n", " ").take(160)}")
+                        speakCommentary(c, gen)
+                    }
                 }
                 "response.completed" -> {
                     runEnded = true
@@ -2531,6 +2664,60 @@ class VoiceController(private val context: Context, private val session: HermesS
             ReplySettle.DROP -> VoxLog.d(
                 "event=settle-drop gen=$gen reason=${if (cancelled) "cancelled" else "already-spoken"} chars=${finalText.length}")
         }
+    }
+
+    /**
+     * F8 (2026-11-04 review): speak the mind's own progress narration as the working line.
+     *
+     * The gateway streams `phase=commentary` text — the mind saying in its own words what it is
+     * doing — and it used to go to the dev console only, while the soul rendered a guess about
+     * the same tool from a name and 60 characters of arguments. This is the line that is both
+     * true and free.
+     *
+     * It goes through [speakGlue], so everything the glue already guarantees holds: the
+     * false-action-claim guard (the mind's own commentary is still unbacked text on the glue
+     * lane), the same-text guard, the arbiter, the transcript, and the rule that a reply which
+     * has started speaking owns the floor. Shape is repaired with the same bound as a soul line
+     * ([ErSoulTurn.fitToBound]); a sentence that will not fit is logged and not spoken.
+     */
+    private fun speakCommentary(commentary: String, gen: Long) {
+        if (gen != turnGen || !turnInFlight || genCancelled) return
+        // The narration register owns whether the phone narrates at all: `silent` means motion
+        // only, and the mind's line is still narration.
+        if (!erPresenceOn || erPresence.voiceMode == "silent") return
+        if (firstTextLatch) {
+            VoxLog.er("event=er-glue-reject reason=reply-live source=$SOURCE_COMMENTARY")
+            return
+        }
+        val fitted = ErSoulTurn.commentaryLine(commentary)
+        if (fitted == null) {
+            VoxLog.er("event=er-glue-reject reason=too-long source=$SOURCE_COMMENTARY")
+            return
+        }
+        // The soul's later asides must not repeat what the mind itself just said.
+        synchronized(workingSaid) { workingSaid.add(fitted) }
+        speakGlue(fitted, source = SOURCE_COMMENTARY)
+    }
+
+    /**
+     * F9 (2026-11-04 review): in a voice call every turn ends audibly.
+     *
+     * An empty reply, a lost stream or a failed turn used to end with `onState("idle")` — no
+     * sound, no words, and a pill nobody driving can read. The caller was left to work out
+     * whether they had been heard. This speaks the repair instead, on the authoritative path
+     * ([speak], not glue): it owns the floor, the mic does not reopen into the middle of it, and
+     * the gate releases from its completion callback exactly like an ordinary reply.
+     *
+     * Returns true when the repair owns this turn's ending. A cut turn is NOT a failed one — a
+     * barge, hush or hangup means the caller stopped it on purpose, so nothing is said.
+     */
+    private fun speakRepair(gen: Long, reason: String): Boolean {
+        if (!TurnRepair.speaks(
+                cancelled = genCancelled, stopped = stopped, listening = listening,
+                voiceOn = shouldSpeak(), sameTurn = gen == turnGen)) return false
+        VoxLog.er("event=repair reason=$reason gen=$gen")
+        speak(TurnRepair.LINE, gen)
+        return true
     }
 
     /**
@@ -3094,7 +3281,12 @@ class VoiceController(private val context: Context, private val session: HermesS
             // D30: [onPlayed] fires from the TTS start callback — the line is audible — so a line
             // dropped anywhere after this point (a stop during synthesis, no engine) is never
             // recorded as heard.
-            val took = ttsHost?.speak(text, { try { onPlayed?.invoke() } catch (_: Throwable) {} }) { _ ->
+            val took = ttsHost?.speak(text, {
+                // B1: the caller can hear it now, so the mind may be told about it.
+                lastHeardLine = text
+                lastHeardSource = source
+                try { onPlayed?.invoke() } catch (_: Throwable) {}
+            }) { _ ->
                 if (speakSeq.get() == seq) {
                     glueSpeaking = false
                     // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
@@ -3227,7 +3419,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 0.6.2: witness the release as a HOLD so the reply's settle
                         // doesn't mistake it for a cancel (the HOLD-drop fix).
                         erHoldReleasedGen = myGen
-                        if (erPresenceOn) {
+                        // F3 (2026-11-04 review): a hold with WORDS is not a backchannel. The
+                        // reviewer's field case — a re-ask, a correction, a follow-up spoken
+                        // during a 20-second lookup — used to be discarded here. It is queued
+                        // as the next turn instead; only the patient caller ("mm-hm") is
+                        // absorbed, which is what a hold is for.
+                        if (ErBargeGate.carries(said)) {
+                            val queued = pendingTurn.offer(said, android.os.SystemClock.uptimeMillis())
+                            VoxLog.er("event=er-pending gen=$myGen queued=$queued reason=hold chars=${said?.length ?: 0}")
+                        } else if (erPresenceOn) {
                             erPresence.onUserUtterance(said ?: "okay", android.os.SystemClock.uptimeMillis())
                         }
                         releaseTurnGate(myGen, "er-barge-hold")
@@ -3305,6 +3505,35 @@ class VoiceController(private val context: Context, private val session: HermesS
         // this the Phase-8 instrumentation had ZERO emit sites — every claim about
         // Presence was an impression. This is the line that makes the delta falsifiable.
         if (presenceActive && ErTelemetry.shouldEmit()) VoxLog.er(ErTelemetry.line())
+        // F3: this turn is over for the caller. If words were queued while it ran, they are the
+        // next turn — posted, so they start after this release is complete on every path.
+        main.post { runPendingTurn() }
+    }
+
+    /**
+     * F3 (2026-11-04 review): submit the queued utterance, if any, now that the previous turn
+     * has settled. Called from [releaseTurnGate] (the moment the floor is free) and never while
+     * a turn is still in flight: the words wait for the mind to finish, they do not interrupt it.
+     *
+     * The queue is one slot and [PendingTurn] expires it, so a long stall cannot make the phone
+     * answer a question the caller has forgotten. A turn the caller starts themselves clears
+     * the slot first — their own words are newer than the queued echo (see runStreamedTurn).
+     */
+    private fun runPendingTurn() {
+        if (stopped || !listening) return
+        // The floor must be free in BOTH senses: no mind turn, and no voice still playing (the
+        // HOLD path releases the gate while the mind keeps working, and the reply's tail outlives
+        // the stream loop). Retry shortly rather than dropping the words; the slot expires itself.
+        if (!PendingTurn.floorFree(turnInFlight, speaking, glueSpeaking, streamed && !sClosed)) {
+            if (pendingTurn.pending() && !pendingFlushScheduled) {
+                pendingFlushScheduled = true
+                main.postDelayed({ pendingFlushScheduled = false; runPendingTurn() }, PENDING_RETRY_MS)
+            }
+            return
+        }
+        val queued = pendingTurn.take(android.os.SystemClock.uptimeMillis()) ?: return
+        VoxLog.er("event=er-pending gen=$turnGen submitted=true chars=${queued.length}")
+        runStreamedTurn(queued, turnGen, fromVoice = true)
     }
 
     private fun stopTts() { try { tts?.stop() } catch (_: Exception) {} }
@@ -3580,8 +3809,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
          *  the mark that lets the reply's first audio cut it without the beat's wait. */
         const val SOURCE_WORKING = "soul-working"
+        /** F3: how often the queued turn is retried while the floor is busy. */
+        const val PENDING_RETRY_MS = 400L
         /** 0.9.1 soak: the once-per-card "say approve or no". */
         const val SOURCE_APPROVAL_PROMPT = "approval-prompt"
+        /** F8: the mind's own progress narration, spoken as the working line. */
+        const val SOURCE_COMMENTARY = "mind-commentary"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */

@@ -105,8 +105,22 @@ barge-in already worked.
 because every call rebuilt a conversation and re-prefilled a ~600-token persona to produce ten tokens.
 The soul now keeps one rolling conversation, primed at load, so each render prefills only its own
 directive. The beat became generated rather than canned: the same render returns the opener, and
-conversation history keeps it from repeating. The mind is now *told* what the voice said, through a
-soul-sync epilogue, and may reply `<<SKIP>>` when the voice already answered.
+conversation history keeps it from repeating. The mind is *told* what the voice said, through a
+soul-sync note. *(The `<<SKIP>>` reply this step added was retired by D30; the sync moved out of the
+user's message into the request's `instructions` by D31.)*
+
+**2026-11-04 — the companion, the words that are kept, and the words that are said.** The Presence review (`docs/reviews/PRESENCE-REVIEW-2026-11-04.md`)
+traced the field report *"faster, but sometimes no response"* to four Presence-only paths, and three
+changes came out of it. D30 retired the skip offer and the gate that held the mind's submit: the soul
+is a companion that opens a turn, never a gatekeeper that answers it. The same week, two mechanical
+faults were fixed: **the caller's words are never discarded** (a hold with content, and a turn that
+arrives while another is in flight, both queue into the next turn instead of vanishing), and **the
+mind is talked to through the API** — the voice register and the soul-sync ride the request's
+ephemeral `instructions` instead of being glued onto the caller's message, with the anti-tool clause
+deleted and a per-request reasoning effort (default low). The agent's own transcript now reads like a
+conversation, and a price question gets looked up. Three smaller quality findings went with them:
+a confirmation is answered as a turn rather than acknowledged with a non-sequitur; the mind's own
+`commentary` is the working line instead of a 2B's guess about it; and no turn ends in silence.
 
 **October 2026 — the name, and the guard's premise questioned.** D16 retired the two-mode framing:
 "Enhanced Realtime" is not a mode, it is Presence, a layer on normal operation, on by default. D17
@@ -124,9 +138,34 @@ is refused.
   what this moment is, and whether to speak. Its output *is* the decision.
 - **It takes the beat.** On the mind's turns it speaks two to six words as it starts thinking, so the
   line is never silent while work happens.
-- **It waits, but not for long.** The mind's submit waits for that decision for a bounded, adaptive
-  moment — the measured render p50 plus 200 ms, capped at 900 ms, and zero when the soul is measured
-  slow. The beat plays through the wait.
+- **It never makes the mind wait.** The turn is submitted the moment the caller stops speaking; the
+  beat renders beside it and is dropped if the mind's first token gets there first. That is D30: the
+  soul no longer holds the turn it used to hold for 700-900 ms.
+- **A confirmation is an answer, not a backchannel.** "Want me to write those points to a markdown
+  file?" → "Yes." used to be met with *"okay — take the time you need"* — the patient-caller line,
+  spoken at turn start, where "yes" is the turn. Now the phone says nothing of its own at turn
+  start (the soul may open with a beat); the hold line survives only for a backchannel spoken
+  *while* the mind works, which is what it was written for (F5).
+- **The mind narrates its own work.** When the gateway streams `phase=commentary` — "Let me search
+  for recent listings" — that line is spoken as the working line, through the same guards as any
+  other aside. It used to go to the dev console while a 2B guessed at the same tool from its name
+  (F8).
+- **No turn ends in silence.** A lost stream, a gateway error or an empty reply speaks one short
+  repair — *"Sorry — I didn't get an answer back on that. Want me to try again?"* — instead of a cue
+  and a pill nobody driving can read. A turn the caller cut is not repaired: they know they cut it
+  (F9, `event=repair`).
+- **It never loses what the caller says.** A backchannel spoken while the mind works ("mm-hm", "take
+  your time") is absorbed — that is what a hold is for. Anything with content is *queued*: one pending
+  slot, newest wins, submitted as the next turn when the current one settles, and dropped only when it
+  has gone stale (60 s) or the caller has started a newer turn themselves. `event=er-pending` is the
+  witness. A turn that arrives while another is still in flight takes the same queue instead of being
+  reported as `suppressed-inflight` and forgotten.
+- **It talks to the mind through the API.** A voice turn sends the mind its register ("speaking out
+  loud on a phone call: two to four sentences, plain speech") and Presence's own context in the
+  request's **ephemeral `instructions`**, plus a per-request reasoning effort (default *low*). The
+  caller's words go on the wire untouched, so the agent's stored history and memory hold the
+  conversation and not the protocol. The mind keeps every tool it has: the old anti-tool clause —
+  *"do NOT do exhaustive tool work"* — is why a price question got a guess, and it is gone (D31).
 - **It is gated in code, not trusted.** No digits the client did not supply. No claim of a result
   that does not exist. No second answer in a turn. No soul line after the mind's reply has begun. A
   line that is too long is repaired; a line that lies is refused.
@@ -176,11 +215,57 @@ chatbot with a voice bolted on.
 - **A guard that earns its bounds.** Every remaining bound in code cites a documented failure, and
   the measured ones retire.
 
-**What is still unproven**, stated plainly because the design depends on it: the render budget
-(~2.5 s against a 900 ms gate) is not solved — the beat is what makes the race stop mattering, not a
-faster model; the guard's premise is being measured rather than assumed (#256); and whether a user
-wants ambient cues *and* presence audio at once is an open design question (#251), with the owner's
-read being one or the other.
+**What is still unproven**, stated plainly because the design depends on it: the beat's own latency
+(~1.8-2.6 s on a GPU phone end to end) is not solved — the beat stops the race *mattering*, it does
+not win it, and D30 removed the cost of losing; the guard's premise is being measured rather than
+assumed (#256); and whether a user wants ambient cues *and* presence audio at once is an open design
+question (#251), with the owner's read being one or the other.
+
+---
+
+## Local actions: the four things the phone does by itself (#421 step 2)
+
+Some requests cannot wait for a gateway. "Set a timer for five minutes" has to be running before a
+streamed turn would even have opened its connection, so it is matched by a **deterministic grammar,
+not a model** (`LocalActionGrammar`) and taken on the phone: the action runs, the caller hears one
+short line, and the registry the presence context reports is updated so the mind can answer
+follow-ups ("how long left?").
+
+**Four actions, Tier 0 only — reversible, private, nothing outward-facing:**
+
+| action | what it sounds like | how |
+|---|---|---|
+| timer | "Timer set for 5 minutes." | `AlarmManager.setExact(…, OnAlarmListener)`; rings through this app |
+| alarm | "Alarm set for 7:30 am." | the same at a wall-clock time (`RTC_WAKEUP`), next occurrence |
+| do not disturb | "Do not disturb on." | `NotificationManager.setInterruptionFilter` |
+| volume | "Volume 62 percent." | `AudioManager.setStreamVolume` (media stream) |
+
+**What each one costs, precisely**, because the honest answer decides what ships:
+
+- **timer and alarm need no permission.** The exact-alarm restriction (`SCHEDULE_EXACT_ALARM`) does
+  not apply to the `OnAlarmListener` form, so the manifest is unchanged and the user is never asked.
+  The trade is stated rather than hidden: the listener lives in this process, so the timer rings
+  while the app is alive — which it is during a call (the voice service is foreground). A timer that
+  must outlive the process would need a broadcast receiver **plus** the "Alarms & reminders" special
+  access, and that is deliberately not this step. An alarm set this way rings through Vox; it is not
+  added to the system Clock app, because that intent launches another app's UI and the caller would
+  have to confirm it — outward-facing, and unverifiable from here.
+- **Do Not Disturb needs the user's policy access.** `ACCESS_NOTIFICATION_POLICY` is already declared
+  for #325's quiet calls, but the grant itself is a special access only the user can give in system
+  settings. Without it the phone says exactly that — *"I can't change do-not-disturb, the phone
+  hasn't given me permission."* What the permission buys: the caller could say "do not disturb on"
+  and have it honoured without leaving the call to visit Settings.
+- **volume needs no permission**, but some devices refuse a stream change while Do Not Disturb owns
+  the audio, which is reported as a failure rather than swallowed.
+
+**The confirmation must be true** (the false-action-claim guard's premise, applied to the phone's own
+actions): a failure has its own words and names what failed. Nothing here claims a result it did not
+produce.
+
+**When it does not match, nothing changes.** A compound or ambiguous sentence ("set a timer for five
+minutes and then email Bob"), a question that merely contains the words ("what does do not disturb
+do"), or any utterance with a letter outside A–Z — English only for now — falls through to the mind
+exactly as before. The grammar claims the whole utterance or none of it.
 
 ---
 
@@ -194,86 +279,115 @@ seen afterwards?**
 ### The decision rule, in code
 
 One render per turn. `ErSoulTurn.directive(callerText)` (`android/app/src/main/java/com/hermesvox/ErSoulTurn.kt`)
-asks the soul one question — *greeting/smalltalk/feeling → one short line; a fact, a tool, a real-world
-action, a plan, or any doubt → the escalate token plus two to six words* — and **its output is the
-decision**:
+asks the soul one question — *the escalate token plus two to six words you would say as you start to
+think, or the token alone for silence* — and **its output is the decision**:
 
 | output | `Outcome` | what happens |
 |---|---|---|
-| a line | `Spoken` | the soul's turn. The mind is still submitted, and is *told* the voice answered (`ErDrift.epilogue`), so it may reply `<<SKIP>>` |
-| `<<ESCALATE>>` + words | `Beat` | the mind's turn; the soul opens it |
+| `<<ESCALATE>>` + words | `Beat` | the mind's turn; the soul opens it, and the beat is dropped if the mind's first token beats it |
 | `<<ESCALATE>>` alone | `Escalate` | the mind's turn, silently |
+| a line with no token | `Spoken` | the model ignored the format. On a turn that is an answer the soul was not asked for, so it is not spoken (`er-soul-drop reason=not-a-beat`) — the mind answers |
 | blank / unavailable | `Nothing` | the mind's turn |
 
-**What is enforced in code, and what is only asked.** Rule 3 ("substantive/factual/tool/planning
-questions escalate") lives in the *directive* — the model is asked to obey it. The code's guards are on
-the **beat** (`ErSoulTurn.opener`: no markup, no claimed result, ≤ 7 words → otherwise escalate silently) and on
-the **working lane** (`ErSoulTurn.judge`: no unbacked result claim). D29/#406 dropped the no-new-numbers
-rule from both: a number is spoken, and an unvouched one is only logged (`numbers-unvouched=`) for #256. A turn answer
-(`Outcome.Spoken`) is otherwise **not** content-checked: it is spoken as written. That asymmetry is deliberate —
-the soul must be able to answer — but it is exactly why a factual turn can be answered locally with no
-error anywhere. The one exception is D29's false-action-claim guard, which since the 0.9.1 review (M2)
-runs on **every** lane, once, inside `speakGlue` (`event=er-glue-reject reason=result-unbacked
-source=…`): the soul's answer, the greeting, the tool narration, the beat and the working lane. A soul
-answer it would refuse is not recorded as answered, so the mind still speaks. See `ErSoulTurn.kt:283` (the guard) against `VoiceController.kt:1837` (the turn lane,
-which never calls it).
+Every voice turn is submitted to the mind at the same moment, whatever this render does. That is
+D30: a soul render can no longer decide whether the mind answers, so a 2B guess cannot swallow a
+question, and nothing waits for the render.
 
-### The two new lines
+**What is enforced in code, and what is only asked.** The beat is guarded (`ErSoulTurn.opener`: no
+markup, no claimed result, ≤ 7 words → otherwise escalate silently), and the working lane is guarded
+(`ErSoulTurn.judge`: no unbacked result claim, shape repaired rather than refused). D29/#406 dropped
+the no-new-numbers rule from both: a number is spoken, and an unvouched one is only logged
+(`numbers-unvouched=`) for #256. D29's false-action-claim guard runs on **every** lane, once, inside
+`speakGlue` (`event=er-glue-reject reason=result-unbacked source=…`): the greeting, the tool
+narration, the beat, the working lane and the mind's own spoken progress line.
+
+### What a voice turn tells the mind
+
+The register and Presence's own context ride the request's **ephemeral `instructions`**, which the
+gateway appends to the system prompt for that request only and never persists
+(`gateway/platforms/api_server_response_admissions.py`). The caller's words are sent byte-exact as
+`input`.
+
+| field | what it carries | why it is there |
+|---|---|---|
+| `instructions` | the voice register: *"You are speaking out loud on a phone call. Reply in two to four sentences of plain speech — no code, no markdown, no lists."* | the mind knows how it is being heard. It says nothing about what it may do, so every tool stays available (D31) |
+| `instructions` | the soul-sync (`ErDrift.sync`): what the phone's voice has already said this turn, and the caller's measured vibe | the mind does not repeat or contradict the beat |
+| `instructions` | the presence context (`PresenceContext`): the soul's last line, whether the phone is speaking, the local actions the phone is running, and the time, battery, connectivity and Do Not Disturb state | the mind can answer "how long is left?" without asking, and knows what the phone has already done |
+| `model_options.reasoning` | `{"enabled":true,"effort":"low"}` by default (`voice_reasoning_effort`: off / low / medium / high) | a spoken turn wants the fast answer; a provider that ignores it behaves as before |
+
+Every request sends `instructions`, **including an empty one on typed turns**: the gateway inherits
+the previous chained turn's value when the field is absent, so a typed turn after a voice turn must
+clear it explicitly.
+
+**The presence context** (`PresenceContext`, #421 step 1) is the block that tells the mind what the
+phone is doing, because the mind is remote and none of this is visible to it:
+
+```
+presence: soul=beat | speaking=false | last_line="On it."
+local_actions: timer(remaining=3m12s)
+device: 18:42, battery 62%, online, dnd=off
+```
+
+It is capped at **200 characters** and trimmed deterministically (the quoted line first, then the
+oldest action) so it can never crowd the register or the soul-sync out of a small model's context.
+It never carries transcript text: the caller's words reach the mind as `input`, once. `soul=` says
+which lane last spoke (beat / working / greeting / filler / quiet / off), `last_line` is that line,
+`local_actions` is the registry of actions the phone took itself (#421 step 2), and `device` is the
+clock, battery, connectivity and Do Not Disturb, all read without a permission the app does not
+already hold.
+
+The anti-tool clause that used to sit in the user's message — *"Answer from what you know; do NOT do
+exhaustive tool work or re-audit your own docs/state unless the caller explicitly asks"* — is
+deleted. It is the reason a price question got a guess instead of a lookup, and it made Presence
+measurably worse than Realtime on the same gateway with the same agent (D31).
+
+### The receipt
+
+`event=er-handoff` is the one line per turn that says what the mind was handed:
 
 | line | meaning | read it as |
 |---|---|---|
-| `event=er-handoff gen=N ok=true\|false reason=… soul=answer\|beat\|escalate\|nothing askChars=N` | **the receipt**: exactly one per turn. `ok=true` = the gateway accepted the turn and returned a stream id; `ok=false` = the mind never saw it, and `reason=` says which path dropped it (`suppressed-inflight`, `cancelled-before-submit`, `stopped`, `no-stream`) | `ok=false` is a swallowed turn. `ok=true` answers the reporter's question — *it got through* |
-| `event=er-swallow gen=N mind=skipped\|not-submitted cls=mind askChars=N soulChars=N` | the no-silent-swallow rule: the soul answered **and** the caller heard no mind. `mind=skipped` = the mind saw the turn, was told the voice answered, and replied `<<SKIP>>`; `mind=not-submitted` = it never saw it | not a failure. The **rate** of these is the number that decides whether the escalate rule needs teeth |
+| `event=er-handoff gen=N ok=true\|false reason=… soul=beat\|escalate\|none\|- askChars=N` | **the receipt**: exactly one per turn. `ok=true` = the gateway accepted the turn and returned a stream id; `ok=false` = the mind never saw it, and `reason=` says which path dropped it (`suppressed-inflight`, `cancelled-before-submit`, `stopped`, `no-stream`) | `ok=false` names a turn the mind never saw. `suppressed-inflight` and a held utterance are no longer lost turns: the words go to `event=er-pending` and are submitted when the current turn settles. `cancelled-before-submit` or `no-stream` is the one to read |
+| `event=er-pending` | the caller's words were queued as the next turn (`queued=true reason=hold / suppressed-inflight chars=N`) or became it (`submitted=true`) | `queued=true` with no later `submitted=true` = words the caller spoke and the mind never saw |
+| `event=er-soul-played` | the beat was **audible** — recorded from the TTS start callback, never from the render | a beat that renders and does not play is not a beat |
 
 `askChars` is a length, never the caller's text, so the line is safe with transcript logging off.
 `soul=-` means the soul was not consulted (presence off, a typed turn) or its decision did not land
-before the submit (the measured-slow path, where `SoulGate.waitMs` is zero) — a subsequent
-`event=er-soul` line is then the decision that arrived too late to be part of the handoff.
+before the submit — a subsequent `event=er-soul` line is then the decision that arrived late, which
+is harmless: the mind was already answering.
 
-The old `event=er-handoff` (the TTS track handoff between a beat and the mind's stream) is now
-**`event=er-audio-handoff`** — same fields, renamed because the name now means the mind's receipt.
+`er-swallow` and `er-mind-skip` are **gone** with the skip offer they logged (D30). A turn can no
+longer be "answered by the voice and skipped by the mind"; what replaces them is the receipt plus
+`heard=none`-style evidence in the turn's own line.
 
 ### Reading a session
 
 ```bash
 # every turn that should have reached the mind, and whether it did
-grep -E 'event=er-(handoff|swallow)' session.log
+grep -E 'event=er-handoff' session.log
 
-# the reporter's shape: soul answers, mind skips
-grep -c 'event=er-soul kind=turn decision=answer' session.log     # denominator: soul-owned turns
-grep -c 'event=er-swallow' session.log                            # numerator: nobody answered
-grep -E 'event=er-(soul|handoff|swallow|mind-skip|soul-drop)' session.log | less   # one turn at a time
+# words that were queued instead of dropped, and whether they became a turn
+grep -E 'event=er-pending' session.log
+
+# the soul's decisions this session, and the beat's delivery
+grep -E 'event=er-(soul|soul-played|soul-drop)' session.log | less
+
+# what the mind was told on each voice turn (register + presence context)
+grep -E 'reasoning=' session.log | tail -20
 ```
 
-The other drops, unchanged, are in the same vocabulary: `er-soul-drop reason=late` (the decision lost
-to the mind's first token — the mind was not told, so it answers), `reason=undeliverable`,
-`reason=mind-already-replying` / `already-answered` (the voice was live first), `event=er-mind-skip`
-(the mind honoured the skip). A `er-soul-drop` is never by itself a swallow — the receipt and the
-swallow line are what settle it.
+The other drops are in the same vocabulary: `er-soul-drop reason=late` (the beat lost to the mind's
+first token — correct, the answer is what was asked), `reason=not-a-beat` (the render answered
+instead of opening; not spoken), `reason=already-spoke`.
 
 ### The guard: proposed, not added
 
 The instruction for 0.9.1 is to instrument before restraining. A hard guard ("a turn answer
 containing a question mark or a digit is refused and escalated") would be a keyword rule in the
 decision path — the pattern the design deleted after 174 substrings failed three times in one
-afternoon (`docs/DESIGN-enhanced-realtime-voice.md` §DECISION). The honest sequence:
-
-1. Ship the receipt. Any device session then answers *"did the mind get the turn?"* mechanically.
-2. Count `er-swallow` against `er-soul decision=answer`. If the rate is non-trivial **and** the
-   swallows cluster on factual turns (`askChars` is the only proxy today — `cls=mind` is constant,
-   because a backchannel never reaches the soul), the guard to propose is a **turn-lane content
-   check** reusing `ErSoulTurn.judge` — not a lexer: refuse `Spoken` when the *mind's own* directive
-   would call it a fact, and escalate instead. That is a one-place change with a tested primitive
-   already in the file.
-
-Until that rate exists, the code records the swallow rather than preventing it.
-
-### Known artifact when reading the log
-
-A sanctioned `<<SKIP>>` currently settles through the **empty-reply** branch
-(`VoiceController.kt:2102` — `terminal.fail("empty-reply")`), so `er-mind-skip` and
-`event=turn outcome=empty-reply` co-occur on a healthy soul-answered turn. Read them together; the
-`empty-reply` is not evidence of a broken gateway in that pair.
+afternoon (`docs/DESIGN-enhanced-realtime-voice.md` §DECISION). With D30 there is nothing left to
+guard on the turn path: the mind always answers. The guard that remains is the false-action-claim
+one, which is cheap and asymmetric.
 
 ---
 
