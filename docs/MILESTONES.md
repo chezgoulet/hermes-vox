@@ -52,6 +52,15 @@ cost controls (dormant), the first-run hardware check that advises.
 (#217), a Presence transcript that is not empty (#223), the invention measurement (#256), and a
 fresh pass on the presence directive and its rails.
 
+**Presence — its tool use (D31).** The layer is not finished at "the phone talks and the mind
+acts". It includes: the mind's **ongoing context** of what the phone is doing (local actions
+running, what the soul last said, device state) carried on every voice turn in the ephemeral
+instructions; the phone's **own capabilities** — timer, alarm, reminder, DND, volume, share —
+executed instantly when the caller asks for them and reported to the mind as context; the mind's
+**direction** of those capabilities, with results, over MCP rather than by rewriting the user's
+words; and the mind's **veto**, pre-execution for consequential acts and post-hoc undo for
+reversible ones. #421 carries the design.
+
 **VOX.md per profile**, presence-gated: fetched on the first call for a profile when Presence is
 on, and the correct soul loaded into the local model when the profile switches.
 
@@ -86,6 +95,12 @@ list would mean we stopped listening.
 Refinements are not saved up. A rough edge found in use — a wording, a colour, a timing, a screen
 that needs explaining — is fixed when it is found and ships in the next point release. The
 Perpetual task does not get a milestone number, and it does not wait for 0.9.2 to be planned.
+
+**Refinement belongs to the milestone that commits the feature (D31).** A feature is not finished
+when its first working version lands. Deciding what it actually *is* — its design, its edges, the
+shape a careful review would give it — is that milestone's work, not the next number's. Deferring
+it is how a feature ships as a sketch and stays one. What does not get a number is polish of things
+already shipped: the rough edge found in use, fixed when found.
 
 The same applies to defects: a real one is fixed when it is known, not scheduled. What a milestone
 records is the work that needed deciding, not the work that simply needed doing.
