@@ -146,10 +146,11 @@ class ErSoulTurnTest {
         assertTrue("must forbid the service-desk greeting", g.contains("Do not ask what they need"))
     }
 
-    @Test fun both_directives_bound_the_margin() {
-        // Maintainer: tighten the margins on soul utterances so the line is short enough to
-        // hand over cleanly rather than compete with a healthy gateway.
-        assertTrue(ErSoulTurn.directive("hi").contains("under about twenty words"))
+    @Test fun the_turn_asks_for_a_beat_and_the_greeting_for_a_line() {
+        // D30: a turn is the mind's, so the soul's turn render is two to six words and never a
+        // sentence; the greeting has no mind turn to compete with and keeps its full line.
+        assertTrue(ErSoulTurn.directive("hi").contains("two to six words"))
+        assertFalse(ErSoulTurn.directive("hi").contains("under about twenty words"))
         assertTrue(ErSoulTurn.greetingDirective().contains("under about twenty words"))
     }
 

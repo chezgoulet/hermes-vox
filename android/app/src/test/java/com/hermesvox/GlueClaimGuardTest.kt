@@ -70,13 +70,13 @@ class GlueClaimGuardTest {
         assertTrue(reject, reject.contains("event=er-glue-reject reason=result-unbacked source=\$source"))
     }
 
-    @Test fun `the soul's answer is not recorded as spoken when the guard would refuse it`() {
+    @Test fun `a working aside is not offered when the guard would refuse it`() {
         val deliver = vc.substringAfter("private fun canDeliverSoulLine(text: String): Boolean {").substringBefore("\n    }")
         assertTrue(deliver, deliver.contains("ErSoulTurn.claimsResult(text)"))
     }
 
     @Test fun `every speaking lane reaches the voice through speakGlue`() {
-        for (src in listOf("soul-greeting", "Transcript.SOURCE_SOUL_ANSWER", "SOURCE_WORKING")) {
+        for (src in listOf("soul-greeting", "soul-beat", "SOURCE_WORKING")) {
             assertTrue(src, Regex("speakGlue\\([^\\n]*$src").containsMatchIn(vc))
         }
         assertTrue(main.contains("speakGlue(said, source = \"tool-narration\")"))

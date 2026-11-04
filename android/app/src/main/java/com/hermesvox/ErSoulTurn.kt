@@ -1,13 +1,14 @@
 package com.hermesvox
 
 /**
- * ErSoulTurn — the contract for the soul's turn decision (0.8/M3c).
+ * ErSoulTurn — the contract for the soul's renders (0.8/M3c, reshaped by D30).
  *
- * The soul model is asked ONE question per turn: given what the caller said (and, when it is
- * known, what the mind is currently doing), do you answer it — or is this the mind's? Its own
- * output IS the decision. There are no keyword lists in this path: the routing lists were
- * deleted because a language judgement cannot be enumerated, and the field proved it three
- * times in one afternoon (see docs/DESIGN-enhanced-realtime-voice.md, "the soul decides").
+ * D30: the soul is a companion, not a gatekeeper. Every voice turn goes to the mind; on a turn
+ * the soul is asked only for the BEAT — two to six words the caller hears while the mind starts
+ * — or silence. Its full lines are kept for the moments no mind turn competes with: the
+ * greeting, and the working asides while a long run is under way. There are no keyword lists
+ * in this path: the routing lists were deleted because a language judgement cannot be
+ * enumerated (see docs/DESIGN-enhanced-realtime-voice.md, "the soul decides").
  *
  * Pure JVM by design: the directive is a string and the decision is a string parse, so both
  * are testable off-device. The render itself lives behind [VoxExpress].
@@ -19,11 +20,9 @@ object ErSoulTurn {
      * a model that wraps it in punctuation or quotes still escalates rather than reading it
      * aloud.
      *
-     * Contract safety: the soul never answers facts, tools, actions or planning. A misjudgement
-     * is bounded by the Contract the persona already carries — rule 1 forbids inventing facts,
-     * rule 4 forbids claiming capabilities it does not have — and the caller can simply ask
-     * again. The expensive direction is the soul *answering* something it should not, which is
-     * why the directive errs toward escalating on doubt.
+     * On a turn the token LEADS the beat (or stands alone for silence): the soul never answers a
+     * turn, so a render that comes back without the token is a model that ignored the format and
+     * is not spoken ([turnBeat]). The mind answers either way.
      */
     const val ESCALATE = "<<ESCALATE>>"
 
@@ -82,15 +81,15 @@ object ErSoulTurn {
             "just say hello as yourself."
 
     /**
-     * The directive rendered as the user turn.
+     * The turn directive: ask for the BEAT and nothing else (D30).
      *
      * [toolContext] is what the mind is currently doing, when that is known. It is what lets
-     * the line be topical — *"checking your inbox now"* rather than a generic greeting — and it
-     * rides the SAME render as the decision, so the soul's speech never costs a second call.
+     * the beat be topical rather than generic.
      *
-     * The mind's-turn branch asks for the BEAT: the escalate token followed by the few words a
-     * person says while they start to answer. One render yields both the routing decision and the
-     * opening beat, so the soul takes the floor on every turn instead of only on the ones it owns.
+     * Every turn is the mind's. The soul's only job is the two to six words a person says while
+     * they start to answer — the escalate token followed by those words — or the token alone for
+     * silence. It is never asked to answer the turn: an answer here is the gatekeeper D30 retired,
+     * because a 2B "helpfully" replying to a factual question was the reporter's lost turn.
      */
     fun directive(callerText: String, toolContext: String? = null, heard: Boolean = false): String {
         val ctx = if (toolContext.isNullOrBlank()) "" else " The mind is currently working on: $toolContext."
@@ -100,13 +99,19 @@ object ErSoulTurn {
             "You can hear the caller: their voice is attached. Start your reply with their tone as ONE tag — " +
                 "{calm}, {warm}, {lively} or {tense} — judged from HOW they sound, then continue. "
         return ears + "The caller just said: \"$callerText\".$ctx " +
-            "If this is a greeting, some smalltalk, or something about how they are feeling, reply with " +
-            "ONE short warm sentence in your own voice, under about twenty words. " +
-            "If answering it needs a fact, a tool, a real-world action, or a plan — or if you are not " +
-            "sure — reply with $ESCALATE followed by two to six words you would say out loud as you " +
-            "start to think about it, in your own voice. Those words must not contain any fact, " +
-            "answer or promise, and must not repeat an opener you already used."
+            "The mind will answer them; you do not. Reply with $ESCALATE followed by two to six " +
+            "words you would say out loud as you start to think about it, in your own voice — or " +
+            "with exactly $ESCALATE to stay silent. Those words must not contain any fact, answer " +
+            "or promise, and must not repeat an opener you already used."
     }
+
+    /**
+     * The words a turn render may speak: the beat, and only the beat (D30). A render without the
+     * token ([Outcome.Spoken]) ignored the format — on a turn that is an answer the soul was not
+     * asked for, and it is not spoken, because the mind is answering. The beat itself already
+     * passed [opener] (no markup, no claimed result, at most [MAX_OPENER_WORDS] words).
+     */
+    fun turnBeat(o: Outcome): String? = (o as? Outcome.Beat)?.opener
 
     /**
      * The mind has started a tool. Offer the soul a beat of narration about it — or silence.
