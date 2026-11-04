@@ -67,6 +67,11 @@ class FileShare(
     var state: State = State.Idle
         private set
 
+    // M5 (0.9.1 review): three threads touch this flow — the UI (begin/cancel/…), the file
+    // server's acceptor (a completed transfer) and the expiry timer. Every state read and
+    // write below happens under the instance lock (`@Synchronized` / `synchronized(this)`);
+    // the acceptor and the timer act only on the offer they were made for (`generation`, and
+    // the copy captured in startOffer).
     /** The one file this flow is about; null outside an offer. */
     private var staged: File? = null
     private var offer: FileOffer.File? = null
@@ -75,12 +80,13 @@ class FileShare(
     private var generation = 0L
 
     /** The server currently open, for tests and for the "waiting" line's expiry. */
-    val openServer: FileServer? get() = server
+    val openServer: FileServer? get() = synchronized(this) { server }
 
     /**
      * Start a flow for [file]. [staged] is the private copy (null for inline and refused
      * routes); [inlineText] is the decoded body when the caller read it as text.
      */
+    @Synchronized
     fun begin(file: FileOffer.File, staged: File?, inlineText: String?) {
         closeServer()
         deleteStaged()
@@ -148,7 +154,13 @@ class FileShare(
                 onTransfer = {
                     // The agent has the bytes. The copy has done its job and goes now —
                     // whatever the agent says next, there is nothing left on disk.
-                    deleteStaged()
+                    // M5: THIS offer's copy, captured above. `staged` may already name the
+                    // next offer's file: `begin` closes the listener, not a connection that is
+                    // already serving, so this can run after the next offer was staged.
+                    synchronized(this@FileShare) {
+                        deleteFile(copy)
+                        if (staged === copy) staged = null
+                    }
                     log("event=file-offer transferred bytes=${file.bytes}")
                 },
             )
@@ -173,6 +185,7 @@ class FileShare(
      * The user chose the inline path after Tailscale was found down. It needs no server and
      * no staged copy — the turn was built from the bytes when the file was read.
      */
+    @Synchronized
     fun sendInline(): Boolean {
         val current = state as? State.Unreachable ?: return false
         val turn = pendingInline ?: return false
@@ -185,6 +198,7 @@ class FileShare(
     }
 
     /** The copy is running. Stated, never a spinner: one line naming the file. */
+    @Synchronized
     fun reading(name: String) {
         generation++
         closeServer()
@@ -195,6 +209,7 @@ class FileShare(
     }
 
     /** A file that could not be staged at all (too big, unreadable): one stated line. */
+    @Synchronized
     fun refuse(line: String) {
         generation++
         closeServer()
@@ -210,6 +225,7 @@ class FileShare(
      * and that sentence wins over everything: a mismatch is never shown as success, even when
      * the transfer itself completed.
      */
+    @Synchronized
     fun agentReplied(text: String?) {
         val file = offer ?: return
         val current = state
@@ -238,6 +254,7 @@ class FileShare(
     }
 
     /** The expiry watcher. A transfer that completed without a reply is still collected. */
+    @Synchronized
     private fun expireIf(mine: Long) {
         if (mine != generation) return
         if (state !is State.Offering) return
@@ -255,6 +272,7 @@ class FileShare(
     }
 
     /** The user closed the sheet, or the screen went away: the copy goes, the server stops. */
+    @Synchronized
     fun cancel() {
         generation++
         closeServer()
@@ -265,6 +283,7 @@ class FileShare(
     }
 
     /** End the flow without changing what the sheet shows (a finished state stays visible). */
+    @Synchronized
     fun finish() {
         generation++
         closeServer()
@@ -288,6 +307,10 @@ class FileShare(
     private fun deleteStaged() {
         val f = staged ?: return
         staged = null
+        deleteFile(f)
+    }
+
+    private fun deleteFile(f: File) {
         try {
             f.delete()
             // The parent is a per-offer directory; remove it once it is empty.

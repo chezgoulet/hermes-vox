@@ -276,4 +276,57 @@ class FileShareTest {
         assertNotNull(f.openServer)
         assertTrue(states.last() is FileShare.State.Offering)
     }
+
+    // ---- M5 (0.9.1 review): a finishing transfer never touches the NEXT offer ----
+
+    /**
+     * Offer A's fetch is already inside the server when the user starts offer B. `begin`
+     * closes A's listener, not that connection, so A's transfer completes AFTER B's copy is
+     * staged. A's completion must delete A's copy — never B's, which B's server would then
+     * answer `500` for until it expired.
+     */
+    @Test fun aTransferThatFinishesAfterTheNextOfferDeletesOnlyItsOwnCopy() {
+        // Large enough that A's body cannot fit the socket buffers: A's server is parked
+        // mid-write inside serve() — past its size check — until this client reads.
+        val (fileA, copyA) = staged("a.bin", ByteArray(16 * 1024 * 1024) { 1 })
+        val (fileB, copyB) = staged("b.bin", ByteArray(4_000) { 2 })
+        val f = flow()
+        f.begin(fileA, copyA, null)
+        val portA = f.openServer!!.port
+        val tokenA = tokenOf(sent.last().first)
+        Socket(InetAddress.getLoopbackAddress(), portA).use { s ->
+            s.soTimeout = 5_000
+            s.receiveBufferSize = 4 * 1024
+            s.getOutputStream().write("GET /$tokenA HTTP/1.1\r\nHost: h\r\n\r\n".toByteArray())
+            s.getOutputStream().flush()
+            val input = BufferedInputStream(s.getInputStream())
+            assertTrue("A's transfer has started", input.read() >= 0)
+            Thread.sleep(200)
+
+            f.begin(fileB, copyB, null)                       // the user shares the next file
+            assertTrue("B is staged", copyB.isFile)
+
+            while (input.read() >= 0) { /* A's fetch completes now */ }
+        }
+        val deadline = System.currentTimeMillis() + 3_000
+        while (logs.none { it.startsWith("event=file-offer transferred") } && System.currentTimeMillis() < deadline) Thread.sleep(10)
+        assertTrue("A was transferred", logs.any { it.startsWith("event=file-offer transferred") })
+        assertFalse("A's copy is gone", copyA.exists())
+        assertTrue("B's copy survives A's transfer", copyB.isFile)
+        assertEquals(200, fetch(f.openServer!!.port, tokenOf(sent.last().first)))
+    }
+
+    /** A late expiry of offer A must not end offer B. */
+    @Test fun anOlderOffersExpiryDoesNotEndTheNextOffer() {
+        val (fileA, copyA) = staged("a.bin", ByteArray(100) { 1 })
+        val (fileB, copyB) = staged("b.bin", ByteArray(100) { 2 })
+        val f = flow()
+        f.begin(fileA, copyA, null)
+        val expireA = expiry!!
+        f.begin(fileB, copyB, null)
+        expireA()
+        assertTrue(states.last() is FileShare.State.Offering)
+        assertTrue(copyB.isFile)
+        assertNotNull(f.openServer)
+    }
 }
