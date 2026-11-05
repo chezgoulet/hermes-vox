@@ -187,6 +187,24 @@ object PhoneFileAccess {
     }
 
     /**
+     * Look up [name] inside [tree] without reading or exporting it. The card needs the file's own
+     * name, type and size, and a file above the bridge's cap is refused before a card is raised.
+     */
+    fun info(context: Context, tree: Tree, name: String): PhoneEngine.PhonePlatform.FileInfo {
+        val doc = when (val found = document(context, tree, name)) {
+            is Lookup.Found -> found.doc
+            Lookup.Missing -> return PhoneEngine.PhonePlatform.FileInfo.Missing
+            Lookup.Outside -> return PhoneEngine.PhonePlatform.FileInfo.Outside
+            is Lookup.Failed -> return PhoneEngine.PhonePlatform.FileInfo.Unavailable(found.detail)
+        }
+        if (doc.size != null && doc.size > FileOffer.MAX_BYTES) {
+            return PhoneEngine.PhonePlatform.FileInfo.TooBig(doc.size)
+        }
+        val shown = doc.mime?.takeIf { it.isNotBlank() } ?: FileStage.guessMime(doc.displayName)
+        return PhoneEngine.PhonePlatform.FileInfo.Ready(doc.displayName, shown, doc.size)
+    }
+
+    /**
      * Stage [name] inside [tree] and serve it once over the tailnet, the same way the share sheet
      * does. The result carries the capability URL, the size and the hash — never the bytes.
      */

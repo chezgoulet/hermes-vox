@@ -142,7 +142,7 @@ class PhoneToolTest {
         for (name in enumOf()) {
             assertTrue(
                 "$name is offered but not executable",
-                name == "undo" || name == "status" || name == "uninstall" ||
+                name == "undo" || name == "status" || PhoneApproval.handshaked(name) ||
                     PhoneTiers.executable(name),
             )
         }

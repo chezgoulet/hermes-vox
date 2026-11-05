@@ -36,6 +36,8 @@ class PhoneFilesCalendarTest {
             PhoneEngine.PhonePlatform.FileText.Missing
         var handoff: PhoneEngine.PhonePlatform.FileHandoff =
             PhoneEngine.PhonePlatform.FileHandoff.Missing
+        var info: PhoneEngine.PhonePlatform.FileInfo =
+            PhoneEngine.PhonePlatform.FileInfo.Missing
         var seenFile: Pair<String, String>? = null
 
         var calendarMissing: String? = null
@@ -75,6 +77,11 @@ class PhoneFilesCalendarTest {
             seenFile = folder.label to name
             return text
         }
+
+        override fun fileInfo(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            name: String,
+        ): PhoneEngine.PhonePlatform.FileInfo = info
 
         override fun fileOffer(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
@@ -263,6 +270,7 @@ class PhoneFilesCalendarTest {
 
     @Test fun file_offer_hands_back_the_bridge_capability_not_the_bytes() {
         fake.folders = listOf(folder)
+        fake.info = PhoneEngine.PhonePlatform.FileInfo.Ready("notes.txt", "text/plain", 12)
         fake.handoff = PhoneEngine.PhonePlatform.FileHandoff.Ready(
             name = "notes.txt",
             mime = "text/plain",
@@ -271,12 +279,31 @@ class PhoneFilesCalendarTest {
             url = "http://100.64.0.1:9/token",
             expiresAtSec = 1_700_000_300L,
         )
-        val r = call(mapOf("action" to "file_offer", "name" to "notes.txt"))
+        val surface = Surface()
+        val e = PhoneEngine(fake, grants = only("files"), approvalSurface = surface)
+        val asked = e.dispatch(mapOf("action" to "file_offer", "name" to "notes.txt"), t0, e0)
+        assertEquals(PhoneReason.APPROVAL, asked.reason)
+        val id = asked.facts["approval_id"] as String
+        assertTrue(e.answerApproval(id, "once", "tap", e0 + 1_000))
+
+        val r = e.dispatch(
+            mapOf("action" to "file_offer", "name" to "notes.txt", "approval" to id),
+            t0,
+            e0 + 2_000,
+        )
         assertTrue(r.json(), r.ok)
         assertEquals("http://100.64.0.1:9/token", r.facts["url"])
         assertEquals("abc123", r.facts["sha256"])
         assertFalse("the artifact is fetched, not embedded", r.facts.containsKey("text"))
         assertNull("offering changes nothing", r.id)
+    }
+
+    private class Surface : PhoneApproval.Surface {
+        val raised = ArrayList<PhoneApproval.Card>()
+        override fun raise(card: PhoneApproval.Card): Boolean {
+            raised.add(card)
+            return true
+        }
     }
 
     @Test fun the_file_actions_are_absent_until_files_is_on() {

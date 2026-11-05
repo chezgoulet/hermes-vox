@@ -4,42 +4,57 @@ import com.hermesvox.core.ApprovalVoice
 import java.security.MessageDigest
 
 /**
- * PhoneApproval — the approval card for the one phone action that cannot be handed off:
- * **`uninstall`**.
+ * PhoneApproval — the approval card for the two phone actions that cannot be handed off:
+ * **`uninstall`** and **`file_offer`**.
  *
  * Messages and calls are handoffs (D36): Vox composes and opens, the owner sends and presses call.
- * Contacts and notifications are reads, so a grant is enough. Removing an app is the one capability
- * left that is irreversible and has no app to hand it to — so it gets a card on the phone.
+ * Contacts and notifications are reads, so a grant is enough. Removing an app is irreversible and
+ * has no app to hand it to; offering a file exports the owner's content to the agent over the
+ * tailnet, where it stays. The folder grant makes that export *possible*, not intended, so both
+ * actions get a card on the phone.
  *
  * ## Two steps, on the same tool
  *
  * An MCP call carries no run id, so it cannot pause a host run the way the gateway's
  * `approval.request` does. The protocol is therefore a handshake on the tool itself:
  *
- * 1. **Request.** `uninstall` without `approval` raises a card and returns
- *    `ok:false, reason:"approval_required", approval_id, expires_at, summary`. Nothing is removed.
+ * 1. **Request.** `uninstall` or `file_offer` without `approval` raises a card and returns
+ *    `ok:false, reason:"approval-required", approval_id, expires_at, summary`. Nothing is removed
+ *    and nothing leaves the phone.
  * 2. **Execute.** The agent calls the **same action with the same canonical arguments** plus
  *    `approval:"<id>"`. It runs only when the id is unexpired, unburnt, and the action and its
  *    canonical arguments hash to the value the card was raised for.
  *
  * Every refusal burns the id: `approval_denied`, `approval_expired`, `approval_mismatch`,
- * `approval_unknown` (no such id, or already used) and `approval_busy` (three cards already
- * waiting). One card is on screen at a time; a second request queues, up to [MAX_PENDING].
+ * `approval_unknown` (no such id, or already used), `approval_locked` (answered from a locked
+ * phone) and `approval_busy` (three cards already waiting). One card is on screen at a time; a
+ * second request queues, up to [MAX_PENDING].
  *
  * ## What the owner answers
  *
  * [Card.prompt] is an [ApprovalPrompt], the same model the gateway's cards use, with `once`/`deny`
  * as its only choices. Voice goes through [ApprovalVoice] — the same allowlist, the same
  * "not an answer" rule, the same "say approve or no" nudge. There is no second matcher here.
- * Silence is a deny at [TIMEOUT_MS]; dismissing the card is a deny too.
+ * Silence is a deny at [TIMEOUT_MS]; dismissing the card is a deny too. An approval answered while
+ * the phone is locked is refused: it must be the owner's decision, not whoever is holding the
+ * locked phone.
  *
  * Pure JVM. [PhoneEngine] owns the instance; the Android side only raises and withdraws the
  * surface, so every rule above is proven in [PhoneApprovalTest] without a phone.
  */
 object PhoneApproval {
 
-    /** The one action this card exists for. */
+    /** The app-removal card. */
     const val ACTION = "uninstall"
+
+    /** The file-export card. The owner's content leaves the phone over the tailnet. */
+    const val FILE_ACTION = "file_offer"
+
+    /** Every action that uses the two-step card handshake. */
+    fun handshaked(action: String): Boolean {
+        val a = action.trim().lowercase()
+        return a == ACTION || a == FILE_ACTION
+    }
 
     /** Two minutes, stated on the card. Expiry burns the id. */
     const val TIMEOUT_MS = 120_000L
@@ -50,12 +65,20 @@ object PhoneApproval {
     /** A package name is a name, not a path or a paragraph. */
     const val MAX_PACKAGE_CHARS = 255
 
-    /** One approval, in the owner's language. The app's label is used; the tool name never is. */
+    /**
+     * One approval, in the owner's language. [label] is the app's label or the file's name; the
+     * tool's name never appears. [detail] carries a file's type and size, because handing over a
+     * 40 MB file is a different act from handing over a note.
+     */
     data class Card(
         val id: String,
-        val packageName: String,
-        /** The app's own label, as the platform reports it. */
+        val action: String,
+        /** The canonical subject: the package name for `uninstall`, the file name for `file_offer`. */
+        val subject: String,
+        /** The app's own label, as the platform reports it, or the file's name. */
         val label: String,
+        /** `PDF, 240 KB` for a file; empty for an app. */
+        val detail: String = "",
         /** The canonical action+arguments the card was raised for. */
         val canonical: String,
         /** SHA-256 of [canonical], hex. Compared alongside it, never instead of it. */
@@ -64,16 +87,30 @@ object PhoneApproval {
         val expiresAtMs: Long,
     ) {
         /** The one-line summary the request result carries and the audit stores. */
-        val summary: String get() = "$ACTION $label"
+        val summary: String get() = when (action) {
+            FILE_ACTION -> "offer $label" + if (detail.isEmpty()) "" else " ($detail)"
+            ACTION -> "uninstall $label"
+            else -> "$action $label"
+        }
 
         /** The exact line on the card, in the owner's language. */
-        val line: String get() = "Your agent wants to remove $label. Approve?"
+        val line: String get() = when (action) {
+            FILE_ACTION ->
+                "Your agent wants to read $label" +
+                    (if (detail.isEmpty()) "" else " ($detail)") + ". Approve?"
+            ACTION -> "Your agent wants to remove $label. Approve?"
+            else -> "Your agent wants to $action $label. Approve?"
+        }
 
         /** The card model the existing approval surface already renders and answers. */
         fun prompt(): ApprovalPrompt = ApprovalPrompt(
             runId = "",
             requestId = id,
-            action = "remove $label",
+            action = when (action) {
+                FILE_ACTION -> "read $label"
+                ACTION -> "remove $label"
+                else -> "$action $label"
+            },
             line = line,
             choices = listOf("once", "deny"),
             timeoutMs = TIMEOUT_MS,
@@ -166,6 +203,54 @@ object PhoneApproval {
         else -> value.toString().trim().replace(Regex("\\s+"), " ")
     }
 
+    /** `PDF, 240 KB` — the type and size the file card shows, never hidden behind a generic "file". */
+    fun fileDetail(name: String, mime: String?, bytes: Long?): String =
+        typeLabel(name, mime) + ", " + if (bytes == null) "size unknown" else FileOffer.size(bytes)
+
+    /**
+     * The short type for the card: the provider's MIME type when it says something useful, else the
+     * extension. It is the owner's word ("PDF"), not a MIME string read aloud.
+     */
+    fun typeLabel(name: String, mime: String?): String {
+        val m = mime?.trim()?.lowercase().orEmpty()
+        val fromMime = when (m) {
+            "application/pdf" -> "PDF"
+            "image/png" -> "PNG"
+            "image/jpeg", "image/jpg" -> "JPEG"
+            "image/gif" -> "GIF"
+            "image/webp" -> "WEBP"
+            "text/plain" -> "text"
+            "text/csv" -> "CSV"
+            "text/html" -> "HTML"
+            "application/json" -> "JSON"
+            "application/zip" -> "ZIP"
+            "", "application/octet-stream" -> ""
+            else -> when {
+                m.startsWith("image/") -> m.removePrefix("image/").uppercase()
+                m.startsWith("text/") -> m.removePrefix("text/").uppercase()
+                m.startsWith("audio/") -> m.removePrefix("audio/").uppercase()
+                m.startsWith("video/") -> m.removePrefix("video/").uppercase()
+                else -> ""
+            }
+        }
+        if (fromMime.isNotEmpty()) return fromMime
+        return when (name.substringAfterLast('.', "").lowercase()) {
+            "pdf" -> "PDF"
+            "png" -> "PNG"
+            "jpg", "jpeg" -> "JPEG"
+            "gif" -> "GIF"
+            "webp" -> "WEBP"
+            "txt", "md", "log" -> "text"
+            "csv" -> "CSV"
+            "html", "htm" -> "HTML"
+            "json" -> "JSON"
+            "zip" -> "ZIP"
+            "mp3", "m4a", "wav", "ogg" -> "audio"
+            "mp4", "mov", "mkv", "webm" -> "video"
+            else -> "file"
+        }
+    }
+
     /** A package name is dotted and has no separators; null when it is not one. */
     fun packageName(raw: String?): String? {
         val p = raw?.trim().orEmpty()
@@ -216,12 +301,15 @@ class PhoneApprovalDesk(
     fun pendingCount(): Int = synchronized(lock) { waiting.size }
 
     /**
-     * Raise a card for [packageName]. [canonical] is the exact action+arguments text; [digest] is
-     * its hash. The label comes from the platform and is the only name the card shows.
+     * Raise a card for [action] and its [subject]. [canonical] is the exact action+arguments text;
+     * [digest] is its hash. The label comes from the platform and is the only name the card shows;
+     * [detail] is the file's type and size, empty for an app.
      */
     fun request(
-        packageName: String,
+        action: String,
+        subject: String,
         label: String,
+        detail: String,
         canonical: String,
         digest: String,
         now: Long,
@@ -230,8 +318,10 @@ class PhoneApprovalDesk(
         if (waiting.size >= capacity) return PhoneApproval.Request.Busy
         val card = PhoneApproval.Card(
             id = "ap-${++next}",
-            packageName = packageName,
+            action = action,
+            subject = subject,
             label = label,
+            detail = detail,
             canonical = canonical,
             digest = digest,
             raisedAtMs = now,
@@ -281,7 +371,7 @@ class PhoneApprovalDesk(
                 if (nudged.add(card.id)) return PhoneApproval.Voice.Reask
                 return PhoneApproval.Voice.Unheard
             }
-        decide(card.id, choice, "voice", now)
+        if (decide(card.id, choice, "voice", now) == null) return PhoneApproval.Voice.Unheard
         PhoneApproval.Voice.Answered(choice, "voice")
     }
 
@@ -304,7 +394,7 @@ class PhoneApprovalDesk(
                     raiseNext(now)
                     return PhoneApproval.Grant.Refused(
                         PhoneApproval.Reason.MISMATCH,
-                        "that approval was for a different app; nothing was removed",
+                        detailOf(PhoneApproval.Reason.MISMATCH, card),
                     )
                 }
                 // Still waiting: the owner has not answered, so nothing may run.
@@ -317,7 +407,7 @@ class PhoneApprovalDesk(
                 if (!matches(card, expected, expectedDigest)) {
                     return PhoneApproval.Grant.Refused(
                         PhoneApproval.Reason.MISMATCH,
-                        "that approval was for a different app; nothing was removed",
+                        detailOf(PhoneApproval.Reason.MISMATCH, card),
                     )
                 }
                 return PhoneApproval.Grant.Allowed(card)
@@ -326,11 +416,11 @@ class PhoneApprovalDesk(
             // A refusal that already happened is reported once; using the id again is unknown.
             val burnt = terminal.remove(id)
             if (burnt != null) {
-                return PhoneApproval.Grant.Refused(burnt.reason, detailOf(burnt.reason))
+                return PhoneApproval.Grant.Refused(burnt.reason, detailOf(burnt.reason, burnt.card))
             }
             PhoneApproval.Grant.Refused(
                 PhoneApproval.Reason.UNKNOWN,
-                "no approval with that id is waiting; nothing was removed",
+                detailOf(PhoneApproval.Reason.UNKNOWN, null),
             )
         }
 
@@ -340,11 +430,24 @@ class PhoneApprovalDesk(
     private fun matches(card: PhoneApproval.Card, expected: String, digest: String): Boolean =
         card.canonical == expected && card.digest == digest
 
-    private fun detailOf(reason: String): String = when (reason) {
-        PhoneApproval.Reason.DENIED -> "the owner denied that request; nothing was removed"
-        PhoneApproval.Reason.EXPIRED -> "that approval expired; nothing was removed"
-        PhoneApproval.Reason.MISMATCH -> "that approval was for a different app; nothing was removed"
-        else -> "that approval is no longer usable; nothing was removed"
+    private fun detailOf(reason: String, card: PhoneApproval.Card?): String {
+        val what = when (card?.action) {
+            PhoneApproval.FILE_ACTION -> "file"
+            PhoneApproval.ACTION -> "app"
+            else -> "action"
+        }
+        val done = when (card?.action) {
+            PhoneApproval.FILE_ACTION -> "offered"
+            PhoneApproval.ACTION -> "removed"
+            else -> "performed"
+        }
+        return when (reason) {
+            PhoneApproval.Reason.DENIED -> "the owner denied that request; nothing was $done"
+            PhoneApproval.Reason.EXPIRED -> "that approval expired; nothing was $done"
+            PhoneApproval.Reason.MISMATCH ->
+                "that approval was for a different $what; nothing was $done"
+            else -> "that approval is no longer usable; nothing was $done"
+        }
     }
 
     /** Raise the head of the queue. A card that cannot be shown burns as expired, never silently. */

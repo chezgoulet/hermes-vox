@@ -64,7 +64,7 @@ being and its asides
 | 5 | TTS | on-device | Supertonic (recommended), Piper, or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:123 `defaultTts`) |
 | 6 | Presence (optional) | on-device | Gemma 4 E2B via LiteRT-LM on the GPU; speaks asides in the agent's mirrored voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:105 `gemma-e2b`) |
 | 7 | Avatar + words | on-device | GPU-drawn being and the speech-locked crawl | (docs/ARCHITECTURE.md:217 `6,000 stateless particles`) |
-| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume, media, device state, clipboard, files, calendar, a contacts lookup by name, and handoffs: a text is composed for the owner's messaging app, the dialer opens with a number ready, apps launch or open. Notifications are a summary of counts per app while a call is live, then one notification's content by id — the listener is open only during a call. Nothing is sent or dialled by Vox. The caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:1782 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:85 `val GROUPS: List<Group> = listOf(`) |
+| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume, media, device state, clipboard, files, calendar, a contacts lookup by name, and handoffs: a text is composed for the owner's messaging app, the dialer opens with a number ready, apps launch or open. Notifications are a summary of counts per app while a call is live, then one notification's content by id — the listener is open only during a call. Nothing is sent or dialled by Vox. The caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:1943 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:85 `val GROUPS: List<Group> = listOf(`) |
 
 Only leg 4 is a network peer. Barge-in cancels the stream rather than leaving it running
 (docs/ARCHITECTURE.md:123 `closing the stream aborts the generation`).
@@ -796,7 +796,7 @@ before answering", look at `er-soul-drop`.
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
 | `event=session-adopt` | A session was picked up: `id=`, `source=` | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2744 `event=session-adopt id=`) |
-| `event=session-transcript` | One transcript read landed: `id=`, `messages=` served, `shown=` after the merge | `messages=0` on a session the card showed rows for = the id or the key is wrong | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2773 `event=session-transcript id=`) |
+| `event=session-transcript` | One transcript read landed: `id=`, `messages=` served, `shown=` after the merge | `messages=0` on a session the card showed rows for = the id or the key is wrong | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2776 `event=session-transcript id=`) |
 | `event=session-transcript … state=key-rejected / no-answer` | The read failed, and which of the two it was | `key-rejected` on the root = the same wall as #436, not a missing session | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2776 `state=key-rejected`) |
 | `event=session-clear` | The adopted session was let go (`id=`): `/new`, `/clear`, a profile switch, a saved connection | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2812 `event=session-clear id=`) |
 | `event=sessions refused reason=alpha-off` / `event=session-adopt refused reason=alpha-off` | The card or the pick was refused because the Alpha Sessions set is off | Expected with the set off; anything else means two gates disagree | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2715 `reason=alpha-off`) |
@@ -1095,7 +1095,7 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   stops at Ask, and Tier 2 returns `approval-required` with an `approval_id`: the phone raises a card,
   the owner answers it by tap or by voice, and the action executes only on a second call carrying that
   id against the same arguments. Tier 2 actions with no card of their own (`install`) stay refused. A call naming an action whose group is Off is refused with `not_granted` and the action
-  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:621 `PhoneTiers.APPROVAL ->`)
+  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:631 `PhoneTiers.APPROVAL ->`)
   (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:188 `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by

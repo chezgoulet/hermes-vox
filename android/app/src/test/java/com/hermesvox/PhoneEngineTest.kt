@@ -308,9 +308,15 @@ class PhoneEngineTest {
             assertEquals("$a must be tier 0", PhoneTiers.INSTANT, PhoneTiers.of(a))
         }
         assertEquals(PhoneTiers.REPORTED, PhoneTiers.of("note"))
-        for (a in listOf("file_list", "file_read", "file_offer", "agenda", "event_create")) {
+        for (a in listOf("file_list", "file_read", "agenda", "event_create")) {
             assertEquals("$a must be reported", PhoneTiers.REPORTED, PhoneTiers.of(a))
         }
+        assertEquals(
+            "offering a file exports it, so it needs the card",
+            PhoneTiers.APPROVAL,
+            PhoneTiers.of("file_offer"),
+        )
+        assertFalse("the phone must never offer a file without approval", PhoneTiers.executable("file_offer"))
         for (a in listOf("message", "dial", "launch", "open")) {
             assertEquals("$a hands off to the owner's own app", PhoneTiers.INSTANT, PhoneTiers.of(a))
             assertTrue("$a is executable by the phone", PhoneTiers.executable(a))
@@ -325,7 +331,7 @@ class PhoneEngineTest {
             assertEquals("$a must need approval", PhoneTiers.APPROVAL, PhoneTiers.of(a))
             assertFalse("$a must never be executed by the phone", PhoneTiers.executable(a))
         }
-        assertNull("share was replaced by file_offer, which is reported", PhoneTiers.of("share"))
+        assertNull("share was replaced by file_offer, which now needs approval", PhoneTiers.of("share"))
         assertNull("call was replaced by dial, which opens the dialer", PhoneTiers.of("call"))
         assertNull(PhoneTiers.of("fly"))
     }
