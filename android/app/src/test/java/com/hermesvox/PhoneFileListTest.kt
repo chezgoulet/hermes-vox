@@ -58,7 +58,8 @@ class PhoneFileListTest {
             PhoneEngine.PhonePlatform.DeviceSnapshot(
                 null, null, null, null, null, null, null, null, null, null, null,
             )
-        override fun clip(text: String): Boolean = true
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite =
+            PhoneEngine.PhonePlatform.ClipWrite.Done
 
         override fun folders(): List<PhoneEngine.PhonePlatform.GrantedFolder> = folders
 

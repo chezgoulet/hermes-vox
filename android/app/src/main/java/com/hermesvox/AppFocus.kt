@@ -3,19 +3,21 @@ package com.hermesvox
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * AppFocus — whether an activity of this app is in front right now.
+ * AppFocus — whether an activity of this app is resumed right now.
  *
- * Two callers need it: the clipboard write (`clip`) and the clipboard read (`clip_read`). Android
- * only lets an app the owner can see touch the clipboard, and from Android 10 a backgrounded call is
- * dropped — silently for a write, with no clipboard for a read. So the phone asks before it acts,
- * rather than reporting a success it cannot check or returning an empty clipboard as if it were the
- * answer.
+ * Android 10's clipboard rule is on **reads**: only the focused app (or the default IME) may read a
+ * clip, while a write through `setPrimaryClip` is allowed without focus. So this signal has two
+ * jobs, neither of them a gate on writing: the clipboard read uses it to explain a "no clip" answer
+ * (where lack of focus is the likely cause), and the approval card uses it to decide whether the
+ * owner can see a card or needs a notification. `clip` never asks it: it writes and reports the
+ * platform's answer.
  *
  * The signal is the resumed-activity count, maintained by [VoxApplication]'s lifecycle callbacks: a
- * resumed activity is one the owner can see. Multi-window can resume an activity without window
- * focus, so this is a close approximation of Android's own rule rather than a proof of it. The
- * platform can still refuse a clipboard call from an app in front, and that refusal is reported as
- * `unavailable` too.
+ * resumed activity is one the owner can see. Picture-in-picture pauses the activity, so PiP reads as
+ * "not in front" — which is exactly the state where a clipboard read usually returns nothing. Multi-
+ * window can resume an activity without window focus, so this is a close approximation of Android's
+ * own rule rather than a proof of it; the platform makes the real decision and its answer is
+ * reported.
  *
  * Pure JVM (a counter), so the rule is provable off-device.
  */

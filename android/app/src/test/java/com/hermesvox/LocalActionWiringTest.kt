@@ -1,5 +1,6 @@
 package com.hermesvox
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -43,5 +44,25 @@ class LocalActionWiringTest {
 
     @Test fun the_runner_is_lazy_so_a_probe_never_touches_the_alarm_services() {
         assertTrue(vc.contains("private val localActions: LocalActions by lazy"))
+    }
+
+    /**
+     * M5: Android restricts clipboard **reads**, not writes. `clip` must ask the platform, never
+     * [AppFocus]; only `clip_read` may read the focus counter, and only to explain a missing clip.
+     * The pure decisions live in ClipboardRules (and are proven there); this pins the wiring so a
+     * re-added pre-emptive gate fails the build.
+     */
+    @Test fun the_clipboard_write_is_not_gated_on_focus() {
+        val la = File("src/main/java/com/hermesvox/LocalActions.kt").readText()
+        val write = la.substringAfter("override fun clip(text: String)")
+            .substringBefore("// ---- handoffs")
+        assertTrue("the write goes through the pure rule", write.contains("ClipboardRules.write"))
+        assertTrue("and reaches the platform's own call", write.contains("setPrimaryClip"))
+        assertFalse("with no pre-emptive focus gate", write.contains("AppFocus"))
+
+        val read = la.substringAfter("override fun readClip()")
+            .substringBefore("private data class BatteryReadings")
+        assertTrue("the read is asked for", read.contains("ClipboardRules.read"))
+        assertTrue("with focus only shaping the answer", read.contains("AppFocus.inFront"))
     }
 }

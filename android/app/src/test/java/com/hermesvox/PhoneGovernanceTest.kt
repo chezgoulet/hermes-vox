@@ -44,7 +44,8 @@ class PhoneGovernanceTest {
                 network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
                 dnd = null, timeZoneId = null, utcOffsetMinutes = null,
             )
-        override fun clip(text: String): Boolean = true
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite =
+            PhoneEngine.PhonePlatform.ClipWrite.Done
     }
 
     private val fake = Fake()

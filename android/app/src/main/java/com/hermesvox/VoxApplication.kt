@@ -11,8 +11,9 @@ import android.app.Application
  * The migration is idempotent (see [PresenceGate.migrate]), so the Application class is a
  * guarantee of ordering, not a correctness crutch.
  *
- * It also keeps [AppFocus] current: the resumed-activity count is the one thing the clipboard
- * needs before it writes, and the callbacks are the only place the platform reports it.
+ * It also keeps [AppFocus] current: the resumed-activity count tells a clipboard read whether the
+ * missing clip is likely because Vox is not focused, and the approval card whether the owner can
+ * see it. The callbacks are the only place the platform reports it.
  */
 class VoxApplication : Application() {
     override fun onCreate() {
@@ -31,8 +32,9 @@ class VoxApplication : Application() {
         // never leave the phone in Do Not Disturb.
         CallQuiet.recover(this, prefs)
         PresenceGate.migrate(prefs)
-        // #429 lane: the clipboard refusal needs to know whether the owner can see the app. One
-        // counter, fed by the platform's own callbacks, read by `clip` before it writes.
+        // #429 lane: the clipboard read and the approval card need to know whether the owner can
+        // see the app. One counter, fed by the platform's own callbacks; `clip` does not read it,
+        // because Android permits a clipboard write without focus.
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: android.app.Activity) = AppFocus.onActivityResumed()
             override fun onActivityPaused(activity: android.app.Activity) = AppFocus.onActivityPaused()
