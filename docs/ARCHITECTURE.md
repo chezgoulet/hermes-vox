@@ -105,8 +105,9 @@ wire (`docs/KOTLIN-CORE.md`, `RouteParityTest`).
   during playback is a real interruption (level + duration, with a level-only escape).
 - **STT:** on-device via sherpa-onnx (`OfflineStt`) — Whisper base.en by default,
   tiny/small, NVIDIA Parakeet-TDT 0.6B v2, or the streaming Nemotron 0.6B model — or an
-  optional self-hosted endpoint (`RemoteStt`). The batch recognisers see a finished
-  utterance; the streaming arm keeps a live hypothesis and feeds partials. The turn text
+  optional self-hosted endpoint (`RemoteStt`). Recognition is *batch*: it sees a finished
+  utterance. The streaming arm is the exception and keeps a live hypothesis that feeds
+  partials. The turn text
   is always the **whole** utterance (`SttWindows` windows anything past 25 s); a partial
   may only *trigger* an early end on a genuine finished-sentence pause, and is reused as
   the text only when it covered the whole utterance (`EarlyStartRule`). Every transcript
@@ -116,10 +117,12 @@ wire (`docs/KOTLIN-CORE.md`, `RouteParityTest`).
   the call; partials are read every 100 ms and `SemanticEndpoint` judges the end of the
   turn from silence, the partial's stability and whether the words can end a sentence.
   Both switches default on *inside* the Alpha gate; with the gate off the old 800 ms
-  silence endpoint runs.
+  silence endpoint runs: a conservative finished-sentence check, not semantic.
 - **Barge-in:** one cut path stops audio, cancels the turn and releases the turn gate
-  (`VoiceController`, `StreamFence`, `StreamRetirementState`). The interrupting words are
-  kept from their onset (with pre-roll) and become the next turn (`BargeCarry`).
+  (`VoiceController`, `StreamFence`, `StreamRetirementState`). On the fallback route,
+  closing the stream aborts the generation; on `/v1/runs` it also POSTs the run's stop. The
+  interrupting words are kept from their onset (with pre-roll) and become the next turn
+  (`BargeCarry`).
 
 ### 3. The voice — on-device
 Supertonic (ten voices, 44.1 kHz) via sherpa-onnx is the recommended voice, chosen by a
