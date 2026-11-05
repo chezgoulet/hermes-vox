@@ -31,6 +31,17 @@ class PhoneEngine(
     private val platform: PhonePlatform,
     /** Where the one-line action log goes. Injected so the engine stays free of android.util.Log. */
     private val log: (String) -> Unit = {},
+    /**
+     * The owner's grant policy (#429). Read at call time, never cached: a group switched Off while a
+     * call is live is Off for the next call. All Off is the default, because a phone that was never
+     * asked has granted nothing.
+     */
+    private val grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
+    /**
+     * Every call the mind makes, refusal included: (result, arguments, epoch millis). The audit is
+     * written *after* the result exists, so it records what happened rather than what was asked.
+     */
+    private val audit: (PhoneResult, Map<String, Any?>, Long) -> Unit = { _, _, _ -> },
 ) {
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
@@ -107,9 +118,18 @@ class PhoneEngine(
         arguments: Map<String, Any?>,
         nowElapsed: Long,
         nowEpoch: Long,
-    ): PhoneResult = when (val parsed = PhoneTool.parse(arguments)) {
-        is PhoneTool.Parsed.Refuse -> parsed.result
-        is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch)
+    ): PhoneResult {
+        val result = when (val parsed = PhoneTool.parse(arguments, grants)) {
+            is PhoneTool.Parsed.Refuse -> parsed.result
+            is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch)
+        }
+        // The audit records refusals as well as successes, because "my agent says it tried" is a
+        // claim the owner has to be able to check. A failure to record must not fail the call.
+        try {
+            audit(result, arguments, nowEpoch)
+        } catch (_: Throwable) {
+        }
+        return result
     }
 
     /** Execute one validated call. */
@@ -307,6 +327,7 @@ class PhoneEngine(
 
     fun status(nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
+        val offered = PhoneTool.offeredActions(grants)
         val running = ArrayList<Map<String, Any?>>(timers.size + alarms.size)
         for (a in timers.values) {
             running.add(
@@ -332,14 +353,15 @@ class PhoneEngine(
         PhoneResult.info(
             "status",
             linkedMapOf<String, Any?>(
-                "offered" to PhoneTool.OFFERED,
+                "offered" to offered,
                 "tiers" to linkedMapOf(
-                    "0" to PhoneTool.OFFERED.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
-                    "1" to PhoneTool.OFFERED.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
+                    "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
+                    "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
                     "2" to listOf(
                         "share", "message", "call", "email", "delete",
                     ),
                 ),
+                "grants" to PhoneGrants.summary(grants),
                 "running" to running,
                 "notes" to saved,
                 "registry" to registry(nowElapsed, nowEpoch),

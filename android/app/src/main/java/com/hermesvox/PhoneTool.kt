@@ -9,17 +9,28 @@ import com.hermesvox.core.Json
  * because the schema rides on every voice turn the gateway offers it on, and because a single tool
  * with a required `action` is easier for a model to use correctly than eight near-synonyms.
  *
- * **This file is pure JVM.** It decides what a call *means* (tier, arguments, validation) and how a
- * result is rendered; [PhoneEngine] executes against a [PhonePlatform] and [PhoneMcpServer] speaks
- * the wire. That split is what lets the tier routing, the refusal path and the result shape be
- * proven off-device, with no Android and no socket.
+ * **This file is pure JVM.** It decides what a call *means* (tier, grant, arguments, validation) and
+ * how a result is rendered; [PhoneEngine] executes against a [PhonePlatform] and [PhoneMcpServer]
+ * speaks the wire. That split is what lets the governance, the tier routing, the refusal path and
+ * the result shape be proven off-device, with no Android and no socket.
  *
- * ## The tier table (D32's bounds, extended by #421 steps 3–4)
+ * ## The schema follows the grants (#429 step 1)
+ *
+ * [PhoneGrants] is the single registry: twelve capability groups, each Off, Ask or Allow, all Off
+ * by default. [schema] builds the advertised `enum` from [PhoneGrants.advertised], so a group the
+ * owner has not granted is **absent** — not a temptation the model has to resist, but a name it
+ * cannot call. The source is read at call time, never cached, so revocation lands on the next call
+ * (including mid-session).
+ *
+ * A call that still names a hidden action gets a described refusal rather than a transport error:
+ * `reason:"not_granted"` when the group is Off, `reason:"approval-required"` when it is Ask.
+ *
+ * ## The tier table (D32's bounds, extended by #421 steps 3–4 and #429)
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `status`, `undo` | executed now, reversible, private |
- * | 1 — reported | `note` | executed now, reported to the mind on the next turn, undoable |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
+ * | 1 — reported | `note` | executed now (when granted), reported to the mind on the next turn, undoable; Ask or Off only |
  * | 2 — approval | `share`, `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
@@ -42,11 +53,11 @@ object PhoneTool {
     const val NAME = "phone"
 
     /**
-     * The action enum the schema offers. Tier 2 names are **not** offered — a model that cannot see
-     * them cannot be tempted by them, and the dispatcher still recognises them so a direct call gets
-     * an honest "that needs the owner" instead of "unknown action".
+     * The actions that are not a capability: `undo` reverses something the owner already allowed,
+     * and `status` only reports. Both are always offered — a phone whose grants are all Off must be
+     * able to say so.
      */
-    val OFFERED = listOf("timer", "alarm", "dnd", "volume", "note", "undo", "status")
+    val ALWAYS: List<String> = PhoneGrants.ALWAYS
 
     /** Timers are bounded exactly as the grammar bounds them: 1 s to 24 h. */
     const val MIN_DURATION_MS = LocalActionGrammar.MIN_DURATION_MS
@@ -55,30 +66,78 @@ object PhoneTool {
     /** A note is a sentence the caller wants kept, not a document. */
     const val MAX_NOTE_CHARS = 500
 
-    /** The tool description the model reads. Short, and honest about the result loop. */
+    /**
+     * The actions a schema may offer right now — a pure function of the live grants. [PhoneToolTest]
+     * pins this against the registry, so the enum and the registry cannot drift.
+     */
+    fun offeredActions(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): List<String> =
+        PhoneGrants.advertised(grants)
+
+    /** The part of the tool description that is true whatever is granted. */
     const val DESCRIPTION =
-        "Act on the phone this conversation is happening on. timer, alarm, dnd and volume happen " +
-            "immediately; note is kept and reported to you on the next turn; undo reverses an " +
-            "action using the id its result returned; status lists what the phone can do and what " +
-            "is running. Every result says what actually happened — check ok before telling the " +
-            "caller an action is done, and do not claim one this tool did not confirm. Consequential " +
-            "actions (share, message, call, delete) are never taken from here: they need the owner's " +
-            "approval on the phone."
+        "Act on the phone this conversation is happening on. Only the actions in `action` are " +
+            "granted on this phone right now; the rest are absent because the owner has not given " +
+            "them. Every result says what actually happened — check ok before telling the caller an " +
+            "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
+            "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
+            "needs the owner's approval on the phone); a refusal means nothing was performed."
+
+    /**
+     * The description the model reads, with the current grants named. Built per request, because a
+     * grant can change between two turns and the model should not be reading yesterday's list.
+     */
+    fun description(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): String {
+        val on = PhoneGrants.GROUPS.filter {
+            PhoneGrants.stateOf(grants, it) != PhoneGrants.State.OFF && it.actions.isNotEmpty()
+        }
+        val grantLine = if (on.isEmpty()) {
+            "No capability group is on: only `status` and `undo` are available."
+        } else {
+            "On now: " + on.joinToString("; ") { g ->
+                "${g.label} (${PhoneGrants.stateOf(grants, g).label.lowercase()}): " +
+                    g.actions.joinToString(", ")
+            } + "."
+        }
+        return "$DESCRIPTION $grantLine"
+    }
+
+    /** One phrase per action, for the `action` property's description. */
+    private val ACTION_HINTS = linkedMapOf(
+        "timer" to "countdown",
+        "alarm" to "wall-clock alarm",
+        "dnd" to "Do not disturb on/off",
+        "volume" to "media volume",
+        "note" to "keep a short note",
+    )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
-    fun schema(): Map<String, Any?> = linkedMapOf(
+    fun schema(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): Map<String, Any?> {
+        val offered = offeredActions(grants)
+        val actionDesc = buildString {
+            append(
+                offered.joinToString("; ") { a ->
+                    when (a) {
+                        "undo" -> "undo: reverse an action by id"
+                        "status" -> "status: what the phone can do and what is running"
+                        else -> "$a: ${ACTION_HINTS[a] ?: a}"
+                    }
+                }
+            )
+            append(
+                ". Actions in a group that is Off are absent on purpose; naming one is refused " +
+                    "with reason=not_granted.",
+            )
+        }
+        return linkedMapOf(
         "name" to NAME,
-        "description" to DESCRIPTION,
+        "description" to description(grants),
         "inputSchema" to linkedMapOf(
             "type" to "object",
             "properties" to linkedMapOf(
                 "action" to linkedMapOf(
                     "type" to "string",
-                    "enum" to OFFERED,
-                    "description" to
-                        "timer: countdown; alarm: wall-clock alarm; dnd: do not disturb on/off; " +
-                        "volume: media volume; note: keep a short note; undo: reverse an action by " +
-                        "id; status: what the phone can do and what is running.",
+                    "enum" to offered,
+                    "description" to actionDesc,
                 ),
                 "duration_ms" to linkedMapOf(
                     "type" to "integer",
@@ -107,7 +166,9 @@ object PhoneTool {
                 ),
                 "text" to linkedMapOf(
                     "type" to "string",
-                    "description" to "note only: the note's text, at most $MAX_NOTE_CHARS characters.",
+                    "description" to
+                        "note only: the note's text, at most $MAX_NOTE_CHARS characters. " +
+                        "Never a message or a secret.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -125,7 +186,9 @@ object PhoneTool {
             "idempotentHint" to false,
             "openWorldHint" to false,
         ),
-    )
+        )
+    }
+
 
     // ---- the calls the dispatcher understands ----
 
@@ -172,13 +235,42 @@ object PhoneTool {
     // ---- argument reading ----
 
     /**
-     * Reads the tool's `arguments` object. Accepts the plain JSON shapes the MCP SDK produces
-     * (Long/Double for integers, String, Boolean) and refuses everything else by name, so a bad call
-     * is a described refusal rather than an exception in a socket thread.
+     * Reads the tool's `arguments` object against the **current** grants. Accepts the plain JSON
+     * shapes the MCP SDK produces (Long/Double for integers, String, Boolean) and refuses everything
+     * else by name, so a bad call is a described refusal rather than an exception in a socket thread.
+     *
+     * The grant check comes before argument parsing on purpose: "that group is off" is the honest
+     * answer to a call the model should not have made, and it does not depend on the argument shape.
+     * [grants] is read now, so a revocation that happened while this request was in flight is
+     * honoured here, not at the next connection.
      */
-    fun parse(args: Map<String, Any?>): Parsed {
+    fun parse(args: Map<String, Any?>, grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): Parsed {
         val action = (args["action"] as? String)?.trim()?.lowercase().orEmpty()
         if (action.isEmpty()) return Parsed.Refuse(PhoneResult.refused("", PhoneReason.INVALID, "action is required"))
+        val group = PhoneGrants.groupOf(action)
+        if (group != null) {
+            return when (PhoneGrants.stateOf(grants, group)) {
+                PhoneGrants.State.OFF -> Parsed.Refuse(
+                    PhoneResult.refused(
+                        action,
+                        PhoneReason.NOT_GRANTED,
+                        "the \"${group.label}\" group is off on this phone; nothing was performed. " +
+                            "Only the owner can grant it in Phone tools.",
+                        tier = group.tier,
+                    )
+                )
+                PhoneGrants.State.ASK -> Parsed.Refuse(
+                    PhoneResult.refused(
+                        action,
+                        PhoneReason.APPROVAL,
+                        "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
+                            "for the owner's approval on the phone and was not performed",
+                        tier = group.tier,
+                    )
+                )
+                PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
+            }
+        }
         return when (PhoneTiers.of(action)) {
             PhoneTiers.APPROVAL -> Parsed.Refuse(
                 PhoneResult.refused(
@@ -193,14 +285,19 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.UNKNOWN,
-                    "not a phone action; offered: ${OFFERED.joinToString(", ")}",
+                    "not a phone action; offered: ${offeredActions(grants).joinToString(", ")}",
                 )
             )
-            else -> parseKnown(action, args)
+            else -> parseArguments(action, args, grants)
         }
     }
 
-    private fun parseKnown(action: String, args: Map<String, Any?>): Parsed {
+    /** Argument bounds for one known action, without the grant decision. Internal for tests. */
+    internal fun parseArguments(
+        action: String,
+        args: Map<String, Any?>,
+        grants: PhoneGrants.Source,
+    ): Parsed {
         return when (action) {
         "timer" -> {
             val ms = integer(args["duration_ms"])
@@ -245,7 +342,11 @@ object PhoneTool {
         }
         "status" -> Parsed.Run(Call.Status)
         else -> Parsed.Refuse(
-            PhoneResult.refused(action, PhoneReason.UNKNOWN, "not a phone action; offered: ${OFFERED.joinToString(", ")}")
+            PhoneResult.refused(
+                action,
+                PhoneReason.UNKNOWN,
+                "not a phone action; offered: ${offeredActions(grants).joinToString(", ")}",
+            )
         )
         }
     }
@@ -330,6 +431,9 @@ object PhoneReason {
 
     /** Tier 2: needs the owner's approval, and nothing was done. */
     const val APPROVAL = "approval-required"
+
+    /** The owner has not granted this capability group. Nothing was done, and it is not offered. */
+    const val NOT_GRANTED = "not_granted"
 }
 
 /**

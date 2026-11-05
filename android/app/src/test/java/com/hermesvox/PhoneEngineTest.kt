@@ -86,7 +86,15 @@ class PhoneEngineTest {
     }
 
     private val fake = Fake()
-    private val engine = PhoneEngine(fake)
+
+    /**
+     * The engine under test is handed a policy; the *store* is what keeps Tier 1/2 at Ask. A raw
+     * source that says Allow for a Tier 1 group is normalised to Ask by the gate, so the tier-1
+     * tests below drive [PhoneEngine.execute] — the path an approved card will use — rather than
+     * pretending the MCP wire can grant Allow where the design does not.
+     */
+    private val grants = PhoneGrants.Source { PhoneGrants.State.ALLOW }
+    private val engine = PhoneEngine(fake, grants = grants)
     private val t0 = 1_000_000L        // elapsed millis
     private val e0 = 1_700_000_000_000L // epoch millis
 
@@ -220,7 +228,7 @@ class PhoneEngineTest {
     // ---- note (tier 1) ----
 
     @Test fun a_note_is_saved_reported_and_undoable() {
-        val r = call(mapOf("action" to "note", "text" to "plumber Thursday 9am"))
+        val r = engine.execute(PhoneTool.Call.Note("plumber Thursday 9am"), t0, e0)
         assertTrue(r.json(), r.ok)
         assertEquals(PhoneTiers.REPORTED, r.tier)
         assertEquals("plumber Thursday 9am", r.facts["text"])
@@ -235,12 +243,12 @@ class PhoneEngineTest {
     }
 
     @Test fun a_note_outlives_the_process_it_was_made_in() {
-        val r = call(mapOf("action" to "note", "text" to "milk"))
+        val r = engine.execute(PhoneTool.Call.Note("milk"), t0, e0)
         val restored = PhoneEngine(Fake())
         restored.restoreNotes(listOf(PhoneEngine.Note(r.id!!, "milk", e0)), t0)
         assertTrue(restored.registry(t0, e0).contains("note(id=note-1)"))
         // A new note must not collide with the restored id.
-        val next = restored.dispatch(mapOf("action" to "note", "text" to "eggs"), t0, e0)
+        val next = restored.execute(PhoneTool.Call.Note("eggs"), t0, e0)
         assertEquals("note-2", next.id)
     }
 
@@ -313,8 +321,6 @@ class PhoneEngineTest {
             mapOf<String, Any?>("action" to "dnd"),
             mapOf<String, Any?>("action" to "volume"),
             mapOf<String, Any?>("action" to "volume", "level" to 101),
-            mapOf<String, Any?>("action" to "note", "text" to "  "),
-            mapOf<String, Any?>("action" to "note", "text" to "x".repeat(PhoneTool.MAX_NOTE_CHARS + 1)),
             mapOf<String, Any?>("action" to "undo"),
             mapOf<String, Any?>(),
         )
@@ -330,10 +336,10 @@ class PhoneEngineTest {
 
     @Test fun status_reports_the_action_list_the_tiers_and_what_is_running() {
         timer(300_000)
-        call(mapOf("action" to "note", "text" to "call the vet"))
+        engine.execute(PhoneTool.Call.Note("call the vet"), t0, e0)
         val s = engine.status(t0 + 60_000, e0 + 60_000)
         assertTrue(s.json(), s.ok)
-        assertEquals(PhoneTool.OFFERED, s.facts["offered"])
+        assertEquals(PhoneTool.offeredActions(grants), s.facts["offered"])
         val running = s.facts["running"] as List<*>
         val entry = running.first() as Map<*, *>
         assertEquals("timer-1", entry["id"])

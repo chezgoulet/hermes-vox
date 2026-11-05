@@ -49,8 +49,19 @@ class LocalActions(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** The one registry, shared by the user path, the MCP path and the presence context. */
-    private val engine = PhoneEngine(Platform(), { line -> VoxLog.d(line) })
+    /**
+     * The one registry, shared by the user path, the MCP path and the presence context.
+     *
+     * The grants are read through [PhoneGrantStore.source] on every call (#429), so revoking a
+     * group takes effect on the next call — not at the next connection. Every mind-initiated call
+     * lands in the Recent actions audit, refusals included.
+     */
+    private val engine = PhoneEngine(
+        Platform(),
+        { line -> VoxLog.d(line) },
+        PhoneGrantStore.source(app),
+        { result, args, at -> PhoneAuditStore.record(app, PhoneAudit.entry(at, args, result)) },
+    )
 
     /** How a scheduled action may be cancelled, per id. */
     private class Armed(
@@ -71,6 +82,10 @@ class LocalActions(context: Context) {
     init {
         // Notes outlive the call that made them; the undo for each is re-registered on load.
         engine.restoreNotes(Notes.decode(prefs.getString(KEY_NOTES, null)), SystemClock.elapsedRealtime())
+        // The owner's Undo tap in the Phone tools sheet reaches this engine while the call lives.
+        PhoneUndo.attach { id ->
+            engine.undo(id, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+        }
     }
 
     /**
@@ -113,9 +128,16 @@ class LocalActions(context: Context) {
         }
         if (!latch.await(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             VoxLog.w("event=phone-mcp timeout action=${actionOf(arguments)}")
-            return PhoneResult.refused(actionOf(arguments), PhoneReason.UNAVAILABLE, "the phone did not answer in time").json()
+            return refusal(arguments, "the phone did not answer in time")
         }
-        return out ?: PhoneResult.refused(actionOf(arguments), PhoneReason.UNAVAILABLE, "the phone did not answer").json()
+        return out ?: refusal(arguments, "the phone did not answer")
+    }
+
+    /** A refusal the phone minted itself (a timeout, a crashed handler), recorded like any other. */
+    private fun refusal(arguments: Map<String, Any?>, detail: String): String {
+        val result = PhoneResult.refused(actionOf(arguments), PhoneReason.UNAVAILABLE, detail)
+        PhoneAuditStore.record(app, PhoneAudit.entry(System.currentTimeMillis(), arguments, result))
+        return result.json()
     }
 
     private fun phoneHere(arguments: Map<String, Any?>): String {

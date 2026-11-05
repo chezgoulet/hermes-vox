@@ -880,3 +880,63 @@ on every turn the server is offered on; `status` exists so the mind asks instead
 
 **What it does not decide.** Whether the soul ever gets tools (it does not — its job is the beat,
 D30), and whether a user wants a setting to change the tier table. Both stay open.
+
+## D35 — The phone's capabilities are granted group by group, and the schema follows the grant
+
+Set 2026-11-04, on #429 step 1.
+
+**The decision.** The agent's reach into the phone is governed by **twelve capability groups**, each
+with exactly one of three states: **Off**, **Ask**, **Allow**. The groups are defined once
+(`PhoneGrants`), and the tool schema, the Phone tools screen and the audit all read that one object.
+A capability the owner has not granted is not a temptation the model has to resist — it is **absent**
+from the advertised `enum`.
+
+**Every group defaults to Off.** A fresh install grants nothing. There is no allow-all switch; the
+one bulk shortcut the design permits is *Allow all instant actions*, and it touches Tier 0 groups
+alone.
+
+**Allow is a Tier 0 word.** Tier 0 is reversible and private, so a grant may make it instant. Tier 1
+changes something the owner can see, and Tier 2 leaves the phone or reads what is private; both stop
+at Ask. The rule is enforced on write *and* read: a stored Allow against a Tier 1 or 2 group comes
+back as Ask, because a grant that cannot be given is not a grant.
+
+**Off means invisible; a direct call still gets an answer.** A call that names an Off group's action
+returns `ok:false, reason:"not_granted"` — a described refusal, not a transport error — so the model
+can say what happened instead of inventing a failure. Ask advertises the action and refuses each use
+(`approval-required`) until the approval card lands with the capability itself; the MCP call carries
+no run id, so the phone cannot mint the gateway's card from inside the server, and #421 rules out a
+second approval surface. Ask is therefore a visible refusal today: visible to the model (offered) and
+to the owner (recorded in Recent actions). This is deliberately honest rather than silent.
+
+**The schema follows the grants, at call time.** `PhoneGrantStore` is read on every `tools/call` and
+every `tools/list`; nothing is cached for the life of the session. Revocation therefore takes effect
+on the very next call — including mid-call — which is the only revocation that means anything. The
+test `PhoneGovernanceTest.revocation_takes_effect_on_the_very_next_call` is the proof, and the device
+pass turns a group off while a call is live.
+
+**Every call is visible, refusals included.** *Recent actions* records time, action, summarised
+arguments, outcome and an undo where the action carries one. Arguments are summarised, not copied: a
+note's text is stored as its length, so the list never carries a message body or a secret. The list is
+the record the owner checks the agent's claims against, so a success and a refusal are the same kind
+of entry.
+
+**Undo is per action.** The result of a reversible action names its undo id; the agent can call
+`undo`, and so can the owner by tapping the row. An undo that did not survive its call says `expired`
+rather than pretending.
+
+**The two things we will not build.**
+- **Bulk deletion, or "clean out my phone".** Irreversible, ambiguous, and a misheard phrase away
+  from damage. Triage is read-only; deletion, when it lands, is one named file on a card.
+- **Silent reading of messages or notifications.** Those are approval-tier capabilities with their
+  own warnings, and they are absent from the schema until granted. There is no background read and no
+  "just this once" that skips the card.
+
+**What it costs, stated.** Eight of the twelve groups have no action in this lane; their grants are
+stored and shown, and their schema entries appear only when their capability lands (a planned action
+name is never advertised; a direct call is refused as not granted). The screen says which groups have
+nothing yet. The grant is not a permission: Android's own runtime and special-access grants still
+apply underneath, and the phone still refuses with `reason:"permission"` when one is missing.
+
+**What it does not decide.** Whether an approved Ask can be remembered for a session, whether a group
+may be limited to a chosen set of apps (Notifications hints at it), and screen automation — which is
+its own decision, with its own indicator and hard off switch.

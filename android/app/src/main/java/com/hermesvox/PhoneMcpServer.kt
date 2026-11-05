@@ -74,6 +74,11 @@ class PhoneMcpServer private constructor(
      * than the agent merely saying it edited its config.
      */
     private val onInitialize: (Long) -> Unit,
+    /**
+     * The owner's grants, read by `tools/list` on every call (#429). Never a captured snapshot: the
+     * advertised `enum` has to lose an action the moment the owner revokes its group.
+     */
+    private val grants: PhoneGrants.Source,
 ) : AutoCloseable {
 
     /** The port the OS gave us (a fixed one in the app: the gateway's config names it). */
@@ -215,7 +220,7 @@ class PhoneMcpServer private constructor(
                 initializeResult(requested)
             }
             "ping" -> "{}"
-            "tools/list" -> Json.encode(linkedMapOf("tools" to listOf(PhoneTool.schema())))
+            "tools/list" -> Json.encode(linkedMapOf("tools" to listOf(PhoneTool.schema(grants))))
             "tools/call" -> when (val reply = callTool(params)) {
                 is ToolReply.Fail -> return 200 to rpcError(id, reply.code, reply.message)
                 is ToolReply.Ok -> reply.result
@@ -299,7 +304,8 @@ class PhoneMcpServer private constructor(
             ),
             "instructions" to
                 "This is the phone the conversation is happening on. Use the `phone` tool to act on " +
-                "it; every call returns what actually happened.",
+                "it; every call returns what actually happened. Only the actions the owner has " +
+                "granted are offered; a refusal names its reason and means nothing was performed.",
         )
     )
 
@@ -422,12 +428,14 @@ class PhoneMcpServer private constructor(
             handler: PhoneToolHandler,
             port: Int = PORT,
             log: (String) -> Unit = {},
+            grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
         ): PhoneMcpServer = start(
             bind = bind,
             tokenProvider = { token },
             handler = handler,
             port = port,
             log = log,
+            grants = grants,
         )
 
         /**
@@ -443,13 +451,14 @@ class PhoneMcpServer private constructor(
             log: (String) -> Unit = {},
             onRequest: (String, Long) -> Unit = { _, _ -> },
             onInitialize: (Long) -> Unit = {},
+            grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
         ): PhoneMcpServer {
             require(!bind.isAnyLocalAddress) { "refusing to bind 0.0.0.0 / :: — pick the tailnet address" }
             require(tokenProvider().isNotEmpty()) { "a bearer token is required" }
             val socket = ServerSocket()
             socket.reuseAddress = true
             socket.bind(InetSocketAddress(bind, port), 8)
-            return PhoneMcpServer(socket, tokenProvider, handler, log, onRequest, onInitialize)
+            return PhoneMcpServer(socket, tokenProvider, handler, log, onRequest, onInitialize, grants)
         }
 
         /** Converts a JSON object into the plain map the tool layer reads. */

@@ -1,0 +1,68 @@
+package com.hermesvox
+
+import android.content.Context
+
+/**
+ * PhoneGrantStore — the Android side of [PhoneGrants]: the owner's choices, read live.
+ *
+ * **Read at call time, never cached.** [source] hands the engine and the MCP server a reader that
+ * consults SharedPreferences on every call, so turning a group Off in the Phone tools sheet takes
+ * effect on the very next tool call — including one the agent has already started. A cached
+ * snapshot would be a revocation that waits for the next call to begin, which is not a revocation.
+ *
+ * **The tier rule is enforced on write and on read.** [set] refuses to store Allow for a Tier 1 or
+ * Tier 2 group (it stores Ask instead and says so in the log); [state] normalises anything a stale
+ * or hand-edited preference might hold through [PhoneGrants.effective]. The UI never offers the
+ * choice, but a preference file is not a UI.
+ *
+ * The log line names the group and the state only: a grant is not a secret, but the phone's log is
+ * attached to bug reports, so nothing else belongs in it.
+ */
+object PhoneGrantStore {
+
+    private const val PREFS = "hv"
+    private const val PREFIX = "phone_grant_"
+
+    /** The stored state of [group]. A missing or unreadable value is Off, never On. */
+    fun state(context: Context, group: PhoneGrants.Group): PhoneGrants.State {
+        val raw = prefs(context).getString(PREFIX + group.id, null)
+        val stored = PhoneGrants.State.of(raw) ?: PhoneGrants.DEFAULT
+        return PhoneGrants.effective(group, stored)
+    }
+
+    /** Every group's state, in [PhoneGrants.GROUPS] order. */
+    fun states(context: Context): Map<String, PhoneGrants.State> {
+        val out = LinkedHashMap<String, PhoneGrants.State>()
+        for (g in PhoneGrants.GROUPS) out[g.id] = state(context, g)
+        return out
+    }
+
+    /**
+     * Store the owner's choice and return the state that is actually in force. An Allow for a group
+     * whose tier does not permit it is stored as Ask: the sheet does not offer it, and the store
+     * does not pretend to have granted something that will be refused anyway.
+     */
+    fun set(context: Context, group: PhoneGrants.Group, wanted: PhoneGrants.State): PhoneGrants.State {
+        val effective = PhoneGrants.effective(group, wanted)
+        if (effective == PhoneGrants.DEFAULT) {
+            prefs(context).edit().remove(PREFIX + group.id).apply()
+        } else {
+            prefs(context).edit().putString(PREFIX + group.id, effective.id).apply()
+        }
+        VoxLog.d("event=phone-grants group=${group.id} state=${effective.id}")
+        return effective
+    }
+
+    /**
+     * A reader for the engine and the server. It closes over the application context and consults
+     * SharedPreferences per group per call — the cheap, in-memory side of SharedPreferences — so
+     * no revocation can be stale.
+     */
+    fun source(context: Context): PhoneGrants.Source {
+        val app = context.applicationContext ?: context
+        return PhoneGrants.Source { group -> state(app, group) }
+    }
+
+    private fun prefs(context: Context) =
+        (context.applicationContext ?: context).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+}

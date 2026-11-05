@@ -66,6 +66,10 @@ is created by the setup path (or by opening this disclosure); the block is gener
 gateway offers it on, and a single tool with a required `action` is cheaper and harder for a model to
 misuse than `phone_timer` / `phone_alarm` / `phone_dnd` / … (#421, third comment).
 
+**The enum is a function of the owner's grants** ([#429] step 1). A capability group that is Off is
+absent from it, so the model is not asked to resist a temptation it should never have had. This
+section describes the actions that exist; the next section describes who may see them.
+
 | action | tier | arguments | result (success) |
 |---|---|---|---|
 | `timer` | 0 | `duration_ms` (1000 – 86 400 000) | `id`, `remaining_ms`, `duration_ms`, `undo` |
@@ -74,12 +78,84 @@ misuse than `phone_timer` / `phone_alarm` / `phone_dnd` / … (#421, third comme
 | `volume` | 0 | `level` (0–100) **or** `direction` (`up`/`down`) | `id`, `level`, `previous`, `undo` |
 | `note` | 1 | `text` (≤ 500 chars) | `id`, `text`, `reported_next_turn`, `undo` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
-| `status` | 0 | – | `offered`, `tiers`, `running`, `notes`, `registry`, `dnd`, `volume` |
+| `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
 
 `status` is the discovery action: it answers "what can you do, and what is running right now" from
 the **same registry** the presence context block reports (`local_actions:`), so the mind never has to
 guess and the two can never disagree. A timer there carries its id and `remaining_ms`; the registry
 line carries the compact `timer(remaining=3m12s)` form.
+
+`undo` and `status` belong to no capability group, and are always offered. `undo` can only reverse
+something the owner already allowed, and `status` only reports; a phone whose grants are all Off must
+still be able to say so.
+
+---
+
+## Grants: what the agent may try (#429)
+
+The registry is **one object**, `PhoneGrants`, and the schema, the Phone tools screen and the audit
+all read it. There is no second list to drift.
+
+| group | tier | actions today | what it lets the agent do |
+|---|---|---|---|
+| Timers and alarms | 0 | `timer`, `alarm` | set, cancel and check timers and alarms |
+| Do not disturb and volume | 0 | `dnd`, `volume` | turn Do Not disturb on/off, change media volume |
+| Reminders and notes | 1 | `note` | keep a short note and report it back |
+| Media | 0 | — | play, pause, skip, ask what is playing |
+| Device state | 0 | — | read battery, charging, connectivity, screen, storage |
+| Clipboard | 0 | — | write to the clipboard (never reads it) |
+| Files | 1 | — | read a named file in Downloads/Documents, offer a file |
+| Calendar | 1 | — | read today's events, create an event (undoable) |
+| Notifications | 2 | — | read the notifications currently on the phone |
+| Messages and calls | 2 | `message`\*, `call`\*, `send`\*, `email`\* | send a text, place a call |
+| Apps | 2 | `launch`\*, `open`\*, `install`\*, `uninstall`\* | open an app, uninstall one |
+| Contacts | 2 | — | look up a number by name |
+
+`*` A planned action: the group and its refusal exist, the capability does not ship yet. A name in
+this column is **never advertised**; a direct call is refused as `not_granted` (group Off) or
+`approval-required` (group Ask) rather than executed. The empty action column is the honest one for
+a group whose capability lands in a later lane.
+
+### The three states
+
+**Off — the default for every group.** The group's actions are absent from the tool's `enum`, and a
+call that still names one returns `ok:false, reason:"not_granted"`. The model cannot call what it
+cannot see; if it tries anyway, the refusal is a result it can read and repeat, not a transport
+error.
+
+**Ask.** The actions are advertised, and every use is a decision rather than a run. On this wire an
+Ask call returns `ok:false, reason:"approval-required"` and performs nothing. The approval card
+arrives with the capability lanes (#429 steps 2–4): the MCP call has no run id, so the phone cannot
+mint the gateway's card from here, and inventing a second approval surface inside the server is what
+#421 rules out. Until then Ask is a visible refusal — visible to the model (the action is offered)
+and to the owner (the refusal is in Recent actions).
+
+**Allow.** The action runs immediately and is reported. **Only Tier 0 may be Allow** — reversible and
+private. Tier 1 stops at Ask because the owner sees its result and should stay in the loop; Tier 2
+stops at Ask because every use is a card of its own. A stored Allow against a Tier 1/2 group is read
+back as Ask; a grant that cannot be given is not a grant.
+
+**There is no allow-all.** The one bulk shortcut the design permits is *Allow all instant actions*,
+and it touches Tier 0 groups alone. (The sheet does not need to show it for the promise to hold.)
+
+**The grant is read at call time.** `PhoneGrantStore.source` consults SharedPreferences on every
+`tools/call` and every `tools/list`; nothing is cached for the life of the session. Turning a group
+Off in the sheet therefore removes it from the advertised `enum` and refuses the next call — even
+mid-call, which is the only kind of revocation worth the name.
+
+### What the owner sees
+
+The Phone tools sheet lists the twelve groups by tier, each with its one-line description and its
+Off / Ask / Allow control (Allow only where the tier permits it). Files, Notifications and Messages
+and calls carry one sentence of plain consequence where the ability is not obvious — "your agent
+could read a file in Downloads when you approve it".
+
+**Recent actions** is the counter-claim: time, action, summarised arguments, outcome, and an Undo
+where the action carries one. It records **refusals as well as successes**, because "my agent says
+it tried" is a claim the owner has to be able to check. Arguments are summarised, never copied: a
+note's text is stored as its length, so the list can be shown and attached to a report without
+carrying the caller's words. Tapping an undoable row calls the same `undo` the agent would, and the
+result says whether it really happened.
 
 ### Results, and the honesty rule
 
@@ -102,12 +178,13 @@ The reason vocabulary is stable and small:
 
 | `reason` | meaning |
 |---|---|
+| `not_granted` | the capability group is Off; the action is not offered and was not performed |
 | `permission` | the phone does not hold a permission the action needs (Do Not Disturb only, today) |
 | `unavailable` | the action was recognised and the platform refused or failed |
 | `expired` | no undo is registered for that id any more (it fired, was superseded, or was never this phone's) |
 | `invalid-arguments` | the arguments do not describe a runnable action |
 | `unknown-action` | not a phone action; `detail` lists what is on offer |
-| `approval-required` | tier 2: nothing was done, and the owner's approval surface owns it |
+| `approval-required` | the group is Ask or the action is Tier 2: nothing was done, and the owner's approval owns it |
 
 **The invariant**: `ok: true` is only ever rendered after the platform said it performed the action,
 and a refusal carries no `id`, no `state`, no success fact. So the mind's claim "I set a timer" is
@@ -130,11 +207,14 @@ Every action that can be undone registers an undo **for its lifetime**, keyed by
 
 ### Tiers
 
-| tier | actions | what the phone does |
-|---|---|---|
-| **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private |
-| **1 — reported** | note | executes now, reported in the next turn's presence context, undoable |
-| **2 — approval** | share, message, call, email, delete, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens |
+The tier is a property of the capability, not of the session. It decides whether Allow is even
+offered, and it does not change with the grant.
+
+| tier | actions | what the phone does | states |
+|---|---|---|---|
+| **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
+| **1 — reported** | note | executes now (when a card approves it), reported in the next turn's presence context, undoable | Off / Ask |
+| **2 — approval** | share, message, call, email, delete, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
 
 Tier 2 is refused rather than queued on purpose. An MCP call carries no run id, so the phone cannot
 mint the approval card `core/Approval.kt` answers — and building a second approval surface inside the
@@ -316,27 +396,41 @@ report the shape, not to grow a second protocol.
    Hang up: `event=phone-mcp stop served=N`.
 2. **Point a scratch client at the URL with the token** (`curl` the `initialize` POST, or
    `mcp-server-fetch`-style tooling). Without the token: `401`. With it: `tools/list` returns `phone`.
-3. **`timer` from the client** → `ok:true` with an id; the timer rings; `status` no longer lists it;
+3. **With every group Off (a fresh install), `tools/list` offers `undo` and `status` only.** A
+   `timer` call returns `ok:false, reason:"not_granted"`; nothing is armed.
+4. **Grant Timers and alarms = Ask.** `tools/list` now includes `timer`; a timer call returns
+   `ok:false, reason:"approval-required"` and nothing is armed. Set the group to **Allow**: the next
+   call returns `ok:true` with an id and the timer rings.
+5. **Revoke mid-call.** While the call is live, set Timers and alarms back to Off. The **next**
+   `tools/list` no longer lists `timer`; the next `timer` call is `not_granted`. No restart, no
+   reconnect.
+6. **`timer` from the client** → `ok:true` with an id; the timer rings; `status` no longer lists it;
    `undo` of that id afterwards says `expired`.
-4. **`undo` while it is running** → the timer is cancelled and does not ring.
-5. **`dnd` on a phone that has never granted policy access** → `ok:false, reason:"permission"`, and
+7. **`undo` while it is running** → the timer is cancelled and does not ring.
+8. **`dnd` on a phone that has never granted policy access** → `ok:false, reason:"permission"`, and
    the Do Not Disturb state is unchanged.
-6. **`volume`** → the reported `level` matches the phone's own slider afterwards.
-7. **`note`** → the next voice turn's `local_actions:` line carries `note(id=…)`, and `undo` deletes
-   it.
-8. **`message`** → `ok:false, reason:"approval-required"`, and nothing is sent.
-9. **Turn the call off** → the next tool call from the gateway fails (server parked), and the agent
-   says it could not reach the phone rather than claiming the action.
-10. **Turn Tailscale off** → no listener at all (`reason=no-tailnet`), and the app is otherwise
+9. **`volume`** → the reported `level` matches the phone's own slider afterwards.
+10. **`note`** → the next voice turn's `local_actions:` line carries `note(id=…)`, and `undo` deletes
+    it.
+11. **`message`** → `not_granted` while Messages and calls is Off, `approval-required` once it is
+    Ask; nothing is sent either way.
+12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
+    summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
+    undoable row: the action is reversed, or the toast says the undo expired.
+13. **The sheet's groups match the wire.** Turn a group Off in the sheet, then ask the client for
+    `tools/list` without leaving the call: the action is gone. Turn it on: it is back.
+14. **Turn the call off** → the next tool call from the gateway fails (server parked), and the agent
+    says it could not reach the phone rather than claiming the action.
+15. **Turn Tailscale off** → no listener at all (`reason=no-tailnet`), and the app is otherwise
     unaffected.
-11. **Run setup twice.** The second turn must update the existing `vox` entry in place; the gateway's
+16. **Run setup twice.** The second turn must update the existing `vox` entry in place; the gateway's
     MCP configuration still has exactly one `vox`. The sheet's Ask again is the path to use.
-12. **Revoke Do Not Disturb access while the sheet is open.** Leave the sheet, revoke it in Android's
+17. **Revoke Do Not Disturb access while the sheet is open.** Leave the sheet, revoke it in Android's
     special-access screen, return: the row says *Not granted* (no restart), and a `dnd` call returns
     `ok:false, reason:"permission"` with the DND state unchanged.
-13. **Rotate the token.** The old token gets `401` on the next request even while the listener stays
+18. **Rotate the token.** The old token gets `401` on the next request even while the listener stays
     up; the sheet stops saying Connected until a new handshake arrives with the new token.
-14. **Make the agent refuse.** Point it at a read-only config or ask it not to edit; the sheet says
+19. **Make the agent refuse.** Point it at a read-only config or ask it not to edit; the sheet says
     *could not edit its configuration*, shows the agent's own words, and offers the manual fallback.
-15. **Confirm the manifest.** `aapt dump permissions` (or the merged manifest) shows no
+20. **Confirm the manifest.** `aapt dump permissions` (or the merged manifest) shows no
     `SCHEDULE_EXACT_ALARM`, no `USE_EXACT_ALARM`, and no permission the table above does not name.
