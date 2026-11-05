@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicInteger
  *   POST /v1/responses stream:true    SSE: response.created → output_text.delta(s)
  *                                     → response.completed, with the tool-progress
  *                                     item shapes when the turn asks for a tool
- *   DELETE /v1/responses/{id}         the /new reset
  *   POST /v1/runs                     202 {run_id} (#404, the shipped route)
  *   GET  /v1/runs/{id}/events         the same turn in the runs vocabulary:
  *                                     message.delta, tool.started/completed, run.completed
@@ -124,17 +123,8 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     private fun responses(ex: HttpExchange) {
         when (ex.requestMethod) {
             "POST" -> storedOrStreamed(ex)
-            "DELETE" -> deleteResponse(ex)
             else -> reject(ex, 405)
         }
-    }
-
-    private fun deleteResponse(ex: HttpExchange) {
-        val id = ex.requestURI.path.substringAfterLast('/')
-        if (id.isEmpty()) return reject(ex, 400)
-        chains.remove(id)
-        ex.sendResponseHeaders(204, -1)
-        ex.close()
     }
 
     private fun storedOrStreamed(ex: HttpExchange) {

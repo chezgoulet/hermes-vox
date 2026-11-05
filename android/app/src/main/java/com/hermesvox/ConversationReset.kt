@@ -9,12 +9,12 @@ package com.hermesvox
  * conversation had the same shape. Every path now ends a live call through `endCall()` — the
  * one teardown that clears `callLive` — and this table says which re-arm it afterwards.
  *
- * #351: the steps are ORDERED, because the order was the defect. A live `/new` used to run the
- * server-copy DELETE before it re-dialled, so the microphone stayed down for a network
- * round-trip (measured 2.4 s foreground, 13.6 s backgrounded; up to
- * `GatewayClient.TIMEOUT_MS` = 20 s on a slow gateway). The plan now lists the steps in the
- * order they must run and puts the delete last, after the call is armed: the server copy is
- * housekeeping, not a precondition for the user to speak.
+ * #351: the steps are ORDERED, because the order was the defect. A live `/new` used to wait on
+ * a server round-trip before it re-dialled, so the microphone stayed down for a network
+ * round-trip (measured 2.4 s foreground, 13.6 s backgrounded; up to 20 s on a slow gateway).
+ * The plan now lists the steps in the order they must run, and re-arming never waits on the
+ * gateway. The host is read-only: a reset drops local state and nothing else, so there is no
+ * server-copy step left to order.
  *
  * #371: a profile switch is in the same table. How a profile was populated — typed by hand or
  * fetched from `GET /v1/profiles` — must not decide whether a live call survives the switch.
@@ -34,17 +34,12 @@ object ConversationReset {
         /** Drop the client-side chain head (`HermesSession.resetConversation`). */
         RESET_CHAIN,
         /** Open the voice line again (`MainActivity.startCall`). Never waits on the network. */
-        REARM_CALL,
-        /** Delete the server's copy of the chain head — after the call is armed. */
-        DELETE_SERVER_COPY
+        REARM_CALL
     }
 
     data class Plan(val endCall: Boolean, val steps: List<Step>) {
         /** Whether the plan re-arms the call after ending it. */
         val rearm: Boolean get() = Step.REARM_CALL in steps
-
-        /** Whether the plan deletes the server-side copy. */
-        val deleteServerCopy: Boolean get() = Step.DELETE_SERVER_COPY in steps
 
         /** Position of [step] in the run order, or -1 when the plan does not perform it. */
         fun orderOf(step: Step): Int = steps.indexOf(step)
@@ -68,9 +63,7 @@ object ConversationReset {
             // #371: a profile switch is the same — the call belonged to the profile it was in.
             Trigger.SETTINGS, Trigger.PROFILE_SWITCH -> Unit
         }
-        // #351: the delete is LAST. It is the only step that can block on the gateway, and
-        // nobody should wait for housekeeping to hear the entity again.
-        if (trigger == Trigger.NEW) steps += Step.DELETE_SERVER_COPY
+        // Nothing here talks to the host: the app reads the gateway, it never mutates it.
         return Plan(endCall = callLive, steps = steps)
     }
 }

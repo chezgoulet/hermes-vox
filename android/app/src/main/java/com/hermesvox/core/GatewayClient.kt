@@ -1,11 +1,14 @@
 package com.hermesvox.core
 
 /**
- * The gateway's model/health/session endpoints the on-device catalog CANNOT
- * provide: /api/model/options (the provider/model catalog the /models chooser
- * reads), /v1/health (the status/version card) and DELETE /v1/responses/{id}
- * (the /new reset). Same base URL + bearer as the responses client; these are
- * gateway administration, not entity turns, so they carry no session scope.
+ * The gateway's model/health endpoints the on-device catalog CANNOT provide:
+ * /api/model/options (the provider/model catalog the /models chooser reads) and
+ * /v1/health (the status/version card). Same base URL + bearer as the responses
+ * client; these are gateway reads, not entity turns, so they carry no session
+ * scope and issue only GET.
+ *
+ * There is deliberately no DELETE here (or anywhere else): the app reads the
+ * host; it never mutates it. [NoDestructiveRequestsTest] makes that structural.
  */
 internal class GatewayClient(private val baseURL: String, private val apiKey: String) {
 
@@ -31,18 +34,6 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         val (code, body) = get("/v1/health")
         if (code != 200) throw HermesException("hermes health $code")
         return body
-    }
-
-    /** Drops a stored server-side response (the /new session reset). */
-    fun deleteResponse(id: String) {
-        val c = Entity.open("DELETE", Entity.url(baseURL, "/v1/responses/$id"), Entity.headers(apiKey, ""), TIMEOUT_MS, TIMEOUT_MS)
-        Entity.exchange(c, TIMEOUT_MS.toLong(), "hermes delete response") {
-            val code = c.responseCode
-            if (code != 200 && code != 204) {
-                throw HermesException("hermes delete response ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
-            }
-            Entity.body(c)?.use { it.readBytes() }
-        }
     }
 
     /**

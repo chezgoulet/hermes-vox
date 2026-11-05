@@ -204,7 +204,6 @@ class HostProfilesTest {
             val plan = ConversationReset.plan(ConversationReset.Trigger.PROFILE_SWITCH, callLive = live)
             assertEquals(live, plan.endCall)
             assertFalse("a switch does not re-arm the call", plan.rearm)
-            assertTrue(plan.deleteServerCopy.not())
         }
         // The call that a host-populated profile ends is the same teardown as any other:
         // every trigger goes through `endCall()`, which is what clears `callLive`.

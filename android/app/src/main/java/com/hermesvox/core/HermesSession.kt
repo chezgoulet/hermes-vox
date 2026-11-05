@@ -74,23 +74,9 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     /** The raw /v1/health JSON (status/version) — the /health card. */
     fun gatewayHealth(): String = gateway.health()
 
-    /** The server-side chain head ("" when there is none).
-     *
-     *  #351: a caller that deletes the copy AFTER a reset must capture it first —
-     *  [resetConversation] drops it, and reading the head later would delete the
-     *  NEXT turn's response instead of the one it meant. */
+    /** The server-side chain head ("" when there is none). Read-only: the app
+     *  never deletes a stored response, and a reset only drops this local pointer. */
     fun lastResponseId(): String = lastID
-
-    /** Drops a stored server-side response by id (the /new reset): DELETE
-     *  /v1/responses/{id}. No id, nothing to do. */
-    fun deleteResponse(id: String) {
-        if (id.isEmpty()) return
-        gateway.deleteResponse(id)
-    }
-
-    /** Drops the current chain head. Prefer [deleteResponse] with an id captured
-     *  before a reset — see [lastResponseId]. */
-    fun deleteLastResponse() = deleteResponse(lastID)
 
     /**
      * Sends a text turn on the non-streaming /v1/responses path, chained off the
