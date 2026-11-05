@@ -880,10 +880,10 @@ Debug / crash log → Share full log).
   fails fast with `event=stream-turn-failed` (android/app/src/main/java/com/hermesvox/VoiceController.kt:2495 `stream-turn-failed`).
 - **Cause:** 0.9 moved turns onto Android's HTTP stack, so the declared network-security
   policy applies: cleartext is refused for every host except tailnet MagicDNS names
-  (docs/RELEASE-0.9.0.md:17 `plain HTTP is refused`) (android/app/src/main/res/xml/network_security_config.xml:26 `cleartextTrafficPermitted="false"`).
+  (docs/RELEASE-0.9.0.md:17 `plain HTTP is refused`) (android/app/src/main/res/xml/network_security_config.xml:15 `cleartextTrafficPermitted="false"`).
 - **Do:** serve the gateway over HTTPS (`tailscale serve`, Caddy, or any TLS terminator) and
   enter the HTTPS URL. For a tailnet certificate, install the CA and use the HTTPS name
-  (android/app/src/main/res/xml/network_security_config.xml:40 `certificates src="user"`). Do
+  (android/app/src/main/res/xml/network_security_config.xml:27 `certificates src="user"`). Do
   not suggest uninstalling or downgrading.
 
 ### 6.2 The selected STT model "isn't working" — it never loaded
