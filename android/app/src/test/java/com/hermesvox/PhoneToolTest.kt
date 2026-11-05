@@ -46,7 +46,11 @@ class PhoneToolTest {
 
     @Test fun the_action_enum_is_built_from_the_grants() {
         assertEquals(
-            listOf("timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing", "state", "clip", "undo", "status"),
+            listOf(
+                "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
+                "state", "clip", "file_read", "file_offer", "agenda", "event_create",
+                "undo", "status",
+            ),
             enumOf(),
         )
     }

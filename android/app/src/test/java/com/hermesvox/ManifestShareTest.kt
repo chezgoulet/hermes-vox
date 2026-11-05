@@ -120,6 +120,10 @@ class ManifestShareTest {
                 // #325: Do Not Disturb during a call — not for sharing; granted by the user in
                 // system settings only when they switch the setting on.
                 "android.permission.ACCESS_NOTIFICATION_POLICY",
+                // #429 lane 2: the calendar group's runtime permissions. Files add none: the
+                // owner grants one folder through the system picker.
+                "android.permission.READ_CALENDAR",
+                "android.permission.WRITE_CALENDAR",
                 "android.permission.FOREGROUND_SERVICE",
                 "android.permission.FOREGROUND_SERVICE_MICROPHONE",
                 "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
