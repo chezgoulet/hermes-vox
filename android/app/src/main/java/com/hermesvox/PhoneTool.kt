@@ -237,7 +237,9 @@ object PhoneTool {
                     "description" to
                         "open only: the URI to open, such as https://…, mailto:… or a deep link. " +
                         "It must carry a scheme and contain no whitespace, at most " +
-                        "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments.",
+                        "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments. " +
+                        "intent:, file: and a string with no scheme are bad_uri and are never " +
+                        "opened.",
                 ),
                 "package" to linkedMapOf(
                     "type" to "string",
@@ -757,12 +759,10 @@ object PhoneTool {
             }
         }
         "open" -> {
-            val raw = args["uri"] as? String
-            val url = uri(raw) ?: return bad(
-                action,
-                "uri is required, must carry a scheme (https:, mailto:, …) and contain no " +
-                    "whitespace",
-            )
+            val url = when (val verdict = uri(action, args["uri"] as? String)) {
+                is UriArg.Use -> verdict.uri
+                is UriArg.Refuse -> return Parsed.Refuse(verdict.result)
+            }
             val pkg = (args["package"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             if (pkg != null && pkg.length > MAX_APP_CHARS) {
                 return bad(action, "package is longer than $MAX_APP_CHARS characters")
@@ -848,17 +848,68 @@ object PhoneTool {
         return (if (raw.startsWith("+")) "+" else "") + digits
     }
 
+    /** The verdict on `open`'s `uri`: the URI to use, or the refusal it has already earned. */
+    sealed class UriArg {
+        data class Use(val uri: String) : UriArg()
+        data class Refuse(val result: PhoneResult) : UriArg()
+    }
+
     /**
-     * A URI for `open`: it must carry a scheme (`https:`, `mailto:`, `geo:`, a deep link) and
-     * no whitespace. A bare address or an empty scheme is `invalid-arguments` rather than
-     * being guessed into something the owner did not ask to open.
+     * `open`'s `uri`: it must carry a scheme (`https:`, `mailto:`, `geo:`, a deep link) and no
+     * whitespace. Three shapes are refused with `bad_uri` **before any intent exists**:
+     *
+     *  * `intent:` — Android starts an explicit component from it, with arbitrary extras and
+     *    flags. That reaches an activity the owner never chose, and is the only reason a URI would
+     *    need to be a URI, so it is refused and the detail names the scheme.
+     *  * `file:` — a path on disk is not something the owner asked Vox to hand to a viewer.
+     *    `file_offer`/`file_read` exist for files, inside the folder grant.
+     *  * **no scheme at all** — refused, never guessed into `https://`.
+     *
+     * `content:` and `https:`/`http:` pass through and are resolved by the platform as before.
+     * A missing, over-long or whitespace-bearing string is `invalid-arguments` instead.
      */
-    fun uri(text: String?): String? {
+    fun uri(action: String, text: String?): UriArg {
         val raw = text?.trim().orEmpty()
-        if (raw.isEmpty() || raw.length > MAX_URI_CHARS) return null
-        if (raw.any { it.isWhitespace() || it.code < 0x20 }) return null
-        val m = Regex("^([A-Za-z][A-Za-z0-9+.-]*):(.+)$").find(raw) ?: return null
-        return raw
+        if (raw.isEmpty() || raw.length > MAX_URI_CHARS) {
+            return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.INVALID,
+                    "uri is required and at most $MAX_URI_CHARS characters",
+                ),
+            )
+        }
+        if (raw.any { it.isWhitespace() || it.code < 0x20 }) {
+            return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.INVALID,
+                    "uri must contain no whitespace",
+                ),
+            )
+        }
+        val scheme = Regex("^([A-Za-z][A-Za-z0-9+.-]*):(.+)$").find(raw)
+            ?.groupValues?.get(1)?.lowercase()
+            ?: return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.BAD_URI,
+                    "uri has no scheme; write it in full (https://…), because nothing is " +
+                        "guessed into one",
+                ),
+            )
+        if (scheme == "intent" || scheme == "file") {
+            return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.BAD_URI,
+                    "the $scheme: scheme is refused; nothing was opened. A file belongs to " +
+                        "file_offer or file_read inside a granted folder, and a component is " +
+                        "never started from a URI",
+                ),
+            )
+        }
+        return UriArg.Use(raw)
     }
 
     /**
@@ -980,6 +1031,12 @@ object PhoneTiers {
 object PhoneReason {
     /** The args name a path, a URI or a name that resolves outside the folder the owner granted. */
     const val BAD_PATH = "bad_path"
+
+    /**
+     * The URI is not one `open` will hand to the platform: `intent:`, `file:`, or no scheme at
+     * all. Nothing was resolved and no intent was built.
+     */
+    const val BAD_URI = "bad_uri"
 
     /** No folder has been granted to the app yet (or not the one the call named). */
     const val NO_FOLDER = "no_folder"

@@ -225,3 +225,9 @@
   doc: docs/MCP-SURFACE.md
   file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
   match: 'data class DeviceSnapshot\('
+
+- id: phone-surface-open-refuses-component-uris
+  says: "Nothing was resolved and no intent was built"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'BAD_URI = "bad_uri"'
