@@ -35,11 +35,16 @@ Never paste API keys, tokens, gateway addresses you would rather not share, or
 personal logs into an issue, a commit or a test fixture. A report that contains
 them gets edited, and the credential gets rotated.
 
-## Licence
+## Licence and contributions
 
-The project is GPL-3.0. By opening a pull request you agree your contribution is
-licensed under the same terms; there is no CLA and no copyright assignment. Only
-contribute code you have the right to license this way.
+The community edition is GPL-3.0. The House is exploring a separate commercial
+edition, so it is moving to a contributor licence agreement (CLA) that grants
+`Chez Goulet LLC` the right to sublicense contributions. The draft is in
+`CLA.md`; it is **not in force** until counsel approves it.
+
+Until it is in force, open an issue or discussion before sending a substantial
+external contribution. Small fixes can still be sent under GPL-3.0. Do not send
+code you do not have the right to license.
 
 ## Repository layout
 
