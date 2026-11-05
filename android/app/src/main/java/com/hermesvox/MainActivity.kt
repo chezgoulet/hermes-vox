@@ -2344,18 +2344,12 @@ open class MainActivity : AppCompatActivity() {
 
     // ---- #437: sessions — the conversations the host already has -------------------------
 
-    /** The session the phone is talking in, when one was picked up from the host. */
-    private var adopted: Sessions.Row? = null
-
     /**
-     * The adopted session's transcript as the app last read it, merged — never appended. The
-     * crawl shows it as one block *before* this call's own trail, so a re-fetch replaces the
-     * block instead of adding to it (#437 §5).
+     * #437: which session this phone is talking in, and the transcript the host last served
+     * for it. The state and its rules are pure ([Sessions.Adoption]) so "a switch clears it"
+     * and "a gap re-reads it" are proven off-device.
      */
-    private var resumed: List<Sessions.Message> = emptyList()
-
-    /** When the transcript was last asked for, for the gap rule on returning to the app. */
-    private var resumedFetchAt = 0L
+    private val adoption = Sessions.Adoption()
 
     /** The gateway behind the active profile: a session list is a property of the host, not
      *  of the profile ([Sessions.rootBase]), so this is the base every session request uses. */
@@ -2365,7 +2359,7 @@ open class MainActivity : AppCompatActivity() {
         SessionsSheet(
             act = this,
             fetch = { limit, offset -> SessionsClient.list(profileBase(), storedKey(), limit, offset) },
-            inUse = { adopted?.id ?: session?.conversationId().orEmpty() },
+            inUse = { adoption.id.ifEmpty { session?.conversationId().orEmpty() } },
             onPick = { row -> adoptSession(row) },
         )
     }
@@ -2399,8 +2393,7 @@ open class MainActivity : AppCompatActivity() {
         }
         val s = session ?: run { setStatus("Connect first", true); return false }
         s.adoptConversation(row.id)
-        adopted = row
-        resumed = emptyList()
+        adoption.adopt(row)
         // The screen now belongs to the adopted session: nothing from the thread just left
         // stays behind it (and a stored turn's id was rotated with the session object).
         clearConversationUi()
@@ -2420,19 +2413,20 @@ open class MainActivity : AppCompatActivity() {
      * which is what makes a re-fetch after a reconnect unable to duplicate a conversation.
      */
     private fun fetchResumed(id: String) {
-        resumedFetchAt = System.currentTimeMillis()
+        // Marked at the start: a slow answer must still throttle the next foreground return.
+        adoption.markFetched(System.currentTimeMillis())
         val base = profileBase()
         val key = storedKey()
         Thread({
             val answer = Sessions.transcript(SessionsClient.messages(base, key, id))
             runOnUiThread {
                 // A later pick, a new conversation or a profile switch wins over this answer.
-                if (adopted?.id != id || isFinishing || isDestroyed) return@runOnUiThread
+                if (adoption.id != id || isFinishing || isDestroyed) return@runOnUiThread
                 when (answer) {
                     is Sessions.Transcript.Ok -> {
-                        resumed = Sessions.merge(resumed, answer.messages)
+                        adoption.settle(answer.messages)
                         renderResumed()
-                        VoxLog.d("event=session-transcript id=$id messages=${answer.messages.size} shown=${resumed.size}")
+                        VoxLog.d("event=session-transcript id=$id messages=${answer.messages.size} shown=${adoption.resumed.size}")
                     }
                     Sessions.Transcript.KeyRejected -> {
                         VoxLog.w("event=session-transcript id=$id state=key-rejected")
@@ -2448,7 +2442,8 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** The resumed block, in the crawl's own gaps and bounded from the tail. */
-    private fun resumedBlock(maxChars: Int = Sessions.TRAIL_MAX): String = Sessions.trail(resumed, maxChars)
+    private fun resumedBlock(maxChars: Int = Sessions.TRAIL_MAX): String =
+        Sessions.trail(adoption.resumed, maxChars)
 
     /** The crawl's document: the resumed session's history, then this call's own scrollback. */
     private fun paintTrail() {
@@ -2468,11 +2463,9 @@ open class MainActivity : AppCompatActivity() {
      * reconnect, which re-dials the same conversation and re-fetches it (#437 §5, §6).
      */
     private fun clearAdoptedSession() {
-        if (adopted == null) return
-        VoxLog.d("event=session-clear id=${adopted?.id}")
-        adopted = null
-        resumed = emptyList()
-        resumedFetchAt = 0L
+        if (!adoption.active) return
+        VoxLog.d("event=session-clear id=${adoption.id}")
+        adoption.clear()
         // A listing belongs to one host: the next card asks again rather than showing this
         // host's answer under another profile's name.
         sessionsSheet.invalidate()
@@ -2903,12 +2896,12 @@ open class MainActivity : AppCompatActivity() {
                 // #437: a reconnect re-dials the SAME conversation — resetActiveConversation
                 // rotates the id, so an adopted session is taken again afterwards, and its
                 // transcript is read again: the other surface may have written to it.
-                val rejoin = adopted
+                val rejoin = adoption.row
                 resetActiveConversation()   // ends a live call properly (#252's class)
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)
                 if (rejoin != null) {
                     session?.adoptConversation(rejoin.id)
-                    adopted = rejoin
+                    adoption.adopt(rejoin)
                     fetchResumed(rejoin.id)
                 }
                 if (ConversationReset.plan(ConversationReset.Trigger.RECONNECT, wasLive, ok).rearm) startCall()   // and re-arms it, as /new does
@@ -3002,9 +2995,8 @@ open class MainActivity : AppCompatActivity() {
      * transcript again, so what is on screen is what the host has, not what it had.
      */
     private fun maybeRefetchResumed() {
-        val row = adopted ?: return
-        if (System.currentTimeMillis() - resumedFetchAt < Sessions.GAP_MS) return
-        fetchResumed(row.id)
+        if (!adoption.due(System.currentTimeMillis())) return
+        fetchResumed(adoption.id)
     }
 
     /** Load the on-device presence model once, if Presence is on and it is not up.
@@ -3211,11 +3203,8 @@ open class MainActivity : AppCompatActivity() {
      */
     private fun recordTrailLine(text: String, kind: CrawlHistory.Kind): Boolean {
         if (text.isBlank()) return false
-        if (adopted != null && kind == CrawlHistory.Kind.REPLY) {
-            // An echo carries no id and no timestamp: the host has not written it yet.
-            resumed = Sessions.merge(
-                resumed + Sessions.Message(role = "assistant", content = text), resumed,
-            )
+        if (adoption.active && kind == CrawlHistory.Kind.REPLY) {
+            adoption.echo(text)
             renderResumed()
             return true
         }

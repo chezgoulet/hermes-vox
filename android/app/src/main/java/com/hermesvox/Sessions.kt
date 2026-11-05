@@ -141,6 +141,78 @@ object Sessions {
     /** One line of the crawl, built from a host message. */
     data class Line(val text: String, val kind: CrawlHistory.Kind)
 
+    /**
+     * The client side of an adopted session: which session this phone is talking in, the
+     * transcript the host last served for it, and when that was.
+     *
+     * It is an object rather than three fields on the activity for one reason: the rules
+     * around it are things to prove. Adopting starts with nothing from the session being left;
+     * a switch, a new conversation and a saved connection clear **both** the id and the
+     * listing, because sessions belong to a profile and another host's answer must never be
+     * shown as this one's; and [due] is the gap rule that makes coming back to the app read
+     * the transcript again. [merge] is the only way messages reach [resumed], so nothing can
+     * be appended to what the app believes it already has.
+     */
+    class Adoption {
+
+        /** The session in use, or null when this app is writing its own conversation. */
+        var row: Row? = null
+            private set
+
+        /** The transcript as last merged — never appended to directly. */
+        var resumed: List<Message> = emptyList()
+            private set
+
+        /** When the transcript was last asked for (0 = never, which is always due). */
+        var fetchedAt: Long = 0L
+            private set
+
+        /** The id in force ("" when none) — what the next turn would be filed under. */
+        val id: String get() = row?.id.orEmpty()
+
+        val active: Boolean get() = row != null
+
+        /** Pick up [r]. Whatever the previous session's transcript was, it is not this one's. */
+        fun adopt(r: Row) {
+            row = r
+            resumed = emptyList()
+            fetchedAt = 0L
+        }
+
+        /** Forget the session and everything read from it. */
+        fun clear() {
+            row = null
+            resumed = emptyList()
+            fetchedAt = 0L
+        }
+
+        /** Record when the transcript was asked for — at the start, so a slow answer still
+         *  throttles the next foreground return. */
+        fun markFetched(now: Long) {
+            fetchedAt = now
+        }
+
+        /** Fold one fetched transcript in, and return what to draw. */
+        fun settle(messages: List<Message>): List<Message> {
+            resumed = merge(resumed, messages)
+            return resumed
+        }
+
+        /**
+         * Record this app's own reply while a session is adopted. It carries no id and no
+         * timestamp — the host has not written it yet — so [merge] drops it once the host
+         * serves the same words, and the screen shows one copy either way.
+         */
+        fun echo(text: String) {
+            val said = text.trim()
+            if (said.isEmpty()) return
+            resumed = merge(resumed + Message(role = "assistant", content = said), resumed)
+        }
+
+        /** Whether a foreground return should read the transcript again (the gap rule). */
+        fun due(now: Long): Boolean = active && now - fetchedAt >= GAP_MS
+    }
+
     // ---- where the list is asked ------------------------------------------------------
 
     /**

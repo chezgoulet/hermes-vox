@@ -349,6 +349,69 @@ class SessionsTest {
         assertEquals("", Sessions.trail(listOf(msg("tool", "irrelevant", at(1)))))
     }
 
+    // ---- the adopted session: per profile, and re-read after a gap ---------------------
+
+    private fun row(id: String) = Sessions.Row(id = id, title = "a title", source = "api_server")
+
+    @Test fun adopting_starts_with_nothing_from_the_session_being_left() {
+        val a = Sessions.Adoption()
+        a.adopt(row("first"))
+        a.settle(listOf(msg("user", "from the first session", at(9))))
+        assertEquals("first", a.id)
+        assertTrue(a.active)
+        a.adopt(row("second"))
+        assertEquals("second", a.id)
+        assertEquals("the new session's transcript is not the old one's", 0, a.resumed.size)
+    }
+
+    /** §6: sessions belong to a profile — a switch clears the id AND the transcript. */
+    @Test fun clearing_the_session_clears_the_id_and_the_transcript() {
+        val a = Sessions.Adoption()
+        a.adopt(row("20261030_235403_045e2835"))
+        a.settle(listOf(msg("user", "hello", at(5)), msg("assistant", "hi", at(4))))
+        a.echo("one more")
+        assertEquals(3, a.resumed.size)
+        a.clear()
+        assertEquals("", a.id)
+        assertFalse(a.active)
+        assertEquals(0, a.resumed.size)
+        // Nothing is due for a session that is not adopted: no fetch chases a stale id.
+        assertFalse(a.due(now + 10 * Sessions.GAP_MS))
+    }
+
+    @Test fun an_adopted_session_is_read_again_only_after_a_gap() {
+        val a = Sessions.Adoption()
+        assertFalse("nothing adopted, nothing to re-read", a.due(now))
+        a.adopt(row("vox_1"))
+        assertTrue("never fetched is always due", a.due(now))
+        a.markFetched(now)
+        assertFalse("just read", a.due(now + Sessions.GAP_MS - 1))
+        assertTrue("a gap long enough for a turn elsewhere", a.due(now + Sessions.GAP_MS))
+    }
+
+    @Test fun an_echo_is_one_line_while_the_host_has_not_written_it() {
+        val a = Sessions.Adoption()
+        a.adopt(row("vox_1"))
+        a.settle(listOf(msg("user", "publish it", at(3))))
+        a.echo("publishing now")
+        a.echo("publishing now")
+        assertEquals("an echo is not a second record of itself", 2, a.resumed.size)
+        // And once the host serves it, the echo is gone: one copy, in the host's place.
+        a.settle(listOf(msg("user", "publish it", at(3)), msg("assistant", "publishing now", at(2))))
+        assertEquals(listOf("publish it", "publishing now"), a.resumed.map { it.content })
+    }
+
+    @Test fun nothing_reaches_the_transcript_except_through_the_merge() {
+        val a = Sessions.Adoption()
+        a.adopt(row("vox_1"))
+        // Two fetches of the same answer, and a third that adds one turn written elsewhere.
+        val served = listOf(msg("user", "one", at(3)), msg("assistant", "two", at(2)))
+        a.settle(served); a.settle(served)
+        assertEquals(2, a.resumed.size)
+        a.settle(served + msg("assistant", "three, from the desk", at(1)))
+        assertEquals(listOf("one", "two", "three, from the desk"), a.resumed.map { it.content })
+    }
+
     // ---- the gate ---------------------------------------------------------------------
 
     @Test fun the_last_door_refuses_with_the_alpha_set_off() {
@@ -363,8 +426,7 @@ class SessionsTest {
         assertNull(Sessions.refusal(on))
     }
 
-    @Test fun the_word_is_unknown_when_the_set_is_off_and_the_command_when_it_is_on() {
-        val off = Sessions.gate(AlphaGate.Reader { _, _ -> false })
+    @Test fun the_word_is_unknown_when_the_set_is_off_and_the_command_when_it_is_on() {        val off = Sessions.gate(AlphaGate.Reader { _, _ -> false })
         assertNull(Sessions.commandFor("/sessions", off))
         assertNull(Sessions.commandFor("sessions", off))
         // With the set off the word is ordinary conversation, exactly like a name no build has.
@@ -375,4 +437,53 @@ class SessionsTest {
         assertNull(Sessions.commandFor("show me the sessions I had yesterday", on))
     }
 
+
+    // ---- the wiring, pinned at source level (the activity is Android-bound) ----------
+
+    private val src = java.io.File("src/main/java/com/hermesvox")
+
+    @Test fun a_profile_switch_and_a_new_conversation_clear_the_adopted_session() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        // §6: sessions belong to a profile. The switch clears the id and the transcript
+        // BEFORE the screen is cleared, so no block of the host just left can survive it.
+        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
+            .substringBefore("clearConversationUi()")
+        assertTrue(switch, switch.contains("clearAdoptedSession()"))
+        // /new and /clear end the host's session too: the next turn is this app's own.
+        val fresh = main.substringAfter("private fun newSession(trigger: ConversationReset.Trigger")
+            .substringBefore("clearConversationUi()")
+        assertTrue(fresh, fresh.contains("clearAdoptedSession()"))
+        // A saved connection is another host, so it is another set of sessions.
+        val saved = main.substringAfter("fun onEntitySaved() {")
+            .substringBefore("resetActiveConversation()")
+        assertTrue(saved, saved.contains("clearAdoptedSession()"))
+    }
+
+    @Test fun a_reconnect_keeps_the_session_and_reads_it_again() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        val reconnect = main.substringAfter("private fun reconnect(onDone: (Boolean) -> Unit = {}) {")
+            .substringBefore("private fun showHelpCard()")
+        assertTrue("the reset rotates the id, so it is taken again",
+            reconnect.contains("adoption.adopt(rejoin)"))
+        assertTrue("and the transcript is read again", reconnect.contains("fetchResumed(rejoin.id)"))
+        assertFalse("a reconnect is not a switch", reconnect.contains("clearAdoptedSession()"))
+    }
+
+    @Test fun returning_to_the_app_after_a_gap_reads_the_transcript_again() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        assertTrue("the foreground asks", main.contains("maybeRefetchResumed()"))
+        val fn = main.substringAfter("private fun maybeRefetchResumed() {")
+            .substringBefore("fetchResumed(adoption.id)")
+        assertTrue(fn, fn.contains("adoption.due(System.currentTimeMillis())"))
+    }
+
+    @Test fun both_reading_surfaces_paint_the_resumed_block_the_same_way() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        // The crawl: the resumed block, then this call's own trail — one document.
+        assertTrue(main.contains("CrawlDocument.join(resumedBlock(), crawlHistory.text())"))
+        // The transcript layout: the same block, before this device's own turns.
+        assertTrue(main.contains("transcript.setHistory(resumedBlock(Transcript.MAX_CHARS))"))
+        // And there is no second way to paint the trail that could forget the block.
+        assertFalse(main.contains("setHistory(crawlHistory.text())"))
+    }
 }
