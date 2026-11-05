@@ -293,4 +293,16 @@ class SessionsTest {
         assertNull(Sessions.refusal(on))
     }
 
+    @Test fun the_word_is_unknown_when_the_set_is_off_and_the_command_when_it_is_on() {
+        val off = Sessions.gate(AlphaGate.Reader { _, _ -> false })
+        assertNull(Sessions.commandFor("/sessions", off))
+        assertNull(Sessions.commandFor("sessions", off))
+        // With the set off the word is ordinary conversation, exactly like a name no build has.
+        val on = Sessions.gate(AlphaGate.Reader { k, _ -> k == AlphaGate.KEY_MASTER || k == AlphaGate.FeatureSet.SESSIONS.key })
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("/sessions", on)?.name)
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ", on)?.name)
+        // A sentence that happens to contain the word is a sentence, not a command.
+        assertNull(Sessions.commandFor("show me the sessions I had yesterday", on))
+    }
+
 }

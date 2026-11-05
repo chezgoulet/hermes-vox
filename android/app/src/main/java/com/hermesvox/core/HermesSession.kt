@@ -207,12 +207,31 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     /** The raw `GET /v1/runs/{id}` body the arm polls. Blocks. */
     internal fun armRunStatus(runId: String): String = gateway.runStatus(runId)
 
-    /** Starts a NEW conversation: drops the chain head and rotates the runs transcript
-     *  id (H2), so the next run is filed under a session with no history. The
-     *  gateway-side history remains until its own retention clears it. */
+    /**
+     * Starts a NEW conversation: drops the chain head and rotates the runs transcript
+     * id (H2), so the next run is filed under a session with no history. The
+     * gateway-side history remains until its own retention clears it. */
     fun resetConversation() {
         lastID = ""
         responses.setConversationId(newConversationId())
+    }
+
+    /**
+     * #437: talks in a conversation the host already has. [id] is the host's session id
+     * (`GET /api/sessions`), and it becomes the body `session_id` of every following turn —
+     * streamed and stored — which `api_server_runs.py` ranks above the response chain and
+     * above the declared `X-Hermes-Session-Key`. Adopting a session is setting this field and
+     * nothing else: the gateway treats it as the same conversation, so nothing is copied and
+     * nothing is forked.
+     *
+     * The chain head is dropped: a `previous_response_id` belongs to the conversation being
+     * left, and chaining off it would replay that conversation's snapshot instead of the one
+     * just adopted. The declared scope is left alone — it is long-term memory, not the
+     * transcript.
+     */
+    fun adoptConversation(id: String) {
+        lastID = ""
+        responses.setConversationId(id.trim())
     }
 
     private companion object {

@@ -100,6 +100,16 @@ object CommandCatalog {
             cost = Cost("This thread cannot be brought back", risk = true),
             category = Category.CLEAR, kind = Kind.INLINE,
             listOf("start over", "fresh", "new topic", "forget", "begin again")),
+        // #437: the other half of /new — pick up a thread that already exists. Gated: listed
+        // only while the Alpha gate allows "Sessions", and with the set off it is a name no
+        // build answers to (the same rule as /profiles and /diagnostics).
+        Command(Sessions.COMMAND, emptyList(), Group.CONVERSATION,
+            effect = "Pick up a thread the agent already has",
+            cost = null,   // nothing is lost: the session keeps its history, and so does this app
+            category = Category.CHOOSE, kind = Kind.CARD,
+            listOf("session", "conversation", "thread", "history", "resume", "pick up",
+                "earlier", "desktop", "before", "past"),
+            gated = true),
         Command("/models", emptyList(), Group.AGENT,
             effect = "Choose the model the agent thinks with",
             cost = Cost("Switching starts a fresh thread", risk = false),

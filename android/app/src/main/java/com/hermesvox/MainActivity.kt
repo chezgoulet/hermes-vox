@@ -1918,6 +1918,13 @@ open class MainActivity : AppCompatActivity() {
             return
         }
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
+        // #437: a typed (or dictated) "/sessions" opens the session card. With the Alpha set
+        // off [commandFor] is null, so the word goes on to the agent like any name nothing
+        // answers to — it never opens a card and never adopts a session.
+        Sessions.commandFor(text, commandGate())?.let { c ->
+            runCommand(c) {}
+            return
+        }
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
         // K2: typing /compress (or /compact) is the same native command as picking it
@@ -2313,14 +2320,76 @@ open class MainActivity : AppCompatActivity() {
     private var stuckShownThisCall = false
     private var callTurns = 0L
     /** Which optional commands exist right now: `/diagnostics` while its own switch is on
-     *  (#418), and `/profiles` only while the Alpha gate allows "Switching profiles" (#402). */
+     *  (#418), `/profiles` only while the Alpha gate allows "Switching profiles" (#402), and
+     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, the search,
+     *  /help and the typed word — there is no second way a row is absent. */
     private fun commandGate(): CommandCatalog.Gate {
+        val r = AlphaGate.reader(prefs)
         val diagnostics = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
-        val profiles = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)
-        return CommandCatalog.Gate { c -> if (c.name == "/profiles") profiles else diagnostics.on(c) }
+        val sessions = Sessions.gate(r)
+        val profiles = AlphaGate.allows(r, AlphaGate.FeatureSet.PROFILES)
+        return CommandCatalog.Gate { c ->
+            when (c.name) {
+                "/profiles" -> profiles
+                else -> diagnostics.on(c) && sessions.on(c)
+            }
+        }
     }
 
     protected fun showCommands() = commandsSheet.show()
+
+    // ---- #437: sessions — the conversations the host already has -------------------------
+
+    /** The session the phone is talking in, when one was picked up from the host. */
+    private var adopted: Sessions.Row? = null
+
+    /** The gateway behind the active profile: a session list is a property of the host, not
+     *  of the profile ([Sessions.rootBase]), so this is the base every session request uses. */
+    private fun profileBase(): String = prefs.getString("url", "").orEmpty()
+
+    private val sessionsSheet by lazy {
+        SessionsSheet(
+            act = this,
+            fetch = { limit, offset -> SessionsClient.list(profileBase(), storedKey(), limit, offset) },
+            inUse = { adopted?.id ?: session?.conversationId().orEmpty() },
+            onPick = { row -> adoptSession(row) },
+        )
+    }
+
+    /** `/sessions`, and the typed word. Behind the Alpha set at both ends: the command does
+     *  not exist with it off, and this door refuses before it asks the host anything. */
+    protected fun showSessions() {
+        Sessions.refusal(AlphaGate.reader(prefs))?.let {
+            VoxLog.d("event=sessions refused reason=alpha-off")
+            return
+        }
+        if (missingKeyPrompt()) return
+        sessionsSheet.show()
+    }
+
+    /**
+     * Pick up [row]: its id becomes the conversation for every following turn — streamed and
+     * stored, `/compress` included — because `POST /v1/runs` ranks an explicit body
+     * `session_id` above the chain and above the declared key. Nothing is forked and nothing
+     * is copied; the host already treats it as the same conversation.
+     *
+     * The call and the profile are deliberately untouched: resuming a session is not a
+     * profile switch, and the live call is the same agent.
+     */
+    private fun adoptSession(row: Sessions.Row): Boolean {
+        Sessions.refusal(AlphaGate.reader(prefs))?.let {
+            // The last door (§1): no path adopts a session with the set off.
+            VoxLog.d("event=session-adopt refused reason=alpha-off id=${row.id}")
+            setStatus(it, true)
+            return false
+        }
+        val s = session ?: run { setStatus("Connect first", true); return false }
+        s.adoptConversation(row.id)
+        adopted = row
+        VoxLog.d("event=session-adopt id=${row.id} source=${row.source}")
+        setStatus("Resumed · ${row.label}", true)
+        return true
+    }
 
     // ---- #370: share with agent — the clipboard, a file, or another app's share ----
     //
@@ -2574,6 +2643,19 @@ open class MainActivity : AppCompatActivity() {
                 }
             }
             "/health" -> showHealthCard()
+            // #437: the session browser. With the Alpha set off this command does not exist
+            // (the catalogue has no such row and no such word), and this is the last door —
+            // it refuses before anything is listed or adopted.
+            Sessions.COMMAND -> {
+                if (Sessions.refusal(AlphaGate.reader(prefs)) != null) {
+                    VoxLog.d("event=command name=/sessions state=refused reason=alpha-off")
+                    showHelpCard()
+                    done(false)
+                } else {
+                    showSessions()
+                    done(true)
+                }
+            }
             // #418: the second door to the report block the Presence row copies. Same
             // collector, same bytes — the door only decides when, never what.
             DiagnosticSummary.COMMAND -> done(DiagnosticClipboard.copy(this, prefs))

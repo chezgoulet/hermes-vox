@@ -68,6 +68,8 @@ class CommandCatalogTest {
             "/compress" to "This conversation",
             "/clear" to "This conversation",
             "/new" to "This conversation",
+            // #437: picking up a thread that already exists — the other half of /new.
+            "/sessions" to "This conversation",
             "/models" to "The agent",
             // Per-profile pass: the switcher is a command, under The agent — it changes the
             // agent you are talking to, not the thread.
@@ -109,7 +111,7 @@ class CommandCatalogTest {
             assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)
             assertTrue("$name's cost has no line break", !cost.text.contains('\n'))
         }
-        for (name in listOf("/reconnect", "/health", "/help", "/diagnostics"))
+        for (name in listOf("/reconnect", "/health", "/help", "/diagnostics", "/sessions"))
             assertNull("$name loses nothing; it has no cost line",
                 CommandCatalog.find(name, CommandCatalog.Gate.EVERYTHING)!!.cost)
         assertNull("the share row sends nothing by itself", CommandCatalog.SHARE.cost)
@@ -185,6 +187,29 @@ class CommandCatalogTest {
         assertTrue(h.contains("/clear /reset"))
         // A switch that is off takes the command out of the card as well as off the sheet.
         assertTrue(!CommandCatalog.helpText().contains("/diagnostics"))
+    }
+
+    /**
+     * #437: the session browser uses the same Gate as /profiles and /diagnostics — one way a
+     * row is absent — so with its Alpha set off it is gone from the sheet, the search, /help
+     * and the typed word, and nothing else moves.
+     */
+    @Test fun sessions_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
+        val noSessions = CommandCatalog.Gate { it.name != "/sessions" }
+        val rows = CommandCatalog.grouped(gate = noSessions).flatMap { it.second }.map { it.name }
+        assertFalse("/sessions", rows.contains("/sessions"))
+        assertTrue("the rest of the catalogue is untouched", rows.contains("/new"))
+        assertFalse(CommandCatalog.search("session", gate = noSessions).any { it.name == "/sessions" })
+        assertTrue(CommandCatalog.search("session", gate = CommandCatalog.Gate.EVERYTHING)
+            .any { it.name == "/sessions" })
+        assertFalse(CommandCatalog.helpText(noSessions).contains("/sessions"))
+        assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/sessions"))
+        // It is a card command: its row reports no state, because the card is the report.
+        val c = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        assertEquals(CommandCatalog.Kind.CARD, c.kind)
+        assertFalse(CommandCatalog.reportsOnRow(c))
+        // And it is in the conversation group, next to /new, where a person looks for threads.
+        assertEquals("This conversation", c.group.label)
     }
 
     @Test fun profiles_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
