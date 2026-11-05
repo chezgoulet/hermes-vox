@@ -49,6 +49,19 @@ object PhoneToolsView {
         if (granted) "Granted — now_playing names the app and the track"
         else "Not granted — now_playing reports only whether audio is playing"
 
+    /**
+     * The same listener, seen from the notifications group: the grant is global, but the app only
+     * listens while a call is live, so the line says both facts rather than only "granted".
+     */
+    fun notifications(granted: Boolean): String =
+        if (granted) "Granted — the listener reads only while a call is live"
+        else "Not granted — only you can give notification-listener access in system settings"
+
+    /** The contacts runtime permission, naming the string Android reports when it is missing. */
+    fun contacts(granted: Boolean, missing: String?): String =
+        if (granted) "Granted — your agent may look up a contact's number by name"
+        else "Not granted — ${missing ?: "contact access"} must be allowed before a lookup can run"
+
     /** The folder the system picker gave, or the plain fact that none has been given. */
     fun files(folders: List<String>): String = when {
         folders.isEmpty() ->

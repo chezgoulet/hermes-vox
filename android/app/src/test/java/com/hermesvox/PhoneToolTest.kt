@@ -49,8 +49,8 @@ class PhoneToolTest {
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
                 "state", "clip", "clip_read", "file_list", "file_read", "file_offer", "agenda",
-                "event_create", "message", "dial", "launch", "open", "uninstall",
-                "undo", "status",
+                "event_create", "notifications", "notification_read", "message", "dial",
+                "launch", "open", "uninstall", "contact", "undo", "status",
             ),
             enumOf(),
         )
@@ -279,6 +279,74 @@ class PhoneToolTest {
         val parsed = PhoneTool.parse(mapOf("action" to "uninstall", "package" to "com.example.app"), apps)
         assertTrue(parsed is PhoneTool.Parsed.Run)
         assertEquals("uninstall", (parsed as PhoneTool.Parsed.Run).call.action)
+    }
+
+    @Test fun notifications_is_an_instant_group_with_allow_and_two_steps() {
+        val group = PhoneGrants.groupOf("notifications")
+        assertEquals("notifications", group?.id)
+        assertEquals(PhoneTiers.INSTANT, group?.tier)
+        assertTrue("Notifications offers Allow", PhoneGrants.State.ALLOW in PhoneGrants.statesFor(group!!.tier))
+
+        val off = PhoneGrants.Source { g ->
+            if (g.id == "notifications") PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+        }
+        assertFalse("notifications is absent while the group is off", "notifications" in enumOf(off))
+        assertFalse("notification_read is absent too", "notification_read" in enumOf(off))
+
+        val on = PhoneGrants.Source { g ->
+            if (g.id == "notifications") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("notifications", "notification_read", "undo", "status"), enumOf(on))
+        assertTrue(PhoneTool.parse(mapOf("action" to "notifications"), on) is PhoneTool.Parsed.Run)
+        assertTrue(
+            PhoneTool.parse(mapOf("action" to "notification_read", "id" to "n1"), on)
+                is PhoneTool.Parsed.Run,
+        )
+        assertEquals(
+            PhoneReason.INVALID,
+            (PhoneTool.parse(mapOf("action" to "notification_read"), on) as PhoneTool.Parsed.Refuse)
+                .result.reason,
+        )
+    }
+
+    @Test fun the_tool_description_carries_the_notification_privacy_rule() {
+        val expected =
+            "Notifications and their contents may include verification codes, private messages " +
+                "and financial alerts. Do not read them aloud unless the owner asked you to, do " +
+                "not repeat them back, and do not store them in a note."
+        assertEquals(expected, PhoneTool.NOTIFICATION_PRIVACY)
+        val description = (schemaObj()["description"] as JStr).value
+        assertTrue("the rule is in the description, not only in the docs", description.contains(expected))
+        // The source-level check: the constant is the description's own sentence, so a later edit
+        // cannot quietly drop it while the docs still promise it.
+        val source = java.io.File("src/main/java/com/hermesvox/PhoneTool.kt").readText()
+        assertTrue(source.contains("NOTIFICATION_PRIVACY"))
+        assertTrue(source.contains("Notifications and their contents may include verification codes"))
+    }
+
+    @Test fun contacts_is_an_instant_group_with_allow_and_a_bounded_name() {
+        val group = PhoneGrants.groupOf("contact")
+        assertEquals("contacts", group?.id)
+        assertEquals(PhoneTiers.INSTANT, group?.tier)
+        assertTrue("Contacts offers Allow", PhoneGrants.State.ALLOW in PhoneGrants.statesFor(group!!.tier))
+
+        val off = PhoneGrants.Source { g ->
+            if (g.id == "contacts") PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+        }
+        assertFalse("contact is absent while Contacts is off", "contact" in enumOf(off))
+
+        val on = PhoneGrants.Source { g ->
+            if (g.id == "contacts") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("contact", "undo", "status"), enumOf(on))
+        val name = ((input(on)["properties"] as JObj)["name"] as JObj)["description"] as JStr
+        assertTrue("the name is documented for contact", name.value.contains("contact"))
+        assertTrue("the bound is in the schema", name.value.contains(PhoneTool.MAX_CONTACT_NAME_CHARS.toString()))
+        assertTrue(PhoneTool.parse(mapOf("action" to "contact", "name" to "Mo"), on) is PhoneTool.Parsed.Run)
+        assertEquals(
+            PhoneReason.INVALID,
+            (PhoneTool.parse(mapOf("action" to "contact"), on) as PhoneTool.Parsed.Refuse).result.reason,
+        )
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {

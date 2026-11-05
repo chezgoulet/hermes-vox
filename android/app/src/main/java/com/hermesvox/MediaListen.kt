@@ -1,5 +1,6 @@
 package com.hermesvox
 
+import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -9,23 +10,108 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 
 /**
- * MediaListen — the notification-listener access `now_playing` needs to name the session, and the
+ * MediaListen — the notification-listener access `now_playing` and `notifications` share, and the
  * one screen where the owner grants it.
  *
  * **The access is a grant, not a wall.** `MediaSessionManager.getActiveSessions` needs the app to
  * be the user's enabled notification listener (or hold `MEDIA_CONTENT_CONTROL`, which a sideloaded
  * app cannot). That is a special access only the owner can give, on Android's own screen — so the
  * phone's job is to show whether it is held and open that screen, not to design around its absence.
- * [MediaListenerService] is the (empty) listener the grant attaches to; it reads nothing.
+ *
+ * **One listener, two uses, one lifetime rule.** [MediaListenerService] is the app's single entry
+ * in Android's notification-access list, so the owner is asked once for one access rather than
+ * twice. Media uses the session list. Notifications use posted notifications — but only while a
+ * call is live, only while the notifications group is on, and never when the posting package is
+ * Vox itself. Outside a call the service records nothing at all; [PhoneNotifications] drops every
+ * record and id when the call ends.
  *
  * **The boundary is still the platform's.** Without the grant, [playback] returns `known:false`
  * with the cheap `isMusicActive` reading and no invented title. With the grant, the package and
  * title are the active session's own metadata; a phone whose players publish no session still gets
  * `known:false`, because there is nothing to name.
  */
-class MediaListenerService : NotificationListenerService()
+class MediaListenerService : NotificationListenerService() {
+
+    /**
+     * The board is call-scoped, and the group is the owner's consent. Both must hold before a
+     * posted notification is read; either one alone is not enough.
+     */
+    private fun collecting(): Boolean =
+        PhoneNotifications.attached() &&
+            PhoneGrantStore.state(this, notificationsGroup()) != PhoneGrants.State.OFF
+
+    override fun onListenerConnected() {
+        // The service can stay bound across calls. Registering the seed lets a call start ask for
+        // the notifications already on the phone, not only the ones posted after it began.
+        PhoneNotifications.setResync { seed() }
+        seed()
+    }
+
+    override fun onListenerDisconnected() {
+        PhoneNotifications.setResync(null)
+    }
+
+    override fun onDestroy() {
+        PhoneNotifications.setResync(null)
+        super.onDestroy()
+    }
+
+    private fun seed() {
+        if (!collecting()) return
+        val active = try {
+            activeNotifications
+        } catch (_: Throwable) {
+            null
+        }
+        active?.forEach { post(it) }
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        if (sbn == null || !collecting()) return
+        post(sbn)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        if (sbn == null) return
+        // Removing Vox's own notification must not touch a record, because none was made for it.
+        if (sbn.packageName == packageName) return
+        PhoneNotifications.remove(sbn.key)
+    }
+
+    private fun post(sbn: StatusBarNotification) {
+        val extras = sbn.notification?.extras
+        val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+        val text = (
+            extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)
+                ?: extras?.getCharSequence(Notification.EXTRA_TEXT)
+                ?: extras?.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)
+                ?: extras?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString(" · ")
+            )?.toString()
+        PhoneNotifications.record(
+            packageName = sbn.packageName,
+            app = appLabel(sbn.packageName),
+            key = sbn.key,
+            title = title,
+            text = text,
+            postedAt = sbn.postTime,
+            // An app reading its own notification through the listener is a loop and a confusion.
+            own = sbn.packageName == packageName,
+        )
+    }
+
+    /** The launcher-visible name, falling back to the package when the platform will not say. */
+    private fun appLabel(pkg: String): String = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    } catch (_: Throwable) {
+        pkg
+    }
+
+    private fun notificationsGroup(): PhoneGrants.Group =
+        PhoneGrants.GROUPS.first { it.id == "notifications" }
+}
 
 object MediaListen {
 

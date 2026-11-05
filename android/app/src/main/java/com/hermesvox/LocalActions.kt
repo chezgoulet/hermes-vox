@@ -487,6 +487,9 @@ class LocalActions(context: Context) {
          */
         override fun playback(): PhoneEngine.PhonePlatform.Playback = MediaListen.playback(app)
 
+        /** The system's notification-listener access, shared with Media but used call-scoped. */
+        override fun notificationListenerGranted(): Boolean = MediaListen.granted(app)
+
         /**
          * One read of the phone's state, each field answered or `null`. Nothing here needs a
          * permission the manifest does not already declare: the battery comes from the sticky
@@ -598,13 +601,18 @@ class LocalActions(context: Context) {
          */
         // ---- handoffs: messages, calls, apps ----
 
-        /**
-         * Resolve the contact name through the owner's address book. **Not built**: the Contacts
-         * group is declared and its grant is stored, but no provider read exists in this lane.
-         * Returning null makes the engine refuse with a sentence that asks for a number instead
-         * of opening `smsto: Mom`, which no messaging app could resolve.
-         */
-        override fun contactNumber(name: String): String? = null
+        /** The exact runtime permission `contact` needs, or null when the owner has granted it. */
+        override fun contactsPermission(): String? = ContactsAccess.permission(app)
+
+        /** Up to 20 people by full or partial name, each with numbers and labels only. */
+        override fun contactMatches(
+            name: String,
+            limit: Int,
+        ): List<PhoneEngine.PhonePlatform.ContactMatch>? =
+            ContactsAccess.matches(app, name, limit)
+
+        /** The first number of the first match, for `message`/`dial`. Null is "no such contact". */
+        override fun contactNumber(name: String): String? = ContactsAccess.firstNumber(app, name)
 
         /**
          * `ACTION_SENDTO` with an `smsto:` URI and the draft in `sms_body`. **No send call of any

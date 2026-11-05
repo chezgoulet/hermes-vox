@@ -63,6 +63,11 @@
          CalendarContract is used; no provider-specific access. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- #429 read lane: the contacts group. A runtime permission, asked when Contacts is turned
+         on; a missing one is a `permission` refusal naming this exact string. ContactsContract
+         only, and the lookup returns names, numbers and labels — never notes, addresses, photos
+         or email. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- #429 lane 2: the Storage Access Framework is the deliberate default, so no storage
          permission is declared for it (not READ_EXTERNAL_STORAGE, not MANAGE_EXTERNAL_STORAGE).
          Files are read through a tree the owner picks with ACTION_OPEN_DOCUMENT_TREE; an all-files

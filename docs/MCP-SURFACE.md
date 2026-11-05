@@ -15,9 +15,12 @@ already real (`timers-alarms`, `dnd-volume`, `notes`).
 **Built today (lane 2):** `files` and `calendar`.
 **Added by the listing lane:** `file_list`, and `file_read`'s `offset`/`length` window.
 **Added by the handoff lane:** `messages`, `calls`, and the safe half of `apps` (`launch`, `open`).
+**Added by the read lane:** `contacts` (`contact`) and `notifications` (`notifications`,
+`notification_read`). Both are instant and both offer Allow; the notification listener is
+call-scoped, and its summary-then-read split is the privacy design, not an implementation detail.
 **Added by the approval lane:** `apps`' `uninstall` — the one Tier 2 action with a card on this
 phone, raised by [_PhoneApproval_](../android/app/src/main/java/com/hermesvox/PhoneApproval.kt).
-**Declared, not built:** `notifications`, `apps`' `install`, `contacts`.
+**Declared, not built:** `apps`' `install`.
 
 ---
 
@@ -90,6 +93,7 @@ with an approval card of its own (below).
 | `invalid-arguments` | the arguments do not describe a runnable action (bounds and shapes are below) |
 | `expired` | no undo is registered for that id any more |
 | `no_app` | nothing on the phone answers the intent: no `ACTION_SENDTO` app, no dialer, no launchable activity, or no app for the URI |
+| `unknown-id` | `notification_read` was given an id that no summary of this call has shown, or the notification has left the phone since |
 | `unknown-action` | not a phone action; the detail lists what is offered right now |
 
 Every action in the tables below can also return `not_granted`, `approval-required` and
@@ -115,10 +119,13 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
 | `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
 | `clip_read` | clipboard | — | `text`, `chars` | **no** — reading changes nothing | `ClipboardManager.getPrimaryClip`. **No permission**, but **the platform decides**: since Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer. Both are `unavailable` with the platform's own reason; the phone never returns empty text as though it were the clipboard | `unavailable` |
-| `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent | `no_app`; `not_granted` naming **Contacts** when `to` is a name and that group is Off |
+| `notifications` | notifications | — | `sensitive: true`, `count`, `apps` — each `app`, `count`, `latest_at` (epoch millis), and opaque `ids` | **no** — reading changes nothing | **Notification-listener special access**, shared with `now_playing`; the system grant is global, but the app's **use** of it is call-scoped: the board attaches when a call starts, detaches when it ends, and drops every record and id. **Vox's own notifications are excluded** (an app reading itself through the listener is a loop). Many notifications → many app rows, but **no title and no text** | `unavailable` (no live call), `permission` (listener access not granted) |
+| `notification_read` | notifications | `id` — one of the ids a `notifications` summary returned | `sensitive: true`, `app`, `posted_at` (epoch millis), `title`, `text` | **no** — reading changes nothing | The same call-scoped listener. This is the deliberate **second step**: one notification, named by an id a summary already showed, never a browse or a vacuum. An id that arrived after the summary is `unknown-id` until a fresh summary shows it | `unavailable`, `permission`, `unknown-id` |
+| `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent | `no_app`; `not_granted` naming **Contacts** when `to` is a name and that group is Off; `permission` when Contacts is on but `READ_CONTACTS` is not held |
 | `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to` | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens | `no_app`; `not_granted` naming **Contacts** for a name without that group |
 | `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the launch still happens | `no_app` |
 | `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live. `intent:` (explicit component, arbitrary extras and flags), `file:` (a path on disk) and a string with **no scheme** are refused `bad_uri` before the intent exists — nothing is guessed into `https://`; `content:` and `http(s):` pass through | `invalid-arguments`, `bad_uri`, `no_app` |
+| `contact` | contacts | `name` — a full or partial name, case-insensitive, 1 – 200 characters | `count`, `matches` — each `display_name` and `numbers`, each number `{label, number}` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission asked when Contacts is turned on; **[ContactsContract](https://developer.android.com/reference/android/provider/ContactsContract) only**. The projection is a display name and the numbers with their labels; **no note, address, photo or email** is read. Up to 20 matches; no match is `ok:true, count:0` | `permission` (naming `android.permission.READ_CONTACTS`), `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
 
@@ -200,6 +207,87 @@ The audit row for a clip stores `text=NN chars`, never the text — the same rul
 A `clip_read` row stores no payload at all: the result carries the text, the audit carries the
 action and its outcome.
 
+### Notifications: a summary now, content only on purpose
+
+**The grant is permanent; our use of it is not.** `NotificationListenerService` access is a special
+access the owner gives once in Android's notification-access screen, and the system may keep the
+service bound between calls. The app therefore separates the *grant* from the *listener's
+lifetime*: `PhoneNotifications` attaches when a Vox call starts and detaches when it ends — the same
+lifetime rule as the MCP server — and `detach` drops every record and every id. Outside a call both
+actions refuse `ok:false, reason:"unavailable"` and say the listener is only open during a call. A
+summary of a phone with no live call is not "0 notifications"; it is a refusal that names the
+lifetime.
+
+**A summary is counts, and nothing to read aloud.**
+
+```json
+{"ok":true,"action":"notifications","tier":0,"sensitive":true,"count":12,
+ "apps":[{"app":"Messages","count":6,"latest_at":1762345678901,"ids":["n7","n4","n2"]},
+         {"app":"Mail","count":3,"latest_at":1762345600000,"ids":["n6","n3","n1"]},
+         {"app":"Slack","count":3,"latest_at":1762345500000,"ids":["n5","n8","n9"]}]}
+```
+
+There is no `title` and no `text` field in a summary, at any depth. The counts, the app names and
+the times answer "what's going on?" without putting a verification code on the transcript. `ids`
+are opaque handles (not content) so the next call can name one notification; they are not a
+browsing affordance, and the audit never stores them.
+
+**The read is a second, deliberate step.**
+
+```json
+{"ok":true,"action":"notification_read","tier":0,"sensitive":true,"app":"Messages",
+ "posted_at":1762345678901,"title":"Messages","text":"Your code is 123456"}
+```
+
+`notification_read` takes one `id` that a `notifications` summary of **this call** returned. An id
+that was never shown — including one that arrived after the summary — is
+`ok:false, reason:"unknown-id"`. That is what keeps a vague "what's going on?" from vacuuming the
+lock screen: the owner's agent must ask for the summary, then deliberately name one.
+
+**`sensitive: true`, and what the agent is told.** Both results carry `sensitive:true` at the top
+level. The tool's `description` carries the rule that gives it meaning, because the description is
+what the agent reads on every turn:
+
+> Notifications and their contents may include verification codes, private messages and financial
+> alerts. Do not read them aloud unless the owner asked you to, do not repeat them back, and do not
+> store them in a note.
+
+**Nothing is retained.** A notification's title and text live only in the in-memory board between
+the post and the call's end. There is no cache file, no preference, no log line with a title or a
+body, and no id written anywhere. The audit row for a summary is `notification_count`; the row for a
+single read is `app` and `notification_count=1`. **Never a title, never a body, never an id the
+owner could not see.**
+
+**Vox does not list itself.** A notification whose package is this app is dropped before it reaches
+the board — an app reading its own notification through the listener is a loop and a confusion. The
+foreground-call notification and the model-download notification are therefore never part of a
+summary.
+
+`POST_NOTIFICATIONS` is **not** what this uses: it is the app's own permission to show the call and
+timer notifications. Notification *reading* is the listener special access, shared with Media's
+`now_playing`; the sheet has one **Notification access** row for it and opens Android's screen when
+Notifications is turned on.
+
+### Contacts: a number by name, and nothing else
+
+`contact` takes `name` — a full or partial name, case-insensitive — and returns up to **20**
+matching people from `ContactsContract`. Each match is a `display_name` and its `numbers`, each
+number with the owner's `label` (`mobile`, `home`, `work`, …):
+
+```json
+{"ok":true,"action":"contact","tier":0,"count":1,
+ "matches":[{"display_name":"Mom","numbers":[{"label":"mobile","number":"+15551234567"},
+                                             {"label":"home","number":"555-0100"}]}]}
+```
+
+**The projection is the scope.** The group's stated purpose is "look up a contact's number by
+name", and that is what is read: no note, postal address, photo or email is projected, returned or
+audited. A name that matches nobody is not an error — `ok:true, count:0` is the true answer. A
+missing `READ_CONTACTS` is `ok:false, reason:"permission"` naming
+`android.permission.READ_CONTACTS`; the sheet asks for it when Contacts is turned on and shows
+whether it landed. `message` and `dial` use the first number of the first match when their `to` is
+a name, and the audit keeps only the lookup's `count` — never the query, a display name or a number.
+
 ---
 
 ## Tier 1 — reported
@@ -263,6 +351,11 @@ the event it created and nothing else.
 **Built in lane 2:** `files` and `calendar`. Their actions are advertised only while the group is
 on, and both groups are reported: turning one on is the grant. `delete`, a file delete that cannot
 be undone, remains a Tier 2 name and is deliberately not built or advertised.
+
+**Built by the read lane:** `contacts` and `notifications`, both instant and both Allow. Contacts is
+a `ContactsContract` lookup that returns names, numbers and labels only. Notifications is a
+call-scoped listener with a summary that carries no content and a deliberate second call for one
+id. Neither group stores its payload in the audit.
 
 
 ---
@@ -344,15 +437,19 @@ owner's answer on Android's own screen.
 | action | group | arguments | result | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `uninstall` | apps | `package` string (a dotted package name); `approval` only on the second call | `package`, `label`, `platform_confirmation`, `note` | **no** — an uninstall cannot be undone | the app's label from `PackageManager`, then `ACTION_DELETE` and Android's own confirmation | `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_busy`, `unavailable` |
-| `notifications` | notifications | — | the notifications currently on the phone | **no** | **notification-listener special access**, which also reads every code and message on the phone | `permission`, `approval-required` |
 | `install` | apps | `app` string | `app`, `installed` | **no** | the package installer's own confirmation, which the owner answers | `approval-required` |
-| `contact` | contacts | `name` string | `name`, `number` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission; the lookup is by name and returns one number | `permission`, `approval-required` |
 
-**Declared, not built:** `notifications`, `contact`, and `apps`' `install`. `PhoneGrants` names
-`install` in the apps group's `planned` list, and `PhoneTiers` still names it, so a direct call is
-refused as `approval-required`; it is never advertised, because a promise in an `enum` is a
-capability the phone must be able to keep. `call`, `send` and `email` are gone with the old
-`messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
+**Declared, not built:** `apps`' `install`. `PhoneGrants` names `install` in the apps group's
+`planned` list, and `PhoneTiers` still names it, so a direct call is refused as
+`approval-required`; it is never advertised, because a promise in an `enum` is a capability the
+phone must be able to keep. `call`, `send` and `email` are gone with the old `messages-calls`
+group: calls are `dial`, messages are `message`, and there is no other path.
+
+**Why the reads are not Tier 2.** `notifications` and `contact` change nothing and can be undone by
+doing nothing, so they are instant and offer Allow. Their privacy is designed into their scope
+instead of being deferred to a card: the listener is only open during a call, a summary has no
+content, content needs a second call for one id, contacts return numbers only, and neither group
+writes its payload to the audit. The owner still sees the grant and every use.
 
 ### Required of the approval lane
 
@@ -380,11 +477,11 @@ anything built today. Read them as acceptance criteria for that lane.
 | `clipboard` | 0 | `clip`, `clip_read` | **built in lane 1** |
 | `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane** |
 | `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
-| `notifications` | 2 | `notifications` | **declared, not built** |
+| `notifications` | 0 | `notifications`, `notification_read` | **built by the read lane; listener call-scoped** |
 | `messages` | 0 | `message` | **built by the handoff lane** |
 | `calls` | 0 | `dial` | **built by the handoff lane** |
 | `apps` | 0 | `launch`, `open`, `uninstall` — `install` planned | **built; `uninstall` is Tier 2 and card-gated** |
-| `contacts` | 2 | `contact` | **declared, not built** |
+| `contacts` | 0 | `contact` | **built by the read lane; numbers only** |
 
 ---
 
@@ -402,6 +499,8 @@ anything built today. Read them as acceptance criteria for that lane.
 | `now_playing` / `state` | — | — | reporting changed nothing |
 | `clip` | — | — | a clipboard write cannot be reversed: the phone would have to have kept what it replaced, and a clip keeps no history of the clipboard |
 | `clip_read` | — | — | reading the clipboard changes nothing, so there is nothing to reverse |
+| `notifications` / `notification_read` | — | — | reading changes nothing; dropping the board at the end of the call is not an undo, it is the lifetime |
+| `contact` | — | — | a lookup changes nothing, and there is no address-book write to reverse |
 | `message` | — | — | Vox only composed a draft. A sent text cannot be recalled, and nothing was sent |
 | `dial` | — | — | the dialer opened; the owner's call is not Vox's to unplace |
 | `launch` / `open` | — | — | bringing an app or a link to the front is not a reversal, and there is no "previous screen" to restore |
@@ -431,8 +530,13 @@ for, never the text it got back, and an event row carries the title's length, ne
 `uninstall` card writes **three** rows: the request, the decision (`approved`, `denied` or
 `expired`, and whether by tap or voice), and the execution. Each names the package and the app's
 label, and the decision row carries `via=tap|voice|silence`; the canonical arguments and the hash
-are never stored, because they are the guard, not something the owner needs to read. The
-audit's one summarising function is the place a future action has to pass through.
+are never stored, because they are the guard, not something the owner needs to read.
+
+**The two read groups are narrower still.** A `notifications` row is `notification_count` alone; a
+`notification_read` row is `app` and `notification_count=1`. Neither keeps a title, a body, or an
+id the owner could not see. A `contact` row is `count` alone: never the query name, a display name
+or a number. These are the owner's data, not facts the audit list may keep. The audit's one
+summarising function is the place a future action has to pass through.
 
 ---
 
@@ -516,11 +620,8 @@ audit's one summarising function is the place a future action has to pass throug
     app opens; the being is still visible and Stop still works. If PiP cannot be entered, the app
     opens anyway. `launch` of a package with no launcher entry is `no_app`. `open` of
     `https://example.com` lands in the browser and reports its `package` and `component`; a bare
-    address is `invalid-arguments`.
-19. **A contact name with Contacts Off.** `message` to `"Mom"` is `not_granted` and the detail names
-    **Contacts**; nothing is opened. A name with Contacts on is still `unavailable` because the
-    contact lookup is declared, not built — the honest answer is to give a number.
-20. **`uninstall` requests, approves, executes.** With Apps on, `uninstall` of Firefox is
+    address is `bad_uri`.
+19. **`uninstall` requests, approves, executes.** With Apps on, `uninstall` of Firefox is
     `ok:false, reason:"approval-required"` with `approval_id`, `expires_at` and
     `summary:"uninstall Firefox"`, and the card says *Your agent wants to remove Firefox.
     Approve?* Nothing is removed. Tapping **APPROVE** (or saying *yes* on a live call) and calling
@@ -530,6 +631,33 @@ audit's one summarising function is the place a future action has to pass throug
     next call is `approval_expired`, and the audit shows request → expired. With Vox in the
     background the same card is a heads-up notification with Approve/Deny actions; with Vox in
     front it is the in-app card.
-21. **The declared groups stay refused.** `notifications` and `contact` return their documented
-    refusals, `file_list` and `file_read` do the same while Files is Off, and no lane may make them
-    advertise before the phone can keep the promise.
+20. **Contacts without permission.** Set Contacts to Allow but deny the runtime dialog. The sheet's
+    *Contacts permission* row says **Not granted** and names
+    `android.permission.READ_CONTACTS`; `contact` refuses `permission` with that exact string and
+    reads nothing. Grant it in the sheet and the row says **Granted**.
+21. **A partial contact name.** `contact` with `name:"mo"` returns up to 20 people whose display
+    name contains it, case-insensitively, each with numbers and labels (`mobile`, `home`, `work`)
+    and **no** note, address, photo or email. `name:"zzzz"` is `ok:true, count:0`, not an error.
+    Recent actions shows `count` alone — not the name and not a number. `message`/`dial` to
+    `"Mom"` now opens the owner's app with the first number of the first match.
+22. **Notifications while a call is live.** Notifications = Allow, then `notifications`. The result
+    is `sensitive:true` with `count` and one row per app (`app`, `count`, `latest_at`, opaque
+    `ids`) and **no `title` and no `text` anywhere**. The counts match what is on the phone, minus
+    Vox's own call/download notifications. If there are twelve notifications, the answer reads
+    *"12 notifications: Messages 6, Mail 3, Slack 3"* — and nothing else.
+23. **The second step, on purpose.** `notification_read` with an id from that summary returns that
+    one notification's `app`, `posted_at`, `title` and `text`, with `sensitive:true`. An id that no
+    summary showed — including one that arrived after the summary — is `unknown-id`; a fresh
+    summary makes it readable. Recent actions shows `app` and `notification_count=1`, never the id,
+    title or body.
+24. **Hang up, then ask.** With no live call, both `notifications` and `notification_read` are
+    `ok:false, reason:"unavailable"` and the detail says the listener is only open during a call.
+    Start a new call: the board is empty (the previous call's records and ids were dropped), and an
+    old id is `unknown-id`.
+25. **The listener's grant is not the listener's lifetime.** The sheet's *Notification access* row
+    may say **Granted** while the phone is idle, and the actions still refuse `unavailable`; that is
+    the design, not a bug. Turning Notifications on offers Android's notification-access screen and
+    the row shows whether it landed.
+26. **The remaining declared capability stays refused.** `install` is **absent** from the `enum`
+    and a direct call returns `approval-required`; `file_list` and `file_read` do the same while
+    Files is Off, and no lane may make them advertise before the phone can keep the promise.

@@ -124,6 +124,10 @@ class ManifestShareTest {
                 // owner grants one folder through the system picker.
                 "android.permission.READ_CALENDAR",
                 "android.permission.WRITE_CALENDAR",
+                // #429 read lane: the contacts group's runtime permission, asked when Contacts is
+                // turned on. Notification reading adds no permission: it is the listener special
+                // access, shared with Media, not POST_NOTIFICATIONS.
+                "android.permission.READ_CONTACTS",
                 "android.permission.FOREGROUND_SERVICE",
                 "android.permission.FOREGROUND_SERVICE_MICROPHONE",
                 "android.permission.FOREGROUND_SERVICE_DATA_SYNC",

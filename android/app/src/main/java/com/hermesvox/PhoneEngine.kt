@@ -239,6 +239,13 @@ class PhoneEngine(
             data class Unavailable(val detail: String) : FileHandoff()
         }
 
+        /**
+         * True when the system's notification-listener access is held. The grant is global and
+         * permanent for the install; `notifications` still refuses `permission` without it, and
+         * its own use of the access is call-scoped regardless ([PhoneNotifications]).
+         */
+        fun notificationListenerGranted(): Boolean = true
+
         /** The folders the owner has granted, in grant order. Empty means neither action can run. */
         fun folders(): List<GrantedFolder> = emptyList()
 
@@ -354,10 +361,32 @@ class PhoneEngine(
             data class Failed(val detail: String) : Handoff()
         }
 
+        // ---- contacts (#429 read lane) ----
+
+        /** One number as the owner labelled it: `mobile`, `home`, `work`, or their own word. */
+        data class ContactNumber(val label: String, val number: String)
+
+        /** One person and their numbers. Nothing else is read from the address book. */
+        data class ContactMatch(val displayName: String, val numbers: List<ContactNumber>)
+
         /**
-         * A recipient name resolved through the owner's address book. Null means the Contacts
-         * capability is not built on this phone; the engine refuses rather than sending `smsto:`
-         * or `tel:` a name the dialer cannot read.
+         * The exact runtime permission the phone lacks for contacts, or null when it holds it.
+         * Always `android.permission.READ_CONTACTS` today; the string is the platform's own.
+         */
+        fun contactsPermission(): String? = null
+
+        /**
+         * Up to [limit] people whose display name contains [name], case-insensitively, each with
+         * the numbers the owner labelled. **No notes, addresses, photos or email**: the group's
+         * purpose is looking up a number by name, and that is the whole projection. Null means the
+         * provider failed; an empty list is a real answer.
+         */
+        fun contactMatches(name: String, limit: Int): List<ContactMatch>? = emptyList()
+
+        /**
+         * A recipient name resolved through the owner's address book: the first number of the
+         * first match. Null means there was no match (or the read failed); the engine distinguishes
+         * that from a missing permission through [contactsPermission].
          */
         fun contactNumber(name: String): String? = null
 
@@ -500,6 +529,9 @@ class PhoneEngine(
             is PhoneTool.Call.FileOffer -> offerFile(call)
             PhoneTool.Call.Agenda -> agenda()
             is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch)
+            PhoneTool.Call.Notifications -> notifications()
+            is PhoneTool.Call.NotificationRead -> notificationRead(call.id)
+            is PhoneTool.Call.Contact -> contacts(call)
             is PhoneTool.Call.Message -> message(call)
             is PhoneTool.Call.Dial -> dial(call)
             is PhoneTool.Call.Launch -> launch(call)
@@ -1187,6 +1219,144 @@ class PhoneEngine(
         )
     }
 
+    // ---- notifications (#429 read lane) ----
+
+    /**
+     * A summary of the notifications on the phone **while a call is live**: a total and one row
+     * per app with `count`, `latest_at` and opaque `ids`. No title and no text — the question
+     * "what's going on?" gets counts, and content is a separate, deliberate step.
+     *
+     * `sensitive:true` is on the result because what this describes is private even when the
+     * summary itself is not. The tool description carries the rule about reading it aloud.
+     */
+    private fun notifications(): PhoneResult {
+        if (!PhoneNotifications.attached()) return listenerClosed("notifications")
+        listenerPermission("notifications")?.let { return it }
+        val summary = PhoneNotifications.summary() ?: return listenerClosed("notifications")
+        val apps = summary.apps.map { row ->
+            linkedMapOf<String, Any?>(
+                "app" to row.app,
+                "count" to row.count,
+                "latest_at" to row.latestAt,
+                "ids" to row.ids,
+            )
+        }
+        log("event=phone-mcp action=notifications ok=true count=${summary.count}")
+        return PhoneResult.info(
+            "notifications",
+            linkedMapOf<String, Any?>(
+                "sensitive" to true,
+                "count" to summary.count,
+                "apps" to apps,
+            ),
+        )
+    }
+
+    /**
+     * One notification's content, by an id a summary of this call has shown. A guessed id, or a
+     * notification that has left the phone since the summary, is `unknown-id`; no live call is
+     * `unavailable`. The content is returned, not logged and not stored.
+     */
+    private fun notificationRead(id: String): PhoneResult {
+        if (!PhoneNotifications.attached()) return listenerClosed("notification_read")
+        listenerPermission("notification_read")?.let { return it }
+        val record = PhoneNotifications.read(id) ?: run {
+            log("event=phone-mcp action=notification_read ok=false reason=unknown-id")
+            return PhoneResult.refused(
+                "notification_read",
+                PhoneReason.UNKNOWN_ID,
+                "no notification with that id is in a summary from this call; the id must come " +
+                    "from a `notifications` summary while the call is open",
+            )
+        }
+        log("event=phone-mcp action=notification_read ok=true")
+        return PhoneResult.info(
+            "notification_read",
+            linkedMapOf<String, Any?>(
+                "sensitive" to true,
+                "app" to record.app,
+                "posted_at" to record.postedAt,
+                "title" to record.title,
+                "text" to record.text,
+            ),
+        )
+    }
+
+    /**
+     * Both notification reads say the same thing when no call is live: the system grant may be
+     * held, but this app's use of it is not. It names the listener's lifetime rather than a
+     * generic failure.
+     */
+    /** The system grant is missing (the group is on, but Android has not been asked or said no). */
+    private fun listenerPermission(action: String): PhoneResult? {
+        if (platform.notificationListenerGranted()) return null
+        log("event=phone-mcp action=$action ok=false reason=permission")
+        return PhoneResult.refused(
+            action,
+            PhoneReason.PERMISSION,
+            "this app does not hold notification-listener access; only the owner can grant it in " +
+                "Phone tools, on Android's notification-access screen",
+        )
+    }
+
+    private fun listenerClosed(action: String): PhoneResult {
+        log("event=phone-mcp action=$action ok=false reason=unavailable live=false")
+        return PhoneResult.refused(
+            action,
+            PhoneReason.UNAVAILABLE,
+            "the notification listener is only open during a call; no call is live, so nothing " +
+                "was read",
+        )
+    }
+
+    // ---- contacts (#429 read lane) ----
+
+    /**
+     * Look a name up in the owner's address book and return **numbers only**. The result has a
+     * display name and each number with its label; there is no note, address, photo or email in
+     * the projection, because the group's stated purpose is "look up a contact's number by name"
+     * and a wider read would be a different capability with different consent.
+     *
+     * A missing `READ_CONTACTS` is `permission` naming Android's exact string. No match is not an
+     * error: `ok:true, count:0` is the true answer to "there is nobody by that name".
+     */
+    private fun contacts(call: PhoneTool.Call.Contact): PhoneResult {
+        platform.contactsPermission()?.let { missing ->
+            log("event=phone-mcp action=contact ok=false reason=permission")
+            return PhoneResult.refused(
+                "contact",
+                PhoneReason.PERMISSION,
+                "this app does not hold $missing, so the address book cannot be read; only the " +
+                    "owner can grant it in Phone tools",
+            )
+        }
+        val found = platform.contactMatches(call.name, PhoneTool.MAX_CONTACT_MATCHES)
+            ?: run {
+                log("event=phone-mcp action=contact ok=false reason=unavailable")
+                return PhoneResult.refused(
+                    "contact",
+                    PhoneReason.UNAVAILABLE,
+                    "the phone's address book did not answer; nothing was read",
+                )
+            }
+        val matches = found.take(PhoneTool.MAX_CONTACT_MATCHES).map { person ->
+            linkedMapOf<String, Any?>(
+                "display_name" to person.displayName,
+                "numbers" to person.numbers.map { n ->
+                    linkedMapOf<String, Any?>("label" to n.label, "number" to n.number)
+                },
+            )
+        }
+        log("event=phone-mcp action=contact ok=true count=${matches.size}")
+        return PhoneResult.info(
+            "contact",
+            linkedMapOf<String, Any?>(
+                "count" to matches.size,
+                "matches" to matches,
+            ),
+        )
+    }
+
     // ---- handoffs: messages, calls, apps ----
 
     /**
@@ -1196,7 +1366,10 @@ class PhoneEngine(
      * so no `SEND_SMS`, no `SmsManager` and no default-SMS role is involved.
      */
     private fun message(call: PhoneTool.Call.Message): PhoneResult {
-        val to = resolveRecipient(call.to, call.contact) ?: return contactUnbuilt("message")
+        val to = when (val r = resolveRecipient("message", call.to, call.contact)) {
+            is Recipient.Number -> r.number
+            is Recipient.Refused -> return r.result
+        }
         return when (val handed = platform.sendMessage(to, call.text)) {
             PhonePlatform.Handoff.NoApp -> noApp(
                 "message",
@@ -1229,7 +1402,10 @@ class PhoneEngine(
      * does not end the conversation: the thread lives on the gateway.
      */
     private fun dial(call: PhoneTool.Call.Dial): PhoneResult {
-        val to = resolveRecipient(call.to, call.contact) ?: return contactUnbuilt("dial")
+        val to = when (val r = resolveRecipient("dial", call.to, call.contact)) {
+            is Recipient.Number -> r.number
+            is Recipient.Refused -> return r.result
+        }
         return when (DialHandoff.run(platform, to)) {
             DialHandoff.Outcome.NO_DIALER -> noApp(
                 "dial",
@@ -1476,23 +1652,43 @@ class PhoneEngine(
         )
     }
 
-    /** A number, or a name only when Contacts is on and the lookup exists. Null is a refusal. */
-    private fun resolveRecipient(raw: String, contact: Boolean): String? =
-        if (!contact) raw else platform.contactNumber(raw)
+    /** A recipient: a number ready to hand off, or the described refusal to return instead. */
+    private sealed class Recipient {
+        data class Number(val number: String) : Recipient()
+        data class Refused(val result: PhoneResult) : Recipient()
+    }
 
     /**
-     * A contact name reached execution but this phone cannot read the address book. The group
-     * is granted, so this is not `not_granted`; it is the declared Contacts capability that is
-     * not built, and the honest answer is to ask for a number instead of sending `smsto: Mom`.
+     * A number as given, or a name resolved through [PhonePlatform.contactMatches]. The Contacts
+     * group's grant is checked before this runs ([PhoneTool.parse]); what remains here is the
+     * platform's answer: a missing `READ_CONTACTS`, no such person, or a provider failure.
      */
-    private fun contactUnbuilt(action: String): PhoneResult {
-        log("event=phone-mcp action=$action ok=false reason=unavailable contact=true")
-        return PhoneResult.refused(
-            action,
-            PhoneReason.UNAVAILABLE,
-            "the Contacts group is on, but looking a name up is not built on this phone; give " +
-                "the number instead. Nothing was opened.",
-        )
+    private fun resolveRecipient(action: String, raw: String, contact: Boolean): Recipient {
+        if (!contact) return Recipient.Number(raw)
+        platform.contactsPermission()?.let { missing ->
+            log("event=phone-mcp action=$action ok=false reason=permission")
+            return Recipient.Refused(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.PERMISSION,
+                    "looking up \"$raw\" reads your address book, and this app does not hold " +
+                        "$missing; only the owner can grant it in Phone tools",
+                )
+            )
+        }
+        val number = platform.contactNumber(raw)
+        if (number.isNullOrBlank()) {
+            log("event=phone-mcp action=$action ok=false reason=no_match")
+            return Recipient.Refused(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.UNAVAILABLE,
+                    "no contact named \"$raw\" has a number in this phone's address book; give " +
+                        "the number instead. Nothing was opened.",
+                )
+            )
+        }
+        return Recipient.Number(number)
     }
 
     /** A handoff with nothing to receive it: no SENDTO app, no dialer, no launchable activity. */

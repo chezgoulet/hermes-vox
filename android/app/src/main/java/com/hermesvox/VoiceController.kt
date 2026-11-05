@@ -514,6 +514,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     // the SAME LocalActions instance the presence context reports from, so the tool and the context
     // block can never disagree about what the phone is doing.
     @Volatile private var phoneMcpUp = false
+
+    /** The notification board follows the same call lifetime as the MCP listener. */
+    @Volatile private var notificationBoardUp = false
     // B1 (#421): the last line the PHONE said, and which lane said it. The mind never hears the
     // soul, so this is what its instructions report as `soul=` / `last_line=`.
     @Volatile private var lastHeardLine = ""
@@ -757,6 +760,13 @@ class VoiceController(private val context: Context, private val session: HermesS
             phoneMcpUp = true
             try { PhoneMcp.start(context) { args -> localActions.phone(args) } }
             catch (t: Throwable) { VoxLog.w("event=phone-mcp unavailable reason=${t.javaClass.simpleName}") }
+        }
+        // The notification listener is attached only while a call is live. The system grant is
+        // permanent, so the board — not the grant — is what opens and closes (PhoneNotifications).
+        if (!notificationBoardUp) {
+            notificationBoardUp = true
+            try { PhoneNotifications.attach() }
+            catch (t: Throwable) { VoxLog.w("event=phone-notifications attach-failed reason=${t.javaClass.simpleName}") }
         }
         // Re-initialize any pipeline leg that stopped warming (e.g. after stop() reset the
         // ready flags) so a fresh start doesn't listen against a dead TTS/STT/VAD.
@@ -1463,6 +1473,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         // is untouched — what is running stays running; only the socket goes.
         phoneMcpUp = false
         try { PhoneMcp.stop() } catch (t: Throwable) { VoxLog.w("event=phone-mcp stop-failed reason=${t.javaClass.simpleName}") }
+        // A hangup closes the notification board: every record and every id is dropped here, not
+        // on a timer and not at the next call. With no live call both actions refuse unavailable.
+        notificationBoardUp = false
+        try { PhoneNotifications.detach() }
+        catch (t: Throwable) { VoxLog.w("event=phone-notifications detach-failed reason=${t.javaClass.simpleName}") }
         recognizer?.destroy(); recognizer = null
         // #282: a hanging-up call withdraws any open approval — never answer a request
         // the user can no longer see. The gate's latch still refuses a late tap.

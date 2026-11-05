@@ -146,10 +146,12 @@ object PhoneGrants {
         Group(
             id = "notifications",
             label = "Notifications",
-            tier = PhoneTiers.APPROVAL,
-            lets = "Read the notifications currently on your phone.",
+            tier = PhoneTiers.INSTANT,
+            lets = "Read the notifications currently on this phone while a call is open — " +
+                "codes, messages and anything else on your lock screen go to your agent.",
             warning = "Your agent could read every notification on this phone. Codes, messages " +
                 "and anything else on your lock screen go to your agent.",
+            actions = listOf("notifications", "notification_read"),
         ),
         Group(
             id = "messages",
@@ -176,8 +178,9 @@ object PhoneGrants {
         Group(
             id = "contacts",
             label = "Contacts",
-            tier = PhoneTiers.APPROVAL,
+            tier = PhoneTiers.INSTANT,
             lets = "Look up a contact's number by name.",
+            actions = listOf("contact"),
         ),
     )
 

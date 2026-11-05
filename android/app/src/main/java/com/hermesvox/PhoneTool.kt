@@ -31,9 +31,9 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. The two read groups are instant because they change nothing; their privacy comes from scope (a call-scoped listener, one notification at a time, numbers and labels only) |
  * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `contact`, `notifications`, `transfer` | `uninstall` is the one that has a card on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
+ * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` is the one that has a card on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
@@ -92,6 +92,18 @@ object PhoneTool {
     const val MAX_APPROVAL_ID_CHARS = 64
 
     /**
+     * A contact lookup answers at most this many people. More would be an address-book dump, not
+     * "look up a contact's number by name"; a name that is too broad is narrowed by asking again.
+     */
+    const val MAX_CONTACT_MATCHES = 20
+
+    /** A name, full or partial, is not a paragraph. */
+    const val MAX_CONTACT_NAME_CHARS = 200
+
+    /** An opaque id from a notifications summary is short; it is not a payload either. */
+    const val MAX_NOTIFICATION_ID_CHARS = 80
+
+    /**
      * `duration_min` is whole minutes, at least one. There is no upper bound of ours: the
      * calendar provider's own limits apply, and a duration it refuses comes back as `unavailable`.
      */
@@ -104,6 +116,16 @@ object PhoneTool {
     fun offeredActions(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): List<String> =
         PhoneGrants.advertised(grants)
 
+    /**
+     * The rule that makes `sensitive:true` on a notification result mean something. It lives in
+     * the **tool description**, not only in the docs, because the description is what the agent
+     * reads on every turn and the docs are not.
+     */
+    const val NOTIFICATION_PRIVACY =
+        "Notifications and their contents may include verification codes, private messages and " +
+            "financial alerts. Do not read them aloud unless the owner asked you to, do not repeat " +
+            "them back, and do not store them in a note."
+
     /** The part of the tool description that is true whatever is granted. */
     const val DESCRIPTION =
         "Act on the phone this conversation is happening on. Only the actions in `action` are " +
@@ -112,6 +134,7 @@ object PhoneTool {
             "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
             "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
             "needs the owner's approval on the phone); a refusal means nothing was performed. " +
+            NOTIFICATION_PRIVACY + " " +
             "`uninstall` is two steps: call it without `approval`, then call it again with the " +
             "returned approval id and identical arguments once the owner says yes."
 
@@ -153,6 +176,9 @@ object PhoneTool {
         "file_offer" to "offer a named file to your agent as an artifact",
         "agenda" to "today's events (start, end, title, calendar)",
         "event_create" to "create one event, undoable",
+        "notifications" to "a count of notifications per app, with no titles or text",
+        "notification_read" to "one notification's app, time, title and text by id from a summary",
+        "contact" to "a contact's numbers by full or partial name",
         "message" to "compose a text and open the messaging app; you send it",
         "dial" to "open the dialer with a number ready; you make the call",
         "launch" to "open a launchable app by package or name",
@@ -266,14 +292,19 @@ object PhoneTool {
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
-                    "description" to "undo only: the id an earlier result returned.",
+                    "description" to
+                        "undo: the id an earlier result returned. notification_read: one of the " +
+                        "ids a notifications summary returned — never guess one.",
                 ),
                 "name" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "file_read or file_offer only: the file's name inside the folder the " +
-                        "owner granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a " +
-                        "path: \"..\", an absolute path and a separator are refused.",
+                        "contact: a full or partial contact name, case-insensitive, at most " +
+                        "$MAX_CONTACT_NAME_CHARS characters; the lookup returns up to " +
+                        "$MAX_CONTACT_MATCHES matching people and their numbers with labels. " +
+                        "file_read or file_offer: the file's name inside the folder the owner " +
+                        "granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a path: " +
+                        "\"..\", an absolute path and a separator are refused.",
                 ),
                 "folder" to linkedMapOf(
                     "type" to "string",
@@ -469,6 +500,21 @@ object PhoneTool {
             val calendar: String?,
         ) : Call() {
             override val action = "event_create"
+        }
+
+        /** A notifications summary: counts per app, never a title or a body. */
+        object Notifications : Call() {
+            override val action = "notifications"
+        }
+
+        /** One notification's content, by an id a summary has already shown. */
+        data class NotificationRead(val id: String) : Call() {
+            override val action = "notification_read"
+        }
+
+        /** A full or partial contact name, answered with numbers and their labels only. */
+        data class Contact(val name: String) : Call() {
+            override val action = "contact"
         }
 
         /**
@@ -770,6 +816,25 @@ object PhoneTool {
             val calendar = (args["calendar"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             Parsed.Run(Call.EventCreate(title, start.iso, minutes.toInt(), calendar))
         }
+        "notifications" -> Parsed.Run(Call.Notifications)
+        "notification_read" -> {
+            val id = (args["id"] as? String)?.trim().orEmpty()
+            when {
+                id.isEmpty() -> bad(action, "id is required: one of the ids a notifications summary returned")
+                id.length > MAX_NOTIFICATION_ID_CHARS ->
+                    bad(action, "id is longer than $MAX_NOTIFICATION_ID_CHARS characters")
+                else -> Parsed.Run(Call.NotificationRead(id))
+            }
+        }
+        "contact" -> {
+            val name = (args["name"] as? String)?.trim().orEmpty()
+            when {
+                name.isEmpty() -> bad(action, "name is required: a full or partial contact name")
+                name.length > MAX_CONTACT_NAME_CHARS ->
+                    bad(action, "name is longer than $MAX_CONTACT_NAME_CHARS characters")
+                else -> Parsed.Run(Call.Contact(name))
+            }
+        }
         "message" -> {
             val text = args["text"] as? String
             when {
@@ -1032,6 +1097,10 @@ object PhoneTiers {
         "state",
         // Clipboard (#429 lane): a write, and a read only when the platform allows it.
         "clip", "clip_read",
+        // Notifications and contacts (#429 read lane): both are reads and both are instant. The
+        // notification listener is call-scoped, and a summary carries counts only; a contact
+        // lookup returns names and numbers, never notes, addresses, photos or email.
+        "notifications", "notification_read", "contact",
         // Messages/calls (#429 handoff lane): a draft handed to the owner's messaging app, and
         // the dialer opened with a number ready. No SEND_SMS and no CALL_PHONE exist on this path.
         "message", "dial",
@@ -1053,7 +1122,7 @@ object PhoneTiers {
      * They are named so a direct call gets "this needs the owner" rather than "unknown action".
      */
     private val TIER_2 = setOf(
-        "purchase", "pay", "install", "uninstall", "transfer", "notifications", "contact",
+        "purchase", "pay", "install", "uninstall", "transfer",
         // `call`, `send` and `email` were names under the old messages-calls group. They are gone
         // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
         // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the
@@ -1147,6 +1216,13 @@ object PhoneReason {
      * dialer, or no launchable activity matches the package or name. Nothing was started.
      */
     const val NO_APP = "no_app"
+
+    /**
+     * The id was not in a notifications summary of this call (or the notification is gone). The
+     * content is only reachable by naming an id a summary already showed, so a guessed id is
+     * refused rather than becoming a way to vacuum notifications.
+     */
+    const val UNKNOWN_ID = "unknown-id"
 }
 
 /**
