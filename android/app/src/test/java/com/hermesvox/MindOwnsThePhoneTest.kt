@@ -33,6 +33,20 @@ class MindOwnsThePhoneTest {
     }
 
     @Test
+    fun no_alpha_set_can_keep_a_voice_turn_off_the_wire() {
+        val turn = vc.substringAfter("private fun runStreamedTurn(")
+            .substringBefore("private fun emitEvents(")
+        // Presence, continuous listening and Phone tools change what the phone can do around the
+        // turn, never whether the mind is asked. A gate here would recreate the second actor.
+        for (set in listOf("PRESENCE", "CONTINUOUS_LISTENING", "PHONE_TOOLS")) {
+            assertFalse(
+                "AlphaGate.FeatureSet.$set must not decide whether the mind is asked",
+                turn.contains("AlphaGate.FeatureSet.$set"),
+            )
+        }
+    }
+
+    @Test
     fun no_source_file_parses_an_utterance_into_a_phone_action() {
         val files = src.walkTopDown().filter { it.isFile && it.name.endsWith(".kt") }
         for (f in files) {
