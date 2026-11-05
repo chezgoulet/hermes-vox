@@ -18,7 +18,6 @@ import com.hermesvox.core.ApprovalNudge
 import com.hermesvox.core.ApprovalVoice
 import com.hermesvox.core.HermesSession
 import com.hermesvox.core.JsonException
-import com.hermesvox.core.StreamRoute
 import com.hermesvox.core.TurnAbandon
 import com.hermesvox.core.TurnApprovalHold
 import com.hermesvox.core.TurnBudget
@@ -2237,8 +2236,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // a fallback for a failure thrown mid-flight.
                 val terminal = StreamTurnTerminal()
                 // The route is fixed for the life of this turn: a settings flip must not
-                // change what abandoning an already-running turn means.
-                val route = StreamRoute.active
+                // change what abandoning an already-running turn means. Ask the session,
+                // which knows this profile's `/v1/runs` fallback, not the process default.
+                val route = session.route()
                 // Promoted out of the try so the finally can decide whether a pending
                 // approval is still answerable after the loop ends.
                 var done = false

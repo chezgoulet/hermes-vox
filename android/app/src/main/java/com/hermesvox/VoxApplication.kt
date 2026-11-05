@@ -15,6 +15,9 @@ class VoxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("hv", MODE_PRIVATE)
+        // #404: the `/v1/runs` fallback is per profile and survives a restart. Install the
+        // store before any session can be built.
+        RouteChoice.install(prefs)
         // M4 (0.9.1 review): the cleartext rule asks the tailnet detector live, and fails
         // closed until this process has installed it.
         com.hermesvox.core.CleartextPolicy.tunnelUp = { Tailnet.address() != null }

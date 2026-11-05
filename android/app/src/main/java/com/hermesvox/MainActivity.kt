@@ -1806,6 +1806,10 @@ open class MainActivity : AppCompatActivity() {
             }, m)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
+        // #404: the `/v1/runs` fallback belongs to the active profile. This runs on every
+        // connect, and a switch calls connect again, so the choice is re-evaluated rather
+        // than inherited from the profile just left.
+        session?.let { RouteChoice.bind(it, prefs) }
         // #421 step 5 / #430: the setup sheet sends its turn through THIS session when one is
         // live, and the connection it was built from is handed over with it — a session keeps the
         // address and key it was built with, so a later turn must be able to tell whether it still

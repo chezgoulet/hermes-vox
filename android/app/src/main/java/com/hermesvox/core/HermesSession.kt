@@ -55,6 +55,13 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      */
     fun setSessionKey(scope: String) = responses.setSessionKey(scope)
 
+    /**
+     * The profile this session is talking to. The `/v1/runs` fallback is remembered per
+     * profile (a 404 is a fact about one host), so a switch re-evaluates it rather than
+     * inheriting another profile's answer.
+     */
+    fun setProfile(name: String) = StreamRoute.useProfile(name)
+
     /** Verifies the entity connection (GET /v1/models, bearer auth) and returns the body
      *  the host answered with — the host names itself there. Throws on a wrong
      *  URL/key/host. Onboarding uses this — never fake success. */

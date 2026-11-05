@@ -1,9 +1,9 @@
 # The `/v1/runs` turn route
 
 Status: **the default (#404), device pass outstanding.** `StreamRoute.active` is
-`TurnRoute.RUNS` for every install that declares a conversation scope; an install with
-a blank scope stays on `/v1/responses` (see *The scope requirement*). The cut waits on
-the device pass below (D29).
+`TurnRoute.RUNS`. A gateway that answers `POST /v1/runs` with **404** has no such
+route; that profile's turns fall back to `/v1/responses` (below). The cut waits on the
+device pass below (D29).
 
 ## Why
 
@@ -24,12 +24,34 @@ internal object StreamRoute {
     @Volatile
     var active: TurnRoute = TurnRoute.RUNS        // #404
     fun routeFor(hasSessionKey: Boolean): TurnRoute =
-        if (active == TurnRoute.RUNS && !hasSessionKey) TurnRoute.RESPONSES else active
+        if (requiresResponses()) TurnRoute.RESPONSES else active
 }
 ```
 
 `Streams.start` and `HermesSession.turnStored` read `routeFor` once per turn; tests
-set and restore `active`. Nothing above `HermesSession` knows the route exists.
+set and restore `active`. Nothing above `HermesSession` turns a route into a different
+wire vocabulary; the controller asks the session for the route only to decide what
+abandoning a turn means.
+
+## A gateway without `/v1/runs`
+
+An older gateway answers `POST /v1/runs` with **404**. That is the only answer treated as
+"this host has no such route": the admission catches exactly that status, remembers the
+answer for the active profile, logs
+
+```
+event=route-fallback reason=no-runs-route profile=<name>
+```
+
+and retries the same turn **once** on `/v1/responses`. The profile is remembered in
+`route_no_runs_profiles` (`RouteChoice`), so the probe is paid once and a later turn — or
+a later launch with the same profile — starts on responses. A profile switch loads that
+profile's own answer, so one host's fallback never leaks into another.
+
+Every other answer is a real error and surfaces exactly as before: **401, 409, 429, 500
+and a transport failure never fall back**, because a bad key hidden behind another route
+is worse than a visible failure. A profile whose admission succeeded keeps riding
+`/v1/runs`.
 
 ## The scope requirement (lifted in 0.9.1, H2)
 
@@ -41,9 +63,10 @@ be a new conversation. Until the 0.9.1 review this kept an unscoped install (the
 card.
 
 The run body now carries the session's own client `session_id` (see the gaps below), so
-the conversation no longer depends on the scope. **Every install rides runs.** The scope
-only decides long-term memory: with no key, memory follows the transcript, exactly as an
-unscoped `/v1/responses` conversation did.
+the conversation no longer depends on the scope. **Every install rides runs** when its
+gateway has the route; a gateway that answers 404 on admission uses the fallback above.
+The scope only decides long-term memory: with no key, memory follows the transcript,
+exactly as an unscoped `/v1/responses` conversation did.
 
 ## The barge-in (#404)
 
