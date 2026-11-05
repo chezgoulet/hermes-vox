@@ -59,6 +59,8 @@ class PhoneEngine(
     private val approvalSurface: PhoneApproval.Surface = PhoneApproval.Surface.NONE,
     /** The approval lifecycle rows: request, decision (approved/denied/expired, and by tap/voice). */
     private val auditRow: (PhoneAudit.Entry) -> Unit = {},
+    /** The keyguard read: a yes answered on a locked phone is refused, never recorded. */
+    private val unlocked: PhoneApproval.Unlocked = PhoneApproval.Unlocked.ALWAYS,
 ) {
 
     /** The one approval desk. Its state outlives a call; the platform only shows the card. */
@@ -70,6 +72,7 @@ class PhoneEngine(
             } catch (_: Throwable) {
             }
         },
+        unlocked = unlocked,
     )
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
@@ -245,6 +248,27 @@ class PhoneEngine(
             data class Failed(val detail: String) : FileText()
         }
 
+        /**
+         * What the phone can say about one file before it is offered: the name, the type and the
+         * size the card must show. Looking is a read; offering is the export.
+         */
+        sealed class FileInfo {
+            data class Ready(
+                val name: String,
+                val mime: String?,
+                /** Null when the provider will not report a size. */
+                val bytes: Long?,
+            ) : FileInfo()
+
+            data object Missing : FileInfo()
+            data object Outside : FileInfo()
+
+            /** Above the bridge's [FileOffer.MAX_BYTES]; nothing can be offered. */
+            data class TooBig(val bytes: Long?) : FileInfo()
+
+            data class Unavailable(val detail: String) : FileInfo()
+        }
+
         /** The outcome of handing one file to the existing file bridge. */
         sealed class FileHandoff {
             data class Ready(
@@ -304,6 +328,9 @@ class PhoneEngine(
             offset: Int,
             limit: Int,
         ): PhoneFiles.ListResult = PhoneFiles.ListResult.MissingPath
+
+        /** Look up one named file's name, type and size without reading or exporting it. */
+        fun fileInfo(folder: GrantedFolder, name: String): FileInfo = FileInfo.Missing
 
         /** Stage one named file inside [folder] and serve it through the file bridge. */
         fun fileOffer(folder: GrantedFolder, name: String): FileHandoff = FileHandoff.Missing
@@ -552,7 +579,7 @@ class PhoneEngine(
         // claim the owner has to be able to check. A failure to record must not fail the call.
         // The initial approval request is the one exception: the desk already wrote its request row,
         // and the "Recent actions" list must show request → decision → execution, not a duplicate.
-        val requestRowAlreadyWritten = result.action == PhoneApproval.ACTION &&
+        val requestRowAlreadyWritten = PhoneApproval.handshaked(result.action) &&
             !result.ok &&
             result.reason == PhoneReason.APPROVAL &&
             result.facts["approval_id"] != null
@@ -593,7 +620,7 @@ class PhoneEngine(
             PhoneTool.Call.ClipRead -> readClip()
             is PhoneTool.Call.FileList -> listFiles(call)
             is PhoneTool.Call.FileRead -> readFile(call)
-            is PhoneTool.Call.FileOffer -> offerFile(call)
+            is PhoneTool.Call.FileOffer -> offerFile(call, nowEpoch)
             PhoneTool.Call.Agenda -> agenda()
             is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Notifications -> notifications()
@@ -1181,57 +1208,186 @@ class PhoneEngine(
     }
 
     /**
-     * Hand one file to the existing file bridge. The result is the capability the bridge minted —
-     * URL, size, hash, expiry — so the agent fetches an artifact instead of receiving bytes in a
-     * tool result. Nothing about the file's contents is returned here, and there is no undo.
+     * Hand one file to the existing file bridge — **after the owner's card says yes**. Offering
+     * exports the owner's content to the agent over the tailnet, where it stays; the folder grant
+     * makes that possible, not intended. So the first call reads only the file's name, type and
+     * size, raises a card showing all three, and returns the id. The second call, with the same
+     * name and folder plus that id, stages and serves it. The result is the capability the bridge
+     * minted — URL, size, hash, expiry — never the bytes, and there is no undo.
      */
-    private fun offerFile(call: PhoneTool.Call.FileOffer): PhoneResult {
+    private fun offerFile(call: PhoneTool.Call.FileOffer, nowEpoch: Long): PhoneResult {
         val folder = when (val pick = folderFor("file_offer", call.folder)) {
             is FolderPick.Found -> pick.folder
             is FolderPick.Refused -> return pick.result
         }
-        return when (val handoff = platform.fileOffer(folder, call.name)) {
-            PhonePlatform.FileHandoff.Missing -> {
-                log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                PhoneResult.refused(
-                    "file_offer", PhoneReason.UNAVAILABLE,
-                    "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
+        val args = fileApprovalArgs(call.name, folder.label)
+        val canonical = PhoneApproval.canonical(PhoneApproval.FILE_ACTION, args)
+        val digest = PhoneApproval.digest(canonical)
+
+        if (call.approvalId == null) {
+            // Look, do not read: the card needs the name, type and size, and a file above the
+            // bridge's cap is refused before a card is raised rather than after a yes.
+            val info = when (val found = platform.fileInfo(folder, call.name)) {
+                PhonePlatform.FileInfo.Missing -> {
+                    log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                    return PhoneResult.refused(
+                        "file_offer", PhoneReason.UNAVAILABLE,
+                        "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
+                    )
+                }
+                PhonePlatform.FileInfo.Outside -> {
+                    log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+                    return PhoneResult.refused(
+                        "file_offer", PhoneReason.BAD_PATH,
+                        "that name resolves outside the folder you granted; nothing was offered",
+                    )
+                }
+                is PhonePlatform.FileInfo.TooBig -> {
+                    log("event=phone-mcp action=file_offer ok=false reason=too_big")
+                    return PhoneResult.refused(
+                        "file_offer", PhoneReason.TOO_BIG,
+                        "that file is above the 100 MB the file bridge will serve; nothing was offered",
+                    )
+                }
+                is PhonePlatform.FileInfo.Unavailable -> {
+                    log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                    return PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, found.detail)
+                }
+                is PhonePlatform.FileInfo.Ready -> found
+            }
+            val detail = PhoneApproval.fileDetail(info.name, info.mime, info.bytes)
+            return when (
+                val request = approvals.request(
+                    PhoneApproval.FILE_ACTION,
+                    call.name,
+                    info.name,
+                    detail,
+                    canonical,
+                    digest,
+                    nowEpoch,
                 )
+            ) {
+                is PhoneApproval.Request.Raised -> {
+                    val card = request.card
+                    log("event=phone-mcp action=file_offer ok=false reason=approval-required id=${card.id}")
+                    PhoneResult.refused(
+                        "file_offer",
+                        PhoneReason.APPROVAL,
+                        "the owner must approve offering ${card.label} (${card.detail}); the card " +
+                            "is up for ${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call file_offer " +
+                            "again with the same name and folder and approval=\"${card.id}\" after " +
+                            "they answer.",
+                        tier = PhoneTiers.APPROVAL,
+                        facts = linkedMapOf<String, Any?>(
+                            "approval_id" to card.id,
+                            "expires_at" to card.expiresAtMs,
+                            "summary" to card.summary,
+                        ),
+                    )
+                }
+                PhoneApproval.Request.Busy -> {
+                    log("event=phone-mcp action=file_offer ok=false reason=approval_busy")
+                    PhoneResult.refused(
+                        "file_offer",
+                        PhoneApproval.Reason.BUSY,
+                        "three approval cards are already waiting on the phone; nothing was raised " +
+                            "and nothing was offered",
+                        tier = PhoneTiers.APPROVAL,
+                    )
+                }
+                is PhoneApproval.Request.Unavailable -> {
+                    log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                    PhoneResult.refused(
+                        "file_offer",
+                        PhoneReason.UNAVAILABLE,
+                        request.detail,
+                        tier = PhoneTiers.APPROVAL,
+                    )
+                }
             }
-            PhonePlatform.FileHandoff.Outside -> {
-                log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+        }
+
+        return when (
+            val grant = approvals.authorize(call.approvalId, PhoneApproval.FILE_ACTION, args, nowEpoch)
+        ) {
+            is PhoneApproval.Grant.Pending -> {
+                val card = grant.card
                 PhoneResult.refused(
-                    "file_offer", PhoneReason.BAD_PATH,
-                    "that name resolves outside the folder you granted; nothing was offered",
-                )
-            }
-            is PhonePlatform.FileHandoff.TooBig -> {
-                log("event=phone-mcp action=file_offer ok=false reason=too_big")
-                PhoneResult.refused(
-                    "file_offer", PhoneReason.TOO_BIG,
-                    "that file is above the 100 MB the file bridge will serve; nothing was offered",
-                )
-            }
-            is PhonePlatform.FileHandoff.Unavailable -> {
-                log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, handoff.detail)
-            }
-            is PhonePlatform.FileHandoff.Ready -> {
-                log("event=phone-mcp action=file_offer ok=true bytes=${handoff.bytes}")
-                PhoneResult.info(
                     "file_offer",
-                    linkedMapOf<String, Any?>(
-                        "name" to handoff.name,
-                        "folder" to folder.label,
-                        "mime" to handoff.mime,
-                        "bytes" to handoff.bytes,
-                        "sha256" to handoff.sha256,
-                        "url" to handoff.url,
-                        "expires_at" to handoff.expiresAtSec,
-                        "undoable" to false,
+                    PhoneReason.APPROVAL,
+                    "the owner has not answered the card for ${card.label} yet; nothing was offered",
+                    tier = PhoneTiers.APPROVAL,
+                    facts = linkedMapOf<String, Any?>(
+                        "approval_id" to card.id,
+                        "expires_at" to card.expiresAtMs,
+                        "summary" to card.summary,
                     ),
                 )
             }
+            is PhoneApproval.Grant.Refused -> {
+                log("event=phone-mcp action=file_offer ok=false reason=${grant.reason}")
+                PhoneResult.refused(
+                    "file_offer",
+                    grant.reason,
+                    grant.detail,
+                    tier = PhoneTiers.APPROVAL,
+                )
+            }
+            is PhoneApproval.Grant.Allowed -> executeFileOffer(grant.card, folder)
+        }
+    }
+
+    /** The canonical arguments a file-offer card is bound to: the name and the granted folder. */
+    private fun fileApprovalArgs(name: String, folder: String): Map<String, Any?> = linkedMapOf(
+        "action" to PhoneApproval.FILE_ACTION,
+        "name" to name,
+        "folder" to folder,
+    )
+
+    private fun executeFileOffer(
+        card: PhoneApproval.Card,
+        folder: PhonePlatform.GrantedFolder,
+    ): PhoneResult = when (val handoff = platform.fileOffer(folder, card.subject)) {
+        PhonePlatform.FileHandoff.Missing -> {
+            log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+            PhoneResult.refused(
+                "file_offer", PhoneReason.UNAVAILABLE,
+                "no file named \"${card.subject}\" is in ${folder.label}; nothing was offered",
+            )
+        }
+        PhonePlatform.FileHandoff.Outside -> {
+            log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+            PhoneResult.refused(
+                "file_offer", PhoneReason.BAD_PATH,
+                "that name resolves outside the folder you granted; nothing was offered",
+            )
+        }
+        is PhonePlatform.FileHandoff.TooBig -> {
+            log("event=phone-mcp action=file_offer ok=false reason=too_big")
+            PhoneResult.refused(
+                "file_offer", PhoneReason.TOO_BIG,
+                "that file is above the 100 MB the file bridge will serve; nothing was offered",
+            )
+        }
+        is PhonePlatform.FileHandoff.Unavailable -> {
+            log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+            PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, handoff.detail)
+        }
+        is PhonePlatform.FileHandoff.Ready -> {
+            log("event=phone-mcp action=file_offer ok=true bytes=${handoff.bytes}")
+            PhoneResult.info(
+                "file_offer",
+                linkedMapOf<String, Any?>(
+                    "name" to handoff.name,
+                    "folder" to folder.label,
+                    "mime" to handoff.mime,
+                    "bytes" to handoff.bytes,
+                    "sha256" to handoff.sha256,
+                    "url" to handoff.url,
+                    "expires_at" to handoff.expiresAtSec,
+                    "undoable" to false,
+                ),
+            )
         }
     }
 
@@ -1586,7 +1742,15 @@ class PhoneEngine(
                 )
             }
             return when (
-                val request = approvals.request(call.packageName, label, canonical, digest, nowEpoch)
+                val request = approvals.request(
+                    PhoneApproval.ACTION,
+                    call.packageName,
+                    label,
+                    "",
+                    canonical,
+                    digest,
+                    nowEpoch,
+                )
             ) {
                 is PhoneApproval.Request.Raised -> {
                     val card = request.card
@@ -1674,14 +1838,14 @@ class PhoneEngine(
      * limit of what this phone can honestly claim — it cannot see the owner's answer there.
      */
     private fun executeUninstall(card: PhoneApproval.Card): PhoneResult =
-        when (val outcome = platform.uninstall(card.packageName)) {
+        when (val outcome = platform.uninstall(card.subject)) {
             is PhonePlatform.Uninstall.Confirming -> {
-                log("event=phone-mcp action=uninstall ok=true package=${card.packageName} confirming=true")
+                log("event=phone-mcp action=uninstall ok=true package=${card.subject} confirming=true")
                 PhoneResult.done(
                     "uninstall",
                     null,
                     linkedMapOf<String, Any?>(
-                        "package" to card.packageName,
+                        "package" to card.subject,
                         "label" to card.label,
                         "platform_confirmation" to true,
                         "undoable" to false,

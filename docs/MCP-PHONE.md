@@ -109,7 +109,7 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
 | `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
 | `file_read` | 1 | `name`, optional `folder` (a granted folder's label), optional `offset`/`length` for a byte window (1 – 65 536) | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
-| `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
+| `file_offer` | 2 | `name`, optional `folder` (a granted folder's label); `approval` on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
 | `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
@@ -154,12 +154,12 @@ all read it. There is no second list to drift.
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
 | Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
-| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent |
+| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent (Tier 2, with a card) |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 0 | `notifications`, `notification_read` | read counts per app while a call is open, then one notification's content by id |
 | Messages | 0 | `message` | compose a text and open the messaging app; you send it |
 | Calls | 0 | `dial` | open the dialer with a number ready; you make the call |
-| Apps | 0 | `launch`, `open`; `install`\*, `uninstall`\* | open an app or a link; installing/uninstalling needs an approval that is not built |
+| Apps | 0 | `launch`, `open`, `uninstall`; `install`\* | open an app or a link; removing an app needs its own card |
 | Contacts | 0 | `contact` | look up a contact's number by name |
 
 `*` A planned action: the group and its refusal exist, the capability does not ship yet. A name in
@@ -174,12 +174,11 @@ call that still names one returns `ok:false, reason:"not_granted"`. The model ca
 cannot see; if it tries anyway, the refusal is a result it can read and repeat, not a transport
 error.
 
-**Ask.** The actions are advertised, and every use is a decision rather than a run. On this wire an
-Ask call returns `ok:false, reason:"approval-required"` and performs nothing. The approval card
-arrives with the capability lanes (#429 steps 2–4): the MCP call has no run id, so the phone cannot
-mint the gateway's card from here, and inventing a second approval surface inside the server is what
-#421 rules out. Until then Ask is a visible refusal — visible to the model (the action is offered)
-and to the owner (the refusal is in Recent actions).
+**Ask.** The actions are advertised, and every use is a decision rather than a run. A Tier 1 group at Ask
+runs and is reported; a Tier 0 group waits for a card. On this wire an Ask call that needs a card
+returns `ok:false, reason:"approval-required"` and performs nothing. `uninstall` and `file_offer`
+are the Tier 2 actions with a two-step card on this phone; the rest stay visible refusals — visible
+to the model (the action is offered) and to the owner (the refusal is in Recent actions).
 
 **Allow.** The action runs immediately and is reported. **Only Tier 0 may be Allow** — reversible and
 private. Tier 1 stops at Ask because the owner sees its result and should stay in the loop; Tier 2
@@ -267,13 +266,14 @@ offered, and it does not change with the grant.
 | tier | actions | what the phone does | states |
 |---|---|---|---|
 | **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
-| **1 — reported** | note, file_list, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
-| **2 — approval** | delete, message, call, email, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
+| **1 — reported** | note, file_list, file_read, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
+| **2 — approval** | uninstall, file_offer, install, delete, purchase … | **never executes on the first call.** `uninstall` and `file_offer` use the phone's two-step card handshake; the rest answer `approval-required` and nothing happens | Off / Ask |
 
-Tier 2 is refused rather than queued on purpose. An MCP call carries no run id, so the phone cannot
-mint the approval card `core/Approval.kt` answers — and building a second approval surface inside the
-MCP server is exactly what #421 rules out. Consequential actions stay on the **gateway's** approval
-surface. An owner who wants *every* phone call behind a card can have that without any code change:
+Tier 2 waits for a card on purpose. An MCP call carries no run id, so the phone cannot mint the
+gateway's `core/Approval.kt` card; instead `uninstall` and `file_offer` use the phone's own two-step
+handshake (`docs/MCP-SURFACE.md`, "Tier 2 — approval"), and every other Tier 2 name is refused.
+The card's notification is private and a yes needs an unlocked device. An owner who wants *every*
+phone call behind the gateway's card can have that without any code change:
 
 ```yaml
     trust: untrusted    # every write-capable tool call asks through the standard approval surface

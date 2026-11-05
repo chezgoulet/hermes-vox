@@ -161,12 +161,17 @@ object PhoneAudit {
         via: String,
     ): Entry {
         val arguments = LinkedHashMap<String, String>()
-        arguments["package"] = clip(card.packageName)
-        arguments["label"] = clip(card.label)
+        if (card.action == PhoneApproval.FILE_ACTION) {
+            arguments["name"] = clip(card.label)
+            if (card.detail.isNotEmpty()) arguments["detail"] = clip(card.detail)
+        } else {
+            arguments["package"] = clip(card.subject)
+            arguments["label"] = clip(card.label)
+        }
         if (outcome != "approval-requested" && via.isNotEmpty()) arguments["via"] = clip(via)
         return Entry(
             atEpochMs = atEpochMs,
-            action = PhoneApproval.ACTION,
+            action = card.action,
             arguments = arguments,
             // A decision is not an execution; the execution row is the one that says `done`.
             ok = false,
