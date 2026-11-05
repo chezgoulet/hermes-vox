@@ -93,6 +93,17 @@ class PhoneSurfaceTest {
 
     private val entries = ArrayList<PhoneAudit.Entry>()
 
+    /** Every card the engine raises; a group at Ask must raise one rather than refuse. */
+    private class Surface : PhoneApproval.Surface {
+        val raised = ArrayList<PhoneApproval.Card>()
+        override fun raise(card: PhoneApproval.Card): Boolean {
+            raised.add(card)
+            return true
+        }
+    }
+
+    private val surface = Surface()
+
     /** Only the named group granted, everything else Off — the screen's own shape. */
     private fun only(id: String) = PhoneGrants.Source { g ->
         if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
@@ -107,6 +118,7 @@ class PhoneSurfaceTest {
         fake,
         grants = grants,
         audit = { result, args, at -> entries.add(PhoneAudit.entry(at, args, result)) },
+        approvalSurface = surface,
     )
 
     private fun call(arguments: Map<String, Any?>, grants: PhoneGrants.Source = only("media")) =
@@ -216,7 +228,11 @@ class PhoneSurfaceTest {
         val ask = call(mapOf("action" to "play"), PhoneGrants.Source { PhoneGrants.State.ASK })
         assertFalse(ask.ok)
         assertEquals(PhoneReason.APPROVAL, ask.reason)
-
+        assertEquals(
+            "Ask raises a card that names the action",
+            "Your agent wants to play. Approve?",
+            surface.raised.single().line,
+        )
         assertEquals("nothing reached the audio service", emptyList<PhoneEngine.PhonePlatform.MediaKey>(), fake.mediaKeys)
     }
 
@@ -304,6 +320,7 @@ class PhoneSurfaceTest {
         val ask = call(mapOf("action" to "state"), PhoneGrants.Source { PhoneGrants.State.ASK })
         assertFalse(ask.ok)
         assertEquals(PhoneReason.APPROVAL, ask.reason)
+        assertEquals("the card names the read", "Your agent wants to read this phone's state. Approve?", surface.raised.last().line)
     }
 
     @Test fun state_is_read_only_and_writes_one_audit_row() {
@@ -437,6 +454,12 @@ class PhoneSurfaceTest {
         val ask = call(mapOf("action" to "clip", "text" to "hello"), askOnly("clipboard"))
         assertFalse("Ask does not write", ask.ok)
         assertEquals(PhoneReason.APPROVAL, ask.reason)
+        assertEquals(
+            "the card says how much would be written, not the text",
+            "Your agent wants to put 5 characters on the clipboard. Approve?",
+            surface.raised.last().line,
+        )
+        assertFalse("the text is not on the card", surface.raised.last().line.contains("hello"))
 
         val empty = call(mapOf("action" to "clip", "text" to "  "), only("clipboard"))
         assertFalse(empty.ok)
@@ -504,6 +527,11 @@ class PhoneSurfaceTest {
         val ask = call(mapOf("action" to "clip_read"), askOnly("clipboard"))
         assertFalse("Ask does not read", ask.ok)
         assertEquals(PhoneReason.APPROVAL, ask.reason)
+        assertEquals(
+            "the card names the read",
+            "Your agent wants to read your clipboard. Approve?",
+            surface.raised.last().line,
+        )
 
         val before = fake.clipReads
         val on = call(mapOf("action" to "clip_read"), only("clipboard"))

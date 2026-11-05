@@ -147,21 +147,15 @@ object PhoneToolsView {
     fun grantSummary(states: Map<String, PhoneGrants.State>): String =
         "${states.values.count { it != PhoneGrants.State.OFF }} of ${states.size} groups on"
 
-    /** What a state means, in the row the owner is about to change. */
-    fun grantMeaning(state: PhoneGrants.State, tier: Int = PhoneTiers.INSTANT): String = when (state) {
-        PhoneGrants.State.OFF -> "Off hides it from your agent’s tool list."
-        PhoneGrants.State.ASK ->
-            if (tier == PhoneTiers.REPORTED) "Ask turns it on: your agent can use it, and every use is reported below."
-            else "Ask does not run anything yet: this group has no approval card that could say yes, " +
-                "so your agent's call is refused until you choose Allow."
-        PhoneGrants.State.ALLOW -> "Allow runs it instantly, and it is reported below."
-    }
-
-    /** Why Allow is absent for a group, or null when it is offered. */
-    fun allowAbsent(tier: Int): String? = when (tier) {
-        PhoneTiers.INSTANT -> null
-        PhoneTiers.REPORTED -> "Allow is not offered here: you see the result, so you stay in the loop."
-        else -> "Allow is not offered here: this is consequential, so every use is a card."
+    /**
+     * What a state means, in the row the owner is about to change. The same three sentences for
+     * every group, every tier: the words are the policy, so they may not mean different things in
+     * different rows.
+     */
+    fun grantMeaning(state: PhoneGrants.State): String = when (state) {
+        PhoneGrants.State.OFF -> "Off — the agent cannot use this."
+        PhoneGrants.State.ASK -> "Ask — the agent asks you first, by tap or by voice."
+        PhoneGrants.State.ALLOW -> "Allow — the agent acts without asking."
     }
 
     /** The HH:mm an action happened, in the phone's own time zone. */
