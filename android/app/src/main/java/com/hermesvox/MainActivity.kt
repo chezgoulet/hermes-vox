@@ -64,8 +64,6 @@ open class MainActivity : AppCompatActivity() {
     private lateinit var pipSurface: View
     private lateinit var pipAvatar: AvatarView
     private var compact = false
-    /** Whether the speech-locked reveal was running when the window shrank. */
-    private var revealBeforeCompact = false
     /** The Stop receiver exists only where PiP does; unregistered with the surface. */
     private var pipReceiverRegistered = false
 
@@ -120,6 +118,10 @@ open class MainActivity : AppCompatActivity() {
     private val revealTask = object : Runnable {
         override fun run() {
             if (!revealActive) return
+            // The compact window draws no words. The loop is HELD rather than destroyed so
+            // the turn's own end still seals the reply (stopReveal) and an expand resumes
+            // exactly at the voice; while compact this returns without touching text.
+            if (compact) { mainHandler.postDelayed(this, REVEAL_TICK_MS); return }
             val c = liveController
             if (c != null) {
                 val spoken = c.speechCursor()
@@ -150,7 +152,6 @@ open class MainActivity : AppCompatActivity() {
 
     private fun startReveal() {
         revealEpoch++                       // cancels any pending minRevealMs stop
-        if (compact) return                 // the window has nowhere to draw words
         if (revealActive) return
         revealActive = true
         revealStartedAt = android.os.SystemClock.uptimeMillis()
@@ -965,9 +966,6 @@ open class MainActivity : AppCompatActivity() {
     private fun enterCompact() {
         if (compact || !::pipSurface.isInitialized) return
         compact = true
-        revealBeforeCompact = revealActive
-        revealActive = false
-        mainHandler.removeCallbacks(revealTask)
         mainHandler.removeCallbacks(fadeHeard)
         if (::heardLine.isInitialized) {
             heardLine.animate().cancel()
@@ -994,10 +992,8 @@ open class MainActivity : AppCompatActivity() {
         applyLayoutMode()
         renderMotion()   // the full being may have missed a state change while it was hidden
         paintTrail()
-        reply.setText(replyBuf)
+        if (!revealActive) reply.setText(replyBuf)   // a held reveal repaints from its own clock
         paintTranscript()
-        if (revealBeforeCompact && replyBuf.isNotBlank() && liveController?.voiceWillSpeak() == true) startReveal()
-        revealBeforeCompact = false
         VoxLog.d("event=pip mode=full callLive=$callLive")
     }
 
