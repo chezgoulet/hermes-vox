@@ -128,6 +128,10 @@ class ManifestShareTest {
                 // turned on. Notification reading adds no permission: it is the listener special
                 // access, shared with Media, not POST_NOTIFICATIONS.
                 "android.permission.READ_CONTACTS",
+                // #apps-and-dismiss: the apps listing's running half. A special access granted on
+                // Android's own Usage access screen; declaring it is what makes Vox appear there.
+                // Not QUERY_ALL_PACKAGES, which is never requested.
+                "android.permission.PACKAGE_USAGE_STATS",
                 "android.permission.FOREGROUND_SERVICE",
                 "android.permission.FOREGROUND_SERVICE_MICROPHONE",
                 "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
@@ -140,6 +144,7 @@ class ManifestShareTest {
             "android.permission.WRITE_EXTERNAL_STORAGE",
             "android.permission.READ_MEDIA_IMAGES",
             "android.permission.MANAGE_EXTERNAL_STORAGE",
+            "android.permission.QUERY_ALL_PACKAGES",
         )) {
             assertFalse(denied, names.contains(denied))
         }
