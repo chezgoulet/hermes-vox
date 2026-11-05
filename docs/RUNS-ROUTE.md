@@ -177,7 +177,9 @@ arrives as its own event.
 ## The device pass (the cut gate)
 
 The parity proof is off-device. Run every check on a **scoped** install (Settings →
-the conversation scope is not blank), or the turns ride responses and prove nothing:
+the conversation scope is not blank) *and* on an unscoped one (check 9): since 0.9.1's H2 fix
+both ride `/v1/runs`, because the run body carries its own `session_id`. A gateway without the
+route falls back to `/v1/responses` (see above), which proves the fallback rather than the route.
 
 1. One live voice turn on the runs route: text streams, TTS starts on the first delta,
    the reply settles once.

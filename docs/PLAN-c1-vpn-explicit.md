@@ -1,5 +1,7 @@
 # SPEC — C1: VPN-explicit onboarding + version bump (0.4.0 polish, batch 2)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Why (directive 2026-09-06)
 Vox speaks HTTP+bearer to a gateway address. Safe ONLY over a user-managed private
 network. Today the README states it but the APP never tells the user. The maintainer:

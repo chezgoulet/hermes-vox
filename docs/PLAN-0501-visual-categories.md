@@ -1,5 +1,7 @@
 # SPEC — 0.5.1: exposable visual categories + connection-test/dialing pill fix
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Field evidence (2026-09-07 13:43–13:55 log, 0.5.0.3 device pass — the "most
 ## productive session" + follow-up)
 Animation praised ("great app", "really, really good", "so many more possibilities",

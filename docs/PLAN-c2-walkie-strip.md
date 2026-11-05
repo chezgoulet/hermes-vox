@@ -1,5 +1,7 @@
 # SPEC — C2: strip walkie-talkie (PTT) mode (0.4.0 polish, batch 3)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Directive
 the maintainer 2026-09-06: "This is also where we will strip out the walkie-talkie
 mode." Hands-free realtime is the ONLY loop shape. Delete every PTT branch so the

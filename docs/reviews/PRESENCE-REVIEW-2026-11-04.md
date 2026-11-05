@@ -1,5 +1,7 @@
 # Presence review — Hermes Vox
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Reviewed: `chezgoulet/hermes-vox` branch `testing` at `a63e85d` (2026-11-04, includes #394 handoff receipt and #406/D29), cloned fresh to `/tmp/vox-review-src/repo` because neither local checkout had it. Upstream gateway: `~/.hermes/hermes-agent` at `f0d94882e8`. Read-only. No builds, no device, no tests run. Every line reference below is to that tree.
 
 Legend: **Verified** means I read the code path end to end. **Suspected** means the code allows it but I have no log or device run to prove it; each one says what would confirm it.

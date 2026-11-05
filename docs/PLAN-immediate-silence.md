@@ -1,5 +1,7 @@
 # SPEC — Immediate silence on stop + voice-usage default OFF (0.3.32.2)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Field evidence (2026-09-06 night log)
 - Toggle `tts_voice_usage` OFF: loud volume restored AND barge-in still fired cleanly
   (rms 0.102/0.116, vad=true) — hardware AEC on the VOICE_COMMUNICATION capture is

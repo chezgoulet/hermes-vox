@@ -1,5 +1,7 @@
 # Notes — what VoiceManager teaches us
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Read 2026-10-20 against `TacoTakumi/VoiceManager`, MIT. A local speech **server**: one
 WebSocket carries streaming STT and streaming TTS at once, tokens in, audio out, barge-in by
 cancellation. ~38k lines of Python with a heavy test suite, and a 1,400-line client

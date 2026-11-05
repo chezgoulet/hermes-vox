@@ -1,5 +1,7 @@
 # Presence guard bounds — measured, then split into content and shape
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The working lane's guard is [ErSoulTurn.workingLine][wl]/[workingReject][wr]. This document began as
 a measurement of what that guard refused over a plausible corpus; **D20** then changed the split.
 It is kept because D20 requires every remaining bound to name the failure it answers.

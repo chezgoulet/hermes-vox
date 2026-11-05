@@ -1,5 +1,7 @@
 # SPEC — 0.4.0.2: level-sustained barge escape (VAD veto under echo)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Field evidence (2026-09-07 0.4.0.1 log — probes did their job)
 - ZERO barge-gap lines -> starvation theory dead (cause A eliminated by absence).
 - SIX barge-nearmiss lines, peakRms 0.071-0.161; sustainedMs always 0 or 64.

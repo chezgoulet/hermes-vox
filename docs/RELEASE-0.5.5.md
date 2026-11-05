@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.5 — the video release (shape routing + Wave 1 + state-wiring)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The being's visual vocabulary grows from 13 to 20 archetypes, the routing that was
 starving the at-rest scene is fixed, and the new shapes now fire in their named states.
 This is the "video point release" — the one that makes the being visibly diverse and

@@ -3,7 +3,10 @@
 F-Droid rejects an app that fetches a prebuilt native library at build time — the pattern
 `scripts/fetch-runtime.sh` uses for the sherpa-onnx AAR (and what they rejected for Anti-Vocale
 and Ramblr). Path B builds sherpa-onnx from source and takes onnxruntime from Maven Central,
-which the inclusion policy allows. **This rail never holds a release** (docs/PLAN-0.9.1.md §9).
+which the inclusion policy allows. **The listing is 0.9.1 work and the release waits for it
+(D29)** — the bar is the app being listed: the recipe reproducible, a merge request against a
+released tag, and the listing granted. As this is written the recipe is still a draft and the app
+is not listed.
 
 ## What is in the repo
 
@@ -54,7 +57,7 @@ cd android && ./gradlew -Phermesvox.sherpaSource=../sherpa-src assembleRelease
 
 ## What was verified (2026-11-03, the submodule build)
 
-- From `third_party/sherpa-onnx` on sasquatch (NDK r28c, CMake 3.28), with no
+- From `third_party/sherpa-onnx` on the build host (NDK r28c, CMake 3.28), with no
   `android/app/libs/` present: arm64-v8a `3a8662e6…f634ca` — **the same bytes as the
   2026-10-22 clone build** — and armeabi-v7a `d70b6f21…cd7e81`.
 - `./gradlew -Phermesvox.sherpaSource=../sherpa-src -Phermesvox.unsigned :app:assembleRelease`:
@@ -79,8 +82,9 @@ nightlies carry the same one). Its `MaintainerNotes` carry the questions a revie
 `fastlane/metadata/android/en-US` carries the title, the short and full descriptions, and a
 changelog per version code, which is what an F-Droid listing renders. The descriptions are
 written to be true of the app as it ships: a client for a gateway the user already runs, no
-account, no service of its own, recognition on the device. Screenshots are still missing; they
-have to be captured on a phone, not generated.
+account, no service of its own, recognition on the device. F-Droid's own screenshot slot (the
+`images/phoneScreenshots` directory) is still empty; the captures under `docs/screenshots/` are
+from the 0.8.0 emulator and are not store assets.
 
 Signing is deliberately **not** made optional. A release build with no
 `keystore/keystore.properties` fails loudly rather than falling back to the public debug key,
@@ -94,11 +98,12 @@ recipe.
 ## What is left, and whose it is
 
 1. **The reproducible-build check against a released tag.** F-Droid's rebuild must match our
-   signed APK minus the signature. Our release APK is built with the prebuilt AAR, so the
-   release itself must switch to path B for the two to match — **a release-process decision**
-   (docs/RELEASE-PROCESS.md), not taken here.
+   signed APK minus the signature. The release now builds path B (`.github/workflows/release.yml`,
+   both builds), so the two sides can match; the check itself has **not** been run against a
+   released tag, because `v0.9.1` does not exist yet. Releasing from the prebuilt AAR is no longer
+   an option — `docs/RELEASE-PROCESS.md` is the process that says so.
 2. **Submitting the recipe** to fdroiddata (a merge request on gitlab.com): outward-facing; the
-   owner's to send.
+   owner's to send. `repos/f-droid/fdroiddata` has no `metadata/com.hermesvox.yml` today.
 3. Cross-path reproducibility is checked for the arm64-v8a library; armeabi-v7a uses the same
    flags but was not compared, and the whole-APK comparison (`scripts/repro-check.sh` with the
-   property set) has not been run.
+   property set) has not been run on the 0.9.1 tree.

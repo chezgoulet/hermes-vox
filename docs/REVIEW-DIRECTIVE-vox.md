@@ -1,5 +1,7 @@
 # DIRECTIVE — Hermes Vox (chezgoulet/hermes-vox) adversarial code review (Opus). Read-only.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 You are reviewing a COPY of the Hermes Vox Android app at ~/vox-review
 (HEAD 9c1a95f5, main). It is isolated in a sandbox. DO NOT modify, commit, or
 "fix" anything. DO NOT touch <repo> or any live checkout. Your ONLY

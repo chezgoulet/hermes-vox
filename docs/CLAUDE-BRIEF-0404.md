@@ -1,5 +1,7 @@
 # BRIEF — 0.4.0.4: the ghost re-speak after hush. YOU are the diagnostician.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Symptom (user, 2026-09-07 00:16 local): "that doesn't work very well at all"
 Evidence log: the 0.4.0.3 field log (removed in the log sweep). Two calls.
 

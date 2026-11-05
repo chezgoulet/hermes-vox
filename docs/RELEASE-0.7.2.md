@@ -1,5 +1,7 @@
 # Hermes Vox 0.7.2 — true black
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The aura fix. A faint rectangular "canvas" had been visible around the being on
 accurate displays since long before 0.7.0 — it took a camera photo of the
 physical panel, a colour-profile A/B, and a glow-slider test to corner it.
@@ -47,7 +49,7 @@ per-category halo sizing; only the invisible tail died.
 
 Field-confirmed by the maintainer on both phones under **both** Natural and
 Adaptive colour profiles, on the hardware-layer-free nightly
-(`nightly-20260910-000519-70bdeac`). Promotion gate on a clean Thelio clone of
+(`nightly-20260910-000519-70bdeac`). Promotion gate on a clean the build host clone of
 `testing`: go vet/test → gomobile bind → `assembleRelease` +
 `testReleaseUnitTest` + `bundleRelease` — 34 suites / 258 tests / 0 failures.
 Version 0.7.2, versionCode 114, signer CN=Hermes Vox.

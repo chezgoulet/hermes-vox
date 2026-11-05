@@ -1,5 +1,7 @@
 # Hermes Vox 0.3.31.0 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## New capabilities
 - **Per-turn evidence logging** (PR #62): every settled turn emits
   `event=turn … outcome=… stt=… firstByte=… firstAudio=… fullReply=…`;

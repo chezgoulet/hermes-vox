@@ -1,5 +1,7 @@
 # Hermes Vox — Sprint 4 Implementation Plan (branch `feature/040-gates`)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Reference brief: `docs/SPRINT-PLAN-040-gates.md`. Scope: Stability + Voice-Quality. **Out:** Enhanced Realtime (Gemma), Google Play.
 App root: `android/app/src/main/java/com/hermesvox/`. Build: `android/`. All edits are plan-only.
 

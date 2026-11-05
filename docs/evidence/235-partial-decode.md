@@ -1,5 +1,7 @@
 # #235 — decoded audio-seconds per partial utterance
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Outcome of this lane: 1 — the fix is already in `testing`, and this lane adds the
 measurement the issue asks for.** The live-stream partial path landed in PR #300
 (`40dff4f`, merged `7bd2909`, 2026-10-21) before the device-free sprint was filed; the

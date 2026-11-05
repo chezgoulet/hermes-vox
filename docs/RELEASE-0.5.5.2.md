@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.5.2 — iris centers properly
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Patch on 0.5.5.1. The previous eye-fix narrowed the dart range but the iris still chased a
 new target every ~1.15s forever, so it never rested at center and never read as an eye.
 The maintainer: "a real iris sits centered and only moves a small margin."

@@ -1,5 +1,7 @@
 # Sprint 6 — Polish / UX — Implementation Plan (byte-precise)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Repo:** `chezgoulet/hermes-vox` · **Branch:** `feature/polish` · **Language:** Kotlin (Android) + Go (gomobile `mobile` package). **No source files are edited by this plan — it is a build spec.**
 
 Ground rules reused throughout: secrets stay in `SecureStore`/`SharedPreferences` (never echo the key); auth for every HTTP call is `Authorization: Bearer <stored key>` against the same `<entity url>` the session already holds; one coherent commit per workstream; `assembleRelease testReleaseUnitTest` green after each.

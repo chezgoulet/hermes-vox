@@ -1,5 +1,7 @@
 # Sound cues — the being's procedural voice (#156, D7)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Sound cues are the fourth way the being is legible (voice, body, transcript, cue): a
 few hundred milliseconds of tone that says *what just happened* without a glance at the
 screen. They are generated on the phone, not sampled, and they are governed by one

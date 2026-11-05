@@ -1,5 +1,7 @@
 # SPEC — Pause-first silence: stop must not wait for the write it is killing (0.3.32.4)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Field evidence (2026-09-06 15:52 log, 0.3.32.3)
 Full replies play to completion (event=tts-retire chunks=5; user confirmed).
 Remaining defect: barge silence latency scales with the in-flight chunk —

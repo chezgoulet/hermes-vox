@@ -1,10 +1,17 @@
 # Reproducible builds
 
-## Status (#166, 2026-10-19)
+## Status
 
-The **unsigned release APK** is now built twice from two different absolute paths
+The last recorded run is from **2026-10-19** and compared the **0.8.1** APK; those numbers are kept
+as the measurement they were. Since #165 the **release** builds sherpa-onnx from source (path B)
+and takes onnxruntime from Maven Central (`docs/FDROID.md`), so the prebuilt sherpa AAR is the
+development runtime, not the release one. The unsigned comparison has **not** been re-run on the
+0.9.1 tree, and the F-Droid rebuild has not been checked against a released tag (there is no
+`v0.9.1` tag yet).
+
+On 2026-10-19 the **unsigned release APK** was built twice from two different absolute paths
 and compared entry by entry by `scripts/repro-check.sh`, on the build host and in
-a pull-request CI job. On this host the two builds are byte-identical:
+a pull-request CI job. On that host the two builds were byte-identical:
 
 ```
 eb602ed4f35825eb5bf5ac9794e5a9c32a960bac628ffcbc961fbf87a3062809  /tmp/opencode/vox-repro/a/.../hermes-vox-0.8.1.apk
@@ -15,8 +22,13 @@ repro: payloads identical (587 entries compared)
 `#126` replaced the Go core with Kotlin (`docs/KOTLIN-CORE.md`), so there is no
 gomobile bind, no NDK link and no `libgojni.so`. The class of nondeterminism
 #138 fixed (path and random work directory baked into a native binary) cannot
-recur from this repo. All native libraries are prebuilt upstream artifacts,
-pinned by version or SHA-256.
+recur from this repo. The release's speech runtime is built from source with mapped paths and
+`--build-id=none` (path B, `docs/FDROID.md`); the other native libraries are prebuilt upstream
+artifacts, pinned by version or SHA-256.
+
+The path-B build adds its own reproducibility requirement, which the source build now meets:
+`-ffile-prefix-map` keeps the build directory out of the library, and arm64-v8a is byte-identical
+across two build directories and two fresh clones (`docs/FDROID.md`).
 
 ## What is enforced now
 
@@ -45,7 +57,7 @@ version change was needed.)
 
 `scripts/repro-check.sh`:
 
-1. verifies the pinned sherpa AAR;
+1. verifies the pinned sherpa AAR (the development runtime — releases build it from source, path B);
 2. copies the tree to `/tmp/opencode/vox-repro/a` and `/tmp/opencode/vox-repro/b`;
 3. runs a clean `assembleRelease -Phermesvox.unsigned` in each copy with the same
    Gradle user home and `--no-build-cache --no-daemon`;
@@ -85,22 +97,22 @@ ordering; only as a last, documented resort disable optimisation
 Build-host gate and reproducibility check:
 
 ```sh
-export JAVA_HOME=/home/c/jdk-17
-export ANDROID_HOME=/home/c/Android/Sdk
+export JAVA_HOME=$HOME/jdk-17
+export ANDROID_HOME=$HOME/Android/Sdk
 export PATH="$JAVA_HOME/bin:/usr/local/bin:/usr/bin:/bin"
 
-flock /home/c/build.lock -c 'bash scripts/gate.sh'
-flock /home/c/build.lock -c 'bash scripts/repro-check.sh'
+flock $HOME/build.lock -c 'bash scripts/gate.sh'
+flock $HOME/build.lock -c 'bash scripts/repro-check.sh'
 ```
 
 Compare two APKs you already have (used to prove the comparator rejects a
 one-byte change):
 
 ```sh
-cp /tmp/opencode/vox-repro/a/android/app/build/outputs/apk/release/hermes-vox-0.8.1.apk /tmp/tampered.apk
+cp /tmp/opencode/vox-repro/a/android/app/build/outputs/apk/release/hermes-vox-<version>.apk /tmp/tampered.apk
 # flip one byte in the local payload, then:
 bash scripts/repro-check.sh --compare \
-  /tmp/opencode/vox-repro/a/android/app/build/outputs/apk/release/hermes-vox-0.8.1.apk \
+  /tmp/opencode/vox-repro/a/android/app/build/outputs/apk/release/hermes-vox-<version>.apk \
   /tmp/tampered.apk   # prints "FIRST DIFFERENCE: <entry>" and exits 1
 ```
 

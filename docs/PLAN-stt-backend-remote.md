@@ -1,5 +1,7 @@
 # PLAN — remote STT backend (VoxStt over an OpenAI-compatible endpoint)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Goal
 Add a **`remote` STT backend** to the existing `VoxStt` seam: any OpenAI-style
 `POST {base}/audio/transcriptions` server (lemonade, whisper.cpp server, faster-whisper
@@ -29,7 +31,7 @@ entity URL — same pattern, Settings → custom backend).
   device ONLY when the user picks `remote` and saves a URL.
 
 ## Commits (each: gradle `:app:testDebugUnitTest` exit 0 before commit; JDK17 +
-## external gradle 8.12.1 on Thelio — see docs in repo or use the logpatch harness)
+## external gradle 8.12.1 on the build host — see docs in repo or use the logpatch harness)
 
 ### R1 — RemoteStt.kt (new file) + WAV encoder + unit tests
 - `class RemoteStt(context: Context) : VoxStt`
@@ -62,7 +64,7 @@ entity URL — same pattern, Settings → custom backend).
 ### R3 — Settings UI (SettingsActivity + layout)
 - STT backend chooser gains "remote" entry (list pattern already exists).
 - When `remote` selected: reveal `stt_remote_url` text field (placeholder
-  `http://192.168.1.9:13305/v1 or https://…`), `stt_remote_model` field (default
+  `http://<lan-ip>:13305/v1 or https://…`), `stt_remote_model` field (default
   `whisper`), optional key field (password input, stored via SecureStore, NEVER
   written to prefs XML in clear — SecureStore pattern already exists), and a
   "Test connection" button reusing the init probe with a toast result + dd log.
@@ -76,9 +78,9 @@ partials; multi-server failover; TLS pinning. All follow-ups on the same seam.
 ## Verification
 1. `cd android && <GRADLE 8.12.1, JDK17> :app:testDebugUnitTest` exit 0 after each commit.
 2. Post-merge device test (the maintainer): Settings → STT backend → remote; URL =
-   Thelio lemonade (after bind flip), model `Whisper-Base`; take 8+ turns; export
+   the build host lemonade (after bind flip), model `Whisper-Base`; take 8+ turns; export
    log; expect `event=stt-remote ms≈<200` and `event=turn … stt=<~200>` lines with
-   outcome=ok, fallback chain verified by turning Thelio off mid-session (expect
+   outcome=ok, fallback chain verified by turning the build host off mid-session (expect
    one `event=stt-fallback` and the loop continuing on-device).
 3. A/B on identical calls (remote vs on-device whisper-base): compare p50
    `stt=` fields from `event=turn` lines — the measurement this whole line of

@@ -1,5 +1,7 @@
 # Presence lane — why a line is dropped `late`
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Diagnosis for the 2026-10-20 field sessions (17 `er-soul-drop reason=late`, 0 guard
 refusals, one session with 4 working slots). Line numbers are the tree as it stands after
 the fix in §5; the changed step is named in §2.

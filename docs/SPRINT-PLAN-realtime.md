@@ -1,6 +1,8 @@
 # Hermes Vox — Sprint 2 Plan Brief: Realtime Loop — re-arm + survive re-init + session isolation
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/sprint2-realtime-loop
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (the build host) · **Branch:** feature/sprint2-realtime-loop
 **Model (plan + build):** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API, vision) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + emulator test (`emulator-5554`).
 

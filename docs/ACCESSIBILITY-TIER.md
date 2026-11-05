@@ -1,5 +1,7 @@
 # The accessibility tier: screen control for the agent (#429, Tier 3)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Status: design. Nothing here is built.** This document is meant to be built from without making
 product decisions along the way. Where it is unsure, it says so and names the experiment that would
 settle the question (§10). Where it changes an existing decision (D34), it says so and proposes the D

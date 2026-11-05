@@ -1,5 +1,7 @@
 # PLAN 0.4.0 — the polish series: no baked secrets, VPN explicit, walkie out, harden in
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Directive (maintainer, 2026-09-06):** 0.3.32.4 is the LAST .3 release. 0.4.0 is
 entirely about polishing what exists, and only after it ships do we open Enhanced
 Realtime. Non-negotiables: (1) NO keys baked into the APK whatsoever — the user
@@ -68,7 +70,7 @@ cleanup-thread vs new-call start (F1 new thread), pause-first on BT routes.
 
 ## Definition of done for 0.4.0
 All commits gated (:app:testDebugUnitTest exit 0, never weaken tests); grep proof of
-no-baked-key and no-walkie; onboarding flows tested on the Thelio-built signed APK;
+no-baked-key and no-walkie; onboarding flows tested on the build-host signed APK;
 GitHub release (the standard chain) + README truth. THEN — and only then —
 Enhanced Realtime planning resumes (END_SENTENCE streaming, thermal gating,
 presence glue, TurnBench).

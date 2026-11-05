@@ -1,5 +1,7 @@
 # BUILD DIRECTIVE — qwen3.8-max implements the 0.5.3 sprint map. Build the BEST version.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 You are the engineer building the 0.5.3 fix batch. Repo: ~/vox-fix053
 (branch fix-batch-053, base = main 9c1a95f5/0.5.2). Read the sprint map FIRST:
 docs/SPRINT-MAP.md. It is the authoritative task list — 10 commits, each with

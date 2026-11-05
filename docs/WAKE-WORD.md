@@ -1,5 +1,7 @@
 # Wake word — design and evidence (#45)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Status: **foundation only** (2026-10-19). The app has a wake-word engine seam with an
 inert implementation and an enrolment screen that records the owner's phrase takes,
 ~15 s of free speech and ~15 s of room sound — everything a personal verifier is
@@ -67,8 +69,8 @@ Inputs:
 Compute **[est]**: clip generation scales from the measured ~10 min per 1,000 clips on
 a T4 → ~3–8 GPU-hours for 20–50 k clips; augmentation + feature extraction is the
 same order; training 10–50 k steps on a small classifier is minutes to an hour.
-Realistically **half a day to a day on the Thelio's GPU**, dominated by synthesis, and
-the 17 GB negative-feature download. Not viable on the Odroid's CPU.
+Realistically **half a day to a day on the the build host's GPU**, dominated by synthesis, and
+the 17 GB negative-feature download. Not viable on the gateway host's CPU.
 
 Output: `hey_hermes.onnx` (~1 MB), versioned and checksummed like our other models.
 

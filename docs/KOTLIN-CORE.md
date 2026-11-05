@@ -35,11 +35,12 @@ changed (`com.hermesvox.mobile.HermesSession` → `com.hermesvox.core.HermesSess
    posts `POST /v1/runs/{id}/stop` as well, because the events GET is only a subscriber
    and closing it leaves the run working. Either way a turn is never abandoned with a
    run still alive behind it.
-2. **`/compress` rides the streamed chain (H2).** One chain head,
-   `HermesSession.lastID`: every poll that carries a `response_id` moves it, and
-   `turnStored` sends it as `previous_response_id` and replaces it with the reply's id.
-   Pinned by the `compress` fixture (the third request must chain off
-   `resp_compress`).
+2. **`/compress` rides the session's conversation (H2).** On `/v1/responses` there is one chain
+   head, `HermesSession.lastID`: every poll that carries a `response_id` moves it, and
+   `turnStored` sends it as `previous_response_id` and replaces it with the reply's id. On
+   `/v1/runs` there is no response id: the stored turn rides the same body `session_id` as the
+   voice turns, and `StreamRoute.chainHead` returns nothing so a run is never pinned to a stale
+   response snapshot (`docs/RUNS-ROUTE.md`). Pinned by the `compress` fixture.
 3. **Cancel retires the stream (M1).** `cancelStream` removes the entry under the
    registry lock before closing the connection, so a barge-in never leaks the
    buffered state. Pinned by the `barge` fixture and `StreamTest`.
@@ -61,8 +62,10 @@ those rules against Go's own output.
 
 ## What was deliberately dropped
 
-- **The runs API** (`StartRun`, `RunStatus`, `CancelRun`, `voice/runs.go`): zero call
-  sites. Barge-in uses stream cancellation.
+- **The runs API** (`StartRun`, `RunStatus`, `CancelRun`, `voice/runs.go`): dropped with the Go
+  core, then rebuilt in Kotlin for #404. `/v1/runs` is now the **default** route, with
+  `/v1/responses` as the per-profile fallback; `core/TurnRoute.kt`, `Streams.startRun` and the
+  runs reader in `core/Stream.kt` are that return, and `docs/RUNS-ROUTE.md` is the contract.
 - **The stub backends** (`voice/backend.go`, `voice/backends.go`: `Cloud`, `Local`,
   `SelfHosted`) and `Conversation.TurnAudio`: no production caller (#47). The
   `VoiceBackend` idea in AGENTS.md is not code yet.

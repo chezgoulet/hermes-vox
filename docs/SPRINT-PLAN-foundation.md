@@ -1,6 +1,8 @@
 # Hermes Vox — Sprint 5 Plan Brief: Polished Foundation (before Enhanced Realtime)
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/foundation
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (the build host) · **Branch:** feature/foundation
 **Plan + build model:** `deepseek/deepseek-v4-flash-vision-exp` · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + unit tests + emulator smoke; on-device for audio paths.
 
@@ -38,7 +40,7 @@
 - Tier-2: allowBackup off; wake lock released on background.
 - Tier-3: the "feels alive" changes land (partial-audio TTS; push-or-close-to-push stream; frame-accurate silence; correct sample rate / sentence seam).
 - Tier-4: settings selectors actually change STT/TTS/voice.
-- **No regression:** realtime loop, session chaining (resp advances per turn), model downloads, warm voice, barge-in. Verified on-device + via the emulator stress harness (walkie/text against the real Odroid gateway).
+- **No regression:** realtime loop, session chaining (resp advances per turn), model downloads, warm voice, barge-in. Verified on-device + via the emulator stress harness (walkie/text against the real gateway).
 - One coherent commit per fix; each compiles + its tests pass.
 
 ## Iron rules (build agent)

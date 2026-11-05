@@ -1,5 +1,7 @@
 # PLAN — Hermes Vox logging patch (P0 + latency/poll infra)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Input: `docs/LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md` (18 findings). **Scope = F1–F6 (all P0) + two infra fixes** (LatencyStats per-turn summary / rolling window; VC:464 poll-spam gate). P1/P2 findings (F7–F18) are tracked in a backlog note, not implemented here. No Go changes (S19 boundary fix is the Kotlin error-echo in F3, which IS in scope).
 
 ## Verified reference table (audit line → real line, P0-relevant)

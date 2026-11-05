@@ -11,7 +11,7 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 The full licence text is in LICENSE. The source for the exact build you have is
 the repository at https://github.com/chezgoulet/hermes-vox, at the tag matching
-the version shown in Settings → About.
+the version shown in Settings → About & Diagnostics.
 
 ## Why GPL-3.0
 
@@ -35,6 +35,12 @@ These are data, not code, and carry their own terms:
 
   - Supertonic TTS (Supertone Inc.) — OpenRAIL-M
   - Whisper (OpenAI) — MIT weights, packaged by sherpa-onnx
+  - Parakeet-TDT 0.6B v2 (NVIDIA) — CC-BY-4.0
+  - Nemotron Speech Streaming 0.6B (NVIDIA) — NVIDIA Open Model License Agreement
   - Silero VAD — MIT
   - Piper voices — per-voice licences, shown in the model list
   - Gemma 4 E2B (Google) — Gemma Terms of Use
+
+LiteRT-LM, the on-device runtime that loads Gemma, is distributed through Google Maven and
+carries its own licence; the F-Droid recipe's `License` field covers the app only
+(`GPL-3.0-only`).

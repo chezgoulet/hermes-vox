@@ -1,5 +1,7 @@
 # Research refresh — Presence against the current literature, November 2026
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Purpose: re-read our own voice research, check what has been published since, and hold our timings
 and mechanics against it. This is a **cross-reference**, not a survey: each row names what we do,
 what we measured, and what the literature says the number should be.

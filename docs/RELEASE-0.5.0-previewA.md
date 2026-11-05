@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.0-previewA — speech-locked transcript
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## The fix
 The visible transcript ran 3-4 sentences ahead of the voice: `onDelta` painted every
 SSE text delta the moment it landed, while Piper renders speech over 8-15s and the

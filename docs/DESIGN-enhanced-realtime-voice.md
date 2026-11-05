@@ -1,5 +1,7 @@
 # DESIGN — Enhanced Realtime voice: bridging a bespoke Hermes agent to the on-phone voice
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Problem (maintainer, 2026-09-07)
 A user constructs an agent with its own soul + personality on their Hermes instance
 (the "mind"). The on-phone Gemma 4 **2B** is meant to be an extension of that

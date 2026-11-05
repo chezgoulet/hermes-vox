@@ -1,5 +1,7 @@
 # 0.9.0.1 — the /new fix
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 A hotfix on top of 0.9.0. Version code **144**.
 
 ## What was broken

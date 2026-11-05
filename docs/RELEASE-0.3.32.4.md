@@ -1,5 +1,7 @@
 # Hermes Vox 0.3.32.4 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## New capabilities
 - **Pause-first silence**: barge/hush/hangup silence is now immediate. `SherpaTts.stopStreaming()`
   closes the fence and calls `pause()` on the caller's thread and returns in milliseconds —

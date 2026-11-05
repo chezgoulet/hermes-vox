@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.1 — exposable visual categories + Dialing/Warming pill phases
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Two field asks from the 2026-09-07 device pass, both from the same session that called
 the animation "great app / really, really good / so many more possibilities":
 

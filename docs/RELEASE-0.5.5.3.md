@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.5.3 — the eye pivots as one object
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Patch on 0.5.5.2. The maintainer correctly diagnosed the remaining flaw: the iris moved over
 a STATIC eyeball (it slid across a fixed sclera), which reads as mechanical/puppet-like. In
 real anatomy the whole eyeball pivots in the socket — iris and sclera move as ONE object.

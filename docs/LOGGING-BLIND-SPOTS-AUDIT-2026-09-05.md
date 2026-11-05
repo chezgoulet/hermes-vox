@@ -1,5 +1,7 @@
 # Hermes Vox — Logging Blind-Spot Audit & Patch Spec
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Scope:** `chezgoulet/hermes-vox` @ main. Kotlin app under `android/app/src/main/java/com/hermesvox/` (22 files) + Go `voice/`, `mobile/`, `cmd/` packages. Read-only audit; no files modified.
 
 **Logging infra today** (verified): `VoxLog` (logcat tag `HermesVox` + `filesDir/logs/hermes-vox.log`, D/W/E all appended to file, crash handler kills process) · `CrashLog` (`vox_crash.log`, 9 KB cap, chains previous handler) · `LatencyStats` (4 ring buffers, push sites at VoiceController.kt **277** pushStt, **461** pushFirstByte, **479** pushFullReply, **530** pushFirstAudio; single emit gate `log("turn")` at **813**, `turns % 8` → P50/P95 lines only every 8th turn; **`reset()` has zero callers** → rings are lifetime aggregates).

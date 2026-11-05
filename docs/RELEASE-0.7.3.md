@@ -1,5 +1,7 @@
 # Hermes Vox 0.7.3 — the first-run fix
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Version code **115** · `versionName` 0.7.3 · built from `main` (0.7.2 + this fix).
 
 ## What this is

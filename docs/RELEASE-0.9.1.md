@@ -1,78 +1,152 @@
 # Hermes Vox 0.9.1 — release notes
 
-**Status:** prepared, not cut. This file is the record of what 0.9.1 contains and what it explicitly
-does not; the version bump and this document merge last, after the remaining lanes land.
+**Status:** prepared, not cut. Version code **147** · `versionName` `0.9.1` · built and gated on
+`testing`; the release commit is cherry-picked to `main`, where `release.yml` builds twice and
+compares the payloads before the tag is made. The list below is read from the tree at
+`2dd7e56`; nothing here is announced as shipped until the tag exists.
 
-**versionCode** 147 · **versionName** `0.9.1` · built from `testing` at the merge commit, released
-through `release.yml` (builds twice from `main` and compares payload hashes) after the cherry-pick.
+The shape of this release is the Alpha gate. Most of what 0.9.1 adds needs no switch at all;
+the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in five
+sets a tester takes one at a time. This document is ordered that way.
 
-## What is in it
+## Ships with no gate
 
-### The being
-- **Light mode is a ground, not a black panel.** Every visual family carries an authored light value
-  and a specified subtractive blend: `out = paper + (ink − paper) × cover`, with `paper = #F3F5F9`.
-  Additive glow is replaced because it vanishes on white, and the hue is normalised by its max
-  channel rather than its luma — the old luma normalisation clipped a green toward white, which is
-  why light mode looked washed out even after the panel was removed.
-- Measured floors, enforced by `LightModeContrastTest` over all 20 families: worst solid body
-  **4.13:1**, worst thin body **4.74:1**, reply text **16.36:1**, call glyphs **5.96 / 5.93**,
-  verdict chips **5.06–6.12**. The dark table is pinned unchanged by its own test.
-- Particle controls with a live preview in the Being section (density, speed, trail, hue, motion
-  scale), judged with Presence off.
-
-### Settings
-- Split by **what you are changing**: Being, Hearing, Voice, Presence. Every row carries a one-line
-  statement of its effect; advanced rows sit behind one disclosure per section.
-- No pref key renamed, no default changed; a test holds the set of keys the screen reads.
-
-### The call
+### The call and the agent
+- **Approvals on the phone (#282).** When Hermes stops to ask before a consequential command, the
+  approval reaches the live call: what is being approved, why, and yes/no by voice or touch. The
+  choices are the gateway's own; `deny` is always offered and a timeout resolves to *no*.
+- **Turns ride `/v1/runs` by default (#404).** The route that carries approvals, stops the run on
+  a barge-in and replays a dropped event stream without leaving a hole. A gateway that answers the
+  admission with **404** is remembered per profile and the turn falls back to `/v1/responses`;
+  every other error stays visible.
+- **A voice turn tells the mind through the API (D31).** The register, the soul-sync and the
+  phone's state ride the request's ephemeral `instructions`, with a per-request reasoning effort
+  (default low). The caller's words go as `input`, unchanged; the anti-tool clause is gone.
 - **`/new` during a call** re-opens the microphone *before* deleting the server copy, so the next
   utterance is recognised without hanging up.
-- **Interrupted audio** is keyed to its reply id and ended once: nothing from a stopped reply resumes
-  after the next turn begins.
-- **Presence is a layer, not a mode** (#222), the transcript path is fed by it (#223), and a repaired
-  presence line is logged as repaired (#257) so a shortened reply is never read as silence.
+- **Interrupted audio** is keyed to its reply id and ended once: nothing from a stopped reply
+  resumes after the next turn begins.
+- **Quiet calls (#325).** An optional switch, **off by default**, silences notifications in the
+  phone's priority Do Not Disturb mode for the length of a call only, restores exactly what it
+  changed, and recovers at app start after a crash. It is not an Alpha set.
+- **Same agent, many profiles.** The switcher fills itself from the host, probes every name before
+  it is usable, marks unknown names unavailable rather than deleting them, and ends a live call on
+  a switch. Each profile carries its own key (Keystore-encrypted), model, voice and look; a switch
+  starts a fresh conversation. **Profile switching, as a feature, is in the Alpha panel** (below);
+  the saved-connection machinery and the connection form are not.
+- **One identity.** Presence remains the public name; "Enhanced Realtime" is retired as
+  vocabulary.
 
 ### Surfaces
-- **The line** (#281): one plain-language line saying what is running and on what; long jobs show
+- **Share with agent (#370, #386).** The clipboard, a file, or another app's share becomes a named
+  artifact. The card names the file, its type and its size; nothing is sent until confirmed. The
+  file is staged, hashed and served once on the tailnet (100 MB cap, five-minute expiry, `410`
+  after the first transfer); text under 8 KB travels inline.
+- **The line (#281).** One plain-language line saying what is running and on what; long jobs show
   movement without inventing a percentage; failures name what failed.
-- **Share with agent** (#370): the clipboard and any file become a named artifact — a URL is a
-  `.txt`, an image stays an image — and another app can hand Vox a file. The card names the file,
-  its type and its size; nothing is sent until it is confirmed. The file itself is offered by
-  #386's tailnet mechanism, not uploaded.
-- **Assistant role** (#329): Vox can hold `android.app.role.ASSISTANT`. The role is ours; the
-  side-button long-press mapping belongs to the device maker.
-- **Commands screen** (#226): the app's own identity, grouped by what a command does, with real
-  queued/running/done/failed state instead of a toast.
-- **The app teaches your agent about itself** (#285): after the connection is verified it offers,
-  once, to install `hermes-vox-app` on the gateway — installed is not enabled, and the mechanism
-  (`skills.platform_disabled.api_server`) is documented.
+- **Commands screen (#226).** Grouped by what a command does, in two groups, with real
+  queued/running/done/failed state instead of a toast. `/diagnostics` is in the catalogue only
+  while its switch in About & Diagnostics is on.
+- **Discovery (#284).** The stuck hint, error naming, and a searchable catalogue that matches what
+  a person says ("it's slow" finds `/compress`, "can't reach it" finds `/reconnect`).
+- **Assistant role (#329).** Vox can hold `android.app.role.ASSISTANT`; the side-button mapping
+  belongs to the device maker.
+- **The app teaches your agent about itself (#285).** After the connection is verified it offers,
+  once, to install `hermes-vox-app` on the gateway — installed is not enabled, and the mechanism is
+  documented.
+- **The transcript scrolls back (#368)** to what the agent said, bounded, without a live reply
+  yanking the view.
+- **Light mode is a ground, not a black panel.** Every visual family carries an authored light
+  value; measured floors are enforced by `LightModeContrastTest` (worst solid body 4.13:1, reply
+  text 16.36:1).
+- **Settings split by what you are changing** — Being, Hearing, Voice, Presence — with one
+  disclosure per section and a hint on each row. Particle controls with a live preview.
+- **The hardware check** runs at first run for everyone and advises in the Alpha panel; it never
+  enables anything.
+
+### The phone, without Alpha
+- **The caller's four local actions** (timer, alarm, Do Not Disturb, volume) are matched on any
+  live voice turn and executed on the phone with no round trip; there is no separate switch for
+  them today. The MCP server and the capability-grant screen are behind the **Phone tools** set.
 
 ### Fixed earlier in the 0.9.x line, still shipping here
 `#328` cold-start listening retry, `#330` a failed TTS engine must not block a call, `#346` TTS
 package visibility, `#240` in-flight audio, `#351` `/new` re-arm.
 
-## What 0.9.1 does not include
+## Needs Alpha features
+
+Each set is selected on its own; with the master off, everything below is dimmed and unreachable.
+
+### Presence (the first set)
+- The on-device Gemma 4 E2B layer: it greets you and speaks the opening **beat** of a turn in the
+  agent's voice while Hermes thinks. It is a companion, not a gatekeeper: every turn still goes to
+  Hermes, which answers (D30). The `<<SKIP>>` offer is retired.
+- Voice and identity come from the agent's own `VOX.md`, mirrored read-only, **one document per
+  profile**, with the pre-profile mirror migrated.
+- It hears tone through the model's own audio encoder; mood steers delivery.
+- The handoff receipt (`event=er-handoff`) proves what the mind was handed; queued words
+  (`event=er-pending`) prove the caller was not dropped.
+- Presence is unfinished and says so. It needs the 2.6 GB presence model and a phone with 8 GB of
+  memory; the hardware check advises and the first real load can demote the choice.
+
+### Continuous listening
+- #228/#229: the microphone and recogniser stay live for the call, partials are read every 100 ms,
+  and semantic endpointing judges the end of a turn instead of waiting out a fixed silence. Both
+  switches default **on inside this set**; about 300 MB more memory during a call. With the gate
+  off, the old 800 ms endpoint runs unchanged.
+
+### Turn-taking
+- **Backchannels (#245)** — a recorded nonverbal acknowledgement in a mid-thought pause, capped,
+  never while anything else sounds; needs continuous listening.
+- **Resume after an interruption (#243)** — a barge leaves a record, and the next voice turn
+  carries one plain directive to answer the interjection first, then pick up without repeating.
+- **Overlap classification (#242)** — the words the barge carried decide whether to carry on, stop
+  and listen, or start a new turn.
+
+### Phone tools
+- The mind acts on the phone through **one MCP tool**, `phone`, on the tailnet, with a result for
+  every call and an undo for every reversible one. The tool schema is built from **twelve
+  capability groups**, each Off / Ask / Allow and **all Off by default**; Allow is a Tier 0 word.
+  Tier 2 is refused and stays on the gateway's approval surface. The app sets the server up by
+  asking the agent to edit its own configuration, and says **Connected** only after its own server
+  has seen an authenticated MCP handshake.
+- The caller's local lane (timer, alarm, Do Not Disturb, volume) executes instantly and reports to
+  the mind through the presence context.
+
+### Switching profiles
+- The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
+  you would be talking to, with **IN USE** on the active one, and a switch ends the live call and
+  starts a fresh conversation. Unfinished until a host's own profile list arrives reliably (#436).
+
+## Not in this release
 
 - **#202** (clipping) and **#240** (interruption) are fixed in code and await a human ear on this
   build; they are not "known broken", they are "unconfirmed by the only instrument that counts".
-- **#191 / #179** presence after the Gemma download and co-residency are unverified: the 2.6 GB
-  presence model is not installed on the test device.
-- **#208** the two-device behaviour matrix; one handset only.
-- **#228 / #229** continuous capture and semantic endpointing: open, not in this release.
-- **#325** silence-notifications, **#282** approvals, **#284** discovery: open, not in this release.
+- **#208** the two-device behaviour matrix; one handset only, and `docs/MATRIX.md` says so.
+- **F4, GPU contention** — not run. F5's resident-stack soak is done.
+- **The F-Droid listing** — the recipe is a draft and the app is not listed. Per D29 this is 0.9.1
+  work and the release waits for it; see `docs/FDROID.md`.
+- **The wake word** — foundation only. **Tier 3 / screen control** — design only. **Full-duplex**
+  — long horizon.
 
 ## Verification
 
-`docs/` carries the live acceptance document (forty cards) used for the release run; the measured
-baselines live in issue #209 (cold start median 161.5 ms over ten runs, 641 MB PSS in a live call
-with all three voice models) and are re-measured on the 0.9.1 build before the run.
+- `bash scripts/gate.sh` (the toolchain check, the runtime fetch, `assembleDebug`,
+  `testDebugUnitTest`, the stream parity harness, the doc-truth and skill-claims checks) is green
+  on the tree this document describes.
+- The device pass is the owner's: the nine checks in `docs/RUNS-ROUTE.md`, the approval cards in
+  `docs/APPROVALS-ACCEPTANCE.md`, and the per-set checks named with each Alpha feature.
+- The measured baselines are in `docs/BASELINE.md` and `docs/BUDGETS-0.9.1.md`; the cold-start
+  median on the 0.9.1 build is 161 ms without Presence and ~210 ms with it, and a live call with
+  Presence costs about 3 GB resident.
 
 ## Release mechanics
 
-1. Cherry-pick the release commit to `main`.
-2. Dispatch `release.yml` from `main`; it builds twice and asserts version, signature and payload
-   equality.
-3. Attach the APK and `SHA256SUMS` to the GitHub release; nightlies install over the release because
+1. Bump the version in `android/app/build.gradle` on `testing` (done: 147 / 0.9.1).
+2. Update `ReleaseNotes.kt` for anything the user must act on.
+3. Cherry-pick the release commit to `main`.
+4. Dispatch `release.yml` from `main`; it builds twice (path-B sherpa from source) and asserts
+   version, signature and payload equality.
+5. Attach the APK and `SHA256SUMS` to the GitHub release; nightlies install over the release because
    both are signed with the release key.
-4. `docs/RELEASE-0.9.1.md` is filled with the final hashes and the run's verdict, not before.
+6. `docs/RELEASE-0.9.1.md` is filled with the final hashes and the run's verdict, not before.

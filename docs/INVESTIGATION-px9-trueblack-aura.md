@@ -1,5 +1,7 @@
 # Investigation: the Pixel 9 "aura" (non-true-black region around the being)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Branch `feature/px9-trueblack`, off `testing` 8e5975e9c (0.7.1).
 Evidence: `.evidence/` panel photos (camera-only captures of the physical Pixel 9
 panel) vs `.evidence/` compositor screenshots (logical surface).

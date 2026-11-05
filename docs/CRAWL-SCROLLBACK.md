@@ -1,5 +1,7 @@
 # The crawl's scrollback (#368)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Read earlier agent speech on the presence surface. The owner's case is the barge-in:
 the response was cut and its first lines are already above the top fade. This is a
 rendering feature, not a scroll-view feature — `CrawlView` is canvas-drawn.

@@ -1,5 +1,7 @@
 # Hermes Vox 0.9.0 — "the HTTPS release"
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Version code **143** · `versionName` 0.9.0 · prepared on `testing`; the tag is cut from
 `main` by the maintainer, and only after the device pass in `docs/TEST-PLAN-0.9.md`.
 

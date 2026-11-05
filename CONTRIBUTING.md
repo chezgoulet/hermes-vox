@@ -76,15 +76,20 @@ no secrets required, so fork PRs are gated too.
 ## The build/test contract (the gate)
 
 **One command, from a clean checkout:** `bash scripts/gate.sh` → prints
-`GATE-GREEN` on success. It runs three stages in order:
+`GATE-GREEN` on success. It runs, in order:
 
 1. `scripts/fetch-runtime.sh` — the sherpa-onnx runtime AAR, SHA-256 verified.
-2. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`)
-3. A check that `StreamParityTest` (the stream parity harness) ran and passed —
+2. The report/skill/doc-truth self-tests: `scripts/check-skill-claims.py`,
+   `scripts/check-doc-truth.py` and the three Python report test suites.
+3. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`).
+4. A check that `StreamParityTest` (the stream parity harness) ran and passed —
    a gate that goes green because the harness stopped running is not a gate.
+5. The live suite: the six `LiveGatewayTest` cases against the deterministic fake
+   gateway, plus its self-check.
 
-Gradle links only `android/app/libs/sherpa-onnx-*.aar`; a leftover `mobile.aar`
-from a pre-#126 checkout is ignored.
+Gradle links only `android/app/libs/sherpa-onnx-*.aar` for development; a leftover
+`mobile.aar` from a pre-#126 checkout is ignored. **Releases** do not use that AAR:
+they build sherpa-onnx from source (path B) with the NDK, as `docs/FDROID.md` describes.
 
 ### Running the tests by hand
 

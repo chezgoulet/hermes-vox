@@ -1,8 +1,10 @@
 # Hermes Vox 0.6.1 — Enhanced Realtime, wired (alpha)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The ER (Enhanced Realtime) build: all seven runtime phases of
 `docs/BUILD-ER-enhanced-realtime.md` land in one release, phase-gated and
-Thelio-verified at every step. **ER is still alpha and labeled alpha** — the
+build-host-verified at every step. **ER is still alpha and labeled alpha** — the
 wire-in is honest, the classifier is keyword-level (deterministic), and the
 soul still never originates a fact.
 
@@ -62,5 +64,5 @@ gates on `voice_mode == enhanced`.
 ## Verification
 
 Every phase: `go vet` → `go test ./voice/...` → `gomobile bind` →
-`assembleRelease` + `testReleaseUnitTest` on the Thelio, independent clean
+`assembleRelease` + `testReleaseUnitTest` on the the build host, independent clean
 clone each time. Final: 30 suites / 240 tests / 0 failures.

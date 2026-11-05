@@ -1,5 +1,7 @@
 # Plan — 0.9.1, the mechanics release
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 0.9.1 is the release where the loop closes: a stranger gives a real command by voice, sees what the
 agent is doing, gets a clean result, and discovers the next thing without a tutorial. It must also be
 fast, correct and navigable with Presence **off** — a property, not the goal (D24).

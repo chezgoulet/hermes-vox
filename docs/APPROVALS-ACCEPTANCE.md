@@ -7,11 +7,14 @@ things were missing, and this document supplies both:
 
 1. **A trigger** — something that makes Hermes ask for a sign-off on a run the
    phone placed, without depending on a lucky model turn.
-2. **A route that can carry the request to the app.** The app's ordinary turns ride
-   `POST /v1/responses`; on gateway 0.22.6 that route does **not** attach an approval
-   notifier, so a flagged command there is resolved by `approvals.unattended_mode`
-   (default `deny`) and no event is emitted at all. Only `POST /v1/runs` and
-   streaming `POST /v1/chat/completions` carry `approval.request` to a client.
+2. **A route that can carry the request to the app.** When this document was written the app's
+   ordinary turns rode `POST /v1/responses`; on gateway 0.22.6 that route does **not** attach an
+   approval notifier, so a flagged command there is resolved by `approvals.unattended_mode`
+   (default `deny`) and no event is emitted at all. Only `POST /v1/runs` and streaming
+   `POST /v1/chat/completions` carry `approval.request` to a client. **Since #404 the app's turns
+   ride `/v1/runs` by default** (`docs/RUNS-ROUTE.md`), so this is now the normal path as well as
+   the arm's; a gateway that answers the admission with 404 still falls back to responses and
+   cannot raise a card.
 
 (2) is why "three voice attempts to trigger it" could never have worked even with a
 perfect trigger. (1) is why a normal turn was never going to raise one either. Both
@@ -112,7 +115,7 @@ sends that shape (`GatewayClient.answerApproval`).
 
 ### 1.4 Gateway settings a user would need — and what **not** to change
 
-The arm needs the gateway's normal, safe policy. On the sasquatch gateway as found
+The arm needs the gateway's normal, safe policy. On the the build host gateway as found
 (2026-11-03) that is already the case:
 
 ```yaml
@@ -140,7 +143,7 @@ command_allowlist:
   exactly what silently denies a flagged command on `/v1/responses`.
 
 **This change did not touch any live host's config.** The procedure above describes
-what a user would set; sasquatch's `~/.hermes/config.yaml` was read, not modified.
+what a user would set; the build host's `~/.hermes/config.yaml` was read, not modified.
 
 ---
 
@@ -343,7 +346,7 @@ it was not offered.
 
 ## 6. State of play on the acceptance host (2026-11-03) — what still needs proving
 
-Investigated on sasquatch against the gateway it runs (`/v1/health` → version
+Investigated on the build host against the gateway it runs (`/v1/health` → version
 **0.22.6**). Recorded so the next run does not rediscover it:
 
 1. **The trigger is proven.** `hermes approvals test -- rm -rf /tmp/vox-approval-arm`

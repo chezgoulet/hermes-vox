@@ -1,5 +1,7 @@
 # Hermes Vox 0.3.32.1 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## New capabilities
 - **Settings toggle "Voice-call echo routing"** (default ON): a switch under
   Settings → Mic/Speech that routes TTS playback as `USAGE_VOICE_COMMUNICATION`

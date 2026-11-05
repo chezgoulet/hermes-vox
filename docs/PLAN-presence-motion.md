@@ -1,5 +1,7 @@
 # SPEC — 0.5.0-previewB: state-driven presence motion (the maintainer-approved vocabulary)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Why
 the maintainer (2026-09-07, APPROVED): "way more animations and they should be way more
 interesting and they should be way more dynamic depending on the work being done."

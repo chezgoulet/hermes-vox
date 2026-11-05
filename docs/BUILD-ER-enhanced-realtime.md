@@ -1,5 +1,7 @@
 # BUILD SPEC — Enhanced Realtime (ER) mode. The full implementation plan.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 This codifies every decision we've locked. It is the BUILD READY plan: what runs on
 the phone, what runs on the gateway, and in what order. It is NOT a feature list —
 each item maps to a concrete, reviewable change.

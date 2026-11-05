@@ -1,5 +1,7 @@
 # Plan — 1.0, the horizon
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 1.0 is the last thing in the sequence and it carries nothing on its own. It is not a bucket of ideas
 that were waiting for a number; it is the point at which the app is finished enough to call general
 release, and the only way to know that is to have been in people's hands long enough to learn it

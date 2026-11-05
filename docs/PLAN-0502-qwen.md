@@ -1,4 +1,6 @@
 # SPEC — 0.5.2-QWEN: massively expand the visualizations; expose every style as a
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 # Settings category; add "cycle all animations across all categories"
 
 ## The maintainer's direction (verbatim, 2026-09-07)

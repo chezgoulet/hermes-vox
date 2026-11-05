@@ -1,5 +1,7 @@
 # Plan — 2.0, "the presence that follows you"
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > **Superseded 2026-10-21 by D21 and D22.** The 2.0 number is retired and nothing replaced it.
 > Continuity and the household are unnumbered, alongside "it reaches you" and "it shows you":
 > [`PLAN-FUTURE.md`](PLAN-FUTURE.md). This page is kept for the constraints it records, not as a plan.

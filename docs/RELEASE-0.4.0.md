@@ -1,5 +1,7 @@
 # Hermes Vox 0.4.0 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > The polish series: everything in 0.3.x, plus the security, lifecycle, and
 > measurement work that makes it a real public app.
 

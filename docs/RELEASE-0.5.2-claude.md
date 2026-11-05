@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.2-claude — no false 401, and a user-facing /compress
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Two items from the 2026-09-07 device pass on 0.5.1.
 
 > `conn-test: verdict=auth ping=401 stream=-1` at 14:27 and again at 16:05 — and the

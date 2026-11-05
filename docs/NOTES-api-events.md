@@ -1,5 +1,7 @@
 # What the Hermes API server gives the app
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Verified 2026-10-21 against the running install: **Hermes Agent v0.22.1+37.ge7b816e**.
 Sources: `gateway/platforms/api_server_openai_routes.py`, `api_server_runs.py`, `api_server.py`.
 

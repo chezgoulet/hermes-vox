@@ -1,5 +1,7 @@
 # SPEC — the conversational bridge (profiles and files, without touching Hermes)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Two features the app needs that the Hermes API does not expose: **which profiles a host serves**, and **a way to hand the agent a file**. Both are solved here as *conversation*, using the surface the app already has and the agent's own tools. No plugin, no fork, no host-side service, no change to Hermes.
 
 Status: proposed. Nothing here is deployed. Supersedes the patched-contract approach in `feat/api-server-profiles` and `feat/api-server-attachments`, both parked.
@@ -95,7 +97,7 @@ The API accepts text and inline images; it refuses `file` parts by design. But t
 
 ```
 [[vox:file]] name=meeting-notes.md type=text/markdown bytes=8123
-sha256=9f2c… url=http://100.82.156.1:49152/6b1f…e0 expires=1793650000
+sha256=9f2c… url=http://100.x.y.z:49152/6b1f…e0 expires=1793650000
 I am sharing one file with you. Fetch it now, verify it, and keep it.
 ```
 

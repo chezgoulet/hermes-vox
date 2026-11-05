@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.5.5 — sphere fork + eye aperture
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 the maintainer's fork: the full sphere was genuinely interesting and deserved its own
 direction; the eye should only render the eyelid-exposed slice, not the whole globe.
 

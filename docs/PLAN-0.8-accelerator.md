@@ -1,5 +1,7 @@
 # PLAN — Hermes Vox 0.8: the accelerator series
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Series thesis: **the accelerator work made the hardware path *possible*; 0.8 makes it
 *provable and perceptible*.** GPU acceleration is the hallmark feature. The Enhanced-Realtime presence
 work rides on it: the whole point of moving the express model off the CPU is to buy the
