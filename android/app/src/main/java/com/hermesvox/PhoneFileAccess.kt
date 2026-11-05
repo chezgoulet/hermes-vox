@@ -18,11 +18,17 @@ import java.io.File
  *
  * **The grant is the owner's, made in the system picker.** [intent] is `ACTION_OPEN_DOCUMENT_TREE`
  * (read-only — this app never writes into the tree); [accept] takes the persistable permission the
- * picker returned and remembers the tree's own display name. Without that grant all three actions
- * refuse `no_folder`, and there is no other way in: **the Storage Access Framework is the deliberate
- * default, and this app declares no broad storage permission for it.** An all-files mode is a
- * decision the owner could be offered later through Android's own `MANAGE_EXTERNAL_STORAGE` screen;
- * it is not a capability this file withholds on their behalf.
+ * picker returned and remembers the tree by **its own id** plus its own display name. Without that
+ * grant all three actions refuse `no_folder`, and there is no other way in: **the Storage Access
+ * Framework is the deliberate default, and this app declares no broad storage permission for it.**
+ * An all-files mode is a decision the owner could be offered later through Android's own
+ * `MANAGE_EXTERNAL_STORAGE` screen; it is not a capability this file withholds on their behalf.
+ *
+ * **The folder really is a subfolder.** Android 11+ refuses to grant the `Download` directory
+ * itself, so the picker opens there and the owner picks one of its subfolders (`Download/Work`).
+ * That subfolder's label is what `tools/list` advertises as `folder`, and the id — not the label —
+ * is how [trees] keys the grant, so a `Work` under Download and a `Work` under Documents are two
+ * grants, not one.
  *
  * **A name is looked up, never walked.** The document id is `treeDocumentId + "/" + name`, which is
  * one child of the granted tree by construction; [PhoneFiles.contained] re-checks the id the
@@ -60,8 +66,12 @@ object PhoneFileAccess {
      */
     private const val MAX_COUNT_BYTES = 8L * 1024 * 1024
 
-    /** One folder the owner granted. [label] is the folder's own name, never a path we invented. */
-    data class Tree(val uri: String, val label: String)
+    /**
+     * One folder the owner granted. [id] is the tree's **own** document id (`primary:Download/Work`)
+     * and it is the key: the grant is found by the id the owner picked, not by a word we invented.
+     * [label] is the folder's own name, which is what a call may say.
+     */
+    data class Tree(val uri: String, val id: String, val label: String)
 
     private data class Doc(
         val uri: Uri,
@@ -92,18 +102,39 @@ object PhoneFileAccess {
             val uri = (o["uri"] as? JStr)?.value?.trim().orEmpty()
             val label = (o["label"] as? JStr)?.value?.trim().orEmpty()
             if (uri.isEmpty()) continue
-            out.add(Tree(uri, label.ifEmpty { labelOf(Uri.parse(uri)) }))
+            // The id is derived from the URI when it is not stored (a grant from before the tree
+            // was keyed by its own id); the URI is the truth either way.
+            val id = (o["id"] as? JStr)?.value?.trim().orEmpty()
+                .ifEmpty { idOf(Uri.parse(uri)) }
+            out.add(Tree(uri, id, label.ifEmpty { labelOf(Uri.parse(uri)) }))
         }
         return out
     }
 
-    /** The picker intent. Read-only and persistable: the grant has to outlive the sheet. */
+    /**
+     * The picker intent. Read-only and persistable: the grant has to outlive the sheet.
+     *
+     * It opens on the **`Download`** folder. That folder itself cannot be granted on Android 11+ —
+     * the picker answers "Can't use this folder" — so the owner picks a **subfolder** of it
+     * (`Download/Work`), and that subfolder's own name is what the tool advertises.
+     */
     fun intent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
         addFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
         )
+        // Best effort: a device or picker that does not honour the initial URI still shows its own
+        // last location, and the grant works the same.
+        runCatching {
+            putExtra(
+                DocumentsContract.EXTRA_INITIAL_URI,
+                DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE, "primary:Download"),
+            )
+        }
     }
+
+    /** The external-storage documents provider: the one whose ids are `primary:…` paths. */
+    private const val EXTERNAL_STORAGE = "com.android.externalstorage.documents"
 
     /**
      * Take the picker's answer: persist the read grant, remember the folder's own name, and return
@@ -114,15 +145,18 @@ object PhoneFileAccess {
     fun accept(context: Context, data: Intent?): Tree? {
         val uri = data?.data ?: return null
         val label = labelOf(uri)
+        val id = idOf(uri)
+        if (id.isEmpty()) return null
         return try {
             context.contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
             val next = ArrayList(trees(context))
-            // The same folder picked again replaces its old grant, which is released so the
-            // provider is not left holding two.
-            next.firstOrNull { PhoneFiles.normalizeFolder(it.label) == PhoneFiles.normalizeFolder(label) }
+            // The same tree picked again replaces its old grant, which is released so the provider
+            // is not left holding two. The **tree id** is the identity: two folders can share a
+            // label (`Work` under Download and under Documents), and they are different grants.
+            next.firstOrNull { it.id == id }
                 ?.let { old ->
                     next.remove(old)
                     runCatching {
@@ -132,10 +166,10 @@ object PhoneFileAccess {
                         )
                     }
                 }
-            next.add(Tree(uri.toString(), label))
+            next.add(Tree(uri.toString(), id, label))
             save(context, next)
-            VoxLog.d("event=phone-files folder=$label")
-            Tree(uri.toString(), label)
+            VoxLog.d("event=phone-files folder=$label tree=$id")
+            Tree(uri.toString(), id, label)
         } catch (t: Throwable) {
             VoxLog.w("event=phone-files grant-failed reason=${t.javaClass.simpleName}")
             null
@@ -143,13 +177,19 @@ object PhoneFileAccess {
     }
 
     private fun save(context: Context, trees: List<Tree>) {
-        val encoded = Json.encode(trees.map { linkedMapOf("uri" to it.uri, "label" to it.label) })
+        val encoded = Json.encode(
+            trees.map { linkedMapOf("uri" to it.uri, "id" to it.id, "label" to it.label) }
+        )
         prefs(context).edit().putString(KEY_TREES, encoded).apply()
     }
 
+    /** The tree's own document id — the key a grant is stored and found by. */
+    private fun idOf(uri: Uri): String =
+        runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull().orEmpty()
+
     /** The tree's own display name, or its last id segment when the provider will not say. */
     private fun labelOf(uri: Uri): String {
-        val id = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull().orEmpty()
+        val id = idOf(uri)
         return id.substringAfterLast(':').substringAfterLast('/').ifBlank { "folder" }
     }
 
@@ -348,10 +388,14 @@ object PhoneFileAccess {
                 "the granted folder is unreadable · grant it again in Phone tools",
             )
         }
-        val treeId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
-            ?: return PhoneFiles.ListResult.Failed(
+        val treeId = tree.id.ifEmpty {
+            runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull().orEmpty()
+        }
+        if (treeId.isEmpty()) {
+            return PhoneFiles.ListResult.Failed(
                 "the granted folder is unreadable · grant it again in Phone tools",
             )
+        }
         // The requested subdirectory is one relative path inside the tree, and nothing else.
         val startId = if (path.isEmpty()) treeId else "$treeId/$path"
         if (!PhoneFiles.containedAt(treeId, startId, path)) return PhoneFiles.ListResult.Outside
@@ -538,8 +582,12 @@ object PhoneFileAccess {
         } catch (_: Throwable) {
             return Lookup.Failed("the granted folder is unreadable · grant it again in Phone tools")
         }
-        val treeId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
-            ?: return Lookup.Failed("the granted folder is unreadable · grant it again in Phone tools")
+        val treeId = tree.id.ifEmpty {
+            runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull().orEmpty()
+        }
+        if (treeId.isEmpty()) {
+            return Lookup.Failed("the granted folder is unreadable · grant it again in Phone tools")
+        }
         val docId = "$treeId/$name"
         // Belt and braces: the id is built from a name already checked, and it is re-checked here.
         if (!PhoneFiles.contained(treeId, docId)) return Lookup.Outside

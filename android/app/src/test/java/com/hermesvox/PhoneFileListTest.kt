@@ -39,6 +39,8 @@ class PhoneFileListTest {
         var window: PhoneEngine.PhonePlatform.FileText = PhoneEngine.PhonePlatform.FileText.Missing
         var seenList: List<Any?>? = null
         var seenWindow: List<Any?>? = null
+        /** The grant the engine handed over, id included: the id is what a tree is keyed by. */
+        var seenFolder: PhoneEngine.PhonePlatform.GrantedFolder? = null
 
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean = true
         override fun startAlarm(id: String, hour: Int, minute: Int, atEpochMs: Long): Boolean = true
@@ -66,7 +68,10 @@ class PhoneFileListTest {
         override fun fileText(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
             name: String,
-        ): PhoneEngine.PhonePlatform.FileText = text
+        ): PhoneEngine.PhonePlatform.FileText {
+            seenFolder = folder
+            return text
+        }
 
         override fun fileList(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
@@ -76,6 +81,7 @@ class PhoneFileListTest {
             offset: Int,
             limit: Int,
         ): PhoneFiles.ListResult {
+            seenFolder = folder
             seenList = listOf(folder.label, path, depth, pattern, offset, limit)
             return listing
         }
@@ -86,6 +92,7 @@ class PhoneFileListTest {
             offset: Long,
             length: Long,
         ): PhoneEngine.PhonePlatform.FileText {
+            seenFolder = folder
             seenWindow = listOf(folder.label, name, offset, length)
             return window
         }
@@ -111,13 +118,24 @@ class PhoneFileListTest {
         grants: PhoneGrants.Source = only("files"),
     ) = engine(grants).dispatch(arguments, t0, e0)
 
-    private val folder = PhoneEngine.PhonePlatform.GrantedFolder("Download")
+    private val folder = PhoneEngine.PhonePlatform.GrantedFolder("primary:Download", "Download")
 
     private fun schemaEnum(grants: PhoneGrants.Source): List<String> {
         val schema = Json.parse(Json.encode(PhoneTool.schema(grants))) as JObj
         val input = schema["inputSchema"] as JObj
         val action = (input["properties"] as JObj)["action"] as JObj
         return (action["enum"] as JArr).items.map { (it as JStr).value }
+    }
+
+    /** The `folder` enum the mind is handed for [labels], read off the real `tools/list` shape. */
+    private fun schemaFolders(labels: List<String>): List<String> {
+        val schema = Json.parse(
+            Json.encode(PhoneTool.schema(only("files"), labels))
+        ) as JObj
+        val input = schema["inputSchema"] as JObj
+        val props = input["properties"] as JObj
+        val property = props["folder"] as JObj
+        return (property["enum"] as? JArr)?.items?.map { (it as JStr).value } ?: emptyList()
     }
 
     /** A real directory tree on disk, plus the reader the SAF edge amounts to: metadata only. */
@@ -560,6 +578,65 @@ class PhoneFileListTest {
         assertTrue("the refusal says how to grant one", r.detail!!.contains("Phone tools"))
     }
 
+    // ---- the grant is the folder, not the word (B1) ----
+
+    /**
+     * B1 of the 0.9.1 review. Android 11+ will not grant the `Download` root, so the owner picks a
+     * subfolder (`Download/Work`). The grant is keyed by its **own tree id**, advertised under its
+     * **own label**, and — because there is exactly one — the default when `folder` is omitted.
+     * Before this fix the schema offered only `Downloads`/`Documents`, so the granted `Work` could
+     * never be named and every call was `no_folder`.
+     */
+    @Test
+    fun a_granted_subfolder_is_advertised_by_its_label_and_read_by_its_tree_id() {
+        val work = PhoneEngine.PhonePlatform.GrantedFolder("primary:Download/Work", "Work")
+        fake.folders = listOf(work)
+        fake.text = PhoneEngine.PhonePlatform.FileText.Found("notes.txt", 5, "hello")
+
+        assertEquals(
+            "the folder enum is the owner's grants, once each, in grant order",
+            listOf("Work", "Notes"),
+            schemaFolders(listOf("Work", "work", " Notes ", "")),
+        )
+
+        // One grant: there is nothing to choose, so `folder` may be omitted.
+        val r = call(mapOf("action" to "file_read", "name" to "notes.txt"))
+        assertTrue(r.json(), r.ok)
+        assertEquals("hello", r.facts["text"])
+        assertEquals("the result names the folder the owner picked", "Work", r.facts["folder"])
+        assertEquals("and the grant carries its tree id", work, fake.seenFolder)
+
+        // Naming it works too, in the call's own case.
+        val named = call(mapOf("action" to "file_read", "name" to "notes.txt", "folder" to "work"))
+        assertTrue(named.json(), named.ok)
+        assertEquals(work, fake.seenFolder)
+
+        val listed = call(mapOf("action" to "file_list", "folder" to "Work"))
+        assertFalse("the listing itself is the platform's answer, not the folder's", listed.ok)
+        assertEquals(work, fake.seenFolder)
+    }
+
+    @Test
+    fun several_grants_refuse_a_call_with_no_folder_and_name_the_choices() {
+        fake.folders = listOf(
+            PhoneEngine.PhonePlatform.GrantedFolder("primary:Download/Work", "Work"),
+            PhoneEngine.PhonePlatform.GrantedFolder("primary:Documents/Notes", "Notes"),
+        )
+        val r = call(mapOf("action" to "file_read", "name" to "notes.txt"))
+        assertFalse(r.ok)
+        assertEquals("guessing a folder is not an answer", PhoneReason.INVALID, r.reason)
+        assertTrue("the choices are named: ${r.detail}", r.detail!!.contains("Work"))
+        assertTrue("both of them: ${r.detail}", r.detail!!.contains("Notes"))
+        assertNull("nothing was read", fake.seenFolder)
+
+        val notGranted = call(
+            mapOf("action" to "file_read", "name" to "notes.txt", "folder" to "Download"),
+        )
+        assertEquals("a word that is not a grant is still no_folder", PhoneReason.NO_FOLDER, notGranted.reason)
+        assertTrue(notGranted.detail!!.contains("Work"))
+        assertNull("and it never falls back to a folder it was not asked for", fake.seenFolder)
+    }
+
     @Test
     fun a_provider_failure_is_unavailable_and_never_a_partial_page() {
         fake.folders = listOf(folder)
@@ -653,15 +730,15 @@ class PhoneFileListTest {
         assertEquals(PhoneFiles.DEFAULT_LIST_LIMIT, call.limit)
         assertEquals(0, call.offset)
         assertNull(call.pattern)
-        assertNull("the default folder is resolved by the engine", call.folder)
+        assertNull("omitting folder means the only grant, resolved by the engine", call.folder)
 
         val top = PhoneTool.parse(
-            mapOf("action" to "file_list", "folder" to "Documents", "path" to "a/b", "depth" to 5,
+            mapOf("action" to "file_list", "folder" to "Work", "path" to "a/b", "depth" to 5,
                 "pattern" to "*.pdf", "offset" to 40, "limit" to 1000),
             only("files"),
         ) as PhoneTool.Parsed.Run
         val bounded = top.call as PhoneTool.Call.FileList
-        assertEquals("Documents", bounded.folder)
+        assertEquals("the folder is the label the owner's grant produced", "Work", bounded.folder)
         assertEquals("a/b", bounded.path)
         assertEquals(5, bounded.depth)
         assertEquals("*.pdf", bounded.pattern)

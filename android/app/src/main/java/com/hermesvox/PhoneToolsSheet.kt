@@ -682,6 +682,12 @@ class PhoneToolsSheet(
 
     /** The system folder picker. The grant is persistable, so it outlives this sheet. */
     private fun pickFolder() {
+        // Android 11+ will not grant the Download folder itself: the picker opens there and shows
+        // "Can't use this folder" if the owner taps it. So the ask is a subfolder, said plainly
+        // before the picker opens rather than discovered as a refusal inside it.
+        notice = "Pick a folder inside Download — for example Download/Work. Android will not grant " +
+            "Download itself, so a subfolder is what your agent gets."
+        paint()
         try {
             act.startActivityForResult(PhoneFileAccess.intent(), REQ_FOLDER)
         } catch (_: Throwable) {
@@ -851,9 +857,16 @@ class PhoneToolsSheet(
                 return true
             }
             val tree = PhoneFileAccess.accept(activity, data)
+            val granted = if (tree == null) 0 else PhoneFileAccess.trees(activity).size
             sheet?.let {
                 it.notice = if (tree != null) {
-                    "Folder granted · ${tree.label} — Files can now read one named file inside it."
+                    val note = if (granted > 1) {
+                        " $granted folders are granted now, so the agent names one when it calls."
+                    } else {
+                        ""
+                    }
+                    "Folder granted · ${tree.label} — Files can now list and read one named file " +
+                        "inside it.$note"
                 } else {
                     "Android did not make that folder grant persistable, so no folder is granted."
                 }

@@ -108,7 +108,7 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
 | `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
 | `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
-| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`), optional `offset`/`length` for a byte window | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
+| `file_read` | 1 | `name`, optional `folder` (a granted folder's label), optional `offset`/`length` for a byte window (1 – 65 536) | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
 | `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
 | `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
@@ -198,9 +198,9 @@ mid-call, which is the only kind of revocation worth the name.
 
 The Phone tools sheet lists the thirteen groups by tier, each with its one-line description and its
 Off / Ask / Allow control (Allow only where the tier permits it). Files and Notifications carry one
-sentence of plain consequence where the ability is not obvious — "your agent could read a file in
-Downloads when you approve it". Messages and Calls do not need one: nothing leaves the phone except
-through an app the owner already uses, and the owner still presses send or call.
+sentence of plain consequence where the ability is not obvious — "your agent could list that folder
+and read a file in it when you approve it". Messages and Calls do not need one: nothing leaves the
+phone except through an app the owner already uses, and the owner still presses send or call.
 
 **Recent actions** is the counter-claim: time, action, summarised arguments, outcome, and an Undo
 where the action carries one. It records **refusals as well as successes**, because "my agent says

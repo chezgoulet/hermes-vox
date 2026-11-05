@@ -13,6 +13,12 @@ import java.io.File
  * subdirectory inside the same tree, and it is refused by the same rule when it is absolute or
  * climbs out.
  *
+ * **The folder vocabulary is the owner's grants, never a fixed pair of words.** [folderChoices] is
+ * the list `tools/list` advertises, in grant order and once each: whatever the owner picked in the
+ * system picker, under its own label. A fixed `Downloads`/`Documents` vocabulary could not name the
+ * subfolder Android 11+ forces the owner to pick (the `Download` root itself cannot be granted), so
+ * the grant's own name is the name the mind uses.
+ *
  * Listing is capable, not cautious: [MAX_DEPTH] and [MAX_LIST_LIMIT] bound one *request*, never
  * what the folder is allowed to contain. A folder with more entries than one page says
  * `has_more` and hands back `next_offset`; it is paged, never refused and never silently cut.
@@ -61,11 +67,23 @@ object PhoneFiles {
     /** A relative directory path inside the granted tree: deep enough, short enough to audit. */
     const val MAX_LIST_PATH_CHARS = 1024
 
-    /** The two folder words the tool accepts. A granted folder's own name may differ. */
-    val FOLDERS = listOf("Downloads", "Documents")
-
-    /** The folder a call means when it omits `folder`. */
-    const val DEFAULT_FOLDER = "Downloads"
+    /**
+     * The folder words the tool may offer: the labels the owner granted, in grant order, once each.
+     *
+     * This is the whole vocabulary. There is no built-in `Downloads`/`Documents` pair to fall back
+     * to: on Android 11+ the `Download` root cannot be granted, so the folder the owner really gave
+     * is a subfolder (`Download/Work`) and its own label is the only honest name for it.
+     */
+    fun folderChoices(labels: List<String>): List<String> {
+        val out = ArrayList<String>(labels.size)
+        for (raw in labels) {
+            val label = raw.trim()
+            if (label.isEmpty()) continue
+            if (out.any { it.equals(label, ignoreCase = true) }) continue
+            out.add(label)
+        }
+        return out
+    }
 
     /**
      * Why [name] is not a file name this action will look up, or null when it is safe.
@@ -152,9 +170,6 @@ object PhoneFiles {
             p.isEmpty() -> null
             p.length > MAX_LIST_PATH_CHARS ->
                 "the path is longer than $MAX_LIST_PATH_CHARS characters"
-            p.contains("..") ->
-                "a path containing \"..\" is refused: listing walks inside the folder you granted, " +
-                    "and nowhere else"
             p.startsWith("/") || p.startsWith("\\") || WINDOWS_ABSOLUTE.containsMatchIn(p) ->
                 "an absolute path is refused: give a path relative to the folder you granted, or " +
                     "leave it out for the folder itself"
@@ -169,13 +184,6 @@ object PhoneFiles {
             else -> null
         }
     }
-
-    /**
-     * The comparable form of a folder word: `Downloads` and `Download` are the same folder, and
-     * the case the owner or the tool used does not decide whether a grant is found.
-     */
-    fun normalizeFolder(label: String?): String =
-        (label?.trim().orEmpty().ifEmpty { DEFAULT_FOLDER }).lowercase().trimEnd('s')
 
     /**
      * True when [documentId] is exactly one child of [treeDocumentId] — nothing above it, nothing

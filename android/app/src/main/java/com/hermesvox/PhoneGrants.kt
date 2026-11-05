@@ -133,9 +133,10 @@ object PhoneGrants {
             id = "files",
             label = "Files",
             tier = PhoneTiers.REPORTED,
-            lets = "List, read and offer files in Downloads or Documents, inside the folder you " +
-                "granted.",
-            warning = "Your agent could list Downloads and read a file in it when you approve it.",
+            // The folder is the owner's grant, by its own name: Android 11+ will not grant the
+            // Download root, so the folder really is a subfolder (`Download/Work`).
+            lets = "List, read and offer files inside the folder you granted.",
+            warning = "Your agent could list that folder and read a file in it when you approve it.",
             actions = listOf("file_list", "file_read", "file_offer"),
         ),
         Group(
