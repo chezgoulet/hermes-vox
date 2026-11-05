@@ -166,9 +166,9 @@ object PhoneGrants {
             id = "apps",
             label = "Apps",
             tier = PhoneTiers.INSTANT,
-            lets = "Open an app or a link. Uninstalling still needs your approval, and is not built.",
-            actions = listOf("launch", "open"),
-            planned = listOf("install", "uninstall"),
+            lets = "Open an app or a link, or remove an app. Removing always asks you first.",
+            actions = listOf("launch", "open", "uninstall"),
+            planned = listOf("install"),
         ),
         Group(
             id = "contacts",
@@ -205,7 +205,9 @@ object PhoneGrants {
     fun tierOf(action: String): Int? {
         val a = action.trim().lowercase()
         val group = groupOf(a) ?: return PhoneTiers.of(a)
-        return if (a in group.actions) group.tier else PhoneTiers.of(a) ?: group.tier
+        // An action's own tier wins inside a group. The apps group is instant because launch/open
+        // are, while `uninstall` stays approval: a group grant is not a grant to remove anything.
+        return PhoneTiers.of(a) ?: group.tier
     }
 
     /**

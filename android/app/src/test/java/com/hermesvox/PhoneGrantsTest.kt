@@ -122,7 +122,14 @@ class PhoneGrantsTest {
         val apps = PhoneGrants.groupOf("uninstall")
         assertEquals("apps", apps?.id)
         assertEquals(PhoneTiers.APPROVAL, PhoneGrants.tierOf("uninstall"))
-        assertFalse("a planned name is never in a group's offerable set", "uninstall" in apps!!.actions)
+        assertTrue("uninstall is built, and its card owns it", "uninstall" in apps!!.actions)
+        assertTrue(
+            "the card's action is offered when its group is on",
+            "uninstall" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
+        )
+        val install = PhoneGrants.groupOf("install")
+        assertEquals("apps", install?.id)
+        assertFalse("install is still planned", "install" in install!!.actions)
         for (g in PhoneGrants.GROUPS) {
             for (planned in g.planned) {
                 assertFalse("$planned is planned, not built", planned in g.actions)
