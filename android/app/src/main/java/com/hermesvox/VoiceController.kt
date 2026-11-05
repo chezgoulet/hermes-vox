@@ -178,6 +178,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     // firstAudioPushed arms the first-REAL-AUDIO push (see the streamChunk seam in
     // the streaming worker). Both reset at the top of every runStreamedTurn.
     @Volatile private var firstTextLatch = false     // #40/C4: one first-text push per turn
+    // TurnWait (naturalness, 2026-11-05): the tools the mind opened and closed this turn — a
+    // running tool explains a silent stream, and a started one makes a give-up uncertain — and
+    // the last time the caller's voice was heard, so a wait line never talks over them.
+    @Volatile private var turnToolCalls = 0
+    @Volatile private var turnToolOutputs = 0
+    @Volatile private var callerVoiceAt = 0L
+    /** The source of the glue playing now (SOURCE_WAIT lines hold the barge check, see the drain). */
+    @Volatile private var glueSource = ""
+    /** A wait line's echo tail: the barge drain holds until this uptime. */
+    @Volatile private var waitLineTailUntil = 0L
     // When that first text landed, for the working lane's `late` witness (milliseconds since).
     // 0 until it lands; reset with the latch at every turn.
     @Volatile private var firstTextAtMs = 0L
@@ -981,7 +991,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // the caller — it may not reset the pause, or the clip would push the
                         // endpoint back. The frames are still kept below.
                         val ackMuted = spoke && Backchannel.vadMuted(android.os.SystemClock.uptimeMillis(), ackLedger)
-                        if (spoke && !ackMuted) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        if (spoke && !ackMuted) { inSpeech = true; silentMs = 0; callerVoiceAt = android.os.SystemClock.uptimeMillis() } else if (inSpeech) silentMs += n * 1000 / sr
                         if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
@@ -1357,12 +1367,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 0.9.1: the reply's level at the playback head — the echo reference.
                         // Only the on-device voice has one; System TTS keeps the fixed floor.
                         val ref = if (spk) (tts as? SherpaTts)?.playbackRms() else null
-                        if (inGrace || stateSkip) {
+                        // TurnWait: a wait line plays in GENERATION mode (nothing else does with
+                        // Presence off), where no echo reference exists — its own sound must not
+                        // read as the caller and cancel the turn it is waiting on.
+                        val waitLine = !spk && ((glueSpeaking && glueSource == SOURCE_WAIT) || readAt < waitLineTailUntil)
+                        if (inGrace || stateSkip || waitLine) {
                             bargeAudio.hold(frames, ref)   // reset sustains, history only (pre-roll)
                             bargeStat.reset()
                             continue
                         }
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
+                        if (vadSpeech) callerVoiceAt = readAt
                         // #282: while an approval is up, the mic answers THAT — it must
                         // not barge-cancel the run that is waiting for the answer. The
                         // same frames, VAD and recogniser as the ordinary loop; only the
@@ -1878,14 +1893,14 @@ class VoiceController(private val context: Context, private val session: HermesS
      * socket on /v1/responses (which aborts the generation), or POST /stop on /v1/runs
      * (where the socket is only a subscriber and the run would otherwise keep going).
      */
-    private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget) {
+    private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget, why: String) {
         // A runs stream's own id maps to its run. L1 (0.9.1 review): there is no fallback.
         // The id is empty only while the admission is in flight, and the card heading the
         // queue then may be an earlier turn's held card or the arm's — stopping it would
         // stop another turn's run. Closing this turn's own stream is enough: the cancel and
         // the admission meet in `StreamState.bindRun`, which stops the run once it is named.
         val runId = session.runIdOf(streamId)
-        VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=budget " +
+        VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=$why " +
             "run=${runId.ifEmpty { "-" }} elapsedMs=${budget.elapsedMs()} " +
             "pausedMs=${budget.pausedMs()} limitMs=${StreamPollGate.STREAM_TURN_TIMEOUT_MS}")
         val stopped = TurnAbandon.perform(
@@ -2212,6 +2227,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         firstTextLatch = false
         firstTextAtMs = 0L
         firstAudioPushed = false
+        turnToolCalls = 0; turnToolOutputs = 0
         genCancelled = false
         replyGen = gen
         if (!replies.begin(gen)) VoxLog.w("event=reply-begin refused gen=$gen (already open or ended)")   // #240
@@ -2337,6 +2353,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var lastEventAt = android.os.SystemClock.uptimeMillis()
                 var stall5 = false
                 var stall15 = false
+                var checkInsSaid = 0
                 while (true) {
                     val tick = android.os.SystemClock.uptimeMillis()
                     // Idempotent: repeated true ticks pause once; repeated false ticks
@@ -2422,8 +2439,33 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val waiting = turnApprovalWaiting()
                             if (!waiting && idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                             else if (!waiting && idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
+                            // TurnWait: a stream that stays open and sends NOTHING had no failure
+                            // path short of the 120 s budget (no poll errors to count). Past the
+                            // silent ceiling — no tool running, no card up — stop waiting and say so.
+                            if (TurnWait.silentStreamExpired(idle, toolRunning = turnToolCalls > turnToolOutputs, approvalWaiting = waiting)) {
+                                VoxLog.w("event=stream-silent gen=$gen idleMs=$idle tools=$turnToolCalls/$turnToolOutputs — stopping the wait")
+                                abandoned = true
+                                abandonTurn(gen, sid, route, budget, TurnRepair.REASON_SILENT)
+                                throw Exception(TurnRepair.REASON_SILENT)
+                            }
                         }
                         emitEvents(evts, t0, gen)
+                        // TurnWait: with Presence silent, a spoken turn that has not started its
+                        // reply gets at most two short, true check-ins (15 s, 40 s).
+                        if (fromVoice && !doneNow && checkInsSaid < TurnWait.MAX_CHECK_INS) {
+                            val line = TurnWait.checkIn(tick - t0, checkInsSaid, firstTextLatch,
+                                presenceSpeaks = voiceTurn && erPresenceOn,
+                                approvalWaiting = turnApprovalWaiting(),
+                                callerQuietMs = tick - callerVoiceAt)
+                            if (line != null) {
+                                checkInsSaid++
+                                VoxLog.d("event=wait-line gen=$gen n=$checkInsSaid waitedMs=${tick - t0}")
+                                main.post {
+                                    if (gen == turnGen && turnInFlight && !genCancelled && !firstTextLatch)
+                                        speakGlue(line, source = SOURCE_WAIT)
+                                }
+                            }
+                        }
                         if (obj.optBoolean("done")) {
                             done = true
                             readerRunEnd = obj.optString("run_end", "")   // H3: "lost" = the run may outlive the turn
@@ -2481,13 +2523,17 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // /v1/responses closes the socket; /v1/runs stops the run itself, so
                     // it is never left working (or parked on an approval) with no client.
                     abandoned = true
-                    abandonTurn(gen, sid, route, budget)
+                    abandonTurn(gen, sid, route, budget, "budget")
                     throw Exception("timeout")
                 }
             } catch (e: Throwable) {
                 noteLiveFailure(e.message)   // K1: only a real auth rejection moves the live verdict
                 VoxLog.e("event=stream-turn-failed gen=$gen err=${e.message}")
-                val reason = if (e.message == "timeout") "turn-timeout" else "stream-error"
+                val reason = when (e.message) {
+                    "timeout" -> TurnRepair.REASON_TIMEOUT
+                    TurnRepair.REASON_SILENT -> TurnRepair.REASON_SILENT
+                    else -> "stream-error"
+                }
                 when (val action = terminal.fail(reason)) {
                     is StreamAction.Fallback -> deliverFallback(action, gen)
                     is StreamAction.Failure -> {
@@ -2567,12 +2613,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onLog("// entity responding…") }
                 "response.output_item.added" -> when (e.optString("item_type")) {
                     "function_call" -> {
+                        turnToolCalls++
                         val name = e.optString("name")
                         val args = e.optString("arguments")
                         mindTool = if (args.isBlank()) name else "$name (${args.take(60)})"
                         main.post { listener?.onLog("◆ tool: $name ${args.take(80)}"); listener?.onTool(name, args) }
                     }
                     "function_call_output" -> {
+                        turnToolOutputs++
                         val raw = e.optString("output")
                         val out = raw.replace("\n", " ")
                         main.post { listener?.onLog("◆ tool · ${out.take(120)}"); listener?.onToolOutput(raw) }
@@ -2760,8 +2808,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (!TurnRepair.speaks(
                 cancelled = genCancelled, stopped = stopped, listening = listening,
                 voiceOn = shouldSpeak(), sameTurn = gen == turnGen)) return false
-        VoxLog.er("event=repair reason=$reason gen=$gen")
-        speak(TurnRepair.LINE, gen)
+        val workStarted = turnToolCalls > 0
+        VoxLog.er("event=repair reason=$reason gen=$gen workStarted=$workStarted")
+        speak(TurnRepair.line(reason, workStarted), gen)
         return true
     }
 
@@ -3314,7 +3363,8 @@ class VoiceController(private val context: Context, private val session: HermesS
             stopTts()
         }
         glueSpeaking = true
-        glueCutAtHandoff = source == SOURCE_WORKING
+        glueSource = source
+        glueCutAtHandoff = source == SOURCE_WORKING || source == SOURCE_WAIT
         // #223: every line the presence layer actually voices is conversation, in the
         // order it was said. This is the one funnel all of them pass through (soul answer,
         // beat, working aside, filler, greeting, tool narration), so the transcript cannot
@@ -3334,6 +3384,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             }) { _ ->
                 if (speakSeq.get() == seq) {
                     glueSpeaking = false
+                    if (source == SOURCE_WAIT) waitLineTailUntil = android.os.SystemClock.uptimeMillis() + WAIT_LINE_TAIL_MS
                     // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
                     // one-voice rule) closes the fence, which is the reply's
                     // streamChunk gate. When a glue ends and a streamed reply is
@@ -3866,6 +3917,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
          *  the mark that lets the reply's first audio cut it without the beat's wait. */
         const val SOURCE_WORKING = "soul-working"
+        /** The glue source of a [TurnWait] check-in — the app's own line while the mind is slow. */
+        const val SOURCE_WAIT = "wait"
+        /** How long the barge drain holds after a wait line ends (its echo tail). */
+        const val WAIT_LINE_TAIL_MS = 300L
         /** F3: how often the queued turn is retried while the floor is busy. */
         const val PENDING_RETRY_MS = 400L
         /** 0.9.1 soak: the once-per-card "say approve or no". */

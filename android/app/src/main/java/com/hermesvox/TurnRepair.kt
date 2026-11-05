@@ -33,6 +33,33 @@ object TurnRepair {
     const val REASON_LOST = "stream-lost"
     /** The turn ended on a gateway error. */
     const val REASON_ERROR = "reply-error"
+    /** The agent budget ran out ([StreamPollGate]): the app stopped waiting. */
+    const val REASON_TIMEOUT = "turn-timeout"
+    /** The stream sent nothing for [TurnWait.SILENT_STREAM_MS]: the app stopped waiting. */
+    const val REASON_SILENT = "stream-silent"
+
+    /** The app gave up waiting, and nothing had been started that it knows of. */
+    const val LINE_GAVE_UP = "That took too long, so I stopped waiting. Want to ask again?"
+
+    /**
+     * The turn ended without an answer AFTER the mind had started work (a tool call was seen).
+     * The guardrail: a refusal must never claim nothing happened when something did, and
+     * "try again" could do it twice — so the line says the outcome is unknown and offers the
+     * safe next step.
+     */
+    const val LINE_UNCERTAIN = "I didn't get an answer back, and it had already started on it, " +
+        "so I can't say what got done. Ask me to check."
+
+    /**
+     * The one line for this ending. [workStarted]: the mind started a tool this turn, so
+     * something may have happened. A timeout or a silent stream says the app stopped waiting —
+     * not that the mind failed — because that is what the app knows.
+     */
+    fun line(reason: String, workStarted: Boolean): String = when {
+        workStarted -> LINE_UNCERTAIN
+        reason == REASON_TIMEOUT || reason == REASON_SILENT -> LINE_GAVE_UP
+        else -> LINE
+    }
 
     /** Should [LINE] be spoken for this turn's ending? */
     fun speaks(
