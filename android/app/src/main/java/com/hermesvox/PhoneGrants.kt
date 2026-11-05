@@ -140,6 +140,7 @@ object PhoneGrants {
             lets = "List, read and offer files inside the folder you granted.",
             warning = "Your agent could list that folder and read a file in it when you approve it.",
             allowWarning = "Allow: Vox can read a file in the folder you granted, and offer it to " +
+                "your agent, without asking. Reading inside that folder is no longer a decision.",
             actions = listOf("file_list", "file_read", "file_offer"),
         ),
         Group(

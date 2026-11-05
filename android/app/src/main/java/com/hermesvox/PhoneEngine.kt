@@ -840,8 +840,15 @@ class PhoneEngine(
         call: PhoneTool.Call,
         arguments: Map<String, Any?>,
     ): Map<String, Any?> = when (call) {
-        is PhoneTool.Call.FileOffer ->
-            arguments + ("folder" to PhoneFiles.normalizeFolder(call.folder))
+        is PhoneTool.Call.FileOffer -> {
+            // The binding names the grant itself: the folder the call resolved to, which is what
+            // the card said and what the executor will use.
+            val resolved = when (val pick = folderFor("file_offer", call.folder)) {
+                is FolderPick.Found -> pick.folder.label
+                is FolderPick.Refused -> call.folder?.trim().orEmpty()
+            }
+            arguments + ("folder" to resolved)
+        }
         else -> arguments
     }
 
