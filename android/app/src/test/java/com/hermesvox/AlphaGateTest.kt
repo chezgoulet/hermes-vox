@@ -99,8 +99,27 @@ class AlphaGateTest {
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
-    @Test fun quiet_calls_is_not_an_alpha_set_any_more() {
-        val gate = File(src, "AlphaGate.kt").readText()
+    /**
+     * #437: the session browser is a set of its own, the sibling of Switching profiles — the
+     * same class of unfinished surface, off until selected, with the owner's words on the panel.
+     */
+    @Test fun sessions_is_a_set_with_its_own_key_and_the_owners_words() {
+        val set = AlphaGate.FeatureSet.SESSIONS
+        assertEquals("alpha_set_sessions", set.key)
+        assertEquals("Sessions", set.label)
+        assertTrue(set.blurb, set.blurb.contains("See the conversations your agent already has"))
+        assertTrue(set.blurb, set.blurb.contains("including ones you started at your desk"))
+        assertTrue(set.blurb, set.blurb.contains("continues the same conversation"))
+        // Selecting it without the master is not enough, exactly like every other set.
+        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
+        assertTrue(AlphaGate.allows(Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, set.key to true)), set))
+        // It is the last set, after Switching profiles: the two leave Alpha together.
+        assertEquals(set, AlphaGate.FeatureSet.entries.last())
+        assertEquals(AlphaGate.FeatureSet.PROFILES,
+            AlphaGate.FeatureSet.entries[AlphaGate.FeatureSet.entries.size - 2])
+    }
+
+    @Test fun quiet_calls_is_not_an_alpha_set_any_more() {        val gate = File(src, "AlphaGate.kt").readText()
         val callQuiet = File(src, "CallQuiet.kt").readText()
         val settings = File(src, "SettingsActivity.kt").readText()
         assertFalse("no enum entry", gate.contains("QUIET_CALLS"))

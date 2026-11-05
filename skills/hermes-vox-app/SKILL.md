@@ -110,7 +110,7 @@ What the build does:
 So: a fresh install has Presence **off**, because Alpha features is off
 (android/app/src/main/java/com/hermesvox/AlphaGate.kt:28 `DEFAULT_MASTER = false`). An install
 upgraded from a build where Presence was running keeps it: the master is turned on with the
-Presence set selected (android/app/src/main/java/com/hermesvox/AlphaGate.kt:116 `fun migrate`).
+Presence set selected (android/app/src/main/java/com/hermesvox/AlphaGate.kt:125 `fun migrate`).
 Do not tell a user Presence is a mode.
 
 **The hardware check (#403).** At first run, for everyone, the app records total RAM and free
