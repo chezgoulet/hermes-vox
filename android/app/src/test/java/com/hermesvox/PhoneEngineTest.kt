@@ -308,7 +308,7 @@ class PhoneEngineTest {
             assertEquals("$a must be tier 0", PhoneTiers.INSTANT, PhoneTiers.of(a))
         }
         assertEquals(PhoneTiers.REPORTED, PhoneTiers.of("note"))
-        for (a in listOf("file_read", "file_offer", "agenda", "event_create")) {
+        for (a in listOf("file_list", "file_read", "file_offer", "agenda", "event_create")) {
             assertEquals("$a must be reported", PhoneTiers.REPORTED, PhoneTiers.of(a))
         }
         for (a in listOf("message", "call", "email", "delete", "purchase", "launch", "send", "contact")) {

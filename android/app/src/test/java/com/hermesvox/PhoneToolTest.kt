@@ -48,7 +48,7 @@ class PhoneToolTest {
         assertEquals(
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
-                "state", "clip", "file_read", "file_offer", "agenda", "event_create",
+                "state", "clip", "file_list", "file_read", "file_offer", "agenda", "event_create",
                 "undo", "status",
             ),
             enumOf(),

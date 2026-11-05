@@ -32,7 +32,7 @@ import com.hermesvox.core.Json
  * | tier | actions | what happens |
  * |---|---|---|
  * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
- * | 1 — reported | `note`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
+ * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
  * | 2 — approval | `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
@@ -129,7 +129,8 @@ object PhoneTool {
         "now_playing" to "what the phone will admit to playing",
         "state" to "battery, charging, screen, network, storage, volume, time",
         "clip" to "put text on the clipboard (never reads it)",
-        "file_read" to "read a named file's text inside the folder you granted",
+        "file_list" to "list a folder you granted (depth-limited, paged, names and sizes only)",
+        "file_read" to "read a named file's text inside the folder you granted, in whole or a window",
         "file_offer" to "offer a named file to your agent as an artifact",
         "agenda" to "today's events (start, end, title, calendar)",
         "event_create" to "create one event, undoable",
@@ -212,10 +213,56 @@ object PhoneTool {
                     "type" to "string",
                     "enum" to PhoneFiles.FOLDERS,
                     "description" to
-                        "file_read or file_offer only: which granted folder to look in — " +
+                        "file_list, file_read or file_offer only: which granted folder to look in — " +
                         "${PhoneFiles.FOLDERS.joinToString(" or ")} (the default is " +
-                        "${PhoneFiles.DEFAULT_FOLDER}). The name is looked up inside that folder " +
-                        "only; there is no directory walk.",
+                        "${PhoneFiles.DEFAULT_FOLDER}). Everything is inside that folder only; " +
+                        "there is no way to name another one.",
+                ),
+                "path" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "file_list only: a subdirectory relative to the folder you granted " +
+                        "(for example \"reports/2026\"); leave it out, or \"\", for the folder " +
+                        "itself. An absolute path, \"..\" and a backslash are refused.",
+                ),
+                "depth" to linkedMapOf(
+                    "type" to "integer",
+                    "minimum" to 1,
+                    "maximum" to PhoneFiles.MAX_DEPTH,
+                    "description" to
+                        "file_list only: 1 (the default) lists that directory's entries; 2 also " +
+                        "lists each subdirectory's, and so on, up to ${PhoneFiles.MAX_DEPTH}.",
+                ),
+                "pattern" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "file_list only: a case-insensitive glob on the file name, such as " +
+                        "\"*.pdf\" or \"invoice*\" (\"*\" is any run of characters, \"?\" one). " +
+                        "Applied to files, never to directories.",
+                ),
+                "offset" to linkedMapOf(
+                    "type" to "integer",
+                    "minimum" to 0,
+                    "description" to
+                        "file_list: the page to start at, from 0 (the default). file_read: the byte " +
+                        "to start a window at (a file larger than the whole-file cap is read this " +
+                        "way, never refused).",
+                ),
+                "limit" to linkedMapOf(
+                    "type" to "integer",
+                    "minimum" to 1,
+                    "maximum" to PhoneFiles.MAX_LIST_LIMIT,
+                    "description" to
+                        "file_list only: entries per page, ${PhoneFiles.DEFAULT_LIST_LIMIT} by " +
+                        "default, at most ${PhoneFiles.MAX_LIST_LIMIT}. More entries are not lost: " +
+                        "the result says has_more and gives next_offset.",
+                ),
+                "length" to linkedMapOf(
+                    "type" to "integer",
+                    "minimum" to 1,
+                    "description" to
+                        "file_read only: the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
+                        "by default. The result says truncated and the file's total bytes.",
                 ),
                 "start" to linkedMapOf(
                     "type" to "string",
@@ -310,8 +357,30 @@ object PhoneTool {
         }
 
         /** One named file inside one granted folder. [folder] is the tool's word, not a path. */
-        data class FileRead(val name: String, val folder: String?) : Call() {
+        data class FileRead(
+            val name: String,
+            val folder: String?,
+            /** Byte offset of a window, or null for the whole-file path. */
+            val offset: Long? = null,
+            /** Bytes in the window; null means the whole-file path. */
+            val length: Long? = null,
+        ) : Call() {
             override val action = "file_read"
+        }
+
+        /**
+         * One page of one directory inside one granted folder. [path] is relative to the granted
+         * root (`""` = the root), [depth] is already bounded, and [offset]/[limit] are a page.
+         */
+        data class FileList(
+            val folder: String?,
+            val path: String,
+            val depth: Int,
+            val pattern: String?,
+            val offset: Int,
+            val limit: Int,
+        ) : Call() {
+            override val action = "file_list"
         }
 
         data class FileOffer(val name: String, val folder: String?) : Call() {
@@ -483,20 +552,86 @@ object PhoneTool {
         "file_read", "file_offer" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
             PhoneFiles.badPath(name)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
-            val folder = when (val raw = args["folder"]) {
-                null -> null
-                is String -> if (raw.isBlank()) null else PhoneFiles.FOLDERS.firstOrNull {
-                    it.equals(raw.trim(), ignoreCase = true)
-                } ?: return bad(
-                    action,
-                    "folder must be ${PhoneFiles.FOLDERS.joinToString(" or ")}",
-                )
-                else -> return bad(action, "folder must be a string")
+            val (folder, folderError) = folderArg(args, action)
+            folderError?.let { return it }
+            if (action == "file_offer") {
+                // An offer hands the whole file to the bridge; a window is a read, not an offer.
+                if (args["offset"] != null || args["length"] != null) {
+                    return bad(action, "file_offer takes no offset or length: it offers the whole file")
+                }
+                return Parsed.Run(Call.FileOffer(name, folder))
             }
-            Parsed.Run(
-                if (action == "file_read") Call.FileRead(name, folder)
-                else Call.FileOffer(name, folder),
-            )
+            val offset = when (val raw = args["offset"]) {
+                null -> null
+                else -> {
+                    val v = integer(raw)
+                        ?: return bad(action, "offset must be a whole number of bytes")
+                    if (v < 0) return bad(action, "offset must be 0 or more")
+                    v
+                }
+            }
+            val length = when (val raw = args["length"]) {
+                null -> null
+                else -> {
+                    val v = integer(raw)
+                        ?: return bad(action, "length must be a whole number of bytes")
+                    if (v < 1) return bad(action, "length must be at least one byte")
+                    v
+                }
+            }
+            when {
+                // A length without an offset starts at the beginning; an offset without a length
+                // takes one cap-sized window from there. Neither is a refusal.
+                offset == null && length == null -> Parsed.Run(Call.FileRead(name, folder))
+                else -> Parsed.Run(
+                    Call.FileRead(name, folder, offset ?: 0L, length ?: PhoneFiles.MAX_READ_BYTES),
+                )
+            }
+        }
+        "file_list" -> {
+            val (folder, folderError) = folderArg(args, action)
+            folderError?.let { return it }
+            val path = (args["path"] as? String)?.trim().orEmpty()
+            PhoneFiles.badListPath(path)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
+            val depth = when (val raw = args["depth"]) {
+                null -> PhoneFiles.DEFAULT_DEPTH
+                else -> {
+                    val v = integer(raw) ?: return bad(action, "depth must be a whole number")
+                    if (v < 1 || v > PhoneFiles.MAX_DEPTH) {
+                        return bad(action, "depth must be between 1 and ${PhoneFiles.MAX_DEPTH}")
+                    }
+                    v.toInt()
+                }
+            }
+            val pattern = (args["pattern"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            if (pattern != null) {
+                PhoneFiles.badPattern(pattern)?.let { return bad(action, it) }
+            }
+            val offset = when (val raw = args["offset"]) {
+                null -> 0
+                else -> {
+                    val v = integer(raw) ?: return bad(action, "offset must be a whole number")
+                    if (v < 0 || v > Int.MAX_VALUE) {
+                        return bad(action, "offset must be between 0 and ${Int.MAX_VALUE}")
+                    }
+                    v.toInt()
+                }
+            }
+            val limit = when (val raw = args["limit"]) {
+                null -> PhoneFiles.DEFAULT_LIST_LIMIT
+                else -> {
+                    val v = integer(raw) ?: return bad(action, "limit must be a whole number")
+                    if (v < 1 || v > PhoneFiles.MAX_LIST_LIMIT) {
+                        return bad(
+                            action,
+                            "limit must be between 1 and ${PhoneFiles.MAX_LIST_LIMIT}; a folder " +
+                                "with more entries is paged, never refused",
+                        )
+                    }
+                    v.toInt()
+                }
+            }
+            Parsed.Run(Call.FileList(folder, path, depth, pattern, offset, limit))
         }
         "agenda" -> Parsed.Run(Call.Agenda)
         "event_create" -> {
@@ -537,6 +672,24 @@ object PhoneTool {
 
     private fun bad(action: String, detail: String): Parsed =
         Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, detail))
+
+    /**
+     * The `folder` argument, as the tool's word or null for the default, together with a refusal
+     * when it is not one of the two words. Shared by the three file actions so the words and their
+     * case can only be read one way.
+     */
+    private fun folderArg(args: Map<String, Any?>, action: String): Pair<String?, Parsed?> =
+        when (val raw = args["folder"]) {
+            null -> null to null
+            is String -> if (raw.isBlank()) {
+                null to null
+            } else {
+                PhoneFiles.FOLDERS.firstOrNull { it.equals(raw.trim(), ignoreCase = true) }?.let {
+                    it to null
+                } ?: (null to bad(action, "folder must be ${PhoneFiles.FOLDERS.joinToString(" or ")}"))
+            }
+            else -> null to bad(action, "folder must be a string")
+        }
 
     /** A refusal with a reason of its own — `bad_path`, `no_folder`, `not_text`, `too_big`. */
     private fun refused(action: String, reason: String, detail: String): Parsed =
@@ -584,8 +737,9 @@ object PhoneTiers {
     )
     private val TIER_1 = setOf(
         "note",
-        // Files (#429 lane 2): one named file inside the folder the owner granted.
-        "file_read", "file_offer",
+        // Files (#429 lane 2, listing lane): what is in the folder the owner granted, one named
+        // file inside it, and one file handed to the bridge. Nothing here walks outside the grant.
+        "file_list", "file_read", "file_offer",
         // Calendar (#429 lane 2): today's events, and one event that can be undone.
         "agenda", "event_create",
     )

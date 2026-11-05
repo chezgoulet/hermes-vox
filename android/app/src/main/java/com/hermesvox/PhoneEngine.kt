@@ -144,6 +144,20 @@ class PhoneEngine(
             /** The file's text, and the size the provider or the read reported. */
             data class Found(val name: String, val bytes: Long, val text: String) : FileText()
 
+            /**
+             * A window of a file: [text] begins at byte [offset] of a file whose whole size is
+             * [totalBytes], and covers [windowBytes] bytes. [text] may start a byte or two after
+             * [offset] when the caller's cut fell inside a character, and the engine reports the
+             * offset it actually used rather than the one that was asked for.
+             */
+            data class Window(
+                val name: String,
+                val totalBytes: Long,
+                val offset: Long,
+                val windowBytes: Long,
+                val text: String,
+            ) : FileText()
+
             /** No document with that name inside the granted folder. */
             data object Missing : FileText()
 
@@ -186,6 +200,32 @@ class PhoneEngine(
 
         /** Read one named file inside [folder], capped and text-only. */
         fun fileText(folder: GrantedFolder, name: String): FileText = FileText.Missing
+
+        /**
+         * Read one window of one named file: [length] bytes from [offset], snapping to character
+         * boundaries. This is how a file larger than [PhoneFiles.MAX_READ_BYTES] is read — it is
+         * never refused for its size when the caller asked for a window.
+         */
+        fun fileWindow(
+            folder: GrantedFolder,
+            name: String,
+            offset: Long,
+            length: Long,
+        ): FileText = FileText.Missing
+
+        /**
+         * List [path] inside [folder] to [depth], paged by [offset]/[limit]. The ordering, the
+         * pattern and the page arithmetic are [PhoneFiles.list]; an implementation only answers
+         * which children a directory has.
+         */
+        fun fileList(
+            folder: GrantedFolder,
+            path: String,
+            depth: Int,
+            pattern: String?,
+            offset: Int,
+            limit: Int,
+        ): PhoneFiles.ListResult = PhoneFiles.ListResult.MissingPath
 
         /** Stage one named file inside [folder] and serve it through the file bridge. */
         fun fileOffer(folder: GrantedFolder, name: String): FileHandoff = FileHandoff.Missing
@@ -296,6 +336,7 @@ class PhoneEngine(
             PhoneTool.Call.NowPlaying -> nowPlaying()
             PhoneTool.Call.State -> deviceState(nowEpoch)
             is PhoneTool.Call.Clip -> clip(call.text)
+            is PhoneTool.Call.FileList -> listFiles(call)
             is PhoneTool.Call.FileRead -> readFile(call)
             is PhoneTool.Call.FileOffer -> offerFile(call)
             PhoneTool.Call.Agenda -> agenda()
@@ -637,14 +678,25 @@ class PhoneEngine(
     }
 
     /**
-     * One named file's text, capped. A name that resolves outside the granted tree is `bad_path`;
-     * a file over [PhoneFiles.MAX_READ_BYTES] is refused, never cut; bytes that are not text are
-     * `not_text`. The result carries the text and its length the result asks for, and no undo —
-     * a read changes nothing.
+     * One named file's text. Without `offset`/`length` the whole file is read, capped at
+     * [PhoneFiles.MAX_READ_BYTES]; with them a **window** is read and `truncated` tells the truth
+     * about the total, so a large file is readable in pieces rather than refused. A name that
+     * resolves outside the granted tree is `bad_path`; bytes that are not text are `not_text`.
+     * The result carries the text and its length, and no undo — a read changes nothing.
      */
     private fun readFile(call: PhoneTool.Call.FileRead): PhoneResult {
         val folder = folderFor(call.folder) ?: return noFolder("file_read", call.folder)
-        return when (val found = platform.fileText(folder, call.name)) {
+        val found = if (call.offset != null || call.length != null) {
+            platform.fileWindow(
+                folder,
+                call.name,
+                call.offset ?: 0L,
+                call.length ?: PhoneFiles.MAX_READ_BYTES,
+            )
+        } else {
+            platform.fileText(folder, call.name)
+        }
+        return when (found) {
             PhonePlatform.FileText.Missing -> {
                 log("event=phone-mcp action=file_read ok=false reason=unavailable")
                 PhoneResult.refused(
@@ -688,6 +740,95 @@ class PhoneEngine(
                         "undoable" to false,
                     ),
                 )
+            }
+            is PhonePlatform.FileText.Window -> {
+                // `truncated` is the whole truth of a window: false only when this text is the
+                // entire file, byte for byte.
+                val whole = found.offset == 0L && found.offset + found.windowBytes >= found.totalBytes
+                log(
+                    "event=phone-mcp action=file_read ok=true window=true offset=${found.offset} " +
+                        "length=${found.windowBytes} chars=${found.text.length}"
+                )
+                PhoneResult.info(
+                    "file_read",
+                    linkedMapOf<String, Any?>(
+                        "name" to found.name,
+                        "folder" to folder.label,
+                        "bytes" to found.totalBytes,
+                        "chars" to found.text.length,
+                        "offset" to found.offset,
+                        "length" to found.windowBytes,
+                        "truncated" to !whole,
+                        "text" to found.text,
+                        "undoable" to false,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * What is inside one granted folder. The walk, the ordering, the pattern and the page are
+     * [PhoneFiles.list]; this maps its outcome onto the tool's result shape and never invents a
+     * count, a page or an entry the platform did not give.
+     *
+     * The log line and the audit row carry the folder, the relative path and the count — `Downloads,
+     * 12 entries` — and **never a name**, because the names in a listing are the owner's.
+     */
+    private fun listFiles(call: PhoneTool.Call.FileList): PhoneResult {
+        val folder = folderFor(call.folder) ?: return noFolder("file_list", call.folder)
+        val listed = platform.fileList(
+            folder, call.path, call.depth, call.pattern, call.offset, call.limit,
+        )
+        return when (listed) {
+            is PhoneFiles.ListResult.Ok -> {
+                val l = listed.listing
+                log(
+                    "event=phone-mcp action=file_list ok=true folder=${folder.label} " +
+                        "path=${l.path.ifEmpty { "/" }} count=${l.count} has_more=${l.hasMore}"
+                )
+                PhoneResult.info(
+                    "file_list",
+                    linkedMapOf<String, Any?>(
+                        "folder" to l.folder,
+                        "path" to l.path,
+                        "depth" to l.depth,
+                        "count" to l.count,
+                        "has_more" to l.hasMore,
+                        "next_offset" to l.nextOffset,
+                        "entries" to l.entries.map { e ->
+                            linkedMapOf<String, Any?>(
+                                "name" to e.name,
+                                "path" to e.path,
+                                "kind" to e.kind,
+                                "bytes" to e.bytes,
+                                "modified" to e.modified,
+                                "mime" to e.mime,
+                            )
+                        },
+                        "undoable" to false,
+                    ),
+                )
+            }
+            PhoneFiles.ListResult.MissingPath -> {
+                log("event=phone-mcp action=file_list ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "file_list", PhoneReason.UNAVAILABLE,
+                    "there is no directory at \"${call.path}\" inside ${folder.label}; " +
+                        "nothing was listed",
+                )
+            }
+            PhoneFiles.ListResult.Outside -> {
+                log("event=phone-mcp action=file_list ok=false reason=bad_path")
+                PhoneResult.refused(
+                    "file_list", PhoneReason.BAD_PATH,
+                    "that path, or an entry below it, resolves outside the folder you granted; " +
+                        "nothing was listed",
+                )
+            }
+            is PhoneFiles.ListResult.Failed -> {
+                log("event=phone-mcp action=file_list ok=false reason=unavailable")
+                PhoneResult.refused("file_list", PhoneReason.UNAVAILABLE, listed.detail)
             }
         }
     }

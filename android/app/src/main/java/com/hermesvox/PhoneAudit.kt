@@ -21,8 +21,9 @@ import com.hermesvox.core.Json
  * carries one. **Arguments are summarised, not copied.** A note's text and an event's title are the
  * caller's words and do not belong in a list that gets shown on a screen or attached to a report,
  * so each is stored as a length ("42 chars"); every other argument today is a duration, a clock
- * time, a boolean, a level, a direction, a file name or an id. Values are clipped so a hostile
- * argument cannot make the list unreadable.
+ * time, a boolean, a level, a direction, a file name or an id. A `file_list` row is the folder, the
+ * relative path and the count (`Downloads, 12 entries`) — never a name it saw. Values are clipped so
+ * a hostile argument cannot make the list unreadable.
  *
  * The audit never stores a token, a message body or a file's contents, because none of those ever
  * become an argument of an action that exists today — and [summarise] is the one function a future
@@ -78,11 +79,28 @@ object PhoneAudit {
         return Entry(
             atEpochMs = atEpochMs,
             action = result.action.ifBlank { (args["action"] as? String).orEmpty() },
-            arguments = summarise(args),
+            arguments = summarise(args).let { summary ->
+                // A listing's row is `Downloads, 12 entries`: the folder it listed, the relative
+                // path inside it, and how many entries that page held. **Never a name** — the names
+                // in a folder are the owner's, and the count is all the record needs.
+                if (result.ok && result.action == "file_list") listingRow(summary, result) else summary
+            },
             ok = result.ok,
             outcome = if (result.ok) "done" else (result.reason ?: "refused"),
             undoId = if (undoable) result.id else null,
         )
+    }
+
+    /** Adds the folder, path and count a listing actually returned; empty path reads `/` (the root). */
+    private fun listingRow(
+        summary: Map<String, String>,
+        result: PhoneResult,
+    ): Map<String, String> {
+        val out = LinkedHashMap(summary)
+        (result.facts["folder"] as? String)?.let { out["folder"] = clip(it) }
+        (result.facts["path"] as? String)?.let { out["path"] = clip(it.ifEmpty { "/" }) }
+        (result.facts["count"] as? Number)?.let { out["count"] = "${it.toLong()} entries" }
+        return out
     }
 
     /** The stored form: a JSON array, small enough for one preference value. */

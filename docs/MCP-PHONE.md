@@ -106,7 +106,8 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `now_playing` | 0 | – | `known`, `playing`, `package`, `title`, `note` when `known` is false |
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
-| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`) | `name`, `folder`, `bytes`, `chars`, `text` (capped, text only) |
+| `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
+| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`), optional `offset`/`length` for a byte window | `name`, `folder`, `bytes`, `chars`, `text` (text only); a window adds `offset`, `length`, `truncated` and the total `bytes` |
 | `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
 | `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`) |
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (1–1440), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
@@ -143,7 +144,7 @@ all read it. There is no second list to drift.
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
 | Clipboard | 0 | `clip` | write to the clipboard (never reads it) |
-| Files | 1 | `file_read`, `file_offer` | read a named file in the folder you granted, offer a file to the agent |
+| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it, offer a file to the agent |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |
 | Messages and calls | 2 | `message`\*, `call`\*, `send`\*, `email`\* | send a text, place a call |
@@ -242,7 +243,7 @@ Every action that can be undone registers an undo **for its lifetime**, keyed by
 | `volume` | restores the previous level | the same |
 | `note` | deletes it | 24 hours — a note outlives the turn that made it |
 | `event_create` | deletes the event it created | until the event starts, or ten minutes |
-| `file_read` / `file_offer` | — | a read or an offer changes nothing on the phone, so there is nothing to reverse |
+| `file_list` / `file_read` / `file_offer` | — | listing, reading or offering changes nothing on the phone, so there is nothing to reverse |
 
 `undo` of an id with no live undo is `ok:false, reason:"expired"`. It never guesses.
 
@@ -254,7 +255,7 @@ offered, and it does not change with the grant.
 | tier | actions | what the phone does | states |
 |---|---|---|---|
 | **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
-| **1 — reported** | note, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
+| **1 — reported** | note, file_list, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
 | **2 — approval** | delete, message, call, email, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
 
 Tier 2 is refused rather than queued on purpose. An MCP call carries no run id, so the phone cannot
@@ -369,7 +370,7 @@ off-device.
 | — (none new) | `media`, `device-state` and `clipboard` add **no** permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard write are all available with what is already declared. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `LocalActions.deviceState`, `LocalActions.clip` |
 | `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
 | `READ_CALENDAR`, `WRITE_CALENDAR` | the calendar group: read today's events and insert one. Both are runtime permissions, asked when Calendar is turned on; a missing one is a `permission` refusal naming Android's exact string | `PhoneCalendarAccess`, `PhoneToolsSheet` |
-| — (none for files) | `files` declares **no** storage permission and never requests `MANAGE_EXTERNAL_STORAGE`: the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, and only a named file inside it is read | `PhoneFileAccess` |
+| — (none for files) | `files` declares **no** storage permission and never requests `MANAGE_EXTERNAL_STORAGE`: the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, and only that folder is listed and only a named file inside it is read | `PhoneFileAccess` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
 | `RECORD_AUDIO` | the voice line (not a phone action) | `MainActivity`, `VoiceController` |
@@ -415,10 +416,11 @@ may do. The tier table does: Tier 0 is reversible and private, Tier 1 is reversi
 Tier 2 is refused because it leaves the phone or cannot be undone. The phone will not send a message
 or place a call for the mind however it authenticates.
 
-**What is deliberately absent.** No file access, no listing, no second route, no SSE stream, no
-server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no caller on
-this side. There is also no verbose log of the arguments — a note's text is the caller's, and it
-belongs in the note, not in a log that gets attached to bug reports.
+**What is deliberately absent.** No MCP resources and no resource listing, no second route, no SSE
+stream, no server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no
+caller on this side. The `file_list` action is a phone capability, not an MCP resource listing.
+There is also no verbose log of the arguments — a note's text is the caller's, and it belongs in the
+note, not in a log that gets attached to bug reports.
 
 ---
 
