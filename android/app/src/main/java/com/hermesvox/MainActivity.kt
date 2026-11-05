@@ -2597,8 +2597,10 @@ open class MainActivity : AppCompatActivity() {
                 val phoneId = phoneApprovalId
                 if (phoneId.isNotEmpty()) {
                     // The phone action's answer; the desk withdraws the card when it lands.
-                    if (!PhoneApprovals.answer(phoneId, choice != "deny", "tap")) {
-                        approvalState.text = "EXPIRED"
+                    when (PhoneApprovals.answer(phoneId, choice != "deny", "tap")) {
+                        PhoneApprovals.Outcome.LOCKED -> approvalState.text = "LOCKED"
+                        PhoneApprovals.Outcome.NOT_PENDING -> approvalState.text = "EXPIRED"
+                        else -> Unit
                     }
                 } else {
                     liveController?.answerApproval(choice)

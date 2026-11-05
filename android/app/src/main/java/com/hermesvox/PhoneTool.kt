@@ -32,14 +32,15 @@ import com.hermesvox.core.Json
  * | tier | actions | what happens |
  * |---|---|---|
  * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. The two read groups are instant because they change nothing; their privacy comes from scope (a call-scoped listener, one notification at a time, numbers and labels only) |
- * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` is the one that has a card on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
+ * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
+ * | 2 — approval | `install`, `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` have cards on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
- * cannot mint the gateway's approval card for it. `uninstall` is the exception that proves the
- * shape: it is irreversible and cannot be handed to another app, so [PhoneApproval] is a **phone**
- * card on this wire — a two-step handshake on the same tool, not a second gateway surface. The
+ * cannot mint the gateway's approval card for it. `uninstall` and `file_offer` are the exceptions
+ * that prove the shape: one cannot be undone and one exports the owner's content, so
+ * [PhoneApproval] is a **phone** card on this wire — a two-step handshake on the same tool, not a
+ * second gateway surface. The
  * owner may still put this whole tool behind the gateway's approval surface with `trust: untrusted`
  * in the gateway config (`docs/MCP-PHONE.md`).
  *
@@ -136,8 +137,8 @@ object PhoneTool {
             "needs the owner's approval on the phone); the detail says whether a card is waiting, " +
             "and a refusal means nothing was performed. " +
             NOTIFICATION_PRIVACY + " " +
-            "`uninstall` is two steps: call it without `approval`, then call it again with the " +
-            "returned approval id and identical arguments once the owner says yes."
+            "`uninstall` and `file_offer` are two steps: call without `approval`, then call again " +
+            "with the returned approval id and identical arguments once the owner says yes."
 
     /**
      * The description the model reads, with the current grants named. Built per request, because a
@@ -183,7 +184,7 @@ object PhoneTool {
         "clip_read" to "the clipboard's text, when the phone allows the read",
         "file_list" to "list a folder you granted (depth-limited, paged, names and sizes only)",
         "file_read" to "read a named file's text inside the folder you granted, in whole or a window",
-        "file_offer" to "offer a named file to your agent as an artifact",
+        "file_offer" to "offer a named file to your agent as an artifact; the owner approves it first",
         "agenda" to "today's events (start, end, title, calendar)",
         "event_create" to "create one event, undoable",
         "notifications" to "a count of notifications per app, with no titles or text",
@@ -294,11 +295,11 @@ object PhoneTool {
                 "approval" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "uninstall only: the `approval_id` a previous call returned. Omit it to " +
-                        "ask the owner; the phone raises a card and answers " +
+                        "uninstall or file_offer only: the `approval_id` a previous call returned. " +
+                        "Omit it to ask the owner; the phone raises a card and answers " +
                         "approval-required with that id and its expiry. Call again with **the " +
-                        "same action and arguments** plus this id to remove the app after the " +
-                        "owner approves. An id is used once.",
+                        "same action and arguments** plus this id after the owner approves. An " +
+                        "id is used once, and only an unlocked phone can approve.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -494,7 +495,16 @@ object PhoneTool {
             override val action = "file_list"
         }
 
-        data class FileOffer(val name: String, val folder: String?) : Call() {
+        /**
+         * Offer one file to the agent. [approvalId] is null on the request call (the phone raises
+         * the card after reading the name, type and size) and the id the card returned on the
+         * execute call. The name and folder are the canonical arguments the id is bound to.
+         */
+        data class FileOffer(
+            val name: String,
+            val folder: String?,
+            val approvalId: String? = null,
+        ) : Call() {
             override val action = "file_offer"
         }
 
@@ -606,12 +616,13 @@ object PhoneTool {
                     // point of the tier: a **Tier 1 (reported)** group acts when the owner turns
                     // it on and is reported back to them — there is no per-use card to wait for,
                     // because the owner has already said yes to the group and can see what it did.
-                    // `uninstall` is the one consequential action with a card on this wire, so it
-                    // goes to the engine's two-step handshake. A Tier 0 group at Ask has **no**
-                    // card: the actions are withheld from the enum, and a direct call is told so
-                    // plainly rather than being promised an approval that will never come (M8).
+                    // `uninstall` and `file_offer` are the Tier 2 actions with cards on this wire,
+                    // so they go to the engine's two-step handshake rather than being refused
+                    // outright. A Tier 0 group at Ask has **no** card: its actions are withheld
+                    // from the enum, and a direct call is told so plainly rather than being
+                    // promised an approval that will never come (M8).
                     val tier = PhoneGrants.tierOf(action) ?: group.tier
-                    if (tier == PhoneTiers.REPORTED || action == PhoneApproval.ACTION) {
+                    if (tier == PhoneTiers.REPORTED || PhoneApproval.handshaked(action)) {
                         parseArguments(action, args, grants)
                     } else {
                         Parsed.Refuse(
@@ -728,7 +739,15 @@ object PhoneTool {
                 if (args["offset"] != null || args["length"] != null) {
                     return bad(action, "file_offer takes no offset or length: it offers the whole file")
                 }
-                return Parsed.Run(Call.FileOffer(name, folder))
+                val approval = when (val raw = args["approval"]) {
+                    null -> null
+                    is String -> raw.trim().takeIf { it.isNotEmpty() }
+                    else -> return bad(action, "approval must be the id a previous result returned")
+                }
+                if (approval != null && approval.length > MAX_APPROVAL_ID_CHARS) {
+                    return bad(action, "approval is longer than $MAX_APPROVAL_ID_CHARS characters")
+                }
+                return Parsed.Run(Call.FileOffer(name, folder, approval))
             }
             val offset = when (val raw = args["offset"]) {
                 null -> null
@@ -1138,9 +1157,9 @@ object PhoneTiers {
     )
     private val TIER_1 = setOf(
         "note",
-        // Files (#429 lane 2, listing lane): what is in the folder the owner granted, one named
-        // file inside it, and one file handed to the bridge. Nothing here walks outside the grant.
-        "file_list", "file_read", "file_offer",
+        // Files (#429 lane 2, listing lane): what is in the folder the owner granted, and one named
+        // file inside it. `file_offer` is Tier 2 below: it exports the owner's content to the agent.
+        "file_list", "file_read",
         // Calendar (#429 lane 2): today's events, and one event that can be undone.
         "agenda", "event_create",
     )
@@ -1151,6 +1170,9 @@ object PhoneTiers {
      */
     private val TIER_2 = setOf(
         "purchase", "pay", "install", "uninstall", "transfer",
+        // `file_offer` exports the owner's content over the tailnet. The folder grant makes the
+        // export possible, not intended: every offer gets its own card, showing name, type and size.
+        "file_offer",
         // `call`, `send` and `email` were names under the old messages-calls group. They are gone
         // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
         // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the
@@ -1235,6 +1257,9 @@ object PhoneReason {
 
     /** Three cards are already waiting; nothing was raised and nothing was performed. */
     const val APPROVAL_BUSY = "approval_busy"
+
+    /** The card was answered from a locked phone. Nothing was approved, and the id is burnt. */
+    const val APPROVAL_LOCKED = "approval_locked"
 
     /** The owner has not granted this capability group. Nothing was done, and it is not offered. */
     const val NOT_GRANTED = "not_granted"

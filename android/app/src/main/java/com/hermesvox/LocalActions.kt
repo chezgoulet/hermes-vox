@@ -83,6 +83,7 @@ class LocalActions(context: Context) {
         { result, args, at -> PhoneAuditStore.record(app, PhoneAudit.entry(at, args, result)) },
         approvalSurface = PhoneApprovals,
         auditRow = { entry -> PhoneAuditStore.record(app, entry) },
+        unlocked = PhoneApproval.Unlocked { PhoneApprovals.deviceUnlocked() },
     )
 
     /** How a scheduled action may be cancelled, per id. */
@@ -426,6 +427,16 @@ class LocalActions(context: Context) {
                 "the folder granted to your agent is no longer readable · grant it again in Phone tools",
             )
             return PhoneFileAccess.list(app, tree, path, depth, pattern, offset, limit)
+        }
+
+        override fun fileInfo(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            name: String,
+        ): PhoneEngine.PhonePlatform.FileInfo {
+            val tree = treeFor(folder) ?: return PhoneEngine.PhonePlatform.FileInfo.Unavailable(
+                "the folder granted to your agent is no longer readable · grant it again in Phone tools",
+            )
+            return PhoneFileAccess.info(app, tree, name)
         }
 
         override fun fileOffer(
