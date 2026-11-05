@@ -1,7 +1,8 @@
 # Release process
 
-Hermes Vox ships as a signed Android APK. Distribution is GitHub Releases,
-Obtainium and F-Droid; Google Play is not a rail (see
+Hermes Vox ships as a signed Android APK. Distribution is GitHub Releases and
+Obtainium today, with F-Droid the intended third rail once the app is listed
+(D29; `docs/FDROID.md`). Google Play is not a rail (see
 [`DECISIONS.md`](DECISIONS.md)). We always publish our own signature, so a
 release is not done until the APK is **reproducible** and the released artifact
 is the same one a rebuild produces.
