@@ -40,4 +40,11 @@
             <certificates src="user"/>
         </trust-anchors>
     </domain-config>
+    <!-- Permit user CAs exclusively in debug builds for local testing/mocking.
+         In release builds, this block is automatically ignored by the Android platform. -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>
