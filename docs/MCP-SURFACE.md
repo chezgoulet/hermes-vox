@@ -83,6 +83,7 @@ with an approval card of its own (below).
 | `permission` | the phone does not hold a permission or special access the action needs |
 | `no_folder` | no folder has been granted with the system picker, so there is nothing to read inside |
 | `bad_path` | the name is a path, contains `..`, or resolves outside the folder the owner granted |
+| `bad_uri` | `open` was given a URI it will not hand to a viewer: `intent:`, `file:`, or no scheme at all. Nothing was resolved and no intent was built |
 | `not_text` | the file's bytes are not text; `file_read` returns text only |
 | `too_big` | a whole-file `file_read` is above the 64 KiB default; ask again with `offset`/`length` to read it in windows |
 | `unavailable` | the action was recognised and the platform refused, failed, or would not say |
@@ -117,7 +118,7 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent | `no_app`; `not_granted` naming **Contacts** when `to` is a name and that group is Off |
 | `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to` | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens | `no_app`; `not_granted` naming **Contacts** for a name without that group |
 | `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the launch still happens | `no_app` |
-| `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live | `invalid-arguments`, `no_app` |
+| `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live. `intent:` (explicit component, arbitrary extras and flags), `file:` (a path on disk) and a string with **no scheme** are refused `bad_uri` before the intent exists — nothing is guessed into `https://`; `content:` and `http(s):` pass through | `invalid-arguments`, `bad_uri`, `no_app` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
 
@@ -352,6 +353,18 @@ owner's answer on Android's own screen.
 refused as `approval-required`; it is never advertised, because a promise in an `enum` is a
 capability the phone must be able to keep. `call`, `send` and `email` are gone with the old
 `messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
+
+### Required of the approval lane
+
+These two are **requirements the approval card must satisfy when it lands**, not descriptions of
+anything built today. Read them as acceptance criteria for that lane.
+
+1. **`file_offer` joins the approval tier.** Handing a file to the agent exports it: the folder
+   grant makes that export possible, not intended. It moves out of the reported tier and asks for
+   the card on every use, one card per file, showing the file's name, type and size.
+2. **The card is not actionable on a locked phone.** Its notification is `VISIBILITY_PRIVATE`, so
+   the lock screen does not show what is being approved, and approving requires the device to be
+   unlocked. A locked phone cannot approve, and no fallback may let it.
 
 ---
 

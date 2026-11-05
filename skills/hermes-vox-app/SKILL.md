@@ -1094,8 +1094,8 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   groups the owner has granted, and every group starts Off; Tier 0 actions may be Allow, Tier 1
   stops at Ask, and Tier 2 is refused with `approval-required` and stays on the gateway's approval
   surface. A call naming an action whose group is Off is refused with `not_granted` and the action
-  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:573 `PhoneTiers.APPROVAL ->`)
-  (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:182 `val DEFAULT: State = State.OFF`).
+  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:575 `PhoneTiers.APPROVAL ->`)
+  (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:185 `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by
   itself, and a skill the owner disabled for the API server stays off
