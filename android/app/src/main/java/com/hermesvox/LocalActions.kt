@@ -468,7 +468,8 @@ class LocalActions(context: Context) {
 
         /**
          * Write the text, and nothing else. **No code here reads the clipboard** — the group's
-         * promise is that it never does, so there is no `getPrimaryClip` in this file.
+         * promise is that it never does: there is no clipboard read in this file, and none in the
+         * tool path at all.
          *
          * The in-front check is done first because Android 10+ drops a background write without
          * saying so; reporting `ok` after a silent drop would be the one thing this tool must never

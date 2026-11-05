@@ -75,8 +75,8 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `play` | media | — | `dispatched` | **no.** This is the row to read twice: "play after pause" is not an undo, and the phone does not pretend it is. It cannot even see whether playback changed | `AudioManager.dispatchMediaKeyEvent` with `KEYCODE_MEDIA_PLAY`. **No permission, no notification-listener access.** The key goes to whichever session the platform considers active | `unavailable` |
 | `pause` | media | — | `dispatched` | **no** — the same reasoning as `play` | the same call with `KEYCODE_MEDIA_PAUSE` | `unavailable` |
 | `skip` | media | `direction` `next` (default) or `previous` | `direction`, `dispatched` | **no** — there is no "unskip" the phone can perform | the same call with `KEYCODE_MEDIA_NEXT` / `KEYCODE_MEDIA_PREVIOUS` | `invalid-arguments`, `unavailable` |
-| `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | **nothing beyond the ordinary APIs.** `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which is a notification-listener special access this app does **not** hold, so they are `null` and `known` is `false` | `unavailable` |
-| `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | `unavailable` |
+| `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | **nothing beyond the ordinary APIs.** `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which is a notification-listener special access this app does **not** hold, so they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
+| `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
 | `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
@@ -134,11 +134,15 @@ number, IMEI, phone number or account.
 
 ### The clipboard writes, and never reads
 
-`clip` puts `text` on the clipboard and reports only its length (`chars`). The group's line — *It
-never reads what is already there* — is a rule, not a preference: **no code path in the phone tool
-reads the clipboard**, and `getPrimaryClip` appears in none of `PhoneTool`, `PhoneEngine`,
-`PhoneGrants`, `LocalActions`, `PhoneMcp` or `PhoneMcpServer`. `PhoneSurfaceTest` asserts that at
-source level, so a later lane cannot quietly add a read.
+`clip` puts `text` on the clipboard and reports only its length (`chars`).
+
+The group's line — *It never reads what is already there* — is a rule, not a preference:
+
+**the phone tool never reads the clipboard.**
+
+`getPrimaryClip` appears nowhere in `PhoneTool`, `PhoneEngine`, `PhoneGrants`, `LocalActions`,
+`PhoneMcp` or `PhoneMcpServer`, and `PhoneSurfaceTest` asserts exactly that at source level, so a
+later lane cannot quietly add a read.
 
 The audit row for a clip stores `text=NN chars`, never the text — the same rule as a note's body.
 
