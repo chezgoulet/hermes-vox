@@ -697,6 +697,12 @@ not the four described while the panel was being designed; the fifth arrived whe
 switching was gated (#402/#436). With the master off, everything alpha is dimmed and unreachable.
 It is a deliberate back door for testers, not a buried switch.
 
+**Amended 2026-11-05.** The panel now has **six sets**: Presence, Continuous listening,
+Turn-taking, Phone tools, Switching profiles and **Sessions** (#437). The single dependency is
+unchanged and now stated for the whole gate: continuous listening requires Presence; Phone tools
+is independent of Presence, and Sessions and Switching profiles stay gated under D39's device-pass
+promotion condition.
+
 **The release notes.** Presence is **announced** — named, described as a layer you turn on through
 Alpha, and honest about being unfinished. It is not buried, and it is not oversold.
 ## D30 — The soul is a companion, not a gatekeeper
@@ -871,6 +877,14 @@ so the context block and the `status` action cannot disagree.
   `approval-required`; the consequential path is the gateway's own approval surface, and
   `trust: untrusted` puts *every* phone call behind it for an owner who wants that.
 
+**Amended 2026-11-05 (the grants, the card and the real tier names).** The Tier 2 list above is the
+state of this lane, not the release. `message`, `dial` and `launch` became handoffs (D36); D37 built
+the phone-side card, so an MCP call can now raise one; and D35's uniform grants make Ask and Allow
+one behaviour each for every tier. The shipped tier-2 names are `uninstall` and `file_offer` (both
+executed at Allow or after their card), plus the never-built `delete`, `purchase`, `pay` and
+`transfer`; `install`, `share`, `call`, `send` and `email` are not phone actions at all. The rest of
+D34 — one tool, a result per call, the undo and the setup turn — is the code.
+
 **Undo is part of the result, not a second protocol.** Every reversible action names its own undo in
 its result (`{"action":"undo","id":"timer-3"}`) and the undo lives for the action's lifetime: a timer
 until it rings, dnd/volume until superseded or ten minutes, a note for a day.
@@ -972,6 +986,9 @@ group-by-group rule above is unchanged.
 at Ask run without asking, and withheld Tier 0 at Ask because it had no card — one word with three
 behaviours. The three states now mean the same thing for every group, every action at Ask goes
 through the one card handshake, and the tier is kept only as the description of consequence and undo.
+The read lane also made `notifications` and `contacts` **instant reads**, not the approval-tier
+capabilities named above; their protection is the call-scoped listener, the summary-then-read split
+and the narrow projection, not a card.
 
 ## D36 — Messages and calls are handoffs, never sends or placed calls
 
@@ -1040,6 +1057,14 @@ own consent.
 
 [CallWindow]: ../android/app/src/main/java/com/hermesvox/CallWindow.kt
 
+**Amended 2026-11-05 (the lanes after this one).** Parts of the text above are the state of *this*
+lane, not the release. Contacts is now built (the read lane) and returns names and numbers, not
+`unavailable`. `uninstall` is built with D37's card and is no longer in a `planned` list. Apps can be
+removed as well as opened. Two edges of the handoff are still **open** and are not claimed here as
+safe: Android may silently refuse a background activity start, so a launch's `ok:true` is the
+handover, not proof the app came forward; and `dial` ends Vox's own call — which is also the MCP
+listener's lifetime — so its result can be lost before the mind receives it. The rest of D36 stands.
+
 ## D37 — Uninstalling an app is the one phone action with its own approval card
 
 Set 2026-11-05, on the phone-approval lane. D36 settled messages and calls as handoffs and left
@@ -1095,6 +1120,11 @@ the action is simply unavailable rather than silently denied later.
 (the phone's card is enough and does not need a run id), and whether a later lane lets the owner
 remember a yes for a session. All are separate decisions.
 
+**Amended 2026-11-05 (uniform grants).** `uninstall` is no longer the **only** action that asks the
+owner directly: D35's uniform grants make every action at Ask raise this same card, and
+`file_offer` is the other consequential action that uses it. D37's protocol, canonicalisation,
+lock-screen rule and audit are unchanged; they are the one handshake, not a Tier 2 exception.
+
 ## D38 — The phone parses nothing; the mind decides, and Presence may look but never act
 
 Set 2026-11-05, on the Presence-scope correction. **Supersedes D32 and the "two initiators stay
@@ -1123,11 +1153,14 @@ what is running, the time left, the device facts — because that is what lets i
 about four minutes left". It may not set, cancel or change anything. `PhoneReadout` exposes the
 registry and nothing else, so a mutating capability is absent from its type, not merely discouraged.
 
-**The gate is two independent sets.** Presence is the being; **Phone tools** is the mind acting on
-the phone. Either can be taken without the other, and no dependency is added between them.
-**Continuous listening** belongs with Presence because it is how the being hears: it cannot be
+**The gate has six sets and one dependency.** Presence is the being; **Phone tools** is the mind
+acting on the phone. Either can be taken without the other, and no dependency is added between
+them. **Continuous listening** belongs with Presence because it is how the being hears: it cannot be
 selected without Presence, `AlphaGate.allows()` refuses a stored preference from an earlier build,
-and turning Presence off leaves it inert with the picker saying why.
+and turning Presence off leaves it inert with the picker saying why. **Turn-taking** needs
+continuous listening for its acknowledgements but adds no second gate dependency. **Sessions** and
+**Switching profiles** stay behind the gate under D39's promotion condition: a device pass, not a
+build.
 
 **What it does not decide.** Whether a future foreground model ever gets a safe, separate voice
 action lane (it would be a new decision and would need its own always-on guarantee), and whether the
