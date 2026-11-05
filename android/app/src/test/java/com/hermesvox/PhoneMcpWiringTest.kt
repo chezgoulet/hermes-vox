@@ -236,7 +236,10 @@ class PhoneMcpWiringTest {
 
     @Test fun the_server_reads_the_grants_per_request_not_once_at_start() {
         assertTrue("the server is handed a source", server.contains("private val grants: PhoneGrants.Source"))
-        assertTrue("tools/list builds the schema now", server.contains("PhoneTool.schema(grants)"))
+        assertTrue(
+            "tools/list builds the schema now, with the grants and the granted folders read per call",
+            server.contains("PhoneTool.schema(grants, folderLabels())"),
+        )
         assertTrue(
             "the app passes the live store, not a snapshot",
             mcp.contains("grants = PhoneGrantStore.source(app)"),

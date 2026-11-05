@@ -203,8 +203,13 @@ class PhoneEngine(
 
         // ---- files (#429 lane 2) ----
 
-        /** One folder the owner granted with the system picker. [label] is the folder's own name. */
-        data class GrantedFolder(val label: String)
+        /** One folder the owner granted with the system picker. */
+        data class GrantedFolder(
+            /** The tree's own document id (`primary:Download/Work`) — the grant's identity. */
+            val id: String,
+            /** The folder's own name, the word a call may say. */
+            val label: String,
+        )
 
         /** The outcome of looking one name up inside one granted folder. */
         sealed class FileText {
@@ -213,9 +218,11 @@ class PhoneEngine(
 
             /**
              * A window of a file: [text] begins at byte [offset] of a file whose whole size is
-             * [totalBytes], and covers [windowBytes] bytes. [text] may start a byte or two after
-             * [offset] when the caller's cut fell inside a character, and the engine reports the
-             * offset it actually used rather than the one that was asked for.
+             * [totalBytes], and covers [windowBytes] bytes — exactly `[offset, offset + windowBytes)`
+             * of the file. [offset] is never before the requested start and the window never ends
+             * after the requested start plus length, so windows stitched by the offsets asked for
+             * never repeat a character; the engine reports the offset it actually used rather than
+             * the one that was asked for, because a cut inside a character cannot be honoured.
              */
             data class Window(
                 val name: String,
@@ -978,30 +985,60 @@ class PhoneEngine(
 
     // ---- tier 1: files ----
 
-    /**
-     * The folder a call means: the one it named, or [PhoneFiles.DEFAULT_FOLDER] when it named
-     * none. [PhoneFiles.normalizeFolder] makes `Downloads`/`Download` and case irrelevant, so the
-     * folder the system picker named is found without asking the owner to spell it our way.
-     *
-     * There is no "pick the only folder that happens to be granted" fallback: the default is
-     * Downloads, and a call that omits the folder means Downloads. Reading Documents because it
-     * was the only grant would be a different file than the caller named.
-     */
-    private fun folderFor(requested: String?): PhonePlatform.GrantedFolder? {
-        val granted = platform.folders()
-        val wanted = PhoneFiles.normalizeFolder(requested)
-        return granted.firstOrNull { PhoneFiles.normalizeFolder(it.label) == wanted }
+    /** What a file action's `folder` resolved to: one grant, or the refusal that says why not. */
+    private sealed class FolderPick {
+        data class Found(val folder: PhonePlatform.GrantedFolder) : FolderPick()
+        data class Refused(val result: PhoneResult) : FolderPick()
     }
 
-    /** Both file actions answer this when the folder they mean has not been granted. */
-    private fun noFolder(action: String, requested: String?): PhoneResult {
+    /**
+     * The folder a call means: the grant it named by label, or the **only** grant when it named
+     * none. The vocabulary is the grants themselves ([PhoneFiles.folderChoices]), never a fixed
+     * `Downloads`/`Documents` pair: Android 11+ will not grant the `Download` root, so the folder
+     * the owner really picked is a subfolder and its own label is the only name it has.
+     *
+     * Omission is a default only when there is exactly one thing it could mean. With several
+     * grants a call without `folder` is `invalid-arguments` naming the choices — reading the first
+     * one would be a different folder than the caller asked for, which is the same mistake as
+     * reading `Documents` because it happened to be granted.
+     */
+    private fun folderFor(action: String, requested: String?): FolderPick {
         val granted = platform.folders()
+        if (granted.isEmpty()) return FolderPick.Refused(noFolder(action, requested, granted))
+        if (requested.isNullOrBlank()) {
+            if (granted.size == 1) return FolderPick.Found(granted.first())
+            val names = granted.joinToString(", ") { it.label }
+            log("event=phone-mcp action=$action ok=false reason=invalid-arguments")
+            return FolderPick.Refused(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.INVALID,
+                    "several folders are granted to your agent ($names); name the one to use with " +
+                        "`folder`, or the owner can remove one in Phone tools → Files",
+                )
+            )
+        }
+        val wanted = requested.trim()
+        val found = granted.firstOrNull { it.label.equals(wanted, ignoreCase = true) }
+        return if (found != null) {
+            FolderPick.Found(found)
+        } else {
+            FolderPick.Refused(noFolder(action, wanted, granted))
+        }
+    }
+
+    /** The refusal a file action gives when the folder it means is not one of the grants. */
+    private fun noFolder(
+        action: String,
+        requested: String?,
+        granted: List<PhonePlatform.GrantedFolder>,
+    ): PhoneResult {
         val detail = if (granted.isEmpty()) {
             PhoneFiles.NO_FOLDER
         } else {
             val names = granted.joinToString(", ") { it.label }
-            "the ${requested ?: PhoneFiles.DEFAULT_FOLDER} folder is not granted; the folder granted " +
-                "to your agent is $names. Name that folder, or the owner can grant another one in " +
+            "the \"${requested.orEmpty()}\" folder is not granted; the folders granted to your " +
+                "agent are $names. Name one of those, or the owner can grant another in " +
                 "Phone tools → Files"
         }
         log("event=phone-mcp action=$action ok=false reason=no_folder")
@@ -1016,7 +1053,10 @@ class PhoneEngine(
      * The result carries the text and its length, and no undo — a read changes nothing.
      */
     private fun readFile(call: PhoneTool.Call.FileRead): PhoneResult {
-        val folder = folderFor(call.folder) ?: return noFolder("file_read", call.folder)
+        val folder = when (val pick = folderFor("file_read", call.folder)) {
+            is FolderPick.Found -> pick.folder
+            is FolderPick.Refused -> return pick.result
+        }
         val found = if (call.offset != null || call.length != null) {
             platform.fileWindow(
                 folder,
@@ -1107,7 +1147,10 @@ class PhoneEngine(
      * 12 entries` — and **never a name**, because the names in a listing are the owner's.
      */
     private fun listFiles(call: PhoneTool.Call.FileList): PhoneResult {
-        val folder = folderFor(call.folder) ?: return noFolder("file_list", call.folder)
+        val folder = when (val pick = folderFor("file_list", call.folder)) {
+            is FolderPick.Found -> pick.folder
+            is FolderPick.Refused -> return pick.result
+        }
         val listed = platform.fileList(
             folder, call.path, call.depth, call.pattern, call.offset, call.limit,
         )
@@ -1173,7 +1216,10 @@ class PhoneEngine(
      * minted — URL, size, hash, expiry — never the bytes, and there is no undo.
      */
     private fun offerFile(call: PhoneTool.Call.FileOffer, nowEpoch: Long): PhoneResult {
-        val folder = folderFor(call.folder) ?: return noFolder("file_offer", call.folder)
+        val folder = when (val pick = folderFor("file_offer", call.folder)) {
+            is FolderPick.Found -> pick.folder
+            is FolderPick.Refused -> return pick.result
+        }
         val args = fileApprovalArgs(call.name, folder.label)
         val canonical = PhoneApproval.canonical(PhoneApproval.FILE_ACTION, args)
         val digest = PhoneApproval.digest(canonical)

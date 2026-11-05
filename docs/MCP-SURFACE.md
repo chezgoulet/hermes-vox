@@ -311,11 +311,21 @@ undoable where the row says so.
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `note` | notes | `text` string, 1 – 500 characters | `id`, `text`, `reported_next_turn`, `undoable` | **yes** — deletes it; lives 24 hours, because the note outlives the turn | none: private app storage | `unavailable` |
-| `file_list` | files | optional `folder` `Downloads` (the default) or `Documents`; optional `path`, a **relative** subdirectory (`""` = the folder itself); optional `depth` integer 1–5 (default 1); optional `pattern`, a case-insensitive glob on the file name (`*.pdf`); `offset` integer ≥ 0 (default 0) and `limit` integer 1–1000 (default 200) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` — each entry `name`, `path` (relative), `kind` (`file`/`dir`), `bytes` (null for a directory), `modified` (local ISO-8601, null when the provider will not say), `mime` (files, when offered) | **no** — listing reads directory metadata and changes nothing | **Storage Access Framework is the deliberate default**, and only inside the same granted tree as `file_read`: the child query is `DocumentsContract` metadata, never a file's contents, one directory at a time, and no storage permission is declared for it | `no_folder`, `bad_path`, `unavailable` |
-| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents`, optional `offset` (bytes, ≥ 0) and `length` (bytes, ≥ 1; default 65 536) | whole file: `name`, `folder`, `bytes`, `chars`, `text`. A window: the same plus `offset`, `length` and `truncated` — with `bytes` the file's **total** size | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework is the deliberate default.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared for it. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`), with its own warning and its own grant — the owner's decision to make, not a capability withheld on their behalf. Text only: a whole read is capped (below), a window is not | `no_folder`, `bad_path`, `not_text`, `too_big` (whole-file only), `unavailable` |
+| `file_list` | files | optional `folder`, one of the **granted** folder labels (the only grant is the default); optional `path`, a **relative** subdirectory (`""` = the folder itself); optional `depth` integer 1–5 (default 1); optional `pattern`, a case-insensitive glob on the file name (`*.pdf`); `offset` integer ≥ 0 (default 0) and `limit` integer 1–1000 (default 200) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` — each entry `name`, `path` (relative), `kind` (`file`/`dir`), `bytes` (null for a directory), `modified` (local ISO-8601, null when the provider will not say), `mime` (files, when offered) | **no** — listing reads directory metadata and changes nothing | **Storage Access Framework is the deliberate default**, and only inside the same granted tree as `file_read`: the child query is `DocumentsContract` metadata, never a file's contents, one directory at a time, and no storage permission is declared for it | `no_folder`, `bad_path`, `invalid-arguments` (several grants, no `folder`), `unavailable` |
+| `file_read` | files | `name` string (the file's name, not a path), optional `folder`, one of the **granted** folder labels (the only grant is the default), optional `offset` (bytes, ≥ 0) and `length` (bytes, 1 – 65 536; default 65 536) | whole file: `name`, `folder`, `bytes`, `chars`, `text`. A window: the same plus `offset`, `length` and `truncated` — with `bytes` the file's **total** size | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework is the deliberate default.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared for it. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`), with its own warning and its own grant — the owner's decision to make, not a capability withheld on their behalf. Text only: a whole read is capped (below), a window is not | `no_folder`, `bad_path`, `not_text`, `too_big` (whole-file only), `invalid-arguments`, `unavailable` |
 | `file_offer` | files | the same `name` and `folder`; `approval` only on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone, but it exports the owner's file to the agent, so it is **Tier 2** and every offer needs the card | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob. The folder grant makes the export possible, not intended | `no_folder`, `bad_path`, `too_big`, `unavailable`, `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy` |
 | `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` (names only), and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
 | `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer ≥ 1, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
+
+**The folder is the grant, by its own name.** The `folder` enum is the labels the owner actually
+granted, built per `tools/list` from the persisted grants; there is no built-in `Downloads`/
+`Documents` pair behind it. Android 11+ refuses to grant the `Download` root itself (and the storage
+root), so the picker opens on `Download` and the owner picks a **subfolder** — the label that picker
+returns (`Work`) is the word the schema offers. Each grant is keyed by its **tree id**
+(`primary:Download/Work`), so a `Work` under Download and a `Work` under Documents are two grants.
+One grant is the default and `folder` may be omitted; with several granted, a call without `folder`
+is `invalid-arguments` naming the choices, because reading one of them would be a different folder
+than the caller asked for.
 
 **Files, precisely.** A file's name is a **name, not a path**: `..`, an absolute path, a separator and
 a URI are refused `bad_path` before the platform is asked, and a document that resolves outside the
@@ -324,7 +334,10 @@ subdirectory inside the same tree, segment-checked before the provider is asked 
 the document id it answers with. On the primary shared volume the document id also names a real path,
 so a symlink that leaves the tree is canonicalised and refused; for a provider with no filesystem path
 (a cloud tree) the document-id check is the whole check, which is stated here rather than pretended
-otherwise.
+otherwise. A **child name** the provider reports is held to the weaker rule, because the id is what
+carries the reach: only a name with `/` or a NUL, or the names `.`/`..` themselves, stops a listing —
+so a real file called `notes..txt` or `Report...pdf` is listed, not turned into `bad_path` for the
+whole folder.
 
 **Listing is inside the granted tree, depth-limited and paged — not a broad scan.** `file_list` walks
 the folder the owner granted, and only that folder: no second tree, no `MANAGE_EXTERNAL_STORAGE`, and
@@ -339,15 +352,17 @@ subdirectory is `unavailable`; a path, a name or a symlink that leaves the tree 
 **Listing never opens a file**: it reads names, kinds, sizes, modified times and MIME types through
 the provider's child query, and `PhoneFileListTest` pins that at source level.
 
-**The 64 KiB figure is a window size, not a refusal to read.** `file_read` returns at most
-65 536 bytes of text in one answer. Above that, a whole-file read says `too_big` and names the way in
-— `offset` and `length` — and a windowed read returns that slice with `truncated: true`, the `offset`
-it actually started at, and the file's total `bytes`, so the mind can keep asking until it has what
-it needs. `truncated` is false only when the returned text is the entire file. A window is cut at byte
-offsets, so it snaps to UTF-8 character boundaries: up to three leading continuation bytes are skipped
-and an incomplete trailing sequence is trimmed, and the result reports where the text really starts
-rather than pretending the cut was clean. `file_offer` has no such cap because it does not put the
-bytes in the result: it keeps the bridge's own 100 MB.
+**The 64 KiB figure is the size of one answer.** `file_read` returns at most 65 536 bytes of text in
+one answer: `length`'s schema `maximum` is 65 536 and the parser refuses more with "read the rest with
+a later offset", so no single call reads a whole large file. Above the cap, a whole-file read says
+`too_big` and names the way in — `offset` and `length` — and a windowed read returns that slice with
+`truncated: true`, the `offset` it actually started at, and the file's total `bytes`, so the mind can
+keep asking until it has what it needs. `truncated` is false only when the returned text is the entire
+file. A window is cut at byte offsets, so it snaps to UTF-8 character boundaries **inward**: it begins
+at the first boundary at or after `offset` and ends at the last at or before `offset + length`, and
+reports where the text really starts. Stitching windows by the offsets asked for therefore never
+duplicates a character at a seam. `file_offer` has no such cap because it does not put the bytes in
+the result: it keeps the bridge's own 100 MB.
 
 **Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns what the
 calendar holds: start, end, title, calendar name, description, location, and attendee **names**.
@@ -634,8 +649,10 @@ summarising function is the place a future action has to pass through.
    also refuses, saying the clipboard is empty.
 10. **Files with no folder granted.** The sheet says *No folder granted*; `file_list`, `file_read`
     and `file_offer` are `ok:false, reason:"no_folder"` and say to pick a folder in Phone tools →
-    Files. Turning Files on opens the system folder picker, and after picking, the sheet names the
-    folder it got (`Granted · Download`). No storage permission prompt ever appears.
+    Files. Turning Files on opens the system folder picker **on `Download`** and says plainly that a
+    subfolder must be picked, because Android 11+ will not grant `Download` itself — after picking
+    `Download/Work`, the sheet names the folder it got (`Granted · Work`) and the schema's `folder`
+    enum is that one label. No storage permission prompt ever appears.
 11. **Files with a folder granted.** `file_list` on a folder with subdirectories answers `folder`,
     `path:""`, `depth:1`, `count`, `has_more:false` and one entry per child: directories first
     (`kind:"dir"`, `bytes:null`), then files alphabetically with their sizes, `modified` when the
