@@ -250,6 +250,17 @@ class PhoneEngine(
          */
         fun calendarPermission(): String? = null
 
+        /**
+         * The permission `agenda` needs: `READ_CALENDAR` alone. A read does not require the write
+         * grant, and denying write must not take the owner's read away.
+         */
+        fun calendarReadPermission(): String? = calendarPermission()
+
+        /**
+         * The permissions `event_create` needs: read (to find a writable calendar) and write.
+         */
+        fun calendarWritePermission(): String? = calendarPermission()
+
         /** Today's events, in the phone's zone. Null when the platform would not answer. */
         fun agenda(): List<AgendaEvent>? = null
 
@@ -822,17 +833,22 @@ class PhoneEngine(
     // ---- tier 1: calendar ----
 
     /**
-     * The runtime permission this phone lacks, as a refusal that names it exactly. Null when both
-     * halves are held. No provider-specific path exists: this is `CalendarContract`, the platform's
-     * own provider, and the permission strings are Android's.
+     * The runtime permission this phone lacks for [action], as a refusal that names it exactly.
+     * Null when the action's halves are held. `agenda` asks only for READ_CALENDAR; `event_create`
+     * asks for both, because it must find a writable calendar before it inserts. No
+     * provider-specific path exists: this is `CalendarContract`, the platform's own provider, and
+     * the permission strings are Android's.
      */
-    private fun calendarRefusal(action: String): PhoneResult? {
-        val missing = platform.calendarPermission() ?: return null
+    private fun calendarRefusal(action: String, write: Boolean): PhoneResult? {
+        val missing = (
+            if (write) platform.calendarWritePermission() else platform.calendarReadPermission()
+            ) ?: return null
         log("event=phone-mcp action=$action ok=false reason=permission")
+        val what = if (write) "write the calendar" else "read the calendar"
         return PhoneResult.refused(
             action, PhoneReason.PERMISSION,
-            "the phone does not hold $missing, so it cannot read the calendar; only the owner can " +
-                "grant it in system settings (Phone tools → Calendar shows whether it is granted)",
+            "the phone does not hold $missing, so it cannot $what; only the owner can grant it in " +
+                "system settings (Phone tools → Calendar shows whether it is granted)",
         )
     }
 
@@ -842,7 +858,7 @@ class PhoneEngine(
      * only: an attendee's address is not read. A field the provider will not answer is null.
      */
     private fun agenda(): PhoneResult {
-        calendarRefusal("agenda")?.let { return it }
+        calendarRefusal("agenda", write = false)?.let { return it }
         val events = platform.agenda() ?: run {
             log("event=phone-mcp action=agenda ok=false reason=unavailable")
             return PhoneResult.refused(
@@ -882,7 +898,7 @@ class PhoneEngine(
         nowElapsed: Long,
         nowEpoch: Long,
     ): PhoneResult {
-        calendarRefusal("event_create")?.let { return it }
+        calendarRefusal("event_create", write = true)?.let { return it }
         val created = platform.createEvent(
             call.title, call.start, call.durationMin, call.calendar,
         ) ?: run {

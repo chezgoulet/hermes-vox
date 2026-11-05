@@ -380,6 +380,12 @@ class LocalActions(context: Context) {
         /** Android's own missing-permission string, or null when both calendar halves are held. */
         override fun calendarPermission(): String? = PhoneCalendarAccess.permission(app)
 
+        /** `agenda` needs read alone; denying write must not take the owner's read away. */
+        override fun calendarReadPermission(): String? = PhoneCalendarAccess.readPermission(app)
+
+        /** `event_create` needs read and write, in that order. */
+        override fun calendarWritePermission(): String? = PhoneCalendarAccess.writePermission(app)
+
         override fun agenda(): List<PhoneEngine.PhonePlatform.AgendaEvent>? =
             PhoneCalendarAccess.agenda(app)
 

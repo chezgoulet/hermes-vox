@@ -39,6 +39,8 @@ class PhoneFilesCalendarTest {
         var seenFile: Pair<String, String>? = null
 
         var calendarMissing: String? = null
+        var calendarReadMissing: String? = null
+        var calendarWriteMissing: String? = null
         var agendaRows: List<PhoneEngine.PhonePlatform.AgendaEvent>? = emptyList()
         var created: PhoneEngine.PhonePlatform.CreatedEvent? = null
         var createdArgs: List<Any?>? = null
@@ -83,6 +85,8 @@ class PhoneFilesCalendarTest {
         }
 
         override fun calendarPermission(): String? = calendarMissing
+        override fun calendarReadPermission(): String? = calendarReadMissing ?: calendarMissing
+        override fun calendarWritePermission(): String? = calendarWriteMissing ?: calendarMissing
         override fun agenda(): List<PhoneEngine.PhonePlatform.AgendaEvent>? = agendaRows
 
         override fun createEvent(
@@ -296,6 +300,39 @@ class PhoneFilesCalendarTest {
         )
         assertNull("the platform's calendar was not written", fake.created)
         assertTrue("nothing was deleted", fake.deleted.isEmpty())
+    }
+
+    /**
+     * The read is the owner's grant on its own. Denying WRITE_CALENDAR is a choice about creating
+     * events; it must not take `agenda` away, because reading needs only READ_CALENDAR.
+     */
+    @Test fun agenda_needs_read_calendar_alone_not_the_write_grant() {
+        fake.calendarReadMissing = null
+        fake.calendarWriteMissing = android.Manifest.permission.WRITE_CALENDAR
+        fake.agendaRows = listOf(
+            PhoneEngine.PhonePlatform.AgendaEvent(
+                start = "2026-11-05T09:30:00",
+                end = "2026-11-05T10:30:00",
+                title = "Dentist",
+                calendar = "Home",
+            ),
+        )
+        val r = call(mapOf("action" to "agenda"), grants = only("calendar"))
+        assertTrue("a read does not need the write grant: ${r.json()}", r.ok)
+        assertEquals(1, r.facts["count"])
+
+        val write = call(
+            mapOf(
+                "action" to "event_create",
+                "title" to "Dentist",
+                "start" to "2026-11-05T09:30",
+                "duration_min" to 30,
+            ),
+            grants = only("calendar"),
+        )
+        assertFalse("creating still needs write", write.ok)
+        assertEquals(PhoneReason.PERMISSION, write.reason)
+        assertTrue(write.detail!!.contains("android.permission.WRITE_CALENDAR"))
     }
 
     @Test fun event_create_without_permission_creates_nothing_and_names_write() {
