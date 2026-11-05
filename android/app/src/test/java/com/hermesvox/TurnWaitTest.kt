@@ -43,9 +43,9 @@ class TurnWaitTest {
         }
     }
 
-    @Test fun a_silent_stream_is_dead_after_forty_five_seconds_unless_a_tool_or_card_explains_it() {
-        assertFalse(TurnWait.silentStreamExpired(44_999, toolRunning = false, approvalWaiting = false))
-        assertTrue(TurnWait.silentStreamExpired(45_000, toolRunning = false, approvalWaiting = false))
+    @Test fun a_silent_stream_is_dead_after_sixty_seconds_unless_a_tool_or_card_explains_it() {
+        assertFalse(TurnWait.silentStreamExpired(59_999, toolRunning = false, approvalWaiting = false))
+        assertTrue(TurnWait.silentStreamExpired(60_000, toolRunning = false, approvalWaiting = false))
         assertFalse("a running tool sends nothing until it ends",
             TurnWait.silentStreamExpired(90_000, toolRunning = true, approvalWaiting = false))
         assertFalse("an approval wait is the human's",
@@ -55,5 +55,7 @@ class TurnWaitTest {
     @Test fun the_silent_ceiling_is_inside_the_agent_budget() {
         assertTrue(TurnWait.SILENT_STREAM_MS < StreamPollGate.STREAM_TURN_TIMEOUT_MS)
         assertTrue(TurnWait.CHECK_IN_SECOND_MS < TurnWait.SILENT_STREAM_MS)
+        assertTrue("the last check-in is not a line spoken just before giving up",
+            TurnWait.SILENT_STREAM_MS - TurnWait.CHECK_IN_SECOND_MS >= 15_000L)
     }
 }

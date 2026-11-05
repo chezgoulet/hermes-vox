@@ -18,7 +18,7 @@ package com.hermesvox
  *     6 s+    the soft PING, every 6 s (the existing ambient cue: "still alive")
  *     15 s    [LINE_FIRST]  — one short, true sentence
  *     40 s    [LINE_SECOND] — one more, and that is the cap ([MAX_CHECK_INS])
- *     45 s of nothing from the stream (no event of any kind, no tool running, no card up):
+ *     60 s of nothing from the stream (no event of any kind, no tool running, no card up):
  *             stop waiting, and say so ([TurnRepair.line] with [TurnRepair.REASON_SILENT])
  *     120 s   the agent budget (StreamPollGate) — stop waiting, say so
  *
@@ -42,11 +42,13 @@ object TurnWait {
     /**
      * A stream that has sent no event at all for this long — while no tool is running and no
      * approval is waiting on the caller — is treated as dead. The longest healthy first-event
-     * gap in the device runs is the provider retry tail (21.5 s); 45 s is twice that. A tool
+     * gap in the device runs is the provider retry tail (21.5 s); 60 s is well past that, and
+     * leaves the 40 s check-in a real promise ("still waiting") rather than a line spoken five
+     * seconds before giving up. A tool
      * that is running is exempt: a 76 s tool call sends nothing until it finishes and is not a
      * stall (PresenceCadence's field finding).
      */
-    const val SILENT_STREAM_MS = 45_000L
+    const val SILENT_STREAM_MS = 60_000L
 
     const val LINE_FIRST = "Still waiting on it."
     const val LINE_SECOND = "This one's taking a while. I'm still waiting."
