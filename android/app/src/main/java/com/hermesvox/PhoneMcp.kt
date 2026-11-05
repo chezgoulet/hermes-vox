@@ -341,6 +341,9 @@ object PhoneMcpConfig {
      *  * `trust: full` is what makes Tier 0 instant; `trust: untrusted` is the option for an owner
      *    who would rather approve every call on the phone.
      *
+     * The keys are the documented ones (`url`, `headers`, `connect_timeout`, `timeout`, `trust`,
+     * `tools.include` — the MCP config reference). The per-server tool-call timeout is `timeout`,
+     * not `tool_timeout`: an unknown key is ignored, which reads as "the timeout did nothing".
      */
     fun snippet(host: String, token: String = DOC_TOKEN, port: Int = PhoneMcpServer.PORT): String =
         buildString {
@@ -350,7 +353,7 @@ object PhoneMcpConfig {
             append("    headers:\n")
             append("      Authorization: \"Bearer ${token}\"\n")
             append("    connect_timeout: 5\n")
-            append("    tool_timeout: 30\n")
+            append("    timeout: 30\n")
             append("    trust: full   # set `untrusted` to require an approval card for every call\n")
             append("    tools:\n")
             append("      include: [").append(PhoneTool.NAME).append("]\n")

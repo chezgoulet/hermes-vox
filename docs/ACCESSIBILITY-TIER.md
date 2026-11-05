@@ -566,9 +566,10 @@ Outcomes: **Allow once** → the act proceeds, then verifies (§3), and the audi
 `confirmed_by: "touch" | "voice"`. **Don't**, no answer in 20 s, or the call ending →
 `ok:false, reason:"declined"` (`detail` says which), nothing dispatched.
 
-The MCP call blocks while the card is open, so the gateway's `tool_timeout` must exceed card (20 s)
-+ verification (≤ 10 s). The setup turn (`PhoneSetup.prompt`) sets `tool_timeout: 45` when the tier
-is enabled (today's value is 30).
+The MCP call blocks while the card is open, so the gateway's per-server `timeout` must exceed card
+(20 s) + verification (≤ 10 s). The setup turn (`PhoneSetup.prompt`) writes the documented `timeout`
+key (today's value is 30); a tier that needs longer raises that value, and never writes
+`tool_timeout`, which is not a server key and is ignored.
 
 #### 4.2.2 Who may answer it
 
@@ -977,7 +978,7 @@ revocation) because it uses all of them. In order:
    switching via `setServiceInfo`, `performAction`/`performGlobalAction`, keyguard and power checks,
    the worker thread.
 4. **Wiring**: dispatch from `PhoneEngine` for tier 3 actions to the screen worker (not the main
-   thread); `instructions` line (§5.3); `tool_timeout` in the setup turn.
+   thread); `instructions` line (§5.3); the `timeout` value in the setup turn.
 5. **The card** on the spine's Ask surface, with the voice answer on the user lane and the playback
    rule (§4.2.2).
 6. **The honesty surface**: notification, overlay frame and node outline, audit rows.

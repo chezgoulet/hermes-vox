@@ -106,8 +106,13 @@ class PhoneMcpWiringTest {
         val setup = File("src/main/java/com/hermesvox/PhoneSetup.kt").readText()
         val store = File("src/main/java/com/hermesvox/PhoneSetupStore.kt").readText()
         val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
-        assertTrue("the app composes the turn", setup.contains("fun prompt(host: String, token: String"))
-        assertTrue("it carries the real address and token", setup.contains("Authorization: Bearer \$token"))
+        assertTrue("the app composes the turn", setup.contains("fun prompt(host: String"))
+        // #452: the turn used to carry the token (and, on the day it shipped, a `***` where the
+        // token should have been). The agent now writes the entry with the key it already holds.
+        assertFalse("the turn carries no bearer", setup.contains("Authorization: Bearer \$token"))
+        assertTrue("it names the key the agent already has", setup.contains("the API key you already use for this host"))
+        assertTrue("it writes the documented shape", setup.contains("mcp_servers:"))
+        assertTrue("with the documented env reference", setup.contains("API_SERVER_KEY"))
         assertTrue("it names the tool the model sees", setup.contains("MODEL_TOOL_NAME"))
         assertTrue("it is idempotent by content", setup.contains("Do not add a second"))
         assertTrue("it is sent as an ordinary stored turn", store.contains("session.turnStored(prompt)"))
@@ -122,6 +127,41 @@ class PhoneMcpWiringTest {
         )
         assertTrue("the prompt is visible in the sheet", sheet.contains("SHOW THE SETUP TURN"))
         assertTrue("manual config is a disclosed fallback", sheet.contains("Manual fallback"))
+    }
+
+    /**
+     * #452, the server side. The phone's server takes a second provider — the active connection's
+     * API key — read from the same store the turn path resolves it from and read per request, so a
+     * key re-saved in Settings is in force immediately. Nothing new is stored: the key the phone
+     * already holds for its turns is the key it now accepts.
+     */
+    @Test fun the_server_accepts_the_key_the_phone_already_sends() {
+        val wiring = File("src/main/java/com/hermesvox/PhoneMcp.kt").readText()
+        val serverFile = File("src/main/java/com/hermesvox/PhoneMcpServer.kt").readText()
+        assertTrue("the second credential is a provider", wiring.contains("keyProvider = { connectionKey(app) }"))
+        assertTrue(
+            "resolved exactly as the turn path resolves it",
+            wiring.contains("GatewayKey.resolve(") && wiring.contains("SecureStore::decrypt"),
+        )
+        assertTrue("from the profile's existing key slot", wiring.contains("Profiles.K_KEY"))
+        assertFalse("no new secret is written for it", wiring.contains("putString(KEY_CONNECTION"))
+        assertTrue("read per request, not captured at start", serverFile.contains("private val keyProvider: () -> String"))
+    }
+
+    /**
+     * #452, the comparison. Both credentials go through [PhoneMcpToken.matches] (constant-time),
+     * and both results are computed before the answer: a short-circuit would tell a caller on the
+     * tailnet which credential it presented, and how close it was.
+     */
+    @Test fun both_credentials_are_compared_without_leaking_which_one_was_tried() {
+        val serverFile = File("src/main/java/com/hermesvox/PhoneMcpServer.kt").readText()
+        assertTrue(serverFile.contains("PhoneMcpToken.matches(presented, tokenProvider())"))
+        assertTrue(serverFile.contains("PhoneMcpToken.matches(presented, keyProvider())"))
+        assertTrue("the second comparison runs even when the first matched",
+            serverFile.contains("val asPhoneToken") && serverFile.contains("val asConnectionKey"))
+        assertTrue("and only then is the answer formed", serverFile.contains("return asPhoneToken or asConnectionKey"))
+        assertFalse("never == on a secret", serverFile.contains("presented == "))
+        assertFalse("never == on a secret", serverFile.contains("== presented"))
     }
 
     @Test fun connected_requires_the_phones_own_handshake() {

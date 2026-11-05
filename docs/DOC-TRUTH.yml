@@ -109,7 +109,7 @@
   says: "The setup path is a turn, not a block to paste."
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
-  match: 'fun prompt\(host: String, token: String'
+  match: 'fun prompt\(host: String'
 
 - id: phone-setup-idempotent
   says: "It is idempotent by content."

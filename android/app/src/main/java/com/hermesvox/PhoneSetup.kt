@@ -54,23 +54,48 @@ object PhoneSetup {
     )
 
     /**
-     * The exact turn the app sends. It carries the real address and bearer token, the server and
-     * tool names, what the phone can and cannot do, the idempotence rule, the reload note, and the
-     * question the reply should answer. No second mechanism writes the gateway's config.
+     * The exact turn the app sends. It carries the address, the server and tool names, the
+     * documented `mcp_servers` shape to write, what the phone can and cannot do, the idempotence
+     * rule, the reload note, and the question the reply should answer.
+     *
+     * **It carries no credential** (#452). The agent authenticates with the API key it already uses
+     * for this host — the same key this phone sends on its own turns — so nothing is paired,
+     * exchanged, or copied out of this sheet, and nothing this turn says can be replayed by anyone
+     * who reads the transcript. The manual fallback ([PhoneMcpConfig.snippet]) still carries the
+     * phone's own token, because that block exists for a host that is *not* the one this phone talks
+     * to.
      */
-    fun prompt(host: String, token: String, port: Int = PhoneMcpServer.PORT): String {
+    fun prompt(host: String, port: Int = PhoneMcpServer.PORT): String {
         val url = "http://${PhoneMcpConfig.hostForUrl(host)}:$port${PhoneMcpServer.PATH}"
         return buildString {
             appendLine("Please add this phone to your own MCP configuration. This is a configuration change you are making for the owner, so make it carefully and report exactly what you changed.")
             appendLine()
             appendLine("Server name: ${PhoneMcpConfig.SERVER_NAME}")
             appendLine("URL: $url")
-            appendLine("Authorization: Bearer $token")
             appendLine("Tool: ${PhoneTool.NAME} — you will see it as ${PhoneMcpConfig.MODEL_TOOL_NAME}")
             appendLine()
-            appendLine("Add it to the MCP servers in your configuration (the `mcp_servers` block in your Hermes config, or the equivalent for the profile you are running). Keep `tools.include` to `${PhoneTool.NAME}`.")
+            appendLine("Authentication: use the API key you already use for this host — the same key this phone uses for its turns. Send it as this entry's `Authorization` header; the phone accepts it for MCP as well. There is no pairing step, no code and nothing to exchange.")
             appendLine()
-            appendLine("This must be idempotent. If a server named `${PhoneMcpConfig.SERVER_NAME}` already exists, update that entry in place with the URL and bearer token above. Do not add a second `${PhoneMcpConfig.SERVER_NAME}` entry, do not duplicate the block, and do not leave two entries pointing at this phone.")
+            appendLine("The shape to write, in the `mcp_servers` block of your Hermes config (`~/.hermes/config.yaml`), or the equivalent for the profile you are running:")
+            appendLine()
+            appendLine("```yaml")
+            appendLine("mcp_servers:")
+            appendLine("  ${PhoneMcpConfig.SERVER_NAME}:")
+            appendLine("    url: \"$url\"")
+            appendLine("    headers:")
+            appendLine("      Authorization: \"Bearer \${API_SERVER_KEY}\"")
+            appendLine("    connect_timeout: 5")
+            appendLine("    timeout: 30")
+            appendLine("    trust: full   # set `untrusted` to require an approval card for every call")
+            appendLine("    tools:")
+            appendLine("      include: [${PhoneTool.NAME}]")
+            appendLine("```")
+            appendLine()
+            appendLine("`\${API_SERVER_KEY}` is an environment reference your client resolves at connect time from the profile's `~/.hermes/.env` (or the process environment); it is the same key your API server accepts. If your key is not exported under that name, write the literal key you already hold there instead — in your configuration file, never in this conversation. An unresolved variable reference in `url` or `headers` fails the connect closed, so do not leave one in place if the variable is not set.")
+            appendLine()
+            appendLine("Keep `tools.include` to `${PhoneTool.NAME}` — this phone exposes exactly one tool.")
+            appendLine()
+            appendLine("This must be idempotent. If a server named `${PhoneMcpConfig.SERVER_NAME}` already exists, update that entry in place with the URL and the header above. Do not add a second `${PhoneMcpConfig.SERVER_NAME}` entry, do not duplicate the block, and do not leave two entries pointing at this phone.")
             appendLine()
             appendLine("What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.")
             appendLine()
@@ -78,7 +103,7 @@ object PhoneSetup {
             appendLine()
             appendLine("After editing, verify that a server named `${PhoneMcpConfig.SERVER_NAME}` appears in the MCP configuration you loaded (list or show it), and reload or restart your gateway if it needs that to pick up a new server. Then reply with: what you changed, whether `${PhoneMcpConfig.SERVER_NAME}` is present, and whether you needed to restart.")
             appendLine()
-            appendLine("Do not claim the phone is connected — the phone checks that when your handshake arrives. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the bearer token into your reply or a log.")
+            appendLine("Do not claim the phone is connected — the phone checks that when your handshake arrives. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste that API key into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential at all.")
         }.trimEnd()
     }
 
