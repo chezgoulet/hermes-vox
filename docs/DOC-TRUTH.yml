@@ -220,12 +220,6 @@
   file: android/app/src/main/java/com/hermesvox/LocalActions.kt
   match: 'dispatchMediaKeyEvent'
 
-- id: phone-surface-clipboard-no-read
-  says: "the phone tool never reads the clipboard"
-  doc: docs/MCP-SURFACE.md
-  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
-  absent: 'getPrimaryClip'
-
 - id: phone-surface-state-every-field
   says: "one object with every field present"
   doc: docs/MCP-SURFACE.md

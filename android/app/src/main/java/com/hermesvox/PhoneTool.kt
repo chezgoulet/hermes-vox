@@ -31,7 +31,7 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
  * | 1 — reported | `note`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
  * | 2 — approval | `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
@@ -128,7 +128,8 @@ object PhoneTool {
         "skip" to "next or previous track",
         "now_playing" to "what the phone will admit to playing",
         "state" to "battery, charging, screen, network, storage, volume, time",
-        "clip" to "put text on the clipboard (never reads it)",
+        "clip" to "put text on the clipboard",
+        "clip_read" to "the clipboard's text, when the phone allows the read",
         "file_read" to "read a named file's text inside the folder you granted",
         "file_offer" to "offer a named file to your agent as an artifact",
         "agenda" to "today's events (start, end, title, calendar)",
@@ -309,6 +310,10 @@ object PhoneTool {
             override val action = "clip"
         }
 
+        object ClipRead : Call() {
+            override val action = "clip_read"
+        }
+
         /** One named file inside one granted folder. [folder] is the tool's word, not a path. */
         data class FileRead(val name: String, val folder: String?) : Call() {
             override val action = "file_read"
@@ -480,6 +485,7 @@ object PhoneTool {
                 else -> Parsed.Run(Call.Clip(text))
             }
         }
+        "clip_read" -> Parsed.Run(Call.ClipRead)
         "file_read", "file_offer" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
             PhoneFiles.badPath(name)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
@@ -579,8 +585,8 @@ object PhoneTiers {
         "play", "pause", "skip", "now_playing",
         // Device state (#429 lane): one read-only report, every field nullable.
         "state",
-        // Clipboard (#429 lane): a write. Never a read.
-        "clip",
+        // Clipboard (#429 lane): a write, and a read only when the platform allows it.
+        "clip", "clip_read",
     )
     private val TIER_1 = setOf(
         "note",

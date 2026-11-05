@@ -15,9 +15,11 @@ import org.junit.Test
  *
  *  * a media action reports that a key was **dispatched**, never that playback changed — the phone
  *    cannot see playback without a listener it does not hold;
- *  * `now_playing` says `known:false` and explains itself rather than inventing a title;
+ *  * `now_playing` says `known:false` and explains itself rather than inventing a title, and names
+ *    the app and track only when the platform's session list is granted;
  *  * `state` reports `null` for anything the platform will not answer, never a plausible zero;
- *  * `clip` reports only the text's length, and the phone tool has no clipboard read path at all.
+ *  * `clip` reports only the text's length, and `clip_read` returns the clipboard only when the
+ *    platform allows the read — a backgrounded or empty clip is a refusal, not empty content.
  *
  * The fake is deliberately dumb: it records what it was asked and answers what it is told to
  * answer, so a test that passes proves the engine, not the fake.
@@ -64,6 +66,11 @@ class PhoneSurfaceTest {
             clips.add(text)
             return !clipRefuse
         }
+
+        var clipRead: PhoneEngine.PhonePlatform.ClipRead =
+            PhoneEngine.PhonePlatform.ClipRead.Empty
+
+        override fun readClip(): PhoneEngine.PhonePlatform.ClipRead = clipRead
     }
 
     private val fake = Fake()
@@ -357,38 +364,60 @@ class PhoneSurfaceTest {
     }
 
     /**
-     * The group's promise is in the schema (`lets`) and in the owner's screen: *It never reads what
-     * is already there.* A source-level assertion, in the style of the existing claim tests, because
-     * the property is an absence — no test of behaviour can prove a read never happens; the code
-     * not containing one can. Comments are stripped first so the explanation above can name the
-     * API it forbids without tripping its own check.
+     * The read the owner granted, when the platform allows it. Android decides this: a foreground
+     * app gets the clipboard, a backgrounded one gets nothing. The engine returns what the platform
+     * handed over, and only then.
      */
-    @Test fun the_phone_tool_has_no_clipboard_read_path() {
-        val phonePath = listOf(
-            "PhoneTool.kt", "PhoneEngine.kt", "PhoneGrants.kt",
-            "LocalActions.kt", "PhoneMcp.kt", "PhoneMcpServer.kt",
-        )
-        for (name in phonePath) {
-            val code = codeOf("src/main/java/com/hermesvox/$name")
-            assertFalse("$name must not read the clipboard", code.contains("getPrimaryClip"))
-            assertFalse("$name must not inspect the clip", code.contains("clipDescription"))
-            assertFalse("$name must not read the clipboard", code.contains("primaryClip"))
-        }
-        assertTrue(
-            "the write path is the one that exists",
-            codeOf("src/main/java/com/hermesvox/LocalActions.kt").contains("setPrimaryClip"),
-        )
+    @Test fun clip_read_returns_the_text_the_platform_hands_over() {
+        val text = "the plumber's number is 555-0100"
+        fake.clipRead = PhoneEngine.PhonePlatform.ClipRead.Text(text)
+        val r = call(mapOf("action" to "clip_read"), only("clipboard"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(text, r.facts["text"])
+        assertEquals(text.length, r.facts["chars"])
+        assertEquals("a clipboard read cannot be reversed", false, r.facts["undoable"])
+        assertFalse("and no undo object is invented", r.json().contains("\"undo\""))
     }
 
-    /** A file's code without its comments: what a source claim is actually about. */
-    private fun codeOf(path: String): String =
-        java.io.File(path).readText()
-            .lines()
-            .filterNot { line ->
-                val t = line.trim()
-                t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")
-            }
-            .joinToString("\n")
+    /**
+     * The rule this lane replaced the old "never reads" assertion with: when the platform will not
+     * answer — the app is backgrounded, which is Android 10+'s own boundary — the result is a
+     * refusal carrying the platform's reason, **not** the empty text a read would have produced.
+     */
+    @Test fun a_backgrounded_clip_read_refuses_honestly_instead_of_returning_empty_content() {
+        fake.clipRead = PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+            "Android does not let an app that is not in front read the clipboard; the phone was " +
+                "backgrounded, so nothing was read",
+        )
+        val r = call(mapOf("action" to "clip_read"), only("clipboard"))
+        assertFalse("a backgrounded read is not a success", r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertTrue(
+            "the platform's own explanation is what the caller reads",
+            r.detail!!.contains("not in front"),
+        )
+        assertFalse("no stale or empty text is passed off as the clipboard", r.toMap().containsKey("text"))
+        assertFalse("and no length either", r.toMap().containsKey("chars"))
+    }
+
+    @Test fun an_empty_clipboard_is_a_refusal_not_an_empty_string() {
+        fake.clipRead = PhoneEngine.PhonePlatform.ClipRead.Empty
+        val r = call(mapOf("action" to "clip_read"), only("clipboard"))
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertTrue(r.detail!!.contains("clipboard is empty"))
+        assertFalse(r.toMap().containsKey("text"))
+    }
+
+    @Test fun clip_read_needs_the_clipboard_group_like_the_write() {
+        val off = call(mapOf("action" to "clip_read"), PhoneGrants.ALL_OFF)
+        assertFalse(off.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, off.reason)
+        assertTrue(off.detail!!.contains("Clipboard"))
+
+        val on = call(mapOf("action" to "clip_read"), only("clipboard"))
+        assertTrue("offered once the group is on", on.ok || on.reason != PhoneReason.NOT_GRANTED)
+    }
 
     @Test fun app_focus_counts_resumed_activities_and_never_goes_below_zero() {
         AppFocus.reset()

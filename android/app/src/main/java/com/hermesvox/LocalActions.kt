@@ -517,13 +517,10 @@ class LocalActions(context: Context) {
         }
 
         /**
-         * Write the text, and nothing else. **No code here reads the clipboard** — the group's
-         * promise is that it never does: there is no clipboard read in this file, and none in the
-         * tool path at all.
-         *
-         * The in-front check is done first because Android 10+ drops a background write without
-         * saying so; reporting `ok` after a silent drop would be the one thing this tool must never
-         * do. The label is the app's name, never the caller's text at the OS layer either.
+         * Write the text, and nothing else. The in-front check is done first because Android 10+
+         * drops a background write without saying so; reporting `ok` after a silent drop would be
+         * the one thing this tool must never do. The label is the app's name, never the caller's
+         * text at the OS layer either.
          */
         override fun clip(text: String): Boolean {
             if (!AppFocus.inFront) return false
@@ -535,6 +532,48 @@ class LocalActions(context: Context) {
             } catch (t: Throwable) {
                 VoxLog.d("event=local-action clip-denied reason=${t.javaClass.simpleName}")
                 false
+            }
+        }
+
+        /**
+         * Read the clipboard **when Android allows it**. The platform, not this app, decides: an
+         * app it does not consider in front gets no clipboard (Android 10+), so the read is
+         * refused with that reason rather than returning an empty clip as if it were the answer.
+         * An empty clipboard and a non-text item are refused too: "nothing" is not clipboard text.
+         *
+         * Nothing else in the app reads the clipboard; this is the one read path, behind the
+         * owner's `clipboard` grant.
+         */
+        override fun readClip(): PhoneEngine.PhonePlatform.ClipRead {
+            if (!AppFocus.inFront) {
+                return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                    "Android does not let an app that is not in front read the clipboard; the " +
+                        "phone was backgrounded, so nothing was read",
+                )
+            }
+            return try {
+                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    ?: return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                        "this phone has no clipboard service to read",
+                    )
+                val clip = cm.primaryClip
+                    ?: return PhoneEngine.PhonePlatform.ClipRead.Empty
+                if (clip.itemCount == 0) return PhoneEngine.PhonePlatform.ClipRead.Empty
+                val text = clip.getItemAt(0).text?.toString()
+                if (text.isNullOrEmpty()) {
+                    PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                        "the clipboard holds no text (it may be an image or another app's " +
+                            "private content), so there was nothing to return",
+                    )
+                } else {
+                    PhoneEngine.PhonePlatform.ClipRead.Text(text)
+                }
+            } catch (t: Throwable) {
+                VoxLog.d("event=local-action clip-read-denied reason=${t.javaClass.simpleName}")
+                PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                    "Android refused the clipboard read (${t.javaClass.simpleName}); nothing " +
+                        "was read",
+                )
             }
         }
     }

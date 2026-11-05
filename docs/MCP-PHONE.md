@@ -106,18 +106,25 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `now_playing` | 0 | – | `known`, `playing`, `package`, `title`, `note` when `known` is false |
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
+| `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
 | `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`) | `name`, `folder`, `bytes`, `chars`, `text` (capped, text only) |
 | `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
-| `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`) |
-| `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (1–1440), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
+| `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
+| `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
 | `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
 
 `play`, `pause` and `skip` dispatch a platform media key to whichever session is active: no
-permission, and no notification-listener access. `dispatched` means the audio service took the key,
-never that playback changed. `now_playing` therefore answers `known:false` with the cheap
-`isMusicActive` reading and a sentence saying what it cannot see — a title would require the
-notification-listener special access this app does not hold, so it is never invented.
+permission. `dispatched` means the audio service took the key, never that playback changed.
+`now_playing` reports the cheap `isMusicActive` reading, and — when the owner has granted notification
+access in the sheet — the active session's real package and title. Without that grant it answers
+`known:false` with a sentence saying what it cannot see; a title is never invented. The sheet's *Now
+playing access* row opens Android's own notification-access screen, the same shape as the Do Not
+Disturb row.
+
+`clip` writes the clipboard; `clip_read` returns its text **when Android allows the read**. Since
+Android 10 a backgrounded app gets no clipboard, and an empty clip is no answer: both refuse with
+`reason:"unavailable"` and the platform's own explanation, never empty text presented as the clip.
 
 `status` is the discovery action: it answers "what can you do, and what is running right now" from
 the **same registry** the presence context block reports (`local_actions:`), so the mind never has to
@@ -142,7 +149,7 @@ all read it. There is no second list to drift.
 | Reminders and notes | 1 | `note` | keep a short note and report it back |
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
-| Clipboard | 0 | `clip` | write to the clipboard (never reads it) |
+| Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
 | Files | 1 | `file_read`, `file_offer` | read a named file in the folder you granted, offer a file to the agent |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |

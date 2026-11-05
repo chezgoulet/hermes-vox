@@ -96,9 +96,28 @@ class PhoneEngine(
         /**
          * Put [text] on the clipboard. False when the phone would not take it — an app that is not
          * in front (Android 10+ drops such a write silently, so this is checked before writing)
-         * or a clipboard that threw. There is deliberately no read of the clipboard anywhere.
+         * or a clipboard that threw.
          */
         fun clip(text: String): Boolean
+
+        /**
+         * What the clipboard holds, **as far as the platform will let this app see it**. Android
+         * does not answer for an app it does not consider in front, so [ClipRead.Unavailable]
+         * carries the platform's own reason rather than a stale or empty stand-in.
+         */
+        sealed class ClipRead {
+            /** The clipboard's text, exactly as the platform handed it over. */
+            data class Text(val text: String) : ClipRead()
+
+            /** There is a clipboard, and it holds nothing. */
+            data object Empty : ClipRead()
+
+            /** The platform would not let this app read it; [detail] is the platform's reason. */
+            data class Unavailable(val detail: String) : ClipRead()
+        }
+
+        fun readClip(): ClipRead =
+            ClipRead.Unavailable("the platform does not let this app read the clipboard")
 
         /** Arm a countdown. False means the phone refused. */
         fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean
@@ -296,6 +315,7 @@ class PhoneEngine(
             PhoneTool.Call.NowPlaying -> nowPlaying()
             PhoneTool.Call.State -> deviceState(nowEpoch)
             is PhoneTool.Call.Clip -> clip(call.text)
+            PhoneTool.Call.ClipRead -> readClip()
             is PhoneTool.Call.FileRead -> readFile(call)
             is PhoneTool.Call.FileOffer -> offerFile(call)
             PhoneTool.Call.Agenda -> agenda()
@@ -561,8 +581,8 @@ class PhoneEngine(
     /**
      * Put the text on the clipboard. The result carries **only the length**: the text is the
      * caller's, and neither the result, the log nor the audit row needs it. There is no undo —
-     * reversing a clipboard write would mean having read what was there, which this phone never
-     * does.
+     * reversing a clipboard write would mean having read what was there, which this action does
+     * not do; [readClip] is a separate call with its own grant and its own result.
      */
     private fun clip(text: String): PhoneResult {
         if (!platform.clip(text)) {
@@ -581,6 +601,37 @@ class PhoneEngine(
                 "undoable" to false,
             ),
         )
+    }
+
+    /**
+     * The clipboard's text, when the platform allows the read. The decision is Android's: since
+     * Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer
+     * either. Both are `unavailable` with the platform's own reason — never empty text dressed up
+     * as what the clipboard holds.
+     */
+    private fun readClip(): PhoneResult = when (val found = platform.readClip()) {
+        is PhonePlatform.ClipRead.Text -> {
+            log("event=phone-mcp action=clip_read ok=true chars=${found.text.length}")
+            PhoneResult.info(
+                "clip_read",
+                linkedMapOf<String, Any?>(
+                    "text" to found.text,
+                    "chars" to found.text.length,
+                    "undoable" to false,
+                ),
+            )
+        }
+        PhonePlatform.ClipRead.Empty -> {
+            log("event=phone-mcp action=clip_read ok=false reason=unavailable")
+            PhoneResult.refused(
+                "clip_read", PhoneReason.UNAVAILABLE,
+                "the clipboard is empty, so there was nothing to read",
+            )
+        }
+        is PhonePlatform.ClipRead.Unavailable -> {
+            log("event=phone-mcp action=clip_read ok=false reason=unavailable")
+            PhoneResult.refused("clip_read", PhoneReason.UNAVAILABLE, found.detail)
+        }
     }
 
     // ---- tier 1 ----
