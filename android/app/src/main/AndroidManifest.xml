@@ -178,6 +178,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- The uninstall card's notification buttons. Explicit intents only; not exported. -->
+        <receiver
+            android:name=".PhoneApprovalReceiver"
+            android:exported="false" />
+
         <!-- #45: wake-word enrolment (preview) — records takes only; no service. -->
         <activity
             android:name=".WakeEnrolActivity"

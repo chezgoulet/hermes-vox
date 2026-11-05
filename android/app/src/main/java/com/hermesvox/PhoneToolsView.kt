@@ -164,12 +164,18 @@ object PhoneToolsView {
         else arguments.entries.joinToString(" · ") { "${it.key}=${it.value}" }
 
     /** The outcome as the owner reads it; the reason stays visible because it is the claim's check. */
-    fun outcomeLine(entry: PhoneAudit.Entry): String = when {
-        entry.ok -> "done"
-        entry.outcome == PhoneReason.NOT_GRANTED -> "refused · not granted"
-        entry.outcome == PhoneReason.APPROVAL -> "refused · needs your approval"
-        entry.outcome == PhoneReason.PERMISSION -> "refused · permission not granted"
-        else -> "refused · ${entry.outcome}"
+    fun outcomeLine(entry: PhoneAudit.Entry): String = when (entry.outcome) {
+        "approval-requested" -> "asked you · approval required"
+        "approved" -> "approved by ${entry.arguments["via"] ?: "tap"} · not performed yet"
+        "denied" -> "denied by ${entry.arguments["via"] ?: "tap"}"
+        "expired" -> "expired · no answer, so not performed"
+        else -> when {
+            entry.ok -> "done"
+            entry.outcome == PhoneReason.NOT_GRANTED -> "refused · not granted"
+            entry.outcome == PhoneReason.APPROVAL -> "refused · needs your approval"
+            entry.outcome == PhoneReason.PERMISSION -> "refused · permission not granted"
+            else -> "refused · ${entry.outcome}"
+        }
     }
 
     /** The audit row's first line: time and action. */

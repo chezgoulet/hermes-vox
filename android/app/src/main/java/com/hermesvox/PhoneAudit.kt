@@ -77,19 +77,59 @@ object PhoneAudit {
     /** The entry for one dispatch: the action, its safe arguments, the outcome, and its undo. */
     fun entry(atEpochMs: Long, args: Map<String, Any?>, result: PhoneResult): Entry {
         val undoable = result.ok && result.facts["undoable"] == true
+        val summary = summarise(args)
+        val arguments = when {
+            // A listing's row is `Downloads, 12 entries`: the folder it listed, the relative
+            // path inside it, and how many entries that page held. **Never a name** — the names
+            // in a folder are the owner's, and the count is all the record needs.
+            result.ok && result.action == "file_list" -> listingRow(summary, result)
+            // An uninstall execution row names the package and its label, nothing else.
+            result.action == "uninstall" && result.ok -> uninstallRow(result)
+            else -> summary
+        }
         return Entry(
             atEpochMs = atEpochMs,
             action = result.action.ifBlank { (args["action"] as? String).orEmpty() },
-            arguments = summarise(args).let { summary ->
-                // A listing's row is `Downloads, 12 entries`: the folder it listed, the relative
-                // path inside it, and how many entries that page held. **Never a name** — the names
-                // in a folder are the owner's, and the count is all the record needs.
-                if (result.ok && result.action == "file_list") listingRow(summary, result) else summary
-            },
+            arguments = arguments,
             ok = result.ok,
             outcome = if (result.ok) "done" else (result.reason ?: "refused"),
             undoId = if (undoable) result.id else null,
         )
+    }
+
+    /**
+     * The request and decision rows for an `uninstall` card. [outcome] is `approval-requested`,
+     * `approved`, `denied` or `expired`; [via] is `tap`, `voice`, `silence` or `agent`.
+     *
+     * The row names the package and the app's label, and — on a decision — how it was answered.
+     * It never stores the canonical arguments or the hash: those are the protocol's guard, not
+     * something the owner needs to read.
+     */
+    fun approvalEntry(
+        atEpochMs: Long,
+        card: PhoneApproval.Card,
+        outcome: String,
+        via: String,
+    ): Entry {
+        val arguments = LinkedHashMap<String, String>()
+        arguments["package"] = clip(card.packageName)
+        arguments["label"] = clip(card.label)
+        if (outcome != "approval-requested" && via.isNotEmpty()) arguments["via"] = clip(via)
+        return Entry(
+            atEpochMs = atEpochMs,
+            action = PhoneApproval.ACTION,
+            arguments = arguments,
+            // A decision is not an execution; the execution row is the one that says `done`.
+            ok = false,
+            outcome = outcome,
+        )
+    }
+
+    private fun uninstallRow(result: PhoneResult): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        (result.facts["package"] as? String)?.let { out["package"] = clip(it) }
+        (result.facts["label"] as? String)?.let { out["label"] = clip(it) }
+        return out
     }
 
     /** Adds the folder, path and count a listing actually returned; empty path reads `/` (the root). */
