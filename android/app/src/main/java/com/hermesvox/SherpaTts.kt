@@ -26,7 +26,28 @@ import kotlin.concurrent.thread
  */
 enum class SherpaVoice(val modelId: String, val displayName: String) {
     PIPER("piper-lessac", "Piper"),
+    PIPER_SIWIS("piper-siwis", "Piper · fr-FR (Siwis)"),
+    PIPER_TOM("piper-tom", "Piper · fr-FR (Tom)"),
+    PIPER_UPMC("piper-upmc", "Piper · fr-FR (UPMC)"),
     SUPERTONIC("supertonic", "Supertonic"),
+    ;
+
+    val isSupertonic: Boolean get() = this == SUPERTONIC
+    val isPiper: Boolean get() = this != SUPERTONIC
+
+    companion object {
+        fun fromModelId(modelId: String): SherpaVoice? =
+            entries.firstOrNull { it.modelId == modelId }
+
+        fun fromEngineToken(token: String): SherpaVoice? = when (token) {
+            "supertonic" -> SUPERTONIC
+            "piper", "piper-lessac" -> PIPER
+            "piper-siwis" -> PIPER_SIWIS
+            "piper-tom" -> PIPER_TOM
+            "piper-upmc" -> PIPER_UPMC
+            else -> null
+        }
+    }
 }
 
 /**
@@ -146,9 +167,8 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         VoiceSpeakers.resolve(speakers, voice, eng.numSpeakers())
 
     /** One phrase through the engine, with the voice's own controls. */
-    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when (voice) {
-        SherpaVoice.PIPER -> eng.generate(text, speakerFor(eng), voiceSpeed)
-        SherpaVoice.SUPERTONIC -> {
+    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when {
+        voice.isSupertonic -> {
             val m = mood
             eng.generateWithConfig(text, GenerationConfig().apply {
                 sid = speakerFor(eng)
@@ -156,6 +176,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 silenceScale = m.silenceScale
             })
         }
+        else -> eng.generate(text, speakerFor(eng), voiceSpeed)
     }
 
     /** `tts_voice_usage` kill-switch (default false): route the playback AudioTracks

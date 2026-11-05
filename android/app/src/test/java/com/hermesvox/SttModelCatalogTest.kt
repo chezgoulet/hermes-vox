@@ -16,7 +16,35 @@ class SttModelCatalogTest {
 
     @Test fun a_multilingual_model_takes_the_pref_or_auto_detects() {
         assertEquals("de", ModelCatalog.whisperLanguage("whisper-base-multi", " DE "))
+        assertEquals("fr", ModelCatalog.whisperLanguage("whisper-base-multi", "fr"))
+        assertEquals("fr", ModelCatalog.whisperLanguage("whisper-tiny-multi", " FR "))
         assertEquals("", ModelCatalog.whisperLanguage("whisper-base-multi", null))   // "" = auto-detect
+    }
+
+    @Test fun multilingual_models_are_registered_and_selectable() {
+        assertTrue(ModelCatalog.sttModels.any { it.first == "whisper-tiny-multi" })
+        assertTrue(ModelCatalog.sttModels.any { it.first == "whisper-base-multi" })
+        assertTrue(ModelCatalog.sttModels.any { it.first == "whisper-small-multi" })
+        val baseMulti = ModelCatalog.blessed.first { it.id == "whisper-base-multi" }
+        assertEquals(64, baseMulti.sha256.length)
+        assertEquals("stt", baseMulti.kind)
+        assertFalse(baseMulti.recommended)
+    }
+
+    @Test fun french_piper_voices_are_registered_and_pinned() {
+        val siwis = ModelCatalog.blessed.first { it.id == "piper-siwis" }
+        assertEquals("tts", siwis.kind)
+        assertEquals(64, siwis.sha256.length)
+        assertTrue(siwis.url.contains("fr_FR-siwis-medium"))
+        assertFalse(siwis.recommended)
+
+        val tom = ModelCatalog.blessed.first { it.id == "piper-tom" }
+        assertEquals("tts", tom.kind)
+        assertEquals(64, tom.sha256.length)
+
+        val upmc = ModelCatalog.blessed.first { it.id == "piper-upmc" }
+        assertEquals("tts", upmc.kind)
+        assertEquals(64, upmc.sha256.length)
     }
 
     @Test fun parakeet_is_a_pinned_selectable_transducer_model_and_whisper_stays_default() {

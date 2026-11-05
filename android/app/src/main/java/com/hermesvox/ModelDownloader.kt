@@ -226,15 +226,15 @@ class ModelDownloader(context: Context) {
             val m = files.firstOrNull { it.name.matches(Regex(pat)) } ?: return
             if (!m.name.equals(to)) m.renameTo(File(dir, to))
         }
-        when (specId) {
-            "whisper-tiny", "whisper-base", "whisper-small" -> {
+        when {
+            specId.startsWith("whisper-") -> {
                 rename(".*-encoder\\.int8\\.onnx", "encoder.int8.onnx")
                 rename(".*-decoder\\.int8\\.onnx", "decoder.int8.onnx")
                 rename(".*-encoder\\.onnx", "encoder.onnx")
                 rename(".*-decoder\\.onnx", "decoder.onnx")
                 rename(".*-tokens\\.txt", "tokens.txt")
             }
-            "piper-lessac" -> {
+            specId.startsWith("piper-") -> {
                 rename(".*\\.onnx", "model.onnx")
             }
         }

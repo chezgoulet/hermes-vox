@@ -27,6 +27,7 @@ object VoiceSpeakers {
     fun defaultId(engine: SherpaVoice): Int = when (engine) {
         SherpaVoice.PIPER -> 0
         SherpaVoice.SUPERTONIC -> 1
+        else -> 0
     }
 
     /** Per-engine storage keys. The modelId is stable and unique per engine. */
@@ -38,6 +39,7 @@ object VoiceSpeakers {
     fun knownCount(engine: SherpaVoice): Int = when (engine) {
         SherpaVoice.PIPER -> 904        // vits-piper-en_US-libritts_r-medium
         SherpaVoice.SUPERTONIC -> 10    // ten built-in voices
+        else -> 1                       // single-speaker Piper models
     }
 
     /** The curated Piper voices offered by the Settings picker (8 of the model's 904).

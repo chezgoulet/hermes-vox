@@ -50,9 +50,17 @@ class VoiceSpeakersTest {
     @Test fun per_engine_default_is_used_when_nothing_is_stored() {
         assertEquals(0, VoiceSpeakers.defaultId(SherpaVoice.PIPER))
         assertEquals(1, VoiceSpeakers.defaultId(SherpaVoice.SUPERTONIC))
+        assertEquals(0, VoiceSpeakers.defaultId(SherpaVoice.PIPER_SIWIS))
         val store = MapPrefs()
         assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER, 904))
         assertEquals(1, VoiceSpeakers.resolve(store, SherpaVoice.SUPERTONIC, 10))
+        assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER_SIWIS, 1))
+    }
+
+    @Test fun single_speaker_piper_voices_have_count_one() {
+        assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_SIWIS))
+        assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_TOM))
+        assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_UPMC))
     }
 
     @Test fun default_is_clamped_by_a_tiny_engine() {

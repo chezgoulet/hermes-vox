@@ -428,6 +428,11 @@ class SettingsActivity : AppCompatActivity() {
             val tokens = ModelCatalog.sttModels.map { it.first }.toTypedArray()
             pick("STT model (on-device)", labels, tokens, ModelCatalog.KEY_STT_MODEL, R.id.set_stt_model_val)
         }
+        findViewById<LinearLayout>(R.id.row_stt_language)?.setOnClickListener {
+            val labels = arrayOf("Auto-detect", "Français (France)", "English", "Español", "Deutsch", "Italiano")
+            val tokens = arrayOf("", "fr", "en", "es", "de", "it")
+            pick("Spoken language (Whisper)", labels, tokens, ModelCatalog.KEY_STT_LANGUAGE, R.id.set_stt_language_val)
+        }
         // 0.7.3: the speech-pipeline CPU budget. Stored as an INT (0 = Auto), so it
         // cannot ride the String-based pick() helper. Applies on the next voice-model
         // load — numThreads is baked into the recognizer/synth session at build.
@@ -447,8 +452,16 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
-                arrayOf("Supertonic (on-device, recommended)", "Piper (on-device, lighter)", "System (fallback)"),
-                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
+                arrayOf(
+                    "Supertonic (on-device, recommended)",
+                    "Piper · fr-FR Siwis (on-device, French)",
+                    "Piper · fr-FR Tom (on-device, French)",
+                    "Piper · fr-FR UPMC (on-device, French)",
+                    "Piper · en-US (on-device, lighter)",
+                    "System (fallback)"
+                ),
+                arrayOf("supertonic", "piper-siwis", "piper-tom", "piper-upmc", "piper", "system"),
+                "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
         // option was removed — WarmTts is a no-op stub, so it never produced
@@ -503,6 +516,8 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
         val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
         findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
+        val lang = prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, "") ?: ""
+        findViewById<TextView>(R.id.set_stt_language_val)?.text = languageLabel(lang)
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
         syncSpeakerRow()   // title + value follow the selected engine
@@ -1127,7 +1142,11 @@ class SettingsActivity : AppCompatActivity() {
         t.init { ok ->
             if (!ok || preview !== t) return@init
             val t0 = android.os.SystemClock.uptimeMillis()
-            t.speak("Hi — this is how I'll sound when we talk.") {
+            val phrase = if (t.name.contains("fr-FR") || prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, "") == "fr")
+                "Bonjour ! Voici ma voix lorsque nous parlerons."
+            else
+                "Hi — this is how I'll sound when we talk."
+            t.speak(phrase) {
                 VoxLog.d("event=voice-preview engine=${t.name} ms=${android.os.SystemClock.uptimeMillis() - t0}")
                 if (preview === t) { try { t.shutdown() } catch (_: Throwable) {}; preview = null }
             }
@@ -1154,11 +1173,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** The on-device engine the row controls, or null for the system voice (which
      *  has no speaker choice — the row hides rather than offering a no-op). */
-    private fun ttsVoiceEngine(): SherpaVoice? = when (ttsEngine()) {
-        "supertonic" -> SherpaVoice.SUPERTONIC
-        "piper" -> SherpaVoice.PIPER
-        else -> null
-    }
+    private fun ttsVoiceEngine(): SherpaVoice? = SherpaVoice.fromEngineToken(ttsEngine())
 
     private fun speakerStore(): SpeakerPrefs = AndroidSpeakerPrefs(prefs)
 
@@ -1171,11 +1186,12 @@ class SettingsActivity : AppCompatActivity() {
     private fun syncSpeakerRow() {
         val row = findViewById<LinearLayout>(R.id.row_tts_speaker) ?: return
         val engine = ttsVoiceEngine()
-        if (engine == null) { row.visibility = android.view.View.GONE; return }
+        if (engine == null || VoiceSpeakers.knownCount(engine) <= 1) { row.visibility = android.view.View.GONE; return }
         row.visibility = android.view.View.VISIBLE
         findViewById<TextView>(R.id.set_tts_speaker_title).text = when (engine) {
             SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
             SherpaVoice.PIPER -> "Speaker (Piper)"
+            else -> "Speaker (${engine.displayName})"
         }
         findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerValue(engine)
     }
@@ -1204,6 +1220,7 @@ class SettingsActivity : AppCompatActivity() {
         when (engine) {
             SherpaVoice.SUPERTONIC -> pickSupertonicSpeaker()
             SherpaVoice.PIPER -> pickPiperSpeaker()
+            else -> {}
         }
     }
 
@@ -1279,6 +1296,16 @@ class SettingsActivity : AppCompatActivity() {
             val curated = VoiceSpeakers.PIPER_CURATED.firstOrNull { it.first == id }
             if (curated != null) "Voice ${curated.second}" else "Voice id $id"
         }
+        else -> "Voice $id"
+    }
+
+    private fun languageLabel(code: String): String = when (code.trim().lowercase()) {
+        "fr" -> "Français (France)"
+        "en" -> "English"
+        "es" -> "Español"
+        "de" -> "Deutsch"
+        "it" -> "Italiano"
+        else -> if (code.isBlank()) "Auto-detect" else code
     }
 
     private fun label(prefKey: String, default: String): String {
@@ -1287,6 +1314,9 @@ class SettingsActivity : AppCompatActivity() {
             "on-device" -> "On-device"
             "presence" -> "Being"; "conversation" -> "Transcript"
             "system" -> "System"; "kokoro" -> "System"; "piper" -> "Piper"; "supertonic" -> "Supertonic"
+            "piper-siwis" -> "Piper · fr-FR (Siwis)"
+            "piper-tom" -> "Piper · fr-FR (Tom)"
+            "piper-upmc" -> "Piper · fr-FR (UPMC)"
             "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
             "dark" -> "Dark"; "light" -> "Light"
             else -> tok

@@ -48,6 +48,21 @@ object ModelCatalog {
             "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
             "Speaks Hermes' replies aloud in a natural voice — fully offline"),
+        ModelSpec("piper-siwis", "Piper · fr-FR (Siwis, medium)", "tts", "vits-piper-fr_FR-siwis-medium.tar.bz2", 64.1,
+            "Piper fr-FR canonical Siwis medium · clear natural French voice", true, 8,
+            "375909aa30842b3a4efa10b1beb1d761af792960ae6873b4d53889f96c66195b", false,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2",
+            "Speaks Hermes' replies aloud in French — natural, fully offline"),
+        ModelSpec("piper-tom", "Piper · fr-FR (Tom, medium)", "tts", "vits-piper-fr_FR-tom-medium.tar.bz2", 64.1,
+            "Piper fr-FR Tom medium · alternative French voice", true, 9,
+            "3d8258ef8466b5d5f2cc46c06e1415d3d01c9cbaeed8b6d5b3d152073672472c", false,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tom-medium.tar.bz2",
+            "Speaks Hermes' replies aloud in French — alternative voice, fully offline"),
+        ModelSpec("piper-upmc", "Piper · fr-FR (UPMC, medium)", "tts", "vits-piper-fr_FR-upmc-medium.tar.bz2", 76.7,
+            "Piper fr-FR UPMC medium · French academic voice", true, 10,
+            "e9830a331a16f6cc5ef3116a287065e015d3495c3f56b974889a266da7f89a7f", false,
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-upmc-medium.tar.bz2",
+            "Speaks Hermes' replies aloud in French — fully offline"),
         ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 80.3,
             "On-device neural voice · fast, natural (model: OpenRAIL-M)", true, 2,
             "8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259", true,
@@ -65,6 +80,18 @@ object ModelCatalog {
             "Offline STT · best accuracy, heaviest", true, 5,
             "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false, "",
             "Turns your speech into text on-device — most accurate, heavier"),
+        ModelSpec("whisper-tiny-multi", "Whisper tiny (multilingual)", "stt", "sherpa-onnx-whisper-tiny.tar.bz2", 110.8,
+            "Offline STT · multilingual, fastest and lightest", true, 11,
+            "c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1", false, "",
+            "Turns multilingual speech into text on-device — fast, supports French"),
+        ModelSpec("whisper-base-multi", "Whisper base (multilingual)", "stt", "sherpa-onnx-whisper-base.tar.bz2", 197.9,
+            "Offline STT · multilingual balanced default", true, 12,
+            "911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de", false, "",
+            "Turns multilingual speech into text on-device — balanced accuracy and speed"),
+        ModelSpec("whisper-small-multi", "Whisper small (multilingual)", "stt", "sherpa-onnx-whisper-small.tar.bz2", 609.8,
+            "Offline STT · multilingual best accuracy, heavier", true, 13,
+            "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6", false, "",
+            "Turns multilingual speech into text on-device — most accurate, heavier download"),
         // Parakeet-TDT 0.6B v2 (NVIDIA, CC-BY-4.0), the sherpa-onnx int8 packaging;
         // sha256 of the upstream asr-models release artifact. Opt-in: on the sttbench
         // corpus it beats whisper-base.en on accuracy AND speed (host CPU: WER 3.4% vs
@@ -95,7 +122,10 @@ object ModelCatalog {
      *  on-device voice (Supertonic, then Piper), else the system voice. */
     fun defaultTts(context: Context): String = when {
         isInstalled(context, "supertonic") -> "supertonic"
+        isInstalled(context, "piper-siwis") -> "piper-siwis"
         isInstalled(context, "piper-lessac") -> "piper"
+        isInstalled(context, "piper-tom") -> "piper-tom"
+        isInstalled(context, "piper-upmc") -> "piper-upmc"
         else -> "system"
     }
 
@@ -104,6 +134,9 @@ object ModelCatalog {
         "whisper-tiny" to "Whisper tiny.en",
         "whisper-base" to "Whisper base.en",
         "whisper-small" to "Whisper small.en",
+        "whisper-tiny-multi" to "Whisper tiny (multilingual)",
+        "whisper-base-multi" to "Whisper base (multilingual)",
+        "whisper-small-multi" to "Whisper small (multilingual)",
         "parakeet-v2" to "Parakeet TDT 0.6B v2"
     )
     /** Blessed default STT model id. */
@@ -162,19 +195,19 @@ object ModelCatalog {
 
     fun isInstalled(context: Context, id: String): Boolean {
         val d = modelDir(context, id)
-        val markers = when (id) {
+        val markers = when {
             // int8 or fp32 weights (OfflineWhisperStt prefers int8 and prunes fp32 once int8 is in use).
-            "whisper-tiny", "whisper-base", "whisper-small" -> return File(d, "tokens.txt").exists() &&
+            id.startsWith("whisper-") -> return File(d, "tokens.txt").exists() &&
                 listOf("encoder", "decoder").all { p ->
                     File(d, "$p.onnx").exists() || File(d, "$p.int8.onnx").exists() ||
                         d.listFiles()?.any { it.name.endsWith("-$p.int8.onnx") } == true
                 }
-            "parakeet-v2" -> listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
-            "silero-vad" -> listOf("silero_vad.onnx")
-            "piper-lessac" -> listOf("model.onnx", "tokens.txt")
-            "supertonic" -> listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx",
+            id.startsWith("piper-") -> listOf("model.onnx", "tokens.txt")
+            id == "parakeet-v2" -> listOf("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
+            id == "silero-vad" -> listOf("silero_vad.onnx")
+            id == "supertonic" -> listOf("duration_predictor.int8.onnx", "text_encoder.int8.onnx",
                 "vector_estimator.int8.onnx", "vocoder.int8.onnx", "tts.json", "unicode_indexer.bin", "voice.bin")
-            "gemma-e2b" -> listOf("gemma-4-E2B-it.litertlm")
+            id == "gemma-e2b" -> listOf("gemma-4-E2B-it.litertlm")
             else -> return d.exists() && (d.listFiles()?.isNotEmpty() == true)
         }
         return markers.all { File(d, it).exists() }
