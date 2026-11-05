@@ -107,7 +107,8 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
 | `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
-| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`) | `name`, `folder`, `bytes`, `chars`, `text` (capped, text only) |
+| `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
+| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`), optional `offset`/`length` for a byte window | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
 | `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
 | `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
@@ -150,7 +151,7 @@ all read it. There is no second list to drift.
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
 | Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
-| Files | 1 | `file_read`, `file_offer` | read a named file in the folder you granted, offer a file to the agent |
+| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |
 | Messages and calls | 2 | `message`\*, `call`\*, `send`\*, `email`\* | send a text, place a call |
@@ -249,7 +250,7 @@ Every action that can be undone registers an undo **for its lifetime**, keyed by
 | `volume` | restores the previous level | the same |
 | `note` | deletes it | 24 hours — a note outlives the turn that made it |
 | `event_create` | deletes the event it created | until the event starts, or ten minutes |
-| `file_read` / `file_offer` | — | a read or an offer changes nothing on the phone, so there is nothing to reverse |
+| `file_list` / `file_read` / `file_offer` | — | listing, reading or offering changes nothing on the phone, so there is nothing to reverse |
 
 `undo` of an id with no live undo is `ok:false, reason:"expired"`. It never guesses.
 
@@ -261,7 +262,7 @@ offered, and it does not change with the grant.
 | tier | actions | what the phone does | states |
 |---|---|---|---|
 | **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
-| **1 — reported** | note, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
+| **1 — reported** | note, file_list, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
 | **2 — approval** | delete, message, call, email, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
 
 Tier 2 is refused rather than queued on purpose. An MCP call carries no run id, so the phone cannot
@@ -376,7 +377,7 @@ off-device.
 | — (none new) | `media`, `device-state` and `clipboard` add **no** runtime permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard read or write are all available with what is already declared. `now_playing`'s package and title come from **notification-listener special access**, granted by the owner on Android's own screen (the sheet offers it); without it the result is `known:false`, not a refusal from this app. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `MediaListen`, `LocalActions.deviceState`, `LocalActions.clip`, `LocalActions.readClip` |
 | `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
 | `READ_CALENDAR`, `WRITE_CALENDAR` | the calendar group: `agenda` needs `READ_CALENDAR` alone; `event_create` needs write, and read to find a writable calendar. Both are runtime permissions, asked when Calendar is turned on; a missing one is a `permission` refusal naming Android's exact string, and denying write does not take the read away | `PhoneCalendarAccess`, `PhoneToolsSheet` |
-| — (none for files) | `files` declares **no** storage permission: the Storage Access Framework is the deliberate default, and the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, with only a named file inside it read. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`) with its own warning — the owner's choice, not a capability this app withholds on their behalf | `PhoneFileAccess` |
+| — (none for files) | `files` declares **no** storage permission, and nothing requests `MANAGE_EXTERNAL_STORAGE`: the Storage Access Framework is the deliberate default, and the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, whose children `file_list` may list and from which only a named file is read. A future "all files" opt-in would use Android's own all-files access screen, with its own warning and its own grant — the owner's choice, not a capability this app withholds on their behalf | `PhoneFileAccess` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
 | `RECORD_AUDIO` | the voice line (not a phone action) | `MainActivity`, `VoiceController` |
@@ -422,10 +423,11 @@ may do. The tier table does: Tier 0 is reversible and private, Tier 1 is reversi
 Tier 2 is refused because it leaves the phone or cannot be undone. The phone will not send a message
 or place a call for the mind however it authenticates.
 
-**What is deliberately absent.** No file access, no listing, no second route, no SSE stream, no
-server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no caller on
-this side. There is also no verbose log of the arguments — a note's text is the caller's, and it
-belongs in the note, not in a log that gets attached to bug reports.
+**What is deliberately absent.** No MCP resources and no resource listing, no second route, no SSE
+stream, no server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no
+caller on this side. The `file_list` action is a phone capability, not an MCP resource listing.
+There is also no verbose log of the arguments — a note's text is the caller's, and it belongs in the
+note, not in a log that gets attached to bug reports.
 
 ---
 

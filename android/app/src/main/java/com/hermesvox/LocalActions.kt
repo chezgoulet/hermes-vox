@@ -361,6 +361,32 @@ class LocalActions(context: Context) {
             return PhoneFileAccess.read(app, tree, name)
         }
 
+        override fun fileWindow(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            name: String,
+            offset: Long,
+            length: Long,
+        ): PhoneEngine.PhonePlatform.FileText {
+            val tree = treeFor(folder) ?: return PhoneEngine.PhonePlatform.FileText.Failed(
+                "the folder granted to your agent is no longer readable · grant it again in Phone tools",
+            )
+            return PhoneFileAccess.readWindow(app, tree, name, offset, length)
+        }
+
+        override fun fileList(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            path: String,
+            depth: Int,
+            pattern: String?,
+            offset: Int,
+            limit: Int,
+        ): PhoneFiles.ListResult {
+            val tree = treeFor(folder) ?: return PhoneFiles.ListResult.Failed(
+                "the folder granted to your agent is no longer readable · grant it again in Phone tools",
+            )
+            return PhoneFileAccess.list(app, tree, path, depth, pattern, offset, limit)
+        }
+
         override fun fileOffer(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
             name: String,

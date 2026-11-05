@@ -129,9 +129,10 @@ object PhoneGrants {
             id = "files",
             label = "Files",
             tier = PhoneTiers.REPORTED,
-            lets = "Read a file you name in Downloads or Documents, and offer a file to your agent.",
-            warning = "Your agent could read a file in Downloads when you approve it.",
-            actions = listOf("file_read", "file_offer"),
+            lets = "List, read and offer files in Downloads or Documents, inside the folder you " +
+                "granted.",
+            warning = "Your agent could list Downloads and read a file in it when you approve it.",
+            actions = listOf("file_list", "file_read", "file_offer"),
         ),
         Group(
             id = "calendar",

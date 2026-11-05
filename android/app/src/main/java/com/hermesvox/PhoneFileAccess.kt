@@ -13,13 +13,13 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * PhoneFileAccess — the Android edge of `file_read` and `file_offer`: the folder the owner granted,
- * the one file a call names inside it, and nothing else.
+ * PhoneFileAccess — the Android edge of `file_list`, `file_read` and `file_offer`: the folder the
+ * owner granted, what is directly inside it, one file named inside it, and nothing else.
  *
  * **The grant is the owner's, made in the system picker.** [intent] is `ACTION_OPEN_DOCUMENT_TREE`
  * (read-only — this app never writes into the tree); [accept] takes the persistable permission the
- * picker returned and remembers the tree's own display name. Without that grant both actions refuse
- * `no_folder`, and there is no other way in: **the Storage Access Framework is the deliberate
+ * picker returned and remembers the tree's own display name. Without that grant all three actions
+ * refuse `no_folder`, and there is no other way in: **the Storage Access Framework is the deliberate
  * default, and this app declares no broad storage permission for it.** An all-files mode is a
  * decision the owner could be offered later through Android's own `MANAGE_EXTERNAL_STORAGE` screen;
  * it is not a capability this file withholds on their behalf.
@@ -32,9 +32,17 @@ import java.io.File
  * cannot show. For a provider with no filesystem path (a cloud tree) the id check is the whole
  * check, which `docs/MCP-SURFACE.md` states rather than pretending otherwise.
  *
- * `file_read` copies at most [PhoneFiles.MAX_READ_BYTES] + 1 bytes and refuses a larger file; it
- * never truncates. `file_offer` hands the document to [FileStage] and [FileServer] — the same bridge
- * the share sheet uses — so the agent fetches an artifact, not a base64 blob in a tool result.
+ * **Listing walks only inside the same grant**, one directory at a time, through the same id rule
+ * ([PhoneFiles.containedAt] for the requested path, [PhoneFiles.contained] for every child) plus the
+ * same canonical check. [list] reads directory metadata and never opens a file; the ordering,
+ * pattern and paging are [PhoneFiles.list]. A folder with more entries than a page is paged, never
+ * refused.
+ *
+ * `file_read` without a window copies at most [PhoneFiles.MAX_READ_BYTES] + 1 bytes and answers
+ * `too_big` above it; with `offset`/`length` it reads exactly that window ([readWindow]) and says
+ * `truncated` with the total. It never silently cuts. `file_offer` hands the document to [FileStage]
+ * and [FileServer] — the same bridge the share sheet uses — so the agent fetches an artifact, not a
+ * base64 blob in a tool result.
  */
 object PhoneFileAccess {
 
@@ -247,6 +255,228 @@ object PhoneFileAccess {
                     "nothing was sent",
             )
         }
+    }
+
+    /**
+     * One window of [name] inside [tree]: [length] bytes from [offset], snapped to character
+     * boundaries, with the file's **total** size so the result can say whether it is a window.
+     *
+     * This is the answer for a file above [PhoneFiles.MAX_READ_BYTES]: the caller asks for a piece
+     * small enough to use, and keeps asking until it has what it needs. Nothing is cut silently and
+     * nothing is refused for its size. A window that ends before the file does, or starts after its
+     * beginning, is not the whole file — the engine reports `truncated: true` for exactly that.
+     */
+    fun readWindow(
+        context: Context,
+        tree: Tree,
+        name: String,
+        offset: Long,
+        length: Long,
+    ): PhoneEngine.PhonePlatform.FileText {
+        val doc = when (val found = document(context, tree, name)) {
+            is Lookup.Found -> found.doc
+            Lookup.Missing -> return PhoneEngine.PhonePlatform.FileText.Missing
+            Lookup.Outside -> return PhoneEngine.PhonePlatform.FileText.Outside
+            is Lookup.Failed -> return PhoneEngine.PhonePlatform.FileText.Failed(found.detail)
+        }
+        val total = doc.size ?: countBytes(context, doc.uri) ?: return PhoneEngine.PhonePlatform
+            .FileText.Failed("the file's size could not be read · nothing was read")
+        val start = offset.coerceIn(0, total)
+        if (start >= total) {
+            // Reading at or past the end is an empty window, not a failure: the caller asked for a
+            // place the file does not have, and the total says where it does end.
+            return PhoneEngine.PhonePlatform.FileText.Window(
+                doc.displayName, total, start, 0, "",
+            )
+        }
+        val want = length.coerceAtLeast(1).coerceAtMost(total - start)
+        // Three bytes of slack on each side: a character is at most four bytes in UTF-8, so this is
+        // enough to start and finish on character boundaries rather than splitting one.
+        val from = (start - 3).coerceAtLeast(0)
+        val slice = readRange(context, doc.uri, from, (start - from) + want + 3)
+            ?: return PhoneEngine.PhonePlatform.FileText.Failed(
+                "the file could not be read · nothing was read",
+            )
+        val window = PhoneFiles.windowText(slice, wholeFile = from == 0L)
+            ?: return PhoneEngine.PhonePlatform.FileText.NotText
+        return PhoneEngine.PhonePlatform.FileText.Window(
+            name = doc.displayName,
+            totalBytes = total,
+            offset = from + window.skipped,
+            windowBytes = window.bytes.toLong(),
+            text = window.text,
+        )
+    }
+
+    /**
+     * What is inside [path] in [tree], to [depth], filtered by [pattern] and paged by
+     * [offset]/[limit]. The rule is [PhoneFiles.list]; this is the provider edge, and it only ever
+     * asks **which children a directory has and what their metadata says** — [children] has no way
+     * to open a file, and nothing here does.
+     *
+     * The requested path is checked against the tree id before the provider is asked
+     * ([PhoneFiles.containedAt]), and every child is checked again after
+     * ([PhoneFiles.contained] and, on the primary volume, [PhoneFiles.canonicalWithin]) so a name
+     * that is a path, a foreign document id, or a symlink out of the tree is `bad_path`.
+     */
+    fun list(
+        context: Context,
+        tree: Tree,
+        path: String,
+        depth: Int,
+        pattern: String?,
+        offset: Int,
+        limit: Int,
+    ): PhoneFiles.ListResult {
+        val treeUri = try {
+            Uri.parse(tree.uri)
+        } catch (_: Throwable) {
+            return PhoneFiles.ListResult.Failed(
+                "the granted folder is unreadable · grant it again in Phone tools",
+            )
+        }
+        val treeId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+            ?: return PhoneFiles.ListResult.Failed(
+                "the granted folder is unreadable · grant it again in Phone tools",
+            )
+        // The requested subdirectory is one relative path inside the tree, and nothing else.
+        val startId = if (path.isEmpty()) treeId else "$treeId/$path"
+        if (!PhoneFiles.containedAt(treeId, startId, path)) return PhoneFiles.ListResult.Outside
+
+        val root = primaryPath(treeId)
+        val reader = PhoneFiles.Reader { rel ->
+            val dirId = if (rel.isEmpty()) treeId else "$treeId/$rel"
+            if (!PhoneFiles.containedAt(treeId, dirId, rel)) PhoneFiles.Dir.Outside
+            else children(context, treeUri, dirId, root)
+        }
+        return PhoneFiles.list(tree.label, path, depth, pattern, offset, limit, reader)
+    }
+
+    /**
+     * The direct children of [dirId]: id, name, size, type and modified time — metadata only.
+     *
+     * `query` is the only call here, and it is a `DocumentsContract` child query: it lists a
+     * directory, it does not read a document. Each child's id must be exactly one segment below
+     * [dirId], and on the primary shared volume its canonical path must stay inside [root]; anything
+     * else is [PhoneFiles.Dir.Outside] and the listing stops rather than leaking a name.
+     */
+    private fun children(
+        context: Context,
+        treeUri: Uri,
+        dirId: String,
+        root: File?,
+    ): PhoneFiles.Dir {
+        val uri = try {
+            DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
+        } catch (_: Throwable) {
+            return PhoneFiles.Dir.Failed(
+                "the granted folder is unreadable · grant it again in Phone tools",
+            )
+        }
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+        )
+        val cursor = try {
+            context.contentResolver.query(uri, columns, null, null, null)
+        } catch (t: Throwable) {
+            VoxLog.w("event=phone-files list-failed reason=${t.javaClass.simpleName}")
+            return PhoneFiles.Dir.Failed(
+                "the folder would not say what is in it · nothing was listed",
+            )
+        } ?: return PhoneFiles.Dir.Missing
+
+        return try {
+            cursor.use { c ->
+                val entries = ArrayList<PhoneFiles.Entry>(c.count.coerceAtLeast(0))
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: return PhoneFiles.Dir.Outside
+                    val name = c.getString(1)?.trim().orEmpty()
+                    if (name.isEmpty()) continue
+                    if (!PhoneFiles.contained(dirId, id)) return PhoneFiles.Dir.Outside
+                    val target = primaryPath(id)
+                    if (root != null && target != null && !PhoneFiles.canonicalWithin(root, target)) {
+                        return PhoneFiles.Dir.Outside
+                    }
+                    val mime = c.getString(2)
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    val bytes = if (isDir || c.isNull(3)) null else c.getLong(3)
+                    val modifiedMs = if (c.isNull(4)) null else c.getLong(4)
+                    entries.add(
+                        PhoneFiles.Entry(
+                            name = name,
+                            dir = isDir,
+                            bytes = bytes,
+                            modified = modifiedMs?.let { ms ->
+                                PhoneEngine.localIso(
+                                    ms,
+                                    java.util.TimeZone.getDefault().getOffset(ms) / 60_000,
+                                )
+                            },
+                            mime = if (isDir) null else mime,
+                        )
+                    )
+                }
+                PhoneFiles.Dir.Found(entries)
+            }
+        } catch (t: Throwable) {
+            VoxLog.w("event=phone-files list-failed reason=${t.javaClass.simpleName}")
+            PhoneFiles.Dir.Failed(
+                "the folder would not say what is in it · nothing was listed",
+            )
+        }
+    }
+
+    // ---- bytes, never for a listing ----
+
+    /** Exactly [count] bytes from [from], or null when the provider failed. */
+    private fun readRange(context: Context, uri: Uri, from: Long, count: Long): ByteArray? = try {
+        context.contentResolver.openInputStream(uri)?.use { src ->
+            var left = from
+            val buf = ByteArray(8 * 1024)
+            while (left > 0) {
+                val skipped = src.skip(left)
+                if (skipped > 0) {
+                    left -= skipped
+                    continue
+                }
+                val n = src.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                if (n < 0) return@use null
+                left -= n
+            }
+            val out = ByteArrayOutputStream(minOf(count, 64 * 1024L).toInt().coerceAtLeast(16))
+            var remaining = count
+            while (remaining > 0) {
+                val n = src.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+                if (n < 0) break
+                out.write(buf, 0, n)
+                remaining -= n
+            }
+            out.toByteArray()
+        }
+    } catch (t: Throwable) {
+        VoxLog.w("event=phone-files window-failed reason=${t.javaClass.simpleName}")
+        null
+    }
+
+    /** The file's whole size by counting it, for a provider that hides [COLUMN_SIZE]. */
+    private fun countBytes(context: Context, uri: Uri): Long? = try {
+        context.contentResolver.openInputStream(uri)?.use { src ->
+            val buf = ByteArray(8 * 1024)
+            var total = 0L
+            while (true) {
+                val n = src.read(buf)
+                if (n < 0) break
+                total += n
+            }
+            total
+        }
+    } catch (t: Throwable) {
+        VoxLog.w("event=phone-files size-failed reason=${t.javaClass.simpleName}")
+        null
     }
 
     // ---- one document, inside the tree ----
