@@ -66,6 +66,9 @@ object PhoneTool {
     /** A note is a sentence the caller wants kept, not a document. */
     const val MAX_NOTE_CHARS = 500
 
+    /** A clip is text meant to be pasted somewhere, not a document either. */
+    const val MAX_CLIP_CHARS = 2_000
+
     /**
      * The actions a schema may offer right now — a pure function of the live grants. [PhoneToolTest]
      * pins this against the registry, so the enum and the registry cannot drift.
@@ -113,6 +116,7 @@ object PhoneTool {
         "skip" to "next or previous track",
         "now_playing" to "what the phone will admit to playing",
         "state" to "battery, charging, screen, network, storage, volume, time",
+        "clip" to "put text on the clipboard (never reads it)",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -174,8 +178,8 @@ object PhoneTool {
                 "text" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "note only: the note's text, at most $MAX_NOTE_CHARS characters. " +
-                        "Never a message or a secret.",
+                        "note or clip only: the text to keep — at most $MAX_NOTE_CHARS characters " +
+                        "for a note, $MAX_CLIP_CHARS for a clip. Never a message or a secret.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -240,6 +244,10 @@ object PhoneTool {
 
         object State : Call() {
             override val action = "state"
+        }
+
+        data class Clip(val text: String) : Call() {
+            override val action = "clip"
         }
 
         data class Undo(val id: String) : Call() {
@@ -373,6 +381,16 @@ object PhoneTool {
         }
         "now_playing" -> Parsed.Run(Call.NowPlaying)
         "state" -> Parsed.Run(Call.State)
+        "clip" -> {
+            val text = args["text"] as? String
+            when {
+                text.isNullOrBlank() -> bad(action, "text is required and must not be empty")
+                text.length > MAX_CLIP_CHARS ->
+                    bad(action, "text is longer than $MAX_CLIP_CHARS characters")
+                // The text is written exactly as given: a clip is something to paste, not prose.
+                else -> Parsed.Run(Call.Clip(text))
+            }
+        }
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -428,6 +446,8 @@ object PhoneTiers {
         "play", "pause", "skip", "now_playing",
         // Device state (#429 lane): one read-only report, every field nullable.
         "state",
+        // Clipboard (#429 lane): a write. Never a read.
+        "clip",
     )
     private val TIER_1 = setOf("note")
 

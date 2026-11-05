@@ -56,6 +56,14 @@ class PhoneSurfaceTest {
         override fun playback(): PhoneEngine.PhonePlatform.Playback = playback
 
         override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot = snapshot
+
+        val clips = ArrayList<String>()
+        var clipRefuse = false
+
+        override fun clip(text: String): Boolean {
+            clips.add(text)
+            return !clipRefuse
+        }
     }
 
     private val fake = Fake()
@@ -295,4 +303,104 @@ class PhoneSurfaceTest {
         timeZoneId = "Europe/Berlin",
         utcOffsetMinutes = 60,
     )
+
+    // ---- clipboard ----
+
+    @Test fun clip_writes_the_text_and_reports_only_its_length() {
+        val text = "the plumber's number is 555-0100"
+        val r = call(mapOf("action" to "clip", "text" to text), only("clipboard"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(listOf(text), fake.clips)
+        assertEquals(text.length, r.facts["chars"])
+        assertEquals("a clipboard write cannot be reversed", false, r.facts["undoable"])
+        assertFalse("the text is never echoed back", r.json().contains("555-0100"))
+        assertFalse("and no undo object is invented", r.json().contains("\"undo\""))
+    }
+
+    @Test fun clip_is_audited_as_a_length_never_the_payload() {
+        call(mapOf("action" to "clip", "text" to "correct horse battery staple"), only("clipboard"))
+        val entry = entries.single()
+        assertEquals("clip", entry.action)
+        assertEquals("${"correct horse battery staple".length} chars", entry.arguments["text"])
+        assertFalse(
+            "the payload must never reach the audit",
+            entry.arguments.values.any { it.contains("battery") },
+        )
+        assertEquals("done", entry.outcome)
+        assertNull(entry.undoId)
+    }
+
+    @Test fun a_clipboard_that_would_not_take_the_text_is_unavailable() {
+        fake.clipRefuse = true
+        val r = call(mapOf("action" to "clip", "text" to "hello"), only("clipboard"))
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertNull("a refusal never carries a success fact", r.facts["chars"])
+        assertTrue("the sentence says nothing was written", r.detail!!.contains("nothing was written"))
+    }
+
+    @Test fun clip_needs_its_group_and_its_argument() {
+        val off = call(mapOf("action" to "clip", "text" to "hello"), PhoneGrants.ALL_OFF)
+        assertFalse(off.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, off.reason)
+        assertTrue(off.detail!!.contains("Clipboard"))
+
+        val empty = call(mapOf("action" to "clip", "text" to "  "), only("clipboard"))
+        assertFalse(empty.ok)
+        assertEquals(PhoneReason.INVALID, empty.reason)
+
+        val long = call(mapOf("action" to "clip", "text" to "x".repeat(PhoneTool.MAX_CLIP_CHARS + 1)), only("clipboard"))
+        assertFalse(long.ok)
+        assertEquals(PhoneReason.INVALID, long.reason)
+
+        assertEquals("nothing was ever written", emptyList<String>(), fake.clips)
+    }
+
+    /**
+     * The group's promise is in the schema (`lets`) and in the owner's screen: *It never reads what
+     * is already there.* A source-level assertion, in the style of the existing claim tests, because
+     * the property is an absence — no test of behaviour can prove a read never happens; the code
+     * not containing one can. Comments are stripped first so the explanation above can name the
+     * API it forbids without tripping its own check.
+     */
+    @Test fun the_phone_tool_has_no_clipboard_read_path() {
+        val phonePath = listOf(
+            "PhoneTool.kt", "PhoneEngine.kt", "PhoneGrants.kt",
+            "LocalActions.kt", "PhoneMcp.kt", "PhoneMcpServer.kt",
+        )
+        for (name in phonePath) {
+            val code = codeOf("src/main/java/com/hermesvox/$name")
+            assertFalse("$name must not read the clipboard", code.contains("getPrimaryClip"))
+            assertFalse("$name must not inspect the clip", code.contains("clipDescription"))
+            assertFalse("$name must not read the clipboard", code.contains("primaryClip"))
+        }
+        assertTrue(
+            "the write path is the one that exists",
+            codeOf("src/main/java/com/hermesvox/LocalActions.kt").contains("setPrimaryClip"),
+        )
+    }
+
+    /** A file's code without its comments: what a source claim is actually about. */
+    private fun codeOf(path: String): String =
+        java.io.File(path).readText()
+            .lines()
+            .filterNot { line ->
+                val t = line.trim()
+                t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")
+            }
+            .joinToString("\n")
+
+    @Test fun app_focus_counts_resumed_activities_and_never_goes_below_zero() {
+        AppFocus.reset()
+        assertFalse("a fresh process has nothing in front", AppFocus.inFront)
+        AppFocus.onActivityResumed()
+        assertTrue(AppFocus.inFront)
+        AppFocus.onActivityResumed()
+        AppFocus.onActivityPaused()
+        assertTrue("a second activity keeps the app in front", AppFocus.inFront)
+        AppFocus.onActivityPaused()
+        AppFocus.onActivityPaused()
+        assertFalse("an unbalanced callback does not go negative", AppFocus.inFront)
+        AppFocus.reset()
+    }
 }

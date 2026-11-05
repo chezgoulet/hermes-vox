@@ -46,7 +46,7 @@ class PhoneToolTest {
 
     @Test fun the_action_enum_is_built_from_the_grants() {
         assertEquals(
-            listOf("timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing", "state", "undo", "status"),
+            listOf("timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing", "state", "clip", "undo", "status"),
             enumOf(),
         )
     }
@@ -184,6 +184,22 @@ class PhoneToolTest {
         }
         assertEquals(listOf("state", "undo", "status"), enumOf(on))
         assertTrue(PhoneTool.parse(mapOf("action" to "state"), on) is PhoneTool.Parsed.Run)
+    }
+
+    @Test fun the_clip_action_is_offered_only_when_granted_and_names_its_bound() {
+        val off = PhoneGrants.Source { g ->
+            if (g.id == "clipboard") PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+        }
+        assertFalse("clip must be absent while the group is off", "clip" in enumOf(off))
+
+        val on = PhoneGrants.Source { g ->
+            if (g.id == "clipboard") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("clip", "undo", "status"), enumOf(on))
+        val text = ((input(on)["properties"] as JObj)["text"] as JObj)["description"] as JStr
+        assertTrue("the bound is in the schema", text.value.contains(PhoneTool.MAX_CLIP_CHARS.toString()))
+        assertTrue("and the action is named", text.value.contains("clip"))
+        assertTrue(PhoneTool.parse(mapOf("action" to "clip", "text" to "hi"), on) is PhoneTool.Parsed.Run)
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {

@@ -93,6 +93,13 @@ class PhoneEngine(
         /** The state now. Implementations catch their own failures and answer null for them. */
         fun deviceState(): DeviceSnapshot
 
+        /**
+         * Put [text] on the clipboard. False when the phone would not take it — an app that is not
+         * in front (Android 10+ drops such a write silently, so this is checked before writing)
+         * or a clipboard that threw. There is deliberately no read of the clipboard anywhere.
+         */
+        fun clip(text: String): Boolean
+
         /** Arm a countdown. False means the phone refused. */
         fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean
 
@@ -192,6 +199,7 @@ class PhoneEngine(
             is PhoneTool.Call.Skip -> skip(call.previous)
             PhoneTool.Call.NowPlaying -> nowPlaying()
             PhoneTool.Call.State -> deviceState(nowEpoch)
+            is PhoneTool.Call.Clip -> clip(call.text)
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -444,6 +452,33 @@ class PhoneEngine(
                 "utc_offset_minutes" to d.utcOffsetMinutes,
                 // Time needs the offset; without one there is no honest clock to report.
                 "time" to d.utcOffsetMinutes?.let { localIso(nowEpoch, it) },
+            ),
+        )
+    }
+
+    // ---- clipboard ----
+
+    /**
+     * Put the text on the clipboard. The result carries **only the length**: the text is the
+     * caller's, and neither the result, the log nor the audit row needs it. There is no undo —
+     * reversing a clipboard write would mean having read what was there, which this phone never
+     * does.
+     */
+    private fun clip(text: String): PhoneResult {
+        if (!platform.clip(text)) {
+            log("event=phone-mcp action=clip ok=false reason=unavailable")
+            return PhoneResult.refused(
+                "clip", PhoneReason.UNAVAILABLE,
+                "the phone would not take the text: it only writes to the clipboard from an app " +
+                    "the owner can see, and nothing was written",
+            )
+        }
+        log("event=phone-mcp action=clip ok=true chars=${text.length}")
+        return PhoneResult.info(
+            "clip",
+            linkedMapOf<String, Any?>(
+                "chars" to text.length,
+                "undoable" to false,
             ),
         )
     }

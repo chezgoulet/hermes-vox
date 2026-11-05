@@ -10,6 +10,9 @@ import android.app.Application
  * `voice_mode` choice is translated into `presence_enabled` before anything can read it.
  * The migration is idempotent (see [PresenceGate.migrate]), so the Application class is a
  * guarantee of ordering, not a correctness crutch.
+ *
+ * It also keeps [AppFocus] current: the resumed-activity count is the one thing the clipboard
+ * needs before it writes, and the callbacks are the only place the platform reports it.
  */
 class VoxApplication : Application() {
     override fun onCreate() {
@@ -28,6 +31,17 @@ class VoxApplication : Application() {
         // never leave the phone in Do Not Disturb.
         CallQuiet.recover(this, prefs)
         PresenceGate.migrate(prefs)
+        // #429 lane: the clipboard refusal needs to know whether the owner can see the app. One
+        // counter, fed by the platform's own callbacks, read by `clip` before it writes.
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: android.app.Activity) = AppFocus.onActivityResumed()
+            override fun onActivityPaused(activity: android.app.Activity) = AppFocus.onActivityPaused()
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityStarted(activity: android.app.Activity) = Unit
+            override fun onActivityStopped(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
         // L6 (0.9.1 review): an encryption that fell back to plaintext last time is retried
         // now, and a pre-0.9.1 unversioned ciphertext is moved to the marked form.
         upgradeStoredKey(prefs, "key")

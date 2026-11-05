@@ -102,6 +102,8 @@ class PhoneEngineTest {
                 network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
                 dnd = null, timeZoneId = null, utcOffsetMinutes = null,
             )
+
+        override fun clip(text: String): Boolean = true
     }
 
     private val fake = Fake()

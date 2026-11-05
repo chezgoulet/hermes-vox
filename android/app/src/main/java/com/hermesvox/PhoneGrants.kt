@@ -116,6 +116,7 @@ object PhoneGrants {
             label = "Clipboard",
             tier = PhoneTiers.INSTANT,
             lets = "Put text on the clipboard. It never reads what is already there.",
+            actions = listOf("clip"),
         ),
         Group(
             id = "files",

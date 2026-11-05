@@ -3,6 +3,8 @@ package com.hermesvox
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.media.AudioManager
 import android.media.RingtoneManager
@@ -45,6 +47,7 @@ import java.util.concurrent.TimeUnit
  * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
  * | now playing | `AudioManager.isMusicActive` | **none** for "is audio playing". A package and a title come from `MediaSessionManager.getActiveSessions`, a notification-listener special access this app does not hold, so the result is `known:false` with a sentence saying so. It never invents a title. |
  * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
+ * | clipboard | `ClipboardManager.setPrimaryClip` | **none**, but Android only lets an app the owner can see write to the clipboard, and on 10+ a background write is dropped silently. `clip` therefore asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen. **The app never reads the clipboard.** |
  *
  * Tier 0 only for the grammar path: reversible, private, nothing outward-facing. No message, no call,
  * no purchase, no app launch.
@@ -462,6 +465,27 @@ class LocalActions(context: Context) {
             VoxLog.d("event=local-action device-state-unreadable field=$field reason=${t.javaClass.simpleName}")
             null
         }
+
+        /**
+         * Write the text, and nothing else. **No code here reads the clipboard** — the group's
+         * promise is that it never does, so there is no `getPrimaryClip` in this file.
+         *
+         * The in-front check is done first because Android 10+ drops a background write without
+         * saying so; reporting `ok` after a silent drop would be the one thing this tool must never
+         * do. The label is the app's name, never the caller's text at the OS layer either.
+         */
+        override fun clip(text: String): Boolean {
+            if (!AppFocus.inFront) return false
+            return try {
+                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    ?: return false
+                cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
+                true
+            } catch (t: Throwable) {
+                VoxLog.d("event=local-action clip-denied reason=${t.javaClass.simpleName}")
+                false
+            }
+        }
     }
 
     /** The battery broadcast, decoded. */
@@ -514,6 +538,9 @@ class LocalActions(context: Context) {
         private const val PREFS = "hv"
         private const val KEY_NOTES = "phone_notes"
         private const val CANCELLED_MEMORY = 64
+
+        /** The clipboard entry's label. The app's name, never the caller's text. */
+        private const val CLIP_LABEL = "Hermes Vox"
 
         /** How long the MCP caller waits for the main thread. Well under any tool timeout. */
         const val CALL_TIMEOUT_MS = 4_000L
