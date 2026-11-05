@@ -42,6 +42,13 @@ open class MainActivity : AppCompatActivity() {
     private var phoneApprovalId = ""
 
     /**
+     * An approval answer carried by the notification's Approve action, waiting for this activity
+     * to be resumed. The answer is delivered **here**, not from the receiver, because the action
+     * it authorises starts another activity and Android blocks that from the background (B2).
+     */
+    private var pendingApprovalAnswer: String? = null
+
+    /**
      * The in-app half of [PhoneApprovals]. The notification half lives in that object; this is the
      * same card the gateway's approvals use, with the phone action's own two words and timeout.
      */
@@ -439,12 +446,36 @@ open class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent); setIntent(intent)
+        // A notification's Approve action opens Vox with the card's id; answer from here.
+        captureApprovalAnswer(intent)
         // #329: the assist gesture, arriving at a call screen that already exists (the
         // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
         // second one). Deferred like the harness so the intent never runs inside dispatch.
         if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
         // §B: a file shared to Vox while the call screen is already up.
         handleShareIntent(intent)
+    }
+
+    /**
+     * Read the notification's Approve action. It is answered once this activity is resumed, so
+     * the platform's own uninstall confirmation has a visible window to open from (B2).
+     */
+    private fun captureApprovalAnswer(intent: Intent?) {
+        if (intent == null) return
+        if (!intent.getBooleanExtra(PhoneApprovals.EXTRA_APPROVE, false)) return
+        pendingApprovalAnswer = intent.getStringExtra(PhoneApprovals.EXTRA_ID)
+            ?.takeIf { it.isNotEmpty() }
+        // Consume the flag: a rotation or a later onNewIntent must not answer twice.
+        intent.removeExtra(PhoneApprovals.EXTRA_APPROVE)
+        mainHandler.post { answerPendingApproval() }
+    }
+
+    /** Deliver a captured approval answer from the resumed activity. Nothing else answers it. */
+    private fun answerPendingApproval() {
+        val id = pendingApprovalAnswer ?: return
+        pendingApprovalAnswer = null
+        val outcome = PhoneApprovals.answer(id, approve = true, via = "notification")
+        VoxLog.d("event=phone-approval source=activity outcome=${outcome.name.lowercase()}")
     }
 
     /**
@@ -477,6 +508,8 @@ open class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
+        // A notification's Approve action arrives as this intent; answer it from the activity.
+        captureApprovalAnswer(intent)
         active = this
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
@@ -1087,6 +1120,9 @@ open class MainActivity : AppCompatActivity() {
      */
     private val phoneHost = object : PhoneHandoff.Host {
         override fun callLive(): Boolean = callLive
+
+        override fun canStartActivity(): Boolean =
+            !isFinishing && !isDestroyed && (AppFocus.inFront || isInPictureInPictureMode)
 
         override fun announceDial(line: String, after: () -> Unit) {
             val c = liveController
@@ -3326,7 +3362,7 @@ open class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
+    override fun onResume() { super.onResume(); runOnUiThread { answerPendingApproval(); updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
 
     /**
      * #437 §5: a resumed session may be written by another surface while the phone is in a

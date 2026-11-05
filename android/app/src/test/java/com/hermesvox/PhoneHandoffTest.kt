@@ -26,6 +26,7 @@ class PhoneHandoffTest {
     private class FakePhone : PhoneEngine.PhonePlatform {
         val events = mutableListOf<String>()
         var live = false
+        var canStart = true
         var dialer = true
         var dialStarts = true
         var contact: String? = null
@@ -37,8 +38,15 @@ class PhoneHandoffTest {
             PhoneEngine.PhonePlatform.AppTarget("com.example.browser", "com.example.browser.View")
         var startResult = true
         var windowHost: CallWindow.Host? = null
+        /** When true, [announce] holds the continuation until the test runs [after]. */
+        var deferAnnounce = false
+        var after: (() -> Unit)? = null
+        var label: String? = "Example"
+        var uninstallResult: PhoneEngine.PhonePlatform.Uninstall =
+            PhoneEngine.PhonePlatform.Uninstall.Confirming("com.example.app")
 
         override fun callLive(): Boolean = live
+        override fun canStartActivity(): Boolean = canStart
         override fun canDial(): Boolean = dialer
 
         override fun announce(line: String, after: () -> Unit) {
@@ -82,6 +90,13 @@ class PhoneHandoffTest {
         ): Boolean {
             events += "open:$uri"
             return startResult
+        }
+
+        override fun appLabel(packageName: String): String? = label
+
+        override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall {
+            events += "uninstall:$packageName"
+            return uninstallResult
         }
 
         override fun window(): CallWindow.Host? = windowHost
@@ -392,4 +407,56 @@ class PhoneHandoffTest {
         assertTrue(result.detail!!.contains("Contacts"))
         assertFalse("nothing was handed off", result.ok)
     }
+
+    // ---- the background-launch gate (B2) ----
+
+    /**
+     * Android 10+ refuses a background activity start **without throwing**. Each handoff must
+     * therefore ask before it resolves a target, ends a call or announces anything, and the
+     * owner-facing refusal must say why rather than reporting a launch that never happened.
+     */
+    @Test
+    fun every_handoff_refuses_before_it_resolves_when_vox_is_not_on_screen() {
+        fake.canStart = false
+        fake.live = true   // even a live call must not be torn down for a start that cannot happen
+        for (call in listOf(
+            mapOf("action" to "message", "to" to "12345", "text" to "hi"),
+            mapOf("action" to "dial", "to" to "12345"),
+            mapOf("action" to "launch", "app" to "com.example.app"),
+            mapOf("action" to "open", "uri" to "https://example.com/a"),
+            mapOf("action" to "uninstall", "package" to "com.example.app"),
+        )) {
+            fake.events.clear()
+            val r = run(call)
+            assertFalse("${call["action"]} must be refused: ${r.json()}", r.ok)
+            assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+            assertTrue(
+                "${call["action"]} must say why: ${r.detail}",
+                r.detail!!.contains("on screen") && r.detail.contains("background"),
+            )
+            assertEquals(
+                "${call["action"]} must resolve, end and start nothing",
+                emptyList<String>(),
+                fake.events,
+            )
+        }
+    }
+
+    @Test
+    fun the_background_refusal_is_visible_and_the_gate_sits_on_the_platform() {
+        val engineSource = File("src/main/java/com/hermesvox/PhoneEngine.kt").readText()
+        assertTrue(
+            "one gate is checked before each handoff",
+            engineSource.contains("private fun backgroundRefusal(action: String)") &&
+                engineSource.countMatches("backgroundRefusal(\"") == 5,
+        )
+        assertTrue(
+            "the answer is resumed or PiP-visible",
+            File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+                .contains("AppFocus.inFront || isInPictureInPictureMode"),
+        )
+    }
+
+    private fun String.countMatches(needle: String): Int =
+        windowed(needle.length).count { it == needle }
 }

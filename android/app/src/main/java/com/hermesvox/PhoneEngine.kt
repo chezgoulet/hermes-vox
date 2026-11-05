@@ -449,6 +449,13 @@ class PhoneEngine(
          */
         fun sendMessage(to: String, text: String): Handoff = Handoff.NoApp
 
+        /**
+         * May this phone start an activity right now? Android 10+ refuses a background activity
+         * start **without throwing**, so "no exception" is not proof it happened. True when an
+         * activity of ours is resumed, or in picture-in-picture and visible.
+         */
+        fun canStartActivity(): Boolean = true
+
         /** Resolve an `ACTION_DIAL` target before anything is ended. False is `no_app`. */
         override fun canDial(): Boolean = true
 
@@ -1792,12 +1799,28 @@ class PhoneEngine(
     // ---- handoffs: messages, calls, apps ----
 
     /**
+     * The one background-activity-launch gate (B2).
+     *
+     * Android 10+ refuses a start from an app with no visible window **without throwing**, so
+     * `startActivity` returning is not proof anything opened. Every handoff asks this before it
+     * resolves a target, ends a call or announces anything, and a "no" is a refusal — never a
+     * silent success. On device the answer is "an activity of ours is resumed, or in
+     * picture-in-picture and visible"; the microphone service does not exempt us.
+     */
+    private fun backgroundRefusal(action: String): PhoneResult? {
+        if (platform.canStartActivity()) return null
+        log("event=phone-mcp action=$action ok=false reason=unavailable background=true")
+        return PhoneResult.refused(action, PhoneReason.UNAVAILABLE, BACKGROUND_DETAIL)
+    }
+
+    /**
      * Compose the text and open the owner's messaging app. **Nothing is sent here.** The result
      * says `handed_off:true` and carries the recipient and the text's length; the owner's tap
      * in their own app is what sends it. `ACTION_SENDTO` with an `smsto:` URI is the only path,
      * so no `SEND_SMS`, no `SmsManager` and no default-SMS role is involved.
      */
     private fun message(call: PhoneTool.Call.Message): PhoneResult {
+        backgroundRefusal("message")?.let { return it }
         val to = when (val r = resolveRecipient("message", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
@@ -1834,6 +1857,7 @@ class PhoneEngine(
      * does not end the conversation: the thread lives on the gateway.
      */
     private fun dial(call: PhoneTool.Call.Dial): PhoneResult {
+        backgroundRefusal("dial")?.let { return it }
         val to = when (val r = resolveRecipient("dial", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
@@ -1860,6 +1884,7 @@ class PhoneEngine(
 
     /** Open one launchable app, entering PiP first when a call is live ([CallWindow]). */
     private fun launch(call: PhoneTool.Call.Launch): PhoneResult {
+        backgroundRefusal("launch")?.let { return it }
         val target = platform.resolveLaunchable(call.app) ?: return noApp(
             "launch",
             "no launchable app matches \"${call.app}\"; only an activity with a launcher entry " +
@@ -1870,6 +1895,7 @@ class PhoneEngine(
 
     /** Open one URI, optionally in a named package, through the same PiP-first window. */
     private fun open(call: PhoneTool.Call.Open): PhoneResult {
+        backgroundRefusal("open")?.let { return it }
         val target = platform.resolveUri(call.uri, call.packageName) ?: return noApp(
             "open",
             "no app on this phone opens that URI" +
@@ -1888,6 +1914,7 @@ class PhoneEngine(
      * this phone can honestly claim — it cannot see the owner's answer there.
      */
     private fun executeUninstall(packageName: String): PhoneResult {
+        backgroundRefusal("uninstall")?.let { return it }
         val label = platform.appLabel(packageName).orEmpty().ifEmpty { packageName }
         return when (val outcome = platform.uninstall(packageName)) {
             is PhonePlatform.Uninstall.Confirming -> {
@@ -2245,6 +2272,15 @@ class PhoneEngine(
     companion object {
         /** How long a dnd/volume undo stays meaningful. Long enough for the next turn to correct it. */
         const val CHANGE_UNDO_MS = 10 * 60_000L
+
+        /**
+         * The one background-launch refusal. Android blocks an activity start from an app that
+         * is not visible without throwing, so the handoffs say this rather than claiming a
+         * launch that never happened (B2).
+         */
+        const val BACKGROUND_DETAIL =
+            "Vox has to be on screen to open another app; Android blocks it from the background. " +
+                "Nothing was opened."
 
         /** A note's undo outlives the turn that made it, because the note itself does. */
         const val NOTE_UNDO_MS = 24 * 60 * 60_000L

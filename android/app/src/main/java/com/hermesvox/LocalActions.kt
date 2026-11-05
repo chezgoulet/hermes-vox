@@ -769,6 +769,14 @@ class LocalActions(context: Context) : PhoneReadout {
         /** Is Vox's own call live in the attached window right now? */
         override fun callLive(): Boolean = onMain("callLive") { PhoneHandoff.callLive() }
 
+        /**
+         * The one background-activity-launch gate. The window answers it: a resumed activity,
+         * or one in picture-in-picture and visible. Checked by the engine before a handoff
+         * resolves, ends or announces anything (B2).
+         */
+        override fun canStartActivity(): Boolean =
+            onMain("canStartActivity") { PhoneHandoff.canStartActivity() }
+
         /** Speak the handoff line through the being; the call ends when it is audible. */
         override fun announce(line: String, after: () -> Unit) =
             onMain("announce") { PhoneHandoff.announceDial(line, after) }
@@ -871,8 +879,11 @@ class LocalActions(context: Context) : PhoneReadout {
 
         /**
          * Open Android's own confirmation (`ACTION_DELETE`). The owner answers *that* screen; this
-         * phone cannot see the answer, so the result says "confirming", not "removed". A background
-         * activity launch the platform refuses becomes `unavailable`, never a silent success.
+         * phone cannot see the answer, so the result says "confirming", not "removed".
+         *
+         * Android 10+ blocks a background activity start without throwing, so [PhoneEngine]
+         * refuses this before it is reached unless an activity of ours is visible. A notification
+         * approval therefore opens Vox first and answers from the activity ([PhoneApprovals]).
          */
         override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall = try {
             val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))

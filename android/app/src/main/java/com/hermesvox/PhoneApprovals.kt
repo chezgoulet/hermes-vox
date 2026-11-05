@@ -17,7 +17,9 @@ import androidx.core.app.NotificationCompat
  *  * **Vox in front** — the existing approval card in [MainActivity], rendered from the same
  *    [com.hermesvox.core.ApprovalPrompt] model and answered by tap or by voice.
  *  * **Vox not in front** — a heads-up notification with **Approve** and **Deny** actions. Tapping
- *    the body opens Vox; the actions answer without opening it.
+ *    the body opens Vox. **Approve opens Vox and is answered from the activity**, because the
+ *    uninstall it allows is a platform activity start and Android 10+ blocks one from the
+ *    background without throwing (B2). Deny answers in place; it starts nothing.
  *
  * **The notification is private and its yes needs an unlocked phone.** [PhoneApprovalNotice]
  * builds it `VISIBILITY_PRIVATE`, so the lock screen does not show the file's name or the app
@@ -220,18 +222,37 @@ object PhoneApprovals : PhoneApproval.Surface {
     }
 
     private fun action(context: Context, id: String, approve: Boolean): PendingIntent =
-        PendingIntent.getBroadcast(
-            context,
-            if (approve) 1 else 2,
-            Intent(context, PhoneApprovalReceiver::class.java)
-                .setAction(if (approve) ACTION_APPROVE else ACTION_DENY)
-                .putExtra(EXTRA_ID, id),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        if (approve) {
+            // Approve starts Vox: the action it authorises opens another activity (Android's
+            // uninstall confirmation), which Android refuses from the background (B2). The
+            // answer is delivered by MainActivity once it is resumed, so the confirmation
+            // appears in front of the owner.
+            PendingIntent.getActivity(
+                context,
+                1,
+                Intent(context, MainActivity::class.java)
+                    .setAction(ACTION_APPROVE)
+                    .putExtra(EXTRA_ID, id)
+                    .putExtra(EXTRA_APPROVE, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        } else {
+            PendingIntent.getBroadcast(
+                context,
+                2,
+                Intent(context, PhoneApprovalReceiver::class.java)
+                    .setAction(ACTION_DENY)
+                    .putExtra(EXTRA_ID, id),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
 
     const val ACTION_APPROVE = "com.hermesvox.action.PHONE_APPROVAL_APPROVE"
     const val ACTION_DENY = "com.hermesvox.action.PHONE_APPROVAL_DENY"
     const val EXTRA_ID = "com.hermesvox.extra.PHONE_APPROVAL_ID"
+    /** Set by the notification's Approve action, so the activity knows to answer on resume. */
+    const val EXTRA_APPROVE = "com.hermesvox.extra.PHONE_APPROVAL_APPROVE"
 }
 
 /** The notification's two buttons. Explicit intents; the receiver is not exported. */
