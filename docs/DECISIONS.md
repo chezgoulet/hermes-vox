@@ -615,9 +615,10 @@ settings**, has since landed in 0.9.1: a profile carries its own voice, model an
 - `0.9.x` is beta. `0.9.1` stays open and absorbs work until the owner signs it off. `0.9.2` and
   `0.9.3` are the next beta milestones. `1.0` is GA, when the owner says so, with no feature
   bucket attached to it. Version scheme: `(GA major).(features).(point).(fixes)`.
-- **One gate for everything unfinished: Enable Alpha Features.** Off on a fresh install. Gates
-  Presence, continuous capture and semantic endpointing, and anything else marked alpha as it
-  lands; the settings it covers are dimmed and unreachable when it is off.
+- **One gate for everything unfinished: Enable Alpha Features.** Off on a fresh install. Its
+  panel lists **five sets**, each selected on its own: **Presence**, **Continuous listening**,
+  **Turn-taking**, **Phone tools** and **Switching profiles**. The settings it covers are dimmed
+  and unreachable when it is off.
 - **The hardware check advises, never enables.** A cheap RAM/free-memory gate at first run, then
   a real load attempt on the first call that can demote the choice. If the phone cannot carry
   Presence it stays off, with one line saying why and where to turn it on.
@@ -642,14 +643,17 @@ code review.
 
 **#325 — silence notifications while the app is open.** Build it, as a setting, **off by default**.
 Not on by default: the app does not decide on the user's behalf that a call outranks a message.
+It is its own switch in Hearing, with **no master gate in front of it**: #325 is not an Alpha set
+(the implementation landed after D29 and this is the shape it shipped in, `CallQuiet`).
 
 **#252 — command parity or the phone-call identity.** **Full command parity in-app.** The commands
 screen stays the inventory it is; hanging up and calling back is a convenience, not the model.
 This settles the question the plan said must not be deferred.
 
 **Continuous capture and semantic endpointing (#228, #229).** Their preferences default **on**, and
-both sit **behind the Alpha gate** — so "on at the cut" means on for anyone who enables Alpha and
-selects the set. The release is gated on the features being tested in that state.
+both sit behind the Alpha gate's **Continuous listening** set — so "on at the cut" means on for
+anyone who enables Alpha and selects that set. The release is gated on the features being tested
+in that state.
 
 **The hardware check.** Bar: **8 GB total RAM**, with a free-memory floor at first run. It runs at
 **first run for everyone**, and its advice is shown in the Alpha panel when the user opens it — it
@@ -687,9 +691,11 @@ because it needs an ear, #208 single-device — and both statements go in the re
 
 **The Alpha gate, as a surface.** A master **Alpha features** toggle at the very top of Settings,
 off by default. Enabling it presents a **slide-out listing the individual feature sets marked
-alpha, with Presence at the top**, so a tester can take one without taking all. With the master
-off, everything alpha is dimmed and unreachable. It is a deliberate back door for testers, not a
-buried switch.
+alpha, with Presence at the top**, so a tester can take one without taking all. It shipped with
+**five sets** — Presence, Continuous listening, Turn-taking, Phone tools, Switching profiles —
+not the four described while the panel was being designed; the fifth arrived when profile
+switching was gated (#402/#436). With the master off, everything alpha is dimmed and unreachable.
+It is a deliberate back door for testers, not a buried switch.
 
 **The release notes.** Presence is **announced** — named, described as a layer you turn on through
 Alpha, and honest about being unfinished. It is not buried, and it is not oversold.

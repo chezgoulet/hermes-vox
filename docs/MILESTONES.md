@@ -20,9 +20,10 @@ off**. There is no feature bucket called "1.0" — GA is a state the product rea
 ## The Alpha gate
 
 There is **one gate for everything unfinished**: **Enable Alpha Features**. It is **off on a
-fresh install**. It gates Presence, continuous capture, semantic endpointing, and the Presence
-behaviours below — and anything else marked alpha as it lands. When it is off, the settings it
-covers are **dimmed and unreachable**: not hidden, and not silently running.
+fresh install**. Its panel lists five sets, each selected on its own: **Presence**,
+**Continuous listening**, **Turn-taking**, **Phone tools** and **Switching profiles**. When it is
+off, the settings those sets cover are **dimmed and unreachable**: not hidden, and not silently
+running. Quiet calls (#325) is not a set; it is its own switch, off by default.
 
 `Presence` remains the feature's public name in copy and release notes. "Alpha Features" is the
 gate, not the name. "Enhanced Realtime" is retired as vocabulary.
@@ -52,7 +53,7 @@ cost controls (dormant), the first-run hardware check that advises.
 (#217), a Presence transcript that is not empty (#223), the invention measurement (#256), and a
 fresh pass on the presence directive and its rails.
 
-**Presence — its tool use (D31).** The layer is not finished at "the phone talks and the mind
+**Presence — its tool use (D32–D34).** The layer is not finished at "the phone talks and the mind
 acts". It includes: the mind's **ongoing context** of what the phone is doing (local actions
 running, what the soul last said, device state) carried on every voice turn in the ephemeral
 instructions; the phone's **own capabilities** — timer, alarm, reminder, DND, volume, share —
