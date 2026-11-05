@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """check-skill-claims.py — keep the app skill honest (#221).
 
-Every factual claim in `skills/hermes-vox-app/SKILL.md` carries a reference of the form
+Every factual claim in `skills/hermes-vox-app/SKILL.md` cites a file and a token:
 
-    (path/to/file.ext:LINE token)
+    (path/to/file.ext `token`)
 
-where `token` is a literal string that must appear on that line (a range
-`path:12-18` is also accepted, and the token may be wrapped in backticks).
-This script verifies every reference: the file exists, the line exists, and the
-named token is on it. Stale references are listed and the process exits 1.
+The token is a literal string that must appear in that file, and it is the whole
+claim: no line number is stored, so adding code above the cited token changes
+nothing. A legacy `path/to/file.ext:LINE `token`` is still accepted on the way in
+with the number ignored, so one commit can convert every claim without a broken
+window.
+
+Three outcomes, one of them good:
+
+  * the token appears exactly once in the file -> verified;
+  * it appears nowhere -> stale: the claim no longer matches the code and must be
+    corrected (never repointed);
+  * it appears more than once -> ambiguous: the token does not identify one
+    place, so the claim must quote the whole line. Proximity is deliberately not
+    used to pick a match — a checker that resolves a repeated token to the
+    nearest line is how a wrong anchor survives review.
 
 It also guards the file's shape, because a skill that loses its frontmatter or a
 required section can no longer be triggered or trusted:
@@ -37,12 +48,14 @@ from pathlib import Path
 
 SKILL = Path("skills/hermes-vox-app/SKILL.md")
 
-# Reference: (path:line[+token]) — a path with a known source extension, a line or
-# line range, then one space and the token, up to the closing parenthesis.
+# Reference: (path[ `token`]) — a path with a known source extension, then one
+# space and a backtick-delimited token. A run of backticks long enough to contain
+# the token's own backticks is the delimiter, so a whole quoted line is writable.
+# The optional `:LINE` (and a `:LINE-END` range) is legacy: accepted, then ignored.
 REF_RE = re.compile(
-    r"\(([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:kt|xml|md|py|sh|yml|yaml|json|gradle|properties|txt))"
-    r":(\d+)(?:-(\d+))?"
-    r"[ \t]+([^)]+?)\)"
+    r"\((?P<path>[A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:kt|xml|md|py|sh|yml|yaml|json|gradle|properties|txt))"
+    r"(?::\d+(?:-\d+)?)?"
+    r"[ \t]+(?P<quote>`+)(?P<token>[^\n]+?)(?P=quote)\)"
 )
 
 MIN_CLAIMS = 150  # the finished skill carries far more; this catches mass deletion
@@ -135,7 +148,7 @@ def check_shape(text: str, fields: dict[str, str]) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Verify the app skill's file:line claims.")
+    ap = argparse.ArgumentParser(description="Verify the app skill's file+token claims.")
     ap.add_argument("--verbose", action="store_true", help="print every verified claim")
     ap.add_argument("--skill", default=str(SKILL), help="path to the skill (default: %(default)s)")
     args = ap.parse_args()
@@ -155,50 +168,57 @@ def main() -> int:
 
     refs = list(REF_RE.finditer(text))
     if not refs:
-        errors.append("no file:line references found — every claim must be checkable")
+        errors.append("no file references found — every claim must be checkable")
 
     verified = 0
-    unique: set[tuple[str, int, int, str]] = set()
+    unique: set[tuple[str, str]] = set()
     for m in refs:
-        rel, first_s, last_s, raw_token = m.groups()
-        first = int(first_s)
-        last = int(last_s) if last_s else first
-        token = raw_token.strip().strip("`").strip()
-        key = (rel, first, last, token)
-        if key in unique:
+        rel = m.group("path")
+        token = norm(m.group("token").strip())
+        if (rel, token) in unique:
             continue
-        unique.add(key)
-        line_no = text[: m.start()].count("\n") + 1
+        unique.add((rel, token))
 
         if not token:
-            errors.append(f"{rel}:{first_s} — reference has no token to check")
+            errors.append(f"{rel} — reference has no token to check")
             continue
         path = resolve(root, rel)
         if path is None:
-            errors.append(f"{rel}:{first_s} — file not found")
+            errors.append(f"{rel} — file not found")
             continue
         try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            source = path.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
-            errors.append(f"{rel}:{first_s} — unreadable: {e}")
+            errors.append(f"{rel} — unreadable: {e}")
             continue
-        if first < 1 or last < first or last > len(lines):
+
+        # Count occurrences in the file's text with whitespace collapsed, so a
+        # quoted line that wraps in the source still matches as written. The
+        # token must identify exactly one place; two is not a tie to break.
+        body = norm(source)
+        hits = body.count(token)
+        if hits == 0:
             errors.append(
-                f"{rel}:{first_s}-{last} — line range outside the file "
-                f"({len(lines)} lines)"
+                f"{rel} — stale claim: token not in this file: {token!r}"
             )
             continue
-        window = norm(" ".join(lines[first - 1 : last]))
-        if norm(token) not in window:
-            actual = norm(lines[first - 1])[:150]
+        if hits > 1:
+            # Line numbers here are a diagnostic, not a resolution: the claim
+            # stays wrong until its token is quoted from the whole line.
+            where = [
+                str(i + 1)
+                for i, line in enumerate(source.splitlines())
+                if token in norm(line)
+            ]
+            at = f" (lines {', '.join(where[:6])})" if where else ""
             errors.append(
-                f"{rel}:{first_s} — token not on line: {token!r}\n"
-                f"      actual line: {actual}"
+                f"{rel} — token appears {hits} times{at}; "
+                f"ambiguous — quote the whole line: {token!r}"
             )
             continue
         verified += 1
         if args.verbose:
-            print(f"ok  {rel}:{first_s}  {token}")
+            print(f"ok  {rel}  {token}")
 
     if verified < MIN_CLAIMS:
         errors.append(
