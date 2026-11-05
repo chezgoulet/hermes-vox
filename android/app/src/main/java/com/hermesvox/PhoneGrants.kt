@@ -282,13 +282,24 @@ object PhoneGrants {
 
     /**
      * "Allow all instant actions" — the one bulk shortcut the design permits. It touches Tier 0
-     * only; Tier 1 and Tier 2 are left as they were. Not "Allow all".
+     * only and never [BULK_EXEMPT]: one tap is not the place to grant the groups that read other
+     * people's words, or the apps group whose Allow is the uninstall request path. Not "Allow all",
+     * and not "Allow all of the private ones" either.
      */
     fun instantAll(states: Map<String, State>): Map<String, State> {
         val out = LinkedHashMap(states)
-        for (g in GROUPS) if (g.tier == PhoneTiers.INSTANT) out[g.id] = State.ALLOW
+        for (g in GROUPS) {
+            if (g.tier == PhoneTiers.INSTANT && g.id !in BULK_EXEMPT) out[g.id] = State.ALLOW
+        }
         return out
     }
+
+    /**
+     * The Tier 0 groups a bulk tap must not decide: notifications and contacts put other people's
+     * words into the agent's conversation, and apps carries the uninstall request path. Each one
+     * stays a decision of its own even if a shortcut is ever wired to the screen.
+     */
+    val BULK_EXEMPT: Set<String> = setOf("notifications", "contacts", "apps")
 
     /** The groups grouped by tier, in display order. */
     fun byTier(): List<Pair<Int, List<Group>>> =
