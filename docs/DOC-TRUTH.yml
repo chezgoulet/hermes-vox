@@ -211,3 +211,23 @@
   file: android/app/src/main/java/com/hermesvox/CallQuiet.kt
   match: 'DEFAULT_ON = false'
 
+
+# ---- #429's surface lanes: docs/MCP-SURFACE.md makes claims about the code ----
+
+- id: phone-surface-media-keys
+  says: "dispatch a platform media key"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
+  match: 'dispatchMediaKeyEvent'
+
+- id: phone-surface-clipboard-no-read
+  says: "the phone tool never reads the clipboard"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
+  absent: 'getPrimaryClip'
+
+- id: phone-surface-state-every-field
+  says: "one object with every field present"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
+  match: 'data class DeviceSnapshot\('

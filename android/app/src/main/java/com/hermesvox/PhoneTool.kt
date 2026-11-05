@@ -29,7 +29,7 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
  * | 1 — reported | `note` | executed now (when granted), reported to the mind on the next turn, undoable; Ask or Off only |
  * | 2 — approval | `share`, `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
@@ -65,6 +65,9 @@ object PhoneTool {
 
     /** A note is a sentence the caller wants kept, not a document. */
     const val MAX_NOTE_CHARS = 500
+
+    /** A clip is text meant to be pasted somewhere, not a document either. */
+    const val MAX_CLIP_CHARS = 2_000
 
     /**
      * The actions a schema may offer right now — a pure function of the live grants. [PhoneToolTest]
@@ -108,6 +111,12 @@ object PhoneTool {
         "dnd" to "Do not disturb on/off",
         "volume" to "media volume",
         "note" to "keep a short note",
+        "play" to "send the play key to the active player",
+        "pause" to "send the pause key to the active player",
+        "skip" to "next or previous track",
+        "now_playing" to "what the phone will admit to playing",
+        "state" to "battery, charging, screen, network, storage, volume, time",
+        "clip" to "put text on the clipboard (never reads it)",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -161,14 +170,16 @@ object PhoneTool {
                 ),
                 "direction" to linkedMapOf(
                     "type" to "string",
-                    "enum" to listOf("up", "down"),
-                    "description" to "volume only, when level is omitted: one step up or down.",
+                    "enum" to listOf("up", "down", "next", "previous"),
+                    "description" to
+                        "volume only: up or down for one stream step. skip only: next (the " +
+                        "default) or previous. Each action accepts only its own pair.",
                 ),
                 "text" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "note only: the note's text, at most $MAX_NOTE_CHARS characters. " +
-                        "Never a message or a secret.",
+                        "note or clip only: the text to keep — at most $MAX_NOTE_CHARS characters " +
+                        "for a note, $MAX_CLIP_CHARS for a clip. Never a message or a secret.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -215,6 +226,28 @@ object PhoneTool {
 
         data class Note(val text: String) : Call() {
             override val action = "note"
+        }
+
+        /** `play` and `pause` are the same call with a different key; [pause] names which. */
+        data class PlayPause(val pause: Boolean) : Call() {
+            override val action: String = if (pause) "pause" else "play"
+        }
+
+        /** `skip` forward (the default) or back, as one transport key. */
+        data class Skip(val previous: Boolean) : Call() {
+            override val action = "skip"
+        }
+
+        object NowPlaying : Call() {
+            override val action = "now_playing"
+        }
+
+        object State : Call() {
+            override val action = "state"
+        }
+
+        data class Clip(val text: String) : Call() {
+            override val action = "clip"
         }
 
         data class Undo(val id: String) : Call() {
@@ -336,6 +369,28 @@ object PhoneTool {
                 else -> Parsed.Run(Call.Note(text))
             }
         }
+        "play" -> Parsed.Run(Call.PlayPause(pause = false))
+        "pause" -> Parsed.Run(Call.PlayPause(pause = true))
+        "skip" -> {
+            val dir = (args["direction"] as? String)?.trim()?.lowercase()
+            when (dir) {
+                null, "", "next" -> Parsed.Run(Call.Skip(previous = false))
+                "previous", "prev" -> Parsed.Run(Call.Skip(previous = true))
+                else -> bad(action, "direction must be next (the default) or previous")
+            }
+        }
+        "now_playing" -> Parsed.Run(Call.NowPlaying)
+        "state" -> Parsed.Run(Call.State)
+        "clip" -> {
+            val text = args["text"] as? String
+            when {
+                text.isNullOrBlank() -> bad(action, "text is required and must not be empty")
+                text.length > MAX_CLIP_CHARS ->
+                    bad(action, "text is longer than $MAX_CLIP_CHARS characters")
+                // The text is written exactly as given: a clip is something to paste, not prose.
+                else -> Parsed.Run(Call.Clip(text))
+            }
+        }
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -385,7 +440,15 @@ object PhoneTiers {
     /** Leaves the phone or cannot be undone: the owner's approval surface owns it. */
     const val APPROVAL = 2
 
-    private val TIER_0 = setOf("timer", "alarm", "dnd", "volume", "status", "undo")
+    private val TIER_0 = setOf(
+        "timer", "alarm", "dnd", "volume", "status", "undo",
+        // Media (#429 lane): transport keys, and a read of what the session will admit to.
+        "play", "pause", "skip", "now_playing",
+        // Device state (#429 lane): one read-only report, every field nullable.
+        "state",
+        // Clipboard (#429 lane): a write. Never a read.
+        "clip",
+    )
     private val TIER_1 = setOf("note")
 
     /**

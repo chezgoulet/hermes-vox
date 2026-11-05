@@ -91,6 +91,8 @@ misuse than `phone_timer` / `phone_alarm` / `phone_dnd` / … (#421, third comme
 **The enum is a function of the owner's grants** ([#429] step 1). A capability group that is Off is
 absent from it, so the model is not asked to resist a temptation it should never have had. This
 section describes the actions that exist; the next section describes who may see them.
+`docs/MCP-SURFACE.md` is the full contract for every action in every group — the built ones and the
+ones declared for later lanes — with each action's arguments, result fields, undo and OS needs.
 
 | action | tier | arguments | result (success) |
 |---|---|---|---|
@@ -99,8 +101,19 @@ section describes the actions that exist; the next section describes who may see
 | `dnd` | 0 | `on` (bool) | `id`, `on`, `previous`, `undo` |
 | `volume` | 0 | `level` (0–100) **or** `direction` (`up`/`down`) | `id`, `level`, `previous`, `undo` |
 | `note` | 1 | `text` (≤ 500 chars) | `id`, `text`, `reported_next_turn`, `undo` |
+| `play` / `pause` | 0 | – | `dispatched`, `note` |
+| `skip` | 0 | `direction` (`next` default, or `previous`) | `direction`, `dispatched`, `note` |
+| `now_playing` | 0 | – | `known`, `playing`, `package`, `title`, `note` when `known` is false |
+| `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
+| `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
 | `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
+
+`play`, `pause` and `skip` dispatch a platform media key to whichever session is active: no
+permission, and no notification-listener access. `dispatched` means the audio service took the key,
+never that playback changed. `now_playing` therefore answers `known:false` with the cheap
+`isMusicActive` reading and a sentence saying what it cannot see — a title would require the
+notification-listener special access this app does not hold, so it is never invented.
 
 `status` is the discovery action: it answers "what can you do, and what is running right now" from
 the **same registry** the presence context block reports (`local_actions:`), so the mind never has to
@@ -123,9 +136,9 @@ all read it. There is no second list to drift.
 | Timers and alarms | 0 | `timer`, `alarm` | set, cancel and check timers and alarms |
 | Do not disturb and volume | 0 | `dnd`, `volume` | turn Do Not disturb on/off, change media volume |
 | Reminders and notes | 1 | `note` | keep a short note and report it back |
-| Media | 0 | — | play, pause, skip, ask what is playing |
-| Device state | 0 | — | read battery, charging, connectivity, screen, storage |
-| Clipboard | 0 | — | write to the clipboard (never reads it) |
+| Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
+| Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
+| Clipboard | 0 | `clip` | write to the clipboard (never reads it) |
 | Files | 1 | — | read a named file in Downloads/Documents, offer a file |
 | Calendar | 1 | — | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |
@@ -347,6 +360,7 @@ off-device.
 | `ACCESS_NETWORK_STATE` | the app reads whether a network is usable before a model download and in the voice turn's context; not needed by the MCP listener itself | `ModelDownloader`, `VoiceController` |
 | `ACCESS_NOTIFICATION_POLICY` | **Do Not Disturb only.** This is a *special* access: the user grants it on Android's own screen, not in a runtime dialog. The sheet shows whether it is granted and opens `ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS`; `dnd` refuses with `reason:"permission"` when it is missing | `LocalActions.dndGranted`, `LocalActions.setDnd`, `PhoneToolsSheet` |
 | `POST_NOTIFICATIONS` | the timer/alarm notification on Android 13+. The ringtone is the signal that matters, so a denial is logged and the timer still rings | `LocalActions.fire` |
+| — (none new) | `media`, `device-state` and `clipboard` add **no** permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard write are all available with what is already declared. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `LocalActions.deviceState`, `LocalActions.clip` |
 | `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
@@ -423,6 +437,9 @@ report the shape, not to grow a second protocol.
 ---
 
 ## What a device pass should check
+
+The checklist for the actions added with the grants (`media`, `device-state`, `clipboard`) is in
+`docs/MCP-SURFACE.md`, under "What a device pass should show".
 
 1. **Start a call with Tailscale connected.** The log shows `event=phone-mcp start url=http://100.x…:8765/mcp`.
    Hang up: `event=phone-mcp stop served=N`.

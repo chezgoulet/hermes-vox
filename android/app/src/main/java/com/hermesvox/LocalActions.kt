@@ -3,12 +3,20 @@ package com.hermesvox
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.media.AudioManager
 import android.media.RingtoneManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.StatFs
 import android.os.SystemClock
+import android.view.KeyEvent
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -36,6 +44,10 @@ import java.util.concurrent.TimeUnit
  * | do not disturb | `NotificationManager.setInterruptionFilter` | **the user's policy access**. `ACCESS_NOTIFICATION_POLICY` is declared, but the grant is a special access only the user can give in system settings. Without it the phone says so — it never pretends. The sheet shows the grant and opens the system screen. |
  * | volume | `AudioManager.setStreamVolume` / `adjustStreamVolume` (media stream) | **`MODIFY_AUDIO_SETTINGS`**, a normal permission declared in the manifest and granted at install; it is what the stream calls rely on. Some devices refuse a stream change while Do Not Disturb owns the stream; that is reported as a failure, not swallowed. The level is read back, so the result is the level in effect. |
  * | note | SharedPreferences, JSON list | **none.** A note is Tier 1: it is kept, reported to the mind on the next turn, and undoable. |
+ * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
+ * | now playing | `AudioManager.isMusicActive` | **none** for "is audio playing". A package and a title come from `MediaSessionManager.getActiveSessions`, a notification-listener special access this app does not hold, so the result is `known:false` with a sentence saying so. It never invents a title. |
+ * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
+ * | clipboard | `ClipboardManager.setPrimaryClip` | **none**, but Android only lets an app the owner can see write to the clipboard, and on 10+ a background write is dropped silently. `clip` therefore asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen. **The app never reads the clipboard.** |
  *
  * Tier 0 only for the grammar path: reversible, private, nothing outward-facing. No message, no call,
  * no purchase, no app launch.
@@ -330,7 +342,155 @@ class LocalActions(context: Context) {
         override fun saveNote(id: String, text: String, atEpochMs: Long): Boolean = true
 
         override fun deleteNote(id: String): Boolean = true
+
+        /**
+         * Dispatch one media key at whatever session is active — exactly what the phone's own
+         * media buttons do. No permission and no notification-listener access: the key goes to the
+         * platform, which routes it to the session that owns the media button receiver. False means
+         * no audio service would take it, never "playback changed".
+         */
+        override fun mediaKey(key: PhoneEngine.PhonePlatform.MediaKey): Boolean = try {
+            val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+            val code = when (key) {
+                PhoneEngine.PhonePlatform.MediaKey.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
+                PhoneEngine.PhonePlatform.MediaKey.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
+                PhoneEngine.PhonePlatform.MediaKey.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+                PhoneEngine.PhonePlatform.MediaKey.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            }
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+            true
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action media-key-denied reason=${t.javaClass.simpleName}")
+            false
+        }
+
+        /**
+         * `isMusicActive` is the one thing the phone will say about playback without special
+         * access, so it is the only thing reported. A package and a title come from
+         * `MediaSessionManager.getActiveSessions`, which needs notification-listener access this
+         * app deliberately does not hold; `known` is therefore always false here, and the result
+         * says the phone cannot see what is playing rather than inventing a title.
+         */
+        override fun playback(): PhoneEngine.PhonePlatform.Playback = try {
+            val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            PhoneEngine.PhonePlatform.Playback(
+                known = false,
+                playing = am?.isMusicActive,
+                packageName = null,
+                title = null,
+            )
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action playback-unreadable reason=${t.javaClass.simpleName}")
+            PhoneEngine.PhonePlatform.Playback(false, null, null, null)
+        }
+
+        /**
+         * One read of the phone's state, each field answered or `null`. Nothing here needs a
+         * permission the manifest does not already declare: the battery comes from the sticky
+         * `ACTION_BATTERY_CHANGED` broadcast, the screen from `PowerManager.isInteractive`, the
+         * transport from `ACCESS_NETWORK_STATE`, storage from `StatFs`, volume from the media
+         * stream, and the clock from the device's own zone. Do Not Disturb is the one field that
+         * can be absent because a special access is missing, and it is `null` rather than "off".
+         */
+        override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot {
+            val battery = attempt("battery") { batteryReadings() }
+            val zone = attempt("zone") { java.util.TimeZone.getDefault() }
+            return PhoneEngine.PhonePlatform.DeviceSnapshot(
+                batteryPercent = battery?.percent,
+                chargingSource = battery?.source,
+                chargingStatus = battery?.status,
+                screenOn = attempt("screen") {
+                    (app.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive
+                },
+                network = attempt("network") { networkTransport() },
+                tailnetPresent = attempt("tailnet") { Tailnet.address() != null },
+                freeStorageBytes = attempt("storage") {
+                    StatFs(app.filesDir.absolutePath).availableBytes
+                },
+                mediaVolume = attempt("volume") { currentVolume() },
+                dnd = attempt("dnd") { if (dndGranted()) currentDnd()?.let { if (it) "on" else "off" } else null },
+                timeZoneId = zone?.id,
+                utcOffsetMinutes = zone?.let { attempt("offset") { it.getOffset(System.currentTimeMillis()) / 60_000 } },
+            )
+        }
+
+        /** The battery broadcast's three answers. Any field it does not carry stays null. */
+        private fun batteryReadings(): BatteryReadings? {
+            val i = app.registerReceiver(
+                null,
+                android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED),
+            ) ?: return null
+            val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            return BatteryReadings(
+                percent = if (level >= 0 && scale > 0) level * 100 / scale else null,
+                source = when (i.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
+                    0 -> "none"
+                    1 -> "ac"        // BATTERY_PLUGGED_AC
+                    2 -> "usb"       // BATTERY_PLUGGED_USB
+                    4 -> "wireless"  // BATTERY_PLUGGED_WIRELESS
+                    8 -> "dock"      // BATTERY_PLUGGED_DOCK (API 33; the value is stable)
+                    else -> null
+                },
+                status = when (i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
+                    2 -> "charging"      // BATTERY_STATUS_CHARGING
+                    3 -> "discharging"   // BATTERY_STATUS_DISCHARGING
+                    4 -> "not-charging"  // BATTERY_STATUS_NOT_CHARGING
+                    5 -> "full"          // BATTERY_STATUS_FULL
+                    else -> null         // unknown is not a state; say nothing
+                },
+            )
+        }
+
+        /** `wifi` / `cellular` / `ethernet` / `vpn` / `other`, or `none` when nothing is connected. */
+        private fun networkTransport(): String? {
+            val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return null
+            val active = cm.activeNetwork ?: return "none"
+            val caps = cm.getNetworkCapabilities(active) ?: return null
+            return when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+                else -> "other"
+            }
+        }
+
+        /** One field's read: a failure is that field's null, never the whole report's failure. */
+        private fun <T> attempt(field: String, read: () -> T?): T? = try {
+            read()
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action device-state-unreadable field=$field reason=${t.javaClass.simpleName}")
+            null
+        }
+
+        /**
+         * Write the text, and nothing else. **No code here reads the clipboard** — the group's
+         * promise is that it never does: there is no clipboard read in this file, and none in the
+         * tool path at all.
+         *
+         * The in-front check is done first because Android 10+ drops a background write without
+         * saying so; reporting `ok` after a silent drop would be the one thing this tool must never
+         * do. The label is the app's name, never the caller's text at the OS layer either.
+         */
+        override fun clip(text: String): Boolean {
+            if (!AppFocus.inFront) return false
+            return try {
+                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    ?: return false
+                cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
+                true
+            } catch (t: Throwable) {
+                VoxLog.d("event=local-action clip-denied reason=${t.javaClass.simpleName}")
+                false
+            }
+        }
     }
+
+    /** The battery broadcast, decoded. */
+    private data class BatteryReadings(val percent: Int?, val source: String?, val status: String?)
 
     // ---- ring ----
 
@@ -379,6 +539,9 @@ class LocalActions(context: Context) {
         private const val PREFS = "hv"
         private const val KEY_NOTES = "phone_notes"
         private const val CANCELLED_MEMORY = 64
+
+        /** The clipboard entry's label. The app's name, never the caller's text. */
+        private const val CLIP_LABEL = "Hermes Vox"
 
         /** How long the MCP caller waits for the main thread. Well under any tool timeout. */
         const val CALL_TIMEOUT_MS = 4_000L

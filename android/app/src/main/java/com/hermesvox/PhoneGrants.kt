@@ -102,18 +102,21 @@ object PhoneGrants {
             label = "Media",
             tier = PhoneTiers.INSTANT,
             lets = "Play, pause, skip, and ask what is playing.",
+            actions = listOf("play", "pause", "skip", "now_playing"),
         ),
         Group(
             id = "device-state",
             label = "Device state",
             tier = PhoneTiers.INSTANT,
             lets = "Read battery, charging, connectivity, screen and storage state.",
+            actions = listOf("state"),
         ),
         Group(
             id = "clipboard",
             label = "Clipboard",
             tier = PhoneTiers.INSTANT,
             lets = "Put text on the clipboard. It never reads what is already there.",
+            actions = listOf("clip"),
         ),
         Group(
             id = "files",

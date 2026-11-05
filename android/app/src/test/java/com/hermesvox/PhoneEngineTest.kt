@@ -32,6 +32,11 @@ class PhoneEngineTest {
         var volumeSets = ArrayList<Int>()
         var volumeRefuse = false
         val notes = LinkedHashMap<String, String>()
+        val mediaKeys = ArrayList<PhoneEngine.PhonePlatform.MediaKey>()
+        var mediaRefuse = false
+        var playback = PhoneEngine.PhonePlatform.Playback(
+            known = false, playing = null, packageName = null, title = null,
+        )
 
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean {
             timerArms++
@@ -83,6 +88,22 @@ class PhoneEngineTest {
         }
 
         override fun deleteNote(id: String): Boolean = notes.remove(id) != null
+
+        override fun mediaKey(key: PhoneEngine.PhonePlatform.MediaKey): Boolean {
+            mediaKeys.add(key)
+            return !mediaRefuse
+        }
+
+        override fun playback(): PhoneEngine.PhonePlatform.Playback = playback
+
+        override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot =
+            PhoneEngine.PhonePlatform.DeviceSnapshot(
+                batteryPercent = null, chargingSource = null, chargingStatus = null, screenOn = null,
+                network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
+                dnd = null, timeZoneId = null, utcOffsetMinutes = null,
+            )
+
+        override fun clip(text: String): Boolean = true
     }
 
     private val fake = Fake()
