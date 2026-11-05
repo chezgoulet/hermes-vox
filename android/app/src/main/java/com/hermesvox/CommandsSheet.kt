@@ -45,6 +45,8 @@ class CommandsSheet(
     /** #284: what the app knows about the moment — the screen leads with what fits it. */
     private val situation: () -> CommandCatalog.Situation,
     private val run: (CommandCatalog.Command, (Boolean) -> Unit) -> Unit,
+    /** Alpha features' Switching profiles set: false takes /profiles off the sheet. */
+    private val profilesAllowed: () -> Boolean = { true },
 ) {
     private var dialog: Dialog? = null
     private val state = HashMap<String, CommandCatalog.RunState>()
@@ -130,22 +132,24 @@ class CommandsSheet(
     /** The list: what fits now, then every group — or, while searching, the matches best first. */
     private fun render(list: LinearLayout, d: Dialog, query: String) {
         list.removeAllViews(); chips.clear()
+        val allowProfiles = profilesAllowed()
         if (query.isBlank()) {
             // #370: the share row leads the screen. It is an artifact action, not a command,
             // so it sits outside the catalogue's groups but uses the same row grammar.
             list.addView(row(CommandCatalog.SHARE, d))
             val now = CommandCatalog.suggest(situation())
+                .filter { CommandCatalog.offered(it, allowProfiles) }
             if (now.isNotEmpty()) {
                 list.addView(header("Fits now"))
                 for (c in now) list.addView(row(c, d, chipKey = "now:" + c.name))
             }
-            for ((group, cmds) in CommandCatalog.grouped()) {
+            for ((group, cmds) in CommandCatalog.grouped(profilesAllowed = allowProfiles)) {
                 list.addView(header(group.label))
                 for (c in cmds) list.addView(row(c, d))
             }
             return
         }
-        val hits = CommandCatalog.search(query)
+        val hits = CommandCatalog.search(query, allowProfiles)
         list.addView(header(if (hits.isEmpty()) "No command for that — try asking the agent" else "Matches"))
         for (c in hits) list.addView(row(c, d))
     }

@@ -59,6 +59,12 @@ object AlphaGate {
                 "Vox runs a small server on your tailnet with its own token, and your agent " +
                 "reaches it over MCP. Off until you set it up.",
         ),
+        PROFILES(
+            "alpha_set_profiles", "Switching profiles",
+            "Talk to another agent on your host. Each profile carries its own address, key, " +
+                "model and voice, and switching starts a fresh conversation. Unfinished until a " +
+                "host's own profile list arrives reliably (#436).",
+        ),
         QUIET_CALLS(
             "alpha_set_quiet_calls", "Quiet calls",
             "Silences notifications while a call is open, using your phone's Do Not Disturb with " +

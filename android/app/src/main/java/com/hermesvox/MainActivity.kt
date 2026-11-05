@@ -1731,6 +1731,12 @@ open class MainActivity : AppCompatActivity() {
      * device-wide value only where it has none, which is the one place that fallback lives.
      */
     private fun switchProfile(p: Profiles.Profile) {
+        // Alpha gate: switching is behind the Switching profiles set, and this is the last
+        // door — a banner, an intent or a restored state cannot switch behind it.
+        if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)) {
+            VoxLog.d("event=profile-switch refused reason=alpha-off profile=${p.name}")
+            return
+        }
         // Settings → Entity edits the live keys, so fold them back into the profile being
         // left before overwriting them; otherwise an edit made there is lost on the switch.
         val cur = profiles.activeName()
@@ -2261,10 +2267,15 @@ open class MainActivity : AppCompatActivity() {
     /** #226: the commands screen — grouped, each row saying what it does, with its running
      *  state on the row. The command names keep their meaning for anyone who types them. */
     private val commandsSheet by lazy {
-        CommandsSheet(this, situation = {
-            CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
-                lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
-        }) { c, done -> runCommand(c, done) }
+        CommandsSheet(
+            act = this,
+            situation = {
+                CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
+                    lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
+            },
+            run = { c, done -> runCommand(c, done) },
+            profilesAllowed = { AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES) },
+        )
     }
     // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
     private var lastTurnFailed = false
@@ -2512,7 +2523,17 @@ open class MainActivity : AppCompatActivity() {
             "/models" -> showModelChooser()
             // Per-profile pass: the switcher is a command now — the commands sheet is where a
             // person goes to change the agent, and this row opens it on the sheets' own scaffold.
-            "/profiles" -> { profiles.showSwitcher(); done(true) }
+            // Alpha gate: with Switching profiles off it is not a command the app knows.
+            "/profiles" -> {
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)) {
+                    VoxLog.d("event=command name=/profiles state=refused reason=alpha-off")
+                    showHelpCard()
+                    done(false)
+                } else {
+                    profiles.showSwitcher()
+                    done(true)
+                }
+            }
             "/health" -> showHealthCard()
             CompressCommand.NAME -> compressContext(done)
             "/new" -> newSession(onDone = done)
@@ -2679,7 +2700,8 @@ open class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage(CommandCatalog.helpText())   // #226: written from the catalogue, never out of step
+            .setMessage(CommandCatalog.helpText(
+                AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)))   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 

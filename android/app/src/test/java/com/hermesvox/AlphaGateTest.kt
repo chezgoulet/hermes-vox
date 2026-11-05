@@ -90,6 +90,15 @@ class AlphaGateTest {
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
+    @Test fun switching_profiles_is_a_set_with_its_own_key_and_the_owners_words() {
+        val set = AlphaGate.FeatureSet.PROFILES
+        assertEquals("alpha_set_profiles", set.key)
+        assertEquals("Switching profiles", set.label)
+        assertTrue(set.blurb, set.blurb.contains("switching starts a fresh conversation"))
+        assertTrue(set.blurb, set.blurb.contains("#436"))
+        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
+    }
+
     @Test fun an_upgrade_that_had_presence_running_keeps_it() {
         // 0.9.0 wrote presence_enabled=true on first start; with the model installed it ran.
         val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to true))
@@ -161,5 +170,27 @@ class AlphaGateTest {
         for (row in listOf("row_grp_presence", "row_er_hears", "row_mic_continuous", "row_mic_semantic")) {
             assertTrue(row, s.contains("gate(R.id.$row,"))
         }
+    }
+
+    @Test fun profile_switching_is_gated_at_every_door_but_the_header_stays() {
+        val main = File(src, "MainActivity.kt").readText()
+        val sheet = File(src, "ProfileSheet.kt").readText()
+        val dialogs = File(src, "ProfileDialogs.kt").readText()
+        val commands = File(src, "CommandsSheet.kt").readText()
+        // The last door refuses before it writes anything.
+        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
+            .substringBefore("// Settings → Entity edits")
+        assertTrue(switch, switch.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
+        assertTrue(switch, switch.contains("return"))
+        // The row, the search and the manage rows all ask the same question.
+        assertTrue(commands.contains("profilesAllowed()"))
+        assertTrue(main.contains("profilesAllowed = { AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES) }"))
+        assertTrue(sheet.contains("if (!allowed())"))
+        assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
+        // The active profile is a connection fact, not a control: the header is not gated.
+        val header = main.substringAfter("private fun headerLabel(model: String): String {")
+            .substringBefore("fun switchProfile")
+        assertTrue(header, header.contains("profiles.activeName()"))
+        assertFalse(header, header.contains("AlphaGate"))
     }
 }

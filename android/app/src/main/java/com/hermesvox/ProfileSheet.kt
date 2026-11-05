@@ -41,6 +41,8 @@ class ProfileSheet(
     private val onAdd: () -> Unit,
     private val onEdit: () -> Unit,
     private val onRefresh: () -> Unit,
+    /** Alpha features' Switching profiles set: false hides the Manage rows. */
+    private val allowed: () -> Boolean = { true },
 ) {
     /** One profile as the sheet shows it. */
     data class Row(
@@ -97,6 +99,15 @@ class ProfileSheet(
         subtitle?.text = note() ?: DEFAULT_NOTE
 
         for (r in rows()) body.addView(profileRow(r))
+        if (!allowed()) {
+            body.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+                text = "Switching profiles is off in Alpha features. The profile you are on " +
+                    "stays visible; adding and editing are unavailable until it is selected."
+                setTextColor(color(R.color.hv_text_dim))
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+            })
+            return
+        }
         body.addView(VoxSheet.subhead(act, "Manage"))
         body.addView(actionRow("Add a profile", "One this host serves, or an address you type") {
             dismiss(); onAdd()

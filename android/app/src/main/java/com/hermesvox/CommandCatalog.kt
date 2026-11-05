@@ -130,10 +130,17 @@ object CommandCatalog {
     }
 
     /** The sheet in screen order: groups in [Group] order, listed commands in catalogue order.
-     *  [all] includes the unlisted ones (the /help card is written from every command). */
-    fun grouped(all: Boolean = false): List<Pair<Group, List<Command>>> =
-        Group.values().map { g -> g to ALL.filter { it.group == g && (all || it.listed) } }
-            .filter { it.second.isNotEmpty() }
+     *  [all] includes the unlisted ones (the /help card is written from every command).
+     *  [profilesAllowed] is the Alpha gate's answer: with it false /profiles is not offered,
+     *  exactly like a command the catalogue does not know. */
+    fun grouped(all: Boolean = false, profilesAllowed: Boolean = true): List<Pair<Group, List<Command>>> =
+        Group.values().map { g ->
+            g to ALL.filter { it.group == g && (all || it.listed) && offered(it, profilesAllowed) }
+        }.filter { it.second.isNotEmpty() }
+
+    /** Whether [c] may be reached at all while /profiles is gated. */
+    fun offered(c: Command, profilesAllowed: Boolean): Boolean =
+        profilesAllowed || c.name != "/profiles"
 
     /** Whether the row can report this command's own progress. A card command's work happens
      *  in the view it opens, so its row says where to look instead of showing a state it
@@ -168,9 +175,9 @@ object CommandCatalog {
      * the effect line and each command's keywords — as well as its name, so "it's slow" finds
      * /compress and "can't reach it" finds /reconnect. A blank query is the whole catalogue.
      */
-    fun search(query: String): List<Command> {
+    fun search(query: String, profilesAllowed: Boolean = true): List<Command> {
         val q = query.trim().lowercase().removePrefix("/")
-        if (q.isEmpty()) return ALL
+        if (q.isEmpty()) return ALL.filter { offered(it, profilesAllowed) }
         val words = q.split(Regex("[^a-z0-9']+")).filter { it.length >= 2 }
         fun score(c: Command): Int {
             var s = 0
@@ -185,7 +192,8 @@ object CommandCatalog {
             }
             return s
         }
-        return (ALL + SHARE).map { it to score(it) }.filter { it.second > 0 }
+        return (ALL + SHARE).filter { offered(it, profilesAllowed) }
+            .map { it to score(it) }.filter { it.second > 0 }
             .sortedByDescending { it.second }.map { it.first }
     }
 
@@ -210,9 +218,10 @@ object CommandCatalog {
     }
 
     /** The /help card, written from the catalogue so the two cannot disagree. */
-    fun helpText(): String = grouped(all = true).joinToString("\n\n") { (g, cmds) ->
-        g.label + "\n" + cmds.joinToString("\n") { c ->
-            (listOf(c.name) + c.aliases).joinToString(" ") + " — " + c.effect
+    fun helpText(profilesAllowed: Boolean = true): String =
+        grouped(all = true, profilesAllowed = profilesAllowed).joinToString("\n\n") { (g, cmds) ->
+            g.label + "\n" + cmds.joinToString("\n") { c ->
+                (listOf(c.name) + c.aliases).joinToString(" ") + " — " + c.effect
+            }
         }
-    }
 }

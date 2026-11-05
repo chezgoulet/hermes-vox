@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -171,5 +172,15 @@ class CommandCatalogTest {
         val h = CommandCatalog.helpText()
         for (c in CommandCatalog.ALL) assertTrue(c.name, h.contains(c.effect))
         assertTrue(h.contains("/clear /reset"))
+    }
+
+    @Test fun profiles_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
+        val all = CommandCatalog.grouped(profilesAllowed = false).flatMap { it.second }.map { it.name }
+        assertFalse("/profiles", all.contains("/profiles"))
+        assertTrue("the rest of the catalogue is untouched", all.contains("/models"))
+        assertFalse(CommandCatalog.search("profiles", profilesAllowed = false).any { it.name == "/profiles" })
+        assertTrue(CommandCatalog.search("profiles", profilesAllowed = true).any { it.name == "/profiles" })
+        assertFalse(CommandCatalog.helpText(profilesAllowed = false).contains("/profiles"))
+        assertTrue(CommandCatalog.helpText(profilesAllowed = true).contains("/profiles"))
     }
 }
