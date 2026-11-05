@@ -165,6 +165,20 @@ class PhoneSetupTest {
         assertTrue(PhoneToolsView.setupNext(PhoneSetup.State.TIMED_OUT).contains("rotate"))
     }
 
+    @Test fun every_status_row_says_why_it_is_off_when_phone_tools_is_off() {
+        for (line in listOf(
+            PhoneToolsView.reachability(host, allowed = false),
+            PhoneToolsView.server(host, listening = true, url = "http://$host/mcp", allowed = false),
+            PhoneToolsView.token(PhoneMcp.TokenState.STORED, allowed = false),
+            PhoneToolsView.setupHeadline(PhoneSetup.State.IDLE, allowed = false),
+            PhoneToolsView.setupNext(PhoneSetup.State.IDLE, allowed = false),
+        )) {
+            assertTrue(line, line.contains("Off") || line.contains("Select Phone tools"))
+            assertFalse(line, line.contains("Not set up"))
+            assertFalse(line, line.contains("Connected"))
+        }
+    }
+
     @Test fun the_token_fingerprint_is_stable_and_not_the_token() {
         val tag = PhoneMcpToken.fingerprint(token)
         assertEquals(tag, PhoneMcpToken.fingerprint(token))

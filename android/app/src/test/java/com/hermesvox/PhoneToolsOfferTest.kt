@@ -13,4 +13,16 @@ class PhoneToolsOfferTest {
         assertFalse(PhoneToolsOffer.shouldOffer(connectionVerified = true, presenceOn = false, offered = false))
         assertFalse(PhoneToolsOffer.shouldOffer(connectionVerified = true, presenceOn = true, offered = true))
     }
+
+    @Test fun the_offer_is_also_behind_the_phone_tools_set() {
+        assertFalse(
+            "the offer must not open a sheet the gate keeps unreachable",
+            PhoneToolsOffer.shouldOffer(
+                connectionVerified = true,
+                presenceOn = true,
+                offered = false,
+                phoneToolsAllowed = false,
+            ),
+        )
+    }
 }

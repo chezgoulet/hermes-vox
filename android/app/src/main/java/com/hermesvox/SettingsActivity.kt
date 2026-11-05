@@ -210,14 +210,20 @@ class SettingsActivity : AppCompatActivity() {
         }
         val presence = AlphaGate.allows(r, AlphaGate.FeatureSet.PRESENCE)
         val listening = AlphaGate.allows(r, AlphaGate.FeatureSet.CONTINUOUS_LISTENING)
+        val phoneTools = AlphaGate.allows(r, AlphaGate.FeatureSet.PHONE_TOOLS)
+        // Turning the set off while a server is up stops it now: a listener that outlives the
+        // owner's choice is the one thing the gate must not allow.
+        if (!phoneTools) PhoneMcp.stop()
         gate(R.id.row_grp_presence, presence)
         gate(R.id.row_er_hears, presence)
         gate(R.id.row_mic_continuous, listening)
         gate(R.id.row_mic_semantic, listening)
         gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
+        gate(R.id.row_phone_mcp, phoneTools)
         gate(R.id.row_call_quiet, AlphaGate.allows(r, AlphaGate.FeatureSet.QUIET_CALLS))
         if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
         refreshGrpVals()
+        refreshPhoneMcpVal()
     }
 
     /** #245: the acknowledgement rate — Off / Sparse / Normal, one tap to the next. Behind the
@@ -1270,8 +1276,9 @@ class SettingsActivity : AppCompatActivity() {
     /** The row's short state; "connected" is only ever the handshake, never the agent's reply. */
     private fun refreshPhoneMcpVal() {
         runCatching {
+            val allowed = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
             findViewById<TextView>(R.id.set_phone_mcp_val).text =
-                PhoneToolsView.rowValue(PhoneSetupStore.state(this))
+                PhoneToolsView.rowValue(PhoneSetupStore.state(this), allowed)
         }
     }
 

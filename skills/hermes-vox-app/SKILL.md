@@ -185,10 +185,14 @@ title is read from the home row that opened it
 | Alpha features | `alpha_features` | false | The master gate for everything unfinished. Off: every alpha row is dimmed and takes no tap, and nothing alpha runs. Turning it on slides out the panel of feature sets | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:27 `KEY_MASTER = "alpha_features"`) |
 | Presence (set) | `alpha_set_presence` | false | Listed first in the panel. Lets Presence run (its own switch then applies). Its description states the cost: about 3 GB of memory while a call is live | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:36 `"alpha_set_presence"`) |
 | Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29). Its description states about 300 MB more memory during a call | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:43 `"alpha_set_continuous_listening"`) |
+| Turn-taking (set) | `alpha_set_turn_taking` | false | Lets the being keep up mid-conversation: an acknowledgement while you talk, a stop told apart from a question, and the thread resumed after a cut | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:50 `"alpha_set_turn_taking"`) |
+| Phone tools (set) | `alpha_set_phone_tools` | false | Lets the agent act on this phone over MCP through a small tailnet server with its own token. Off: the server refuses to start, no token is created, and the Settings row and first-run offer are unreachable | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:56 `"alpha_set_phone_tools"`) |
+| Switching profiles (set) | `alpha_set_profiles` | false | Lets the commands sheet offer `/profiles` and its Manage rows. Off: the row is not listed or searchable, the manage dialogs refuse, and `switchProfile` refuses; the active profile stays in the header as a connection fact | (android/app/src/main/java/com/hermesvox/AlphaGate.kt:61 `"alpha_set_profiles"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
-dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
-semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:213 `gate(R.id.row_grp_presence, presence)`).
+dimmed rows are the Presence group row, the Phone tools row and, in Hearing, the tone,
+continuous-capture and semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:213 `gate(R.id.row_grp_presence, presence)`). Quiet calls is not one of them: its own
+Hearing switch is independent of the master.
 
 ### Entity & Connection
 
@@ -211,6 +215,7 @@ semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActiv
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
 | Barge-in | `duplex` | true | Talking over the entity interrupts it | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:975 `"duplex", true`) |
+| Quiet calls | `silence_notifications_in_call` | false | Silences notifications while a call is open, using the phone's own Do Not Disturb (priority, so your exceptions still come through) and putting the previous filter back at hang-up. Its own Hearing switch, **not** an Alpha set, so it works with the master switch off | (android/app/src/main/java/com/hermesvox/CallQuiet.kt:30 `const val KEY = "silence_notifications_in_call"`) |
 | Noise & echo cancel (AEC) | `mic_aec` | true | Uses `VOICE_COMMUNICATION` capture (hardware AEC/NS) instead of raw MIC | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1646 `set_mic_aec`) |
 | Extra noise suppression | `ns_extra` | true | Adds a platform `NoiseSuppressor` on the record session | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1647 `set_ns_extra`) |
 | Streaming partial transcripts | `partial_stt` | true | Runs partial decoding to end a turn early on a finished-sounding pause | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1648 `set_partial_stt`) |

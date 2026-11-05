@@ -81,6 +81,15 @@ class AlphaGateTest {
         assertFalse(AlphaGate.allows(s, P))
     }
 
+    @Test fun phone_tools_is_a_set_with_its_own_key_and_the_owners_words() {
+        val set = AlphaGate.FeatureSet.PHONE_TOOLS
+        assertEquals("alpha_set_phone_tools", set.key)
+        assertEquals("Phone tools", set.label)
+        assertTrue(set.blurb, set.blurb.contains("Vox runs a small server on your tailnet with its own token"))
+        assertTrue(set.blurb, set.blurb.contains("Off until you set it up."))
+        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
+    }
+
     @Test fun an_upgrade_that_had_presence_running_keeps_it() {
         // 0.9.0 wrote presence_enabled=true on first start; with the model installed it ran.
         val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to true))

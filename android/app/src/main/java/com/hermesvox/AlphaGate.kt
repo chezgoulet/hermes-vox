@@ -53,6 +53,12 @@ object AlphaGate {
                 "thread picked up after you cut in. Needs continuous listening for the " +
                 "acknowledgements.",
         ),
+        PHONE_TOOLS(
+            "alpha_set_phone_tools", "Phone tools",
+            "Lets your agent act on this phone — a timer, an alarm, Do Not Disturb, the volume. " +
+                "Vox runs a small server on your tailnet with its own token, and your agent " +
+                "reaches it over MCP. Off until you set it up.",
+        ),
         QUIET_CALLS(
             "alpha_set_quiet_calls", "Quiet calls",
             "Silences notifications while a call is open, using your phone's Do Not Disturb with " +

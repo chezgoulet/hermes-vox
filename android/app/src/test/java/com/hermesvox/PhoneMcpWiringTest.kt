@@ -70,6 +70,24 @@ class PhoneMcpWiringTest {
         )
     }
 
+    @Test fun the_phone_tools_set_gates_the_server_the_token_and_the_sheet() {
+        val settings = File("src/main/java/com/hermesvox/SettingsActivity.kt").readText()
+        val offer = File("src/main/java/com/hermesvox/PhoneToolsOffer.kt").readText()
+        val view = File("src/main/java/com/hermesvox/PhoneToolsView.kt").readText()
+        assertTrue("start refuses while the set is off",
+            mcp.contains("AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)"))
+        assertTrue("the token is not generated while the set is off",
+            mcp.contains("event=phone-mcp token=off reason=alpha"))
+        assertTrue("rotation is refused too", mcp.contains("action=rotate"))
+        assertTrue("the status carries the gate", mcp.contains("allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS)"))
+        assertTrue("the settings row is dimmed and takes no tap",
+            settings.contains("gate(R.id.row_phone_mcp, phoneTools)"))
+        assertTrue("turning the set off stops a live listener", settings.contains("if (!phoneTools) PhoneMcp.stop()"))
+        assertTrue("the first-run offer is gated too",
+            offer.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)"))
+        assertTrue("status rows say why they are off", view.contains("const val ALPHA_OFF"))
+    }
+
     @Test fun the_user_initiated_path_is_untouched_and_still_local() {
         val parse = vc.indexOf("LocalActionGrammar.parse(text)")
         val submit = vc.indexOf("session.voiceTurn(")
