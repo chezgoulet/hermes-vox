@@ -431,6 +431,10 @@ class SettingsActivity : AppCompatActivity() {
                     prefs.edit().putString("url", u)
                         .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
+                    // L9 (0.9.1 review): a live call belonged to the connection it opened
+                    // on. Saving Entity ends it, exactly as a profile switch does, and the
+                    // shared session is rebuilt from the values just written.
+                    MainActivity.onEntitySaved()
                     refreshEntityVal()
                     dlg.dismiss()
                 }

@@ -1648,6 +1648,21 @@ open class MainActivity : AppCompatActivity() {
             active?.clearConversationUi()
         }
 
+        /**
+         * L9 (0.9.1 review): Settings → Entity saved a new endpoint, key or scope. A live
+         * call was opened against the old connection, and the controller still holds it;
+         * end it the way a profile switch does ([ConversationReset.Trigger.SETTINGS]),
+         * then rebuild the shared session from the prefs just written. Without the rebuild
+         * the screen would keep dialling the old endpoint until the next launch.
+         */
+        fun onEntitySaved() {
+            val a = active
+            val wasLive = callIsLive()
+            resetActiveConversation()
+            a?.connectFromPrefs()
+            VoxLog.d("event=entity-saved callEnded=$wasLive")
+        }
+
         /** 0.6.7 Tier 1: push a presence-voice mode change from Settings to the
          *  live controller's presence loop (a live read on the next tick).
          *  `liveController` is the COMPANION's var — reach it unqualified here. */
