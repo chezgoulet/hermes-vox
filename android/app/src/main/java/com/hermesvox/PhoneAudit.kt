@@ -25,9 +25,10 @@ import com.hermesvox.core.Json
  * relative path and the count (`Downloads, 12 entries`) — never a name it saw. Values are clipped so
  * a hostile argument cannot make the list unreadable.
  *
- * The audit never stores a token, a message body or a file's contents, because none of those ever
- * become an argument of an action that exists today — and [summarise] is the one function a future
- * action must go through.
+ * The audit never stores a token, a message body or a file's contents. A `message` text **does**
+ * become an argument now, so [summarise] stores it as its length exactly as it does a note's; a
+ * handoff's recipient is stored because the owner needs to see who the draft was for. [summarise]
+ * is the one function a future action must go through.
  *
  * Pure JVM. [PhoneAuditStore] is the Android side that persists it; this file is what
  * [PhoneAuditTest] pins.

@@ -946,3 +946,74 @@ apply underneath, and the phone still refuses with `reason:"permission"` when on
 **What it does not decide.** Whether an approved Ask can be remembered for a session, whether a group
 may be limited to a chosen set of apps (Notifications hints at it), and screen automation — which is
 its own decision, with its own indicator and hard off switch.
+
+**Amended 2026-11-05.** D36 split `messages-calls` into `messages` and `calls`, and gave `apps` its
+instant `launch`/`open` half. The registry therefore holds **thirteen** groups, not twelve; the
+group-by-group rule above is unchanged.
+
+## D36 — Messages and calls are handoffs, never sends or placed calls
+
+Set 2026-11-05, on #429's handoff lane. (Numbered D36 because D35 above already records the
+group-grant decision; the two are separate and neither replaces the other.)
+
+**The decision.** Three capabilities need **no permission and no approval card**, because each one
+hands off to an app the owner already trusts. The old `messages-calls` group splits by consent, not
+by convenience:
+
+- **`messages`** (Tier 0, Off by default, Allow offered) — `message` takes `to` and `text`, composes
+  an `ACTION_SENDTO` intent with an `smsto:` URI and `sms_body`, and opens the owner's messaging
+  app. The result is `ok`, `to`, `chars`, `handed_off:true`. **Vox never sends.**
+- **`calls`** (Tier 0, Off by default, Allow offered) — `dial` takes `to` and opens
+  `ACTION_DIAL` with a `tel:` URI. The result is `ok`, `to`. **Vox never dials; the owner presses
+  call.**
+- **`apps`** keeps its safe half instant: `launch` resolves a package or launcher label among
+  **launchable** activities only, and `open` resolves a URI with an optional package. Both report
+  `package` and `component`, and both enter PiP first while a Vox call is live so the being stays
+  visible and stoppable. If PiP is unavailable the launch happens anyway.
+
+**Messages: `ACTION_SENDTO` only; no `SEND_SMS`, ever.** The owner's own messaging app is the
+sender. Vox does not become the default SMS app, does not ask for the role, and does not read or
+send messages itself. Two-factor codes therefore reach the agent the way the owner already handles
+them: copy the code, and let the existing `clipboard` group read it. The rejected alternative —
+`SEND_SMS` plus the default-SMS role — would have made Vox an SMS app to gain a permission the
+handoff does not need, and would have put a silent send behind a tool call.
+
+**Calls: `ACTION_DIAL` only; no `CALL_PHONE`, ever.** The dialer opens with the number filled in and
+the owner makes the call. `CALL_PHONE` was rejected because it places the call itself, needs a
+runtime permission, and creates an emergency-number question (what happens when the agent dials 112)
+that does not exist here: **we never dial**, so no emergency special case is needed and none is
+written. `ACTION_DIAL` also leaves the owner's own dialer, call log and SIM choice intact.
+
+**Dialling ends Vox's own call — deliberately, at the handoff.** If a Vox call is live, the being
+says one line, *"dialling — ending our call"*, the call ends through the same teardown the on-screen
+hang-up uses, and then the dialer opens. It does **not** wait for the telephony call to connect: by
+then audio focus has moved and the teardown would run under a grab. **Ending the call does not end
+the conversation** — the thread lives on the gateway, and the next call resumes it. That survival is
+what makes ending the call acceptable instead of a lost turn.
+
+**Launching enters PiP first when a call is live.** `launch` and `open` call the existing
+[CallWindow] funnel before starting the intent, so the being floats beside the app and Stop still
+works. A launch is never failed because the window could not shrink: no PiP feature, a refused
+window or an OEM that says no all fall through to starting the app immediately.
+
+**`uninstall` is not in this lane.** It needs the owner's approval card, and it stays
+`approval-required` until that card exists on this wire. It is named in the apps group's `planned`
+list and is never advertised. `install` is in the same position.
+
+**Refusals are part of the decision.** A group that is Off is `not_granted`; bad arguments are
+`invalid-arguments`; and a handoff with nothing to receive it is `no_app` — no `ACTION_SENDTO` app,
+no dialer, no launchable activity, no app for the URI. A **contact name** without the Contacts group
+is `not_granted` **naming Contacts**, because resolving a name is reading the address book. Contacts
+lookup itself is declared, not built, so a granted name still refuses `unavailable` and asks for a
+number rather than opening `smsto: Mom`.
+
+**What it costs, stated.** The agent cannot send a text or place a call, even when the owner would
+have approved it; it can only put the draft or the number in front of them. A contact name needs a
+second group grant. Apps can be opened but not removed. Every handoff is logged and audited like any
+other call, and a refusal carries no success fact.
+
+**What it does not decide.** Whether the gateway's approval surface ever gets a card for `uninstall`
+or for an SMS send, and whether a future lane reads contacts. Both are separate decisions with their
+own consent.
+
+[CallWindow]: ../android/app/src/main/java/com/hermesvox/CallWindow.kt

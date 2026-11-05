@@ -15,6 +15,34 @@
         <intent>
             <action android:name="android.intent.action.ASSIST" />
         </intent>
+        <!-- #429 handoff lane: `launch` resolves an app only among LAUNCHABLE activities. This
+             is a declared visibility question — the app may see launcher entries, not every
+             installed package — and it is why a package with no launcher entry is no_app. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- The two resolvers `message` and `dial` ask before they hand off: is there an app
+             for a text, and is there a dialer? Visibility only; no permission. -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- `open` resolves the URI's handler. http/https are the declared common case; a deep
+             link whose app Android cannot see still refuses no_app rather than guessing a
+             package, and naming `package` asks for exactly one target. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
     </queries>
 
     <uses-permission android:name="android.permission.INTERNET" />

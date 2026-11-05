@@ -311,16 +311,21 @@ class PhoneEngineTest {
         for (a in listOf("file_list", "file_read", "file_offer", "agenda", "event_create")) {
             assertEquals("$a must be reported", PhoneTiers.REPORTED, PhoneTiers.of(a))
         }
-        for (a in listOf("message", "call", "email", "delete", "purchase", "launch", "send", "contact")) {
+        for (a in listOf("message", "dial", "launch", "open")) {
+            assertEquals("$a hands off to the owner's own app", PhoneTiers.INSTANT, PhoneTiers.of(a))
+            assertTrue("$a is executable by the phone", PhoneTiers.executable(a))
+        }
+        for (a in listOf("uninstall", "install", "delete", "purchase", "contact")) {
             assertEquals("$a must need approval", PhoneTiers.APPROVAL, PhoneTiers.of(a))
             assertFalse("$a must never be executed by the phone", PhoneTiers.executable(a))
         }
         assertNull("share was replaced by file_offer, which is reported", PhoneTiers.of("share"))
+        assertNull("call was replaced by dial, which opens the dialer", PhoneTiers.of("call"))
         assertNull(PhoneTiers.of("fly"))
     }
 
     @Test fun a_tier_two_action_is_refused_and_names_the_approval_path() {
-        val r = call(mapOf("action" to "message", "text" to "hi"))
+        val r = call(mapOf("action" to "uninstall", "app" to "com.example"))
         assertFalse(r.ok)
         assertEquals(PhoneTiers.APPROVAL, r.tier)
         assertEquals(PhoneReason.APPROVAL, r.reason)

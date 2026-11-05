@@ -16,7 +16,7 @@ import com.hermesvox.core.Json
  *
  * ## The schema follows the grants (#429 step 1)
  *
- * [PhoneGrants] is the single registry: twelve capability groups, each Off, Ask or Allow, all Off
+ * [PhoneGrants] is the single registry: thirteen capability groups, each Off, Ask or Allow, all Off
  * by default. [schema] builds the advertised `enum` from [PhoneGrants.advertised], so a group the
  * owner has not granted is **absent** — not a temptation the model has to resist, but a name it
  * cannot call. The source is read at call time, never cached, so revocation lands on the next call
@@ -31,9 +31,9 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app |
  * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
+ * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `contact`, `notifications`, `transfer` | **never executed from here.** The result says an approval is required and names the surface that owns it. `install`/`uninstall` are named but not built: they need the card |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
@@ -76,6 +76,16 @@ object PhoneTool {
 
     /** An event's title is a label, not a description. */
     const val MAX_EVENT_TITLE_CHARS = PhoneCalendar.MAX_TITLE_CHARS
+
+    /** A text handed to the owner's messaging app is a message, not a document. */
+    const val MAX_MESSAGE_CHARS = 1_000
+
+    /** A recipient is a phone number or a contact name; neither is a paragraph. */
+    const val MAX_TO_CHARS = 200
+
+    /** An app name or package, and a URI, are both one line, not a payload. */
+    const val MAX_APP_CHARS = 200
+    const val MAX_URI_CHARS = 2_000
 
     /**
      * `duration_min` is whole minutes, at least one. There is no upper bound of ours: the
@@ -137,6 +147,10 @@ object PhoneTool {
         "file_offer" to "offer a named file to your agent as an artifact",
         "agenda" to "today's events (start, end, title, calendar)",
         "event_create" to "create one event, undoable",
+        "message" to "compose a text and open the messaging app; you send it",
+        "dial" to "open the dialer with a number ready; you make the call",
+        "launch" to "open a launchable app by package or name",
+        "open" to "open a URI in the app that claims it",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -198,8 +212,38 @@ object PhoneTool {
                 "text" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "note or clip only: the text to keep — at most $MAX_NOTE_CHARS characters " +
-                        "for a note, $MAX_CLIP_CHARS for a clip. Never a message or a secret.",
+                        "note, clip or message only: the text to keep or send — at most " +
+                        "$MAX_NOTE_CHARS characters for a note, $MAX_CLIP_CHARS for a clip, " +
+                        "$MAX_MESSAGE_CHARS for a message. A message is composed here and " +
+                        "handed to your messaging app; this tool never sends it.",
+                ),
+                "to" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "message or dial only: the recipient — a phone number, or a contact name " +
+                        "when the Contacts group is granted. At most $MAX_TO_CHARS characters. " +
+                        "The dialer opens with the number filled in, and the messaging app opens " +
+                        "with the draft; the owner presses send or call.",
+                ),
+                "app" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "launch only: the package name, or the name the launcher shows. At most " +
+                        "$MAX_APP_CHARS characters. Only an activity with a launcher entry can " +
+                        "be started; a package with no launchable activity is no_app.",
+                ),
+                "uri" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "open only: the URI to open, such as https://…, mailto:… or a deep link. " +
+                        "It must carry a scheme and contain no whitespace, at most " +
+                        "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments.",
+                ),
+                "package" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "open only: the package that must receive the URI. Omit it to let the " +
+                        "phone choose among the apps that claim the link.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -406,6 +450,29 @@ object PhoneTool {
             val calendar: String?,
         ) : Call() {
             override val action = "event_create"
+        }
+
+        /**
+         * A text composed here and handed to the owner's messaging app. [to] is already a
+         * number or, when [contact] is true, a name the Contacts group permits reading.
+         */
+        data class Message(val to: String, val text: String, val contact: Boolean = false) : Call() {
+            override val action = "message"
+        }
+
+        /** The dialer, opened with [to] ready. Same number-or-contact shape as [Message]. */
+        data class Dial(val to: String, val contact: Boolean = false) : Call() {
+            override val action = "dial"
+        }
+
+        /** One launchable app, named by package or by the label the launcher shows. */
+        data class Launch(val app: String) : Call() {
+            override val action = "launch"
+        }
+
+        /** One URI, optionally restricted to [package]. */
+        data class Open(val uri: String, val packageName: String? = null) : Call() {
+            override val action = "open"
         }
 
         data class Undo(val id: String) : Call() {
@@ -668,6 +735,51 @@ object PhoneTool {
             val calendar = (args["calendar"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             Parsed.Run(Call.EventCreate(title, start.iso, minutes.toInt(), calendar))
         }
+        "message" -> {
+            val text = args["text"] as? String
+            when {
+                text.isNullOrBlank() -> bad(action, "text is required and must not be empty")
+                text.length > MAX_MESSAGE_CHARS ->
+                    bad(action, "text is longer than $MAX_MESSAGE_CHARS characters")
+                else -> recipient(action, args, grants) { to, contact ->
+                    Call.Message(to, text, contact)
+                }
+            }
+        }
+        "dial" -> recipient(action, args, grants) { to, contact -> Call.Dial(to, contact) }
+        "launch" -> {
+            val name = (args["app"] as? String)?.trim().orEmpty()
+            when {
+                name.isEmpty() -> bad(action, "app is required")
+                name.length > MAX_APP_CHARS ->
+                    bad(action, "app is longer than $MAX_APP_CHARS characters")
+                else -> Parsed.Run(Call.Launch(name))
+            }
+        }
+        "open" -> {
+            val raw = args["uri"] as? String
+            val url = uri(raw) ?: return bad(
+                action,
+                "uri is required, must carry a scheme (https:, mailto:, …) and contain no " +
+                    "whitespace",
+            )
+            val pkg = (args["package"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            if (pkg != null && pkg.length > MAX_APP_CHARS) {
+                return bad(action, "package is longer than $MAX_APP_CHARS characters")
+            }
+            Parsed.Run(Call.Open(url, pkg))
+        }
+        // The apps group's safe half is launch/open. The destructive half is named so a
+        // direct call is answered honestly, and stays unbuilt until the approval card lands.
+        "install", "uninstall" -> Parsed.Refuse(
+            PhoneResult.refused(
+                action,
+                PhoneReason.APPROVAL,
+                "installing or uninstalling an app needs the owner's approval, and that card is " +
+                    "not built; nothing was performed",
+                tier = PhoneTiers.APPROVAL,
+            )
+        )
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -685,6 +797,69 @@ object PhoneTool {
 
     private fun bad(action: String, detail: String): Parsed =
         Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, detail))
+
+    /**
+     * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
+     * group is not Off. Resolving a name is reading the address book, so a phone whose owner
+     * has not granted Contacts refuses with `not_granted` naming it — never with a generic
+     * complaint about the arguments. [build] receives the recipient and whether it is a name.
+     */
+    private fun recipient(
+        action: String,
+        args: Map<String, Any?>,
+        grants: PhoneGrants.Source,
+        build: (String, Boolean) -> Call,
+    ): Parsed {
+        val raw = (args["to"] as? String)?.trim().orEmpty()
+        if (raw.isEmpty()) {
+            return bad(action, "to is required: a phone number, or a contact name when Contacts is on")
+        }
+        if (raw.length > MAX_TO_CHARS) {
+            return bad(action, "to is longer than $MAX_TO_CHARS characters")
+        }
+        number(raw)?.let { return Parsed.Run(build(it, false)) }
+        val contacts = PhoneGrants.GROUPS.first { it.id == "contacts" }
+        if (PhoneGrants.stateOf(grants, contacts) == PhoneGrants.State.OFF) {
+            return Parsed.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.NOT_GRANTED,
+                    "\"$raw\" is a contact name, and looking one up reads your address book; " +
+                        "the \"${contacts.label}\" group is off on this phone. Only the owner can " +
+                        "grant it in Phone tools, or give a number instead.",
+                    tier = PhoneTiers.of(action),
+                )
+            )
+        }
+        return Parsed.Run(build(raw, true))
+    }
+
+    /**
+     * A phone number, normalised to an optional `+` and its digits; null means "this is a
+     * name, not a number". Spaces, dashes, dots and parentheses are formatting and are
+     * removed; **letters make it a name**, which is what routes the Contacts check above.
+     */
+    fun number(text: String?): String? {
+        val raw = text?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        if (!raw.all { it.isDigit() || it in "+-() ." }) return null
+        val digits = raw.filter { it.isDigit() }
+        if (digits.length < 3) return null
+        return (if (raw.startsWith("+")) "+" else "") + digits
+    }
+
+    /**
+     * A URI for `open`: it must carry a scheme (`https:`, `mailto:`, `geo:`, a deep link) and
+     * no whitespace. A bare address or an empty scheme is `invalid-arguments` rather than
+     * being guessed into something the owner did not ask to open.
+     */
+    fun uri(text: String?): String? {
+        val raw = text?.trim().orEmpty()
+        if (raw.isEmpty() || raw.length > MAX_URI_CHARS) return null
+        if (raw.any { it.isWhitespace() || it.code < 0x20 }) return null
+        val m = Regex("^([A-Za-z][A-Za-z0-9+.-]*):(.+)$").find(raw) ?: return null
+        return raw
+    }
 
     /**
      * The `folder` argument, as the tool's word or null for the default, together with a refusal
@@ -747,6 +922,12 @@ object PhoneTiers {
         "state",
         // Clipboard (#429 lane): a write, and a read only when the platform allows it.
         "clip", "clip_read",
+        // Messages/calls (#429 handoff lane): a draft handed to the owner's messaging app, and
+        // the dialer opened with a number ready. No SEND_SMS and no CALL_PHONE exist on this path.
+        "message", "dial",
+        // Apps (#429 handoff lane): the safe half of the group. Only launchable activities are
+        // resolved, and a launch enters PiP first while a call is live.
+        "launch", "open",
     )
     private val TIER_1 = setOf(
         "note",
@@ -762,8 +943,12 @@ object PhoneTiers {
      * They are named so a direct call gets "this needs the owner" rather than "unknown action".
      */
     private val TIER_2 = setOf(
-        "message", "call", "email", "send", "purchase", "pay", "launch", "open", "install",
-        "uninstall", "transfer", "notifications", "contact",
+        "purchase", "pay", "install", "uninstall", "transfer", "notifications", "contact",
+        // `call`, `send` and `email` were names under the old messages-calls group. They are gone
+        // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
+        // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the
+        // phone is pretending not to have.
+        //
         // A file delete is a Tier 2 capability that this lane deliberately does not build: there
         // is no undo, so it is named here and never advertised.
         "delete",
@@ -825,6 +1010,12 @@ object PhoneReason {
 
     /** The owner has not granted this capability group. Nothing was done, and it is not offered. */
     const val NOT_GRANTED = "not_granted"
+
+    /**
+     * A handoff found nothing to receive it: no app answers `ACTION_SENDTO`, there is no
+     * dialer, or no launchable activity matches the package or name. Nothing was started.
+     */
+    const val NO_APP = "no_app"
 }
 
 /**

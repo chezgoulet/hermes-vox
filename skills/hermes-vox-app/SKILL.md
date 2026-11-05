@@ -64,7 +64,7 @@ being and its asides
 | 5 | TTS | on-device | Supertonic (recommended), Piper, or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:123 `defaultTts`) |
 | 6 | Presence (optional) | on-device | Gemma 4 E2B via LiteRT-LM on the GPU; speaks asides in the agent's mirrored voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:105 `gemma-e2b`) |
 | 7 | Avatar + words | on-device | GPU-drawn being and the speech-locked crawl | (docs/ARCHITECTURE.md:217 `6,000 stateless particles`) |
-| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume and notes: the caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:1154 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:85 `val GROUPS: List<Group> = listOf(`) |
+| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume, media, device state, clipboard, files, calendar, and handoffs: a text is composed for the owner's messaging app, the dialer opens with a number ready, apps launch or open. Nothing is sent or dialled by Vox. The caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:1366 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:85 `val GROUPS: List<Group> = listOf(`) |
 
 Only leg 4 is a network peer. Barge-in cancels the stream rather than leaving it running
 (docs/ARCHITECTURE.md:123 `closing the stream aborts the generation`).
@@ -99,7 +99,7 @@ What the build does:
   `enhanced` becomes on, an install that never touched it gets on
   (android/app/src/main/java/com/hermesvox/PresenceGate.kt:58 `fun migrated`).
 - Presence runs only when the model is downloaded **and** able to start
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1484 `presenceActive`). When it
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1518 `presenceActive`). When it
   cannot, the app is normal operation: no label, no degraded-mode pill.
 - The Settings presence row is the only place the absence is explained
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:739 `set_presence_status`),
@@ -120,7 +120,7 @@ The bar is 8 GB of total RAM, read as the phone's marketed size
 floor of 3 GB (android/app/src/main/java/com/hermesvox/HardwareCheck.kt:36 `FREE_FLOOR_MB`).
 The first call that loads Presence is the second stage: a failed load switches the Presence set
 off and says so in the Alpha panel
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:3270 `event=hw-check stage=first-load`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:3311 `event=hw-check stage=first-load`).
 It only advises: the verdict appears in the Alpha panel under Presence and, when the phone falls
 short, in first run with where to turn it on. It never selects anything.
 
@@ -147,7 +147,7 @@ presents*: its **voice**, its **model** and its **look**. The record carries the
 (android/app/src/main/java/com/hermesvox/Profiles.kt:66 `data class Profile`) as a map of the scoped
 keys (android/app/src/main/java/com/hermesvox/ProfileScope.kt:67 `val KEYS`), and a switch applies
 all three: the being redraws, the next utterance speaks in the new voice, the next turn thinks with
-the new model (android/app/src/main/java/com/hermesvox/MainActivity.kt:1974 `private fun switchProfile`).
+the new model (android/app/src/main/java/com/hermesvox/MainActivity.kt:2015 `private fun switchProfile`).
 
 - **The fallback.** The live `hv` prefs stay the store the app reads, and they are the device-wide
   default: a key a profile has no value for is not written on a switch, so the device-wide value
@@ -155,7 +155,7 @@ the new model (android/app/src/main/java/com/hermesvox/MainActivity.kt:1974 `pri
   (android/app/src/main/java/com/hermesvox/ProfileScope.kt:119 `fun adopt`).
 - **The one-time inheritance.** On first load, every profile with no values of its own takes the
   device-wide ones, once, guarded by `profile_scoped`; from then on they are its own, and a later
-  device-wide change does not move them (android/app/src/main/java/com/hermesvox/MainActivity.kt:1938 `fun migrateScopedProfiles`).
+  device-wide change does not move them (android/app/src/main/java/com/hermesvox/MainActivity.kt:1979 `fun migrateScopedProfiles`).
 - **A change belongs to who was on.** Leaving a profile records the live values into it, so a setting
   changed in Settings is that profile's (android/app/src/main/java/com/hermesvox/ProfileScope.kt:104 `fun capture`).
 - **The rows say so.** Every voice/model/look row carries "· profile <name>" on its second line —
@@ -201,7 +201,7 @@ of that switch records `diag_summary_chosen`, so an explicit off survives every 
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, `Add a profile` / `Edit a profile` / `Refresh from host` are rows of their own, and a switch closes the sheet and ends a live call first. The list is **asked in conversation** (#384) on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt:451 `profiles.showSwitcher()`) |
+| Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, `Add a profile` / `Edit a profile` / `Refresh from host` are rows of their own, and a switch closes the sheet and ends a live call first. The list is **asked in conversation** (#384) on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt:456 `profiles.showSwitcher()`) |
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1532 `testConnectionAsync`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:415 `prefs.getString("url", "")`) |
 | Entity name | `agent_name` | the host's `data[0].id`, else `model` | The name above the being and in Settings → Entity. It is **read-only and host-derived**: the same `GET /v1/models` probe as connect adopts `data[0].id`; a 200 with no id says "connected, but the host did not name itself" and keeps the fallback. It is not the request route | (android/app/src/main/java/com/hermesvox/OnboardingActivity.kt:178 `HostEntity.answer`) |
@@ -336,7 +336,7 @@ working path is Android's own screen, where Vox is listed; and several apps can 
 row cannot name the current holder — it says "another app", not a guess
 (android/app/src/main/java/com/hermesvox/AssistantRole.kt:81 `fun summary`). The manifest
 declaration is what makes the app eligible
-(android/app/src/main/AndroidManifest.xml:128 `android.intent.action.ASSIST`).
+(android/app/src/main/AndroidManifest.xml:141 `android.intent.action.ASSIST`).
 
 ### Commands (the `/` button on the main screen)
 
@@ -373,7 +373,7 @@ only while its switch is on, `/profiles` only while the Alpha *Switching profile
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt:66 `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the ten names above
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2583 `when (c.name)`), and no build of
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2624 `when (c.name)`), and no build of
 this tree has ever had a handler for one. Files arrive a different way: the **Share with agent**
 row inside the commands sheet, or sharing one to Vox from another app, offers it to the agent —
 see *Share with agent* below. Do not invent a `/file` command; do not say files are impossible
@@ -387,7 +387,7 @@ the catalogue only while the Alpha **Sessions** set is on
 (android/app/src/main/java/com/hermesvox/Sessions.kt:471 `fun refusal`): with it off the row is
 absent from the sheet, the search and `/help`, a typed or dictated "/sessions" is ordinary
 conversation, and the dispatch and the pick both refuse
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2634 `private fun adoptSession`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2675 `private fun adoptSession`).
 
 **The list is asked at the host, not at the profile.** A profile is addressed at
 `https://host/p/<name>`, and on a real gateway the root answers 200 for the same key a profile
@@ -424,7 +424,7 @@ there is one, else `created_at` plus `role`
 (android/app/src/main/java/com/hermesvox/Sessions.kt:409 `fun merge`). The app's own reply is
 recorded as an echo with no id and no timestamp, and disappears the moment the host serves the
 same words, so a reconnect shows one copy of every line. Both reading surfaces show the same block
-— the crawl as its history (android/app/src/main/java/com/hermesvox/MainActivity.kt:2696 `private fun paintTrail`)
+— the crawl as its history (android/app/src/main/java/com/hermesvox/MainActivity.kt:2737 `private fun paintTrail`)
 and the conversation layout before this device's own turns
 (android/app/src/main/java/com/hermesvox/Transcript.kt:58 `fun setHistory`).
 
@@ -432,9 +432,9 @@ and the conversation layout before this device's own turns
 listing that offered it are one piece of state
 (android/app/src/main/java/com/hermesvox/Sessions.kt:156 `class Adoption`), and a profile switch, a
 new conversation or a saved connection clears all three
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2713 `private fun clearAdoptedSession`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2754 `private fun clearAdoptedSession`).
 A `/reconnect` deliberately does not — it re-dials the same conversation and reads it again
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:3141 `adoption.adopt(rejoin)`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:3182 `adoption.adopt(rejoin)`).
 
 The **Being** section opens with a live preview: the same being the main screen draws, from the
 same prefs, walking through resting, listening, working and speaking — so a look is judged in
@@ -449,7 +449,7 @@ targets (android/app/src/main/java/com/hermesvox/AvatarView.kt:209 `fun setPause
 (inspect), pulse (choose), converge (compress), scatter (start over), ring (reconnect), settle
 (help) — held while it runs; it ends in a bloom when it worked and in the hourglass, in the
 waiting colour, when it failed (android/app/src/main/java/com/hermesvox/CommandMotion.kt:43 `fun verbFor`).
-The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:2954 `event=command-motion`).
+The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt:2995 `event=command-motion`).
 
 **Finding a command.** The commands screen has a search box that matches what a person wants
 ("it's slow", "can't reach it", "start over"), not only command names
@@ -464,7 +464,7 @@ the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java
 The main action row has the call glyph and **one** commands entry, `⌘` (U+2318). It is drawn
 as a local vector path, so it never depends on a system font shipping the glyph, and its label
 is still "Commands". Typing `/` on the main screen opens the same sheet
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2104 `fun dispatchKeyEvent`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2145 `fun dispatchKeyEvent`).
 
 The first row inside that sheet is **Share with agent**. It is an artifact action, not a slash
 command: it sits outside the nine-command catalogue, inherits the row grammar and the CHOOSE →
@@ -474,7 +474,7 @@ with the file's name, type and size
 (android/app/src/main/java/com/hermesvox/ShareSheet.kt:29 `class ShareSheet`). Nothing is sent
 until SEND. An incoming `ACTION_SEND`, `ACTION_SEND_MULTIPLE` or `ACTION_VIEW` lands on that
 same card; the share target is not a licence to send on arrival
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:2898 `fun routeShareIntent`).
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:2939 `fun routeShareIntent`).
 
 The clipboard is rendered as a **file**, never as pasted text. A URL or any other string
 becomes `clipboard-2026-11-02T14-31.txt`; an image keeps its bytes and becomes
@@ -525,7 +525,7 @@ profile needs its own key (android/app/src/main/java/com/hermesvox/Profiles.kt:8
 The list is asked in conversation (#384), not from a route: the app sends one
 `[[vox:profiles]]` chat turn and the agent answers with a `vox-profiles` block, while a switch
 still ends a live call and starts a new conversation
-(android/app/src/main/java/com/hermesvox/MainActivity.kt:1879 `resetConversation`). The answer
+(android/app/src/main/java/com/hermesvox/MainActivity.kt:1920 `resetConversation`). The answer
 is cached; opening the switcher never asks, a refresh inside 60 s is refused, and a refresh
 during a call runs when the call ends
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt:346 `fun decide`). A host that does
@@ -580,9 +580,9 @@ Do not send a user hunting for these.
   ignore it and always decode English (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:165 `stt_language`).
   This tree never writes it either, so multilingual models always auto-detect.
 - `provider` — the per-request provider override, written when a model is picked from the
-  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:3021 `putString("provider"`).
+  gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt:3062 `putString("provider"`).
 - `agent_name` — the label above the being; read with the model id as its fallback
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1957 `agent_name`). It is written only
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:1998 `agent_name`). It is written only
   from a verified host answer (`data[0].id`), by onboarding's connect and Settings → Entity's
   on-open refresh (android/app/src/main/java/com/hermesvox/HostEntity.kt:62 `fun parse`), never
   by free text.
@@ -590,7 +590,7 @@ Do not send a user hunting for these.
   `er_presence_density` (android/app/src/main/java/com/hermesvox/PresenceCadence.kt:36 `LEGACY_PREF`).
   Nothing writes it any more.
 - `presence` — a second narration gate read alongside `er_presence` when a tool call wants a
-  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:2306 `"presence", true`).
+  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt:2347 `"presence", true`).
   Read with a default of true and never written by this tree, so treat it as permanently on.
 
 ---
@@ -633,16 +633,16 @@ that is not here, this list is stale: add it with a reference.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:768 `call-end`) |
-| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:3388 `activity-stop`) |
+| `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:773 `call-end`) |
+| `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:3429 `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:33 `fg-service start`) |
 | `event=fg-service-start` | The mic foreground service was requested | `event=fg-service-start-failed err=` | (android/app/src/main/java/com/hermesvox/VoiceService.kt:87 `fg-service-start ok`) |
-| `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1595 `wake acquired`) |
-| `event=screen-alive` | The keep-screen-on window flag was armed | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1603 `screen-alive armed`) |
-| `event=focus-acquire` | Audio focus requested; `result=granted` or `denied` | `event=focus-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1667 `focus-acquire result=`) |
-| `event=focus-change` | Another app took/returned focus; `state=loss kind=loss / transient / can-duck`, or `state=resume` | `action=hangup reason=over-…` means focus stayed away too long and the call ended | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1705 `focus-change state=loss`) |
-| `event=focus` | Focus released | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1681 `focus released`) |
-| `event=audio-route` | Capture/playback re-attached for a device change; `devices=` lists the route | `event=audio-route-register-failed`, `event=audio-route-unregister-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1772 `audio-route devices=`) |
+| `event=wake` | Wake lock acquired/released for the open line | `event=wake-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1629 `wake acquired`) |
+| `event=screen-alive` | The keep-screen-on window flag was armed | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1637 `screen-alive armed`) |
+| `event=focus-acquire` | Audio focus requested; `result=granted` or `denied` | `event=focus-acquire-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1701 `focus-acquire result=`) |
+| `event=focus-change` | Another app took/returned focus; `state=loss kind=loss / transient / can-duck`, or `state=resume` | `action=hangup reason=over-…` means focus stayed away too long and the call ended | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1739 `focus-change state=loss`) |
+| `event=focus` | Focus released | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1715 `focus released`) |
+| `event=audio-route` | Capture/playback re-attached for a device change; `devices=` lists the route | `event=audio-route-register-failed`, `event=audio-route-unregister-failed` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1806 `audio-route devices=`) |
 | `event=comm-route` | Headset/communication-route selection (`action=set ok=…`, `action=none`, `action=cleared`) | `action=select-failed`, `ok=false` | (android/app/src/main/java/com/hermesvox/CommRoute.kt:92 `comm-route action=set`) |
 | `event=assist` | #329: the assistant gesture reached the app; `route=start_call` (cold, opens ready to listen), `route=focus_live_call` (a call was already running — never a second session) or `route=onboard` (no gateway yet) | `route=start_call` while the user was mid-call | (android/app/src/main/java/com/hermesvox/MainActivity.kt:417 `event=assist route=`) |
 | `event=harness` | Debug builds only: a test intent set ringer mode | — | (android/app/src/debug/java/com/hermesvox/DebugHarnessActivity.kt:119 `harness ringer=`) |
@@ -680,9 +680,9 @@ that is not here, this list is stale: add it with a reference.
 | `event=turn-dropped` | A completed turn was dropped because the generation was stopped | `reason=stopped` after a hangup is expected | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2521 `turn-dropped`) |
 | `event=settle-drop` | A settled reply was not spoken because it was cancelled or already voiced | Both reasons are protective; a drop with no cut means a double-settle bug | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2683 `settle-drop`) |
 | `event=stream-fallback` | The stream failed **after** assembling text; the text is spoken non-streamed instead of lost | Any — the reply is degraded | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2748 `stream-fallback`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:3075 `compress-failed`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:3116 `compress-failed`) |
 | `event=command` | A command from the commands screen changed state: `name=`, `state=queued / running / done / failed`; `queued` carries `behind=` the command it waits for | `failed` names the command that did not complete | (android/app/src/main/java/com/hermesvox/CommandsSheet.kt:230 `event=command name=`) |
-| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:3075 `compress-failed`) |
+| `event=compress-failed` | `/compress` (context compression) failed | Always worth reporting with `err=` | (android/app/src/main/java/com/hermesvox/MainActivity.kt:3116 `compress-failed`) |
 | `event=turn` | One line per settled turn with latency fields and `outcome=` | Cut outcomes: `reply-error`, `stream-lost`, `empty-reply`, `stopped`, `hush`, `barge-in`, `focus-loss`, `suppressed-inflight`; healthy: `stream-done`, `speak-done`, `text-only` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2907 `stream-done`) |
 | `event=turn-skip` † | A second settle for the same epoch was suppressed | Repeats = a double-settle path | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3519 `turn-skip`) |
 | `event=lat` | Rolling p50/p95 per metric every 8 turns | Compare `first-audio` against the cadence target, p50 700 ms / p95 1.4 s (docs/DECISIONS.md:322 `p50 ≤ 700 ms`) | (android/app/src/main/java/com/hermesvox/LatencyStats.kt:116 `event=lat`) |
@@ -739,7 +739,7 @@ that is not here, this list is stale: add it with a reference.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1454 `er-soul kind=`) |
+| `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt:1488 `er-soul kind=`) |
 | `event=presence-unload` | The presence Engine was released: `reason=` one of `call-end` (immediate arm, dev pref), `idle` (the delayed arm's timer), `presence-off`, `released=`, `availMb=` after the close | Never fires on a shipped build — both release arms are off by default | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:272 `event=presence-unload reason=`) |
 | `event=presence-unload-arm` | The delayed arm was armed at hangup: `trigger=call-end`/`presence-off`, `minutes=` | Fires and is never followed by `-due` or `-cancel` = the timer died | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:346 `event=presence-unload-arm trigger=`) |
 | `event=memory-budget` | The dev memory dialog was applied: `kv=` (2048/4096/8192, applies on the next presence load), `unload=`, `idleMin=` | Any `kv=` other than the arm a run believes it is in = the measurement is misattributed | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:1182 `event=memory-budget`) |
@@ -795,11 +795,11 @@ before answering", look at `er-soul-drop`.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
-| `event=session-adopt` | A session was picked up: `id=`, `source=` | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2647 `event=session-adopt id=`) |
-| `event=session-transcript` | One transcript read landed: `id=`, `messages=` served, `shown=` after the merge | `messages=0` on a session the card showed rows for = the id or the key is wrong | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2676 `event=session-transcript id=`) |
-| `event=session-transcript … state=key-rejected / no-answer` | The read failed, and which of the two it was | `key-rejected` on the root = the same wall as #436, not a missing session | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2679 `state=key-rejected`) |
-| `event=session-clear` | The adopted session was let go (`id=`): `/new`, `/clear`, a profile switch, a saved connection | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2715 `event=session-clear id=`) |
-| `event=sessions refused reason=alpha-off` / `event=session-adopt refused reason=alpha-off` | The card or the pick was refused because the Alpha Sessions set is off | Expected with the set off; anything else means two gates disagree | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2618 `reason=alpha-off`) |
+| `event=session-adopt` | A session was picked up: `id=`, `source=` | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2688 `event=session-adopt id=`) |
+| `event=session-transcript` | One transcript read landed: `id=`, `messages=` served, `shown=` after the merge | `messages=0` on a session the card showed rows for = the id or the key is wrong | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2717 `event=session-transcript id=`) |
+| `event=session-transcript … state=key-rejected / no-answer` | The read failed, and which of the two it was | `key-rejected` on the root = the same wall as #436, not a missing session | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2720 `state=key-rejected`) |
+| `event=session-clear` | The adopted session was let go (`id=`): `/new`, `/clear`, a profile switch, a saved connection | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2756 `event=session-clear id=`) |
+| `event=sessions refused reason=alpha-off` / `event=session-adopt refused reason=alpha-off` | The card or the pick was refused because the Alpha Sessions set is off | Expected with the set off; anything else means two gates disagree | (android/app/src/main/java/com/hermesvox/MainActivity.kt:2659 `reason=alpha-off`) |
 
 ---
 
@@ -995,7 +995,7 @@ Debug / crash log → Share full log).
   reads "On, but the model cannot start on this device — Presence stays off here"
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt:758 `cannot start on this device`),
   and the log carries `event=presence-unavailable reason=start-failed`
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:3276 `presence-unavailable`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:3317 `presence-unavailable`).
 - **Cause:** the LiteRT-LM engine could not initialise on this GPU, and the CPU path is the
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt:88 `1.8s`); there is also a recorded
@@ -1015,7 +1015,7 @@ Debug / crash log → Share full log).
   room — measured at ~50 s on an 8 GB Pixel 7 whose other apps held a 2.5 GB model of their own (#191). It is not
   a hang. After 20 s the pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt:22 `OFFER_SKIP_MS`),
   which opens the call with Presence joining when it is ready
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt:684 `event=presence-skip`).
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt:689 `event=presence-skip`).
 - **What to do:** close other heavy apps (on-device AI apps especially), or turn Presence off on that phone.
 
 ### 6.12 The text on screen runs ahead of (or behind) the voice
@@ -1094,8 +1094,8 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   groups the owner has granted, and every group starts Off; Tier 0 actions may be Allow, Tier 1
   stops at Ask, and Tier 2 is refused with `approval-required` and stays on the gateway's approval
   surface. A call naming an action whose group is Off is refused with `not_granted` and the action
-  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:473 `PhoneTiers.APPROVAL ->`)
-  (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:175 `val DEFAULT: State = State.OFF`).
+  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:540 `PhoneTiers.APPROVAL ->`)
+  (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:182 `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by
   itself, and a skill the owner disabled for the API server stays off
