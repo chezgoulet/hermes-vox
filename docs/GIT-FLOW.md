@@ -28,6 +28,23 @@ with the signed APK attached. Rules:
 - If the gate is red, the nightly build FAILS — nothing is published. A red
   testing branch is loud, not silent.
 
+## The gate serialises per host, not per worktree
+
+`scripts/gate.sh` takes an exclusive lock on `/tmp/hermes-vox-gate.lock` after the
+toolchain checks and before step 0, and holds it for the whole run — so two gates
+on one machine run one after the other even when they belong to different
+worktrees, and even when only one of them is inside Gradle. The worktrees are
+separate; `~/.gradle` is not. Two gate runs sharing that cache interleave writes
+into the same test-results directory, and the loser reports
+`java.io.FileNotFoundException: .../testDebugUnitTest/binary/output.bin.idx` or
+"Could not write XML test results" — which reads exactly like a failing test and
+is not one. (It cost three gates in a day and sent a reader hunting a bug that
+was contention.) A gate that finds the lock held prints `gate: another gate is
+running on this host — waiting`, blocks, and gives up after an hour with the lock
+path and, where the platform can say, the holder's PID. On a host without
+`flock` it says it is running unlocked instead of behaving differently in
+silence.
+
 ## Rules of engagement
 
 1. Branch from `testing`: `git checkout testing && git pull && git checkout -b feature/<name>`.
