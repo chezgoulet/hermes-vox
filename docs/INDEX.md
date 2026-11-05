@@ -40,7 +40,7 @@ root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 | [`docs/MCP-PHONE.md`](MCP-PHONE.md) | the phone’s MCP server: setup turn, one `phone` tool, grants, tiers, results, permissions. Checked against `PhoneTool.kt`, `PhoneGrants.kt`, `PhoneMcpServer.kt` |
 | [`docs/RUNS-ROUTE.md`](RUNS-ROUTE.md) | `/v1/runs`, the default route, its 404 fallback, barge-in and the device pass. Checked against `core/TurnRoute.kt`, `core/Stream.kt`, `RouteChoice.kt` |
 | [`docs/FDROID.md`](FDROID.md) | the F-Droid rail (path B, source-built runtime, draft recipe). Corrected: releases already build path B; the listing is 0.9.1 work per D29 and does not exist yet |
-| [`docs/APP-SKILL.md`](APP-SKILL.md) | the app skill `hermes-vox-app` and how to install it on the agent. Its 380 claims are checked by `scripts/check-skill-claims.py` |
+| [`docs/APP-SKILL.md`](APP-SKILL.md) | the app skill `hermes-vox-app` and how to install it on the agent. Its claims are checked by `scripts/check-skill-claims.py` — a file and a token each, never a line number |
 | [`docs/APPROVALS-ACCEPTANCE.md`](APPROVALS-ACCEPTANCE.md) | the approval acceptance cards and the debug arm. Corrected: ordinary turns now ride `/v1/runs`, not `/v1/responses` |
 | [`docs/ASSISTANT-ROLE.md`](ASSISTANT-ROLE.md) | `android.app.role.ASSISTANT`: what the app does, what Android does, what the device maker owns |
 | [`docs/BUDGETS-0.9.1.md`](BUDGETS-0.9.1.md) | the CPU/GPU/battery/RSS budgets for the continuous lane, proposed and measured kept apart |

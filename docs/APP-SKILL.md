@@ -10,6 +10,15 @@ This note is in four parts: how a Hermes skill is enabled (read from the Hermes 
 from memory), the shortest honest install, what was actually verified against a running agent,
 and what to do when the agent's profile is not the one your Vox profile calls.
 
+**A claim is a file and a token, never a line number.** Every factual claim in the skill ends
+with ``(path `token`)``. The token must appear in that file, and it is the whole claim: a line
+number is a denormalised index into source that any edit above it moves, so it is not stored.
+Adding code above a cited token changes nothing. If a token disappears from its file the claim
+is stale and must be corrected, not repointed; if a token appears more than once the claim is
+ambiguous and must quote the whole line. `scripts/check-skill-claims.py` enforces exactly that
+on every gate run, and it is the only tool that does — there is no separate re-anchoring
+script, because there is nothing to re-anchor.
+
 ---
 
 ## 1. How a skill is enabled, in the Hermes source
