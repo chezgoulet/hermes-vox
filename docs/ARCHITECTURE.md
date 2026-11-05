@@ -159,14 +159,11 @@ small on-device model as the *soul's voice*, never a second brain ([design][er-d
 - **Measured (`ErTelemetry`).** Per call: soul-first-word, soul-spoke %, render
   p50/p95, arbiter and barge outcomes.
 
-### 5. The phone acts — local actions and MCP (#421, D32–D35)
-Two lanes, deliberately not one wire:
+### 5. The phone acts — the mind, through MCP (#421, D38)
+One actor. The phone does not parse the caller's words; every voice turn goes to the mind.
 
-- **The caller's lane.** `LocalActionGrammar` recognises a timer, alarm, Do Not Disturb
-  or volume command in one utterance, and `LocalActions` executes it on the phone with no
-  network round trip. It is Tier 0 only: reversible, private, nothing outward-facing.
-  The presence context then tells the mind what the phone did.
-- **The mind's lane.** While a call is live, `PhoneMcpServer` serves **one** MCP tool,
+- **The mind's lane.** The mind decides whether the phone should act, and while a call is live
+  `PhoneMcpServer` serves **one** MCP tool,
   `phone`, on the phone's tailnet address (`100.64.0.0/10`, port 8765, `/mcp`), behind a
   128-bit bearer token stored in the Android Keystore. Every call returns one JSON
   result with `ok` and the facts of what happened; a refusal is a result with a `reason`,
@@ -178,6 +175,9 @@ Two lanes, deliberately not one wire:
   every `tools/list` and `tools/call`, so a revocation takes effect on the next call.
   The three states mean the same thing for every group; the tier only describes the
   consequence and whether an undo exists. `docs/MCP-PHONE.md` is the contract.
+- **Presence may look, never act.** The being reads the registry and device facts through
+  `PhoneReadout`, which exposes no mutating call. Presence and Phone tools are independent
+  Alpha sets; continuous listening belongs with Presence because it is how the being hears.
 
 ### 6. Profiles — saved connections
 A profile is the whole connection: base URL (`https://host/p/<name>`), its own key, model,
