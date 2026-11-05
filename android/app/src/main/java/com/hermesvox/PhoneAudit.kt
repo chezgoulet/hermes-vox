@@ -80,16 +80,35 @@ object PhoneAudit {
         return Entry(
             atEpochMs = atEpochMs,
             action = result.action.ifBlank { (args["action"] as? String).orEmpty() },
-            arguments = summarise(args).let { summary ->
-                // A listing's row is `Downloads, 12 entries`: the folder it listed, the relative
-                // path inside it, and how many entries that page held. **Never a name** — the names
-                // in a folder are the owner's, and the count is all the record needs.
-                if (result.ok && result.action == "file_list") listingRow(summary, result) else summary
+            arguments = when {
+                // A contact lookup is the owner's address book, so the row is its count alone:
+                // never the name that was asked for and never a number or display name it found.
+                result.action == "contact" -> contactRow(result)
+                else -> summarise(args).let { summary ->
+                    // A listing's row is `Downloads, 12 entries`: the folder it listed, the
+                    // relative path inside it, and how many entries that page held. **Never a
+                    // name** — the names in a folder are the owner's, and the count is all the
+                    // record needs.
+                    if (result.ok && result.action == "file_list") listingRow(summary, result) else summary
+                }
             },
             ok = result.ok,
             outcome = if (result.ok) "done" else (result.reason ?: "refused"),
             undoId = if (undoable) result.id else null,
         )
+    }
+
+    /**
+     * The contact row: how many people matched, and nothing else. The query name, the display
+     * names and the numbers are the owner's address book — the audit is a list that gets shown
+     * and attached to reports, so it keeps only the count. A refusal has no count to claim.
+     */
+    private fun contactRow(result: PhoneResult): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        if (result.ok) {
+            (result.facts["count"] as? Number)?.let { out["count"] = "${it.toLong()}" }
+        }
+        return out
     }
 
     /** Adds the folder, path and count a listing actually returned; empty path reads `/` (the root). */

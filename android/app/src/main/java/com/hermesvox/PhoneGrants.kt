@@ -173,8 +173,9 @@ object PhoneGrants {
         Group(
             id = "contacts",
             label = "Contacts",
-            tier = PhoneTiers.APPROVAL,
+            tier = PhoneTiers.INSTANT,
             lets = "Look up a contact's number by name.",
+            actions = listOf("contact"),
         ),
     )
 

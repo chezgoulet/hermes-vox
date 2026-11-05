@@ -276,6 +276,17 @@ class PhoneToolsSheet(
                 openListenerSettings()
             }
         }
+        row(col, "Contacts permission", PhoneToolsView.contacts(status.contactsGranted, status.contactsMissing))
+        if (!status.contactsGranted) {
+            action(
+                col,
+                "GRANT CONTACTS ACCESS",
+                primary = false,
+                description = "Ask Android for read access to your contacts",
+            ) {
+                requestContacts()
+            }
+        }
         row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
         row(col, "Files folder", PhoneToolsView.files(status.folders))
         if (status.folders.isEmpty()) {
@@ -508,6 +519,7 @@ class PhoneToolsSheet(
                     // nothing, and a grant already held is not asked for again.
                     when (group.id) {
                         "calendar" -> if (state != PhoneGrants.State.OFF) requestCalendar()
+                        "contacts" -> if (state != PhoneGrants.State.OFF) requestContacts()
                         "files" -> if (
                             state != PhoneGrants.State.OFF && PhoneFileAccess.trees(act).isEmpty()
                         ) pickFolder()
@@ -665,6 +677,17 @@ class PhoneToolsSheet(
         }
     }
 
+    /** Ask Android for contacts read access; the system dialog decides. */
+    private fun requestContacts() {
+        if (ContactsAccess.permission(act) == null) return
+        try {
+            ActivityCompat.requestPermissions(act, arrayOf(ContactsAccess.PERMISSION), REQ_CONTACTS)
+        } catch (_: Throwable) {
+            notice = "Android would not open the permission dialog; grant Contacts in system settings."
+            paint()
+        }
+    }
+
     private fun hostOrPlaceholder(status: PhoneMcp.Status): String =
         status.tailnet?.takeIf { it.isNotBlank() }
             ?: status.url?.substringAfter("http://")?.substringBefore(':').orEmpty()
@@ -780,6 +803,9 @@ class PhoneToolsSheet(
         /** The calendar's runtime-permission request code. */
         private const val REQ_CALENDAR = 4302
 
+        /** The contacts runtime-permission request code. */
+        private const val REQ_CONTACTS = 4303
+
         /**
          * Hand the folder picker's answer to the open sheet. Called from the activity that holds
          * the sheet; false means the result belonged to something else. The grant itself is taken
@@ -812,19 +838,35 @@ class PhoneToolsSheet(
             return true
         }
 
-        /** Hand the calendar permission answer to the open sheet. False when it was not ours. */
-        fun handlePermissionResult(activity: AppCompatActivity, requestCode: Int): Boolean {
-            if (requestCode != REQ_CALENDAR) return false
-            val missing = PhoneCalendarAccess.permission(activity)
-            current?.let {
-                it.notice = if (missing == null) {
-                    "Calendar granted — Agenda and Create event can now run."
-                } else {
-                    "Calendar not granted — $missing is still not allowed, so Calendar actions refuse."
+        /** Hand a runtime-permission answer to the open sheet. False when it was not ours. */
+        fun handlePermissionResult(activity: AppCompatActivity, requestCode: Int): Boolean = when (
+            requestCode
+        ) {
+            REQ_CALENDAR -> {
+                val missing = PhoneCalendarAccess.permission(activity)
+                current?.let {
+                    it.notice = if (missing == null) {
+                        "Calendar granted — Agenda and Create event can now run."
+                    } else {
+                        "Calendar not granted — $missing is still not allowed, so Calendar actions refuse."
+                    }
+                    it.paint()
                 }
-                it.paint()
+                true
             }
-            return true
+            REQ_CONTACTS -> {
+                val missing = ContactsAccess.permission(activity)
+                current?.let {
+                    it.notice = if (missing == null) {
+                        "Contacts granted — a contact's number can now be looked up by name."
+                    } else {
+                        "Contacts not granted — $missing is still not allowed, so the lookup refuses."
+                    }
+                    it.paint()
+                }
+                true
+            }
+            else -> false
         }
 
         /** Called from an activity's onResume, so a grant made in system settings is visible at once. */

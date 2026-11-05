@@ -31,9 +31,9 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. A contact lookup is instant because it changes nothing; its privacy comes from the projection (numbers only) |
  * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `contact`, `notifications`, `transfer` | **never executed from here.** The result says an approval is required and names the surface that owns it. `install`/`uninstall` are named but not built: they need the card |
+ * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `notifications`, `transfer` | **never executed from here.** The result says an approval is required and names the surface that owns it. `install`/`uninstall` are named but not built: they need the card |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
@@ -86,6 +86,15 @@ object PhoneTool {
     /** An app name or package, and a URI, are both one line, not a payload. */
     const val MAX_APP_CHARS = 200
     const val MAX_URI_CHARS = 2_000
+
+    /**
+     * A contact lookup answers at most this many people. More would be an address-book dump, not
+     * "look up a contact's number by name"; a name that is too broad is narrowed by asking again.
+     */
+    const val MAX_CONTACT_MATCHES = 20
+
+    /** A name, full or partial, is not a paragraph. */
+    const val MAX_CONTACT_NAME_CHARS = 200
 
     /**
      * `duration_min` is whole minutes, at least one. There is no upper bound of ours: the
@@ -147,6 +156,7 @@ object PhoneTool {
         "file_offer" to "offer a named file to your agent as an artifact",
         "agenda" to "today's events (start, end, title, calendar)",
         "event_create" to "create one event, undoable",
+        "contact" to "a contact's numbers by full or partial name",
         "message" to "compose a text and open the messaging app; you send it",
         "dial" to "open the dialer with a number ready; you make the call",
         "launch" to "open a launchable app by package or name",
@@ -252,9 +262,12 @@ object PhoneTool {
                 "name" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "file_read or file_offer only: the file's name inside the folder the " +
-                        "owner granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a " +
-                        "path: \"..\", an absolute path and a separator are refused.",
+                        "contact: a full or partial contact name, case-insensitive, at most " +
+                        "$MAX_CONTACT_NAME_CHARS characters; the lookup returns up to " +
+                        "$MAX_CONTACT_MATCHES matching people and their numbers with labels. " +
+                        "file_read or file_offer: the file's name inside the folder the owner " +
+                        "granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a path: " +
+                        "\"..\", an absolute path and a separator are refused.",
                 ),
                 "folder" to linkedMapOf(
                     "type" to "string",
@@ -450,6 +463,11 @@ object PhoneTool {
             val calendar: String?,
         ) : Call() {
             override val action = "event_create"
+        }
+
+        /** A full or partial contact name, answered with numbers and their labels only. */
+        data class Contact(val name: String) : Call() {
+            override val action = "contact"
         }
 
         /**
@@ -735,6 +753,15 @@ object PhoneTool {
             val calendar = (args["calendar"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             Parsed.Run(Call.EventCreate(title, start.iso, minutes.toInt(), calendar))
         }
+        "contact" -> {
+            val name = (args["name"] as? String)?.trim().orEmpty()
+            when {
+                name.isEmpty() -> bad(action, "name is required: a full or partial contact name")
+                name.length > MAX_CONTACT_NAME_CHARS ->
+                    bad(action, "name is longer than $MAX_CONTACT_NAME_CHARS characters")
+                else -> Parsed.Run(Call.Contact(name))
+            }
+        }
         "message" -> {
             val text = args["text"] as? String
             when {
@@ -922,6 +949,9 @@ object PhoneTiers {
         "state",
         // Clipboard (#429 lane): a write, and a read only when the platform allows it.
         "clip", "clip_read",
+        // Contacts (#429 read lane): a lookup by name returns names and numbers, never notes,
+        // addresses, photos or email.
+        "contact",
         // Messages/calls (#429 handoff lane): a draft handed to the owner's messaging app, and
         // the dialer opened with a number ready. No SEND_SMS and no CALL_PHONE exist on this path.
         "message", "dial",
@@ -943,7 +973,7 @@ object PhoneTiers {
      * They are named so a direct call gets "this needs the owner" rather than "unknown action".
      */
     private val TIER_2 = setOf(
-        "purchase", "pay", "install", "uninstall", "transfer", "notifications", "contact",
+        "purchase", "pay", "install", "uninstall", "transfer", "notifications",
         // `call`, `send` and `email` were names under the old messages-calls group. They are gone
         // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
         // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the

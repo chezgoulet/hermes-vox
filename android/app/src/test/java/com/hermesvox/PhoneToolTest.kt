@@ -49,7 +49,7 @@ class PhoneToolTest {
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
                 "state", "clip", "clip_read", "file_list", "file_read", "file_offer", "agenda",
-                "event_create", "message", "dial", "launch", "open",
+                "event_create", "message", "dial", "launch", "open", "contact",
                 "undo", "status",
             ),
             enumOf(),
@@ -274,6 +274,31 @@ class PhoneToolTest {
         assertEquals(listOf("launch", "open", "undo", "status"), enumOf(apps))
         assertFalse("uninstall waits for the approval card", "uninstall" in enumOf(apps))
         assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("uninstall"))
+    }
+
+    @Test fun contacts_is_an_instant_group_with_allow_and_a_bounded_name() {
+        val group = PhoneGrants.groupOf("contact")
+        assertEquals("contacts", group?.id)
+        assertEquals(PhoneTiers.INSTANT, group?.tier)
+        assertTrue("Contacts offers Allow", PhoneGrants.State.ALLOW in PhoneGrants.statesFor(group!!.tier))
+
+        val off = PhoneGrants.Source { g ->
+            if (g.id == "contacts") PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+        }
+        assertFalse("contact is absent while Contacts is off", "contact" in enumOf(off))
+
+        val on = PhoneGrants.Source { g ->
+            if (g.id == "contacts") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("contact", "undo", "status"), enumOf(on))
+        val name = ((input(on)["properties"] as JObj)["name"] as JObj)["description"] as JStr
+        assertTrue("the name is documented for contact", name.value.contains("contact"))
+        assertTrue("the bound is in the schema", name.value.contains(PhoneTool.MAX_CONTACT_NAME_CHARS.toString()))
+        assertTrue(PhoneTool.parse(mapOf("action" to "contact", "name" to "Mo"), on) is PhoneTool.Parsed.Run)
+        assertEquals(
+            PhoneReason.INVALID,
+            (PhoneTool.parse(mapOf("action" to "contact"), on) as PhoneTool.Parsed.Refuse).result.reason,
+        )
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {
