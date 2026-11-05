@@ -36,7 +36,10 @@ class PhoneSetupTest {
         assertTrue(p, p.contains("http://100.101.102.103:8765/mcp"))
         assertTrue(p, p.contains("Server name: vox"))
         assertTrue(p, p.contains("mcp__vox__phone"))
-        assertTrue("the agent must know to include only phone", p.contains("tools.include"))
+        assertTrue(
+            "the prompt says, in prose, that the phone offers one tool and needs no filter",
+            p.contains("exactly one tool"),
+        )
     }
 
     /**
@@ -64,9 +67,12 @@ class PhoneSetupTest {
     }
 
     /**
-     * The shape is the upstream one (MCP config reference: `mcp_servers.<name>` with `url` +
-     * `headers`, and `tools.include` to filter). A prompt that invents a key is a prompt the agent
-     * cannot use — which is exactly what #452 reported.
+     * The shape is the upstream one — `mcp_servers.<name>` with `url` and `headers`, plus the
+     * documented per-server `timeout` and `connect_timeout`. The reference
+     * (`docs/reference/mcp-config-reference`, and `cli-config.yaml.example`) lists **no per-server
+     * tool filter**, so the prompt must not name one: an invented key is silently ignored, and the
+     * agent would believe it had scoped the server when it had not. That is the same class of
+     * mistake as #452.
      */
     @Test fun the_prompt_writes_the_documented_mcp_config_shape() {
         val p = PhoneSetup.prompt(host)
@@ -79,8 +85,9 @@ class PhoneSetupTest {
             p.contains("      Authorization: \"Bearer \${API_SERVER_KEY}\""),
         )
         assertTrue("the documented per-server timeout key", p.contains("    timeout: 30"))
-        assertTrue("the documented filter", p.contains("      include: [phone]"))
-        assertTrue("the trust tier is stated", p.contains("trust: full"))
+        assertFalse("no per-server tool filter exists in the reference", p.contains("tools.include"))
+        assertFalse("`tools:` is not a per-server key", p.contains("    tools:"))
+        assertFalse("`trust:` is implemented but not documented; do not teach it here", p.contains("trust:"))
         assertFalse("this is a remote HTTP server: no stdio command", p.contains("command:"))
         assertFalse("an undeclared key is ignored, so never tell the agent to write it", p.contains("tool_timeout"))
     }
