@@ -1733,6 +1733,34 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_command_icon"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Command icon"
+                        style="@style/HvRowTitle" />
+                    <!-- The choice is made by looking: the row shows the glyph it means,
+                         drawn at the row's own size in the theme's ink, then its name. -->
+                    <com.hermesvox.CommandMark
+                        android:id="@+id/set_command_icon_mark"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center_vertical"
+                        android:layout_marginEnd="10dp" />
+                    <TextView
+                        android:id="@+id/set_command_icon_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Steve"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_keep_screen_on"
                     style="@style/HvRow"
                     android:layout_width="match_parent"

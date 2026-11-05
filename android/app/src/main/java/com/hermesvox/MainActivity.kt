@@ -1830,8 +1830,26 @@ open class MainActivity : AppCompatActivity() {
     private fun wireButtons() {
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
-        // #370: one commands entry (⌘). Sharing lives inside its sheet, not beside it.
+        // #370: one commands entry. Sharing lives inside its sheet, not beside it.
         findViewById<View>(R.id.commands).setOnClickListener { showCommands() }
+        applyCommandIcon()
+    }
+
+    /**
+     * The commands entry is whichever glyph Settings → Appearance chose, drawn by
+     * [CommandGlyph] in the theme's ink — the same drawing the chooser showed. The
+     * content description is "Commands" for every one of them ([CommandGlyph.LABEL]);
+     * the icon's name is a choice in a list, not a name to announce.
+     *
+     * Called when the buttons are wired and again on resume, so a choice made in
+     * Settings is on the entry the moment the main screen is back.
+     */
+    private fun applyCommandIcon() {
+        findViewById<android.widget.ImageButton>(R.id.commands)?.apply {
+            val icon = CommandGlyph.current(this@MainActivity)
+            setImageDrawable(CommandGlyph.drawable(this@MainActivity, icon))
+            contentDescription = CommandGlyph.contentDescription(icon)
+        }
     }
 
     /**
@@ -2797,7 +2815,7 @@ open class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
 
     /** Load the on-device presence model once, if Presence is on and it is not up.
      *  A model that is installed but cannot start (no supported accelerator/CPU path on

@@ -256,10 +256,11 @@
             android:layout_height="wrap_content"
             android:layout_weight="1" />
         <!-- #370: the main surface keeps the call glyph and one commands entry, nothing
-             else. The entry is ⌘ (U+2318), drawn from our own vector path so it does not
-             depend on a system font having the glyph; the label a screen reader announces
-             is still "Commands". PASTE and FILE are gone — both are rows inside the sheet
-             now, and the clipboard is an artifact, not pasted text. -->
+             else. The entry's glyph is the choice in Settings → Appearance (Steve's ⌘ by
+             default), drawn from our own vector paths by CommandGlyph — never a font
+             glyph or a bitmap — and painted in the theme's ink. The label a screen
+             reader announces is still "Commands". PASTE and FILE are gone — both are
+             rows inside the sheet now, and the clipboard is an artifact, not pasted text. -->
         <ImageButton
             android:id="@+id/commands"
             android:layout_width="56dp"
@@ -267,7 +268,6 @@
             android:background="@drawable/bg_button_ghost"
             android:padding="12dp"
             android:scaleType="fitCenter"
-            android:src="@drawable/ic_command"
             android:contentDescription="Commands" />
     </LinearLayout>
 </LinearLayout>

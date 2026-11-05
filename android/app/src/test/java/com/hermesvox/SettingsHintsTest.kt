@@ -285,6 +285,8 @@ class SettingsHintsTest {
         val BEFORE_AND_AFTER_SPLIT_PREF_KEYS: Set<String> = setOf(
             // #402: the one key added deliberately since the split — the Alpha master switch.
             "AlphaGate.KEY_MASTER",
+            // The commands entry's glyph (Settings → Appearance): one pref, five drawings.
+            "CommandGlyph.PREF",
             // #245: the acknowledgement rate, behind the Alpha turn-taking set.
             "Backchannel.KEY_RATE",
             // #325: silence notifications during a call, off by default, behind Alpha.

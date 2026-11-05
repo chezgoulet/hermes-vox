@@ -51,6 +51,9 @@ object VoxSheet {
         closeLabel: String,
         onClose: () -> Unit,
         back: Pair<String, () -> Unit>? = null,
+        /** An optional mark before the title — the commands sheet puts the chosen glyph
+         *  there, so the sheet is the same entry the main screen shows ([CommandGlyph]). */
+        lead: View? = null,
     ): Header {
         val c = root.context
         val row = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -58,6 +61,10 @@ object VoxSheet {
             mark(c, "←", label, onBack).apply { setPadding(dp(c, 4), dp(c, 6), dp(c, 12), dp(c, 6)) }
         }
         backMark?.let { row.addView(it) }
+        lead?.let {
+            row.addView(it, LinearLayout.LayoutParams(dp(c, 24), dp(c, 24))
+                .apply { marginEnd = dp(c, 10) })
+        }
         val t = TextView(c, null, 0, R.style.TextVox_Title).apply {
             text = title
             maxLines = 1
