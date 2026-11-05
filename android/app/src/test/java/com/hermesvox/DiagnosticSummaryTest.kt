@@ -179,6 +179,19 @@ class DiagnosticSummaryTest {
         assertFalse(activity.contains("\"diag_summary\""))
     }
 
+    /**
+     * A report is wanted exactly when the app is not working, so the typed word is answered
+     * before "connect first" and the empty-key prompt — neither of which should stand between
+     * a stuck user and a block that names no key at all.
+     */
+    @Test fun the_typed_word_is_answered_before_the_connection_checks() {
+        val main = File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+        val call = main.indexOf("DiagnosticSummary.commandFor(text")
+        assertTrue("the typed word is not dispatched", call > 0)
+        assertTrue(call < main.indexOf("if (missingKeyPrompt()) return", call))
+        assertTrue(call < main.indexOf("val s = session ?: run", call))
+    }
+
     // ---- the two doors, byte for byte -----------------------------------------------------
 
     /**

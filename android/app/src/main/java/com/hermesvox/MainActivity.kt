@@ -1879,6 +1879,15 @@ open class MainActivity : AppCompatActivity() {
      *  offer (name, size, hash, URL) or — for the inline fallback — the body itself; the
      *  transcript shows only the card (name, type, size), so a file's contents never enter it. */
     protected fun send(text: String, transcript: String? = null) {
+        // #418: a typed (or dictated) "/diagnostics" copies the report block — and it is
+        // answered BEFORE the connection checks, because "it will not connect" and "the key is
+        // empty" are exactly the bugs a report is for. With the switch off [commandFor] is
+        // null, so the word goes on to the agent like any name nothing answers to: it never
+        // copies silently.
+        DiagnosticSummary.commandFor(text, DiagnosticSummary.store(prefs))?.let { c ->
+            runCommand(c) {}
+            return
+        }
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
@@ -1886,13 +1895,6 @@ open class MainActivity : AppCompatActivity() {
         // from the commands sheet — status feedback + the gateway's answer in a card,
         // instead of the word disappearing into the turn as ordinary conversation.
         if (CompressCommand.matches(text)) { compressContext(); return }
-        // #418: a typed (or dictated) "/diagnostics" copies the report block — but only while
-        // its switch is on. With the switch off [commandFor] is null, so the word goes on to
-        // the agent like any name nothing answers to: it never copies silently.
-        DiagnosticSummary.commandFor(text, DiagnosticSummary.store(prefs))?.let { c ->
-            runCommand(c) {}
-            return
-        }
         turnSeq++   // #368: a typed turn is a new trail chapter
         appendConvo(transcript ?: "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
