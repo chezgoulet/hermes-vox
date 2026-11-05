@@ -31,9 +31,9 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed when the group allows or after the card; reversible, private. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app |
- * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create` | executed when the group allows or after the card, and reported to the mind on the next turn; undoable where the row says |
- * | 2 — consequential | `install`, `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` are implemented and use the one card handshake; the rest are named but never built, so they are never offered and a direct call is refused |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `apps`, `launch`, `open`, `status`, `undo` | executed when the group allows or after the card; reversible, private. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. `apps` is a read of launchable entries and what the phone can honestly see running |
+ * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create`, `notification_dismiss` | executed when the group allows or after the card, and reported to the mind on the next turn; undoable where the row says. A dismissal cannot be undone |
+ * | 2 — consequential | `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` are implemented and use the one card handshake; the rest are named but never built, so they are never offered and a direct call is refused |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 names that are not implemented are refused rather than offered: an entry in an `enum` is
@@ -185,9 +185,11 @@ object PhoneTool {
         "event_create" to "create one event, undoable",
         "notifications" to "a count of notifications per app, with no titles or text",
         "notification_read" to "one notification's app, time, title and text by id from a summary",
+        "notification_dismiss" to "dismiss one notification by id, or all of an app's; not undoable",
         "contact" to "a contact's numbers by full or partial name",
         "message" to "compose a text and open the messaging app; you send it",
         "dial" to "open the dialer with a number ready; you make the call",
+        "apps" to "what is installed, and what the phone can honestly see running",
         "launch" to "open a launchable app by package or name",
         "open" to "open a URI in the app that claims it",
         "uninstall" to "remove an app by package",
@@ -274,7 +276,9 @@ object PhoneTool {
                     "description" to
                         "launch only: the package name, or the name the launcher shows. At most " +
                         "$MAX_APP_CHARS characters. Only an activity with a launcher entry can " +
-                        "be started; a package with no launchable activity is no_app.",
+                        "be started; a package with no launchable activity is no_app. " +
+                        "notification_dismiss: the launcher label or package whose notifications " +
+                        "are all dismissed.",
                 ),
                 "uri" to linkedMapOf(
                     "type" to "string",
@@ -306,7 +310,9 @@ object PhoneTool {
                     "type" to "string",
                     "description" to
                         "undo: the id an earlier result returned. notification_read: one of the " +
-                        "ids a notifications summary returned — never guess one.",
+                        "ids a notifications summary returned — never guess one. " +
+                        "notification_dismiss: an id a `notifications` summary returned — the " +
+                        "notification to dismiss.",
                 ),
                 "name" to linkedMapOf(
                     "type" to "string",
@@ -545,6 +551,15 @@ object PhoneTool {
         /** One notification's content, by an id a summary has already shown. */
         data class NotificationRead(val id: String) : Call() {
             override val action = "notification_read"
+        }
+
+        /** Dismiss by one summarised [id], or every notification from [app]; exactly one is set. */
+        data class NotificationDismiss(val id: String?, val app: String?) : Call() {
+            override val action = "notification_dismiss"
+        }
+
+        object Apps : Call() {
+            override val action = "apps"
         }
 
         /** A full or partial contact name, answered with numbers and their labels only. */
@@ -853,6 +868,27 @@ object PhoneTool {
                 else -> Parsed.Run(Call.NotificationRead(id))
             }
         }
+        "apps" -> Parsed.Run(Call.Apps)
+        "notification_dismiss" -> {
+            val id = (args["id"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            val app = (args["app"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            when {
+                id != null && app != null -> bad(
+                    action,
+                    "give id or app, not both: an id dismisses one notification, an app dismisses all " +
+                        "of that app's",
+                )
+                id == null && app == null -> bad(
+                    action,
+                    "id or app is required: an id from a notifications summary, or an app name",
+                )
+                id != null && id.length > MAX_NOTIFICATION_ID_CHARS ->
+                    bad(action, "id is longer than $MAX_NOTIFICATION_ID_CHARS characters")
+                app != null && app.length > MAX_APP_CHARS ->
+                    bad(action, "app is longer than $MAX_APP_CHARS characters")
+                else -> Parsed.Run(Call.NotificationDismiss(id, app))
+            }
+        }
         "contact" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
             when {
@@ -895,8 +931,7 @@ object PhoneTool {
             Parsed.Run(Call.Open(url, pkg))
         }
         // The apps group's safe half is launch/open. `uninstall` is the consequential action: it
-        // parses into a call and the engine cards it at Ask, or runs it at Allow. `install` is still
-        // named and refused, because its own installer confirmation is a different lane.
+        // parses into a call and the engine cards it at Ask, or runs it at Allow.
         "uninstall" -> {
             val unexpected = args.keys - setOf("action", "package", "approval")
             if (unexpected.isNotEmpty()) {
@@ -914,15 +949,6 @@ object PhoneTool {
                 )
             Parsed.Run(Call.Uninstall(pkg))
         }
-        "install" -> Parsed.Refuse(
-            PhoneResult.refused(
-                action,
-                PhoneReason.APPROVAL,
-                "installing an app needs its own approval card, which is not built; nothing was " +
-                    "performed",
-                tier = PhoneTiers.APPROVAL,
-            )
-        )
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -1131,9 +1157,10 @@ object PhoneTiers {
         // Messages/calls (#429 handoff lane): a draft handed to the owner's messaging app, and
         // the dialer opened with a number ready. No SEND_SMS and no CALL_PHONE exist on this path.
         "message", "dial",
-        // Apps (#429 handoff lane): the safe half of the group. Only launchable activities are
-        // resolved, and a launch enters PiP first while a call is live.
-        "launch", "open",
+        // Apps (#429 handoff lane, extended by #apps-and-dismiss): the safe half of the group. Only
+        // launchable activities are resolved, and a launch enters PiP first while a call is live.
+        // `apps` is the installed listing — a read of launchable entries, so it is instant.
+        "launch", "open", "apps",
     )
     private val TIER_1 = setOf(
         "note",
@@ -1142,6 +1169,8 @@ object PhoneTiers {
         "file_list", "file_read",
         // Calendar (#429 lane 2): today's events, and one event that can be undone.
         "agenda", "event_create",
+        // Dismissal changes something the owner can see, and cannot be undone.
+        "notification_dismiss",
     )
 
     /**
@@ -1151,7 +1180,7 @@ object PhoneTiers {
      * so they are never offered and can never raise a card.
      */
     private val TIER_2 = setOf(
-        "purchase", "pay", "install", "uninstall", "transfer",
+        "purchase", "pay", "uninstall", "transfer",
         // `file_offer` exports the owner's content over the tailnet. The folder grant makes the
         // export possible, not intended: at Ask every offer gets its own card, showing name, type
         // and size; at Allow the owner has granted the export outright.

@@ -255,6 +255,13 @@ class LocalActions(context: Context) {
 
     private inner class Platform : PhoneEngine.PhonePlatform {
 
+        private val appsHost = AppsAccess.Android(app)
+
+        override fun launchableApps(): List<AppsAccess.App>? = appsHost.launchableApps()
+        override fun usageAccess(): Boolean = appsHost.usageAccess()
+        override fun foregroundApp(): AppsAccess.App? = appsHost.foregroundApp()
+        override fun recentApps(limit: Int): List<AppsAccess.App> = appsHost.recentApps(limit)
+
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean =
             schedule(
                 id = id,
