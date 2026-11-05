@@ -64,7 +64,7 @@ being and its asides
 | 5 | TTS | on-device | Supertonic (recommended), Piper, or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:123 `defaultTts`) |
 | 6 | Presence (optional) | on-device | Gemma 4 E2B via LiteRT-LM on the GPU; speaks asides in the agent's mirrored voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt:105 `gemma-e2b`) |
 | 7 | Avatar + words | on-device | GPU-drawn being and the speech-locked crawl | (docs/ARCHITECTURE.md:217 `6,000 stateless particles`) |
-| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume and notes: the caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:919 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:85 `val GROUPS: List<Group> = listOf(`) |
+| 8 | Phone actions | on-device (plus a tailnet listener while a call is live) | timers, alarms, do-not-disturb, volume and notes: the caller's words are matched locally and never leave the phone, and the mind acts through one MCP tool that returns a result. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt:997 `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:85 `val GROUPS: List<Group> = listOf(`) |
 
 Only leg 4 is a network peer. Barge-in cancels the stream rather than leaving it running
 (docs/ARCHITECTURE.md:123 `closing the stream aborts the generation`).
@@ -336,7 +336,7 @@ working path is Android's own screen, where Vox is listed; and several apps can 
 row cannot name the current holder — it says "another app", not a guess
 (android/app/src/main/java/com/hermesvox/AssistantRole.kt:81 `fun summary`). The manifest
 declaration is what makes the app eligible
-(android/app/src/main/AndroidManifest.xml:109 `android.intent.action.ASSIST`).
+(android/app/src/main/AndroidManifest.xml:126 `android.intent.action.ASSIST`).
 
 ### Commands (the `/` button on the main screen)
 
@@ -755,7 +755,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=er-barge-fire` | A staged barge was fired; `hold=staged frames=` | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3414 `er-barge-fire`) |
 | `event=er-barge-verdict` | What the verdict classifier decided about the interrupting words | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3425 `er-barge-verdict`) |
 | `event=local-action` | The phone took the utterance itself (timer / alarm / do-not-disturb / volume) with no network round trip: `kind=`, `ok=`, `registry=`, and `event=local-action ring kind=` when a timer fires | `ok=false` = the phone could not do it and said so (a missing DND permission is named); the utterance then never reached the mind, which is `er-handoff reason=local-action` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2042 `event=local-action kind=`) |
-| `event=phone-mcp` | The mind acting on the phone: `start url=… port=` when a call opens the listener, `stop served=N` on hangup, `action=<timer/alarm/dnd/volume/note/undo> ok=true id=…` per call, `refused reason=no-token / unknown-tool`, `unavailable reason=no-tailnet / bind`, `token-store=failed session-only=true` | `ok=false` with a `reason=` is the phone refusing truthfully (no DND access, tier 2, bad arguments). `refused reason=no-token` = a client with neither the phone's token nor the connection's API key probed the port | (android/app/src/main/java/com/hermesvox/PhoneMcp.kt:314 `event=phone-mcp start`) |
+| `event=phone-mcp` | The mind acting on the phone: `start url=… port=` when a call opens the listener, `stop served=N` on hangup, `action=<timer/alarm/dnd/volume/note/undo> ok=true id=…` per call, `refused reason=no-token / unknown-tool`, `unavailable reason=no-tailnet / bind`, `token-store=failed session-only=true` | `ok=false` with a `reason=` is the phone refusing truthfully (no DND access, tier 2, bad arguments). `refused reason=no-token` = a client with neither the phone's token nor the connection's API key probed the port | (android/app/src/main/java/com/hermesvox/PhoneMcp.kt:321 `event=phone-mcp start`) |
 | `event=er-handoff` | **The receipt**: one line per turn proving the mind received it. `ok=true\|false`, `reason=voice-turn / text-turn / suppressed-inflight / cancelled-before-submit / stopped / no-stream`, `soul=`, `askChars=` | `ok=false` = the mind never saw the turn. `reason=suppressed-inflight` is not a lost utterance: the words are queued (`event=er-pending`) and submitted when the current turn settles. Since D30 the mind is never told the voice answered, so no `soul=answer` response is invited | (android/app/src/main/java/com/hermesvox/ErHandoff.kt:55 `event=$EVENT gen=$gen ok=$ok`) |
 | `event=er-audio-handoff` | The mind's reply cut in over the soul; `waitedMs=`, `cut=` | Large `waitedMs` = the turn waited on a slow render | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2843 `er-audio-handoff`) |
 | `event=er-presence line=` | A mid-run aside was voiced; `line=`, `interval=`, `density=`, `kind=lag / soul` | — | (android/app/src/main/java/com/hermesvox/ErPresence.kt:318 `er-presence line=`) |
@@ -1094,7 +1094,7 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   groups the owner has granted, and every group starts Off; Tier 0 actions may be Allow, Tier 1
   stops at Ask, and Tier 2 is refused with `approval-required` and stays on the gateway's approval
   surface. A call naming an action whose group is Off is refused with `not_granted` and the action
-  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:397 `PhoneTiers.APPROVAL ->`)
+  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:404 `PhoneTiers.APPROVAL ->`)
   (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:174 `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by

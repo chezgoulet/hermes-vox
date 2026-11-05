@@ -175,6 +175,19 @@ class PhoneSurfaceTest {
         assertEquals("no caveat is needed when the phone can see", false, r.toMap().containsKey("note"))
     }
 
+    @Test fun now_playing_with_the_listener_granted_does_not_claim_the_access_is_missing() {
+        fake.playback = PhoneEngine.PhonePlatform.Playback(
+            known = false, playing = false, packageName = null, title = null,
+            listenerGranted = true,
+        )
+        val r = call(mapOf("action" to "now_playing"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(false, r.facts["known"])
+        val note = r.facts["note"] as String
+        assertTrue("it says the phone can see sessions", note.contains("can see media sessions"))
+        assertFalse("and does not pretend the grant is absent", note.contains("does not hold"))
+    }
+
     @Test fun the_media_group_is_refused_when_off_and_asked_when_ask() {
         val off = call(mapOf("action" to "play"), PhoneGrants.ALL_OFF)
         assertFalse(off.ok)

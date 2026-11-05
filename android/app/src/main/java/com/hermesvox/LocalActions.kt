@@ -45,9 +45,9 @@ import java.util.concurrent.TimeUnit
  * | volume | `AudioManager.setStreamVolume` / `adjustStreamVolume` (media stream) | **`MODIFY_AUDIO_SETTINGS`**, a normal permission declared in the manifest and granted at install; it is what the stream calls rely on. Some devices refuse a stream change while Do Not Disturb owns the stream; that is reported as a failure, not swallowed. The level is read back, so the result is the level in effect. |
  * | note | SharedPreferences, JSON list | **none.** A note is Tier 1: it is kept, reported to the mind on the next turn, and undoable. |
  * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
- * | now playing | `AudioManager.isMusicActive` | **none** for "is audio playing". A package and a title come from `MediaSessionManager.getActiveSessions`, a notification-listener special access this app does not hold, so the result is `known:false` with a sentence saying so. It never invents a title. |
+ * | now playing | `AudioManager.isMusicActive`; `MediaSessionManager.getActiveSessions` with the listener | **none** for "is audio playing". A package and a title come from the active media session, which needs **notification-listener special access** — a grant the owner gives on Android's own screen, offered in the sheet. With it the result is `known:true` and the session's own package/title; without it `known:false` and a sentence saying so. It never invents a title. |
  * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
- * | clipboard | `ClipboardManager.setPrimaryClip` | **none**, but Android only lets an app the owner can see write to the clipboard, and on 10+ a background write is dropped silently. `clip` therefore asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen. **The app never reads the clipboard.** |
+ * | clipboard | `ClipboardManager.setPrimaryClip` / `getPrimaryClip` | **none**, but Android decides what is readable: on 10+ an app that is not in front gets no clipboard at all, and a write from a backgrounded app is dropped silently. `clip` asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen; `clip_read` asks for the clip and reports the platform's own refusal — backgrounded, or an empty clip — rather than returning stale or empty text as though it were the clipboard. |
  *
  * Tier 0 only for the grammar path: reversible, private, nothing outward-facing. No message, no call,
  * no purchase, no app launch.
@@ -416,24 +416,12 @@ class LocalActions(context: Context) {
         }
 
         /**
-         * `isMusicActive` is the one thing the phone will say about playback without special
-         * access, so it is the only thing reported. A package and a title come from
-         * `MediaSessionManager.getActiveSessions`, which needs notification-listener access this
-         * app deliberately does not hold; `known` is therefore always false here, and the result
-         * says the phone cannot see what is playing rather than inventing a title.
+         * What the phone will say about playback. `isMusicActive` needs no access; the package
+         * and title are the active session's own metadata, read only while the owner's
+         * notification-listener grant is held ([MediaListen]). Without the grant the result is
+         * `known:false` — the platform's boundary, reported rather than worked around.
          */
-        override fun playback(): PhoneEngine.PhonePlatform.Playback = try {
-            val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            PhoneEngine.PhonePlatform.Playback(
-                known = false,
-                playing = am?.isMusicActive,
-                packageName = null,
-                title = null,
-            )
-        } catch (t: Throwable) {
-            VoxLog.d("event=local-action playback-unreadable reason=${t.javaClass.simpleName}")
-            PhoneEngine.PhonePlatform.Playback(false, null, null, null)
-        }
+        override fun playback(): PhoneEngine.PhonePlatform.Playback = MediaListen.playback(app)
 
         /**
          * One read of the phone's state, each field answered or `null`. Nothing here needs a

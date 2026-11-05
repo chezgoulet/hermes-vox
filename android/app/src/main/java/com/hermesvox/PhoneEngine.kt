@@ -60,6 +60,12 @@ class PhoneEngine(
             val playing: Boolean?,
             val packageName: String?,
             val title: String?,
+            /**
+             * True when the phone has granted this app the session list (notification-listener
+             * access), whether or not a session is publishing right now. It separates "the phone
+             * cannot see" from "the phone can see, and nothing is publishing".
+             */
+            val listenerGranted: Boolean = false,
         )
 
         /**
@@ -502,15 +508,14 @@ class PhoneEngine(
     }
 
     /**
-     * What the phone will say about playback. Without notification-listener access it will not name
-     * the session, so this returns `known:false` with the cheap `playing` reading and a sentence
-     * saying so — never a guessed title.
+     * What the phone will say about playback. The listener's grant separates the two honest
+     * answers: without it the session is invisible and only `isMusicActive` is available; with it
+     * the package and title are the platform's own, and an empty session list is said plainly —
+     * never a guessed title.
      */
     private fun nowPlaying(): PhoneResult {
         val p = platform.playback()
         if (p.known) {
-            // Reachable only when a platform (a later lane holding session access) really can name
-            // it; the shape is here so that lane does not have to invent a second one.
             log("event=phone-mcp action=now_playing ok=true known=true")
             return PhoneResult.info(
                 "now_playing",
@@ -522,7 +527,7 @@ class PhoneEngine(
                 ),
             )
         }
-        log("event=phone-mcp action=now_playing ok=true known=false")
+        log("event=phone-mcp action=now_playing ok=true known=false listen=${p.listenerGranted}")
         return PhoneResult.info(
             "now_playing",
             linkedMapOf<String, Any?>(
@@ -530,12 +535,22 @@ class PhoneEngine(
                 "playing" to p.playing,
                 "package" to null,
                 "title" to null,
-                "note" to when (p.playing) {
-                    true -> "audio is playing, but the phone cannot see which app it is or what it " +
-                        "is: that needs notification-listener access, which this app does not hold"
-                    false -> "no audio is playing right now, and the phone cannot see what was " +
-                        "last: that needs notification-listener access, which this app does not hold"
-                    null -> "the phone cannot see what is playing: that needs notification-listener " +
+                "note" to when {
+                    // The access is held; no app is publishing a session this reading can name.
+                    p.listenerGranted ->
+                        if (p.playing == true) {
+                            "audio is playing, but no app is publishing a media session the " +
+                                "phone can name"
+                        } else {
+                            "the phone can see media sessions, and none is publishing one right now"
+                        }
+                    p.playing == true -> "audio is playing, but the phone cannot see which app it " +
+                        "is or what it is: that needs notification-listener access, which this " +
+                        "app does not hold"
+                    p.playing == false -> "no audio is playing right now, and the phone cannot see " +
+                        "what was last: that needs notification-listener access, which this app " +
+                        "does not hold"
+                    else -> "the phone cannot see what is playing: that needs notification-listener " +
                         "access, which this app does not hold"
                 },
             ),

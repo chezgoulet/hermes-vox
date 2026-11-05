@@ -47,9 +47,10 @@ import androidx.core.content.ContextCompat
  * config block still exists — behind a disclosure, labelled fallback, never the default path — for
  * an owner whose agent cannot edit its own configuration.
  *
- * **Permissions are shown, not assumed.** Do Not Disturb is a special access, so the sheet shows
- * whether it is granted and opens the right system screen; an action that needs it still refuses in
- * [PhoneEngine] with `reason:"permission"`.
+ * **Permissions are shown, not assumed.** Do Not Disturb and notification access are special
+ * accesses, so the sheet shows whether each is granted and opens the right system screen; an action
+ * that needs one still refuses honestly in [PhoneEngine] — Do Not Disturb with `reason:"permission"`,
+ * `now_playing` with `known:false` and the platform's own limit.
  *
  * **The sheet is one column, and it scrolls to its end.** The capability groups, Recent actions and
  * Set up are all in it; the column is exactly as tall as what it holds and the viewport is what the
@@ -260,6 +261,19 @@ class PhoneToolsSheet(
                 description = "Open the system screen where you grant Do Not Disturb access",
             ) {
                 openDndSettings()
+            }
+        }
+        row(col, "Now playing access", PhoneToolsView.nowPlaying(status.mediaListenerGranted))
+        if (states["media"] != null && states["media"] != PhoneGrants.State.OFF &&
+            !status.mediaListenerGranted
+        ) {
+            action(
+                col,
+                "LET VOX SEE WHAT IS PLAYING",
+                primary = false,
+                description = "Open the system screen where you grant notification access",
+            ) {
+                openListenerSettings()
             }
         }
         row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
@@ -497,6 +511,12 @@ class PhoneToolsSheet(
                         "files" -> if (
                             state != PhoneGrants.State.OFF && PhoneFileAccess.trees(act).isEmpty()
                         ) pickFolder()
+                        // The media group's one special access: without it now_playing can only
+                        // say whether audio is playing, so turning the group on is the moment the
+                        // system screen is offered — the same shape as Calendar and Files.
+                        "media" -> if (
+                            state != PhoneGrants.State.OFF && !MediaListen.granted(act)
+                        ) openListenerSettings()
                     }
                     paint()
                 }
@@ -610,6 +630,15 @@ class PhoneToolsSheet(
     private fun openDndSettings() {
         try {
             act.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+        } catch (_: Throwable) {
+            Toast.makeText(act, "Android does not expose that screen on this device", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** The notification-access screen, where the owner grants what `now_playing` needs. */
+    private fun openListenerSettings() {
+        try {
+            act.startActivity(MediaListen.settingsIntent())
         } catch (_: Throwable) {
             Toast.makeText(act, "Android does not expose that screen on this device", Toast.LENGTH_LONG).show()
         }

@@ -84,9 +84,10 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `play` | media | — | `dispatched` | **no.** This is the row to read twice: "play after pause" is not an undo, and the phone does not pretend it is. It cannot even see whether playback changed | `AudioManager.dispatchMediaKeyEvent` with `KEYCODE_MEDIA_PLAY`. **No permission, no notification-listener access.** The key goes to whichever session the platform considers active | `unavailable` |
 | `pause` | media | — | `dispatched` | **no** — the same reasoning as `play` | the same call with `KEYCODE_MEDIA_PAUSE` | `unavailable` |
 | `skip` | media | `direction` `next` (default) or `previous` | `direction`, `dispatched` | **no** — there is no "unskip" the phone can perform | the same call with `KEYCODE_MEDIA_NEXT` / `KEYCODE_MEDIA_PREVIOUS` | `invalid-arguments`, `unavailable` |
-| `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | **nothing beyond the ordinary APIs.** `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which is a notification-listener special access this app does **not** hold, so they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
+| `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which needs **notification-listener special access**; the sheet offers that grant and opens Android's screen. With it they are the session's own values and `known` is `true`; without it they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
 | `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
 | `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
+| `clip_read` | clipboard | — | `text`, `chars` | **no** — reading changes nothing | `ClipboardManager.getPrimaryClip`. **No permission**, but **the platform decides**: since Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer. Both are `unavailable` with the platform's own reason; the phone never returns empty text as though it were the clipboard | `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
 
@@ -96,23 +97,35 @@ and `status` only reports. They are therefore always advertised, even with every
 ### Media, precisely
 
 `play`, `pause` and `skip` **dispatch a platform media key** and nothing else. They act on
-whatever session Android considers active; the phone does not choose a player, does not start one,
-and does not hold a notification listener. The result's `dispatched` is exactly that: the audio
-service accepted the key event. It is **not** a claim that a track started, a track stopped, or a
-track changed — the phone cannot see playback state without a listener, and it does not invent one.
+whatever session Android considers active; the phone does not choose a player and does not start
+one. The result's `dispatched` is exactly that: the audio service accepted the key event. It is
+**not** a claim that a track started, a track stopped, or a track changed.
 
-`now_playing` is deliberately honest about the same limit:
+`now_playing` asks the phone, and reports what the phone will say:
+
+```json
+{"ok":true,"action":"now_playing","tier":0,"known":true,"playing":true,
+ "package":"com.example.player","title":"A Track"}
+```
+
+- **With notification-listener access**, the active session's own package and title are returned,
+  and `known` is `true`. The sheet shows whether that access is held and offers **Let Vox see what
+  is playing**, which opens Android's notification-access screen — the same shape as the Do Not
+  Disturb row. Turning the Media group on offers it too.
+- **Without it**, the platform will not name the session, so the result is the honest refusal below:
+  `known:false`, `package` and `title` `null`, with a sentence saying what the phone cannot see.
+  There is no prompt hidden behind a tool call; the grant is the owner's to give in the sheet.
 
 ```json
 {"ok":true,"action":"now_playing","tier":0,"known":false,"playing":true,"package":null,
- "title":null,"note":"the phone can see that audio is playing, but not which app or what it is: that needs notification-listener access, which this app does not hold"}
+ "title":null,"note":"audio is playing, but the phone cannot see which app it is or what it is: that needs notification-listener access, which this app does not hold"}
 ```
 
-- `known:true` (with a package and a title) is only ever returned when the platform will say, which
-  today it will not; the field exists so a later lane can fill it without changing the shape.
 - `playing` is `isMusicActive` — a boolean the phone is allowed to read, and `null` when even that
   cannot be read.
-- `package` and `title` are `null` when `known` is `false`. **The phone never invents a title.**
+- `package` and `title` are `null` when `known` is `false`. **The phone never invents a title.** When
+  the access is granted but no app is publishing a session, the note says *that* rather than
+  blaming a missing grant.
 
 `skip`'s `direction` defaults to `next` when omitted; any other value is `invalid-arguments`. It
 shares the `direction` property with `volume`, so the schema lists `up`, `down`, `next` and

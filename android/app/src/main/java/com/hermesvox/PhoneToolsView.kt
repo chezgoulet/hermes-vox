@@ -44,6 +44,11 @@ object PhoneToolsView {
         if (granted) "Granted — the phone may change Do Not Disturb"
         else "Not granted — only you can give this in system settings"
 
+    /** The notification-listener grant `now_playing` uses to name the app and the track. */
+    fun nowPlaying(granted: Boolean): String =
+        if (granted) "Granted — now_playing names the app and the track"
+        else "Not granted — now_playing reports only whether audio is playing"
+
     /** The folder the system picker gave, or the plain fact that none has been given. */
     fun files(folders: List<String>): String = when {
         folders.isEmpty() ->
