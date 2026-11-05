@@ -1,5 +1,7 @@
 # BRIEF — 0.4.0.3: make barge-in cut through loud TTS reliably. YOU are the diagnostician.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Your mission
 The user talks over the app's own speech during long replies; roughly half the time
 nothing fires. A previous engineer has theories (listed at the bottom as HINTS ONLY —

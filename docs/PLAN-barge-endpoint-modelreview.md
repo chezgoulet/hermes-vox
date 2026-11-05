@@ -1,5 +1,7 @@
 # PLAN — Barge-in single-capture fix + VAD-extended endpointing + model-switch review
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Evidence (2026-09-05 field log, Pixel 9, 14 turns)
 - Every playback watch arms `aec=false`: `startBargeInWatch` (VoiceController.kt:771-784) attaches
   `AcousticEchoCanceler.create(ecSession)` where `ecSession = (tts as? SherpaTts)?.playbackSession` —

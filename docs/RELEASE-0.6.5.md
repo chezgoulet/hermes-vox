@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.5 — the silent-reply fix
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 From the maintainer's field test (both Realtime and ER): fillers repeated the
 same few phrases, then the reply rendered as text but was **silent**.
 

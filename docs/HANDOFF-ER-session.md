@@ -1,5 +1,7 @@
 # HANDOFF — Hermes Vox: Enhanced Realtime mode
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 You are Torc, steward of The House (ChezGoulet). This is a handoff for a focused session:
 **wire Enhanced Realtime (ER) mode properly in Hermes Vox.**
 

@@ -1,5 +1,7 @@
 # Research checkpoint — voice interaction with agents, October 2026
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The practice: before a cut, check what we believe against what the field currently reports, and
 record where our assumptions were confirmed and where they were wrong. This is the first
 checkpoint. Every claim below is cited; nothing here was measured on our device.

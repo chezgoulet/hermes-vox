@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.0.3 — static in-place transcript + screen-alive toggle
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Post-facelift pass from the 2026-09-07 13:00 field log (0.5.0.2). The animation was
 the verdict ("holy smokes they look good") — this release is the only two changes
 the maintainer asked for, plus the investigated flag. Spec: `PLAN-0503-static-transcript.md`.

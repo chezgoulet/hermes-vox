@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.0.1 — crash guard
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Field log 2026-09-07 (0.5.0 multi-turn test) surfaced a real app crash, separate from the
 upstream agentic-turn issue. `java.util.concurrent.RejectedExecutionException` at
 `VoiceController.runStreamedTurn` — a turn-start submitted to the executor *after* the

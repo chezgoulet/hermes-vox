@@ -1,5 +1,7 @@
 # SPEC — Voice-call echo routing toggle + barge tuning UI (0.3.32.1)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Why
 B1 added `tts_voice_usage` (SherpaTts.kt:40-46, default true) — it routes TTS playback
 as USAGE_VOICE_COMMUNICATION. On Pixel 9 this dropped output to the incall-volume bus

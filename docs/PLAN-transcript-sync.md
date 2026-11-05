@@ -1,5 +1,7 @@
 # SPEC — Speech-locked transcript (0.5.0-preview A)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Symptom (maintainer, 2026-09-07)
 "The text that appears as the agent is speaking disappears faster than the agent
 can say it. I wish it was synced."

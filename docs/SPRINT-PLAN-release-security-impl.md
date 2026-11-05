@@ -1,5 +1,7 @@
 # Sprint 3 Implementation Plan — Release Signing + Security Cluster + #60 (prepared from `docs/SPRINT-PLAN-release-security.md`)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Target artifact: `docs/SPRINT-PLAN-release-security-impl.md`
 
 ## WORKSTREAM A — Release signing (keystore + shrink)

@@ -1,5 +1,7 @@
 # SPEC — 0.4.0.1: barge near-miss telemetry + log-honesty fixes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Field evidence (2026-09-06 20:03 log, 0.4.0)
 Silence 3-9ms, retirement clean, focus/route symmetric, provenance + session_turns
 working. NEW DEFECT: barge-in goes DEAF during long playback tails — turns 1/2/4/6

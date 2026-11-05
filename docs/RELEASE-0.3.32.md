@@ -1,5 +1,7 @@
 # Hermes Vox 0.3.32.0 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## New capabilities
 - **Single-capture barge-in** (B1): the capture path no longer stops and re-opens a
   second recorder to watch for interruptions. One `AudioRecord` keeps running the

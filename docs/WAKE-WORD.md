@@ -1,5 +1,7 @@
 # Wake word — design and evidence (#45)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Status: **foundation only** (2026-10-19). The app has a wake-word engine seam with an
 inert implementation and an enrolment screen that records the owner's phrase takes,
 ~15 s of free speech and ~15 s of room sound — everything a personal verifier is

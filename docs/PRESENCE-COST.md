@@ -1,5 +1,7 @@
 # What the presence layer costs, and what each way of not paying it costs instead
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The presence layer is a Gemma 4 E2B bundle (2.5 GB on disk) that is built on every launch and, by
 shipped default, **never released while the process lives**. `docs/BUDGETS-0.9.1.md` budgets 220 MB
 of idle PSS and a 1.5 GB whole-process ceiling. This document measures what the layer actually costs

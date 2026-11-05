@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.6 — the ER tool-call crash
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 From the field log (14:22:49, gen=8 — the "go ahead and look it up" turn,
 the first real tool call of an ER call): **NoSuchMethodError
 `SendChannel.close$default` inside litertlm's own `sendMessageAsync` Flow

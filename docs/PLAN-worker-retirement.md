@@ -1,5 +1,7 @@
 # SPEC — Worker-owner reply retirement + start-stream provenance (0.3.32.3)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Field evidence (2026-09-06 12:44 log)
 - Barge silence fix PROVEN: event=tts-stop reason=barge-in msSinceBarge=377 (was up to 4000).
 - NEW BUG: long replies truncate. Turn 1 (288 ch reply): worker-break chunkIdx=2 at

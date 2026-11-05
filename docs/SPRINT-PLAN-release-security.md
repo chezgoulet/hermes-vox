@@ -1,5 +1,7 @@
 # Hermes Vox — Sprint 3 Plan Brief: Release Signing + Security Cluster + Streaming Tidy-Up
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/release-security
 **Plan + build model:** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + emulator smoke + one on-device run.

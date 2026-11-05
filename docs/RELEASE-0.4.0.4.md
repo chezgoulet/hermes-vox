@@ -1,5 +1,7 @@
 # Hermes Vox 0.4.0.4 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > The ghost-voice release. In 0.4.0.3 a hush could silence a reply and then be
 > answered, one second later, by the *entire* reply spoken again — through an
 > AudioTrack nothing in the app could stop, still talking after the call ended and

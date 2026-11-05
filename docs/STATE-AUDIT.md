@@ -1,5 +1,7 @@
 # State audit — which surface carries which state (#280)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Set 2026-10-31, read from `testing` at `6aea36d`. This is an audit and a design document: it changes
 no production behaviour. It replaces the 2026-10-21 draft of this file and keeps its one decision —
 **one line of words, not a panel** — extending it to the two configurations the draft did not test

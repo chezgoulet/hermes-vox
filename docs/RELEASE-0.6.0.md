@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.0
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The major point release that consolidates the 0.5.5→0.5.7 hardening/UX/doc arc into one
 stable line, lands the settings-UX sprint, makes the app release/Play-ready, and ships the
 app as **100% Android-native** (all legacy Ebitengine code removed).

@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.0-previewB — state-driven presence motion
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## The fix
 The being LOOPED; it did not report. Motion was chosen at the call site — `onState`
 pushed a shape string plus a made-up level (`0.6f` for "speaking"), `onLog` pushed a

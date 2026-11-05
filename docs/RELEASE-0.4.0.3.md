@@ -1,5 +1,7 @@
 # Hermes Vox 0.4.0.3 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > The reachability release. 0.4.0.2's level-only escape shipped and then never
 > fired once in a whole field session. This one proves why from the log, and
 > makes the escape a duty-cycle test at a bar the microphone can actually reach.

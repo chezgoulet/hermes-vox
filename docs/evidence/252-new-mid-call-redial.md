@@ -1,5 +1,7 @@
 # #252 — `/new` during a live call
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Outcome of the 0.9.0.2 lane: could not reproduce the reported permanent deafness. The reset
 does re-arm, but it re-dials through a network round-trip, and a capture loop that dies while
 `callLive` is true can never be re-armed. No behaviour was changed there** (see "Why no fix").

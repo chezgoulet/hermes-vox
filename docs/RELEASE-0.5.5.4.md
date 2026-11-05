@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.5.4 — the eye is a rotating sphere
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Patch on 0.5.5.3. The maintainer correctly diagnosed that the eye still slid over a flat
 plane — "an egg cracked on a table." But an eyeball is a SPHERE: when it looks, the whole
 ball rotates in 3D so the iris swings to face the target, and the sclera foreshortens

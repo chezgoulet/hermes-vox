@@ -1,5 +1,7 @@
 # Hermes Vox 0.7.0 — the naturalness release
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The first release of the new git flow (`testing` → nightly → `main`), and the
 one where Enhanced Realtime stops being a mode that's merely wired and starts
 being a mode that *sounds alive*. Everything below rode the nightly track

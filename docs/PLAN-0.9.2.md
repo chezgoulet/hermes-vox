@@ -1,5 +1,7 @@
 # Plan — 0.9.2, Presence
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 0.9.2 is where Presence stops being a mode you can find in Settings and becomes the thing the app
 is. One name, one switch that means on or off, and a conversation that behaves: it acknowledges
 while you speak, it yields when you interrupt, it resumes where it was, and it does not say a thing

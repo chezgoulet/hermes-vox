@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.1 — Enhanced Realtime, wired (alpha)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The ER (Enhanced Realtime) build: all seven runtime phases of
 `docs/BUILD-ER-enhanced-realtime.md` land in one release, phase-gated and
 Thelio-verified at every step. **ER is still alpha and labeled alpha** — the

@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.2-qwen — massively expanded visual categories + cycle-all
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 One field ask from the maintainer, 2026-09-07:
 
 > "Massively expanding the visualizations. Make sure that Qwen exposes all of the styles

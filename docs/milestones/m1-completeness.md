@@ -1,5 +1,7 @@
 # M1 Demo Note — Completeness Test (GREEN)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Date: 2026-08-25 · Host: Thelio (the build host) · Emulator-5554 (Android 15)
 
 ## What was proven

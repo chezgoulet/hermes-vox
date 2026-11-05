@@ -1,5 +1,7 @@
 # Why barge-in worked in 0.7.x and not now
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Branch `fix/barge-why-090`, on top of `fdf05c1` (the 0.9.1 barge fix that did not fix
 barge). Sources:
 - the 0.7.3 tree (`36418d9`, the release merge; there are no 0.7.x tags)

@@ -1,5 +1,7 @@
 # Hermes Vox 0.9 — device test pass
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 What to put in front of a phone before 0.9 is cut. Ordered by risk, not by feature:
 the upgrade path first, because that is the only thing every existing user will hit
 within a minute of installing.

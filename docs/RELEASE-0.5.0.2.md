@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.0.2 — the being shapes its own light
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## The animation facelift
 `AvatarView.kt` was rewritten from a parametric-curve-of-dots into an **emergent luminous
 swarm**. The maintainer's vision, verbatim: "the AI agent exists within the forms and likes

@@ -1,5 +1,7 @@
 # Emulator Agent->App Stress — 2026-08-28 (0.3.26.0, debug harness)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Bridge: emulator-5554 -> adb reverse tcp:8642 -> host gwproxy.py -> Odroid gateway <your-gateway-host>:8642 (real Hermes instance).
 Drive: debug-gated harness intent (debug-only `--es text`); text turns; `adb logcat` evidence.
 

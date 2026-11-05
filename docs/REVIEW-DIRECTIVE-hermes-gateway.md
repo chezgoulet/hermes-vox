@@ -1,5 +1,7 @@
 # DIRECTIVE — Hermes Agent (NousResearch) adversarial code review (Opus). Read-only.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 You are reviewing a COPY of the Hermes Agent codebase at ~/hermes-review
 (HEAD fdc342c0), cloned into an isolated sandbox. DO NOT modify, commit, or
 "fix" anything. DO NOT touch /home/robot/.hermes/hermes-agent (the LIVE gateway

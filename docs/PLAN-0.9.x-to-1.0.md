@@ -1,5 +1,7 @@
 # Plan — from 0.9.0 to 1.0
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > **Superseded 2026-10-21 by D21.** The 0.9.1 / 0.9.2 / 0.9.3 shape below no longer holds:
 > 0.9.1 now carries the mechanics, 0.9.2 is Presence, and everything else belongs to 1.0. The sprint
 > detail is kept because the ordering argument and the measurements still stand. What is actually

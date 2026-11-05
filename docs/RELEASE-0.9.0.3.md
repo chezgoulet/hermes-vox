@@ -1,5 +1,7 @@
 # Hermes Vox 0.9.0.3
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Released:** 2026-10-31
 **versionCode:** 146
 **Type:** patch release — one defect, reported from a phone. No action required from users.

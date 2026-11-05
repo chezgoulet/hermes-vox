@@ -1,5 +1,7 @@
 # Demo Note — In-App Model Downloader + Blessed Defaults (GREEN)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Date: 2026-08-25 · Emulator-5554 (Android 15) · store hosted on Thelio (`100.68.43.34:8899`)
 
 ## What shipped

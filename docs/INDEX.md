@@ -153,3 +153,6 @@ Not documents; listed so the tree is accounted for.
   `being-off-light.{png,svg}`, `carrier-map.{png,svg}`, `light-mode-contrast.{png,svg}`,
   `pocketed-sound-off.{png,svg}`. Historical: drawn for `STATE-AUDIT.md` at its 2026-10-31
   commit.
+- **`docs/REFERENCE-retirement-original.diff`** — historical artifact: the original retirement
+  patch, kept verbatim. It is not bannered because a banner would corrupt the diff; treat it as a
+  record of the moment, not as current code.

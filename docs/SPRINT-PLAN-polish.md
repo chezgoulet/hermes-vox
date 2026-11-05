@@ -1,5 +1,7 @@
 # Hermes Vox — Sprint 6: Polish / UX Sprint (before Enhanced Realtime)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Repo:** chezgoulet/hermes-vox · **Branch:** feature/polish
 **Model:** `deepseek/deepseek-v4-flash-vision-exp` · **Owner/approver:** Torc
 **Theme:** Make everything more intuitive. Post-hardening polish — the phone-call flow + foundation are solid (0.3.26–0.3.29); this sprint is UX/UI clarity + making actions actually work.

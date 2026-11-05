@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.7 — 100% Android-native (Ebitengine fully removed)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The release that strips all remaining Ebitengine code. Hermes Vox is now
 Android-native rendering (Kotlin Canvas particle-being) + a thin Go voice core,
 with **zero Ebitengine**.

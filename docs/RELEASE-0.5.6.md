@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.6 — settings-ux, P0 wave 1 (voice mode, reset scopes, bootstrapping)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Release of the first wave of the settings-UX sprint (issues #111-#114 + bootstrapping #6,
 #12, #16). Two non-colliding sub-agents (Settings vs Models/Main), KEEP-list clean, gated
 green on a fresh clone (UX-GATE-EXIT=0).

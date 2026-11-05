@@ -1,5 +1,7 @@
 # BUILD-DIRECTIVE: video-routing (Part 1) — widen the shape vocabulary
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 REPO (sandbox): `~/vox-video`  — branch `video-routing-spec`, HEAD `fc23d7f`.
 Read the design docs FIRST: `docs/CLAUDE-BRIEF-routing.md` (the 4 edits) + cross-check
 `docs/design-menu-shapes.md` (the vocab + locked decisions).

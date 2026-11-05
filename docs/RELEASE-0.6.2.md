@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.2 — ER hotfix pass + the honest self-review
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The fix pass for everything the 0.6.1 self-review flagged, plus the ER
 controls surfaced to Settings. Still alpha; still honest.
 

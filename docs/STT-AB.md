@@ -1,5 +1,7 @@
 # Streaming STT A/B — measured on a Pixel 7
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Decision D5 says streaming STT is chosen by measurement, not by reputation. This
 is that measurement: four sherpa-onnx streaming arms, run on the phone through the
 runtime the app ships, in real time, in three noise conditions plus accented

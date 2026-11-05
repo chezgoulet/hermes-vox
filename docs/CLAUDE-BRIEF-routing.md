@@ -1,5 +1,7 @@
 # Visual Routing Fix — spec for the next 0.5 point release
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Problem (from field screenshots):** the at-rest being and the "thinking" fallback
 both resolve to a narrow set of round/diffuse shapes (A_ORB cloud + the A_GYRE
 spiral), so the 13 designed archetypes mostly never reach the screen. The being reads

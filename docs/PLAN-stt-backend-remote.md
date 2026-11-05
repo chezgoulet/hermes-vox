@@ -1,5 +1,7 @@
 # PLAN — remote STT backend (VoxStt over an OpenAI-compatible endpoint)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Goal
 Add a **`remote` STT backend** to the existing `VoxStt` seam: any OpenAI-style
 `POST {base}/audio/transcriptions` server (lemonade, whisper.cpp server, faster-whisper

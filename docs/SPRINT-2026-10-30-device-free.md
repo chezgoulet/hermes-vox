@@ -1,5 +1,7 @@
 # Sprint specification — the device-free half of 0.9.1
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Status:** filed 2026-10-30 · **not dispatched**
 **Owner:** Christopher · **Executor:** `opencode2` sessions on sasquatch
 

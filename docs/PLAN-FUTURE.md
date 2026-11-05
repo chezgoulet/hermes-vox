@@ -1,5 +1,7 @@
 # Plan — unnumbered work: what is on the table
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Nothing on this page is scheduled. It is the honest list of ideas good enough to keep, kept so they
 survive the gap between "we thought of it" and "the community asked for it" (#268). Anything here can
 be taken up early; anything here can be dropped without breaking a release.

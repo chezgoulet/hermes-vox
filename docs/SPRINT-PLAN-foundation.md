@@ -1,5 +1,7 @@
 # Hermes Vox — Sprint 5 Plan Brief: Polished Foundation (before Enhanced Realtime)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/foundation
 **Plan + build model:** `deepseek/deepseek-v4-flash-vision-exp` · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + unit tests + emulator smoke; on-device for audio paths.

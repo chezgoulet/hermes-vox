@@ -1,5 +1,7 @@
 # Hermes Vox 0.8.1 — "the headset release"
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Version code **142** · `versionName` 0.8.1 · cut from `main` on 2026-10-19.
 
 A point release: one behavioural fix, one correction to the front door, and two

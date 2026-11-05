@@ -1,5 +1,7 @@
 # Hermes Vox — Handoff to the Next Agent
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Repo:** `chezgoulet/hermes-vox` (public) · **Host:** Thelio `the build host` · **App dir:** `<repo>/android` · **APK:** release build, versioned `hermes-vox-<version>.apk`
 **Latest release:** `0.3.7` (Latest). **Working head:** `07607af` (un-released 0.3.7+n). **Target:** 0.4.0 (see Gates).
 

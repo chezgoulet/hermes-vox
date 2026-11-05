@@ -1,5 +1,7 @@
 # Barge-in regression analysis — 0.8.1 (Go core) vs 0.9.0 (Kotlin core)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Branch `fix/barge-090`. Inputs: the 0.8.1 tree (`origin/main`, release commit
 `9058fa8`), the 0.9.0 tree (`origin/testing`, `a41636b`), and a 0.9.0 Pixel 7 field
 logcat (2026-10-20, 00:14–00:23). The field report: *"it truncates what I say and it

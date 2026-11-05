@@ -1,5 +1,7 @@
 # Presence bench — Qwen 3.5 0.8B and the lighter candidates on a Pixel 7
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 D4 (`docs/DECISIONS.md`) makes `Qwen3.5-0.8B_int8.litertlm` the default presence model, on the
 runtime we already ship, and commits to measuring load time and resident memory on the Pixel
 before calling it done. This is that measurement, plus SmolLM2 360M and the current Gemma 4 E2B,

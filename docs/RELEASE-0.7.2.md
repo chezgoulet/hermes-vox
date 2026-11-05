@@ -1,5 +1,7 @@
 # Hermes Vox 0.7.2 — true black
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The aura fix. A faint rectangular "canvas" had been visible around the being on
 accurate displays since long before 0.7.0 — it took a camera photo of the
 physical panel, a colour-profile A/B, and a glow-slider test to corner it.

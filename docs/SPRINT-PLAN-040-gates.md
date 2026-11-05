@@ -1,5 +1,7 @@
 # Hermes Vox — Sprint 4 Plan Brief: Stability + Voice-Quality (fix the deferred items first)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/040-gates
 **Plan + build model:** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + emulator (`emulator-5554` via adb/uiautomator/screencap) BEFORE shipping, + on-device for audio paths.

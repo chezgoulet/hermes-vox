@@ -1,5 +1,7 @@
 # SPEC — C4: firstAudio truth + log rotation (0.4.0 polish, batch 5, final before release)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Why
 Two honesty defects in the observability we now steer by:
 1. **firstAudio lie**: VoiceController pushes LatencyStats.pushFirstAudio on the
