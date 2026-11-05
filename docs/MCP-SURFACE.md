@@ -121,7 +121,7 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `skip` | media | `direction` `next` (default) or `previous` | `direction`, `dispatched` | **no** — there is no "unskip" the phone can perform | the same call with `KEYCODE_MEDIA_NEXT` / `KEYCODE_MEDIA_PREVIOUS` | `invalid-arguments`, `unavailable` |
 | `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which needs **notification-listener special access**; the sheet offers that grant and opens Android's screen. With it they are the session's own values and `known` is `true`; without it they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
 | `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
-| `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
+| `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission, and no focus**: Android restricts clipboard *reads*, not writes, so a background or picture-in-picture call writes like any other. The platform may still refuse (a device policy or an app-op), and that refusal is `unavailable` with the platform's own reason | `unavailable` |
 | `clip_read` | clipboard | — | `text`, `chars` | **no** — reading changes nothing | `ClipboardManager.getPrimaryClip`. **No permission**, but **the platform decides**: since Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer. Both are `unavailable` with the platform's own reason; the phone never returns empty text as though it were the clipboard | `unavailable` |
 | `notifications` | notifications | — | `sensitive: true`, `count`, `apps` — each `app`, `count`, `latest_at` (epoch millis), and opaque `ids` | **no** — reading changes nothing | **Notification-listener special access**, shared with `now_playing`; the system grant is global, but the app's **use** of it is call-scoped: the board attaches when a call starts, detaches when it ends, and drops every record and id. **Vox's own notifications are excluded** (an app reading itself through the listener is a loop). Many notifications → many app rows, but **no title and no text** | `unavailable` (no live call), `permission` (listener access not granted) |
 | `notification_read` | notifications | `id` — one of the ids a `notifications` summary returned | `sensitive: true`, `app`, `posted_at` (epoch millis), `title`, `text` | **no** — reading changes nothing | The same call-scoped listener. This is the deliberate **second step**: one notification, named by an id a summary already showed, never a browse or a vacuum. An id that arrived after the summary is `unknown-id` until a fresh summary shows it | `unavailable`, `permission`, `unknown-id` |
@@ -196,14 +196,22 @@ shares the `direction` property with `volume`, so the schema lists `up`, `down`,
 `state` is read-only and changes nothing. It reads no file, lists nothing, and reports no serial
 number, IMEI, phone number or account.
 
-### The clipboard: a write, and a read only when Android allows it
+### The clipboard: a write anywhere, a read only while focused
 
-`clip` puts `text` on the clipboard and reports only its length (`chars`).
+Android 10 restricts clipboard **reads**, not writes: only the focused app (or the default IME) may
+read a clip, while `setPrimaryClip` is permitted from the background. The two actions follow that
+asymmetry instead of guarding both.
+
+`clip` puts `text` on the clipboard and reports only its length (`chars`). It writes wherever the
+call is — foreground, background, or picture-in-picture (where the activity is paused but the call
+is live) — and the write is attempted rather than predicted. If the platform refuses it, the result
+is `ok:false, reason:"unavailable"` with the platform's own reason.
 
 `clip_read` returns the clipboard's `text` and `chars` — when the platform allows the read. The
-boundary is Android's, not ours: since Android 10 an app that is not in the foreground cannot read
-the clipboard, and an empty clipboard is no answer either. Both cases are
-`ok:false, reason:"unavailable"` with the platform's own explanation; the tool never returns stale
+boundary is Android's, not ours: an app that is not focused cannot read the clipboard, and an empty
+clipboard is no answer either. Both cases are `ok:false, reason:"unavailable"`; when the platform
+returned no clip while Vox was not focused, the sentence names the lack of focus as the **likely**
+cause rather than claiming to know why the platform answered nothing. The tool never returns stale
 or empty content dressed up as what the clipboard holds. The owner granted the `clipboard` group, so
 the read is offered with the write, and the OS decides whether this call may use it.
 
@@ -617,11 +625,13 @@ summarising function is the place a future action has to pass through.
    `chars` only, Recent actions shows `text=NN chars`, and the clipboard's previous contents are not
    anywhere in the app. A following `clip_read` in the foreground returns that same text and its
    `chars`.
-9. **`clip` and `clip_read` from a backgrounded phone** (a call that lost focus). `clip` is
-   `ok:false, reason:"unavailable"`, and nothing was written. `clip_read` is `ok:false,
-   reason:"unavailable"` with Android's own explanation that a foreground app is required — and no
-   `text` field, so no empty or stale clip is mistaken for the clipboard. With the clipboard empty
-   in the foreground, `clip_read` also refuses, saying the clipboard is empty.
+9. **`clip` and `clip_read` from a backgrounded phone or from picture-in-picture** (a call whose
+   activity is paused). `clip` is `ok:true` with `chars`, and the text is on the clipboard: Android
+   permits a write without focus. `clip_read` is `ok:false, reason:"unavailable"` with the
+   platform's answer, and the sentence names the lack of focus as the **likely** cause rather than
+   claiming to know why the platform returned nothing. There is no `text` field, so no empty or
+   stale clip is mistaken for the clipboard. With the clipboard empty in the foreground, `clip_read`
+   also refuses, saying the clipboard is empty.
 10. **Files with no folder granted.** The sheet says *No folder granted*; `file_list`, `file_read`
     and `file_offer` are `ok:false, reason:"no_folder"` and say to pick a folder in Phone tools →
     Files. Turning Files on opens the system folder picker, and after picking, the sheet names the

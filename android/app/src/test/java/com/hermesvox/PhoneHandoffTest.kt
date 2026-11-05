@@ -108,7 +108,8 @@ class PhoneHandoffTest {
             network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
             dnd = null, timeZoneId = null, utcOffsetMinutes = null,
         )
-        override fun clip(text: String) = true
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite =
+            PhoneEngine.PhonePlatform.ClipWrite.Done
     }
 
     /** A PiP host that records `pip` and holds the posted start until the test runs it. */
