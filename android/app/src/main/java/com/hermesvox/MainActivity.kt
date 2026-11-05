@@ -939,7 +939,7 @@ open class MainActivity : AppCompatActivity() {
                     // No call: no actions, and auto-enter explicitly off.
                     PipWindow.params(
                         this,
-                        Pip.Params(Pip.ASPECT_NUMERATOR, Pip.ASPECT_DENOMINATOR, emptyList(), Pip.DESCRIPTION),
+                        Pip.Params(Pip.ASPECT_NUMERATOR, Pip.ASPECT_DENOMINATOR, emptyList()),
                         emptyMap(),
                         autoEnter = false,
                     )

@@ -39,8 +39,6 @@ object Pip {
     const val ASPECT_NUMERATOR = 1
     const val ASPECT_DENOMINATOR = 1
 
-    /** Only the window's own chrome is drawn by the system; this is its accessibility label. */
-    const val DESCRIPTION = "Hermes Vox call"
 
     /**
      * A control the system draws in the PiP window's menu. [id] is the action token the
@@ -53,12 +51,15 @@ object Pip {
         UNMUTE("unmute", "Unmute"),
     }
 
-    /** The immutable description of one compact window. */
+    /**
+     * The immutable description of one compact window. Deliberately no title and no
+     * caption: the system draws the window chrome, and the only words a person sees are
+     * the [Action] labels in its menu.
+     */
     data class Params(
         val aspectNumerator: Int,
         val aspectDenominator: Int,
         val actions: List<Action>,
-        val description: String,
     )
 
     /**
@@ -78,7 +79,7 @@ object Pip {
             add(Action.STOP)
             if (canMute) add(if (muted) Action.UNMUTE else Action.MUTE)
         }
-        return Params(ASPECT_NUMERATOR, ASPECT_DENOMINATOR, actions, DESCRIPTION)
+        return Params(ASPECT_NUMERATOR, ASPECT_DENOMINATOR, actions)
     }
 
     /** May this window float at all? Both halves are required; neither alone is enough. */
