@@ -132,6 +132,19 @@ class DiagnosticSummaryTest {
         assertNull(DiagnosticSummary.commandFor("/diagnostics", s))
     }
 
+    /**
+     * And the wiring is where the rule lives: the Alpha master switch's own listener turns the
+     * command on (`if (on)`), which is what makes it one-way — off writes nothing here.
+     */
+    @Test fun opting_into_alpha_is_the_only_alpha_write() {
+        val activity = File("src/main/java/com/hermesvox/SettingsActivity.kt").readText()
+        assertTrue(activity.contains("if (on) DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs))"))
+        // one call site for the alpha rule, and it is inside the alpha switch's listener
+        assertEquals(1, Regex("DiagnosticSummary\\.alphaTurnedOn\\(").findAll(activity).count())
+        val inAlpha = activity.substringAfter("private fun bindAlpha()").substringBefore("private fun alphaPanel()")
+        assertTrue(inAlpha.contains("DiagnosticSummary.alphaTurnedOn("))
+    }
+
     /** The mirror case: turning it on by hand also outranks Alpha, so Alpha-off cannot be
      *  mistaken for a reason to hide it. */
     @Test fun a_hand_set_on_is_left_alone() {

@@ -177,6 +177,10 @@ class SettingsActivity : AppCompatActivity() {
         sw.isChecked = AlphaGate.masterOn(AlphaGate.reader(prefs))
         sw.setOnCheckedChangeListener { _, on ->
             prefs.edit().putBoolean(AlphaGate.KEY_MASTER, on).apply()
+            // #418: someone who opts into alpha is a tester, and a tester should be able to
+            // hand us a bug without hunting for a switch — so the report command comes with
+            // it. One-way (off is not undone), and never over a switch set by hand.
+            if (on) DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs))
             refreshAlpha()
             if (on) alphaPanel()
         }
