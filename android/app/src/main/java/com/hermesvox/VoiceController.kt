@@ -507,9 +507,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     // hold with content, or a turn suppressed by `turnInFlight`. One slot, newest wins; it is
     // submitted when the current turn settles ([runPendingTurn]), never discarded.
     private val pendingTurn = PendingTurn()
-    // B2 (#421): the phone's own actions — timer, alarm, do-not-disturb, volume. Created on first
-    // use so a probe-only controller never touches the alarm/audio services.
+    // The phone's own actions — timer, alarm, do-not-disturb, volume, and the rest of the tool.
+    // Created on first use so a probe-only controller never touches the alarm/audio services.
     private val localActions: LocalActions by lazy { LocalActions(context) }
+    // D38: Presence's entire view of the phone. Read-only by type, so the being can report a
+    // running timer and can never set, cancel or change one.
+    private val presenceReadout: PhoneReadout by lazy { localActions }
     // B3 (#421 steps 3–4): the phone as an MCP server, up exactly while the call is. The handler is
     // the SAME LocalActions instance the presence context reports from, so the tool and the context
     // block can never disagree about what the phone is doing.
@@ -2069,49 +2072,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
-     * B2 (#421 step 2): take a recognised local action instead of a mind turn.
-     *
-     * The utterance never becomes a stream: the action runs, the caller hears one short, TRUE line,
-     * and the registry B1 reports is updated so the mind can answer follow-ups about it ("how long
-     * left?"). The turn's gate is released by [speak]'s completion, exactly like a reply's, so the
-     * mic reopens when the confirmation has finished rather than over the top of it.
-     *
-     * The receipt says `reason=local-action`: the mind did not see this turn, by design — the phone
-     * did it. `ok=false` would otherwise read as a swallowed turn in the field log.
-     */
-    private fun takeLocalAction(text: String, intent: LocalActionGrammar.Intent, gen: Long) {
-        // The turn's gate, armed here because this turn never reaches the stream body that
-        // normally arms it: the confirmation's completion releases it (as a reply's would), and
-        // the capture loop's drain is waiting on the same latch.
-        turnInFlight = true
-        voiceState.arm()
-        listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
-        val outcome = localActions.run(intent)
-        VoxLog.d("event=local-action kind=${intent.kind} ok=${outcome.ok} " +
-            "registry=\"${localActions.registry().joinToString(",")}\" " +
-            "text=${if (logTranscripts()) text.take(80) else "<hidden>"}")
-        noteHandoff(gen, false, ErHandoff.REASON_LOCAL_ACTION, "-", text.length)
-        listener?.onLog("// local: ${if (outcome.ok) "done" else "refused or failed"}")
-        main.post {
-            // The confirmation is the turn's answer: it belongs in the transcript, and it is
-            // spoken on the authoritative path so the mic does not reopen into the middle of it.
-            listener?.onReply(outcome.line)
-            turnInFlight = false   // the action is done; only its one line is still playing
-            if (shouldSpeak()) speak(outcome.line, gen)
-            else { listener?.onState("idle"); releaseTurnGate(gen, "local-action") }
-        }
-        // The presence window belongs to the mind's work; there is none here.
-        erActive = false; erMindLive = false
-        turnUtterance = null
-    }
-
-    /**
      * B1 (#421 step 1): what the phone is doing, for the voice turn's `instructions`.
      *
      * Every fact here is cheap and readable without a permission we do not have: the local clock,
      * the battery percentage, whether there is a validated network, whether Do Not Disturb is on,
-     * the presence layer's own state, and the registry of actions the phone took itself. Never
-     * transcript text — the caller's words reach the mind as `input`, once.
+     * the presence layer's own state, and the registry of actions the mind has taken through the
+     * `phone` tool. Never transcript text — the caller's words reach the mind as `input`, once.
+     *
+     * Only [PhoneReadout] is touched. Presence may look and may never act (D38): the being gets
+     * the registry and the device facts, not [LocalActions]' mutating calls.
      */
     private fun presenceContextBlock(): String {
         val now = java.util.Calendar.getInstance()
@@ -2133,7 +2102,10 @@ class VoiceController(private val context: Context, private val session: HermesS
             soul = PresenceContext.soulToken(lastHeardSource, erPresenceOn && presenceActive),
             speaking = speaking || glueSpeaking,
             lastLine = lastHeardLine,
-            actions = localActions.registry(),
+            actions = presenceReadout.registry(
+                android.os.SystemClock.elapsedRealtime(),
+                System.currentTimeMillis(),
+            ),
             clock = clock,
             battery = battery,
             online = online,
@@ -2156,12 +2128,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // A turn the caller just started by speaking is newer than anything queued: their own
         // words supersede the queued echo of an earlier ones (the pending slot is "newest wins").
         pendingTurn.clear()
-        // B2 (#421 step 2): an utterance the local grammar recognises is taken on the phone NOW,
-        // with no network round trip. Everything else falls through untouched.
-        if (fromVoice && !pasted) {
-            val local = LocalActionGrammar.parse(text)
-            if (local != null) { takeLocalAction(text, local, gen); return }
-        }
+        // D38: the phone parses nothing. Every voice turn goes to the mind, which decides what it
+        // means and whether to act through the `phone` tool — with that path's grant and card.
         val voiceTurn = fromVoice && presenceActive
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
         // runtime are user-togglable in Settings (er_semantic_barge / er_presence).

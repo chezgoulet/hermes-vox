@@ -61,9 +61,9 @@ object PhoneTool {
      */
     val ALWAYS: List<String> = PhoneGrants.ALWAYS
 
-    /** Timers are bounded exactly as the grammar bounds them: 1 s to 24 h. */
-    const val MIN_DURATION_MS = LocalActionGrammar.MIN_DURATION_MS
-    const val MAX_DURATION_MS = LocalActionGrammar.MAX_DURATION_MS
+    /** Timers are bounded: 1 s to 24 h. */
+    const val MIN_DURATION_MS = 1_000L
+    const val MAX_DURATION_MS = 24L * 60 * 60 * 1000
 
     /** A note is a sentence the caller wants kept, not a document. */
     const val MAX_NOTE_CHARS = 500
