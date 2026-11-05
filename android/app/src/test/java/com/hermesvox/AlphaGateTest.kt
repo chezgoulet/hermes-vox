@@ -2,6 +2,7 @@ package com.hermesvox
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -59,8 +60,9 @@ class AlphaGateTest {
     }
 
     @Test fun master_on_and_one_set_selected_enables_exactly_that_set() {
-        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, L.key to true))
-        assertTrue(AlphaGate.allows(s, L))
+        val phone = AlphaGate.FeatureSet.PHONE_TOOLS
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, phone.key to true))
+        assertTrue(AlphaGate.allows(s, phone))
         assertFalse(AlphaGate.allows(s, P))
         assertEquals(1, AlphaGate.selectedCount(s))
     }
@@ -168,11 +170,16 @@ class AlphaGateTest {
         assertFalse(AlphaGate.masterOn(s))
     }
 
-    @Test fun an_upgrade_with_continuous_capture_on_keeps_continuous_listening() {
+    @Test fun an_upgrade_with_continuous_capture_on_keeps_the_choice_but_it_is_inert_without_presence() {
         val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to false, ContinuousCapture.KEY to true))
         AlphaGate.migrate(s, presenceModelInstalled = false)
-        assertTrue(AlphaGate.allows(s, L))
+        // The tester's pick survives, but the dependency refuses it: an earlier build cannot
+        // leave continuous listening running with no being to hear for.
+        assertTrue("the stored selection is kept", AlphaGate.selected(s, L))
+        assertFalse("and is inert until Presence is selected", AlphaGate.allows(s, L))
         assertFalse(AlphaGate.allows(s, P))
+        s.putBoolean(P.key, true)
+        assertTrue(AlphaGate.allows(s, L))
     }
 
     @Test fun the_legacy_enhanced_choice_counts_as_presence_running() {
@@ -191,6 +198,77 @@ class AlphaGateTest {
         // D29: their preferences default on; the gate is what keeps them from running.
         assertTrue(ContinuousCapture.DEFAULT_ON)
         assertTrue(SemanticEndpoint.DEFAULT_ON)
+    }
+
+    /**
+     * D38: continuous listening is how the being hears, so it belongs with Presence. The stored
+     * preference is not enough — an earlier build could have left it selected without Presence.
+     */
+    @Test fun continuous_listening_cannot_run_without_presence() {
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, L.key to true))
+        assertFalse("selected alone is inert", AlphaGate.allows(s, L))
+        assertEquals(
+            "Requires Presence: continuous listening is how the being hears.",
+            AlphaGate.dependencyRefusal(s, L),
+        )
+        s.putBoolean(P.key, true)
+        assertNull("Presence makes it reachable", AlphaGate.dependencyRefusal(s, L))
+        assertTrue(AlphaGate.allows(s, L))
+        // Turning Presence off leaves the stored selection in place but inert.
+        s.putBoolean(P.key, false)
+        assertTrue(AlphaGate.selected(s, L))
+        assertFalse(AlphaGate.allows(s, L))
+        // The master still rules everything.
+        s.putBoolean(AlphaGate.KEY_MASTER, false)
+        assertFalse(AlphaGate.allows(s, L))
+    }
+
+    /** D38: Phone tools is the mind acting on the phone; Presence is the being. Neither needs the other. */
+    @Test fun phone_tools_and_presence_are_independent_sets() {
+        val phoneOnly = Fake(mutableMapOf(
+            AlphaGate.KEY_MASTER to true,
+            AlphaGate.FeatureSet.PHONE_TOOLS.key to true,
+        ))
+        assertTrue("the phone is the mind's capability", AlphaGate.allows(phoneOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+        assertFalse("and not a reason to run the being", AlphaGate.allows(phoneOnly, P))
+
+        val presenceOnly = Fake(mutableMapOf(
+            AlphaGate.KEY_MASTER to true,
+            P.key to true,
+        ))
+        assertTrue("the being is a voice", AlphaGate.allows(presenceOnly, P))
+        assertFalse("and it does not open the phone tool", AlphaGate.allows(presenceOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+        assertNull("the dependency table only names continuous listening",
+            AlphaGate.dependencyRefusal(phoneOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+    }
+
+    /** The picker refuses the impossible selection where the user makes it, with the reason on screen. */
+    @Test fun the_picker_refuses_continuous_listening_without_presence() {
+        val panel = File(src, "AlphaPanel.kt").readText()
+        assertTrue("the row asks the one dependency question", panel.contains("AlphaGate.dependencyRefusal("))
+        assertTrue("a refused tap does not store the preference", panel.contains("if (refusal != null)"))
+        assertTrue("the row shows the returned line", panel.contains("text = if (inert) \"Inert — \$why\" else why"))
+        val gate = File(src, "AlphaGate.kt").readText()
+        assertTrue("the line says why", gate.contains("Requires Presence: continuous listening is how the being hears."))
+        assertTrue("allows() refuses the stale preference too",
+            gate.contains("dependencyRefusal(r, set) == null"))
+    }
+
+    /** Sessions and Profiles were not promoted by this change; both still need the gate and a pick. */
+    @Test fun sessions_and_profiles_stay_gated() {
+        val masterOnly = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true))
+        for (set in listOf(AlphaGate.FeatureSet.PROFILES, AlphaGate.FeatureSet.SESSIONS)) {
+            assertFalse("$set needs its own selection", AlphaGate.allows(masterOnly, set))
+            masterOnly.putBoolean(set.key, true)
+            assertTrue("$set works once selected behind the master", AlphaGate.allows(masterOnly, set))
+            masterOnly.putBoolean(set.key, false)
+        }
+        val withoutMaster = Fake(mutableMapOf(
+            AlphaGate.FeatureSet.PROFILES.key to true,
+            AlphaGate.FeatureSet.SESSIONS.key to true,
+        ))
+        assertFalse(AlphaGate.allows(withoutMaster, AlphaGate.FeatureSet.PROFILES))
+        assertFalse(AlphaGate.allows(withoutMaster, AlphaGate.FeatureSet.SESSIONS))
     }
 
     // ---- the wiring, pinned at source level (the readers are Android-bound) ----

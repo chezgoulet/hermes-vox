@@ -27,8 +27,8 @@ root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 |---|---|
 | [`docs/INDEX.md`](INDEX.md) | this file |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | the system on one page: app, gateway routes (`/v1/runs` and the `/v1/responses` fallback), approvals, profiles, file offer, MCP phone route, Alpha gate. Checked against `core/TurnRoute.kt`, `core/Stream.kt`, `AlphaGate.kt`, `Profiles.kt`, `FileOffer.kt`, `PhoneTool.kt` |
-| [`docs/DECISIONS.md`](DECISIONS.md) | the decision log, D1–D35. D29’s gate entry corrected to the five sets that shipped; D29–D34 checked against `AlphaGate.FeatureSet`, `CallQuiet.kt`, `ErHandoff.kt`, `VoiceTurn.kt`, `LocalActionGrammar.kt`, `PhoneTool.kt` |
-| [`docs/MILESTONES.md`](MILESTONES.md) | the current milestone map (D28). Corrected: the gate names its five sets; Presence tool use is D32–D34, not D31 |
+| [`docs/DECISIONS.md`](DECISIONS.md) | the decision log, D1–D39. D29’s gate entry corrected to the five sets that shipped; D38 supersedes the local-action lane and records Presence’s read-only scope; D39 records the Sessions/Profiles promotion condition |
+| [`docs/MILESTONES.md`](MILESTONES.md) | the current milestone map (D28). Corrected: the gate names its five sets; Presence tool use is D38, which supersedes D32–D34's two-lane shape |
 | [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | every 0.9.1 item by real status (in the build / device pass outstanding / not built / carried / out) |
 | [`docs/RELEASE-0.9.1.md`](RELEASE-0.9.1.md) | the dry release list, structured by what needs Alpha and what does not. Rewritten from the tree |
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | how a cut is made (version bump on `testing`, gate, reproducibility, signing). Checked against `scripts/gate.sh` and `release.yml` |
@@ -36,7 +36,7 @@ root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 | [`docs/DOC-TRUTH.yml`](DOC-TRUTH.yml) | the machine-checked invariants behind the claims above (`scripts/check-doc-truth.py`) |
 | [`docs/KOTLIN-CORE.md`](KOTLIN-CORE.md) | the `com.hermesvox.core` connector. Corrected: the runs API is no longer “deliberately dropped”; it is the default route |
 | [`docs/MODELS-SCREEN.md`](MODELS-SCREEN.md) | the Voice models screen and its one catalogue (`ModelCatalog.blessed`) |
-| [`docs/PRESENCE.md`](PRESENCE.md) | Presence: the layer, VOX.md, the beat, local actions, the MCP phone tool, the handoff receipt. Corrected: it runs only behind the Alpha gate, off on a fresh install |
+| [`docs/PRESENCE.md`](PRESENCE.md) | Presence: the layer, VOX.md, the beat, the read-only phone context, the MCP phone tool, the handoff receipt. Corrected: it runs only behind the Alpha gate, off on a fresh install |
 | [`docs/MCP-PHONE.md`](MCP-PHONE.md) | the phone’s MCP server: setup turn, one `phone` tool, grants, tiers, results, permissions. Checked against `PhoneTool.kt`, `PhoneGrants.kt`, `PhoneMcpServer.kt` |
 | [`docs/RUNS-ROUTE.md`](RUNS-ROUTE.md) | `/v1/runs`, the default route, its 404 fallback, barge-in and the device pass. Checked against `core/TurnRoute.kt`, `core/Stream.kt`, `RouteChoice.kt` |
 | [`docs/FDROID.md`](FDROID.md) | the F-Droid rail (path B, source-built runtime, draft recipe). Corrected: releases already build path B; the listing is 0.9.1 work per D29 and does not exist yet |

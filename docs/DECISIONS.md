@@ -772,6 +772,10 @@ lesser turn.
 
 Set 2026-11-04, on #421 (Presence's tool use, steps 1 and 2).
 
+**Superseded 2026-11-05 by D38.** The local grammar lane below was removed: the phone no longer
+decides what an utterance means, and every voice turn goes to the mind. The entry is kept as it was
+written, including the reason the fast path seemed right at the time.
+
 **The decision.** Presence gets a **local-action lane** for the handful of things that must be
 instant — **timer, alarm, do-not-disturb, volume** — matched by a deterministic grammar, executed on
 the phone with **no network round trip**, and recorded in a small registry that the voice turn's
@@ -831,6 +835,11 @@ promised at the moment we promised it.
 ## D34 — The mind acts on the phone through one MCP tool, and every action returns a result
 
 Set 2026-11-04, on #421's third comment and steps 3–4.
+
+**Amended 2026-11-05 by D38.** The user-initiated lane D34 kept separate is gone, so its "why the
+two initiators stay separate" argument no longer describes the code. The MCP tool, its result and
+its grants stand; it is now the only way the phone acts on the owner's words. The rest of this entry
+is kept as written.
 
 **The decision.** The phone runs a small **MCP server on the tailnet** exposing **one** tool,
 `phone`, with an action enum (`timer`, `alarm`, `dnd`, `volume`, `note`, `undo`, `status`). Every call
@@ -1085,3 +1094,54 @@ the action is simply unavailable rather than silently denied later.
 **What it does not decide.** Whether the gateway's approval surface also gets an `uninstall` card
 (the phone's card is enough and does not need a run id), whether `install` gets one, and whether a
 later lane lets the owner remember a yes for a session. All are separate decisions.
+
+## D38 — The phone parses nothing; the mind decides, and Presence may look but never act
+
+Set 2026-11-05, on the Presence-scope correction. **Supersedes D32 and the "two initiators stay
+separate" argument in D34.**
+
+**The decision.** Every voice turn goes to the mind. The phone keeps no local grammar that matches
+the caller's words, and no turn ends on the phone before the mind is asked. When the mind wants the
+phone it calls the existing MCP `phone` tool, with the grant and the card that path already
+enforces. `LocalActionGrammar`, the interception in `runStreamedTurn`, and the local turn-gate
+plumbing that existed only to release a locally-taken turn are deleted. `LocalActions` and its
+registry stay: they are the phone's engine and the memory the sheet and a follow-up read.
+`LocalActions.run` stays as the owner-initiated entry point to that engine; no voice turn calls it.
+
+**Why.** A second initiation path is a second actor. The owner was talking to one of them and not
+the other: "set a timer" matched a phone regex and never reached the mind, whether Presence was on
+or off. The mind could not answer a timer request it never saw, and the owner had no way to tell
+which decision-maker had heard them. One actor is the point of having one agent.
+
+**What it costs, stated.** A timer now costs a gateway round trip, and it needs the **Phone tools**
+set with the timer's capability group granted. With the tool absent or the group Off, the mind
+cannot act on the phone; it says what it cannot do instead of the phone inventing a timer. That is
+the honest price of one actor, and it is accepted.
+
+**Presence's scope.** Presence is the being: it may read what the phone is doing — the registry,
+what is running, the time left, the device facts — because that is what lets it say "your timer has
+about four minutes left". It may not set, cancel or change anything. `PhoneReadout` exposes the
+registry and nothing else, so a mutating capability is absent from its type, not merely discouraged.
+
+**The gate is two independent sets.** Presence is the being; **Phone tools** is the mind acting on
+the phone. Either can be taken without the other, and no dependency is added between them.
+**Continuous listening** belongs with Presence because it is how the being hears: it cannot be
+selected without Presence, `AlphaGate.allows()` refuses a stored preference from an earlier build,
+and turning Presence off leaves it inert with the picker saying why.
+
+**What it does not decide.** Whether a future foreground model ever gets a safe, separate voice
+action lane (it would be a new decision and would need its own always-on guarantee), and whether the
+gateway's own approval surface changes. Both stay open.
+
+## D39 — Sessions and Profiles leave Alpha after a device pass, not on a build
+
+Set 2026-11-05, alongside D38.
+
+**The decision.** **Sessions** and **Switching profiles** stay behind the Alpha gate for now. They
+leave Alpha once a device pass shows conversation switching and profile switching work as intended.
+That is the promotion condition: it is a check on the phone, not a version number and not a claim
+from the code that the paths exist.
+
+**Why.** Both are host questions answered with the host's own key, and both were lived with only
+lightly. D33 puts the depth of a committed feature in the milestone that commits it; this decision
+records the door out, so the sets are not promoted by drift or by a release note.

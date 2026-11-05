@@ -39,9 +39,6 @@ object ErHandoff {
     const val REASON_STOPPED = "stopped"
     /** The submit returned no stream id, or the submit itself threw. */
     const val REASON_NO_STREAM = "no-stream"
-    /** The phone took the utterance itself (a local action, #421); the mind was never asked, by
-     *  design. Not a swallow — `event=local-action` says what was done. */
-    const val REASON_LOCAL_ACTION = "local-action"
 
     /**
      * The receipt line.

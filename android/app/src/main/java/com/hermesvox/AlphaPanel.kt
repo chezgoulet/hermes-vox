@@ -28,6 +28,15 @@ class AlphaPanel(
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
     private fun color(id: Int) = ContextCompat.getColor(act, id)
 
+    private lateinit var list: LinearLayout
+
+    /** Rebuild every row, so a dependency line appears or clears with the switch that caused it. */
+    private fun renderRows() {
+        if (!::list.isInitialized) return
+        list.removeAllViews()
+        for (set in AlphaGate.FeatureSet.entries) list.addView(row(set))
+    }
+
     fun show() {
         val d = Dialog(act, R.style.Theme_HermesVox)
         val root = VoxSheet.root(act)
@@ -37,8 +46,8 @@ class AlphaPanel(
                 "and turning Alpha features off stops all of them."
             setPadding(0, dp(8), 0, dp(12))
         })
-        val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        for (set in AlphaGate.FeatureSet.entries) list.addView(row(set))
+        list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        renderRows()
         root.addView(ScrollView(act).apply { addView(list) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         d.setContentView(root)
@@ -61,6 +70,7 @@ class AlphaPanel(
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
         }
+        val reader = AlphaGate.reader(prefs)
         val text = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         text.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { this.text = set.label })
         text.addView(TextView(act, null, 0, R.style.HvRowValue).apply { this.text = set.blurb })
@@ -71,12 +81,34 @@ class AlphaPanel(
                 setPadding(0, dp(6), 0, 0)
             })
         }
+        // A dependency the switch cannot satisfy is stated here, in one line, before it is tried.
+        AlphaGate.dependencyRefusal(reader, set)?.let { why ->
+            val inert = AlphaGate.selected(reader, set)
+            text.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+                this.text = if (inert) "Inert — $why" else why
+                setTextColor(color(R.color.hv_warn))
+                setPadding(0, dp(6), 0, 0)
+            })
+        }
         row.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        var adjusting = false
         row.addView(SwitchCompat(act).apply {
             contentDescription = set.label
-            isChecked = AlphaGate.selected(AlphaGate.reader(prefs), set)
-            setOnCheckedChangeListener { _, on ->
+            isChecked = AlphaGate.selected(reader, set)
+            setOnCheckedChangeListener { button, on ->
+                if (adjusting) return@setOnCheckedChangeListener
+                // Refuse in the picker, not only in allows(): selecting it without Presence
+                // would store a preference that can never run.
+                val refusal = if (on) AlphaGate.dependencyRefusal(AlphaGate.reader(prefs), set) else null
+                if (refusal != null) {
+                    adjusting = true
+                    button.isChecked = false
+                    adjusting = false
+                    renderRows()
+                    return@setOnCheckedChangeListener
+                }
                 prefs.edit().putBoolean(set.key, on).apply()
+                renderRows()
                 onChange()
             }
         })
