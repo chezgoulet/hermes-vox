@@ -924,9 +924,12 @@ object PhoneTool {
 
     /**
      * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
-     * group is not Off. Resolving a name is reading the address book, so a phone whose owner
-     * has not granted Contacts refuses with `not_granted` naming it — never with a generic
-     * complaint about the arguments. [build] receives the recipient and whether it is a name.
+     * group is **Allow**. Resolving a name is reading the address book whatever action asked for
+     * it, so `dial`/`message` obey the same grant as `contact` itself: Off refuses with
+     * `not_granted`, and Ask refuses with `approval-required` naming Contacts — there is no card
+     * for a lookup, so nothing is read while the group is only at Ask. Neither refusal is a
+     * generic complaint about the arguments. [build] receives the recipient and whether it is a
+     * name.
      */
     private fun recipient(
         action: String,
@@ -943,8 +946,8 @@ object PhoneTool {
         }
         number(raw)?.let { return Parsed.Run(build(it, false)) }
         val contacts = PhoneGrants.GROUPS.first { it.id == "contacts" }
-        if (PhoneGrants.stateOf(grants, contacts) == PhoneGrants.State.OFF) {
-            return Parsed.Refuse(
+        when (PhoneGrants.stateOf(grants, contacts)) {
+            PhoneGrants.State.OFF -> return Parsed.Refuse(
                 PhoneResult.refused(
                     action,
                     PhoneReason.NOT_GRANTED,
@@ -954,6 +957,18 @@ object PhoneTool {
                     tier = PhoneTiers.of(action),
                 )
             )
+            PhoneGrants.State.ASK -> return Parsed.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.APPROVAL,
+                    "\"$raw\" is a contact name, and looking one up reads your address book; " +
+                        "the \"${contacts.label}\" group is set to Ask on this phone, and there is " +
+                        "no approval card for a contact lookup yet, so nothing was looked up. " +
+                        "Only the owner can set it to Allow in Phone tools, or give a number instead.",
+                    tier = PhoneTiers.of(action),
+                )
+            )
+            PhoneGrants.State.ALLOW -> Unit
         }
         return Parsed.Run(build(raw, true))
     }

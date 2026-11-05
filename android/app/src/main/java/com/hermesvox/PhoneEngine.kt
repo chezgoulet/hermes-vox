@@ -1660,7 +1660,8 @@ class PhoneEngine(
 
     /**
      * A number as given, or a name resolved through [PhonePlatform.contactMatches]. The Contacts
-     * group's grant is checked before this runs ([PhoneTool.parse]); what remains here is the
+     * grant is enforced before this runs ([PhoneTool.parse]): only Allow reaches here with a name,
+     * because Ask and Off are both refused with a governance reason. What remains here is the
      * platform's answer: a missing `READ_CONTACTS`, no such person, or a provider failure.
      */
     private fun resolveRecipient(action: String, raw: String, contact: Boolean): Recipient {
