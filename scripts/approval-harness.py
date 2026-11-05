@@ -36,11 +36,11 @@ use the debug-only approval arm (`--es arm approval`, the runs lane).
 The app's debug build has an intent harness, so no UI tapping is needed to START a
 turn or the arm:
 
-    adb shell am start -n com.hermesvox/.MainActivity \
+    adb shell am start -n com.hermesvox/.DebugHarnessActivity \
         --es url "http://sasquatch.leopard-vibes.ts.net:8765" \
         --es key "harness-key" --es text "please run the flagged action"
 
-    adb shell am start -n com.hermesvox/.MainActivity --es arm approval
+    adb shell am start -n com.hermesvox/.DebugHarnessActivity --es arm approval
 
 Then answer on the phone (tap NO or say "no") and watch this process print:
 

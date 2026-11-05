@@ -83,8 +83,12 @@ platform's HTTP stack instead of Go's.
   `*.ts.net` may be cleartext. On the platform stack the policy applies, so a
   cleartext LAN gateway will be refused, as the conn-test probe already was (this
   follows from the platform's documented behaviour; it was not exercised on a device
-  in #126). Likewise user-installed CAs are now trusted for HTTPS, as that file
-  intends; Go's `crypto/x509` searched the system CA directory, not the user store.
+  in #126). Go's `crypto/x509` searched the system CA directory, not the user store;
+  the platform stack also sees the user store, but since M4 (0.9.1 review) that
+  anchor is scoped to `*.ts.net` rather than trusted for every host. And cleartext to
+  `*.ts.net` is refused by `core/CleartextPolicy.kt` while the tailnet is down: with
+  the tunnel gone, MagicDNS is no longer private by construction, and a hostile
+  network could answer the name and collect the bearer key.
 - **HTTP/1.1 only.** Go negotiated HTTP/2 where offered. SSE is unaffected.
 - **Transport error text** comes from the JVM/OkHttp (`Connection refused`, …), not
   Go (`dial tcp …`). Gateway-produced errors (`hermes response failed: …`,

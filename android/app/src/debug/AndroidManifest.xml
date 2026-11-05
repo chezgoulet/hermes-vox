@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- M3 (0.9.1 review): the debug harness is a debug-only component behind a permission
+         the shell holds and third-party apps cannot. It is merged only into debug builds;
+         release contains neither the class nor this entry.
+
+         Why DUMP: adb shell and the system hold android.permission.DUMP, while a normal
+         co-installed app cannot request it (signature|privileged). The harness can set the
+         endpoint and bearer key, send a turn to an agent with terminal tools, and stage a
+         readable file, so it must not be reachable by an intent from another app. -->
+    <application>
+        <activity
+            android:name=".DebugHarnessActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize" />
+    </application>
+</manifest>

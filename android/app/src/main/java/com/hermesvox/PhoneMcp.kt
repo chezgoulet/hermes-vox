@@ -55,6 +55,8 @@ object PhoneMcp {
         val token: TokenState,
         val dndGranted: Boolean,
         val volumeGranted: Boolean,
+        /** Whether Alpha features' Phone tools set is selected. False means nothing here runs. */
+        val allowed: Boolean = true,
     )
 
     @Volatile private var server: PhoneMcpServer? = null
@@ -73,6 +75,13 @@ object PhoneMcp {
      * button is the only UI path that reaches it before a call does.
      */
     fun token(context: Context): String {
+        // #421/alpha: the credential does not exist before the owner selects Phone tools.
+        // Returning "" (rather than generating and hiding it) keeps the server's own
+        // `require(tokenProvider().isNotEmpty())` a second door, not the only one.
+        if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            VoxLog.d("event=phone-mcp token=off reason=alpha")
+            return ""
+        }
         synchronized(this) {
             memoryToken?.let { return it }
             val app = context.applicationContext ?: context
@@ -123,6 +132,10 @@ object PhoneMcp {
      * with it: the old connection is not evidence for the new credential.
      */
     fun rotate(context: Context): String = synchronized(this) {
+        if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            VoxLog.d("event=phone-mcp token=off reason=alpha action=rotate")
+            return ""
+        }
         val app = context.applicationContext ?: context
         val fresh = PhoneMcpToken.generate()
         storeToken(app, fresh)
@@ -208,6 +221,7 @@ object PhoneMcp {
             token = tokenState(app),
             dndGranted = dnd,
             volumeGranted = volume,
+            allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS),
         )
     }
 
@@ -218,6 +232,11 @@ object PhoneMcp {
      */
     fun start(context: Context, handler: PhoneToolHandler): PhoneMcpServer? {
         synchronized(this) {
+            if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+                // The set is off: no listener, and no credential is created by asking.
+                VoxLog.d("event=phone-mcp unavailable reason=alpha-off")
+                return null
+            }
             server?.let { return it }
             val app = context.applicationContext ?: context
             val address = try {

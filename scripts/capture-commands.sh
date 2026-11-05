@@ -6,7 +6,7 @@
 # own frame buffer. Nothing about the screen is drawn by this script.
 #
 # The sheet is opened by the debug harness (`--ez sheet true`, inert in a release build;
-# MainActivity.handleDebugHarness). Tapping `/` on the main screen opens the same screen.
+# DebugHarnessActivity.handleHarness). Tapping `/` on the main screen opens the same screen.
 #
 # The four states come from the app's real behaviour, not from a harness flag:
 #   running   /reconnect against a gateway that accepts the connection and never answers,
@@ -57,7 +57,7 @@ $A shell settings put system screen_off_timeout 1800000 >/dev/null 2>&1 || true
 $A shell svc power stayon true >/dev/null 2>&1 || true
 # run-as only works once the app has run at least once (its data dir must exist).
 $A shell run-as "$PKG" true >/dev/null 2>&1 \
-  || $A shell am start -n "$PKG/com.hermesvox.MainActivity" >/dev/null 2>&1 || true
+  || $A shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" >/dev/null 2>&1 || true
 
 # ---- geometry: rows are constants of the screen, in per-mille of its height --------------
 SIZE="$($A shell wm size | tr -d '\r' | sed -n 's/.*: \([0-9]*x[0-9]*\).*/\1/p')"
@@ -115,7 +115,7 @@ open_sheet() {
   # the next call would otherwise leave the list where the last swipe put it.
   $A shell input keyevent KEYCODE_BACK >/dev/null 2>&1 || true
   sleep 1
-  $A shell am start -n "$PKG/com.hermesvox.MainActivity" --ez sheet true >/dev/null
+  $A shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" --ez sheet true >/dev/null
   # A cold start on a slow device takes seconds; the sheet is posted after the harness.
   sleep "${SETTLE:-8}"
 }

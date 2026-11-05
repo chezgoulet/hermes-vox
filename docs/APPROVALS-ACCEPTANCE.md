@@ -167,7 +167,7 @@ applied only when present; `arm=approval` is the trigger. `arm_prompt` overrides
 command for a special case.
 
 ```bash
-adb -s emulator-5560 shell am start -n com.hermesvox/.MainActivity \
+adb -s emulator-5560 shell am start -n com.hermesvox/.DebugHarnessActivity \
   --es url "http://<gateway-host>:8742" \
   --es key "<API_SERVER_KEY>" \
   --es model hermes-agent \
@@ -276,7 +276,7 @@ python3 scripts/approval-harness.py --port 8765 --key harness-key \
 
 # 2. Point the debug APK at it and arm
 adb -s emulator-5560 shell am force-stop com.hermesvox
-adb -s emulator-5560 shell am start -n com.hermesvox/.MainActivity \
+adb -s emulator-5560 shell am start -n com.hermesvox/.DebugHarnessActivity \
   --es url "http://<host>.<tailnet>.ts.net:8765" \
   --es key harness-key --es arm approval
 
@@ -310,7 +310,7 @@ on the app's ordinary turn): start the harness **without** `--arm`, then send a 
 turn with the existing harness extra instead of the arm:
 
 ```bash
-adb -s emulator-5560 shell am start -n com.hermesvox/.MainActivity \
+adb -s emulator-5560 shell am start -n com.hermesvox/.DebugHarnessActivity \
   --es url "http://<host>.<tailnet>.ts.net:8765" --es key harness-key \
   --es text "please run the flagged action"
 ```

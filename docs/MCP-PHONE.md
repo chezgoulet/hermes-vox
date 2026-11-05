@@ -17,10 +17,16 @@ configuration; the manual block remains for an agent that cannot.
 ## Setting it up: the app asks your agent, not you
 
 The setup path is a turn, not a block to paste. **Settings → About & Diagnostics → Phone as an MCP
-server → Set up with my agent** composes one ordinary turn and sends it through the app's existing
-session. The agent edits its own configuration, verifies the entry, and says what it changed. The
-turn is visible in the sheet behind **Show the setup turn**, and the agent's own reply is shown
-beneath the state — a change to the agent's configuration is never silent.
+server → Set up with my agent** composes one ordinary turn and sends it on the active profile's client
+— its url, key and declared scope, from the same live prefs Settings' connection test builds from.
+The sheet resolves that connection at the moment of the press (`PhoneSetupStore.session`), and a
+session object built for a different connection is never reused: a `HermesSession` keeps the address
+and key it was created with, so after the connection is re-pointed the held one still names the old
+gateway. That was #430 — the connection test passed while the setup turn went to the previous address
+and the gateway in force logged nothing. If there is no session at that moment, one is built there;
+only an unconfigured connection refuses. The agent edits its own configuration, verifies the entry,
+and says what it changed. The turn is visible in the sheet behind **Show the setup turn**, and the
+agent's own reply is shown beneath the state — a change to the agent's configuration is never silent.
 
 The turn carries the server name (`vox`), the real tailnet URL (`http://<tailnet-ip>:8765/mcp`), the
 bearer token, the tool name the model will see (`mcp__vox__phone`), what the phone can and cannot do,
@@ -43,9 +49,14 @@ force: rotating the token clears it.
 | **not set up** | *Not set up yet* | **Set up with my agent** |
 | **waiting** | *Waiting for your agent to connect*, with the agent's reply beneath | **Ask again**; start a call, because the listener is only up while a call is |
 | **connected** | *Connected*, plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
-| **unreachable** | *Could not reach your agent* | Check the gateway connection in Settings, then **Try again** |
+| **unreachable** | the cause, in its own words: *No connection configured*, *Key rejected*, *Your agent did not answer: …*, or *Turn failed: …* | Fix what is named — the connection in Entity & Connection, the profile's key, the gateway — then **Try again** |
 | **refused** | *Your agent could not edit its configuration*, with its own explanation | Fix its file access and **Try again**, or use the manual fallback |
 | **timed out** | *Your agent was asked, but nothing connected in time* | **Try again**, or **Rotate token** and ask once more |
+
+A failure names what happened, never one line for every case: a local misconfiguration must not read
+as a network outage. The four are `no connection configured`, `key rejected`, `agent did not answer`
+(transport, timeout, or an empty answer) and `turn failed: <the gateway's own reason>`
+(`PhoneSetupSend`). The line is persisted with the record, so it survives reopening the sheet.
 
 A timeout is three minutes. A late handshake still wins: if the agent connects after the sheet has
 shown the timeout, the phone says Connected because the handshake is real. The reply stays readable

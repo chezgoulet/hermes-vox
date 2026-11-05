@@ -1,9 +1,9 @@
 # The `/v1/runs` turn route
 
 Status: **the default (#404), device pass outstanding.** `StreamRoute.active` is
-`TurnRoute.RUNS` for every install that declares a conversation scope; an install with
-a blank scope stays on `/v1/responses` (see *The scope requirement*). The cut waits on
-the device pass below (D29).
+`TurnRoute.RUNS`. A gateway that answers `POST /v1/runs` with **404** has no such
+route; that profile's turns fall back to `/v1/responses` (below). The cut waits on the
+device pass below (D29).
 
 ## Why
 
@@ -24,12 +24,34 @@ internal object StreamRoute {
     @Volatile
     var active: TurnRoute = TurnRoute.RUNS        // #404
     fun routeFor(hasSessionKey: Boolean): TurnRoute =
-        if (active == TurnRoute.RUNS && !hasSessionKey) TurnRoute.RESPONSES else active
+        if (requiresResponses()) TurnRoute.RESPONSES else active
 }
 ```
 
 `Streams.start` and `HermesSession.turnStored` read `routeFor` once per turn; tests
-set and restore `active`. Nothing above `HermesSession` knows the route exists.
+set and restore `active`. Nothing above `HermesSession` turns a route into a different
+wire vocabulary; the controller asks the session for the route only to decide what
+abandoning a turn means.
+
+## A gateway without `/v1/runs`
+
+An older gateway answers `POST /v1/runs` with **404**. That is the only answer treated as
+"this host has no such route": the admission catches exactly that status, remembers the
+answer for the active profile, logs
+
+```
+event=route-fallback reason=no-runs-route profile=<name>
+```
+
+and retries the same turn **once** on `/v1/responses`. The profile is remembered in
+`route_no_runs_profiles` (`RouteChoice`), so the probe is paid once and a later turn — or
+a later launch with the same profile — starts on responses. A profile switch loads that
+profile's own answer, so one host's fallback never leaks into another.
+
+Every other answer is a real error and surfaces exactly as before: **401, 409, 429, 500
+and a transport failure never fall back**, because a bad key hidden behind another route
+is worse than a visible failure. A profile whose admission succeeded keeps riding
+`/v1/runs`.
 
 ## The scope requirement (lifted in 0.9.1, H2)
 
@@ -41,9 +63,10 @@ be a new conversation. Until the 0.9.1 review this kept an unscoped install (the
 card.
 
 The run body now carries the session's own client `session_id` (see the gaps below), so
-the conversation no longer depends on the scope. **Every install rides runs.** The scope
-only decides long-term memory: with no key, memory follows the transcript, exactly as an
-unscoped `/v1/responses` conversation did.
+the conversation no longer depends on the scope. **Every install rides runs** when its
+gateway has the route; a gateway that answers 404 on admission uses the fallback above.
+The scope only decides long-term memory: with no key, memory follows the transcript,
+exactly as an unscoped `/v1/responses` conversation did.
 
 ## The barge-in (#404)
 
@@ -67,6 +90,12 @@ unscoped `/v1/responses` conversation did.
   when neither the status nor the stop can be had does the done poll say
   `run_end:"lost"` — and that, not the loop's `done` flag, is what keeps a pending
   approval card on screen (`TurnApprovalHold.runEnded`).
+- **A truncated replay never leaves a hole in the answer** (0.9.1 review L3). If the
+  gateway no longer retains every event we missed, it says so with `replay.truncated`
+  (`oldest_retained_seq`). The replayed deltas then have a hole, so the reader does not
+  present them as the reply: the terminal `run.completed.output` is the whole answer and
+  replaces the gapped text (tool markers kept). If the terminal event carries no text,
+  the turn fails honestly rather than speaking the prefix and suffix around the hole.
 - `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
   scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
   nothing left to stop; nothing about the stop is ever thrown to the caller.
@@ -159,7 +188,9 @@ the conversation scope is not blank), or the turns ride responses and prove noth
 4. An approval: the card appears on a run that parks in `waiting_for_approval`, the
    answer posts once, and the run resumes. This is the capability the port exists for.
 5. A dropped socket: airplane mode mid-turn, restore, and the turn completes from
-   replay rather than the "voice stream was lost" error.
+   replay rather than the "voice stream was lost" error. If the drop outlives the
+   gateway's retained backlog, the reply still matches the run's final answer (or the
+   turn says it failed) — never a sentence with a missing middle.
 6. `/compress` after a runs turn: with no response id on the route, confirm the
    compaction targets the same conversation the run wrote to. If it does not, the
    stored-turn path needs its own route-aware chain before the flip.

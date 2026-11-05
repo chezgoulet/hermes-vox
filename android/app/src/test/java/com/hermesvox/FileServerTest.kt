@@ -43,6 +43,7 @@ class FileServerTest {
         expiresAtMs: Long = System.currentTimeMillis() + 300_000,
         clock: () -> Long = System::currentTimeMillis,
         onTransfer: () -> Unit = {},
+        requestDeadlineMs: Long = FileServer.requestDeadlineFor(body.size.toLong()),
     ) = FileServer.start(
         bind = InetAddress.getLoopbackAddress(),
         token = token,
@@ -53,6 +54,7 @@ class FileServerTest {
         expiresAtMs = expiresAtMs,
         log = { log.add(it) },
         onTransfer = onTransfer,
+        requestDeadlineMs = requestDeadlineMs,
     )
 
     /** A raw request; returns (status, headers, body). */
@@ -398,4 +400,40 @@ class FileServerTest {
 
     private fun assertArrayEquals(expected: ByteArray, actual: ByteArray) =
         assertEquals(expected.toList(), actual.toList())
+
+    // ---- L7 (0.9.1 review): one total deadline per request ----
+
+    /**
+     * A peer that sends a header byte every hundred milliseconds would never trip the
+     * per-read timeout, and would hold the one-shot handler (and therefore everyone else)
+     * until the offer expired. The request deadline closes it, and the listener still
+     * serves the real fetch afterwards.
+     */
+    @Test fun aTricklingPeerCannotHoldTheOneHandlerPastTheDeadline() {
+        run {
+            val s = start(requestDeadlineMs = 300)
+            val startedAt = System.currentTimeMillis()
+            Socket(InetAddress.getLoopbackAddress(), s.port).use { sock ->
+                sock.soTimeout = 3_000
+                val out = sock.getOutputStream()
+                out.write("GET /$token HTTP/1.1\r\nHost: 127.0.0.1\r\n".toByteArray())
+                out.flush()
+                val input = BufferedInputStream(sock.getInputStream())
+                var closed = false
+                try {
+                    while (System.currentTimeMillis() - startedAt < 3_000) {
+                        out.write('X'.code); out.flush()
+                        if (input.read() < 0) { closed = true; break }
+                        Thread.sleep(100)
+                    }
+                } catch (_: java.io.IOException) {
+                    closed = true
+                }
+                assertTrue("the trickling request was not cut at the deadline", closed)
+                assertTrue("the deadline is the total, not per read",
+                    System.currentTimeMillis() - startedAt < 2_000)
+            }
+            assertEquals("the listener still serves the one real fetch", 200, request(s.port).first)
+        }
+    }
 }

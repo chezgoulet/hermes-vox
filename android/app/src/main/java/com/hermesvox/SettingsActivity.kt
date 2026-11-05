@@ -179,6 +179,15 @@ class SettingsActivity : AppCompatActivity() {
         sw.isChecked = AlphaGate.masterOn(AlphaGate.reader(prefs))
         sw.setOnCheckedChangeListener { _, on ->
             prefs.edit().putBoolean(AlphaGate.KEY_MASTER, on).apply()
+            // #418: someone who opts into alpha is a tester, and a tester should be able to
+            // hand us a bug without hunting for a switch — so the report command comes with
+            // it. One-way (off is not undone), and never over a switch set by hand. The
+            // switch is re-read so the row shows what just happened; re-binding it does not
+            // record a choice the user did not make.
+            if (on) {
+                DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs))
+                bindDiagSummary()
+            }
             refreshAlpha()
             if (on) alphaPanel()
         }
@@ -186,6 +195,24 @@ class SettingsActivity : AppCompatActivity() {
             if (AlphaGate.masterOn(AlphaGate.reader(prefs))) alphaPanel() else sw.isChecked = true
         }
         refreshAlpha()
+    }
+
+    /**
+     * #418: the switch behind `/diagnostics`, off by default, beside the logging switches
+     * because it is the same kind of tool. It gates the command's existence and nothing else —
+     * the Presence section's own copy row is untouched by it. A flip here is the user's
+     * decision, recorded as one ([DiagnosticSummary.setByUser]) so a later Alpha-on cannot
+     * overrule it.
+     *
+     * Re-binding is how the row is re-read after Alpha turns it on: the checked state is set
+     * before the listener exists, so showing the new state records no choice.
+     */
+    private fun bindDiagSummary() {
+        val sw = findViewById<SwitchCompat>(R.id.set_diag_summary) ?: return
+        sw.isChecked = DiagnosticSummary.on(DiagnosticSummary.store(prefs))
+        sw.setOnCheckedChangeListener { _, on ->
+            DiagnosticSummary.setByUser(DiagnosticSummary.store(prefs), on)
+        }
     }
 
     private fun alphaPanel() = AlphaPanel(this, prefs, ::alphaAdvice) { refreshAlpha() }.show()
@@ -212,14 +239,20 @@ class SettingsActivity : AppCompatActivity() {
         }
         val presence = AlphaGate.allows(r, AlphaGate.FeatureSet.PRESENCE)
         val listening = AlphaGate.allows(r, AlphaGate.FeatureSet.CONTINUOUS_LISTENING)
+        val phoneTools = AlphaGate.allows(r, AlphaGate.FeatureSet.PHONE_TOOLS)
+        // Turning the set off while a server is up stops it now: a listener that outlives the
+        // owner's choice is the one thing the gate must not allow.
+        if (!phoneTools) PhoneMcp.stop()
         gate(R.id.row_grp_presence, presence)
         gate(R.id.row_er_hears, presence)
         gate(R.id.row_mic_continuous, listening)
         gate(R.id.row_mic_semantic, listening)
         gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
-        gate(R.id.row_call_quiet, AlphaGate.allows(r, AlphaGate.FeatureSet.QUIET_CALLS))
+        gate(R.id.row_phone_mcp, phoneTools)
+        // Quiet calls is its own Hearing setting now: no Alpha set, no master gate.
         if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
         refreshGrpVals()
+        refreshPhoneMcpVal()
     }
 
     /** #245: the acknowledgement rate — Off / Sparse / Normal, one tap to the next. Behind the
@@ -421,11 +454,23 @@ class SettingsActivity : AppCompatActivity() {
                         Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
                     }
+                    // M4 (0.9.1 review): a plain-HTTP endpoint is refused while the
+                    // tunnel is down, before anything is saved or sent.
+                    val u = eurl.text.toString().trim()
+                    com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
+                        Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
-                    prefs.edit().putString("url", eurl.text.toString().trim())
+                    prefs.edit().putString("url", u)
                         .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
+                    // L9 (0.9.1 review): a live call belonged to the connection it opened
+                    // on. Saving Entity ends it, exactly as a profile switch does, and the
+                    // shared session is rebuilt from the values just written — so the next
+                    // turn (the phone setup turn included, #430) cannot go to the old endpoint.
+                    MainActivity.onEntitySaved()
                     refreshEntityVal()
                     dlg.dismiss()
                 }
@@ -619,20 +664,10 @@ class SettingsActivity : AppCompatActivity() {
         // #417: the report block. Everything on the clipboard is a setting, a device fact or
         // a measured number — no transcript text, key, URL, hostname or path. Omitted metrics
         // stay omitted rather than being printed as an invented zero.
+        // #418: the `/diagnostics` command copies the same block through the same helper; this
+        // row is the Presence section's door and stays exactly where it is.
         findViewById<LinearLayout>(R.id.row_presence_diag).setOnClickListener {
-            val block = PresenceDiagnosticCollect.collect(
-                this, prefs, versionName(), currentDensity())
-            try {
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                    as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("vox-diag", block))
-                Toast.makeText(this,
-                    "Diagnostic summary copied — safe to paste in a public report",
-                    Toast.LENGTH_SHORT).show()
-            } catch (_: Throwable) {
-                Toast.makeText(this, "Could not copy the diagnostic summary",
-                    Toast.LENGTH_SHORT).show()
-            }
+            DiagnosticClipboard.copy(this, prefs)
         }
         // Echo guard slider: 0-6 steps -> 0,300,500,700,1000,1500,2500ms (0 = off).
         val echoSteps = intArrayOf(0, 300, 500, 700, 1000, 1500, 2500)
@@ -711,9 +746,7 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun currentDensity(): PresenceCadence.Density = PresenceCadence.resolve(
-        prefs.getString(PresenceCadence.PREF, null),
-        if (prefs.contains(PresenceCadence.LEGACY_PREF)) prefs.getInt(PresenceCadence.LEGACY_PREF, 2) else null)
+    private fun currentDensity(): PresenceCadence.Density = PresenceDiagnosticCollect.density(prefs)
 
     private fun densityLabel(d: PresenceCadence.Density): String = when (d) {
         PresenceCadence.Density.QUIET -> "Quiet"
@@ -786,13 +819,18 @@ class SettingsActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
             return
         }
+        // M6: a snapshot of the profile's own values, taken before the turn. A lazy pref read
+        // inside the thread could see a different active profile after a switch.
+        val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        val provider = prefs.getString("provider", "").orEmpty()
+        val scope = prefs.getString(SessionScope.PREF, "").orEmpty()
         val label = findViewById<TextView>(R.id.set_vox_val)
         label.text = "asking the entity…"
         // Off the UI thread: the directive turn is a real /v1/responses call
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
             // M6: declared like the live session (scope + provider), not a bare one.
-            val s = EntitySession.build(u, SecureStore.decrypt(k) ?: k, { prefs.getString(it, "").orEmpty() })
+            val s = EntitySession.of(u, SecureStore.decrypt(k) ?: k, model, provider, scope)
             // #220: one call does extract → repair → validate, so a document that arrives
             // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
             // instead of costing the user a second button press. The retry below stays as
@@ -971,6 +1009,7 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
+        bindDiagSummary()
         // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
         // long-press on the debug-log row in the developer section. Both settings default to
         // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens
@@ -1255,8 +1294,9 @@ class SettingsActivity : AppCompatActivity() {
     /** The row's short state; "connected" is only ever the handshake, never the agent's reply. */
     private fun refreshPhoneMcpVal() {
         runCatching {
+            val allowed = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
             findViewById<TextView>(R.id.set_phone_mcp_val).text =
-                PhoneToolsView.rowValue(PhoneSetupStore.state(this))
+                PhoneToolsView.rowValue(PhoneSetupStore.state(this), allowed)
         }
     }
 
@@ -1321,12 +1361,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun onOff(on: Boolean): String = if (on) "on" else "off"
 
-    // The About row's version subtitle. Uses PackageManager (no BuildConfig dependency —
-    // the C0 release guard rejects buildConfigField key injection, and BuildConfig is
-    // not reliably generated). Falls back to the label on any failure.
-    private fun versionName(): String = try {
-        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-    } catch (_: Throwable) { "" }
+    // The About row's version subtitle. PackageManager (no BuildConfig dependency — the C0
+    // release guard rejects buildConfigField key injection, and BuildConfig is not reliably
+    // generated). The reader lives with the report's collector, so the version this screen
+    // prints and the version the block reports are the same read.
+    private fun versionName(): String = PresenceDiagnosticCollect.versionName(this)
 
     // #118/#224: the advanced panels (Hearing's timing tuning, Being's fine look,
     // Presence's behaviour controls) are collapsed by default, one disclosure each.
@@ -1540,7 +1579,7 @@ class SettingsActivity : AppCompatActivity() {
         // block the owner pastes; this row opens the one sheet that composes it, shows the agent's
         // reply, waits for the phone's own handshake, and keeps the manual config as a fallback.
         findViewById<LinearLayout>(R.id.row_phone_mcp).setOnClickListener {
-            PhoneToolsSheet(this, session = PhoneSetupStore.session(this)).show()
+            PhoneToolsSheet(this).show()
         }
         refreshPhoneMcpVal()
     }

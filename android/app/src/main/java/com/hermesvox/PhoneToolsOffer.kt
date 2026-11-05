@@ -19,8 +19,12 @@ object PhoneToolsOffer {
     /** Set once the offer has been shown, whatever the answer was. Never offered twice. */
     const val PREF_OFFERED = "phone_tools_offered"
 
-    fun shouldOffer(connectionVerified: Boolean, presenceOn: Boolean, offered: Boolean): Boolean =
-        connectionVerified && presenceOn && !offered
+    fun shouldOffer(
+        connectionVerified: Boolean,
+        presenceOn: Boolean,
+        offered: Boolean,
+        phoneToolsAllowed: Boolean = true,
+    ): Boolean = connectionVerified && presenceOn && !offered && phoneToolsAllowed
 
     /**
      * Show the sheet if this is the first eligible moment. [onDone] runs after the sheet closes (or
@@ -28,7 +32,8 @@ object PhoneToolsOffer {
      */
     fun offerOnce(activity: Activity, prefs: SharedPreferences, onDone: () -> Unit) {
         val verified = prefs.getString("url", "").orEmpty().isNotBlank()
-        if (!shouldOffer(verified, PresenceGate.chosen(prefs), prefs.getBoolean(PREF_OFFERED, false))) {
+        val allowed = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
+        if (!shouldOffer(verified, PresenceGate.chosen(prefs), prefs.getBoolean(PREF_OFFERED, false), allowed)) {
             onDone()
             return
         }
@@ -43,7 +48,6 @@ object PhoneToolsOffer {
         }
         PhoneToolsSheet(
             activity,
-            session = PhoneSetupStore.session(activity),
             firstRun = true,
             onDismiss = onDone,
         ).show()

@@ -19,6 +19,10 @@ package com.hermesvox
  * #371: a profile switch is in the same table. How a profile was populated — typed by hand or
  * fetched from `GET /v1/profiles` — must not decide whether a live call survives the switch.
  *
+ * L9 (0.9.1 review): Settings → Entity is a connection change, so saving it is in the table
+ * too. A live call belongs to the endpoint, key and scope it was opened with; the save ends
+ * it (through the same SETTINGS plan) and the session is rebuilt from the new values.
+ *
  * Pure JVM, so the rule — and the order — is proven off-device.
  */
 object ConversationReset {

@@ -7,6 +7,7 @@ import android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** #325 — silence during a call, and put back exactly what was changed. */
@@ -38,9 +39,14 @@ class CallQuietTest {
         assertNull(CallQuiet.restoreTo(null, null, INTERRUPTION_FILTER_ALL))
     }
 
-    @Test fun `it is behind its own alpha set`() {
-        val prefs = mapOf(CallQuiet.KEY to true)
-        val r = AlphaGate.Reader { k, d -> prefs[k] ?: d }
-        assertFalse(AlphaGate.allows(r, AlphaGate.FeatureSet.QUIET_CALLS))
+    @Test fun `it is its own setting, not an alpha set`() {
+        val prefs = mapOf(CallQuiet.KEY to true, AlphaGate.KEY_MASTER to false)
+        val read: (String, Boolean) -> Boolean = { k, d -> prefs[k] ?: d }
+        assertTrue("the feature works with the master switch off", CallQuiet.enabled(read))
+        assertFalse("and is still off until its own switch is on",
+            CallQuiet.enabled { _, _ -> false })
+        assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_quiet_calls" })
+        assertFalse("the old set is gone, so the reader cannot name it",
+            AlphaGate.FeatureSet.entries.any { it.name == "QUIET_CALLS" })
     }
 }

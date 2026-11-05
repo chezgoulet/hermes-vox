@@ -70,6 +70,24 @@ class PhoneMcpWiringTest {
         )
     }
 
+    @Test fun the_phone_tools_set_gates_the_server_the_token_and_the_sheet() {
+        val settings = File("src/main/java/com/hermesvox/SettingsActivity.kt").readText()
+        val offer = File("src/main/java/com/hermesvox/PhoneToolsOffer.kt").readText()
+        val view = File("src/main/java/com/hermesvox/PhoneToolsView.kt").readText()
+        assertTrue("start refuses while the set is off",
+            mcp.contains("AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)"))
+        assertTrue("the token is not generated while the set is off",
+            mcp.contains("event=phone-mcp token=off reason=alpha"))
+        assertTrue("rotation is refused too", mcp.contains("action=rotate"))
+        assertTrue("the status carries the gate", mcp.contains("allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS)"))
+        assertTrue("the settings row is dimmed and takes no tap",
+            settings.contains("gate(R.id.row_phone_mcp, phoneTools)"))
+        assertTrue("turning the set off stops a live listener", settings.contains("if (!phoneTools) PhoneMcp.stop()"))
+        assertTrue("the first-run offer is gated too",
+            offer.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)"))
+        assertTrue("status rows say why they are off", view.contains("const val ALPHA_OFF"))
+    }
+
     @Test fun the_user_initiated_path_is_untouched_and_still_local() {
         val parse = vc.indexOf("LocalActionGrammar.parse(text)")
         val submit = vc.indexOf("session.voiceTurn(")
@@ -93,8 +111,15 @@ class PhoneMcpWiringTest {
         assertTrue("it names the tool the model sees", setup.contains("MODEL_TOOL_NAME"))
         assertTrue("it is idempotent by content", setup.contains("Do not add a second"))
         assertTrue("it is sent as an ordinary stored turn", store.contains("session.turnStored(prompt)"))
-        assertTrue("through the live session when there is one", store.contains("live?.let"))
-        assertTrue("which MainActivity hands over", File("src/main/java/com/hermesvox/MainActivity.kt").readText().contains("PhoneSetupStore.attach(session)"))
+        assertTrue(
+            "through the live session only when it is the connection in force",
+            store.contains("PhoneSetupSend.plan(liveFor, live != null, active)"),
+        )
+        assertTrue(
+            "which MainActivity hands over with the connection it was built from",
+            File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+                .contains("PhoneSetupStore.attach(session, PhoneSetupSend.Connection("),
+        )
         assertTrue("the prompt is visible in the sheet", sheet.contains("SHOW THE SETUP TURN"))
         assertTrue("manual config is a disclosed fallback", sheet.contains("Manual fallback"))
     }

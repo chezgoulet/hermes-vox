@@ -161,6 +161,11 @@ class OnboardingActivity : AppCompatActivity() {
         val fallback = storedEntityName()
         val sc = scope.text.toString()
         if (u.isBlank() || k.isBlank()) { Toast.makeText(this, "Enter the endpoint and API key", Toast.LENGTH_SHORT).show(); return }
+        // M4 (0.9.1 review): plain HTTP is only trusted while the tailnet is up. Refuse
+        // before the probe, so a key is never sent over a hostile network's answer.
+        com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
+            Toast.makeText(this, it, Toast.LENGTH_LONG).show(); return
+        }
         // Checked BEFORE the probe: a scope the gateway would reject (or one that
         // would have to be silently rewritten) must not be discovered mid-call —
         // and it must never be stored as a different identity than typed.

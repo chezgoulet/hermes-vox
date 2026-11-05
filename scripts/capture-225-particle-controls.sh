@@ -16,7 +16,7 @@
 #              by a debug build with `adb install -r`)
 #
 # Requires: adb, python3 with Pillow (the frame check), one unlocked device, the shot build
-# installed and debuggable. The debug harness (MainActivity.handleDebugHarness +
+# installed and debuggable. The debug harness (DebugHarnessActivity.handleHarness +
 # SettingsActivity.applyDebugHarness) opens the section and the panel, holds the preview on
 # one state and scrolls — so no tap is needed and every run is identical. Nothing about a
 # release build changes: both harnesses return immediately unless the APK is debuggable.
@@ -62,7 +62,7 @@ ensure_app() {
     echo "  (installing $PKG from $APK)"
     adb install -r -g "$APK" >/dev/null 2>&1 \
       || { adb uninstall "$PKG" >/dev/null 2>&1 || true; adb install -g "$APK" >/dev/null 2>&1 || true; }
-    adb shell am start -n "$PKG/com.hermesvox.MainActivity" >/dev/null 2>&1 || true
+    adb shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" >/dev/null 2>&1 || true
     sleep 5
   done
   adb shell run-as "$PKG" true >/dev/null 2>&1
@@ -182,7 +182,7 @@ capture() {
   # itself, so exactly one being exists in the process that is being photographed.
   local args=(--es settings visuals --es being_advanced true --es preview_state thinking)
   [ -n "$row" ] && args+=(--es scroll_to "$row")
-  adb shell am start -n "$PKG/com.hermesvox.MainActivity" "${args[@]}" >/dev/null
+  adb shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" "${args[@]}" >/dev/null
   wait_for_settings || echo "  ! Settings did not come up for $name" >&2
   sleep "$SETTLE"
   # The top shot is the one that must show the being; a scrolled shot's band is rows.

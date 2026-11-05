@@ -23,6 +23,10 @@ object SettingsHints {
         "row_being_advanced",    // the disclosure chip itself
         "row_presence_advanced", // the disclosure chip itself
         "row_visual_cycle_all",  // carries its own description line
+        // #418: carries the owner's own subtitle line, in the developer section beside the
+        // logging switches ("Adds a command that copies a report block for a bug report;
+        // contains no conversations.").
+        "row_diag_summary",
     )
 
     val HINTS: Map<String, String> = linkedMapOf(

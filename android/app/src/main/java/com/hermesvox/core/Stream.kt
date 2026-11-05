@@ -72,6 +72,12 @@ internal class StreamState {
     /** The last `seq` the runs stream delivered, so a reattach replays only the rest. */
     var lastSeq = -1L
     /**
+     * L3 (0.9.1 review): the gateway said its retained backlog starts after our last seq,
+     * so the replayed deltas have a hole. The accumulated text is then not the answer; the
+     * terminal `run.completed.output` is (or the turn fails honestly).
+     */
+    var replayTruncated = false
+    /**
      * H3 (0.9.1 review): how a FAILED runs turn left its run — [RUN_ENDED] when the run is
      * known to be over (it said so, the gateway's status is terminal, or the reader
      * stopped it), [RUN_LOST] when the reader failed and could neither confirm the end
@@ -205,8 +211,29 @@ internal object Streams {
         }
         Thread({
             val err = try {
-                if (route == TurnRoute.RUNS) consumeRuns(client, input, st, options)
-                else consume(client, input, chainHead, st, options)
+                if (route == TurnRoute.RUNS) {
+                    try {
+                        consumeRuns(client, input, st, options)
+                    } catch (noRuns: NoRunsRoute) {
+                        // A 404 on admission is the one answer that means "this gateway has no
+                        // /v1/runs". Remember it for this profile and retry the SAME turn once
+                        // on the responses route. Nothing above this reader can tell the routes
+                        // apart, so the retry is invisible except for its log line.
+                        val name = StreamRoute.currentProfile()
+                        if (StreamRoute.markNoRuns(name)) {
+                            try {
+                                StreamRoute.log("event=route-fallback reason=no-runs-route profile=$name")
+                            } catch (_: Throwable) { }
+                        }
+                        consume(
+                            client, input,
+                            StreamRoute.chainHead(TurnRoute.RESPONSES, previousResponseId),
+                            st, options,
+                        )
+                    }
+                } else {
+                    consume(client, input, chainHead, st, options)
+                }
                 ""
             } catch (e: Exception) {
                 e.message ?: e.javaClass.name
@@ -590,6 +617,15 @@ internal object Streams {
     /** The reply to an admission whose body had gone out was lost: retry once ([admitRun]). */
     private class AdmissionLost(override val cause: IOException) : Exception(cause)
 
+    /**
+     * `POST /v1/runs` answered exactly 404: this gateway has no such route. It is not a
+     * failure to surface as the turn's error — it is the probe's answer, and [Streams.start]
+     * retries once on `/v1/responses`. Every other status (401, 409, 429, 500) and every
+     * transport failure remains a real error, because falling back on those would hide a
+     * bad key behind a different route.
+     */
+    private class NoRunsRoute : Exception("this gateway has no POST /v1/runs")
+
     /** Observes each admission attempt (the idempotency key it carried). Tests only. */
     @Volatile
     internal var admitAttempt: ((String) -> Unit)? = null
@@ -618,6 +654,10 @@ internal object Streams {
                 throw AdmissionLost(e)
             }
             // 202 is the documented admission; 200 is accepted by older builds.
+            if (code == 404) {
+                if (st.cancelled) return ""
+                throw NoRunsRoute()
+            }
             if (code != 200 && code != 202) {
                 if (st.cancelled) return ""
                 throw HermesException("hermes run ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
@@ -784,11 +824,34 @@ internal object Streams {
                     ev.text = st.text.toString()
                 }
 
+                // L3: the reattach could not replay everything it missed. Do not present the
+                // gapped deltas as the answer: the terminal event carries the whole response.
+                "replay.truncated" -> {
+                    st.replayTruncated = true
+                    recoverOutcome?.invoke(st.runId, "replay.truncated oldest=${env.oldestRetainedSeq}")
+                    emit = false
+                }
+
                 "run.completed", "done" -> {
-                    if (plainText(st.text.toString()).isEmpty() && env.output.isNotEmpty()) {
+                    if (st.replayTruncated) {
+                        if (env.output.isNotEmpty()) {
+                            // Keep the tool markers the transcript rendered; replace the text
+                            // with the run's own final answer.
+                            val tools = toolMarkers(st.text.toString())
+                            st.text.setLength(0)
+                            st.text.append(tools).append(env.output)
+                            st.replayTruncated = false
+                        } else {
+                            // No whole answer to fall back to: never present the gapped text.
+                            st.failure = "hermes stream: the replayed events were truncated " +
+                                "and the run completed without text"
+                            st.text.setLength(0)
+                            ev.text = ""
+                        }
+                    } else if (plainText(st.text.toString()).isEmpty() && env.output.isNotEmpty()) {
                         st.text.append(env.output)
                     }
-                    markDone(st, ev)
+                    if (st.failure.isEmpty()) markDone(st, ev)
                 }
 
                 "run.failed", "run.cancelled", "run.interrupted" -> {
@@ -889,6 +952,12 @@ internal object Streams {
         ev.output = output
         st.text.append("\n[tool-done]\n")
         ev.text = st.text.toString()
+    }
+
+    /** The `[tool:…]` / `[tool-done]` lines a transcript rendered, in order. */
+    private fun toolMarkers(text: String): String {
+        val lines = text.lineSequence().filter { it.startsWith("[tool:") || it == "[tool-done]" }.toList()
+        return if (lines.isEmpty()) "" else "\n" + lines.joinToString("\n") + "\n"
     }
 
     /** The terminal success both routes share. */
@@ -1113,6 +1182,8 @@ internal class Envelope(
     val completed: Boolean? = null,
     /** The runs stream's own sequence number, for replay/re-attach. -1 when absent. */
     val seq: Long = -1L,
+    /** `replay.truncated`: the oldest seq the gateway still retains. -1 when absent. */
+    val oldestRetainedSeq: Long = -1L,
 ) {
     class Part(val type: String, val text: String)
     class Item(val id: String, val type: String, val phase: String, val name: String,
@@ -1194,6 +1265,7 @@ internal class Envelope(
                 interrupted = (o?.get("interrupted") as? JBool)?.value ?: false,
                 completed = (o?.get("completed") as? JBool)?.value,
                 seq = seq,
+                oldestRetainedSeq = (o?.get("oldest_retained_seq") as? JNum)?.raw?.toLongOrNull() ?: -1L,
             )
         }
 

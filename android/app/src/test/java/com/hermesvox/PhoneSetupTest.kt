@@ -134,9 +134,10 @@ class PhoneSetupTest {
         val tag = PhoneMcpToken.fingerprint(token)
         val empty = PhoneSetup.replied(requested(), "   ")
         assertEquals(PhoneSetup.State.UNREACHABLE, PhoneSetup.state(empty, now + 2_000L, tag))
-        assertTrue(empty.sendFailed)
+        assertTrue(empty.failure.orEmpty().contains("did not answer"))
         val thrown = PhoneSetup.unreachable(requested())
         assertEquals(PhoneSetup.State.UNREACHABLE, PhoneSetup.state(thrown, now + 2_000L, tag))
+        assertTrue(thrown.failure.orEmpty().isNotBlank())
     }
 
     @Test fun nothing_connected_within_the_window_is_a_timeout_with_a_retry() {
@@ -162,6 +163,20 @@ class PhoneSetupTest {
         assertTrue(PhoneToolsView.setupHeadline(PhoneSetup.State.CONNECTED).contains("Connected"))
         assertTrue(PhoneToolsView.setupHeadline(PhoneSetup.State.WAITING).contains("Waiting"))
         assertTrue(PhoneToolsView.setupNext(PhoneSetup.State.TIMED_OUT).contains("rotate"))
+    }
+
+    @Test fun every_status_row_says_why_it_is_off_when_phone_tools_is_off() {
+        for (line in listOf(
+            PhoneToolsView.reachability(host, allowed = false),
+            PhoneToolsView.server(host, listening = true, url = "http://$host/mcp", allowed = false),
+            PhoneToolsView.token(PhoneMcp.TokenState.STORED, allowed = false),
+            PhoneToolsView.setupHeadline(PhoneSetup.State.IDLE, allowed = false),
+            PhoneToolsView.setupNext(PhoneSetup.State.IDLE, allowed = false),
+        )) {
+            assertTrue(line, line.contains("Off") || line.contains("Select Phone tools"))
+            assertFalse(line, line.contains("Not set up"))
+            assertFalse(line, line.contains("Connected"))
+        }
     }
 
     @Test fun the_token_fingerprint_is_stable_and_not_the_token() {

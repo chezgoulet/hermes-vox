@@ -18,7 +18,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.hermesvox.core.HermesSession
 
 /**
  * PhoneToolsSheet — the owner's side of the phone-as-MCP-server (#421 steps 3–5).
@@ -27,6 +26,15 @@ import com.hermesvox.core.HermesSession
  * [PhoneSetup], creates the credential if there is not one, and sends that prompt as an ordinary
  * stored turn through the app's session. The turn and the agent's reply are shown here, so a change
  * to the agent's own configuration is legible.
+ *
+ * **The turn is sent from the connection in force.** The session is resolved at the press
+ * ([PhoneSetupStore.session]), from the active profile's url, key and scope, and rebuilt when the
+ * one the app holds was built for a different connection (#430). Holding a client object in this
+ * sheet would re-create that bug: a session keeps the address it was built with.
+ *
+ * **A failure says what happened.** [PhoneToolsView.setupHeadline] shows the record's own line — no
+ * connection configured, key rejected, the agent did not answer, or the turn failed with the
+ * gateway's reason — so a local misconfiguration never reads as a network outage.
  *
  * **Connected is earned by the handshake.** The headline stays *waiting for your agent to connect*
  * until the phone's own [PhoneMcpServer] has seen an authenticated MCP `initialize`; only then is
@@ -43,7 +51,6 @@ import com.hermesvox.core.HermesSession
  */
 class PhoneToolsSheet(
     private val act: AppCompatActivity,
-    private val session: HermesSession? = null,
     private val firstRun: Boolean = false,
     private val onDismiss: () -> Unit = {},
 ) {
@@ -182,10 +189,10 @@ class PhoneToolsSheet(
         val state = PhoneSetup.state(record, now, PhoneMcp.tokenTag(act))
 
         col.addView(VoxSheet.subhead(act, "This phone"))
-        row(col, "Reachability", PhoneToolsView.reachability(status.tailnet))
-        row(col, "Server", PhoneToolsView.server(status.tailnet, status.listening, status.url))
+        row(col, "Reachability", PhoneToolsView.reachability(status.tailnet, status.allowed))
+        row(col, "Server", PhoneToolsView.server(status.tailnet, status.listening, status.url, status.allowed))
         row(col, "Do Not Disturb access", PhoneToolsView.dnd(status.dndGranted))
-        if (!status.dndGranted) {
+        if (!status.dndGranted && status.allowed) {
             action(
                 col,
                 "OPEN DND ACCESS",
@@ -197,7 +204,7 @@ class PhoneToolsSheet(
         }
         row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
         row(col, "Last request", PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now))
-        row(col, "Token", PhoneToolsView.token(status.token))
+        row(col, "Token", PhoneToolsView.token(status.token, status.allowed))
 
         col.addView(VoxSheet.subhead(act, "Set up with your agent"))
         body(
@@ -207,8 +214,8 @@ class PhoneToolsSheet(
                 "already exists, the turn says to update it in place, not to add a second one.",
         )
 
-        row(col, "Setup", PhoneToolsView.setupHeadline(state))
-        body(col, PhoneToolsView.setupNext(state), dim = true)
+        row(col, "Setup", PhoneToolsView.setupHeadline(state, record.failure, status.allowed))
+        body(col, PhoneToolsView.setupNext(state, status.allowed), dim = true)
         notice?.let { body(col, it) }
 
         if (state == PhoneSetup.State.CONNECTED) {
@@ -223,22 +230,24 @@ class PhoneToolsSheet(
 
         when (state) {
             PhoneSetup.State.IDLE ->
-                action(col, "SET UP WITH MY AGENT", primary = true, description = "Ask your agent to add this phone") { setUpAgent() }
+                if (status.allowed) action(col, "SET UP WITH MY AGENT", primary = true, description = "Ask your agent to add this phone") { setUpAgent() }
             PhoneSetup.State.WAITING ->
-                action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
+                if (status.allowed) action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
             PhoneSetup.State.CONNECTED ->
-                action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again; it will not add a second entry") { setUpAgent() }
+                if (status.allowed) action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again; it will not add a second entry") { setUpAgent() }
             PhoneSetup.State.UNREACHABLE ->
-                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
+                if (status.allowed) action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
             PhoneSetup.State.REFUSED ->
-                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
+                if (status.allowed) action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
             PhoneSetup.State.TIMED_OUT -> {
-                action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
-                action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
+                if (status.allowed) {
+                    action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
+                    action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
+                }
             }
         }
 
-        if (record.requestedAt > 0L) {
+        if (status.allowed && record.requestedAt > 0L) {
             val sent = PhoneSetupStore.lastPrompt()
             disclosure(
                 col,
@@ -264,6 +273,16 @@ class PhoneToolsSheet(
                     sent ?: PhoneSetupStore.prompt(hostOrPlaceholder(status), PhoneMcp.token(act)),
                 )
             }
+        }
+
+        if (!status.allowed) {
+            body(
+                col,
+                "Phone tools is off, so there is no token, no listener and no config to copy. " +
+                    "Select Phone tools in Alpha features at the top of Settings.",
+                dim = true,
+            )
+            return root
         }
 
         col.addView(VoxSheet.subhead(act, "Manual fallback"))
@@ -441,6 +460,11 @@ class PhoneToolsSheet(
     }
 
     private fun setUpAgent() {
+        if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            notice = "Phone tools is off. Select it in Alpha features before asking your agent."
+            paint()
+            return
+        }
         val status = PhoneMcp.status(act)
         val host = hostOrPlaceholder(status)
         if (status.tailnet.isNullOrBlank()) {
@@ -449,9 +473,14 @@ class PhoneToolsSheet(
             paint()
             return
         }
-        val s = session ?: PhoneSetupStore.session(act)
+        // #430: resolved at the moment of the press from the connection in force — never a client
+        // object captured when this sheet was built. A stale object sends the turn to the address
+        // the owner just replaced, while the connection test (built from the same prefs) passes.
+        val s = PhoneSetupStore.session(act)
         if (s == null) {
-            notice = "Connect the app to your gateway first (Entity & Connection), then try again."
+            // Nothing configured to send to. Said plainly, and recorded so the state names it too.
+            notice = null
+            PhoneSetupStore.failedBeforeSend(act, PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION))
             paint()
             return
         }
@@ -464,6 +493,11 @@ class PhoneToolsSheet(
     }
 
     private fun rotateToken() {
+        if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            notice = "Phone tools is off, so there is no token to rotate. Select it in Alpha features."
+            paint()
+            return
+        }
         PhoneSetupStore.rotate(act)
         expanded = false
         notice = "New token generated. The old token no longer works and the old connection proof " +

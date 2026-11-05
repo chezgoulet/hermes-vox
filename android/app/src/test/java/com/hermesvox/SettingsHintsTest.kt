@@ -212,7 +212,11 @@ class SettingsHintsTest {
      * split moved views only, so every key must still be read or written here.
      */
     @Test fun theScreenReadsAndWritesTheSamePrefKeysAsBeforeTheSplit() {
-        val keys = prefKeysIn(activityFile.readText())
+        // #418: the Presence density read — and its legacy filler-cap migration — moved to the
+        // file that owns the report block, so the row and `/diagnostics` cannot read it
+        // differently. The screen still reaches it, one call away, so the key is still here.
+        val keys = prefKeysIn(activityFile.readText()) +
+            prefKeysIn(File("src/main/java/com/hermesvox/PresenceDiagnosticCollect.kt").readText())
         assertEquals("pref keys the Settings screen touches changed — a moved row lost or " +
             "renamed its binding", BEFORE_AND_AFTER_SPLIT_PREF_KEYS, keys)
     }
