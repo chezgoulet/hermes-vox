@@ -386,12 +386,15 @@ class LocalActions(context: Context) {
         override fun deleteNote(id: String): Boolean = true
 
         /**
-         * The folders the owner granted with the system picker, by their own display names. The
-         * tree URI stays in [PhoneFileAccess]; the engine only needs the label to choose one, so
-         * the path never travels through a tool result or a log line.
+         * The folders the owner granted with the system picker, by their own display names and
+         * **tree ids**. The tree URI stays in [PhoneFileAccess]; the engine needs the id to name
+         * the grant and the label to let a call choose one, so the path never travels through a
+         * tool result or a log line.
          */
         override fun folders(): List<PhoneEngine.PhonePlatform.GrantedFolder> =
-            PhoneFileAccess.trees(app).map { PhoneEngine.PhonePlatform.GrantedFolder(it.label) }
+            PhoneFileAccess.trees(app).map {
+                PhoneEngine.PhonePlatform.GrantedFolder(id = it.id, label = it.label)
+            }
 
         override fun fileText(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
@@ -449,11 +452,9 @@ class LocalActions(context: Context) {
             return PhoneFileAccess.offer(app, tree, name)
         }
 
-        /** The one folder whose label matches, by the same normalisation the engine used. */
+        /** The one tree whose **id** is the grant: a label may repeat, a tree id cannot. */
         private fun treeFor(folder: PhoneEngine.PhonePlatform.GrantedFolder): PhoneFileAccess.Tree? =
-            PhoneFileAccess.trees(app).firstOrNull {
-                PhoneFiles.normalizeFolder(it.label) == PhoneFiles.normalizeFolder(folder.label)
-            }
+            PhoneFileAccess.trees(app).firstOrNull { it.id == folder.id }
 
         /** Android's own missing-permission string, or null when both calendar halves are held. */
         override fun calendarPermission(): String? = PhoneCalendarAccess.permission(app)

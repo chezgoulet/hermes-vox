@@ -194,8 +194,12 @@ object PhoneTool {
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
-    fun schema(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): Map<String, Any?> {
+    fun schema(
+        grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
+        folders: List<String> = emptyList(),
+    ): Map<String, Any?> {
         val offered = offeredActions(grants)
+        val folderChoices = PhoneFiles.folderChoices(folders)
         val actionDesc = buildString {
             append(
                 offered.joinToString("; ") { a ->
@@ -316,12 +320,23 @@ object PhoneTool {
                 ),
                 "folder" to linkedMapOf(
                     "type" to "string",
-                    "enum" to PhoneFiles.FOLDERS,
-                    "description" to
-                        "file_list, file_read or file_offer only: which granted folder to look in — " +
-                        "${PhoneFiles.FOLDERS.joinToString(" or ")} (the default is " +
-                        "${PhoneFiles.DEFAULT_FOLDER}). Everything is inside that folder only; " +
-                        "there is no way to name another one.",
+                    // The enum is the owner's grants, built per `tools/list` the way the action
+                    // enum is: a folder that is not granted is not a name the phone can keep.
+                    *folderEnum(folderChoices),
+                    "description" to if (folderChoices.isEmpty()) {
+                        "file_list, file_read or file_offer only: the folder the owner granted. " +
+                            "No folder is granted yet, so these actions refuse no_folder until the " +
+                            "owner picks one in Phone tools → Files."
+                    } else {
+                        val which = if (folderChoices.size == 1) {
+                            "It is the only grant, so it is the default when folder is omitted."
+                        } else {
+                            "Name one of them: with several folders granted there is no default."
+                        }
+                        "file_list, file_read or file_offer only: which granted folder to look in " +
+                            "— ${folderChoices.joinToString(", ")}. $which Everything is inside " +
+                            "that folder only."
+                    },
                 ),
                 "path" to linkedMapOf(
                     "type" to "string",
@@ -365,9 +380,13 @@ object PhoneTool {
                 "length" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
+                    // One answer is one cap's worth of text. A caller that wants more asks for the
+                    // next window; without a maximum one call reads a whole file into the answer.
+                    "maximum" to PhoneFiles.MAX_READ_BYTES,
                     "description" to
                         "file_read only: the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
-                        "by default. The result says truncated and the file's total bytes.",
+                        "by default and at most that. The result says truncated and the file's " +
+                        "total bytes; read the rest with a later offset.",
                 ),
                 "start" to linkedMapOf(
                     "type" to "string",
@@ -731,6 +750,15 @@ object PhoneTool {
                     val v = integer(raw)
                         ?: return bad(action, "length must be a whole number of bytes")
                     if (v < 1) return bad(action, "length must be at least one byte")
+                    // One answer is at most one cap of text. Asking for more is not a way to read
+                    // the whole file in one result; it is the next window's job.
+                    if (v > PhoneFiles.MAX_READ_BYTES) {
+                        return bad(
+                            action,
+                            "length is at most ${PhoneFiles.MAX_READ_BYTES} bytes; read the rest " +
+                                "with a later offset",
+                        )
+                    }
                     v
                 }
             }
@@ -1031,22 +1059,27 @@ object PhoneTool {
     }
 
     /**
-     * The `folder` argument, as the tool's word or null for the default, together with a refusal
-     * when it is not one of the two words. Shared by the three file actions so the words and their
-     * case can only be read one way.
+     * The `folder` argument, as the folder's own label or null for "the only grant", together with
+     * a refusal when it is not a string.
+     *
+     * The value is not checked against a list here: the list is the owner's grants, read per
+     * request, and the **engine** resolves it against them — a folder that is not granted is
+     * refused `no_folder` with the labels that are, which is more useful than "not one of two
+     * words". The advertised `enum` in [schema] is the same set of labels.
      */
     private fun folderArg(args: Map<String, Any?>, action: String): Pair<String?, Parsed?> =
         when (val raw = args["folder"]) {
             null -> null to null
-            is String -> if (raw.isBlank()) {
-                null to null
-            } else {
-                PhoneFiles.FOLDERS.firstOrNull { it.equals(raw.trim(), ignoreCase = true) }?.let {
-                    it to null
-                } ?: (null to bad(action, "folder must be ${PhoneFiles.FOLDERS.joinToString(" or ")}"))
-            }
+            is String -> raw.trim().takeIf { it.isNotEmpty() } to null
             else -> null to bad(action, "folder must be a string")
         }
+
+    /**
+     * The `folder` property's `enum`, or nothing at all when no folder is granted — an empty enum
+     * would advertise a vocabulary with no words in it.
+     */
+    private fun folderEnum(choices: List<String>): Array<Pair<String, Any?>> =
+        if (choices.isEmpty()) emptyArray() else arrayOf<Pair<String, Any?>>("enum" to choices)
 
     /** A refusal with a reason of its own — `bad_path`, `no_folder`, `not_text`, `too_big`. */
     private fun refused(action: String, reason: String, detail: String): Parsed =

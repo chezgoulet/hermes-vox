@@ -15,7 +15,10 @@ import org.junit.Test
 class PhoneFileApprovalTest {
 
     private class Fake : PhoneEngine.PhonePlatform {
-        val folder = PhoneEngine.PhonePlatform.GrantedFolder("Download")
+        val folder = PhoneEngine.PhonePlatform.GrantedFolder(
+            id = "primary:Download/Work",
+            label = "Work",
+        )
         var info: PhoneEngine.PhonePlatform.FileInfo =
             PhoneEngine.PhonePlatform.FileInfo.Ready("report.pdf", "application/pdf", 240_000)
         var handoff: PhoneEngine.PhonePlatform.FileHandoff =

@@ -18,11 +18,17 @@ import java.io.File
  *
  * **The grant is the owner's, made in the system picker.** [intent] is `ACTION_OPEN_DOCUMENT_TREE`
  * (read-only — this app never writes into the tree); [accept] takes the persistable permission the
- * picker returned and remembers the tree's own display name. Without that grant all three actions
- * refuse `no_folder`, and there is no other way in: **the Storage Access Framework is the deliberate
- * default, and this app declares no broad storage permission for it.** An all-files mode is a
- * decision the owner could be offered later through Android's own `MANAGE_EXTERNAL_STORAGE` screen;
- * it is not a capability this file withholds on their behalf.
+ * picker returned and remembers the tree by **its own id** plus its own display name. Without that
+ * grant all three actions refuse `no_folder`, and there is no other way in: **the Storage Access
+ * Framework is the deliberate default, and this app declares no broad storage permission for it.**
+ * An all-files mode is a decision the owner could be offered later through Android's own
+ * `MANAGE_EXTERNAL_STORAGE` screen; it is not a capability this file withholds on their behalf.
+ *
+ * **The folder really is a subfolder.** Android 11+ refuses to grant the `Download` directory
+ * itself, so the picker opens there and the owner picks one of its subfolders (`Download/Work`).
+ * That subfolder's label is what `tools/list` advertises as `folder`, and the id — not the label —
+ * is how [trees] keys the grant, so a `Work` under Download and a `Work` under Documents are two
+ * grants, not one.
  *
  * **A name is looked up, never walked.** The document id is `treeDocumentId + "/" + name`, which is
  * one child of the granted tree by construction; [PhoneFiles.contained] re-checks the id the
@@ -52,8 +58,20 @@ object PhoneFileAccess {
     /** At most this many offers are held open at once; the oldest is closed to make room. */
     private const val MAX_OPEN_OFFERS = 4
 
-    /** One folder the owner granted. [label] is the folder's own name, never a path we invented. */
-    data class Tree(val uri: String, val label: String)
+    /**
+     * The most bytes [countedSize] will stream to learn a file's size when the provider reports
+     * neither [DocumentsContract.Document.COLUMN_SIZE] nor a descriptor length. Above this the size
+     * is treated as unknowable rather than counted to the end on the main thread: a 500 MB log is
+     * not something to read twice in a voice call.
+     */
+    private const val MAX_COUNT_BYTES = 8L * 1024 * 1024
+
+    /**
+     * One folder the owner granted. [id] is the tree's **own** document id (`primary:Download/Work`)
+     * and it is the key: the grant is found by the id the owner picked, not by a word we invented.
+     * [label] is the folder's own name, which is what a call may say.
+     */
+    data class Tree(val uri: String, val id: String, val label: String)
 
     private data class Doc(
         val uri: Uri,
@@ -84,18 +102,39 @@ object PhoneFileAccess {
             val uri = (o["uri"] as? JStr)?.value?.trim().orEmpty()
             val label = (o["label"] as? JStr)?.value?.trim().orEmpty()
             if (uri.isEmpty()) continue
-            out.add(Tree(uri, label.ifEmpty { labelOf(Uri.parse(uri)) }))
+            // The id is derived from the URI when it is not stored (a grant from before the tree
+            // was keyed by its own id); the URI is the truth either way.
+            val id = (o["id"] as? JStr)?.value?.trim().orEmpty()
+                .ifEmpty { idOf(Uri.parse(uri)) }
+            out.add(Tree(uri, id, label.ifEmpty { labelOf(Uri.parse(uri)) }))
         }
         return out
     }
 
-    /** The picker intent. Read-only and persistable: the grant has to outlive the sheet. */
+    /**
+     * The picker intent. Read-only and persistable: the grant has to outlive the sheet.
+     *
+     * It opens on the **`Download`** folder. That folder itself cannot be granted on Android 11+ —
+     * the picker answers "Can't use this folder" — so the owner picks a **subfolder** of it
+     * (`Download/Work`), and that subfolder's own name is what the tool advertises.
+     */
     fun intent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
         addFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
         )
+        // Best effort: a device or picker that does not honour the initial URI still shows its own
+        // last location, and the grant works the same.
+        runCatching {
+            putExtra(
+                DocumentsContract.EXTRA_INITIAL_URI,
+                DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE, "primary:Download"),
+            )
+        }
     }
+
+    /** The external-storage documents provider: the one whose ids are `primary:…` paths. */
+    private const val EXTERNAL_STORAGE = "com.android.externalstorage.documents"
 
     /**
      * Take the picker's answer: persist the read grant, remember the folder's own name, and return
@@ -106,15 +145,18 @@ object PhoneFileAccess {
     fun accept(context: Context, data: Intent?): Tree? {
         val uri = data?.data ?: return null
         val label = labelOf(uri)
+        val id = idOf(uri)
+        if (id.isEmpty()) return null
         return try {
             context.contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
             val next = ArrayList(trees(context))
-            // The same folder picked again replaces its old grant, which is released so the
-            // provider is not left holding two.
-            next.firstOrNull { PhoneFiles.normalizeFolder(it.label) == PhoneFiles.normalizeFolder(label) }
+            // The same tree picked again replaces its old grant, which is released so the provider
+            // is not left holding two. The **tree id** is the identity: two folders can share a
+            // label (`Work` under Download and under Documents), and they are different grants.
+            next.firstOrNull { it.id == id }
                 ?.let { old ->
                     next.remove(old)
                     runCatching {
@@ -124,10 +166,10 @@ object PhoneFileAccess {
                         )
                     }
                 }
-            next.add(Tree(uri.toString(), label))
+            next.add(Tree(uri.toString(), id, label))
             save(context, next)
-            VoxLog.d("event=phone-files folder=$label")
-            Tree(uri.toString(), label)
+            VoxLog.d("event=phone-files folder=$label tree=$id")
+            Tree(uri.toString(), id, label)
         } catch (t: Throwable) {
             VoxLog.w("event=phone-files grant-failed reason=${t.javaClass.simpleName}")
             null
@@ -135,13 +177,19 @@ object PhoneFileAccess {
     }
 
     private fun save(context: Context, trees: List<Tree>) {
-        val encoded = Json.encode(trees.map { linkedMapOf("uri" to it.uri, "label" to it.label) })
+        val encoded = Json.encode(
+            trees.map { linkedMapOf("uri" to it.uri, "id" to it.id, "label" to it.label) }
+        )
         prefs(context).edit().putString(KEY_TREES, encoded).apply()
     }
 
+    /** The tree's own document id — the key a grant is stored and found by. */
+    private fun idOf(uri: Uri): String =
+        runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull().orEmpty()
+
     /** The tree's own display name, or its last id segment when the provider will not say. */
     private fun labelOf(uri: Uri): String {
-        val id = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull().orEmpty()
+        val id = idOf(uri)
         return id.substringAfterLast(':').substringAfterLast('/').ifBlank { "folder" }
     }
 
@@ -276,8 +324,9 @@ object PhoneFileAccess {
     }
 
     /**
-     * One window of [name] inside [tree]: [length] bytes from [offset], snapped to character
-     * boundaries, with the file's **total** size so the result can say whether it is a window.
+     * One window of [name] inside [tree]: [length] bytes from [offset], snapped **inward** to
+     * character boundaries, with the file's **total** size so the result can say whether it is a
+     * window.
      *
      * This is the answer for a file above [PhoneFiles.MAX_READ_BYTES]: the caller asks for a piece
      * small enough to use, and keeps asking until it has what it needs. Nothing is cut silently and
@@ -297,7 +346,7 @@ object PhoneFileAccess {
             Lookup.Outside -> return PhoneEngine.PhonePlatform.FileText.Outside
             is Lookup.Failed -> return PhoneEngine.PhonePlatform.FileText.Failed(found.detail)
         }
-        val total = doc.size ?: countBytes(context, doc.uri) ?: return PhoneEngine.PhonePlatform
+        val total = doc.size ?: sizeOf(context, doc.uri) ?: return PhoneEngine.PhonePlatform
             .FileText.Failed("the file's size could not be read · nothing was read")
         val start = offset.coerceIn(0, total)
         if (start >= total) {
@@ -307,20 +356,24 @@ object PhoneFileAccess {
                 doc.displayName, total, start, 0, "",
             )
         }
-        val want = length.coerceAtLeast(1).coerceAtMost(total - start)
-        // Three bytes of slack on each side: a character is at most four bytes in UTF-8, so this is
-        // enough to start and finish on character boundaries rather than splitting one.
+        // Second line of defence: the tool refuses a `length` above the cap, and a caller that got
+        // here some other way is still held to it. A window is never larger than one whole read.
+        val want = length.coerceAtLeast(1)
+            .coerceAtMost(PhoneFiles.MAX_READ_BYTES)
+            .coerceAtMost(total - start)
+        // Three bytes of slack on each side, so the inward snap in [PhoneFiles.window] has a whole
+        // character to find on either side of the cut. The text itself never extends past `want`.
         val from = (start - 3).coerceAtLeast(0)
         val slice = readRange(context, doc.uri, from, (start - from) + want + 3)
             ?: return PhoneEngine.PhonePlatform.FileText.Failed(
                 "the file could not be read · nothing was read",
             )
-        val window = PhoneFiles.windowText(slice, wholeFile = from == 0L)
+        val window = PhoneFiles.window(slice, from, start, want)
             ?: return PhoneEngine.PhonePlatform.FileText.NotText
         return PhoneEngine.PhonePlatform.FileText.Window(
             name = doc.displayName,
             totalBytes = total,
-            offset = from + window.skipped,
+            offset = window.offset,
             windowBytes = window.bytes.toLong(),
             text = window.text,
         )
@@ -353,10 +406,14 @@ object PhoneFileAccess {
                 "the granted folder is unreadable · grant it again in Phone tools",
             )
         }
-        val treeId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
-            ?: return PhoneFiles.ListResult.Failed(
+        val treeId = tree.id.ifEmpty {
+            runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull().orEmpty()
+        }
+        if (treeId.isEmpty()) {
+            return PhoneFiles.ListResult.Failed(
                 "the granted folder is unreadable · grant it again in Phone tools",
             )
+        }
         // The requested subdirectory is one relative path inside the tree, and nothing else.
         val startId = if (path.isEmpty()) treeId else "$treeId/$path"
         if (!PhoneFiles.containedAt(treeId, startId, path)) return PhoneFiles.ListResult.Outside
@@ -480,21 +537,59 @@ object PhoneFileAccess {
         null
     }
 
-    /** The file's whole size by counting it, for a provider that hides [COLUMN_SIZE]. */
-    private fun countBytes(context: Context, uri: Uri): Long? = try {
+    /**
+     * The file's whole size, asked of the provider before anything is read.
+     *
+     * A provider that hides [DocumentsContract.Document.COLUMN_SIZE] usually still knows the size of
+     * the file it is serving, and both a descriptor's declared length and its `statSize` answer it
+     * without moving a byte. Only when neither does is the stream counted — and then only up to
+     * [MAX_COUNT_BYTES], because counting a large file on the calling (main) thread is the thing
+     * this function exists to avoid. Above that the size is not knowable cheaply, and null says so.
+     */
+    private fun sizeOf(context: Context, uri: Uri): Long? =
+        declaredSize(context, uri) ?: countBytes(context, uri, MAX_COUNT_BYTES)
+
+    /** The size the provider declares for [uri], or null when it will not say. */
+    private fun declaredSize(context: Context, uri: Uri): Long? {
+        val declared = try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        } catch (_: Throwable) {
+            -1L
+        }
+        if (declared >= 0) return declared
+        return try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+                ?.takeIf { it >= 0 }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** The file's size by counting it, giving up (null) once it is above [cap]. */
+    private fun countBytes(context: Context, uri: Uri, cap: Long): Long? = try {
         context.contentResolver.openInputStream(uri)?.use { src ->
             val buf = ByteArray(8 * 1024)
-            var total = 0L
-            while (true) {
-                val n = src.read(buf)
-                if (n < 0) break
-                total += n
-            }
-            total
+            countedSize(cap) { src.read(buf) }
         }
     } catch (t: Throwable) {
         VoxLog.w("event=phone-files size-failed reason=${t.javaClass.simpleName}")
         null
+    }
+
+    /**
+     * Count what [step] yields until it ends or the count passes [cap]; null above the cap.
+     *
+     * Pure so the bound is a tested property rather than a comment: a stream far larger than the
+     * cap is abandoned after `cap` bytes, never read to its end.
+     */
+    internal fun countedSize(cap: Long, step: () -> Int): Long? {
+        var total = 0L
+        while (true) {
+            val n = step()
+            if (n < 0) return total
+            total += n
+            if (total > cap) return null
+        }
     }
 
     // ---- one document, inside the tree ----
@@ -505,8 +600,12 @@ object PhoneFileAccess {
         } catch (_: Throwable) {
             return Lookup.Failed("the granted folder is unreadable · grant it again in Phone tools")
         }
-        val treeId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
-            ?: return Lookup.Failed("the granted folder is unreadable · grant it again in Phone tools")
+        val treeId = tree.id.ifEmpty {
+            runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull().orEmpty()
+        }
+        if (treeId.isEmpty()) {
+            return Lookup.Failed("the granted folder is unreadable · grant it again in Phone tools")
+        }
         val docId = "$treeId/$name"
         // Belt and braces: the id is built from a name already checked, and it is re-checked here.
         if (!PhoneFiles.contained(treeId, docId)) return Lookup.Outside

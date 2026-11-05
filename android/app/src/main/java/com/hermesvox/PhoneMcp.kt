@@ -331,6 +331,9 @@ object PhoneMcp {
                     // The grants, read per request: the enum the gateway lists must lose a group
                     // the owner turns off, without restarting the listener or the call.
                     grants = PhoneGrantStore.source(app),
+                    // The folder enum too: a grant made (or removed) in the picker is in force on
+                    // the very next tools/list, and only the owner's labels are ever offered.
+                    folderLabels = { PhoneFileAccess.trees(app).map { it.label } },
                 )
                 server = s
                 VoxLog.d("event=phone-mcp start url=${s.url} port=${s.port}")
