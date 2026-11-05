@@ -370,6 +370,25 @@ object Sessions {
         }
     }
 
+    /**
+     * A resumed transcript as one block of trail text, bounded at [maxChars] **from the
+     * tail**: on a scrollback the newest lines are the ones worth keeping, and the crawl
+     * already shows the end. Whole lines are dropped, never halves, so a line the screen shows
+     * is a line the host wrote; only a single line longer than the whole budget keeps its tail.
+     */
+    fun trail(messages: List<Message>, maxChars: Int = TRAIL_MAX): String {
+        val lines = render(messages).map { it.text }.toMutableList()
+        fun len(): Int = if (lines.isEmpty()) 0 else
+            lines.sumOf { it.length } + CrawlHistory.GAP.length * (lines.size - 1)
+        while (lines.size > 1 && len() > maxChars) lines.removeAt(0)
+        if (lines.isEmpty()) return ""
+        val only = lines.joinToString(CrawlHistory.GAP)
+        return if (only.length <= maxChars) only else only.takeLast(maxChars.coerceAtLeast(0))
+    }
+
+    /** The trail block's budget — the same one [CrawlHistory] keeps for its own ring. */
+    const val TRAIL_MAX = CrawlHistory.MAX_CHARS
+
     // ---- the gate, and the word that reaches the card ---------------------------------
 
     /**

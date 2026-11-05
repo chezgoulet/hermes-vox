@@ -208,4 +208,40 @@ class TranscriptTest {
     @Test fun the_call_transcript_outlives_any_one_activity() {
         assertSame(Transcript.Call.transcript, Transcript.Call.transcript)
     }
+
+    // ---- #437: a resumed session's transcript, drawn before this device's own turns ----
+
+    @Test fun resumed_history_is_drawn_before_this_devices_own_turns() {
+        val t = Transcript()
+        t.setHistory("You: what did we decide\nAgent: the wiki move")
+        t.heard("and the next step")
+        t.replyFinal("Publish it.")
+        assertEquals(
+            "You: what did we decide\nAgent: the wiki move\n" +
+                "You: and the next step\nAgent: Publish it.",
+            t.text,
+        )
+    }
+
+    @Test fun re_setting_the_resumed_history_replaces_it_and_never_appends_it() {
+        val t = Transcript()
+        t.setHistory("You: one")
+        t.heard("two")
+        // A re-fetch serves the same first line plus one written at the desk meanwhile.
+        t.setHistory("You: one\nAgent: two, from the desk")
+        assertEquals("You: one\nAgent: two, from the desk\nYou: two", t.text)
+        // The same answer again changes nothing: the block is replaced, not appended.
+        t.setHistory("You: one\nAgent: two, from the desk")
+        assertEquals("You: one\nAgent: two, from the desk\nYou: two", t.text)
+    }
+
+    @Test fun clearing_a_conversation_drops_the_resumed_history_too() {
+        val t = Transcript()
+        t.setHistory("You: from another surface")
+        t.heard("hello")
+        t.clear()
+        assertEquals("", t.text)
+        t.heard("again")
+        assertEquals("You: again", t.text)
+    }
 }

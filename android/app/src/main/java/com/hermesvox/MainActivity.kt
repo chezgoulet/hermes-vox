@@ -1657,6 +1657,7 @@ open class MainActivity : AppCompatActivity() {
         fun onEntitySaved() {
             val a = active
             val wasLive = callIsLive()
+            a?.clearAdoptedSession()   // #437 §6: another host, another set of sessions
             resetActiveConversation()
             a?.connectFromPrefs()
             VoxLog.d("event=entity-saved callEnded=$wasLive")
@@ -1676,7 +1677,7 @@ open class MainActivity : AppCompatActivity() {
         // #368: a new conversation ends the trail too — old replies must not survive a
         // reset, and a scroll position into them would be a trap.
         crawlHistory.clear(); turnSeq = 0L
-        reply.setHistory(""); reply.resetScroll()
+        paintTrail(); reply.resetScroll()
         reply.setText("")
         transcript.clear()
         convoText.setText("")
@@ -1759,6 +1760,9 @@ open class MainActivity : AppCompatActivity() {
         }.apply()
         session?.resetConversation()   // the same url+key (two scopes on one gateway) keeps the object
         LatencyStats.resetSessionTurns()
+        // #437 §6: sessions belong to a profile. Nothing of the host just left — the adopted
+        // id or its listing — survives the switch.
+        clearAdoptedSession()
         clearConversationUi()
         connectFromPrefs()
         // The being is drawn from the prefs just written: re-read the look now, not at the next
@@ -2155,7 +2159,7 @@ open class MainActivity : AppCompatActivity() {
             // voiced) is what keeps a scroll from losing or duplicating a Presence line.
             val kind = if (source == Transcript.SOURCE_SOUL_ANSWER)
                 CrawlHistory.Kind.REPLY else CrawlHistory.Kind.ASIDE
-            if (crawlHistory.add(text, kind, turnSeq)) reply.setHistory(crawlHistory.text())
+            recordTrailLine(text, kind)
             appendPresence(text, source)
         } }
         override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
@@ -2343,6 +2347,16 @@ open class MainActivity : AppCompatActivity() {
     /** The session the phone is talking in, when one was picked up from the host. */
     private var adopted: Sessions.Row? = null
 
+    /**
+     * The adopted session's transcript as the app last read it, merged — never appended. The
+     * crawl shows it as one block *before* this call's own trail, so a re-fetch replaces the
+     * block instead of adding to it (#437 §5).
+     */
+    private var resumed: List<Sessions.Message> = emptyList()
+
+    /** When the transcript was last asked for, for the gap rule on returning to the app. */
+    private var resumedFetchAt = 0L
+
     /** The gateway behind the active profile: a session list is a property of the host, not
      *  of the profile ([Sessions.rootBase]), so this is the base every session request uses. */
     private fun profileBase(): String = prefs.getString("url", "").orEmpty()
@@ -2386,9 +2400,82 @@ open class MainActivity : AppCompatActivity() {
         val s = session ?: run { setStatus("Connect first", true); return false }
         s.adoptConversation(row.id)
         adopted = row
+        resumed = emptyList()
+        // The screen now belongs to the adopted session: nothing from the thread just left
+        // stays behind it (and a stored turn's id was rotated with the session object).
+        clearConversationUi()
         VoxLog.d("event=session-adopt id=${row.id} source=${row.source}")
         setStatus("Resumed · ${row.label}", true)
+        fetchResumed(row.id)
         return true
+    }
+
+    /**
+     * Read the adopted session's transcript and put it on screen.
+     *
+     * The host owns this transcript and another surface may be writing it while the phone
+     * reads it, so every fetch replaces the block: [Sessions.merge] keeps what the host
+     * served, drops anything of ours it has now accounted for, and keeps a turn of ours the
+     * host has not recorded yet. Nothing is ever appended to what the app believes it has,
+     * which is what makes a re-fetch after a reconnect unable to duplicate a conversation.
+     */
+    private fun fetchResumed(id: String) {
+        resumedFetchAt = System.currentTimeMillis()
+        val base = profileBase()
+        val key = storedKey()
+        Thread({
+            val answer = Sessions.transcript(SessionsClient.messages(base, key, id))
+            runOnUiThread {
+                // A later pick, a new conversation or a profile switch wins over this answer.
+                if (adopted?.id != id || isFinishing || isDestroyed) return@runOnUiThread
+                when (answer) {
+                    is Sessions.Transcript.Ok -> {
+                        resumed = Sessions.merge(resumed, answer.messages)
+                        renderResumed()
+                        VoxLog.d("event=session-transcript id=$id messages=${answer.messages.size} shown=${resumed.size}")
+                    }
+                    Sessions.Transcript.KeyRejected -> {
+                        VoxLog.w("event=session-transcript id=$id state=key-rejected")
+                        setStatus(Sessions.KEY_REJECTED, true)
+                    }
+                    Sessions.Transcript.NoAnswer -> {
+                        VoxLog.w("event=session-transcript id=$id state=no-answer")
+                        setStatus(Sessions.TRANSCRIPT_FAILED, true)
+                    }
+                }
+            }
+        }, "sessions-transcript").start()
+    }
+
+    /** The resumed block, in the crawl's own gaps and bounded from the tail. */
+    private fun resumedBlock(maxChars: Int = Sessions.TRAIL_MAX): String = Sessions.trail(resumed, maxChars)
+
+    /** The crawl's document: the resumed session's history, then this call's own scrollback. */
+    private fun paintTrail() {
+        reply.setHistory(CrawlDocument.join(resumedBlock(), crawlHistory.text()))
+    }
+
+    /** The resumed transcript, on both reading surfaces: the crawl and the transcript view. */
+    private fun renderResumed() {
+        paintTrail()
+        transcript.setHistory(resumedBlock(Transcript.MAX_CHARS))
+        paintTranscript()
+    }
+
+    /**
+     * Forget the adopted session and everything read from it. Called where the conversation
+     * really ends — `/new`, `/clear`, a profile switch, a saved connection — and never by a
+     * reconnect, which re-dials the same conversation and re-fetches it (#437 §5, §6).
+     */
+    private fun clearAdoptedSession() {
+        if (adopted == null) return
+        VoxLog.d("event=session-clear id=${adopted?.id}")
+        adopted = null
+        resumed = emptyList()
+        resumedFetchAt = 0L
+        // A listing belongs to one host: the next card asks again rather than showing this
+        // host's answer under another profile's name.
+        sessionsSheet.invalidate()
     }
 
     // ---- #370: share with agent — the clipboard, a file, or another app's share ----
@@ -2798,6 +2885,7 @@ open class MainActivity : AppCompatActivity() {
         stopVoiceWake()
         releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
         unregisterRouteCallback()  // C3: no line -> no route rebuilds
+        clearAdoptedSession()      // #437: /new and /clear leave the host's session behind
         clearConversationUi()
         if (!wasLive) setStatus("New session started", true)
     }
@@ -2812,8 +2900,17 @@ open class MainActivity : AppCompatActivity() {
             val ok = try { HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
             runOnUiThread {
                 val wasLive = callLive
+                // #437: a reconnect re-dials the SAME conversation — resetActiveConversation
+                // rotates the id, so an adopted session is taken again afterwards, and its
+                // transcript is read again: the other surface may have written to it.
+                val rejoin = adopted
                 resetActiveConversation()   // ends a live call properly (#252's class)
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)
+                if (rejoin != null) {
+                    session?.adoptConversation(rejoin.id)
+                    adopted = rejoin
+                    fetchResumed(rejoin.id)
+                }
                 if (ConversationReset.plan(ConversationReset.Trigger.RECONNECT, wasLive, ok).rearm) startCall()   // and re-arms it, as /new does
                 setStatus(if (ok) "Reconnected" else "Reconnect failed — check network + address", true)
                 onDone(ok)
@@ -2897,7 +2994,18 @@ open class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
+    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
+
+    /**
+     * #437 §5: a resumed session may be written by another surface while the phone is in a
+     * pocket. Coming back to the app after a gap longer than [Sessions.GAP_MS] reads the
+     * transcript again, so what is on screen is what the host has, not what it had.
+     */
+    private fun maybeRefetchResumed() {
+        val row = adopted ?: return
+        if (System.currentTimeMillis() - resumedFetchAt < Sessions.GAP_MS) return
+        fetchResumed(row.id)
+    }
 
     /** Load the on-device presence model once, if Presence is on and it is not up.
      *  A model that is installed but cannot start (no supported accelerator/CPU path on
@@ -3088,7 +3196,31 @@ open class MainActivity : AppCompatActivity() {
         replyBuf = ""
         reply.setText("")
         if (text.isBlank()) return
-        crawlHistory.add(text, CrawlHistory.Kind.REPLY, turnSeq)
-        reply.setHistory(crawlHistory.text())
+        recordTrailLine(text, CrawlHistory.Kind.REPLY)
+    }
+
+    /**
+     * #437: one funnel for a finished line in the trail.
+     *
+     * While a session is adopted, a REPLY belongs to the host's transcript: it is recorded as
+     * this app's own echo *inside* the resumed block and the block is repainted, never added
+     * to the ring beside it. That is the rule that makes a reconnect safe — the host serves
+     * the same turn on the next fetch, the echo is dropped by identity, and the screen shows
+     * one copy of it either way. An ASIDE (Presence speaking on its own) is this device's own
+     * line and stays in the ring, because the host's transcript has no such thing.
+     */
+    private fun recordTrailLine(text: String, kind: CrawlHistory.Kind): Boolean {
+        if (text.isBlank()) return false
+        if (adopted != null && kind == CrawlHistory.Kind.REPLY) {
+            // An echo carries no id and no timestamp: the host has not written it yet.
+            resumed = Sessions.merge(
+                resumed + Sessions.Message(role = "assistant", content = text), resumed,
+            )
+            renderResumed()
+            return true
+        }
+        if (!crawlHistory.add(text, kind, turnSeq)) return false
+        paintTrail()
+        return true
     }
 }

@@ -279,6 +279,76 @@ class SessionsTest {
         assertEquals(listOf("older", "only on the phone"), merged.map { it.content })
     }
 
+    /**
+     * The §5 test, as the app performs it: fetch, resume, ask a turn, reconnect, fetch again —
+     * the screen must not duplicate what it already showed.
+     *
+     * Off-device this is the sequence the activity runs: the first fetch fills the block, the
+     * app records its own reply as an echo (no id, no timestamp, because the host has not
+     * written it yet), the reconnect re-adopts and fetches, and the second fetch has the host's
+     * copy of that reply. Every line appears exactly once, in the host's order.
+     */
+    @Test fun the_reconnect_sequence_does_not_duplicate_a_single_line() {
+        val first = listOf(msg("user", "where were we", at(20)), msg("assistant", "on the wiki move", at(19)))
+        var resumed = Sessions.merge(emptyList(), first)
+        assertEquals(2, resumed.size)
+
+        // The phone asks a turn; the host has not recorded it at the instant it is drawn.
+        resumed = Sessions.merge(resumed + msg("assistant", "publishing it now", ""), resumed)
+        assertEquals(3, resumed.size)
+        assertEquals("publishing it now", resumed.last().content)
+
+        // Reconnect: re-adopt, fetch again — now the host has the same turn, with its own row.
+        val second = first + msg("user", "publish it", at(18)) + msg("assistant", "publishing it now", at(17))
+        resumed = Sessions.merge(resumed, second)
+
+        val trail = Sessions.trail(resumed)
+        for (said in listOf("where were we", "on the wiki move", "publish it", "publishing it now")) {
+            assertEquals("'$said' appears once", 1, Regex(Regex.escape(said)).findAll(trail).count())
+        }
+        // The host's order wins, and it put the echo where the turn really happened.
+        assertEquals(
+            listOf("where were we", "on the wiki move", "publish it", "publishing it now"),
+            resumed.map { it.content },
+        )
+        // And a third fetch of the same answer is a no-op.
+        assertEquals(trail, Sessions.trail(Sessions.merge(resumed, second)))
+    }
+
+    // ---- the trail block --------------------------------------------------------------
+
+    @Test fun the_trail_is_the_transcript_in_order_with_the_transcripts_labels() {
+        val messages = listOf(
+            msg("user", "first", at(3)),
+            msg("assistant", "second", at(2)),
+            msg("system", "never spoken", at(1)),
+            msg("assistant", "third", at(1)),
+        )
+        assertEquals(
+            listOf("You: first", "Agent: second", "Agent: third"),
+            Sessions.render(messages).map { it.text },
+        )
+        assertEquals("You: first\n\nAgent: second\n\nAgent: third", Sessions.trail(messages))
+    }
+
+    @Test fun a_long_trail_keeps_its_newest_lines_and_whole_lines() {
+        val messages = (1..10).map { n -> msg("assistant", "line $n " + "x".repeat(20), at(100L - n)) }
+        val capped = Sessions.trail(messages, maxChars = 120)
+        assertTrue("bounded: ${capped.length}", capped.length <= 120)
+        // The newest lines are the ones kept…
+        assertTrue(capped, capped.contains("line 10"))
+        assertFalse(capped, capped.contains("line 1 "))
+        // …and what is kept ends at a line the host wrote, not mid-word.
+        for (line in capped.split("\n\n")) assertTrue("'$line'", line.endsWith("x".repeat(20)))
+        // Nothing is dropped when it fits.
+        assertEquals(Sessions.trail(messages), Sessions.trail(messages, maxChars = 10_000))
+    }
+
+    @Test fun an_empty_transcript_is_an_empty_trail() {
+        assertEquals("", Sessions.trail(emptyList()))
+        assertEquals("", Sessions.trail(listOf(msg("tool", "irrelevant", at(1)))))
+    }
+
     // ---- the gate ---------------------------------------------------------------------
 
     @Test fun the_last_door_refuses_with_the_alpha_set_off() {
