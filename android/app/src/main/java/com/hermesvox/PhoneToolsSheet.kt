@@ -48,6 +48,15 @@ import androidx.core.content.ContextCompat
  * **Permissions are shown, not assumed.** Do Not Disturb is a special access, so the sheet shows
  * whether it is granted and opens the right system screen; an action that needs it still refuses in
  * [PhoneEngine] with `reason:"permission"`.
+ *
+ * **The sheet is one column, and it scrolls to its end.** The capability groups, Recent actions and
+ * Set up are all in it; the column is exactly as tall as what it holds and the viewport is what the
+ * header leaves, so nothing below the fold is ever clipped without a scroll range (#451).
+ *
+ * **A tick redraws only what changed.** The poll is there so the clock can move waiting → timed out
+ * and the "last request" line can age — not so the sheet can be rebuilt every second. Rebuilding it
+ * put the scroll back at the top and dropped a drag in flight, which is what made the sheet read as
+ * unscrollable on a device. [Drawn] is everything the sheet shows, and [repaints] is the rule.
  */
 class PhoneToolsSheet(
     private val act: AppCompatActivity,
@@ -60,6 +69,12 @@ class PhoneToolsSheet(
     private var notice: String? = null
     private var poll: Runnable? = null
     private val main = Handler(Looper.getMainLooper())
+
+    /** The column the sheet scrolls, so a repaint can put the owner back where they were. */
+    private var scroll: ScrollView? = null
+
+    /** What the sheet is drawing right now; a tick that would draw the same thing does nothing. */
+    private var shown: Drawn? = null
 
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
     private fun color(id: Int) = ContextCompat.getColor(act, id)
@@ -76,6 +91,13 @@ class PhoneToolsSheet(
         if (open) paint()
     }
 
+    /**
+     * The column the sheet scrolls. Read by [PhoneToolsSheetLayoutTest], which measures the sheet on
+     * a device: that its content is taller than the viewport, that the last section is reachable,
+     * and that a repaint leaves the owner where they were.
+     */
+    internal val scroller: ScrollView? get() = scroll
+
     fun close() {
         dialog?.dismiss()
     }
@@ -87,26 +109,56 @@ class PhoneToolsSheet(
             created.setOnDismissListener {
                 open = false
                 dialog = null
+                scroll = null
+                shown = null
                 poll?.let { main.removeCallbacks(it) }
                 poll = null
                 if (current === this) current = null
                 onDismiss()
             }
         }
-        d.setContentView(build())
+        // A repaint rebuilds the column, so the offset is carried across it: the owner's place in
+        // a long sheet is theirs, and a state that lands while they are reading must not yank them
+        // back to the top (#451).
+        val at = if (d.isShowing) scroll?.scrollY ?: 0 else 0
+        val next = snapshot(System.currentTimeMillis())
+        d.setContentView(build(next))
+        shown = next
+        if (at > 0) scroll?.post { scroll?.scrollTo(0, at) }
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         if (d.isShowing) return
         d.show()
     }
+
+    /**
+     * What the sheet draws, as data — the whole of it, read once.
+     *
+     * [PhoneMcp.Status] and [PhoneSetup.Record] are data classes, and the two lines that age are
+     * rendered here, so two reads a second apart are equal unless something the owner can see has
+     * actually changed. That is what makes the poll safe: see [repaints].
+     */
+    internal data class Drawn(
+        val status: PhoneMcp.Status,
+        val state: PhoneSetup.State,
+        val record: PhoneSetup.Record,
+        val lastRequest: String,
+        val handshake: String,
+    )
+
+    private fun snapshot(now: Long): Drawn =
+        drawn(PhoneMcp.status(act), PhoneSetupStore.read(act), PhoneMcp.tokenTag(act), now)
 
     private fun schedulePoll() {
         if (poll != null) return
         val tick = object : Runnable {
             override fun run() {
                 if (!open) return
-                val state = PhoneSetupStore.state(act)
-                // The clock is what moves waiting → timed out, and what ages "last request".
-                if (state == PhoneSetup.State.WAITING || state == PhoneSetup.State.TIMED_OUT) paint()
+                // #451: a tick repaints only when what the sheet would draw has changed.
+                // This used to repaint on the clock — every second for as long as a setup was
+                // WAITING or TIMED_OUT — and each repaint replaced the content view: the scroll
+                // jumped to the top and a drag in flight was dropped, so nothing below the fold
+                // could be reached at all.
+                if (repaints(shown, snapshot(System.currentTimeMillis()))) paint()
                 main.postDelayed(this, 1_000L)
             }
         }
@@ -114,11 +166,18 @@ class PhoneToolsSheet(
         main.postDelayed(tick, 1_000L)
     }
 
-    private fun build(): View {
+    private fun build(drawn: Drawn): View {
         val root = VoxSheet.root(act)
         VoxSheet.header(root, "PHONE TOOLS", "Close phone tools", onClose = { dialog?.dismiss() })
 
-        val scroll = ScrollView(act).apply { isFillViewport = true }
+        // #451: the scroll takes the height the header leaves, and the column is exactly as tall as
+        // what it holds. That pair is the scroll range: a weighted viewport over a wrapping column.
+        // `isFillViewport` stretched a short column to the viewport, which makes the range and the
+        // content disagree — so it is not set, and the column here is never short. Focusable, so a
+        // keyboard or a switch device can rest on the column and arrow through it; the platform's
+        // own initial focus (the close mark) is left alone.
+        val scroll = ScrollView(act).apply { isFocusable = true }
+        this.scroll = scroll
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -183,10 +242,9 @@ class PhoneToolsSheet(
             for (entry in audit.asReversed().take(AUDIT_ROWS)) auditRow(col, entry)
         }
 
-        val status = PhoneMcp.status(act)
-        val now = System.currentTimeMillis()
-        val record = PhoneSetupStore.read(act)
-        val state = PhoneSetup.state(record, now, PhoneMcp.tokenTag(act))
+        val status = drawn.status
+        val record = drawn.record
+        val state = drawn.state
 
         col.addView(VoxSheet.subhead(act, "This phone"))
         row(col, "Reachability", PhoneToolsView.reachability(status.tailnet, status.allowed))
@@ -203,7 +261,7 @@ class PhoneToolsSheet(
             }
         }
         row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
-        row(col, "Last request", PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now))
+        row(col, "Last request", drawn.lastRequest)
         row(col, "Token", PhoneToolsView.token(status.token, status.allowed))
 
         col.addView(VoxSheet.subhead(act, "Set up with your agent"))
@@ -219,7 +277,7 @@ class PhoneToolsSheet(
         notice?.let { body(col, it) }
 
         if (state == PhoneSetup.State.CONNECTED) {
-            body(col, PhoneToolsView.handshakeLine(record.handshakeAt, now), dim = true)
+            body(col, drawn.handshake, dim = true)
         }
 
         val reply = record.reply
@@ -593,6 +651,32 @@ class PhoneToolsSheet(
     companion object {
         /** How many Recent actions rows the sheet renders. The store keeps [PhoneAudit.MAX]. */
         private const val AUDIT_ROWS = 20
+
+        /**
+         * What the sheet would draw, from a status and a record read at [now]. Pure, so the poll's
+         * rule is proved without a device ([PhoneToolsSheetPollTest]): the two lines that age are
+         * rendered here, and everything else is a data class, so two reads a second apart are equal
+         * unless something the owner can see has changed.
+         */
+        internal fun drawn(
+            status: PhoneMcp.Status,
+            record: PhoneSetup.Record,
+            tokenTag: String,
+            now: Long,
+        ): Drawn = Drawn(
+            status = status,
+            state = PhoneSetup.state(record, now, tokenTag),
+            record = record,
+            lastRequest = PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now),
+            handshake = PhoneToolsView.handshakeLine(record.handshakeAt, now),
+        )
+
+        /**
+         * The poll's rule, pure: a tick repaints only when what the sheet would draw differs from
+         * what it already shows. A second passing is not on its own a reason to rebuild the column
+         * (#451) — that rebuild is what reset the scroll and dropped a drag in flight.
+         */
+        internal fun repaints(shown: Drawn?, next: Drawn): Boolean = next != shown
 
         @Volatile private var current: PhoneToolsSheet? = null
 
