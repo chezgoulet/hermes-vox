@@ -1,5 +1,7 @@
 package com.hermesvox
 
+import com.hermesvox.core.ProfileReach
+
 /**
  * ConnectionPhase — the pure, emulator-free rule for WHICH PHASE the connection is
  * in, and what the status pill says about it (0.5.1 Part B).
@@ -52,6 +54,8 @@ object ConnectionPhase {
         GATEWAY_COLD,
         /** Reached the gateway; it rejected the key. */
         AUTH_REJECTED,
+        /** Reached the gateway; the profile in the address does not exist there. */
+        PROFILE_MISSING,
         /** Reached the gateway; it answered with something we can't use. */
         GATEWAY_ERROR,
         /** Never reached the gateway at all (DNS / connect / no network). */
@@ -60,7 +64,7 @@ object ConnectionPhase {
 
     /** The outcome of one connection probe. [NOT_TESTED] is a real, honest value:
      *  it is what we have before anything has been asked of the network. */
-    enum class Probe { NOT_TESTED, IN_FLIGHT, OK, COLD, AUTH, GATEWAY_ERROR, UNREACHABLE, BLOCKED }
+    enum class Probe { NOT_TESTED, IN_FLIGHT, OK, COLD, AUTH, PROFILE_MISSING, GATEWAY_ERROR, UNREACHABLE, BLOCKED }
 
     /**
      * What the LIVE voice channel — the real streamed turn through the gateway
@@ -90,22 +94,34 @@ object ConnectionPhase {
      *     rather than by remembering not to call the test too early;
      *  3. only then does the probe decide, and each outcome gets its own phase.
      */
-    fun resolve(endpointSet: Boolean, keyPresent: Boolean, modelsWarm: Boolean, probe: Probe): Phase {
+    fun resolve(
+        endpointSet: Boolean,
+        keyPresent: Boolean,
+        modelsWarm: Boolean,
+        probe: Probe,
+        profileMissing: Boolean = false,
+    ): Phase {
         if (!endpointSet) return Phase.NO_ENDPOINT
         if (!keyPresent) return Phase.NEEDS_KEY
+        // The local pipeline still owns the pre-connect word: never a gateway verdict
+        // (a missing profile included) before the app is warm enough to render one.
         if (!modelsWarm) return Phase.WARMING
+        // The configured profile does not exist on this host. That is a fact about the
+        // address, observed from the wire — never "Connected".
+        if (profileMissing || probe == Probe.PROFILE_MISSING) return Phase.PROFILE_MISSING
         return when (probe) {
             Probe.NOT_TESTED, Probe.IN_FLIGHT, Probe.BLOCKED -> Phase.DIALING
             Probe.OK -> Phase.CONNECTED
             Probe.COLD -> Phase.GATEWAY_COLD
             Probe.AUTH -> Phase.AUTH_REJECTED
+            Probe.PROFILE_MISSING -> Phase.PROFILE_MISSING
             Probe.GATEWAY_ERROR -> Phase.GATEWAY_ERROR
             Probe.UNREACHABLE -> Phase.UNREACHABLE
         }
     }
 
     /** The status-pill copy for a phase. Short — it is a pill, not a dialog. */
-    fun pill(phase: Phase): String = when (phase) {
+    fun pill(phase: Phase, profile: String = ""): String = when (phase) {
         Phase.NO_ENDPOINT -> "No gateway set — open Settings"
         Phase.NEEDS_KEY -> "Key needed — open Settings"
         Phase.WARMING -> "Initializing…"
@@ -113,6 +129,7 @@ object ConnectionPhase {
         Phase.CONNECTED -> "Connected"
         Phase.GATEWAY_COLD -> "Gateway is warming up…"
         Phase.AUTH_REJECTED -> "Gateway rejected the key"
+        Phase.PROFILE_MISSING -> ProfileReach.line(profile)
         Phase.GATEWAY_ERROR -> "Gateway answered with an error"
         Phase.UNREACHABLE -> "Can't reach the gateway"
     }
@@ -159,6 +176,16 @@ object ConnectionPhase {
         if (streamCode < 200 || streamCode >= 400) return Probe.GATEWAY_ERROR
         return Probe.OK
     }
+
+    /**
+     * The body-aware form: a 404 carrying the host's `Unknown or unconfigured profile`
+     * phrase is [Probe.PROFILE_MISSING], a distinct state — not [Probe.GATEWAY_ERROR],
+     * not [Probe.AUTH] and not [Probe.UNREACHABLE]. Every other answer falls through to
+     * the code-only [classify].
+     */
+    fun classifyAnswer(code: Int, body: String): Probe =
+        if (ProfileReach.isMissingAnswer(code, body)) Probe.PROFILE_MISSING
+        else classify(code, "", NOT_RUN, "")
 
     /**
      * 0.5.2 — THE FALSE-401 GATE. [classify] reports what the one-shot probe saw;
@@ -218,7 +245,7 @@ object ConnectionPhase {
      * The dialog copy for a probe outcome. The verbose form is kept (WS3); what
      * changes is that a cold gateway is no longer told it is unreachable.
      */
-    fun copy(probe: Probe, debug: String): String {
+    fun copy(probe: Probe, debug: String, profile: String = ""): String {
         val body = when (probe) {
             Probe.OK -> return "Connected to your agent. Everything's working."
             Probe.NOT_TESTED -> "Not tested yet — the gateway hasn't been dialled."
@@ -227,6 +254,9 @@ object ConnectionPhase {
                 "(still warming up). Give it a moment and test again."
             Probe.AUTH -> "Reached your gateway and it needs valid auth — it rejected this key. " +
                 "Re-enter the key in Settings › Entity & Connection."
+            Probe.PROFILE_MISSING -> "Reached your gateway, but ${ProfileReach.line(profile)}. " +
+                "Check the address in Settings › Entity & Connection — this app cannot create a " +
+                "profile on the host."
             Probe.GATEWAY_ERROR -> "Reached your gateway, but it answered with something this app " +
                 "can't use. Check that the address points at the gateway itself."
             Probe.UNREACHABLE -> "Couldn't reach the gateway. Check that your network is on and " +

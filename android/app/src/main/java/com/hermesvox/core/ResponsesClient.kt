@@ -132,7 +132,11 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
         return Entity.exchange(c, RESPONSE_TIMEOUT_MS.toLong(), "hermes responses") {
             Entity.send(c, buildBody(input, previousResponseId, false))
             if (c.responseCode != 200) {
-                throw HermesException("hermes responses ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+                val err = Entity.readErrorBody(c)
+                // A 404 with the host's missing-profile phrase is a fact about this address,
+                // not a key or network failure: record it before surfacing the error.
+                ProfileReach.observe(c.responseCode, err, baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes responses ${Entity.status(c)}: $err")
             }
             val raw = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
             parseResponse(raw)
@@ -150,7 +154,14 @@ internal class ResponsesClient(val baseURL: String, val apiKey: String, model: S
         return Entity.exchange(c, PING_TIMEOUT_MS.toLong(), "hermes ping") {
             val code = c.responseCode
             val raw = Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
-            if (code != 200) throw HermesException("hermes ${Entity.status(c)}")
+            // This is the one probe that can both convict and clear the missing-profile
+            // state: a successful GET /v1/models for this profile proves it exists again.
+            if (code == 200) ProfileReach.clearedByModels(Entity.url(baseURL, "/v1/models"))
+            else ProfileReach.observe(code, raw, baseURL, StreamRoute.currentProfile())
+            if (code != 200) {
+                val detail = if (raw.isBlank()) "" else ": $raw"
+                throw HermesException("hermes ${Entity.status(c)}$detail")
+            }
             raw
         }
     }

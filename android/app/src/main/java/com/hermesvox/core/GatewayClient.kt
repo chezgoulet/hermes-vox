@@ -17,6 +17,7 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         return Entity.exchange(c, TIMEOUT_MS.toLong(), "hermes $path") {
             val code = c.responseCode
             val body = Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+            ProfileReach.observe(code, body, baseURL, StreamRoute.currentProfile())
             code to body
         }
     }
@@ -58,7 +59,9 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
             Entity.send(c, body)
             val code = c.responseCode
             if (code != 200) {
-                throw HermesException("hermes approval ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes approval ${Entity.status(c)}: $err")
             }
             Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
         }
@@ -80,7 +83,9 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
             Entity.send(c, body)
             val code = c.responseCode
             if (code != 200 && code != 202) {
-                throw HermesException("hermes run ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes run ${Entity.status(c)}: $err")
             }
             val raw = Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
             val runId = try {
@@ -112,7 +117,9 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         Entity.exchange(c, STOP_TIMEOUT_MS.toLong(), "hermes run stop") {
             val code = c.responseCode
             if (code != 200 && code != 202 && code != 204) {
-                throw HermesException("hermes run stop ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes run stop ${Entity.status(c)}: $err")
             }
             Entity.body(c)?.use { it.readBytes() }
         }

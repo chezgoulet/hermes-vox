@@ -62,6 +62,9 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
 
         /** `POST /v1/runs` answers 500: a real error, never a fallback trigger. */
         RUNS_500,
+
+        /** Every `/p/<name>` request answers the host's exact missing-profile 404. */
+        UNKNOWN_PROFILE,
     }
 
     private val server: HttpServer =
@@ -79,6 +82,14 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     /** Run ids a barge-in stopped, in order. */
     val stops: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
 
+    /** Every request the fake saw, in order — proves what the app did and did not send. */
+    data class Seen(val method: String, val path: String)
+    val seen: MutableList<Seen> = java.util.Collections.synchronizedList(ArrayList())
+
+    /** A profile `/p/<name>` the host does not serve. Mutable so a later 200 can clear it. */
+    @Volatile
+    var profileMissing: Boolean = faults == Faults.UNKNOWN_PROFILE
+
     /** `POST /v1/runs` attempts, and `POST /v1/responses` stream attempts. */
     val runAdmissions = AtomicInteger()
     val responseStreams = AtomicInteger()
@@ -90,6 +101,8 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
         server.createContext("/api/model/options") { ex -> guarded(ex) { modelOptions(ex) } }
         server.createContext("/v1/responses") { ex -> guarded(ex) { responses(ex) } }
         server.createContext("/v1/runs") { ex -> guarded(ex) { runsRoute(ex) } }
+        // A named Hermes profile is addressed at /p/<name>/…; the same handlers serve it.
+        server.createContext("/p") { ex -> guarded(ex) { profile(ex) } }
         server.start()
     }
 
@@ -118,6 +131,22 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     private fun modelOptions(ex: HttpExchange) {
         if (ex.requestMethod != "GET") return reject(ex, 405)
         json(ex, 200, """{"providers":[{"slug":"hermes","name":"Hermes","models":["hermes-agent"],"total_models":1,"is_current":true,"authenticated":true,"source":"fake","capabilities":[],"warning":null}]}""")
+    }
+
+    /** `/p/<name>/…`: the missing-profile answer, or the models proof once it is cleared. */
+    private fun profile(ex: HttpExchange) {
+        if (profileMissing) return missingProfile(ex)
+        val tail = "/" + ex.requestURI.path.substringAfter("/p/").substringAfter('/', "")
+        when {
+            tail == "/v1/models" -> models(ex)
+            tail == "/v1/responses" -> responses(ex)
+            else -> reject(ex, 404)
+        }
+    }
+
+    private fun missingProfile(ex: HttpExchange) {
+        // The host's exact body, quoted from the field report.
+        json(ex, 404, """{"error": "Unknown or unconfigured profile"}""")
     }
 
     private fun responses(ex: HttpExchange) {
@@ -333,6 +362,7 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
 
     private fun guarded(ex: HttpExchange, block: () -> Unit) {
         try {
+            seen.add(Seen(ex.requestMethod, ex.requestURI.path))
             block()
         } catch (_: IOException) {
             // the client hung up (a barge-in, a truncated read) — expected
