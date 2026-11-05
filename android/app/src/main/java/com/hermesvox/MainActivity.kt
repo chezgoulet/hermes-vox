@@ -472,9 +472,11 @@ open class MainActivity : AppCompatActivity() {
                     android.content.Intent(this, SettingsActivity::class.java)
                         .putExtra("section", "models")   // SettingsActivity.SECTION_MODELS
                 )
-                AlertAction.URL -> startActivity(
-                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(alert.url))
-                )
+                AlertAction.URL -> launchOutside {
+                    startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(alert.url))
+                    )
+                }
                 AlertAction.NONE -> Unit
             }
         }
@@ -999,6 +1001,26 @@ open class MainActivity : AppCompatActivity() {
         VoxLog.d("event=pip mode=full callLive=$callLive")
     }
 
+    /**
+     * Open another screen or another app without losing the call: PiP first, the start
+     * second ([CallWindow]). This is the funnel `apps.launch` / `open` uses — on 12+ the
+     * system only shrinks us for the caller's own leave gesture, not for a launch the app
+     * performs itself, so the app has to arrange this one. If PiP is unavailable the start
+     * still happens, immediately.
+     */
+    private fun launchOutside(start: () -> Unit) {
+        val order = CallWindow.launch(pipHost, start)
+        if (order == CallWindow.Order.PIP_THEN_LAUNCH) VoxLog.d("event=launch pip-first callLive=$callLive")
+    }
+
+    private val pipHost = object : CallWindow.Host {
+        override fun callLive(): Boolean = callLive
+        override fun enterPip(): Boolean = this@MainActivity.enterPip()
+        override fun post(delayMs: Long, action: () -> Unit) {
+            mainHandler.postDelayed({ if (!isFinishing && !isDestroyed) action() }, delayMs)
+        }
+    }
+
     /** The system's Stop button. The same `endCall()` the on-screen hang-up runs. */
     private val pipReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -1093,7 +1115,7 @@ open class MainActivity : AppCompatActivity() {
     }
 
     private fun openModelsStore() {
-        startActivity(Intent(this, ModelsActivity::class.java))
+        launchOutside { startActivity(Intent(this, ModelsActivity::class.java)) }
     }
 
     private fun showModelsEmptyState() {
@@ -2517,7 +2539,10 @@ open class MainActivity : AppCompatActivity() {
         else -> null
     }
 
-    private fun openSettings() { startActivity(Intent(this, SettingsActivity::class.java)); overridePendingTransition(R.anim.slide_in, R.anim.fade_out) }
+    private fun openSettings() = launchOutside {
+        startActivity(Intent(this, SettingsActivity::class.java))
+        overridePendingTransition(R.anim.slide_in, R.anim.fade_out)
+    }
 
     /** Expose the Hermes instance's /commands. For the MVP a curated set; the
      *  live command list is a follow-up (query the gateway). WS4b: the /models,
@@ -2749,7 +2774,7 @@ open class MainActivity : AppCompatActivity() {
         }
         try {
             @Suppress("DEPRECATION")
-            startActivityForResult(intent, REQ_FILE)
+            launchOutside { startActivityForResult(intent, REQ_FILE) }
         } catch (_: Throwable) {
             setStatus("No file picker on this device", true)
         }
