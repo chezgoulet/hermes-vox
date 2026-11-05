@@ -105,12 +105,14 @@ object CommandCatalog {
             cost = Cost("Switching starts a fresh thread", risk = false),
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
+        // Gated (#402): listed only while the Alpha gate allows "Switching profiles".
         Command("/profiles", emptyList(), Group.AGENT,
             effect = "Talk to another of this host's agents",
             cost = Cost("Switching starts a fresh conversation", risk = false),
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("profile", "agent", "another agent", "who am i talking to", "switch agent",
-                "connection", "home", "work")),
+                "connection", "home", "work"),
+            gated = true),
         Command("/reconnect", emptyList(), Group.AGENT,
             effect = "Reach the gateway again; a live call re-dials",
             cost = null,   // nothing is lost: the thread and the call both survive

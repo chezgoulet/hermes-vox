@@ -1731,6 +1731,12 @@ open class MainActivity : AppCompatActivity() {
      * device-wide value only where it has none, which is the one place that fallback lives.
      */
     private fun switchProfile(p: Profiles.Profile) {
+        // Alpha gate: switching is behind the Switching profiles set, and this is the last
+        // door — a banner, an intent or a restored state cannot switch behind it.
+        if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)) {
+            VoxLog.d("event=profile-switch refused reason=alpha-off profile=${p.name}")
+            return
+        }
         // Settings → Entity edits the live keys, so fold them back into the profile being
         // left before overwriting them; otherwise an edit made there is lost on the switch.
         val cur = profiles.activeName()
@@ -1800,6 +1806,10 @@ open class MainActivity : AppCompatActivity() {
             }, m)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
+        // #404: the `/v1/runs` fallback belongs to the active profile. This runs on every
+        // connect, and a switch calls connect again, so the choice is re-evaluated rather
+        // than inherited from the profile just left.
+        session?.let { RouteChoice.bind(it, prefs) }
         // #421 step 5 / #430: the setup sheet sends its turn through THIS session when one is
         // live, and the connection it was built from is handed over with it — a session keeps the
         // address and key it was built with, so a later turn must be able to tell whether it still
@@ -2270,19 +2280,28 @@ open class MainActivity : AppCompatActivity() {
     /** #226: the commands screen — grouped, each row saying what it does, with its running
      *  state on the row. The command names keep their meaning for anyone who types them. */
     private val commandsSheet by lazy {
-        CommandsSheet(this, situation = {
-            CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
-                lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
-        }, gate = diagnosticGate()) { c, done -> runCommand(c, done) }
+        CommandsSheet(
+            act = this,
+            situation = {
+                CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
+                    lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
+            },
+            run = { c, done -> runCommand(c, done) },
+            gate = commandGate(),
+        )
     }
-
-    /** #418: which optional commands exist right now. `/diagnostics` is in the catalogue only
-     *  while its own switch (Settings › About › Diagnostic summary) is on. */
-    private fun diagnosticGate(): CommandCatalog.Gate = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
     // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
     private var lastTurnFailed = false
     private var stuckShownThisCall = false
     private var callTurns = 0L
+    /** Which optional commands exist right now: `/diagnostics` while its own switch is on
+     *  (#418), and `/profiles` only while the Alpha gate allows "Switching profiles" (#402). */
+    private fun commandGate(): CommandCatalog.Gate {
+        val diagnostics = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
+        val profiles = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)
+        return CommandCatalog.Gate { c -> if (c.name == "/profiles") profiles else diagnostics.on(c) }
+    }
+
     protected fun showCommands() = commandsSheet.show()
 
     // ---- #370: share with agent — the clipboard, a file, or another app's share ----
@@ -2525,7 +2544,17 @@ open class MainActivity : AppCompatActivity() {
             "/models" -> showModelChooser()
             // Per-profile pass: the switcher is a command now — the commands sheet is where a
             // person goes to change the agent, and this row opens it on the sheets' own scaffold.
-            "/profiles" -> { profiles.showSwitcher(); done(true) }
+            // Alpha gate: with Switching profiles off it is not a command the app knows.
+            "/profiles" -> {
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)) {
+                    VoxLog.d("event=command name=/profiles state=refused reason=alpha-off")
+                    showHelpCard()
+                    done(false)
+                } else {
+                    profiles.showSwitcher()
+                    done(true)
+                }
+            }
             "/health" -> showHealthCard()
             // #418: the second door to the report block the Presence row copies. Same
             // collector, same bytes — the door only decides when, never what.
@@ -2695,7 +2724,7 @@ open class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage(CommandCatalog.helpText(diagnosticGate()))   // #226: written from the catalogue, never out of step
+            .setMessage(CommandCatalog.helpText(commandGate()))   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 

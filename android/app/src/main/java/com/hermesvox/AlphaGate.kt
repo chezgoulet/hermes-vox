@@ -53,11 +53,17 @@ object AlphaGate {
                 "thread picked up after you cut in. Needs continuous listening for the " +
                 "acknowledgements.",
         ),
-        QUIET_CALLS(
-            "alpha_set_quiet_calls", "Quiet calls",
-            "Silences notifications while a call is open, using your phone's Do Not Disturb with " +
-                "your own exceptions, and puts things back when you hang up. Off until you turn " +
-                "it on in Hearing; asks for Do Not Disturb access then.",
+        PHONE_TOOLS(
+            "alpha_set_phone_tools", "Phone tools",
+            "Lets your agent act on this phone — a timer, an alarm, Do Not Disturb, the volume. " +
+                "Vox runs a small server on your tailnet with its own token, and your agent " +
+                "reaches it over MCP. Off until you set it up.",
+        ),
+        PROFILES(
+            "alpha_set_profiles", "Switching profiles",
+            "Talk to another agent on your host. Each profile carries its own address, key, " +
+                "model and voice, and switching starts a fresh conversation. Unfinished until a " +
+                "host's own profile list arrives reliably (#436).",
         ),
     }
 

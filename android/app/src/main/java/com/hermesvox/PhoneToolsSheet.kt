@@ -189,10 +189,10 @@ class PhoneToolsSheet(
         val state = PhoneSetup.state(record, now, PhoneMcp.tokenTag(act))
 
         col.addView(VoxSheet.subhead(act, "This phone"))
-        row(col, "Reachability", PhoneToolsView.reachability(status.tailnet))
-        row(col, "Server", PhoneToolsView.server(status.tailnet, status.listening, status.url))
+        row(col, "Reachability", PhoneToolsView.reachability(status.tailnet, status.allowed))
+        row(col, "Server", PhoneToolsView.server(status.tailnet, status.listening, status.url, status.allowed))
         row(col, "Do Not Disturb access", PhoneToolsView.dnd(status.dndGranted))
-        if (!status.dndGranted) {
+        if (!status.dndGranted && status.allowed) {
             action(
                 col,
                 "OPEN DND ACCESS",
@@ -204,7 +204,7 @@ class PhoneToolsSheet(
         }
         row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
         row(col, "Last request", PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now))
-        row(col, "Token", PhoneToolsView.token(status.token))
+        row(col, "Token", PhoneToolsView.token(status.token, status.allowed))
 
         col.addView(VoxSheet.subhead(act, "Set up with your agent"))
         body(
@@ -214,8 +214,8 @@ class PhoneToolsSheet(
                 "already exists, the turn says to update it in place, not to add a second one.",
         )
 
-        row(col, "Setup", PhoneToolsView.setupHeadline(state, record.failure))
-        body(col, PhoneToolsView.setupNext(state), dim = true)
+        row(col, "Setup", PhoneToolsView.setupHeadline(state, record.failure, status.allowed))
+        body(col, PhoneToolsView.setupNext(state, status.allowed), dim = true)
         notice?.let { body(col, it) }
 
         if (state == PhoneSetup.State.CONNECTED) {
@@ -230,22 +230,24 @@ class PhoneToolsSheet(
 
         when (state) {
             PhoneSetup.State.IDLE ->
-                action(col, "SET UP WITH MY AGENT", primary = true, description = "Ask your agent to add this phone") { setUpAgent() }
+                if (status.allowed) action(col, "SET UP WITH MY AGENT", primary = true, description = "Ask your agent to add this phone") { setUpAgent() }
             PhoneSetup.State.WAITING ->
-                action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
+                if (status.allowed) action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
             PhoneSetup.State.CONNECTED ->
-                action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again; it will not add a second entry") { setUpAgent() }
+                if (status.allowed) action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again; it will not add a second entry") { setUpAgent() }
             PhoneSetup.State.UNREACHABLE ->
-                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
+                if (status.allowed) action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
             PhoneSetup.State.REFUSED ->
-                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
+                if (status.allowed) action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
             PhoneSetup.State.TIMED_OUT -> {
-                action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
-                action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
+                if (status.allowed) {
+                    action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
+                    action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
+                }
             }
         }
 
-        if (record.requestedAt > 0L) {
+        if (status.allowed && record.requestedAt > 0L) {
             val sent = PhoneSetupStore.lastPrompt()
             disclosure(
                 col,
@@ -271,6 +273,16 @@ class PhoneToolsSheet(
                     sent ?: PhoneSetupStore.prompt(hostOrPlaceholder(status), PhoneMcp.token(act)),
                 )
             }
+        }
+
+        if (!status.allowed) {
+            body(
+                col,
+                "Phone tools is off, so there is no token, no listener and no config to copy. " +
+                    "Select Phone tools in Alpha features at the top of Settings.",
+                dim = true,
+            )
+            return root
         }
 
         col.addView(VoxSheet.subhead(act, "Manual fallback"))
@@ -448,6 +460,11 @@ class PhoneToolsSheet(
     }
 
     private fun setUpAgent() {
+        if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            notice = "Phone tools is off. Select it in Alpha features before asking your agent."
+            paint()
+            return
+        }
         val status = PhoneMcp.status(act)
         val host = hostOrPlaceholder(status)
         if (status.tailnet.isNullOrBlank()) {
@@ -476,6 +493,11 @@ class PhoneToolsSheet(
     }
 
     private fun rotateToken() {
+        if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            notice = "Phone tools is off, so there is no token to rotate. Select it in Alpha features."
+            paint()
+            return
+        }
         PhoneSetupStore.rotate(act)
         expanded = false
         notice = "New token generated. The old token no longer works and the old connection proof " +

@@ -57,6 +57,12 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
          * "created AND completed" assertion catches it.
          */
         TRUNCATED_STREAM,
+
+        /** An older gateway: `POST /v1/runs` answers 404, so the client must fall back. */
+        NO_RUNS_ROUTE,
+
+        /** `POST /v1/runs` answers 500: a real error, never a fallback trigger. */
+        RUNS_500,
     }
 
     private val server: HttpServer =
@@ -73,6 +79,10 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     private val runs = ConcurrentHashMap<String, String>()
     /** Run ids a barge-in stopped, in order. */
     val stops: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
+
+    /** `POST /v1/runs` attempts, and `POST /v1/responses` stream attempts. */
+    val runAdmissions = AtomicInteger()
+    val responseStreams = AtomicInteger()
 
     init {
         server.executor = pool
@@ -156,7 +166,14 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     private fun runsRoute(ex: HttpExchange) {
         val path = ex.requestURI.path.removeSuffix("/")
         when {
-            ex.requestMethod == "POST" && path == "/v1/runs" -> admit(ex)
+            ex.requestMethod == "POST" && path == "/v1/runs" -> {
+                runAdmissions.incrementAndGet()
+                when (faults) {
+                    Faults.NO_RUNS_ROUTE -> rejectJson(ex, 404, "unknown route: /v1/runs")
+                    Faults.RUNS_500 -> rejectJson(ex, 500, "runs route failed")
+                    else -> admit(ex)
+                }
+            }
             ex.requestMethod == "POST" && path.endsWith("/stop") -> {
                 val id = path.removePrefix("/v1/runs/").removeSuffix("/stop")
                 stops.add(id)
@@ -266,6 +283,7 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
     // ---- streamed turn ----
 
     private fun sse(ex: HttpExchange, id: String, input: String) {
+        responseStreams.incrementAndGet()
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.responseHeaders.add("Cache-Control", "no-cache")
         // length 0 = chunked; the body ends when this handler returns/closes.

@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,7 +104,7 @@ class CommandCatalogTest {
      */
     @Test fun aCommandThatLosesSomethingSaysWhatAndNoOtherDoes() {
         for (name in listOf("/new", "/clear", "/compress", "/models", "/profiles")) {
-            val cost = CommandCatalog.find(name)!!.cost
+            val cost = CommandCatalog.find(name, CommandCatalog.Gate.EVERYTHING)!!.cost
             assertTrue("$name loses something and must say what", cost != null)
             assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)
             assertTrue("$name's cost has no line break", !cost.text.contains('\n'))
@@ -184,5 +185,19 @@ class CommandCatalogTest {
         assertTrue(h.contains("/clear /reset"))
         // A switch that is off takes the command out of the card as well as off the sheet.
         assertTrue(!CommandCatalog.helpText().contains("/diagnostics"))
+    }
+
+    @Test fun profiles_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
+        // The same Gate mechanism the diagnostic command uses: one way to hide a row.
+        val noProfiles = CommandCatalog.Gate { it.name != "/profiles" }
+        val all = CommandCatalog.grouped(gate = noProfiles).flatMap { it.second }.map { it.name }
+        assertFalse("/profiles", all.contains("/profiles"))
+        assertTrue("the rest of the catalogue is untouched", all.contains("/models"))
+        assertFalse(CommandCatalog.search("profiles", gate = noProfiles).any { it.name == "/profiles" })
+        assertTrue(
+            CommandCatalog.search("profiles", gate = CommandCatalog.Gate.EVERYTHING)
+                .any { it.name == "/profiles" })
+        assertFalse(CommandCatalog.helpText(noProfiles).contains("/profiles"))
+        assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/profiles"))
     }
 }

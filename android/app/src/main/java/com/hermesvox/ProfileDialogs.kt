@@ -88,7 +88,18 @@ class ProfileDialogs(
 
     /** The switcher reads the cache instantly; it never asks. */
     fun showSwitcher() {
+        if (refuseWhenOff()) return
         renderSwitcher()
+    }
+
+    /** Alpha features' Switching profiles set. One question, asked at every management door. */
+    private fun switchingAllowed(): Boolean =
+        AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)
+
+    private fun refuseWhenOff(): Boolean {
+        if (switchingAllowed()) return false
+        toast("Switching profiles is off in Alpha features")
+        return true
     }
 
     private fun renderSwitcher() {
@@ -108,6 +119,7 @@ class ProfileDialogs(
             onAdd = { addProfile(list()) },
             onEdit = { pickToEdit(list()) },
             onRefresh = { refreshFromHost(ProfilesAsk.AskKind.REFRESH) },
+            allowed = { switchingAllowed() },
         )
         open = sheet
         sheet.show()
@@ -270,6 +282,7 @@ class ProfileDialogs(
     /** Add ([editing] null) or edit a profile. The dialog stays open until the gateway
      *  accepts it, and says precisely why when it does not. */
     fun showEditor(editing: Profiles.Profile?) {
+        if (refuseWhenOff()) return
         val view = activity.layoutInflater.inflate(R.layout.dialog_entity, null) as android.view.ViewGroup
         val name = EditText(activity).apply {
             hint = "Name (e.g. work)"; setSingleLine()
@@ -345,6 +358,7 @@ class ProfileDialogs(
      * another host.
      */
     private fun addProfile(l: List<Profiles.Profile>) {
+        if (refuseWhenOff()) return
         val served = usable
         if (served.isEmpty()) { showEditor(null); return }
         val unsaved = served.filter { Profiles.find(l, it.name) == null }
@@ -376,6 +390,7 @@ class ProfileDialogs(
     }
 
     private fun pickToEdit(l: List<Profiles.Profile>) {
+        if (refuseWhenOff()) return
         val gone = this.gone
         AlertDialog.Builder(activity)
             .setTitle("Edit a profile")

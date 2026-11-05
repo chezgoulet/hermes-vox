@@ -10,11 +10,17 @@ package com.hermesvox
  */
 object PhoneToolsView {
 
-    fun reachability(tailnet: String?): String =
-        if (tailnet.isNullOrBlank()) "Cannot run — Tailscale is not connected"
-        else "Can run on the tailnet · $tailnet"
+    /** The one line every status row uses while Alpha features' Phone tools set is off. */
+    const val ALPHA_OFF = "Off — select Phone tools in Alpha features"
 
-    fun server(tailnet: String?, listening: Boolean, url: String?): String = when {
+    fun reachability(tailnet: String?, allowed: Boolean = true): String = when {
+        !allowed -> ALPHA_OFF
+        tailnet.isNullOrBlank() -> "Cannot run — Tailscale is not connected"
+        else -> "Can run on the tailnet · $tailnet"
+    }
+
+    fun server(tailnet: String?, listening: Boolean, url: String?, allowed: Boolean = true): String = when {
+        !allowed -> ALPHA_OFF
         tailnet.isNullOrBlank() -> "Stopped — no tailnet address to bind"
         listening -> "Listening · ${url ?: "on the tailnet"}"
         else -> "Stopped — the listener opens when a call starts"
@@ -26,11 +32,12 @@ object PhoneToolsView {
         return "$request · ${ago(ago)} ago"
     }
 
-    fun token(state: PhoneMcp.TokenState): String = when (state) {
-        PhoneMcp.TokenState.NONE -> "Not created yet"
-        PhoneMcp.TokenState.STORED -> "Set · stored encrypted on this phone"
-        PhoneMcp.TokenState.SESSION_ONLY -> "Set for this launch only · not saved"
-        PhoneMcp.TokenState.UNREADABLE -> "Set but unreadable · rotate to replace it"
+    fun token(state: PhoneMcp.TokenState, allowed: Boolean = true): String = when {
+        !allowed -> "Off — no token is created while Phone tools is off"
+        state == PhoneMcp.TokenState.NONE -> "Not created yet"
+        state == PhoneMcp.TokenState.STORED -> "Set · stored encrypted on this phone"
+        state == PhoneMcp.TokenState.SESSION_ONLY -> "Set for this launch only · not saved"
+        else -> "Set but unreadable · rotate to replace it"
     }
 
     fun dnd(granted: Boolean): String =
@@ -42,42 +49,50 @@ object PhoneToolsView {
         else "Not granted — volume changes will refuse with a reason"
 
     /** The compact value on the Settings row. Never says connected before the handshake. */
-    fun rowValue(state: PhoneSetup.State): String = when (state) {
-        PhoneSetup.State.CONNECTED -> "connected"
-        PhoneSetup.State.WAITING -> "waiting"
-        PhoneSetup.State.UNREACHABLE, PhoneSetup.State.REFUSED, PhoneSetup.State.TIMED_OUT -> "retry"
-        PhoneSetup.State.IDLE -> "set up"
+    fun rowValue(state: PhoneSetup.State, allowed: Boolean = true): String = when {
+        !allowed -> "off · alpha"
+        state == PhoneSetup.State.CONNECTED -> "connected"
+        state == PhoneSetup.State.WAITING -> "waiting"
+        state == PhoneSetup.State.UNREACHABLE || state == PhoneSetup.State.REFUSED ||
+            state == PhoneSetup.State.TIMED_OUT -> "retry"
+        else -> "set up"
     }
 
     /**
      * The one line under "Set up with your agent". [failure] is the record's own named cause
      * ([PhoneSetupSend]); it is what an unreachable send says, because "could not reach" for every
-     * cause is the wrong-cause message #430 removed.
+     * cause is the wrong-cause message #430 removed. [allowed] is the Alpha gate: off wins.
      */
-    fun setupHeadline(state: PhoneSetup.State, failure: String? = null): String = when (state) {
-        PhoneSetup.State.IDLE -> "Not set up yet"
-        PhoneSetup.State.WAITING -> "Waiting for your agent to connect"
-        PhoneSetup.State.CONNECTED -> "Connected"
-        PhoneSetup.State.UNREACHABLE ->
+    fun setupHeadline(
+        state: PhoneSetup.State,
+        failure: String? = null,
+        allowed: Boolean = true,
+    ): String = when {
+        !allowed -> ALPHA_OFF
+        state == PhoneSetup.State.IDLE -> "Not set up yet"
+        state == PhoneSetup.State.WAITING -> "Waiting for your agent to connect"
+        state == PhoneSetup.State.CONNECTED -> "Connected"
+        state == PhoneSetup.State.UNREACHABLE ->
             failure?.takeIf { it.isNotBlank() }
                 ?: PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER)
-        PhoneSetup.State.REFUSED -> "Your agent could not edit its configuration"
-        PhoneSetup.State.TIMED_OUT -> "Your agent was asked, but nothing connected in time"
+        state == PhoneSetup.State.REFUSED -> "Your agent could not edit its configuration"
+        else -> "Your agent was asked, but nothing connected in time"
     }
 
     /** The next step for the state, in the owner's words. Never a dead end. */
-    fun setupNext(state: PhoneSetup.State): String = when (state) {
-        PhoneSetup.State.IDLE ->
+    fun setupNext(state: PhoneSetup.State, allowed: Boolean = true): String = when {
+        !allowed -> "Select Phone tools in Alpha features at the top of Settings to use this."
+        state == PhoneSetup.State.IDLE ->
             "Set up asks your agent to add this phone to its own MCP configuration. You do not edit any files."
-        PhoneSetup.State.WAITING ->
+        state == PhoneSetup.State.WAITING ->
             "The listener opens when a call starts. Skim your agent's reply below — it is the best clue if this does not complete."
-        PhoneSetup.State.CONNECTED ->
+        state == PhoneSetup.State.CONNECTED ->
             "Your agent reached this phone and completed the MCP handshake. That is the proof; its reply is below for the record."
-        PhoneSetup.State.UNREACHABLE ->
+        state == PhoneSetup.State.UNREACHABLE ->
             "Check the gateway connection in Settings, then try again."
-        PhoneSetup.State.REFUSED ->
+        state == PhoneSetup.State.REFUSED ->
             "Your agent could not write its own configuration. Try again after fixing its file access, or use the manual fallback below."
-        PhoneSetup.State.TIMED_OUT ->
+        else ->
             "Nothing connected within three minutes. Try again, or rotate the token and ask once more."
     }
 

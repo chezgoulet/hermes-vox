@@ -211,8 +211,29 @@ internal object Streams {
         }
         Thread({
             val err = try {
-                if (route == TurnRoute.RUNS) consumeRuns(client, input, st, options)
-                else consume(client, input, chainHead, st, options)
+                if (route == TurnRoute.RUNS) {
+                    try {
+                        consumeRuns(client, input, st, options)
+                    } catch (noRuns: NoRunsRoute) {
+                        // A 404 on admission is the one answer that means "this gateway has no
+                        // /v1/runs". Remember it for this profile and retry the SAME turn once
+                        // on the responses route. Nothing above this reader can tell the routes
+                        // apart, so the retry is invisible except for its log line.
+                        val name = StreamRoute.currentProfile()
+                        if (StreamRoute.markNoRuns(name)) {
+                            try {
+                                StreamRoute.log("event=route-fallback reason=no-runs-route profile=$name")
+                            } catch (_: Throwable) { }
+                        }
+                        consume(
+                            client, input,
+                            StreamRoute.chainHead(TurnRoute.RESPONSES, previousResponseId),
+                            st, options,
+                        )
+                    }
+                } else {
+                    consume(client, input, chainHead, st, options)
+                }
                 ""
             } catch (e: Exception) {
                 e.message ?: e.javaClass.name
@@ -596,6 +617,15 @@ internal object Streams {
     /** The reply to an admission whose body had gone out was lost: retry once ([admitRun]). */
     private class AdmissionLost(override val cause: IOException) : Exception(cause)
 
+    /**
+     * `POST /v1/runs` answered exactly 404: this gateway has no such route. It is not a
+     * failure to surface as the turn's error — it is the probe's answer, and [Streams.start]
+     * retries once on `/v1/responses`. Every other status (401, 409, 429, 500) and every
+     * transport failure remains a real error, because falling back on those would hide a
+     * bad key behind a different route.
+     */
+    private class NoRunsRoute : Exception("this gateway has no POST /v1/runs")
+
     /** Observes each admission attempt (the idempotency key it carried). Tests only. */
     @Volatile
     internal var admitAttempt: ((String) -> Unit)? = null
@@ -624,6 +654,10 @@ internal object Streams {
                 throw AdmissionLost(e)
             }
             // 202 is the documented admission; 200 is accepted by older builds.
+            if (code == 404) {
+                if (st.cancelled) return ""
+                throw NoRunsRoute()
+            }
             if (code != 200 && code != 202) {
                 if (st.cancelled) return ""
                 throw HermesException("hermes run ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
