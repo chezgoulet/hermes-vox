@@ -12,13 +12,13 @@ package com.hermesvox
  * | state | the schema | a call |
  * |---|---|---|
  * | **Off** | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"` |
- * | **Ask** (Tier 0) | the actions are offered | `ok:false, reason:"approval-required"` — the owner's card owns it |
+ * | **Ask** (Tier 0) | the actions are **absent** from the `enum` (except one with its own card, `uninstall`) | `ok:false, reason:"approval-required"`, and the detail says no card exists for it yet |
  * | **Ask** (Tier 1) | the actions are offered | executed, and reported: a reported group is on when the owner turns it on |
  * | **Ask** (Tier 2) | the actions are offered | `ok:false, reason:"approval-required"` — every use is a card |
  * | **Allow** (Tier 0 only) | the actions are offered | executed, and reported |
  *
  * **Every group defaults to [GrantState.OFF].** There is no allow-all; the closest shortcut,
- * [PhoneGrants.instantAll], can only touch Tier 0.
+ * [PhoneGrants.instantAll], touches Tier 0 and skips the groups a bulk tap must not decide.
  *
  * **Allow is a Tier 0 word.** Tier 1 changes something the owner can see and Tier 2 leaves the
  * phone or reads what is private, so both stop at Ask; [effective] coerces a stored Allow back to
@@ -27,8 +27,10 @@ package com.hermesvox
  *
  * **Ask is not one behaviour.** It is "the owner said yes, once, at the group" for a Tier 1 group —
  * which acts now and is reported, because there is nothing to wait for after the group was turned
- * on — and "every use waits for a card" for Tier 0 and Tier 2. [PhoneTool.parse] is where that
- * line is drawn.
+ * on — and "every use waits for a card" for Tier 2. For **Tier 0** there is no card: its actions
+ * are withheld from the enum and a call is refused with the truth ("there is no approval card for
+ * it yet"), because an offer in an `enum` is a capability the phone must be able to keep.
+ * [PhoneTool.parse] is where that line is drawn.
  *
  * ## Which tier a group is
  *
@@ -244,18 +246,35 @@ object PhoneGrants {
      * The actions the model may be offered right now: every implemented action whose group is not
      * Off, plus `undo` and `status`.
      *
-     * `undo` and `status` belong to no group on purpose. `undo` only reverses something the owner
-     * already allowed, and `status` only reports; neither acts on the phone, and a phone whose
-     * grants are all Off must still be able to say so.
+     * An entry in this list is a promise the phone must be able to keep, so a group at **Ask** is
+     * only advertised where Ask is real: a Tier 1 group at Ask is on and runs, and an action with
+     * its own card (`uninstall`) is honoured. A Tier 0 group at Ask has no card to wait for, so its
+     * actions are withheld, and a direct call gets the truth from [PhoneTool.parse] rather than a
+     * promise of an approval that will not come.
+     *
+     * `undo` and `status` belong to no group on purpose. `undo` only reverses what the agent itself
+     * did (H4), and `status` only reports the mind's own view; neither acts on the phone, and a
+     * phone whose grants are all Off must still be able to say so.
      */
     fun advertised(source: Source): List<String> {
         val out = ArrayList<String>()
         for (g in GROUPS) {
-            if (stateOf(source, g) == State.OFF) continue
-            out.addAll(g.actions)
+            val state = stateOf(source, g)
+            if (state == State.OFF) continue
+            for (a in g.actions) {
+                if (state == State.ASK && !honoursAsk(g, a)) continue
+                out.add(a)
+            }
         }
         out.addAll(ALWAYS)
         return out
+    }
+
+    /** True when a call to [action] in [group] can succeed while the group is only at Ask. */
+    private fun honoursAsk(group: Group, action: String): Boolean {
+        val tier = tierOf(action) ?: group.tier
+        // Reported groups run at Ask; `uninstall` is the one consequential action with a card.
+        return tier == PhoneTiers.REPORTED || action == PhoneApproval.ACTION
     }
 
     /** The two actions that are not a capability: reversing one, and asking what is on. */
@@ -286,8 +305,9 @@ object PhoneGrants {
     /** The one line that explains a tier's rules above its rows. */
     fun tierLine(tier: Int): String = when (tier) {
         PhoneTiers.INSTANT ->
-            "Reversible and private. Off hides these actions from your agent; Ask makes it try and " +
-                "records the attempt; Allow lets them run and be reported."
+            "Reversible and private. Off hides these actions from your agent; Allow lets them run " +
+                "and be reported. Ask has no card to answer it yet, so a group at Ask is refused " +
+                "and nothing runs until you choose Allow."
         PhoneTiers.REPORTED ->
             "Changes something you can see. Off, or Ask — and Ask means it runs, because a " +
                 "reported group is one you have already turned on. Every use is recorded below."

@@ -149,6 +149,37 @@ class PhoneGrantsTest {
         assertEquals(listOf("timer", "alarm", "note", "undo", "status"), PhoneGrants.advertised(both))
     }
 
+    /**
+     * M8 of the 0.9.1 review: an entry in the enum is a capability the phone must be able to
+     * keep. Ask on a Tier 0 group has no card behind it, so it advertises nothing; the one
+     * Tier 0 action that raises its own card (`uninstall`) is still offered.
+     */
+    @Test fun ask_advertises_only_what_a_card_can_answer() {
+        val tierZero = listOf(
+            "timers-alarms", "dnd-volume", "media", "device-state", "clipboard",
+            "notifications", "messages", "calls", "contacts",
+        )
+        for (id in tierZero) {
+            val group = PhoneGrants.GROUPS.first { it.id == id }
+            assertEquals("$id is Tier 0", PhoneTiers.INSTANT, group.tier)
+            val on = PhoneGrants.Source { g -> if (g.id == id) PhoneGrants.State.ASK else PhoneGrants.State.OFF }
+            assertEquals(
+                "$id at Ask has no card, so it must not be advertised",
+                listOf("undo", "status"),
+                PhoneGrants.advertised(on),
+            )
+        }
+
+        val apps = PhoneGrants.Source { g ->
+            if (g.id == "apps") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        }
+        assertEquals(
+            "only the action with its own card survives Ask",
+            listOf("uninstall", "undo", "status"),
+            PhoneGrants.advertised(apps),
+        )
+    }
+
     @Test fun the_one_bulk_shortcut_touches_tier_zero_only() {
         val before = PhoneGrants.GROUPS.associate { it.id to PhoneGrants.State.OFF }
         val after = PhoneGrants.instantAll(before)
