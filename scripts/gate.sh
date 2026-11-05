@@ -24,6 +24,68 @@ java_major="$("$JAVA_HOME/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]
 echo "gate: JAVA_HOME=$JAVA_HOME"
 export PATH="$JAVA_HOME/bin:$PATH"
 
+# Two gates at once on one host are not two independent gates. The worktrees are
+# separate but ~/.gradle is not, and a shared test-results directory corrupted by
+# contention reads as a failing test ("Could not write XML test results",
+# output.bin.idx missing) — a failure that sends the reader hunting a bug that
+# does not exist. So gate runs serialise per host, on a path outside every
+# checkout, for the whole run (gradle, fetch-runtime.sh and the parity harness all
+# contend, not just gradle).
+GATE_LOCK="${HERMES_VOX_GATE_LOCK:-/tmp/hermes-vox-gate.lock}"
+# The overrides exist so the lock's behaviour can be exercised without waiting an
+# hour or touching the host-wide path; a normal run uses the defaults.
+GATE_LOCK_TIMEOUT="${HERMES_VOX_GATE_LOCK_TIMEOUT:-3600}"
+
+# Best effort: name the holder so a timeout says who is blocking. The gate writes
+# its pid into the lock file; if that is unreadable or stale, ask the platform.
+# Empty when nobody can say — the message degrades, it does not invent a holder.
+gate_lock_holder() {
+  local pid=""
+  pid="$(sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$GATE_LOCK" 2>/dev/null | head -n1)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    printf 'PID %s' "$pid"
+    return 0
+  fi
+  if command -v fuser >/dev/null 2>&1; then
+    pid="$(fuser "$GATE_LOCK" 2>/dev/null | tr -s ' \t' ' ' | sed 's/^ //; s/ $//')"
+    if [ -n "$pid" ]; then printf 'PID %s' "$pid"; fi
+  fi
+  return 0
+}
+
+gate_acquire_lock() {
+  if ! command -v flock >/dev/null 2>&1; then
+    # macOS has no flock(1). Say so — a different behaviour stated beats one hidden.
+    echo "gate: flock not available on this platform — running UNLOCKED (two gates on this host may corrupt each other's test results)"
+    return 0
+  fi
+  # fd 9 is held for the life of the script. The lock goes with the process, however
+  # it dies (exit, error, SIGKILL): a dead gate cannot leave a stale lock behind.
+  exec 9>>"$GATE_LOCK" || gate_die "cannot open the gate lock $GATE_LOCK"
+  if ! flock -n 9; then
+    echo "gate: another gate is running on this host — waiting"
+    if ! flock -w "$GATE_LOCK_TIMEOUT" 9; then
+      holder="$(gate_lock_holder)"
+      gate_die "could not acquire $GATE_LOCK within ${GATE_LOCK_TIMEOUT}s${holder:+; still held by $holder}"
+    fi
+    echo "gate: lock acquired — continuing"
+  fi
+  # Diagnostics only: the pid lets a waiter's timeout message name the holder.
+  printf 'pid=%s started=%s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$GATE_LOCK" 2>/dev/null || true
+  trap 'exec 9>&-' EXIT
+  return 0
+}
+
+gate_acquire_lock
+
+# Everything below runs in a subshell whose lock descriptor is closed, so the
+# children the gate spawns (gradle, python, the parity harness) cannot inherit —
+# and therefore cannot keep holding — the lock. This process alone holds it, and
+# the kernel drops it when this process dies, including SIGKILL. No stale lock,
+# no lock a later gate has to wait on because an orphan build still has it.
+(
+exec 9>&-
+
 echo "== [0/6] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
@@ -72,3 +134,4 @@ grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$live" \
 echo "gate: live suite OK ($(grep -o 'tests="[0-9]*"' "$live" | head -n1) — six live cases + the harness self-check)"
 
 echo "GATE-GREEN"
+)
