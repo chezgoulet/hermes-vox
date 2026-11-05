@@ -326,6 +326,19 @@ class PhoneHandoffTest {
     }
 
     @Test
+    fun a_dialer_that_will_not_start_is_unavailable_not_no_app() {
+        fake.dialStarts = false
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertFalse(r.json(), r.ok)
+        assertEquals(
+            "the dialer resolved but refused: that is the platform, not a missing app",
+            PhoneReason.UNAVAILABLE,
+            r.reason,
+        )
+        assertTrue(r.detail!!.contains("dialer"))
+    }
+
+    @Test
     fun dial_does_not_end_a_call_that_is_not_live() {
         val r = run(mapOf("action" to "dial", "to" to "123456"))
         assertTrue(r.ok)

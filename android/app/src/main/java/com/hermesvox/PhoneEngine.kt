@@ -1883,10 +1883,15 @@ class PhoneEngine(
                 "dial",
                 "no app on this phone answers ACTION_DIAL; nothing was opened and no call was ended",
             )
-            DialHandoff.Outcome.DIAL_FAILED -> noApp(
-                "dial",
-                "the dialer could not be opened; nothing was dialled and no call was placed",
-            )
+            DialHandoff.Outcome.DIAL_FAILED -> {
+                log("event=phone-mcp action=dial ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "dial",
+                    PhoneReason.UNAVAILABLE,
+                    "the dialer is on this phone but Android would not open it; nothing was " +
+                        "dialled and no call was placed",
+                )
+            }
             DialHandoff.Outcome.DIALED -> {
                 log("event=phone-mcp action=dial ok=true")
                 PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
