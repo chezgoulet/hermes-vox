@@ -14,7 +14,8 @@ token, the wire, the device pass for the tool as a whole. This one is the surfac
 already real (`timers-alarms`, `dnd-volume`, `notes`).
 **Built today (lane 2):** `files` and `calendar`.
 **Added by the listing lane:** `file_list`, and `file_read`'s `offset`/`length` window.
-**Declared, not built:** `notifications`, `messages-calls`, `apps`, `contacts`.
+**Added by the handoff lane:** `messages`, `calls`, and the safe half of `apps` (`launch`, `open`).
+**Declared, not built:** `notifications`, `apps`' `install`/`uninstall`, `contacts`.
 
 ---
 
@@ -50,6 +51,18 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 | **1** | reported | acts now when granted, is reported to the mind on the next turn, and is undoable | Off / Ask |
 | **2** | approval | **never executes from this wire.** The result says `approval-required` and names the surface that owns it | Off / Ask |
 
+### Why these hand off
+
+`message` and `dial` are not "send" and "call" with a confirmation. **Vox composes; the owner's own
+app acts.** A text is `ACTION_SENDTO` with an `smsto:` URI — never `SEND_SMS`, and Vox never asks to
+be the default SMS app. Two-factor codes therefore reach the agent the way the owner already handles
+them: copy the code, and let the `clipboard` group read it. A call is `ACTION_DIAL` with the number
+filled in — never `CALL_PHONE` — and because Vox never dials, no emergency-number special case is
+needed or wanted. Dialling **ends Vox's own call at the handoff**, after one spoken line, because the
+dialer is about to take the audio route; it does **not** end the conversation, which lives on the
+gateway and is resumed on the next call. The same reasoning keeps `apps` split: `launch`/`open` are
+instant, while `uninstall` waits for an approval card that is not built yet.
+
 ### The reason vocabulary
 
 | `reason` | meaning |
@@ -64,6 +77,7 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 | `unavailable` | the action was recognised and the platform refused, failed, or would not say |
 | `invalid-arguments` | the arguments do not describe a runnable action (bounds and shapes are below) |
 | `expired` | no undo is registered for that id any more |
+| `no_app` | nothing on the phone answers the intent: no `ACTION_SENDTO` app, no dialer, no launchable activity, or no app for the URI |
 | `unknown-action` | not a phone action; the detail lists what is offered right now |
 
 Every action in the tables below can also return `not_granted`, `approval-required` and
@@ -89,6 +103,10 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
 | `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
 | `clip_read` | clipboard | — | `text`, `chars` | **no** — reading changes nothing | `ClipboardManager.getPrimaryClip`. **No permission**, but **the platform decides**: since Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer. Both are `unavailable` with the platform's own reason; the phone never returns empty text as though it were the clipboard | `unavailable` |
+| `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent | `no_app`; `not_granted` naming **Contacts** when `to` is a name and that group is Off |
+| `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to` | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens | `no_app`; `not_granted` naming **Contacts** for a name without that group |
+| `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the launch still happens | `no_app` |
+| `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live | `invalid-arguments`, `no_app` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
 
@@ -247,25 +265,21 @@ building a second approval surface inside the MCP server is exactly what #421 ru
 | action | group | arguments (the contract, when it exists) | result (when it lands) | undo | what it would need from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `notifications` | notifications | — | the notifications currently on the phone | **no** | **notification-listener special access**, which also reads every code and message on the phone | `permission`, `approval-required` |
-| `message` | messages-calls | `to` string, `text` string ≤ 1 000 | `to`, `sent` | **no** — a sent message cannot be unsent | `SEND_SMS`, and the default-SMS-role on modern Android | `permission`, `approval-required` |
-| `call` | messages-calls | `to` string | `number`, `dialled` | **no** — a placed call cannot be unplaced | `CALL_PHONE`, a runtime permission | `permission`, `approval-required` |
-| `send` | messages-calls | `to` string, `text` string | `to`, `sent` | **no** | the same as `message`, for a channel the owner picks | `permission`, `approval-required` |
-| `email` | messages-calls | `to` string, `subject` string, `body` string | `to`, `sent` | **no** | a mail client the owner hands the draft to | `permission`, `approval-required` |
-| `launch` | apps | `app` string (package or label) | `app`, `opened` | **no** — bringing an app to the front is not reversible in any useful sense | a launcher intent; no permission | `approval-required`, `unavailable` |
-| `open` | apps | `app` string, `uri` string | `app`, `opened` | **no** | a deep link the target app claims | `approval-required`, `unavailable` |
-| `install` | apps | `app` string | `app`, `installed` | **no** | the package installer's own confirmation, which the owner answers | `approval-required`, `unavailable` |
-| `uninstall` | apps | `app` string | `app`, `removed` | **no** — an uninstall always needs the owner, and is never silent | `ACTION_DELETE` on the package, with the system's confirmation | `approval-required`, `unavailable` |
+| `install` | apps | `app` string | `app`, `installed` | **no** | the package installer's own confirmation, which the owner answers | `approval-required` |
+| `uninstall` | apps | `app` string | `app`, `removed` | **no** — an uninstall always needs the owner, and is never silent | `ACTION_DELETE` on the package, with the system's confirmation. **Not built**: it needs the approval card, which does not exist on the MCP wire yet | `approval-required` |
 | `contact` | contacts | `name` string | `name`, `number` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission; the lookup is by name and returns one number | `permission`, `approval-required` |
 
-**Declared, not built:** `notifications`, `messages-calls`, `apps` and `contacts`. `PhoneGrants`
-already names `message`, `call`, `send`, `email`, `launch`, `open`, `install` and `uninstall` in
-those groups' `planned` lists, so a direct call is refused with the group's own name instead of
-"unknown action"; none is advertised, because a promise in an `enum` is a capability the phone must
-be able to keep.
+**Declared, not built:** `notifications`, `contact`, and the destructive half of `apps`
+(`install`, `uninstall`). `PhoneGrants` names `install` and `uninstall` in the apps group's
+`planned` list, and `PhoneTiers` still names them, so a direct call is refused as
+`approval-required`; neither is advertised, because a promise in an `enum` is a capability the
+phone must be able to keep. **`uninstall` is not in the handoff lane**: it needs the approval card
+and stays `approval-required` until that exists. `call`, `send` and `email` are gone with the old
+`messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
 
 ---
 
-## The twelve groups
+## The thirteen groups
 
 | group | tier | actions | state |
 |---|---|---|---|
@@ -278,8 +292,9 @@ be able to keep.
 | `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane** |
 | `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
 | `notifications` | 2 | `notifications` | **declared, not built** |
-| `messages-calls` | 2 | `message`, `call`, `send`, `email` | **declared, not built** |
-| `apps` | 2 | `launch`, `open`, `install`, `uninstall` | **declared, not built** |
+| `messages` | 0 | `message` | **built by the handoff lane** |
+| `calls` | 0 | `dial` | **built by the handoff lane** |
+| `apps` | 0 | `launch`, `open` — `install`, `uninstall` planned | **safe half built; destructive half declared, not built** |
 | `contacts` | 2 | `contact` | **declared, not built** |
 
 ---
@@ -298,6 +313,9 @@ be able to keep.
 | `now_playing` / `state` | — | — | reporting changed nothing |
 | `clip` | — | — | a clipboard write cannot be reversed: the phone would have to have kept what it replaced, and a clip keeps no history of the clipboard |
 | `clip_read` | — | — | reading the clipboard changes nothing, so there is nothing to reverse |
+| `message` | — | — | Vox only composed a draft. A sent text cannot be recalled, and nothing was sent |
+| `dial` | — | — | the dialer opened; the owner's call is not Vox's to unplace |
+| `launch` / `open` | — | — | bringing an app or a link to the front is not a reversal, and there is no "previous screen" to restore |
 | `undo` / `status` | — | — | neither is a capability |
 | every Tier 1/2 write | as the row says | — | where the table says "no", there is no reversal and no invented one |
 
@@ -311,9 +329,11 @@ Every call the mind makes — success **and** refusal — writes one row through
 [`PhoneAudit`](../android/app/src/main/java/com/hermesvox/PhoneAudit.kt): time, action, the
 arguments summarised, the outcome, and the undo id when there is a real one.
 
-Arguments are **summarised, never copied**: a `note` or `clip` `text` and an `event_create` `title`
-are stored as `NN chars`; a duration, a clock time, a boolean, a level, a direction, an id, a file
-name or a folder is stored as itself, clipped to one line. A `file_list` row is the folder, the
+Arguments are **summarised, never copied**: a `note`, `clip` or `message` `text` and an
+`event_create` `title` are stored as `NN chars`; a duration, a clock time, a boolean, a level, a
+direction, an id, a file name, a folder or a recipient is stored as itself, clipped to one line.
+A `message` row therefore shows who and how many characters, never the body; an `open` row shows the
+URI it asked for, so the owner can see the destination. A `file_list` row is the folder, the
 relative path and the count — `Downloads, 12 entries` — and **never a name it saw**, because the
 names in a folder are the owner's. Nothing in this surface logs a secret, a clipboard payload, a
 file's contents or a calendar's contents — a `file_read` row carries the name and folder it asked
@@ -391,6 +411,23 @@ audit's one summarising function is the place a future action has to pass throug
     title or a file path's contents.
 15. **Revoke mid-call.** Turn Media Off while the call is live: the next `tools/list` no longer
     lists `play`, and the next call is `not_granted` with no key dispatched.
-16. **The declared groups stay refused.** With Messages and calls at Ask, `message` returns
-    `approval-required` and nothing is sent; `file_list` and `file_read` do the same while Files is
-    Off. No lane may make these advertise before the phone can keep the promise.
+16. **Messages = Allow, then `message` to a number.** The owner's messaging app opens on a draft
+    with the number and body filled in; **nothing is sent**, and the result is `ok:true` with `to`,
+    `chars` and `handed_off:true`. The owner's send button is the only thing that sends.
+17. **Calls = Allow, then `dial` while a Vox call is live.** The being says *dialling — ending our
+    call*; the Vox call ends through the same teardown the hang-up uses; the dialer opens with the
+    number filled in and nothing is placed. The conversation is still on the gateway when the next
+    call resumes it. `dial` with no dialer is `no_app`, and no call is ended for nothing.
+18. **Apps = Allow, then `launch` while a call is live.** The window shrinks to PiP first, then the
+    app opens; the being is still visible and Stop still works. If PiP cannot be entered, the app
+    opens anyway. `launch` of a package with no launcher entry is `no_app`. `open` of
+    `https://example.com` lands in the browser and reports its `package` and `component`; a bare
+    address is `invalid-arguments`.
+19. **A contact name with Contacts Off.** `message` to `"Mom"` is `not_granted` and the detail names
+    **Contacts**; nothing is opened. A name with Contacts on is still `unavailable` because the
+    contact lookup is declared, not built — the honest answer is to give a number.
+20. **`uninstall` stays refused.** With Apps at Allow, `uninstall` is **absent** from the `enum`;
+    a direct call returns `approval-required` and nothing is removed.
+21. **The declared groups stay refused.** `notifications` and `contact` return their documented
+    refusals, `file_list` and `file_read` do the same while Files is Off, and no lane may make them
+    advertise before the phone can keep the promise.

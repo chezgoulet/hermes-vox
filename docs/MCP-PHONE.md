@@ -154,8 +154,9 @@ all read it. There is no second list to drift.
 | Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |
-| Messages and calls | 2 | `message`\*, `call`\*, `send`\*, `email`\* | send a text, place a call |
-| Apps | 2 | `launch`\*, `open`\*, `install`\*, `uninstall`\* | open an app, uninstall one |
+| Messages | 0 | `message` | compose a text and open the messaging app; you send it |
+| Calls | 0 | `dial` | open the dialer with a number ready; you make the call |
+| Apps | 0 | `launch`, `open`; `install`\*, `uninstall`\* | open an app or a link; installing/uninstalling needs an approval that is not built |
 | Contacts | 2 | — | look up a number by name |
 
 `*` A planned action: the group and its refusal exist, the capability does not ship yet. A name in
@@ -192,10 +193,11 @@ mid-call, which is the only kind of revocation worth the name.
 
 ### What the owner sees
 
-The Phone tools sheet lists the twelve groups by tier, each with its one-line description and its
-Off / Ask / Allow control (Allow only where the tier permits it). Files, Notifications and Messages
-and calls carry one sentence of plain consequence where the ability is not obvious — "your agent
-could read a file in Downloads when you approve it".
+The Phone tools sheet lists the thirteen groups by tier, each with its one-line description and its
+Off / Ask / Allow control (Allow only where the tier permits it). Files and Notifications carry one
+sentence of plain consequence where the ability is not obvious — "your agent could read a file in
+Downloads when you approve it". Messages and Calls do not need one: nothing leaves the phone except
+through an app the owner already uses, and the owner still presses send or call.
 
 **Recent actions** is the counter-claim: time, action, summarised arguments, outcome, and an Undo
 where the action carries one. It records **refusals as well as successes**, because "my agent says
@@ -481,8 +483,10 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 9. **`volume`** → the reported `level` matches the phone's own slider afterwards.
 10. **`note`** → the next voice turn's `local_actions:` line carries `note(id=…)`, and `undo` deletes
     it.
-11. **`message`** → `not_granted` while Messages and calls is Off, `approval-required` once it is
-    Ask; nothing is sent either way.
+11. **`message`** → `not_granted` while Messages is Off, `approval-required` at Ask; at Allow the
+    owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted` while
+    Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after the
+    being says *dialling — ending our call*.
 12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
     summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
     undoable row: the action is reversed, or the toast says the undo expired.

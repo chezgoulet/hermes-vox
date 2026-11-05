@@ -172,7 +172,7 @@ Two lanes, deliberately not one wire:
   result with `ok` and the facts of what happened; a refusal is a result with a `reason`,
   never a transport error. Tier 2 actions are refused (`approval-required`) and belong to
   the gateway's approval surface.
-- **Grants.** `PhoneGrants` defines twelve capability groups once, each Off / Ask /
+- **Grants.** `PhoneGrants` defines thirteen capability groups once, each Off / Ask /
   Allow and Off by default. The tool's advertised `enum` is built from the live grants on
   every `tools/list` and `tools/call`, so a revocation takes effect on the next call.
   Allow is a Tier 0 word only. `docs/MCP-PHONE.md` is the contract.

@@ -49,7 +49,7 @@ class PhoneToolTest {
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
                 "state", "clip", "clip_read", "file_list", "file_read", "file_offer", "agenda",
-                "event_create",
+                "event_create", "message", "dial", "launch", "open",
                 "undo", "status",
             ),
             enumOf(),
@@ -102,13 +102,22 @@ class PhoneToolTest {
             (timer as PhoneTool.Parsed.Refuse).result.reason,
         )
 
-        val messages = PhoneGrants.Source { g ->
-            if (g.id == "messages-calls") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        val apps = PhoneGrants.Source { g ->
+            if (g.id == "apps") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
-        val message = PhoneTool.parse(mapOf("action" to "message", "text" to "hi"), messages)
+        val launch = PhoneTool.parse(mapOf("action" to "launch", "app" to "com.example"), apps)
         assertEquals(
             PhoneReason.APPROVAL,
-            (message as PhoneTool.Parsed.Refuse).result.reason,
+            (launch as PhoneTool.Parsed.Refuse).result.reason,
+        )
+
+        val notifications = PhoneGrants.Source { g ->
+            if (g.id == "notifications") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        }
+        val tierTwo = PhoneTool.parse(mapOf("action" to "notifications"), notifications)
+        assertEquals(
+            PhoneReason.APPROVAL,
+            (tierTwo as PhoneTool.Parsed.Refuse).result.reason,
         )
     }
 
@@ -140,7 +149,7 @@ class PhoneToolTest {
 
     @Test fun the_tier_two_capabilities_are_not_offered() {
         val offered = enumOf().toSet()
-        for (consequential in listOf("share", "message", "call", "email", "delete")) {
+        for (consequential in listOf("share", "call", "email", "delete", "send", "uninstall")) {
             assertFalse("$consequential must not be advertised", consequential in offered)
         }
     }
@@ -158,7 +167,9 @@ class PhoneToolTest {
         assertEquals("100", ((props["level"] as JObj)["maximum"] as com.hermesvox.core.JNum).raw)
         val direction = ((props["direction"] as JObj)["enum"] as JArr).items.map { (it as JStr).value }
         assertEquals(listOf("up", "down", "next", "previous"), direction)
-        for (key in listOf("at", "on", "text", "id")) assertNotNull("$key must be documented", props[key])
+        for (key in listOf("at", "on", "text", "id", "to", "app", "uri", "package")) {
+            assertNotNull("$key must be documented", props[key])
+        }
     }
 
     // ---- the media group ----
@@ -230,6 +241,41 @@ class PhoneToolTest {
         )
     }
 
+    // ---- the handoff groups ----
+
+    @Test
+    fun messages_and_calls_are_separate_instant_groups_with_allow() {
+        for ((id, action) in listOf("messages" to "message", "calls" to "dial")) {
+            val group = PhoneGrants.groupOf(action)
+            assertEquals("$action belongs to $id", id, group?.id)
+            assertEquals("$id is instant", PhoneTiers.INSTANT, group?.tier)
+            assertTrue(
+                "$id offers Allow",
+                PhoneGrants.State.ALLOW in PhoneGrants.statesFor(group!!.tier),
+            )
+
+            val off = PhoneGrants.Source { g ->
+                if (g.id == id) PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+            }
+            assertFalse("$action is absent while $id is off", action in enumOf(off))
+
+            val on = PhoneGrants.Source { g ->
+                if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+            }
+            assertEquals(listOf(action, "undo", "status"), enumOf(on))
+        }
+    }
+
+    @Test
+    fun apps_offers_its_safe_half_and_never_uninstall() {
+        val apps = PhoneGrants.Source { g ->
+            if (g.id == "apps") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("launch", "open", "undo", "status"), enumOf(apps))
+        assertFalse("uninstall waits for the approval card", "uninstall" in enumOf(apps))
+        assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("uninstall"))
+    }
+
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {
         val annotations = schemaObj()["annotations"] as JObj
         assertEquals(false, (annotations["readOnlyHint"] as JBool).value)
@@ -272,7 +318,8 @@ class PhoneToolTest {
     @Test fun the_tier_is_readable_before_anything_runs() {
         assertEquals(PhoneTiers.INSTANT, PhoneTiers.of("TIMER"))
         assertEquals(PhoneTiers.REPORTED, PhoneTiers.of(" note "))
-        assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("Message"))
+        assertEquals(PhoneTiers.INSTANT, PhoneTiers.of("Message"))
+        assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("Uninstall"))
         assertNull(PhoneTiers.of(""))
     }
 }

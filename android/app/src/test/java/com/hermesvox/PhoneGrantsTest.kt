@@ -14,7 +14,7 @@ import org.junit.Test
  * The properties that matter are the design's promises, asserted rather than described:
  *
  *  * **every group defaults to Off**, and Off advertises nothing;
- *  * **twelve groups**, each with one tier, a one-line description and a unique id;
+ *  * **thirteen groups**, each with one tier, a one-line description and a unique id;
  *  * **Allow exists for Tier 0 only** — a stored Allow on Tier 1/2 reads back as Ask;
  *  * **no allow-all**; the one bulk shortcut touches Tier 0 alone.
  */
@@ -36,13 +36,13 @@ class PhoneGrantsTest {
         )
     }
 
-    @Test fun the_twelve_groups_are_defined_once_with_unique_ids() {
+    @Test fun the_thirteen_groups_are_defined_once_with_unique_ids() {
         val ids = PhoneGrants.GROUPS.map { it.id }
         assertEquals(PhoneGrants.GROUPS.size, ids.toSet().size)
         assertEquals(
             listOf(
                 "timers-alarms", "dnd-volume", "notes", "media", "device-state", "clipboard",
-                "files", "calendar", "notifications", "messages-calls", "apps", "contacts",
+                "files", "calendar", "notifications", "messages", "calls", "apps", "contacts",
             ),
             ids,
         )
@@ -54,7 +54,7 @@ class PhoneGrantsTest {
     }
 
     @Test fun the_warnings_land_where_the_consequence_is_not_obvious() {
-        for (id in listOf("files", "notifications", "messages-calls")) {
+        for (id in listOf("files", "notifications")) {
             val group = PhoneGrants.GROUPS.first { it.id == id }
             assertNotNull("$id must carry its consequence in plain words", group.warning)
             assertTrue("$id's warning must say 'your agent could'", group.warning!!.contains("Your agent could"))
@@ -119,10 +119,10 @@ class PhoneGrantsTest {
     }
 
     @Test fun planned_actions_resolve_to_their_group_but_are_never_advertised() {
-        val message = PhoneGrants.groupOf("message")
-        assertEquals("messages-calls", message?.id)
-        assertEquals(PhoneTiers.APPROVAL, PhoneGrants.tierOf("message"))
-        assertFalse("a planned name is never in a group's offerable set", message!!.built)
+        val apps = PhoneGrants.groupOf("uninstall")
+        assertEquals("apps", apps?.id)
+        assertEquals(PhoneTiers.APPROVAL, PhoneGrants.tierOf("uninstall"))
+        assertFalse("a planned name is never in a group's offerable set", "uninstall" in apps!!.actions)
         for (g in PhoneGrants.GROUPS) {
             for (planned in g.planned) {
                 assertFalse("$planned is planned, not built", planned in g.actions)

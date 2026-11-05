@@ -437,6 +437,11 @@ open class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
         CrashLog.init(applicationContext)
+        // The phone's handoff actions (message/dial/launch) need the window that owns the call:
+        // the being to speak the dial line, the one hang-up teardown, and the PiP host. They are
+        // attached for exactly as long as this screen exists; the application context alone
+        // takes the honest fallback (nothing to announce or shrink, the owner's app still opens).
+        PhoneHandoff.attach(phoneHost)
         maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
@@ -1024,6 +1029,35 @@ open class MainActivity : AppCompatActivity() {
         override fun post(delayMs: Long, action: () -> Unit) {
             mainHandler.postDelayed({ if (!isFinishing && !isDestroyed) action() }, delayMs)
         }
+    }
+
+    /**
+     * The screen's half of the phone's handoff actions. The dial line is voiced through the
+     * **existing being** ([VoiceController.speakGlue]) and the rest of the handoff — the
+     * hang-up teardown, then the dialer — runs when that line is audible. A short fallback
+     * fires if nothing can speak, because a dial must never wait on TTS: the line is a courtesy
+     * at the handoff, not a gate on the owner's call.
+     */
+    private val phoneHost = object : PhoneHandoff.Host {
+        override fun callLive(): Boolean = callLive
+
+        override fun announceDial(line: String, after: () -> Unit) {
+            val c = liveController
+            if (!callLive || c == null) {
+                after()
+                return
+            }
+            val fired = java.util.concurrent.atomic.AtomicBoolean(false)
+            val go = {
+                if (fired.compareAndSet(false, true)) mainHandler.post(after)
+            }
+            c.speakGlue(line, critical = true, source = "dial-handoff", onPlayed = { go() })
+            mainHandler.postDelayed({ go() }, ANNOUNCE_FALLBACK_MS)
+        }
+
+        override fun endCall() = this@MainActivity.endCall()
+
+        override fun window(): CallWindow.Host? = pipHost
     }
 
     /** The system's Stop button. The same `endCall()` the on-screen hang-up runs. */
@@ -1838,6 +1872,13 @@ open class MainActivity : AppCompatActivity() {
         /** The PiP Stop RemoteAction's broadcast. Internal: the intent is package-scoped. */
         const val ACTION_PIP_STOP = "com.hermesvox.action.PIP_STOP"
         const val REQ_PIP_STOP = 3272
+
+        /**
+         * How long the dial handoff waits for its line to become audible before ending the Vox
+         * call anyway. A courtesy, not a gate: no TTS engine, or a reply already owning the
+         * voice, must never leave the owner waiting on a dialer.
+         */
+        const val ANNOUNCE_FALLBACK_MS = 900L
 
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
@@ -3409,6 +3450,7 @@ open class MainActivity : AppCompatActivity() {
         fileShareRef?.close()
         cues?.release()                           // #156: free the cue AudioTrack with the surface
         cues = null
+        PhoneHandoff.detach(phoneHost)            // a dead window answers no handoff
         if (active === this) active = null
         super.onDestroy()
     }
