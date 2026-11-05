@@ -14,7 +14,7 @@ but it is not a claim about the current build. Three classes are used:
   the banner, and the line below says what changed, so a reader who skips the banner is not
   misled.
 
-Counts: **34 current** · **130 historical** · **5 contradicted** · **19 assets** (images, listed at
+Counts: **34 current** · **129 historical** · **6 contradicted** · **19 assets** (images, listed at
 the end). `README.md`, `CONTRIBUTING.md`, `SECURITY.md` and `NOTICE` are counted as current
 root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 
@@ -140,6 +140,7 @@ not the only warning.
 | [`docs/PRESENCE-BENCH.md`](PRESENCE-BENCH.md) | Its opening says D4 makes Qwen 3.5 0.8B the default presence model. D4 was amended the same day and the code keeps **Gemma 4 E2B** (`ModelCatalog`: `gemma-e2b`); the document’s own conclusion says Qwen cannot be the default on a Pixel 7. |
 | [`docs/PLAN-0.9.1.md`](PLAN-0.9.1.md) | Its “carried without a number” list still includes **#165**, while D29 makes the F-Droid listing 0.9.1 work and the release wait for it. Everything else in the plan was amended to the D28 shape. |
 | [`docs/handoff.md`](handoff.md) | It names **0.3.7** as the latest release and the Go connector as the architecture. The Kotlin core replaced Go in #126 and the newest shipped release is **0.9.0.3**. |
+| [`docs/RELEASE-0.6.0.md`](RELEASE-0.6.0.md) | It lists the app's `LICENSE` as **Apache-2.0**. That was true when 0.6.0 shipped; the app was relicensed to **GPL-3.0** on 2026-10-19 (`2beacd9`, D11) because the speech runtime statically links espeak-ng. No current document disagrees: `LICENSE`, `NOTICE`, README, ARCHITECTURE and the F-Droid metadata all say GPL-3.0. |
 
 ## Assets
 
