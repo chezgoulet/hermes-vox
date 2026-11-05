@@ -3,7 +3,7 @@
 **Status:** prepared, not cut. Version code **147** · `versionName` `0.9.1` · built and gated on
 `testing`; the release commit is cherry-picked to `main`, where `release.yml` builds twice and
 compares the payloads before the tag is made. The list below is read from the tree at
-`42ad6e0` (after #476); nothing here is announced as shipped until the tag exists.
+`0f3ec3a`; nothing here is announced as shipped until the tag exists.
 
 The shape of this release is the Alpha gate. Most of what 0.9.1 adds needs no switch at all;
 the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in six
@@ -15,6 +15,10 @@ sets a tester takes one at a time. This document is ordered that way.
 - **Approvals on the phone (#282).** When Hermes stops to ask before a consequential command, the
   approval reaches the live call: what is being approved, why, and yes/no by voice or touch. The
   choices are the gateway's own; `deny` is always offered and a timeout resolves to *no*.
+- The card is **private on the lock screen** (`VISIBILITY_PRIVATE`) and **cannot be answered
+  from a locked phone**: approving needs an unlocked device, and a pending card cannot be
+  answered from the lock screen at any point in its two minutes. A confirmation that anyone
+  holding the phone could press would not confirm anything.
 - **Turns ride `/v1/runs` by default (#404).** The route that carries approvals, stops the run on
   a barge-in and replays a dropped event stream without leaving a hole. A gateway that answers the
   admission with **404** is remembered per profile and the turn falls back to `/v1/responses`;
@@ -129,6 +133,25 @@ Each set is selected on its own; with the master off, everything below is dimmed
   will not grant the `Download` root, so the picker opens there and the owner picks a subfolder.
 - There is no local phone lane any more. A timer now costs a round trip and needs this set plus the
   timer group; that is the price of the mind being the only decision-maker (D38).
+- **The engine runs off the drawing thread.** Phone actions execute on their own thread, not on
+  the one that paints the being and runs the voice loop. Only what Android insists on — opening
+  another app, the floating window — crosses to the UI thread, and that crossing is bounded. A
+  depth-five listing stops at the page it answers instead of walking the whole tree, so a large
+  folder can no longer block the call it was asked in.
+- **A timeout is not a refusal.** When a caller's bound expires the result is `ok:false`,
+  `reason:"unavailable"` and **`outcome_uncertain:true`** — the action may still complete, and
+  `status` will say whether it did. The old wording claimed nothing had been performed, which was
+  false whenever the work it gave up on finished anyway.
+- **A launch the phone blocked is reported as blocked.** Android refuses to open another app from
+  the background without raising anything, and the app used to report success regardless. It now
+  checks that Vox is on screen before anything is resolved, ended or announced, and says plainly
+  that Vox has to be on screen to open another app when it is not.
+- **An uninstall approved from the notification opens Vox first**, so the platform's own
+  confirmation has a window to appear in. The card is the owner's decision; it was never the
+  platform's.
+- **`dial` finishes its line before it hangs up.** The announcement used to be cut off by the
+  teardown that followed it, and a dialer that then failed left no record. Both are fixed, and a
+  dialer that resolves but will not start is `unavailable` rather than `no_app`.
 
 ### Switching profiles
 - The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
