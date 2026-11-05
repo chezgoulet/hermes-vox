@@ -17,10 +17,16 @@ configuration; the manual block remains for an agent that cannot.
 ## Setting it up: the app asks your agent, not you
 
 The setup path is a turn, not a block to paste. **Settings → About & Diagnostics → Phone as an MCP
-server → Set up with my agent** composes one ordinary turn and sends it through the app's existing
-session. The agent edits its own configuration, verifies the entry, and says what it changed. The
-turn is visible in the sheet behind **Show the setup turn**, and the agent's own reply is shown
-beneath the state — a change to the agent's configuration is never silent.
+server → Set up with my agent** composes one ordinary turn and sends it on the active profile's client
+— its url, key and declared scope, from the same live prefs Settings' connection test builds from.
+The sheet resolves that connection at the moment of the press (`PhoneSetupStore.session`), and a
+session object built for a different connection is never reused: a `HermesSession` keeps the address
+and key it was created with, so after the connection is re-pointed the held one still names the old
+gateway. That was #430 — the connection test passed while the setup turn went to the previous address
+and the gateway in force logged nothing. If there is no session at that moment, one is built there;
+only an unconfigured connection refuses. The agent edits its own configuration, verifies the entry,
+and says what it changed. The turn is visible in the sheet behind **Show the setup turn**, and the
+agent's own reply is shown beneath the state — a change to the agent's configuration is never silent.
 
 The turn carries the server name (`vox`), the real tailnet URL (`http://<tailnet-ip>:8765/mcp`), the
 bearer token, the tool name the model will see (`mcp__vox__phone`), what the phone can and cannot do,

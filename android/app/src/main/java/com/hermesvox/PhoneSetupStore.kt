@@ -9,10 +9,21 @@ import java.util.concurrent.atomic.AtomicBoolean
  * PhoneSetupStore — the Android edge of [PhoneSetup]: persistence, the ordinary turn, and the
  * session it rides.
  *
- * The setup turn is sent with [HermesSession.turnStored] — the same `/v1/responses` path a typed
- * turn uses, chained off the same session — and its reply is kept so the sheet can show the agent's
- * own words. Nothing here writes a gateway file, and nothing here treats the reply as proof: the
- * proof is the MCP `initialize` recorded by [PhoneMcp.recordHandshake].
+ * **The turn rides the active connection, never a held object.** #430: `session()` used to return
+ * `live` — the `HermesSession` MainActivity built at connect time — for as long as it existed.
+ * A session keeps its url and key for life, and Settings → Entity & Connection → Save writes new
+ * prefs without re-dialling, so after re-pointing the connection the sheet sent the setup turn to
+ * the OLD address while the connection test (which builds its own session from the prefs) said
+ * *Connection OK*. The gateway the owner was watching logged nothing, and the sheet said "could
+ * not reach your agent". [PhoneSetupSend.plan] is the rule now: the live session is reused only
+ * when it was built for exactly the connection in force, otherwise one is built here from that
+ * connection. A missing session is not a failure — only a missing connection is.
+ *
+ * The setup turn is sent with [HermesSession.turnStored] — the same `/v1/runs` path a
+ * typed turn uses, chained off the same session when that session is the current one — and its
+ * reply is kept so the sheet can show the agent's own words. Nothing here writes a gateway file,
+ * and nothing here treats the reply as proof: the proof is the MCP `initialize` recorded by
+ * [PhoneMcp.recordHandshake].
  *
  * The prompt carries the bearer token. It is never logged: the failure line names only the class of
  * failure, and the sheet is the one place the turn is rendered, for the owner who is setting it up.
@@ -31,14 +42,21 @@ object PhoneSetupStore {
     /** The last prompt sent in this process; not persisted, because it contains the token. */
     @Volatile private var lastSent: String? = null
 
-    /** The live session MainActivity connected; setup rides it so the turn is in the same chain. */
+    /** The live session MainActivity connected; setup rides it when it is the current connection. */
     @Volatile private var live: HermesSession? = null
+
+    /** The connection [live] was built for. Null when no session is held. */
+    @Volatile private var liveFor: PhoneSetupSend.Connection? = null
 
     fun lastPrompt(): String? = lastSent
 
-    /** Called by MainActivity's connection path. Null while there is no live session. */
-    fun attach(session: HermesSession?) {
+    /**
+     * Called by MainActivity's connection path with the session *and* the connection it was built
+     * from, so a later turn can tell whether it still names the address in force. Null detaches.
+     */
+    fun attach(session: HermesSession?, connection: PhoneSetupSend.Connection? = null) {
         live = session
+        liveFor = if (session == null) null else connection
     }
 
     private fun prefs(context: Context) =
@@ -71,7 +89,7 @@ object PhoneSetupStore {
     fun state(context: Context, now: Long = System.currentTimeMillis()): PhoneSetup.State =
         PhoneSetup.state(read(context), now, PhoneMcp.tokenTag(context))
 
-    /** A setup turn is being sent: the waiting line, with the previous answer cleared. */
+    /** A setup turn is being sent: the waiting line, with the previous answer and failure cleared. */
     fun begin(context: Context, now: Long = System.currentTimeMillis()) {
         write(context, PhoneSetup.begin(read(context), now, PhoneMcp.tokenTag(context)))
     }
@@ -98,6 +116,10 @@ object PhoneSetupStore {
      * Ask the agent, on a worker thread. [onDone] runs on that thread; callers that touch views
      * must post to the UI thread. The turn is an ordinary stored turn, so it is part of the same
      * conversation chain and the reply is the agent's own.
+     *
+     * The outcome is classified rather than flattened: an empty answer, a refused key and a
+     * transport failure are three different lines in [PhoneSetupSend], and the record keeps the
+     * one that happened. The token is scrubbed out of the reason before it is stored.
      */
     fun ask(
         context: Context,
@@ -128,18 +150,35 @@ object PhoneSetupStore {
     fun prompt(host: String, token: String): String = PhoneSetup.prompt(host, token)
 
     /**
-     * The app's existing session configuration — the same URL, key, model, provider and declared
-     * scope every other caller uses. Null when the app is not connected yet; the sheet says so
-     * instead of inventing an endpoint.
+     * The connection in force now: the live prefs' url, key, model, provider and scope — the same
+     * prefs the call path and Settings' connection test build their session from. Blank unless both
+     * halves of a connection are there.
+     */
+    fun connection(activity: AppCompatActivity): PhoneSetupSend.Connection {
+        val p = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return PhoneSetupSend.connection(
+            { key -> p.getString(key, "").orEmpty() },
+            { stored -> SecureStore.decrypt(stored) },
+        )
+    }
+
+    /**
+     * The client the setup turn must ride: the live session when it was built for the connection
+     * in force, otherwise one built here from that connection. Null **only** when there is nothing
+     * configured to send to — never because a session object was missing.
      */
     fun session(activity: AppCompatActivity): HermesSession? {
-        live?.let { return it }
-        val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val url = prefs.getString("url", "").orEmpty()
-        if (url.isBlank()) return null
-        val stored = prefs.getString("key", "").orEmpty()
-        val key = GatewayKey.resolve(stored) { SecureStore.decrypt(it) }
-        if (GatewayKey.isMissing(key)) return null
-        return EntitySession.build(url, key, { prefs.getString(it, "").orEmpty() })
+        val active = connection(activity).takeIf { it.configured }
+        return when (PhoneSetupSend.plan(liveFor, live != null, active)) {
+            PhoneSetupSend.Plan.RIDE_LIVE -> live
+            PhoneSetupSend.Plan.BUILD -> active?.let { build(it) }
+            PhoneSetupSend.Plan.NO_CONNECTION -> null
+        }
     }
+
+    /** One session for one resolved connection — the same declaration [EntitySession] makes. */
+    fun build(connection: PhoneSetupSend.Connection): HermesSession =
+        EntitySession.of(
+            connection.url, connection.key, connection.model, connection.provider, connection.scope,
+        )
 }

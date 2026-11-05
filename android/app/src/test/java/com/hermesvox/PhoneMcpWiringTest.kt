@@ -93,8 +93,15 @@ class PhoneMcpWiringTest {
         assertTrue("it names the tool the model sees", setup.contains("MODEL_TOOL_NAME"))
         assertTrue("it is idempotent by content", setup.contains("Do not add a second"))
         assertTrue("it is sent as an ordinary stored turn", store.contains("session.turnStored(prompt)"))
-        assertTrue("through the live session when there is one", store.contains("live?.let"))
-        assertTrue("which MainActivity hands over", File("src/main/java/com/hermesvox/MainActivity.kt").readText().contains("PhoneSetupStore.attach(session)"))
+        assertTrue(
+            "through the live session only when it is the connection in force",
+            store.contains("PhoneSetupSend.plan(liveFor, live != null, active)"),
+        )
+        assertTrue(
+            "which MainActivity hands over with the connection it was built from",
+            File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+                .contains("PhoneSetupStore.attach(session, PhoneSetupSend.Connection("),
+        )
         assertTrue("the prompt is visible in the sheet", sheet.contains("SHOW THE SETUP TURN"))
         assertTrue("manual config is a disclosed fallback", sheet.contains("Manual fallback"))
     }

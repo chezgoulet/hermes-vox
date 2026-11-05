@@ -18,7 +18,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.hermesvox.core.HermesSession
 
 /**
  * PhoneToolsSheet — the owner's side of the phone-as-MCP-server (#421 steps 3–5).
@@ -27,6 +26,11 @@ import com.hermesvox.core.HermesSession
  * [PhoneSetup], creates the credential if there is not one, and sends that prompt as an ordinary
  * stored turn through the app's session. The turn and the agent's reply are shown here, so a change
  * to the agent's own configuration is legible.
+ *
+ * **The turn is sent from the connection in force.** The session is resolved at the press
+ * ([PhoneSetupStore.session]), from the active profile's url, key and scope, and rebuilt when the
+ * one the app holds was built for a different connection (#430). Holding a client object in this
+ * sheet would re-create that bug: a session keeps the address it was built with.
  *
  * **Connected is earned by the handshake.** The headline stays *waiting for your agent to connect*
  * until the phone's own [PhoneMcpServer] has seen an authenticated MCP `initialize`; only then is
@@ -43,7 +47,6 @@ import com.hermesvox.core.HermesSession
  */
 class PhoneToolsSheet(
     private val act: AppCompatActivity,
-    private val session: HermesSession? = null,
     private val firstRun: Boolean = false,
     private val onDismiss: () -> Unit = {},
 ) {
@@ -449,7 +452,10 @@ class PhoneToolsSheet(
             paint()
             return
         }
-        val s = session ?: PhoneSetupStore.session(act)
+        // #430: resolved at the moment of the press from the connection in force — never a client
+        // object captured when this sheet was built. A stale object sends the turn to the address
+        // the owner just replaced, while the connection test (built from the same prefs) passes.
+        val s = PhoneSetupStore.session(act)
         if (s == null) {
             notice = "Connect the app to your gateway first (Entity & Connection), then try again."
             paint()

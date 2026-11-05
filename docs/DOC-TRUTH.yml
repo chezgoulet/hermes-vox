@@ -117,6 +117,12 @@
   file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
   match: 'Do not add a second'
 
+- id: phone-setup-rides-the-active-connection
+  says: "the active profile's client"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneSetupSend.kt
+  match: 'fun plan\('
+
 - id: phone-connected-on-handshake
   says: "The app verifies locally, never on the agent's word."
   doc: docs/MCP-PHONE.md

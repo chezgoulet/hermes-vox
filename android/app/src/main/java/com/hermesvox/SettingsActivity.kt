@@ -433,7 +433,8 @@ class SettingsActivity : AppCompatActivity() {
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
                     // L9 (0.9.1 review): a live call belonged to the connection it opened
                     // on. Saving Entity ends it, exactly as a profile switch does, and the
-                    // shared session is rebuilt from the values just written.
+                    // shared session is rebuilt from the values just written — so the next
+                    // turn (the phone setup turn included, #430) cannot go to the old endpoint.
                     MainActivity.onEntitySaved()
                     refreshEntityVal()
                     dlg.dismiss()
@@ -1549,7 +1550,7 @@ class SettingsActivity : AppCompatActivity() {
         // block the owner pastes; this row opens the one sheet that composes it, shows the agent's
         // reply, waits for the phone's own handshake, and keeps the manual config as a fallback.
         findViewById<LinearLayout>(R.id.row_phone_mcp).setOnClickListener {
-            PhoneToolsSheet(this, session = PhoneSetupStore.session(this)).show()
+            PhoneToolsSheet(this).show()
         }
         refreshPhoneMcpVal()
     }
