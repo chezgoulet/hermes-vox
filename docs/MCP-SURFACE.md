@@ -278,6 +278,18 @@ phone must be able to keep. **`uninstall` is not in the handoff lane**: it needs
 and stays `approval-required` until that exists. `call`, `send` and `email` are gone with the old
 `messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
 
+### Required of the approval lane
+
+These two are **requirements the approval card must satisfy when it lands**, not descriptions of
+anything built today. Read them as acceptance criteria for that lane.
+
+1. **`file_offer` joins the approval tier.** Handing a file to the agent exports it: the folder
+   grant makes that export possible, not intended. It moves out of the reported tier and asks for
+   the card on every use, one card per file, showing the file's name, type and size.
+2. **The card is not actionable on a locked phone.** Its notification is `VISIBILITY_PRIVATE`, so
+   the lock screen does not show what is being approved, and approving requires the device to be
+   unlocked. A locked phone cannot approve, and no fallback may let it.
+
 ---
 
 ## The thirteen groups
