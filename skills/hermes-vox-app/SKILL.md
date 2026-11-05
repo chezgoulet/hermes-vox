@@ -1092,12 +1092,14 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   user says "it doesn't wake on Hey Hermes", the answer is "it cannot, by design yet".
 - **No local mind.** The app never reasons, calls tools or stores long-term memory; Gemma
   only expresses (android/app/src/main/java/com/hermesvox/VoxExpress.kt `Gemma NEVER runs the agentic stream`).
-- **No consequential action from the agent.** The phone's MCP tool offers only the capability
-  groups the owner has granted, and every group starts Off; Tier 0 actions may be Allow, Tier 1
-  stops at Ask, and Tier 2 returns `approval-required` with an `approval_id`: the phone raises a card,
-  the owner answers it by tap or by voice, and the action executes only on a second call carrying that
-  id against the same arguments. Tier 2 actions with no card of their own (`install`) stay refused. A call naming an action whose group is Off is refused with `not_granted` and the action
-  is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt `PhoneTiers.APPROVAL ->`)
+- **No consequential action the owner has not allowed.** The phone's MCP tool offers only the
+  capability groups the owner has granted, and every group starts Off. Off refuses (`not_granted`);
+  Ask raises the phone's own card on every use, whatever the tier; Allow runs without a card. The
+  owner answers by tap or by voice, and the action executes only on a second call carrying that id
+  against the same arguments — so an Allow on a consequential action is a real permission, said
+  plainly on its row. Unbuilt consequential names (`install`) stay refused and unadvertised. A call
+  naming an action whose group is Off is absent from the advertised `enum`
+  (android/app/src/main/java/com/hermesvox/PhoneTool.kt `PhoneTiers.APPROVAL ->`)
   (android/app/src/main/java/com/hermesvox/PhoneGrants.kt `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by
