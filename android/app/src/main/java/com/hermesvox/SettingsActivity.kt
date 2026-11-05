@@ -220,7 +220,7 @@ class SettingsActivity : AppCompatActivity() {
         gate(R.id.row_mic_semantic, listening)
         gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
         gate(R.id.row_phone_mcp, phoneTools)
-        gate(R.id.row_call_quiet, AlphaGate.allows(r, AlphaGate.FeatureSet.QUIET_CALLS))
+        // Quiet calls is its own Hearing setting now: no Alpha set, no master gate.
         if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
         refreshGrpVals()
         refreshPhoneMcpVal()

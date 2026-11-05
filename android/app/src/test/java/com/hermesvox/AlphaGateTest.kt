@@ -99,6 +99,17 @@ class AlphaGateTest {
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
+    @Test fun quiet_calls_is_not_an_alpha_set_any_more() {
+        val gate = File(src, "AlphaGate.kt").readText()
+        val callQuiet = File(src, "CallQuiet.kt").readText()
+        val settings = File(src, "SettingsActivity.kt").readText()
+        assertFalse("no enum entry", gate.contains("QUIET_CALLS"))
+        assertFalse("no key use", gate.contains("alpha_set_quiet_calls"))
+        assertFalse("enabled is its own preference alone", callQuiet.contains("AlphaGate"))
+        assertFalse("the Hearing row is not gated", settings.contains("row_call_quiet, AlphaGate"))
+        assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_quiet_calls" })
+    }
+
     @Test fun an_upgrade_that_had_presence_running_keeps_it() {
         // 0.9.0 wrote presence_enabled=true on first start; with the model installed it ran.
         val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to true))

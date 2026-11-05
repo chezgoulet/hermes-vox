@@ -8,8 +8,8 @@ import android.provider.Settings
 
 /**
  * CallQuiet — #325: silence notifications while a call is open. A setting, **off by default**
- * (D29: the app does not decide on the user's behalf that a call outranks a message), and behind
- * the Alpha gate's *Quiet calls* set, so nothing changes for anyone who has not chosen it.
+ * (D29: the app does not decide on the user's behalf that a call outranks a message), and its
+ * own switch alone: it is not an Alpha set and no master gate stands in front of it.
  *
  * What it does, scoped as agreed on the issue:
  *
@@ -50,8 +50,12 @@ object CallQuiet {
     fun restoreTo(setByUs: Int?, previous: Int?, current: Int): Int? =
         if (setByUs == null || previous == null || current != setByUs) null else previous
 
+    /** The feature's own switch, with no gate in front of it. */
+    fun enabled(getBoolean: (String, Boolean) -> Boolean): Boolean =
+        getBoolean(KEY, DEFAULT_ON)
+
     fun enabled(prefs: SharedPreferences): Boolean =
-        AlphaGate.allows(prefs, AlphaGate.FeatureSet.QUIET_CALLS) && prefs.getBoolean(KEY, DEFAULT_ON)
+        enabled { key, default -> prefs.getBoolean(key, default) }
 
     fun granted(context: Context): Boolean = nm(context)?.isNotificationPolicyAccessGranted == true
 
