@@ -867,6 +867,9 @@ open class MainActivity : AppCompatActivity() {
 
     /** The compact surface over the full one. GONE from launch; the root stays untouched. */
     private fun setUpPipSurface() {
+        // Without the feature there is nothing to build and nothing to change: the app
+        // takes exactly the path it took before PiP existed, down to the views it creates.
+        if (!pipSupported()) return
         val content = findViewById<android.view.ViewGroup>(android.R.id.content)
         pipSurface = layoutInflater.inflate(R.layout.activity_pip, content, false)
         pipAvatar = pipSurface.findViewById(R.id.pip_avatar)
@@ -874,9 +877,6 @@ open class MainActivity : AppCompatActivity() {
         content.addView(pipSurface)
         pipAvatar.applyLookPrefs(prefs)
         pipAvatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))
-        // Without the feature there is nothing to register and nothing to change: the app
-        // takes exactly the path it took before PiP existed.
-        if (!pipSupported()) return
         try {
             ContextCompat.registerReceiver(this, pipReceiver, IntentFilter(ACTION_PIP_STOP), ContextCompat.RECEIVER_NOT_EXPORTED)
             pipReceiverRegistered = true
