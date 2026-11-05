@@ -59,7 +59,30 @@ object CommandCatalog {
         /** Whether the sheet lists it. `/help` answers a typed or spoken "/help", but on the
          *  sheet it would be a row that opens a copy of the sheet. Search still finds it. */
         val listed: Boolean = true,
+        /** #418: whether the command exists only while its own switch is on. A gated command
+         *  with the switch off is not a hidden row — it is a name no build answers to, so the
+         *  sheet, the search, the /help card and a typed word all treat it as unknown. */
+        val gated: Boolean = false,
     )
+
+    /**
+     * Which optional commands exist right now. There is one today (`/diagnostics`, behind the
+     * switch in Settings › About › Diagnostic summary), and the answer is the same one every
+     * surface asks: the sheet, the search, /help, and the typed word's dispatch.
+     */
+    fun interface Gate {
+        fun on(c: Command): Boolean
+        companion object {
+            /** Nothing optional is on — a fresh install, and the default everywhere. */
+            val NOTHING: Gate = Gate { false }
+            /** Every command the catalogue knows, optional ones included. */
+            val EVERYTHING: Gate = Gate { true }
+        }
+    }
+
+    /** Every command that exists right now, optional ones only while [gate] allows them. */
+    fun commands(gate: Gate = Gate.NOTHING): List<Command> =
+        ALL.filter { !it.gated || gate.on(it) }
 
     val ALL: List<Command> = listOf(
         Command(CompressCommand.NAME, listOf(CompressCommand.ALIAS), Group.CONVERSATION,
@@ -98,6 +121,14 @@ object CommandCatalog {
             cost = null,   // it asks and reports; nothing changes
             category = Category.INSPECT, kind = Kind.CARD,
             listOf("is it working", "server", "gateway", "up", "down", "version", "status")),
+        // #418: the report block as a command, the second door to what the Presence row copies.
+        // Gated: it is in the catalogue only while its own switch is on, off by default.
+        Command(DiagnosticSummary.COMMAND, emptyList(), Group.AGENT,
+            effect = "Copy a report block for a bug report",
+            cost = null,   // nothing is lost: it reads and copies; the report stays on the phone
+            category = Category.INFORM, kind = Kind.INLINE,
+            listOf("bug", "report", "problem", "glitch", "support", "summary"),
+            gated = true),
         Command("/help", emptyList(), Group.AGENT,
             effect = "What each command does",
             cost = null,
@@ -123,16 +154,17 @@ object CommandCatalog {
         keywords = listOf("share", "file", "clipboard", "attach", "document", "send file"),
     )
 
-    /** The command a typed or spoken name means, by its name or an alias. */
-    fun find(name: String): Command? {
+    /** The command a typed or spoken name means, by its name or an alias — and whether it
+     *  exists at all: a gated command with its switch off is null, exactly like `/nope`. */
+    fun find(name: String, gate: Gate = Gate.NOTHING): Command? {
         val n = name.trim().lowercase()
-        return (ALL + SHARE).firstOrNull { it.name.lowercase() == n || n in it.aliases }
+        return (commands(gate) + SHARE).firstOrNull { it.name.lowercase() == n || n in it.aliases }
     }
 
     /** The sheet in screen order: groups in [Group] order, listed commands in catalogue order.
      *  [all] includes the unlisted ones (the /help card is written from every command). */
-    fun grouped(all: Boolean = false): List<Pair<Group, List<Command>>> =
-        Group.values().map { g -> g to ALL.filter { it.group == g && (all || it.listed) } }
+    fun grouped(all: Boolean = false, gate: Gate = Gate.NOTHING): List<Pair<Group, List<Command>>> =
+        Group.values().map { g -> g to commands(gate).filter { it.group == g && (all || it.listed) } }
             .filter { it.second.isNotEmpty() }
 
     /** Whether the row can report this command's own progress. A card command's work happens
@@ -168,9 +200,9 @@ object CommandCatalog {
      * the effect line and each command's keywords — as well as its name, so "it's slow" finds
      * /compress and "can't reach it" finds /reconnect. A blank query is the whole catalogue.
      */
-    fun search(query: String): List<Command> {
+    fun search(query: String, gate: Gate = Gate.NOTHING): List<Command> {
         val q = query.trim().lowercase().removePrefix("/")
-        if (q.isEmpty()) return ALL
+        if (q.isEmpty()) return commands(gate)
         val words = q.split(Regex("[^a-z0-9']+")).filter { it.length >= 2 }
         fun score(c: Command): Int {
             var s = 0
@@ -185,7 +217,7 @@ object CommandCatalog {
             }
             return s
         }
-        return (ALL + SHARE).map { it to score(it) }.filter { it.second > 0 }
+        return (commands(gate) + SHARE).map { it to score(it) }.filter { it.second > 0 }
             .sortedByDescending { it.second }.map { it.first }
     }
 
@@ -203,16 +235,18 @@ object CommandCatalog {
     enum class Tint { ACCENT, RISK }
     fun tint(c: Command): Tint = if (c.cost?.risk == true) Tint.RISK else Tint.ACCENT
 
-    fun suggest(s: Situation): List<Command> = when {
-        !s.connected || s.lastTurnFailed -> listOfNotNull(find("/reconnect"), find("/health"))
-        s.sessionTurns >= COMPRESS_AFTER_TURNS -> listOfNotNull(find(CompressCommand.NAME))
+    fun suggest(s: Situation, gate: Gate = Gate.NOTHING): List<Command> = when {
+        !s.connected || s.lastTurnFailed ->
+            listOfNotNull(find("/reconnect", gate), find("/health", gate))
+        s.sessionTurns >= COMPRESS_AFTER_TURNS -> listOfNotNull(find(CompressCommand.NAME, gate))
         else -> emptyList()
     }
 
     /** The /help card, written from the catalogue so the two cannot disagree. */
-    fun helpText(): String = grouped(all = true).joinToString("\n\n") { (g, cmds) ->
-        g.label + "\n" + cmds.joinToString("\n") { c ->
-            (listOf(c.name) + c.aliases).joinToString(" ") + " — " + c.effect
+    fun helpText(gate: Gate = Gate.NOTHING): String =
+        grouped(all = true, gate = gate).joinToString("\n\n") { (g, cmds) ->
+            g.label + "\n" + cmds.joinToString("\n") { c ->
+                (listOf(c.name) + c.aliases).joinToString(" ") + " — " + c.effect
+            }
         }
-    }
 }
