@@ -220,6 +220,13 @@ class PhoneEngine(
             data class Unavailable(val detail: String) : FileHandoff()
         }
 
+        /**
+         * True when the system's notification-listener access is held. The grant is global and
+         * permanent for the install; `notifications` still refuses `permission` without it, and
+         * its own use of the access is call-scoped regardless ([PhoneNotifications]).
+         */
+        fun notificationListenerGranted(): Boolean = true
+
         /** The folders the owner has granted, in grant order. Empty means neither action can run. */
         fun folders(): List<GrantedFolder> = emptyList()
 
@@ -467,6 +474,8 @@ class PhoneEngine(
             is PhoneTool.Call.FileOffer -> offerFile(call)
             PhoneTool.Call.Agenda -> agenda()
             is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch)
+            PhoneTool.Call.Notifications -> notifications()
+            is PhoneTool.Call.NotificationRead -> notificationRead(call.id)
             is PhoneTool.Call.Contact -> contacts(call)
             is PhoneTool.Call.Message -> message(call)
             is PhoneTool.Call.Dial -> dial(call)
@@ -1151,6 +1160,96 @@ class PhoneEngine(
                 "calendar" to created.calendar,
                 "undoable" to true,
             ),
+        )
+    }
+
+    // ---- notifications (#429 read lane) ----
+
+    /**
+     * A summary of the notifications on the phone **while a call is live**: a total and one row
+     * per app with `count`, `latest_at` and opaque `ids`. No title and no text — the question
+     * "what's going on?" gets counts, and content is a separate, deliberate step.
+     *
+     * `sensitive:true` is on the result because what this describes is private even when the
+     * summary itself is not. The tool description carries the rule about reading it aloud.
+     */
+    private fun notifications(): PhoneResult {
+        if (!PhoneNotifications.attached()) return listenerClosed("notifications")
+        listenerPermission("notifications")?.let { return it }
+        val summary = PhoneNotifications.summary() ?: return listenerClosed("notifications")
+        val apps = summary.apps.map { row ->
+            linkedMapOf<String, Any?>(
+                "app" to row.app,
+                "count" to row.count,
+                "latest_at" to row.latestAt,
+                "ids" to row.ids,
+            )
+        }
+        log("event=phone-mcp action=notifications ok=true count=${summary.count}")
+        return PhoneResult.info(
+            "notifications",
+            linkedMapOf<String, Any?>(
+                "sensitive" to true,
+                "count" to summary.count,
+                "apps" to apps,
+            ),
+        )
+    }
+
+    /**
+     * One notification's content, by an id a summary of this call has shown. A guessed id, or a
+     * notification that has left the phone since the summary, is `unknown-id`; no live call is
+     * `unavailable`. The content is returned, not logged and not stored.
+     */
+    private fun notificationRead(id: String): PhoneResult {
+        if (!PhoneNotifications.attached()) return listenerClosed("notification_read")
+        listenerPermission("notification_read")?.let { return it }
+        val record = PhoneNotifications.read(id) ?: run {
+            log("event=phone-mcp action=notification_read ok=false reason=unknown-id")
+            return PhoneResult.refused(
+                "notification_read",
+                PhoneReason.UNKNOWN_ID,
+                "no notification with that id is in a summary from this call; the id must come " +
+                    "from a `notifications` summary while the call is open",
+            )
+        }
+        log("event=phone-mcp action=notification_read ok=true")
+        return PhoneResult.info(
+            "notification_read",
+            linkedMapOf<String, Any?>(
+                "sensitive" to true,
+                "app" to record.app,
+                "posted_at" to record.postedAt,
+                "title" to record.title,
+                "text" to record.text,
+            ),
+        )
+    }
+
+    /**
+     * Both notification reads say the same thing when no call is live: the system grant may be
+     * held, but this app's use of it is not. It names the listener's lifetime rather than a
+     * generic failure.
+     */
+    /** The system grant is missing (the group is on, but Android has not been asked or said no). */
+    private fun listenerPermission(action: String): PhoneResult? {
+        if (platform.notificationListenerGranted()) return null
+        log("event=phone-mcp action=$action ok=false reason=permission")
+        return PhoneResult.refused(
+            action,
+            PhoneReason.PERMISSION,
+            "this app does not hold notification-listener access; only the owner can grant it in " +
+                "Phone tools, on Android's notification-access screen",
+        )
+    }
+
+    private fun listenerClosed(action: String): PhoneResult {
+        log("event=phone-mcp action=$action ok=false reason=unavailable live=false")
+        return PhoneResult.refused(
+            action,
+            PhoneReason.UNAVAILABLE,
+            "the notification listener is only open during a call; no call is live, so nothing " +
+                "was read",
         )
     }
 

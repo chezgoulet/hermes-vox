@@ -70,6 +70,8 @@ object PhoneMcp {
         val calendarMissing: String? = null,
         /** True when the owner has enabled the notification listener `now_playing` uses. */
         val mediaListenerGranted: Boolean = false,
+        /** True when the notification-listener access `notifications` needs is held. */
+        val notificationListenerGranted: Boolean = false,
         /** True when `READ_CONTACTS` is held, for the contacts group's row. */
         val contactsGranted: Boolean = false,
         /** The exact contacts permission still missing, or null when it is held. */
@@ -280,6 +282,7 @@ object PhoneMcp {
             calendarGranted = calendarMissing == null,
             calendarMissing = calendarMissing,
             mediaListenerGranted = listenerGranted,
+            notificationListenerGranted = listenerGranted,
             contactsGranted = contactsMissing == null,
             contactsMissing = contactsMissing,
             allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS),

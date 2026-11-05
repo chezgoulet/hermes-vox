@@ -317,6 +317,10 @@ class PhoneEngineTest {
         }
         assertEquals("a contact lookup is a read", PhoneTiers.INSTANT, PhoneTiers.of("contact"))
         assertTrue("the phone may look a contact up", PhoneTiers.executable("contact"))
+        for (a in listOf("notifications", "notification_read")) {
+            assertEquals("$a is a read", PhoneTiers.INSTANT, PhoneTiers.of(a))
+            assertTrue("the phone may perform $a", PhoneTiers.executable(a))
+        }
         for (a in listOf("uninstall", "install", "delete", "purchase")) {
             assertEquals("$a must need approval", PhoneTiers.APPROVAL, PhoneTiers.of(a))
             assertFalse("$a must never be executed by the phone", PhoneTiers.executable(a))

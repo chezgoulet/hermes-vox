@@ -463,6 +463,9 @@ class LocalActions(context: Context) {
          */
         override fun playback(): PhoneEngine.PhonePlatform.Playback = MediaListen.playback(app)
 
+        /** The system's notification-listener access, shared with Media but used call-scoped. */
+        override fun notificationListenerGranted(): Boolean = MediaListen.granted(app)
+
         /**
          * One read of the phone's state, each field answered or `null`. Nothing here needs a
          * permission the manifest does not already declare: the battery comes from the sticky

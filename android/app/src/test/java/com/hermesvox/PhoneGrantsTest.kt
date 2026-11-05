@@ -53,6 +53,25 @@ class PhoneGrantsTest {
         }
     }
 
+    @Test fun the_two_read_groups_are_instant_and_offer_allow() {
+        for ((id, actions) in listOf(
+            "notifications" to listOf("notifications", "notification_read"),
+            "contacts" to listOf("contact"),
+        )) {
+            val group = PhoneGrants.GROUPS.first { it.id == id }
+            assertEquals("$id is instant", PhoneTiers.INSTANT, group.tier)
+            assertEquals("$id is built", actions, group.actions)
+            assertTrue(
+                "$id offers Allow because it is instant",
+                PhoneGrants.State.ALLOW in PhoneGrants.statesFor(group.tier),
+            )
+            val on = PhoneGrants.Source { g ->
+                if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+            }
+            assertEquals(actions + PhoneGrants.ALWAYS, PhoneGrants.advertised(on))
+        }
+    }
+
     @Test fun the_warnings_land_where_the_consequence_is_not_obvious() {
         for (id in listOf("files", "notifications")) {
             val group = PhoneGrants.GROUPS.first { it.id == id }

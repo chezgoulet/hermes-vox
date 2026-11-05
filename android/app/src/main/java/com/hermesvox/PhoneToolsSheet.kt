@@ -276,6 +276,19 @@ class PhoneToolsSheet(
                 openListenerSettings()
             }
         }
+        row(col, "Notification access", PhoneToolsView.notifications(status.notificationListenerGranted))
+        if (states["notifications"] != null && states["notifications"] != PhoneGrants.State.OFF &&
+            !status.notificationListenerGranted
+        ) {
+            action(
+                col,
+                "OPEN NOTIFICATION ACCESS",
+                primary = false,
+                description = "Open the system screen where you grant notification-listener access",
+            ) {
+                openListenerSettings()
+            }
+        }
         row(col, "Contacts permission", PhoneToolsView.contacts(status.contactsGranted, status.contactsMissing))
         if (!status.contactsGranted) {
             action(
@@ -514,12 +527,22 @@ class PhoneToolsSheet(
             setOnClickListener {
                 if (!selected) {
                     PhoneGrantStore.set(act, group, state)
+                    // A group turned on mid-call starts collecting the notifications already on
+                    // the phone; outside a call this is a no-op because the board is closed.
+                    if (group.id == "notifications" && state != PhoneGrants.State.OFF) {
+                        PhoneNotifications.requestResync()
+                    }
                     // Turning a group on is the moment its platform access is asked for: the
                     // calendar's runtime permissions, and the folder picker for files. Off does
                     // nothing, and a grant already held is not asked for again.
                     when (group.id) {
                         "calendar" -> if (state != PhoneGrants.State.OFF) requestCalendar()
                         "contacts" -> if (state != PhoneGrants.State.OFF) requestContacts()
+                        // The notifications group uses the same system listener as Media. Turning
+                        // it on is the moment the owner is offered Android's access screen.
+                        "notifications" -> if (
+                            state != PhoneGrants.State.OFF && !MediaListen.granted(act)
+                        ) openListenerSettings()
                         "files" -> if (
                             state != PhoneGrants.State.OFF && PhoneFileAccess.trees(act).isEmpty()
                         ) pickFolder()
