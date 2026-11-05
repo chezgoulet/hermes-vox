@@ -481,6 +481,7 @@ open class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
         CrashLog.init(applicationContext)
+        com.hermesvox.core.MtlsConfig.init(applicationContext)
         // The phone's handoff actions (message/dial/launch) need the window that owns the call:
         // the being to speak the dial line, the one hang-up teardown, and the PiP host. They are
         // attached for exactly as long as this screen exists; the application context alone

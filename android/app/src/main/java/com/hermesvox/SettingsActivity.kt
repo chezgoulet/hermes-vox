@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -32,6 +33,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         if (prefs.getString("theme", "system") == "dark") AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         super.onCreate(savedInstanceState)
+        com.hermesvox.core.MtlsConfig.init(applicationContext)
         setContentView(R.layout.activity_settings)
 
         // Back button is section-aware: inside a sub-view it returns to the group
@@ -447,9 +449,57 @@ class SettingsActivity : AppCompatActivity() {
             emodel.isCursorVisible = false
             emodel.keyListener = null
             emodel.setText(storedEntityName())
-            eurl.setText(prefs.getString("url", ""))
+
+            val dMtlsAlias = view.findViewById<TextView>(R.id.d_mtls_alias)
+            val dMtlsChoose = view.findViewById<Button>(R.id.d_mtls_choose)
+            val dMtlsClear = view.findViewById<Button>(R.id.d_mtls_clear)
+
+            val initialUrl = prefs.getString("url", "").orEmpty()
+            eurl.setText(initialUrl)
             ekey.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
             escope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
+
+            val initialOrigin = com.hermesvox.core.MtlsConfig.originOf(initialUrl)
+            var currentAlias = if (initialOrigin != null) com.hermesvox.core.MtlsConfig.getAlias(prefs, initialOrigin) else null
+
+            fun updateMtlsViews() {
+                if (currentAlias.isNullOrBlank()) {
+                    dMtlsAlias.text = "None (system default)"
+                    dMtlsClear.visibility = View.GONE
+                } else {
+                    dMtlsAlias.text = currentAlias
+                    dMtlsClear.visibility = View.VISIBLE
+                }
+            }
+            updateMtlsViews()
+
+            dMtlsChoose.setOnClickListener {
+                val origin = com.hermesvox.core.MtlsConfig.originOf(eurl.text.toString().trim())
+                if (origin == null) {
+                    Toast.makeText(this, "Enter a valid HTTPS endpoint URL first", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                android.security.KeyChain.choosePrivateKeyAlias(
+                    this,
+                    { alias ->
+                        runOnUiThread {
+                            currentAlias = alias
+                            updateMtlsViews()
+                        }
+                    },
+                    arrayOf("RSA", "EC"),
+                    null,
+                    origin.host,
+                    origin.port,
+                    currentAlias
+                )
+            }
+
+            dMtlsClear.setOnClickListener {
+                currentAlias = null
+                updateMtlsViews()
+            }
+
             val dlg = AlertDialog.Builder(this)
                 .setTitle("Entity")
                 .setView(view)
@@ -473,6 +523,10 @@ class SettingsActivity : AppCompatActivity() {
                     com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
                         Toast.makeText(this, it, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
+                    }
+                    val finalOrigin = com.hermesvox.core.MtlsConfig.originOf(u)
+                    if (finalOrigin != null) {
+                        com.hermesvox.core.MtlsConfig.setAlias(prefs, finalOrigin, currentAlias)
                     }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
@@ -902,7 +956,9 @@ class SettingsActivity : AppCompatActivity() {
         // the host's (T7); the model id is only the fallback until a verify names it.
         val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         val who = if (scope.isEmpty()) "no scope" else "scope · $scope"
-        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who"
+        val origin = com.hermesvox.core.MtlsConfig.originOf(u)
+        val mtls = if (origin != null && com.hermesvox.core.MtlsConfig.getAlias(prefs, origin) != null) " · mTLS" else ""
+        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls"
     }
 
     /** The host's adopted name, or the old `model` value until a verify gives one. */
