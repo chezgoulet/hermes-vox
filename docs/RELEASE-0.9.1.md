@@ -3,10 +3,10 @@
 **Status:** prepared, not cut. Version code **147** · `versionName` `0.9.1` · built and gated on
 `testing`; the release commit is cherry-picked to `main`, where `release.yml` builds twice and
 compares the payloads before the tag is made. The list below is read from the tree at
-`2dd7e56`; nothing here is announced as shipped until the tag exists.
+`42ad6e0` (after #476); nothing here is announced as shipped until the tag exists.
 
 The shape of this release is the Alpha gate. Most of what 0.9.1 adds needs no switch at all;
-the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in five
+the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in six
 sets a tester takes one at a time. This document is ordered that way.
 
 ## Ships with no gate
@@ -115,10 +115,18 @@ Each set is selected on its own; with the master off, everything below is dimmed
   the other.
 - The mind acts on the phone through **one MCP tool**, `phone`, on the tailnet, with a result for
   every call and an undo for every reversible one. The tool schema is built from **thirteen
-  capability groups**, each Off / Ask / Allow and **all Off by default**. Tier 2 is refused and
-  stays on the gateway's approval surface. The app sets the server up by asking the agent to edit
-  its own configuration, and says **Connected** only after its own server has seen an authenticated
-  MCP handshake.
+  capability groups**, each Off / Ask / Allow and **all Off by default**. The three words mean one
+  thing for every group: Off refuses, Ask raises the phone's card for **every** action, Allow runs
+  without one; there is no per-tier restriction. `uninstall` and `file_offer` are built and run at
+  Allow or after their card; `install` is not on the surface at all (a direct call is
+  `unknown-action`). The app sets the server up by asking the agent to edit its own configuration,
+  and says **Connected** only after its own server has seen an authenticated MCP handshake.
+- The surface this release adds: `file_list` / `file_read` (with a 65 536-byte cap per answer and a
+  windowed read above it), `file_offer`, `apps` (the installed list, plus what usage access can
+  honestly say is running), and `notification_dismiss`. `notification_dismiss` is Tier 1 and not
+  undoable; `apps` is a read.
+- Files are keyed by the grant's tree id, and the `folder` enum is the granted labels. Android 11+
+  will not grant the `Download` root, so the picker opens there and the owner picks a subfolder.
 - There is no local phone lane any more. A timer now costs a round trip and needs this set plus the
   timer group; that is the price of the mind being the only decision-maker (D38).
 
@@ -143,6 +151,13 @@ Each set is selected on its own; with the master off, everything below is dimmed
   work and the release waits for it; see `docs/FDROID.md`.
 - **The wake word** — foundation only. **Tier 3 / screen control** — design only. **Full-duplex**
   — long horizon.
+- **Two handoff edges are open, and the release notes do not promise them.** Android may silently
+  refuse a background activity start, so `launch`/`open`/`message`/`dial` report the handover, not
+  proof another app came forward. And `dial` ends Vox's own call — which is also the MCP listener's
+  lifetime — so its result can be lost before the mind receives it. Both are tracked, not fixed
+  here.
+- **A device pass for Sessions and Switching profiles.** D39 keeps both behind the gate until that
+  pass; neither is promoted by this cut.
 
 ## Verification
 
