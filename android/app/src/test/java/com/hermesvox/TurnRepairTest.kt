@@ -46,4 +46,23 @@ class TurnRepairTest {
             TurnRepair.speaks(cancelled = false, stopped = false, listening = true,
                 voiceOn = false, sameTurn = true))
     }
+
+    /**
+     * Naturalness pass (2026-11-05): a turn that ran out of time says the app stopped waiting —
+     * and once the mind had started a tool, it says the outcome is unknown instead of inviting a
+     * retry that could do the work twice.
+     */
+    @Test fun a_timeout_says_the_app_stopped_waiting_and_never_claims_nothing_happened() {
+        for (reason in listOf(TurnRepair.REASON_TIMEOUT, TurnRepair.REASON_SILENT)) {
+            assertTrue(TurnRepair.line(reason, workStarted = false).contains("stopped waiting"))
+        }
+        for (reason in listOf(TurnRepair.REASON_TIMEOUT, TurnRepair.REASON_SILENT, TurnRepair.REASON_EMPTY,
+                TurnRepair.REASON_LOST, TurnRepair.REASON_ERROR)) {
+            val l = TurnRepair.line(reason, workStarted = true)
+            assertTrue("$reason after work started must say the outcome is unknown", l.contains("can't say what got done"))
+            assertFalse("$reason after work started must not invite a blind retry", l.contains("try again") || l.contains("ask again"))
+        }
+        assertTrue("nothing started: the old line stands",
+            TurnRepair.line(TurnRepair.REASON_ERROR, workStarted = false) == TurnRepair.LINE)
+    }
 }
