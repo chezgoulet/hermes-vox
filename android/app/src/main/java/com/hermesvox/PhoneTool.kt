@@ -23,26 +23,24 @@ import com.hermesvox.core.Json
  * (including mid-session).
  *
  * A call that still names a hidden action gets a described refusal rather than a transport error:
- * `reason:"not_granted"` when the group is Off, `reason:"approval-required"` when it is Ask and the
- * tier waits for a card. A **reported** (Tier 1) group at Ask runs: the owner turned it on, and the
- * result is reported back to them.
+ * `reason:"not_granted"` when the group is Off. A group at **Ask** parses into a call exactly as
+ * at Allow; [PhoneEngine] then raises the same card for every action and executes only after the
+ * owner answers and the agent calls again with the id.
  *
  * ## The tier table (D32's bounds, extended by #421 steps 3–4 and #429)
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. The two read groups are instant because they change nothing; their privacy comes from scope (a call-scoped listener, one notification at a time, numbers and labels only) |
- * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `install`, `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` have cards on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed when the group allows or after the card; reversible, private. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app |
+ * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create` | executed when the group allows or after the card, and reported to the mind on the next turn; undoable where the row says |
+ * | 2 — consequential | `install`, `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` are implemented and use the one card handshake; the rest are named but never built, so they are never offered and a direct call is refused |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
- * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
- * cannot mint the gateway's approval card for it. `uninstall` and `file_offer` are the exceptions
- * that prove the shape: one cannot be undone and one exports the owner's content, so
- * [PhoneApproval] is a **phone** card on this wire — a two-step handshake on the same tool, not a
- * second gateway surface. The
- * owner may still put this whole tool behind the gateway's approval surface with `trust: untrusted`
- * in the gateway config (`docs/MCP-PHONE.md`).
+ * Tier 2 names that are not implemented are refused rather than offered: an entry in an `enum` is
+ * a promise the phone must be able to keep, and these cannot raise a card. `uninstall` and
+ * `file_offer` can, and do — through the same two-step handshake as every other action at Ask.
+ * The owner may still put this whole tool behind the gateway's approval surface with
+ * `trust: untrusted` in the gateway config (`docs/MCP-PHONE.md`).
  *
  * ## The invariant
  *
@@ -137,8 +135,8 @@ object PhoneTool {
             "needs the owner's approval on the phone); the detail says whether a card is waiting, " +
             "and a refusal means nothing was performed. " +
             NOTIFICATION_PRIVACY + " " +
-            "`uninstall` and `file_offer` are two steps: call without `approval`, then call again " +
-            "with the returned approval id and identical arguments once the owner says yes."
+            "Every action at Ask is two steps: call without `approval`, then call again with the " +
+            "returned approval id and identical arguments once the owner answers the card."
 
     /**
      * The description the model reads, with the current grants named. Built per request, because a
@@ -154,14 +152,12 @@ object PhoneTool {
         } else {
             "On now: " + on.joinToString("; ") { g ->
                 val state = PhoneGrants.stateOf(grants, g)
-                // Only what the enum actually offers: a Tier 0 group at Ask has no card, so
-                // naming its actions here would be a second promise the phone cannot keep (M8).
                 val live = g.actions.filter { it in offered }
-                if (live.isEmpty()) {
-                    "${g.label} (${state.label.lowercase()}): no action is offered, because " +
-                        "there is no approval card for this group yet"
-                } else {
-                    "${g.label} (${state.label.lowercase()}): ${live.joinToString(", ")}"
+                when (state) {
+                    PhoneGrants.State.ASK ->
+                        "${g.label} (ask): ${live.joinToString(", ")} — each call raises a card " +
+                            "and runs only after the owner answers it"
+                    else -> "${g.label} (${state.label.lowercase()}): ${live.joinToString(", ")}"
                 }
             } + "."
         }
@@ -194,7 +190,7 @@ object PhoneTool {
         "dial" to "open the dialer with a number ready; you make the call",
         "launch" to "open a launchable app by package or name",
         "open" to "open a URI in the app that claims it",
-        "uninstall" to "remove an app by package; the phone asks you first",
+        "uninstall" to "remove an app by package",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -299,11 +295,12 @@ object PhoneTool {
                 "approval" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "uninstall or file_offer only: the `approval_id` a previous call returned. " +
-                        "Omit it to ask the owner; the phone raises a card and answers " +
+                        "Any action whose group is at Ask: the `approval_id` a previous call " +
+                        "returned. Omit it to ask the owner; the phone raises a card and answers " +
                         "approval-required with that id and its expiry. Call again with **the " +
-                        "same action and arguments** plus this id after the owner approves. An " +
-                        "id is used once, and only an unlocked phone can approve.",
+                        "same action and arguments** plus this id after the owner answers. An " +
+                        "id is used once, for those arguments only, and only an unlocked phone " +
+                        "can approve.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -515,14 +512,13 @@ object PhoneTool {
         }
 
         /**
-         * Offer one file to the agent. [approvalId] is null on the request call (the phone raises
-         * the card after reading the name, type and size) and the id the card returned on the
-         * execute call. The name and folder are the canonical arguments the id is bound to.
+         * Offer one file to the agent. The name and folder are the canonical arguments the
+         * approval id is bound to; the id itself arrives in the call's `approval` argument and
+         * [PhoneEngine] owns the handshake for every action.
          */
         data class FileOffer(
             val name: String,
             val folder: String?,
-            val approvalId: String? = null,
         ) : Call() {
             override val action = "file_offer"
         }
@@ -580,11 +576,11 @@ object PhoneTool {
         }
 
         /**
-         * Remove one app. [approvalId] is null on the request call (the phone raises the card) and
-         * the id the card returned on the execute call. The package is the canonical argument the
-         * id is bound to.
+         * Remove one app. The package is the canonical argument the approval id is bound to; the
+         * id itself arrives in the call's `approval` argument and [PhoneEngine] owns the
+         * handshake for every action.
          */
-        data class Uninstall(val packageName: String, val approvalId: String? = null) : Call() {
+        data class Uninstall(val packageName: String) : Call() {
             override val action = "uninstall"
         }
 
@@ -614,6 +610,10 @@ object PhoneTool {
      * answer to a call the model should not have made, and it does not depend on the argument shape.
      * [grants] is read now, so a revocation that happened while this request was in flight is
      * honoured here, not at the next connection.
+     *
+     * **Ask and Allow parse the same way.** Ask is not a refusal: [PhoneEngine] raises the card and
+     * executes only after the owner's answer, so the arguments have to be validated before the card
+     * is shown. Only Off refuses here.
      */
     fun parse(args: Map<String, Any?>, grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): Parsed {
         val action = (args["action"] as? String)?.trim()?.lowercase().orEmpty()
@@ -630,34 +630,9 @@ object PhoneTool {
                         tier = group.tier,
                     )
                 )
-                PhoneGrants.State.ASK -> {
-                    // Ask means two different things by tier, and the difference is the whole
-                    // point of the tier: a **Tier 1 (reported)** group acts when the owner turns
-                    // it on and is reported back to them — there is no per-use card to wait for,
-                    // because the owner has already said yes to the group and can see what it did.
-                    // `uninstall` and `file_offer` are the Tier 2 actions with cards on this wire,
-                    // so they go to the engine's two-step handshake rather than being refused
-                    // outright. A Tier 0 group at Ask has **no** card: its actions are withheld
-                    // from the enum, and a direct call is told so plainly rather than being
-                    // promised an approval that will never come (M8).
-                    val tier = PhoneGrants.tierOf(action) ?: group.tier
-                    if (tier == PhoneTiers.REPORTED || PhoneApproval.handshaked(action)) {
-                        parseArguments(action, args, grants)
-                    } else {
-                        Parsed.Refuse(
-                            PhoneResult.refused(
-                                action,
-                                PhoneReason.APPROVAL,
-                                "the \"${group.label}\" group is set to Ask on this phone, and " +
-                                    "there is no approval card for it yet, so this was not " +
-                                    "performed and nothing is waiting for the owner. The owner can " +
-                                    "set it to Allow in Phone tools.",
-                                tier = tier,
-                            )
-                        )
-                    }
-                }
-                PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
+                // Ask raises a card; Allow runs. Both need the arguments, and the card names
+                // what those arguments will do, so neither may skip the validation.
+                PhoneGrants.State.ASK, PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
             }
         }
         return when (PhoneTiers.of(action)) {
@@ -758,15 +733,7 @@ object PhoneTool {
                 if (args["offset"] != null || args["length"] != null) {
                     return bad(action, "file_offer takes no offset or length: it offers the whole file")
                 }
-                val approval = when (val raw = args["approval"]) {
-                    null -> null
-                    is String -> raw.trim().takeIf { it.isNotEmpty() }
-                    else -> return bad(action, "approval must be the id a previous result returned")
-                }
-                if (approval != null && approval.length > MAX_APPROVAL_ID_CHARS) {
-                    return bad(action, "approval is longer than $MAX_APPROVAL_ID_CHARS characters")
-                }
-                return Parsed.Run(Call.FileOffer(name, folder, approval))
+                return Parsed.Run(Call.FileOffer(name, folder))
             }
             val offset = when (val raw = args["offset"]) {
                 null -> null
@@ -927,9 +894,9 @@ object PhoneTool {
             }
             Parsed.Run(Call.Open(url, pkg))
         }
-        // The apps group's safe half is launch/open. `uninstall` is the one destructive action
-        // with a card: it parses into a call and the engine runs its two-step handshake. `install`
-        // is still named and refused, because its own installer confirmation is a different lane.
+        // The apps group's safe half is launch/open. `uninstall` is the consequential action: it
+        // parses into a call and the engine cards it at Ask, or runs it at Allow. `install` is still
+        // named and refused, because its own installer confirmation is a different lane.
         "uninstall" -> {
             val unexpected = args.keys - setOf("action", "package", "approval")
             if (unexpected.isNotEmpty()) {
@@ -945,15 +912,7 @@ object PhoneTool {
                     "package is required and must be a dotted package name, such as " +
                         "org.mozilla.firefox",
                 )
-            val approval = when (val raw = args["approval"]) {
-                null -> null
-                is String -> raw.trim().takeIf { it.isNotEmpty() }
-                else -> return bad(action, "approval must be the id a previous result returned")
-            }
-            if (approval != null && approval.length > MAX_APPROVAL_ID_CHARS) {
-                return bad(action, "approval is longer than $MAX_APPROVAL_ID_CHARS characters")
-            }
-            Parsed.Run(Call.Uninstall(pkg, approval))
+            Parsed.Run(Call.Uninstall(pkg))
         }
         "install" -> Parsed.Refuse(
             PhoneResult.refused(
@@ -984,12 +943,11 @@ object PhoneTool {
 
     /**
      * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
-     * group is **Allow**. Resolving a name is reading the address book whatever action asked for
-     * it, so `dial`/`message` obey the same grant as `contact` itself: Off refuses with
-     * `not_granted`, and Ask refuses with `approval-required` naming Contacts — there is no card
-     * for a lookup, so nothing is read while the group is only at Ask. Neither refusal is a
-     * generic complaint about the arguments. [build] receives the recipient and whether it is a
-     * name.
+     * group is not Off. Resolving a name is reading the address book whatever action asked for it,
+     * so `dial`/`message` obey the same grant as `contact` itself: Off refuses with
+     * `not_granted`, and Ask parses into the call — [PhoneEngine] raises a card for the lookup and
+     * nothing is read until the owner answers. Neither path is a generic complaint about the
+     * arguments. [build] receives the recipient and whether it is a name.
      */
     private fun recipient(
         action: String,
@@ -1017,18 +975,7 @@ object PhoneTool {
                     tier = PhoneTiers.of(action),
                 )
             )
-            PhoneGrants.State.ASK -> return Parsed.Refuse(
-                PhoneResult.refused(
-                    action,
-                    PhoneReason.APPROVAL,
-                    "\"$raw\" is a contact name, and looking one up reads your address book; " +
-                        "the \"${contacts.label}\" group is set to Ask on this phone, and there is " +
-                        "no approval card for a contact lookup yet, so nothing was looked up. " +
-                        "Only the owner can set it to Allow in Phone tools, or give a number instead.",
-                    tier = PhoneTiers.of(action),
-                )
-            )
-            PhoneGrants.State.ALLOW -> Unit
+            PhoneGrants.State.ASK, PhoneGrants.State.ALLOW -> Unit
         }
         return Parsed.Run(build(raw, true))
     }
@@ -1166,7 +1113,7 @@ object PhoneTiers {
     /** Acts now, is reported to the mind next turn, and can be undone. */
     const val REPORTED = 1
 
-    /** Leaves the phone or cannot be undone: the owner's approval surface owns it. */
+    /** Consequential, or private to read: no undo, and a card names exactly what will happen. */
     const val APPROVAL = 2
 
     private val TIER_0 = setOf(
@@ -1198,13 +1145,16 @@ object PhoneTiers {
     )
 
     /**
-     * The consequential capabilities the phone deliberately does **not** execute for the mind.
-     * They are named so a direct call gets "this needs the owner" rather than "unknown action".
+     * The consequential capabilities. `uninstall` and `file_offer` are implemented and run through
+     * the same card handshake as every action at Ask (or directly at Allow). The rest are named so
+     * a direct call gets "this needs the owner" rather than "unknown action"; they are never built,
+     * so they are never offered and can never raise a card.
      */
     private val TIER_2 = setOf(
         "purchase", "pay", "install", "uninstall", "transfer",
         // `file_offer` exports the owner's content over the tailnet. The folder grant makes the
-        // export possible, not intended: every offer gets its own card, showing name, type and size.
+        // export possible, not intended: at Ask every offer gets its own card, showing name, type
+        // and size; at Allow the owner has granted the export outright.
         "file_offer",
         // `call`, `send` and `email` were names under the old messages-calls group. They are gone
         // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
@@ -1234,8 +1184,11 @@ object PhoneTiers {
         }
     }
 
-    /** True when the phone itself may perform [action]. */
-    fun executable(action: String): Boolean = of(action)?.let { it <= REPORTED } == true
+    /** True when the phone can perform [action] — directly at Allow, or after its card at Ask. */
+    fun executable(action: String): Boolean {
+        val a = action.trim().lowercase()
+        return of(a)?.let { it <= REPORTED || a == "uninstall" || a == "file_offer" } == true
+    }
 }
 
 /** The machine-readable reasons a result can carry. Stable strings; the model reads them. */

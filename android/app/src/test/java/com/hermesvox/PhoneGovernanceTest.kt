@@ -63,10 +63,22 @@ class PhoneGovernanceTest {
 
     private val entries = ArrayList<PhoneAudit.Entry>()
 
+    /** Every card the engine raises, so "it asks first" can be asserted on the surface. */
+    private class Surface : PhoneApproval.Surface {
+        val raised = ArrayList<PhoneApproval.Card>()
+        override fun raise(card: PhoneApproval.Card): Boolean {
+            raised.add(card)
+            return true
+        }
+    }
+
+    private val surface = Surface()
+
     private fun engine(grants: PhoneGrants.Source) = PhoneEngine(
         fake,
         grants = grants,
         audit = { result, args, at -> entries.add(PhoneAudit.entry(at, args, result)) },
+        approvalSurface = surface,
     )
 
     private fun timerCall() = mapOf<String, Any?>("action" to "timer", "duration_ms" to 300_000L)
@@ -79,23 +91,38 @@ class PhoneGovernanceTest {
         assertEquals("a refused call must not reach the platform", 0, fake.timerArms)
     }
 
-    @Test fun an_ask_group_refuses_and_nothing_is_armed() {
+    @Test fun an_ask_group_raises_a_card_and_arms_nothing() {
         val r = engine(MutableGrants(PhoneGrants.State.ASK)).dispatch(timerCall(), t0, e0)
         assertFalse(r.ok)
         assertEquals(PhoneReason.APPROVAL, r.reason)
         assertNull(r.id)
         assertEquals(0, fake.timerArms)
+        assertEquals("the ask is a card, not a refusal without one", 1, surface.raised.size)
+        assertEquals("set a timer for 5 minutes", surface.raised.single().phrase)
     }
 
-    @Test fun a_reported_group_at_ask_runs_and_lands_in_the_audit() {
-        // Tier 1 has no Allow: Ask is its on state, and the report is the audit row plus the
-        // result. Nothing waits for a card that this build cannot mint.
-        val r = engine(MutableGrants(PhoneGrants.State.ASK))
-            .dispatch(mapOf("action" to "note", "text" to "milk"), t0, e0)
+    /**
+     * The old rule let a Tier 1 group at Ask run and report afterwards. Ask now means a card for
+     * every group, so the note is not written until the owner answers and the agent calls again.
+     */
+    @Test fun a_reported_group_at_ask_waits_for_the_card_then_runs_and_is_audited() {
+        val e = engine(MutableGrants(PhoneGrants.State.ASK))
+        val asked = e.dispatch(mapOf("action" to "note", "text" to "milk"), t0, e0)
+        assertEquals(PhoneReason.APPROVAL, asked.reason)
+        assertEquals(1, surface.raised.size)
+        assertEquals("keep a note (4 characters)", surface.raised.single().phrase)
+
+        val id = asked.facts["approval_id"] as String
+        assertTrue(e.answerApproval(id, "once", "tap", e0 + 1_000))
+        val r = e.dispatch(
+            mapOf("action" to "note", "text" to "milk", "approval" to id),
+            t0,
+            e0 + 2_000,
+        )
         assertTrue(r.json(), r.ok)
         assertEquals("note", r.action)
         assertNotNull(r.id)
-        val entry = entries.single()
+        val entry = entries.last()
         assertEquals("done", entry.outcome)
         assertTrue("a note is reported as a length, never its body", entry.arguments["text"] == "4 chars")
     }
@@ -221,10 +248,11 @@ class PhoneGovernanceTest {
 
     /**
      * Notes on: the mind's own note is listed and reversible, and the owner's note is not listed
-     * even though the group is on — Ask is not Allow, and an owner action is the owner's.
+     * even though the group is on — the mind's directive is an Allow here, and an owner action is
+     * the owner's.
      */
     @Test fun with_notes_on_the_minds_note_appears_and_the_owners_does_not() {
-        val e = engine(MutableGrants(PhoneGrants.State.ASK))
+        val e = engine(MutableGrants(PhoneGrants.State.ALLOW))
         val owner = e.execute(
             PhoneTool.Call.Note("my own private note"),
             t0,

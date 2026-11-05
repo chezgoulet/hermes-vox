@@ -170,12 +170,14 @@ Two lanes, deliberately not one wire:
   `phone`, on the phone's tailnet address (`100.64.0.0/10`, port 8765, `/mcp`), behind a
   128-bit bearer token stored in the Android Keystore. Every call returns one JSON
   result with `ok` and the facts of what happened; a refusal is a result with a `reason`,
-  never a transport error. Tier 2 actions are refused (`approval-required`) and belong to
-  the gateway's approval surface.
+  never a transport error. Every action at Ask raises the phone's own card
+  (`approval-required`) and executes only on a second call with that id and the same
+  arguments; Allow runs without a card.
 - **Grants.** `PhoneGrants` defines thirteen capability groups once, each Off / Ask /
   Allow and Off by default. The tool's advertised `enum` is built from the live grants on
   every `tools/list` and `tools/call`, so a revocation takes effect on the next call.
-  Allow is a Tier 0 word only. `docs/MCP-PHONE.md` is the contract.
+  The three states mean the same thing for every group; the tier only describes the
+  consequence and whether an undo exists. `docs/MCP-PHONE.md` is the contract.
 
 ### 6. Profiles — saved connections
 A profile is the whole connection: base URL (`https://host/p/<name>`), its own key, model,

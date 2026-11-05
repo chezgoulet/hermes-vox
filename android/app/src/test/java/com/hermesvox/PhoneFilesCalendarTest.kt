@@ -117,7 +117,13 @@ class PhoneFilesCalendarTest {
     private val t0 = 1_000_000L
     private val e0 = 1_700_000_000_000L
 
+    /** The named group allowed, everything else Off. The ask path has its own test below. */
     private fun only(id: String) = PhoneGrants.Source { g ->
+        if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+    }
+
+    /** The named group at Ask: the same action, behind a card. */
+    private fun askOnly(id: String) = PhoneGrants.Source { g ->
         if (g.id == id) PhoneGrants.State.ASK else PhoneGrants.State.OFF
     }
 
@@ -281,7 +287,7 @@ class PhoneFilesCalendarTest {
             expiresAtSec = 1_700_000_300L,
         )
         val surface = Surface()
-        val e = PhoneEngine(fake, grants = only("files"), approvalSurface = surface)
+        val e = PhoneEngine(fake, grants = askOnly("files"), approvalSurface = surface)
         val asked = e.dispatch(mapOf("action" to "file_offer", "name" to "notes.txt"), t0, e0)
         assertEquals(PhoneReason.APPROVAL, asked.reason)
         val id = asked.facts["approval_id"] as String

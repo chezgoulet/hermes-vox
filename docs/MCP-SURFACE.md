@@ -21,7 +21,8 @@ call-scoped, and its summary-then-read split is the privacy design, not an imple
 **Added by the approval lane:** `apps`' `uninstall` and `files`' `file_offer` — the two Tier 2
 actions with cards on this phone, raised by
 [_PhoneApproval_](../android/app/src/main/java/com/hermesvox/PhoneApproval.kt). The card's
-notification is private and cannot be approved while the phone is locked.
+notification is private and cannot be approved while the phone is locked. Since the uniform-grants
+change, this is the same card **every** action at Ask goes through, not a Tier 2 exception.
 **Declared, not built:** `apps`' `install`.
 
 ---
@@ -35,19 +36,16 @@ built from [PhoneGrants](../android/app/src/main/java/com/hermesvox/PhoneGrants.
 | grant | the schema | a call that names it |
 |---|---|---|
 | **Off** (the default for every group) | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"`, and the detail names the group the owner must grant |
-| **Ask**, Tier 0 | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
-| **Ask**, Tier 2 `uninstall` or `file_offer` | offered | the two-step card handshake below: a request raises the card, then the same call plus `approval` executes |
-| **Ask**, any other Tier 2 | offered | `ok:false, reason:"approval-required"`; no card exists for it and nothing is performed |
-| **Ask**, Tier 1 (reported) | offered | executed, audited, and reported — turning a reported group on *is* the grant |
-| **Allow** | offered | executed, audited, and reported |
+| **Ask** | offered for every tier | `ok:false, reason:"approval-required"` with a card naming the action and its arguments; the same call plus `approval:"<id>"` and identical arguments executes after the owner answers |
+| **Allow** | offered for every tier | executed without a card, audited, and reported |
 
-**Allow exists for Tier 0 only.** A stored Allow on a Tier 1 or Tier 2 group is read back as Ask: a
-grant that cannot be given is not a grant. **Ask is not one behaviour:** a Tier 0 group at Ask waits
-for the owner's card, and a Tier 2 group at Ask waits for a card on every use; a Tier 1 group at Ask
-runs, because the owner has already turned it on and sees what it did. The apps group is Tier 0
-because `launch`/`open` are, but its `uninstall` action keeps its own Tier 2 rule: a grant to open
-apps is not a grant to remove one. `undo` and `status` belong to no group and are always offered,
-because a phone whose grants are all Off must still be able to say so.
+**The three words mean one thing each, whatever the tier.** A stored state is honoured as stored;
+nothing is normalised on read or write. Allow on a consequential action is a **real permission** —
+the Apps row at Allow can remove an app, and the row says so in a loud line. The protection is the
+warning and the Off default, not a hidden veto. **Ask is one behaviour:** every action raises the
+same card, answered by tap or by voice, and the id is bound to the exact action and arguments that
+were approved. `undo` and `status` belong to no group and are always offered, because a phone whose
+grants are all Off must still be able to say so.
 
 **A refusal is a result, not a transport error.** `isError` stays `false`; the JSON carries `ok`,
 `action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform said it
@@ -55,11 +53,13 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 
 ### The tiers
 
-| tier | name | the promise | states |
-|---|---|---|---|
-| **0** | instant | executes now, private, and reversible *where reversal is real* | Off / Ask / **Allow** |
-| **1** | reported | acts now when granted, is reported to the mind on the next turn, and is undoable | Off / Ask |
-| **2** | approval | **never executes without the owner's card.** `uninstall` and `file_offer` have cards on this phone; the rest still answer `approval-required` | Off / Ask |
+| tier | name | the description (what a card says, whether undo exists) |
+|---|---|---|
+| **0** | instant | executes now, private, and reversible *where reversal is real* — an undo is offered |
+| **1** | reported | executes now, is reported to the mind on the next turn, and is undoable where the row says |
+| **2** | consequential | executes now at Allow or after its card at Ask; no undo. `uninstall` and `file_offer` are built; the other names are never advertised |
+
+The tier no longer limits which states are offered: every row has Off, Ask and Allow.
 
 ### Why these hand off
 
@@ -80,13 +80,13 @@ export is the act. Those two are the actions with approval cards of their own (b
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
-| `approval-required` | the group is Ask, or the action is Tier 2; the owner's approval owns it and nothing was done. For `uninstall` and `file_offer` it carries `approval_id`, `expires_at` and `summary` |
-| `approval_denied` | the owner answered an `uninstall` or `file_offer` card with no; nothing was removed or exported, and the id is burnt |
-| `approval_expired` | the card was not answered within two minutes (silence is no); nothing was removed or exported |
-| `approval_mismatch` | the id was approved for one app or file and the call names another; nothing was removed or exported |
-| `approval_unknown` | no such approval id, or it has already been used; nothing was removed or exported |
-| `approval_locked` | the card was answered while the phone was locked. The yes was refused, the id is burnt, and nothing was removed or exported. Unlock the phone and ask again |
-| `approval_busy` | three cards were already waiting, so no fourth was raised; nothing was removed or exported |
+| `approval-required` | the group is Ask: nothing was done, and a card with `approval_id`, `expires_at` and `summary` is waiting for the owner. Any action can answer it |
+| `approval_denied` | the owner answered the card with no; nothing was performed, and the id is burnt |
+| `approval_expired` | the card was not answered within two minutes (silence is no); nothing was performed |
+| `approval_mismatch` | the id was approved for one action and one set of arguments, and the call names different ones; nothing was performed |
+| `approval_unknown` | no such approval id, or it has already been used; nothing was performed |
+| `approval_locked` | the card was answered while the phone was locked. The yes was refused, the id is burnt, and nothing was performed. Unlock the phone and ask again |
+| `approval_busy` | three cards were already waiting, so no fourth was raised; nothing was performed |
 | `permission` | the phone does not hold a permission or special access the action needs |
 | `no_folder` | no folder has been granted with the system picker, so there is nothing to read inside |
 | `bad_path` | the name is a path, contains `..`, or resolves outside the folder the owner granted |
@@ -304,9 +304,8 @@ a name, and the audit keeps only the lookup's `count` — never the query, a dis
 
 ## Tier 1 — reported
 
-Executes when the owner has put the group at **Ask** — turning a reported group on is the grant —
-and is reported to the mind on the next turn through the presence context and in the audit;
-undoable where the row says so.
+Executes at **Allow**, or after its card at **Ask**, and is reported to the mind on the next turn
+through the presence context and in the audit; undoable where the row says so.
 
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
@@ -387,38 +386,43 @@ id. Neither group stores its payload in the audit.
 
 ---
 
-## Tier 2 — approval
+## Tier 2 — consequential
 
-Tier 2 is for what cannot be undone and cannot be handed to another app. The phone **never
-executes** one on the first call. `uninstall` and `file_offer` have cards on this phone; the rest
-still answer `approval-required` and name the surface that owns them.
+Tier 2 is for what cannot be undone and cannot be handed to another app. `uninstall` and
+`file_offer` are built and use the same card as every action at Ask; the unbuilt names
+(`install`, `delete`, `purchase`, `pay`, `transfer`) are never advertised, because a card cannot be
+raised for something the phone cannot do.
 
 `file_offer` is here because offering a file **exports** it: the bytes leave the granted folder,
 travel over the tailnet, land in the conversation and stay. The folder grant makes that export
-possible, not intended, so it takes a card on every use even though the Files group is reported.
+possible, not intended, so Ask means a card on every use, and Allow means the owner has granted the
+export outright.
 
-### `uninstall` and `file_offer`: two steps, on the same tool
+### Every action at Ask: two steps, on the same tool
 
 An MCP call carries no run id, so the approval cannot park a host run the way the gateway's
-`approval.request` does. The protocol is a handshake on the same action:
+`approval.request` does. The protocol is a handshake on the same action, for **every** action at
+Ask — `uninstall` and `file_offer` are only the consequential examples:
 
-1. **Request.** Call `uninstall` with `package`, or `file_offer` with `name` and `folder`, and
-   **no** `approval`. Nothing is removed or exported. The phone raises the card and returns:
+1. **Request.** Call the action with its arguments and **no** `approval`. Nothing is performed. The
+   phone raises the card and returns:
 
    ```json
    {"ok":false,"action":"uninstall","tier":2,"reason":"approval-required",
-    "detail":"the owner must approve removing Firefox; …",
+    "detail":"the owner must approve uninstall Firefox; …",
     "approval_id":"ap-7","expires_at":1767225600000,"summary":"uninstall Firefox"}
    ```
 
    ```json
    {"ok":false,"action":"file_offer","tier":2,"reason":"approval-required",
-    "detail":"the owner must approve offering report.pdf (PDF, 240 KB); …",
+    "detail":"the owner must approve offer report.pdf (PDF, 240 KB); …",
     "approval_id":"ap-8","expires_at":1767225600000,
     "summary":"offer report.pdf (PDF, 240 KB)"}
    ```
 
-   `summary` names the app and its label, or the file, its type and its size; `expires_at` is epoch
+   A Tier 0 action looks the same, with its own words: `summary` is `set a timer for 5 minutes`, and
+   the same call plus `approval:"ap-9"` after the owner answers arms it. `summary` names the app and
+   its label, the file and its type and size, or the action and its arguments; `expires_at` is epoch
    millis, two minutes after the card was raised. A file above the 100 MB the bridge will serve, a
    missing file and a name outside the grant are refused **before** a card is raised.
 
@@ -436,8 +440,8 @@ An MCP call carries no run id, so the approval cannot park a host run the way th
 
    The call executes only after the owner has approved. If the card is still up it returns
    `approval-required` again with the same id; it does not burn the id. If the owner denied it the
-   answer is `approval_denied`; after two minutes `approval_expired`; a different package or file
-   is `approval_mismatch`; a reused or unknown id is `approval_unknown`; an answer given while the
+   answer is `approval_denied`; after two minutes `approval_expired`; different arguments are
+   `approval_mismatch`; a reused or unknown id is `approval_unknown`; an answer given while the
    phone was locked is `approval_locked`.
 
 **Every refusal burns the id.** A denied, expired, locked or mismatched id reports its reason once,
@@ -543,12 +547,12 @@ These are the behaviours the shipped card implements, not requirements for a lat
 | `media` | 0 | `play`, `pause`, `skip`, `now_playing` | **built in lane 1** |
 | `device-state` | 0 | `state` | **built in lane 1** |
 | `clipboard` | 0 | `clip`, `clip_read` | **built in lane 1** |
-| `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane; `file_offer` is Tier 2 and card-gated** |
+| `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane; `file_offer` is Tier 2 and is carded at Ask like every action** |
 | `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
 | `notifications` | 0 | `notifications`, `notification_read` | **built by the read lane; listener call-scoped** |
 | `messages` | 0 | `message` | **built by the handoff lane** |
 | `calls` | 0 | `dial` | **built by the handoff lane** |
-| `apps` | 0 | `launch`, `open`, `uninstall` — `install` planned | **built; `uninstall` is Tier 2 and card-gated** |
+| `apps` | 0 | `launch`, `open`, `uninstall` — `install` planned | **built; `uninstall` is Tier 2, so its card describes a removal and an Allow covers it** |
 | `contacts` | 0 | `contact` | **built by the read lane; numbers only** |
 
 ---
@@ -614,8 +618,10 @@ summarising function is the place a future action has to pass through.
 1. **Every group Off (fresh install).** `tools/list` offers `undo` and `status` only; `play`,
    `state` and `clip` are all `ok:false, reason:"not_granted"` and the detail names Media, Device
    state and Clipboard.
-2. **Media = Ask.** `play` is in the `enum`; a call returns `approval-required` and the music keeps
-   playing or keeps stopping — nothing is sent.
+2. **Media = Ask.** `play` is in the `enum`; a call returns `approval-required` with an
+   `approval_id`, a card names `play`, and the music keeps playing or keeps stopping — nothing is
+   sent. Answer the card by voice ("yes"): the same `play` call plus `approval:"<id>"` sends the key.
+   A second call with different arguments is `approval_mismatch`.
 3. **Media = Allow, audio paused.** `play` → `ok:true, dispatched:true`, and the player resumes.
    `pause` → the player stops. `skip` with no `direction` → the next track; with
    `direction:"previous"` → the previous one. Each result carries `undoable:false` and **no** `undo`

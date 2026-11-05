@@ -4,23 +4,21 @@ import com.hermesvox.core.ApprovalVoice
 import java.security.MessageDigest
 
 /**
- * PhoneApproval — the approval card for the two phone actions that cannot be handed off:
- * **`uninstall`** and **`file_offer`**.
+ * PhoneApproval — the approval card that answers **every action at Ask**, whichever group it is in.
  *
- * Messages and calls are handoffs (D36): Vox composes and opens, the owner sends and presses call.
- * Contacts and notifications are reads, so a grant is enough. Removing an app is irreversible and
- * has no app to hand it to; offering a file exports the owner's content to the agent over the
- * tailnet, where it stays. The folder grant makes that export *possible*, not intended, so both
- * actions get a card on the phone.
+ * The card is not a Tier 2 special case any more. `Messages` set to Ask, a note at Ask, `uninstall`
+ * at Ask, `file_offer` at Ask: they all take the same two steps, on the same tool, and the owner
+ * answers the same card. The tier decides what the card *says* and whether an undo exists, not
+ * whether a card can be raised.
  *
  * ## Two steps, on the same tool
  *
  * An MCP call carries no run id, so it cannot pause a host run the way the gateway's
  * `approval.request` does. The protocol is therefore a handshake on the tool itself:
  *
- * 1. **Request.** `uninstall` or `file_offer` without `approval` raises a card and returns
- *    `ok:false, reason:"approval-required", approval_id, expires_at, summary`. Nothing is removed
- *    and nothing leaves the phone.
+ * 1. **Request.** Any action at Ask without `approval` raises a card naming the action and its
+ *    arguments, and returns `ok:false, reason:"approval-required", approval_id, expires_at,
+ *    summary`. Nothing is performed.
  * 2. **Execute.** The agent calls the **same action with the same canonical arguments** plus
  *    `approval:"<id>"`. It runs only when the id is unexpired, unburnt, and the action and its
  *    canonical arguments hash to the value the card was raised for.
@@ -44,17 +42,11 @@ import java.security.MessageDigest
  */
 object PhoneApproval {
 
-    /** The app-removal card. */
+    /** The app-removal card's action name. */
     const val ACTION = "uninstall"
 
-    /** The file-export card. The owner's content leaves the phone over the tailnet. */
+    /** The file-export card's action name. The owner's content leaves the phone over the tailnet. */
     const val FILE_ACTION = "file_offer"
-
-    /** Every action that uses the two-step card handshake. */
-    fun handshaked(action: String): Boolean {
-        val a = action.trim().lowercase()
-        return a == ACTION || a == FILE_ACTION
-    }
 
     /** Two minutes, stated on the card. Expiry burns the id. */
     const val TIMEOUT_MS = 120_000L
@@ -66,14 +58,15 @@ object PhoneApproval {
     const val MAX_PACKAGE_CHARS = 255
 
     /**
-     * One approval, in the owner's language. [label] is the app's label or the file's name; the
-     * tool's name never appears. [detail] carries a file's type and size, because handing over a
-     * 40 MB file is a different act from handing over a note.
+     * One approval, in the owner's language. [label] is the app's label, the file's name, or the
+     * subject the action works on; the tool's name never appears. [detail] carries a file's type
+     * and size, or another short fact, because handing over a 40 MB file is a different act from
+     * handing over a note.
      */
     data class Card(
         val id: String,
         val action: String,
-        /** The canonical subject: the package name for `uninstall`, the file name for `file_offer`. */
+        /** The canonical subject: the package for `uninstall`, the file name for `file_offer`. */
         val subject: String,
         /** The app's own label, as the platform reports it, or the file's name. */
         val label: String,
@@ -85,20 +78,31 @@ object PhoneApproval {
         val digest: String,
         val raisedAtMs: Long,
         val expiresAtMs: Long,
+        /**
+         * What the action does, without the leading "Your agent wants to": `remove Firefox`,
+         * `set a timer for 5 minutes`, `write a text to Sam`. The card line is built from it, so
+         * every action says exactly what it is about to do.
+         */
+        val phrase: String = "",
+        /** The one-line summary the result carries and the audit stores; [phrase] by default. */
+        val summaryText: String = "",
     ) {
         /** The one-line summary the request result carries and the audit stores. */
-        val summary: String get() = when (action) {
-            FILE_ACTION -> "offer $label" + if (detail.isEmpty()) "" else " ($detail)"
-            ACTION -> "uninstall $label"
+        val summary: String get() = when {
+            summaryText.isNotEmpty() -> summaryText
+            action == FILE_ACTION -> "offer $label" + if (detail.isEmpty()) "" else " ($detail)"
+            action == ACTION -> "uninstall $label"
+            phrase.isNotEmpty() -> phrase
             else -> "$action $label"
         }
 
         /** The exact line on the card, in the owner's language. */
-        val line: String get() = when (action) {
-            FILE_ACTION ->
+        val line: String get() = when {
+            phrase.isNotEmpty() -> "Your agent wants to $phrase. Approve?"
+            action == FILE_ACTION ->
                 "Your agent wants to read $label" +
                     (if (detail.isEmpty()) "" else " ($detail)") + ". Approve?"
-            ACTION -> "Your agent wants to remove $label. Approve?"
+            action == ACTION -> "Your agent wants to remove $label. Approve?"
             else -> "Your agent wants to $action $label. Approve?"
         }
 
@@ -106,9 +110,10 @@ object PhoneApproval {
         fun prompt(): ApprovalPrompt = ApprovalPrompt(
             runId = "",
             requestId = id,
-            action = when (action) {
-                FILE_ACTION -> "read $label"
-                ACTION -> "remove $label"
+            action = when {
+                phrase.isNotEmpty() -> phrase
+                action == FILE_ACTION -> "read $label"
+                action == ACTION -> "remove $label"
                 else -> "$action $label"
             },
             line = line,
@@ -116,6 +121,113 @@ object PhoneApproval {
             timeoutMs = TIMEOUT_MS,
             labels = linkedMapOf("once" to "APPROVE", "deny" to "DENY"),
         )
+    }
+
+    /**
+     * What a card says for one validated call: [label] is the safe short subject the audit keeps,
+     * [detail] a safe extra, and [phrase] the owner-language sentence after "Your agent wants to".
+     *
+     * **Private payloads never appear.** A note's text, a clip's text and a message's body are
+     * shown only as a length; an event's title is shown because the owner is approving that event.
+     */
+    data class Description(
+        val label: String,
+        val detail: String,
+        val phrase: String,
+        val summaryText: String = "",
+    )
+
+    /** The card's words for every implemented action. */
+    fun describe(call: PhoneTool.Call): Description = when (call) {
+        is PhoneTool.Call.Timer -> Description(
+            "timer",
+            LocalActionSpeech.spokenDuration(call.durationMs),
+            "set a timer for ${LocalActionSpeech.spokenDuration(call.durationMs)}",
+        )
+        is PhoneTool.Call.Alarm -> Description(
+            "alarm",
+            LocalActionSpeech.spokenClock(call.hour, call.minute),
+            "set an alarm for ${LocalActionSpeech.spokenClock(call.hour, call.minute)}",
+        )
+        is PhoneTool.Call.Dnd -> Description(
+            "do not disturb",
+            if (call.on) "on" else "off",
+            if (call.on) "turn Do Not Disturb on" else "turn Do Not Disturb off",
+        )
+        is PhoneTool.Call.Volume -> if (call.level != null) {
+            Description("volume", "${call.level}%", "set the media volume to ${call.level}%")
+        } else {
+            val way = if (call.direction > 0) "up" else "down"
+            Description("volume", "one step $way", "turn the media volume $way")
+        }
+        is PhoneTool.Call.Note -> Description(
+            "note",
+            "${call.text.length} characters",
+            "keep a note (${call.text.length} characters)",
+        )
+        is PhoneTool.Call.PlayPause -> Description(
+            "media",
+            if (call.pause) "pause" else "play",
+            if (call.pause) "pause what is playing" else "play",
+        )
+        is PhoneTool.Call.Skip -> Description(
+            "media",
+            if (call.previous) "previous" else "next",
+            if (call.previous) "skip back a track" else "skip to the next track",
+        )
+        PhoneTool.Call.NowPlaying ->
+            Description("media", "now playing", "see what is playing")
+        PhoneTool.Call.State ->
+            Description("device state", "", "read this phone's state")
+        is PhoneTool.Call.Clip -> Description(
+            "clipboard text",
+            "${call.text.length} characters",
+            "put ${call.text.length} characters on the clipboard",
+        )
+        PhoneTool.Call.ClipRead ->
+            Description("clipboard", "", "read your clipboard")
+        is PhoneTool.Call.FileList -> {
+            val folder = call.folder ?: "the folder you granted"
+            val at = if (call.path.isEmpty()) folder else "$folder/${call.path}"
+            Description(folder, call.path, "list the files in $at")
+        }
+        is PhoneTool.Call.FileRead -> {
+            val folder = call.folder ?: "the folder you granted"
+            Description(call.name, folder, "read ${call.name} in $folder")
+        }
+        is PhoneTool.Call.FileOffer -> Description(
+            call.name,
+            call.folder ?: "the folder you granted",
+            "read ${call.name} in ${call.folder ?: "the folder you granted"}",
+        )
+        PhoneTool.Call.Agenda ->
+            Description("calendar", "today", "read today's events")
+        is PhoneTool.Call.EventCreate -> Description(
+            "event",
+            "${call.durationMin} minutes at ${call.start}",
+            "create \"${call.title}\" at ${call.start} for ${call.durationMin} minutes",
+        )
+        PhoneTool.Call.Notifications ->
+            Description("notifications", "", "read the notifications on this phone")
+        is PhoneTool.Call.NotificationRead ->
+            Description("notifications", "one", "read one notification on this phone")
+        is PhoneTool.Call.Contact ->
+            Description("contact lookup", "", "look up \"${call.name}\" in your contacts")
+        is PhoneTool.Call.Message -> Description(
+            "text message to ${call.to}",
+            "${call.text.length} characters",
+            "write a text to ${call.to} (${call.text.length} characters)",
+        )
+        is PhoneTool.Call.Dial ->
+            Description("dialer", call.to, "open the dialer for ${call.to}")
+        is PhoneTool.Call.Launch ->
+            Description("app", call.app, "open ${call.app}")
+        is PhoneTool.Call.Open ->
+            Description("link", call.uri, "open ${call.uri}")
+        is PhoneTool.Call.Uninstall ->
+            Description("app", call.packageName, "remove ${call.packageName}")
+        is PhoneTool.Call.Undo -> Description("undo", call.id, "undo ${call.id}")
+        PhoneTool.Call.Status -> Description("status", "", "report what this phone is doing")
     }
 
     /**
@@ -331,6 +443,8 @@ class PhoneApprovalDesk(
         canonical: String,
         digest: String,
         now: Long,
+        phrase: String = "",
+        summaryText: String = "",
     ): PhoneApproval.Request = synchronized(lock) {
         expire(now)
         if (waiting.size >= capacity) return PhoneApproval.Request.Busy
@@ -344,6 +458,8 @@ class PhoneApprovalDesk(
             digest = digest,
             raisedAtMs = now,
             expiresAtMs = now + timeoutMs,
+            phrase = phrase,
+            summaryText = summaryText,
         )
         waiting.add(card)
         audit(card, "approval-requested", "agent", now)
@@ -352,7 +468,7 @@ class PhoneApprovalDesk(
             waiting.removeAll { it.id == card.id }
             return PhoneApproval.Request.Unavailable(
                 "the owner could not be asked: no card and no notification could be shown, so " +
-                    "nothing was removed",
+                    "nothing was performed",
             )
         }
         PhoneApproval.Request.Raised(card)
@@ -461,7 +577,7 @@ class PhoneApprovalDesk(
         val what = when (card?.action) {
             PhoneApproval.FILE_ACTION -> "file"
             PhoneApproval.ACTION -> "app"
-            else -> "action"
+            else -> card?.action?.let { "different $it request" } ?: "action"
         }
         val done = when (card?.action) {
             PhoneApproval.FILE_ACTION -> "offered"
@@ -472,7 +588,7 @@ class PhoneApprovalDesk(
             PhoneApproval.Reason.DENIED -> "the owner denied that request; nothing was $done"
             PhoneApproval.Reason.EXPIRED -> "that approval expired; nothing was $done"
             PhoneApproval.Reason.MISMATCH ->
-                "that approval was for a different $what; nothing was $done"
+                "that approval was for a different request ($what); nothing was $done"
             PhoneApproval.Reason.LOCKED ->
                 "the phone was locked when that approval was answered; nothing was $done. " +
                     "Unlock it and ask again"

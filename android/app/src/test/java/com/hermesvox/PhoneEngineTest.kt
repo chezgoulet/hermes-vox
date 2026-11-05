@@ -110,14 +110,13 @@ class PhoneEngineTest {
     private val fake = Fake()
 
     /**
-     * The engine under test is handed a policy; the *store* is what keeps Tier 1/2 at Ask. A raw
-     * source that says Allow for a Tier 1 group is normalised to Ask by the gate, so the tier-1
-     * tests below drive [PhoneEngine.execute] — the path an approved card will use — rather than
-     * pretending the MCP wire can grant Allow where the design does not.
+     * The engine under test is handed a policy that says Allow for every group; the card path is
+     * proved in [PhoneUniformGrantsTest], and the tier-1 tests below drive [PhoneEngine.execute] —
+     * the path an approved card uses — rather than pretending the MCP wire can grant something.
      */
     private val grants = PhoneGrants.Source { PhoneGrants.State.ALLOW }
 
-    /** The notes group on, for the mind's view: Tier 1, so Ask is its on state. */
+    /** The notes group on, for the mind's view: at Allow, its action runs without a card. */
     private val notesOn = PhoneGrants.Source { g ->
         if (g.id == "notes") PhoneGrants.State.ASK else PhoneGrants.State.OFF
     }
@@ -322,11 +321,14 @@ class PhoneEngineTest {
             assertEquals("$a must be reported", PhoneTiers.REPORTED, PhoneTiers.of(a))
         }
         assertEquals(
-            "offering a file exports it, so it needs the card",
+            "offering a file exports it, so it is consequential",
             PhoneTiers.APPROVAL,
             PhoneTiers.of("file_offer"),
         )
-        assertFalse("the phone must never offer a file without approval", PhoneTiers.executable("file_offer"))
+        assertTrue(
+            "the phone can perform file_offer — at Allow directly, at Ask after the card",
+            PhoneTiers.executable("file_offer"),
+        )
         for (a in listOf("message", "dial", "launch", "open")) {
             assertEquals("$a hands off to the owner's own app", PhoneTiers.INSTANT, PhoneTiers.of(a))
             assertTrue("$a is executable by the phone", PhoneTiers.executable(a))
@@ -338,15 +340,19 @@ class PhoneEngineTest {
             assertTrue("the phone may perform $a", PhoneTiers.executable(a))
         }
         for (a in listOf("uninstall", "install", "delete", "purchase")) {
-            assertEquals("$a must need approval", PhoneTiers.APPROVAL, PhoneTiers.of(a))
-            assertFalse("$a must never be executed by the phone", PhoneTiers.executable(a))
+            assertEquals("$a is consequential", PhoneTiers.APPROVAL, PhoneTiers.of(a))
+            assertEquals(
+                "uninstall is built and can raise a card; the rest are never built",
+                a == "uninstall",
+                PhoneTiers.executable(a),
+            )
         }
         assertNull("share was replaced by file_offer, which now needs approval", PhoneTiers.of("share"))
         assertNull("call was replaced by dial, which opens the dialer", PhoneTiers.of("call"))
         assertNull(PhoneTiers.of("fly"))
     }
 
-    @Test fun a_tier_two_action_is_refused_and_names_the_approval_path() {
+    @Test fun an_unbuilt_consequential_action_is_refused_and_names_the_approval_path() {
         val r = call(mapOf("action" to "delete"))
         assertFalse(r.ok)
         assertEquals(PhoneTiers.APPROVAL, r.tier)

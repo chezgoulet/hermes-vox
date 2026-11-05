@@ -7,9 +7,10 @@ import com.hermesvox.core.ApprovalChoices
  * this is the small immutable snapshot the host renders, so a later event cannot
  * mutate the card under the user's finger.
  *
- * The phone's `uninstall` card uses the same model ([PhoneApproval.Card.prompt]): the same
- * voice allowlist answers it, and the only difference is the two words on the buttons
- * ([labels]), which are the owner's language rather than the gateway's choice words.
+ * The phone's cards use the same model ([PhoneApproval.Card.prompt]) — every action at Ask, not
+ * only a special one: the same voice allowlist answers them, and the only difference is the two
+ * words on the buttons ([labels]), which are the owner's language rather than the gateway's choice
+ * words.
  */
 class ApprovalPrompt(
     val runId: String,

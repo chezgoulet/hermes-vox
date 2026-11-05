@@ -103,8 +103,9 @@ class PhoneFileListTest {
     private val e0 = 1_700_000_000_000L
     private val entries = ArrayList<PhoneAudit.Entry>()
 
+    /** The named group allowed, everything else Off: these tests are about what a listing returns. */
     private fun only(id: String) = PhoneGrants.Source { g ->
-        if (g.id == id) PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
     }
 
     private fun engine(grants: PhoneGrants.Source) = PhoneEngine(

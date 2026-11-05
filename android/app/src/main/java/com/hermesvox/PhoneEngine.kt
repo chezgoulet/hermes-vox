@@ -52,9 +52,9 @@ class PhoneEngine(
      */
     private val audit: (PhoneResult, Map<String, Any?>, Long) -> Unit = { _, _, _ -> },
     /**
-     * Where the `uninstall` card is raised (the in-app card, else a heads-up notification). A
-     * surface that cannot show anything makes the request refuse `unavailable` rather than
-     * letting a two-minute silence look like a denial.
+     * Where an approval card is raised (the in-app card, else a heads-up notification). A surface
+     * that cannot show anything makes the request refuse `unavailable` rather than letting a
+     * two-minute silence look like a denial.
      */
     private val approvalSurface: PhoneApproval.Surface = PhoneApproval.Surface.NONE,
     /** The approval lifecycle rows: request, decision (approved/denied/expired, and by tap/voice). */
@@ -469,7 +469,7 @@ class PhoneEngine(
         /** Start `ACTION_VIEW` for [uri] in the resolved [target]. */
         fun startUri(target: AppTarget, uri: String): Boolean = false
 
-        // ---- apps: uninstall (the one card-gated action) ----
+        // ---- apps: uninstall (the consequential action) ----
 
         /** The label the launcher shows for [packageName], or null when no such app is installed. */
         fun appLabel(packageName: String): String? = null
@@ -573,14 +573,20 @@ class PhoneEngine(
         val result = when (val parsed = PhoneTool.parse(arguments, grants)) {
             is PhoneTool.Parsed.Refuse -> parsed.result
             // Everything on this wire is the mind's, and every entry it registers says so.
-            is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch, Origin.MIND)
+            is PhoneTool.Parsed.Run -> {
+                val ask = askGroup(parsed.call)
+                if (ask == null) {
+                    execute(parsed.call, nowElapsed, nowEpoch, Origin.MIND)
+                } else {
+                    handshake(parsed.call, ask, arguments, nowElapsed, nowEpoch)
+                }
+            }
         }
         // The audit records refusals as well as successes, because "my agent says it tried" is a
         // claim the owner has to be able to check. A failure to record must not fail the call.
         // The initial approval request is the one exception: the desk already wrote its request row,
         // and the "Recent actions" list must show request → decision → execution, not a duplicate.
-        val requestRowAlreadyWritten = PhoneApproval.handshaked(result.action) &&
-            !result.ok &&
+        val requestRowAlreadyWritten = !result.ok &&
             result.reason == PhoneReason.APPROVAL &&
             result.facts["approval_id"] != null
         if (!requestRowAlreadyWritten) {
@@ -590,6 +596,263 @@ class PhoneEngine(
             }
         }
         return result
+    }
+
+    /**
+     * The group whose **Ask** the call must answer, or null when it may run now.
+     *
+     * One state, one meaning: a call in a group at Ask always raises a card, whatever the group's
+     * tier. There is one composition rule — a message or dial addressed to a contact **name** reads
+     * the address book, so it also answers the Contacts group's Ask even when its own group is
+     * Allow. Off never reaches here; [PhoneTool.parse] refuses it.
+     */
+    private fun askGroup(call: PhoneTool.Call): PhoneGrants.Group? {
+        val group = PhoneGrants.groupOf(call.action) ?: return null
+        if (PhoneGrants.stateOf(grants, group) == PhoneGrants.State.ASK) return group
+        val readsContacts = (call is PhoneTool.Call.Message && call.contact) ||
+            (call is PhoneTool.Call.Dial && call.contact)
+        if (!readsContacts) return null
+        val contacts = PhoneGrants.GROUPS.first { it.id == "contacts" }
+        return contacts.takeIf { PhoneGrants.stateOf(grants, it) == PhoneGrants.State.ASK }
+    }
+
+    /**
+     * The one two-step handshake, for every action at Ask.
+     *
+     * Without an `approval` id it raises a card naming the action and its arguments and returns
+     * `approval-required` with the id and its expiry. With an id it asks the desk whether that id
+     * was approved, unexpired and bound to **these exact arguments**, and only then executes. The
+     * desk burns the id on every refusal, so a repeat is never a second permission.
+     */
+    private fun handshake(
+        call: PhoneTool.Call,
+        group: PhoneGrants.Group,
+        arguments: Map<String, Any?>,
+        nowElapsed: Long,
+        nowEpoch: Long,
+    ): PhoneResult {
+        val id = when (val raw = arguments["approval"]) {
+            null -> null
+            is String -> raw.trim().takeIf { it.isNotEmpty() }
+            else -> return PhoneResult.refused(
+                call.action,
+                PhoneReason.INVALID,
+                "approval must be the id a previous result returned",
+                tier = PhoneGrants.tierOf(call.action),
+            )
+        } ?: return raise(call, group, arguments, nowEpoch)
+
+        if (id.length > PhoneTool.MAX_APPROVAL_ID_CHARS) {
+            return PhoneResult.refused(
+                call.action,
+                PhoneReason.INVALID,
+                "approval is longer than ${PhoneTool.MAX_APPROVAL_ID_CHARS} characters",
+                tier = PhoneGrants.tierOf(call.action),
+            )
+        }
+        val canonical = canonicalArgs(call, arguments)
+        return when (val grant = approvals.authorize(id, call.action, canonical, nowEpoch)) {
+            is PhoneApproval.Grant.Allowed ->
+                execute(call, nowElapsed, nowEpoch, Origin.MIND)
+            is PhoneApproval.Grant.Pending -> PhoneResult.refused(
+                call.action,
+                PhoneReason.APPROVAL,
+                "the owner has not answered the card for ${grant.card.summary} yet; nothing was " +
+                    "performed",
+                tier = PhoneGrants.tierOf(call.action),
+                facts = linkedMapOf<String, Any?>(
+                    "approval_id" to grant.card.id,
+                    "expires_at" to grant.card.expiresAtMs,
+                    "summary" to grant.card.summary,
+                ),
+            )
+            is PhoneApproval.Grant.Refused -> {
+                log("event=phone-mcp action=${call.action} ok=false reason=${grant.reason}")
+                PhoneResult.refused(
+                    call.action,
+                    grant.reason,
+                    grant.detail,
+                    tier = PhoneGrants.tierOf(call.action),
+                )
+            }
+        }
+    }
+
+    /**
+     * The request half: read what the card needs to say, then raise it. Nothing is performed.
+     *
+     * `uninstall` and `file_offer` look at the phone first (the app's label, the file's type and
+     * size) so the card names what will actually happen, and a missing or oversized target is
+     * refused before a card is raised rather than after a yes.
+     */
+    private fun raise(
+        call: PhoneTool.Call,
+        group: PhoneGrants.Group,
+        arguments: Map<String, Any?>,
+        nowEpoch: Long,
+    ): PhoneResult {
+        val subject: String
+        var described: PhoneApproval.Description
+        when (call) {
+            is PhoneTool.Call.FileOffer -> {
+                val folder = when (val pick = folderFor("file_offer", call.folder)) {
+                    is FolderPick.Found -> pick.folder
+                    is FolderPick.Refused -> return pick.result
+                }
+                val info = when (val found = platform.fileInfo(folder, call.name)) {
+                    PhonePlatform.FileInfo.Missing -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                        return PhoneResult.refused(
+                            "file_offer", PhoneReason.UNAVAILABLE,
+                            "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
+                        )
+                    }
+                    PhonePlatform.FileInfo.Outside -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+                        return PhoneResult.refused(
+                            "file_offer", PhoneReason.BAD_PATH,
+                            "that name resolves outside the folder you granted; nothing was offered",
+                        )
+                    }
+                    is PhonePlatform.FileInfo.TooBig -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=too_big")
+                        return PhoneResult.refused(
+                            "file_offer", PhoneReason.TOO_BIG,
+                            "that file is above the 100 MB the file bridge will serve; nothing was offered",
+                        )
+                    }
+                    is PhonePlatform.FileInfo.Unavailable -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                        return PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, found.detail)
+                    }
+                    is PhonePlatform.FileInfo.Ready -> found
+                }
+                val detail = PhoneApproval.fileDetail(info.name, info.mime, info.bytes)
+                subject = call.name
+                described = PhoneApproval.Description(
+                    label = info.name,
+                    detail = detail,
+                    phrase = "read ${info.name} ($detail)",
+                    summaryText = "offer ${info.name} ($detail)",
+                )
+            }
+            is PhoneTool.Call.Uninstall -> {
+                val label = platform.appLabel(call.packageName) ?: run {
+                    log("event:phone-mcp action=uninstall ok=false reason=unavailable")
+                    return PhoneResult.refused(
+                        "uninstall",
+                        PhoneReason.UNAVAILABLE,
+                        "no installed app has the package \"${call.packageName}\"; nothing was removed",
+                    )
+                }
+                subject = call.packageName
+                described = PhoneApproval.Description(
+                    label = label,
+                    detail = "",
+                    phrase = "remove $label",
+                    summaryText = "uninstall $label",
+                )
+            }
+            else -> {
+                described = PhoneApproval.describe(call)
+                // A name is an address-book read whatever action asked for it; the card must say
+                // so, because the lookup is the part the Contacts group governs.
+                if (group.id == "contacts") {
+                    val who = when (call) {
+                        is PhoneTool.Call.Dial -> call.to
+                        is PhoneTool.Call.Message -> call.to
+                        else -> described.label
+                    }
+                    val then = when (call) {
+                        is PhoneTool.Call.Dial -> ", then open the dialer"
+                        is PhoneTool.Call.Message ->
+                            ", then write a text (${call.text.length} characters)"
+                        else -> ""
+                    }
+                    described = described.copy(
+                        label = "contact lookup",
+                        detail = "",
+                        phrase = "look up \"$who\" in your contacts$then",
+                    )
+                }
+                subject = described.label
+            }
+        }
+
+        val canonicalArgs = canonicalArgs(call, arguments)
+        val canonical = PhoneApproval.canonical(call.action, canonicalArgs)
+        val digest = PhoneApproval.digest(canonical)
+        return when (
+            val request = approvals.request(
+                call.action,
+                subject,
+                described.label,
+                described.detail,
+                canonical,
+                digest,
+                nowEpoch,
+                described.phrase,
+                described.summaryText,
+            )
+        ) {
+            is PhoneApproval.Request.Raised -> {
+                val card = request.card
+                log("event=phone-mcp action=${call.action} ok=false reason=approval-required id=${card.id}")
+                PhoneResult.refused(
+                    call.action,
+                    PhoneReason.APPROVAL,
+                    "the owner must approve ${card.summary}; the card is up for " +
+                        "${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call ${call.action} again " +
+                        "with the same arguments and approval=\"${card.id}\" after they answer.",
+                    tier = PhoneGrants.tierOf(call.action),
+                    facts = linkedMapOf<String, Any?>(
+                        "approval_id" to card.id,
+                        "expires_at" to card.expiresAtMs,
+                        "summary" to card.summary,
+                    ),
+                )
+            }
+            PhoneApproval.Request.Busy -> {
+                log("event=phone-mcp action=${call.action} ok=false reason=approval_busy")
+                PhoneResult.refused(
+                    call.action,
+                    PhoneApproval.Reason.BUSY,
+                    "three approval cards are already waiting on the phone; nothing was raised " +
+                        "and nothing was performed",
+                    tier = PhoneGrants.tierOf(call.action),
+                )
+            }
+            is PhoneApproval.Request.Unavailable -> {
+                log("event=phone-mcp action=${call.action} ok=false reason=unavailable")
+                PhoneResult.refused(
+                    call.action,
+                    PhoneReason.UNAVAILABLE,
+                    request.detail,
+                    tier = PhoneGrants.tierOf(call.action),
+                )
+            }
+        }
+    }
+
+    /**
+     * The exact arguments a card is bound to. Almost every action binds to the call's own
+     * arguments; the two that resolve a name at the phone normalise it, so `folder` omitted and
+     * `folder: "Download"` are the same request and a different file is not.
+     */
+    private fun canonicalArgs(
+        call: PhoneTool.Call,
+        arguments: Map<String, Any?>,
+    ): Map<String, Any?> = when (call) {
+        is PhoneTool.Call.FileOffer -> {
+            // The binding names the grant itself: the folder the call resolved to, which is what
+            // the card said and what the executor will use.
+            val resolved = when (val pick = folderFor("file_offer", call.folder)) {
+                is FolderPick.Found -> pick.folder.label
+                is FolderPick.Refused -> call.folder?.trim().orEmpty()
+            }
+            arguments + ("folder" to resolved)
+        }
+        else -> arguments
     }
 
     /**
@@ -620,7 +883,10 @@ class PhoneEngine(
             PhoneTool.Call.ClipRead -> readClip()
             is PhoneTool.Call.FileList -> listFiles(call)
             is PhoneTool.Call.FileRead -> readFile(call)
-            is PhoneTool.Call.FileOffer -> offerFile(call, nowEpoch)
+            is PhoneTool.Call.FileOffer -> when (val pick = folderFor("file_offer", call.folder)) {
+                is FolderPick.Found -> executeFileOffer(call.name, pick.folder)
+                is FolderPick.Refused -> pick.result
+            }
             PhoneTool.Call.Agenda -> agenda()
             is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Notifications -> notifications()
@@ -630,7 +896,7 @@ class PhoneEngine(
             is PhoneTool.Call.Dial -> dial(call)
             is PhoneTool.Call.Launch -> launch(call)
             is PhoneTool.Call.Open -> open(call)
-            is PhoneTool.Call.Uninstall -> uninstall(call, nowEpoch)
+            is PhoneTool.Call.Uninstall -> executeUninstall(call.packageName)
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -1208,151 +1474,21 @@ class PhoneEngine(
     }
 
     /**
-     * Hand one file to the existing file bridge — **after the owner's card says yes**. Offering
-     * exports the owner's content to the agent over the tailnet, where it stays; the folder grant
-     * makes that possible, not intended. So the first call reads only the file's name, type and
-     * size, raises a card showing all three, and returns the id. The second call, with the same
-     * name and folder plus that id, stages and serves it. The result is the capability the bridge
-     * minted — URL, size, hash, expiry — never the bytes, and there is no undo.
+     * Hand one file to the existing file bridge. Offering exports the owner's content to the agent
+     * over the tailnet, where it stays; the folder grant makes that possible, not intended. The
+     * card said yes — at Ask — or the owner set the group to Allow, and either way this is the call
+     * that stages and serves the file. The result is the capability the bridge minted — URL, size,
+     * hash, expiry — never the bytes, and there is no undo.
      */
-    private fun offerFile(call: PhoneTool.Call.FileOffer, nowEpoch: Long): PhoneResult {
-        val folder = when (val pick = folderFor("file_offer", call.folder)) {
-            is FolderPick.Found -> pick.folder
-            is FolderPick.Refused -> return pick.result
-        }
-        val args = fileApprovalArgs(call.name, folder.label)
-        val canonical = PhoneApproval.canonical(PhoneApproval.FILE_ACTION, args)
-        val digest = PhoneApproval.digest(canonical)
-
-        if (call.approvalId == null) {
-            // Look, do not read: the card needs the name, type and size, and a file above the
-            // bridge's cap is refused before a card is raised rather than after a yes.
-            val info = when (val found = platform.fileInfo(folder, call.name)) {
-                PhonePlatform.FileInfo.Missing -> {
-                    log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                    return PhoneResult.refused(
-                        "file_offer", PhoneReason.UNAVAILABLE,
-                        "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
-                    )
-                }
-                PhonePlatform.FileInfo.Outside -> {
-                    log("event=phone-mcp action=file_offer ok=false reason=bad_path")
-                    return PhoneResult.refused(
-                        "file_offer", PhoneReason.BAD_PATH,
-                        "that name resolves outside the folder you granted; nothing was offered",
-                    )
-                }
-                is PhonePlatform.FileInfo.TooBig -> {
-                    log("event=phone-mcp action=file_offer ok=false reason=too_big")
-                    return PhoneResult.refused(
-                        "file_offer", PhoneReason.TOO_BIG,
-                        "that file is above the 100 MB the file bridge will serve; nothing was offered",
-                    )
-                }
-                is PhonePlatform.FileInfo.Unavailable -> {
-                    log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                    return PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, found.detail)
-                }
-                is PhonePlatform.FileInfo.Ready -> found
-            }
-            val detail = PhoneApproval.fileDetail(info.name, info.mime, info.bytes)
-            return when (
-                val request = approvals.request(
-                    PhoneApproval.FILE_ACTION,
-                    call.name,
-                    info.name,
-                    detail,
-                    canonical,
-                    digest,
-                    nowEpoch,
-                )
-            ) {
-                is PhoneApproval.Request.Raised -> {
-                    val card = request.card
-                    log("event=phone-mcp action=file_offer ok=false reason=approval-required id=${card.id}")
-                    PhoneResult.refused(
-                        "file_offer",
-                        PhoneReason.APPROVAL,
-                        "the owner must approve offering ${card.label} (${card.detail}); the card " +
-                            "is up for ${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call file_offer " +
-                            "again with the same name and folder and approval=\"${card.id}\" after " +
-                            "they answer.",
-                        tier = PhoneTiers.APPROVAL,
-                        facts = linkedMapOf<String, Any?>(
-                            "approval_id" to card.id,
-                            "expires_at" to card.expiresAtMs,
-                            "summary" to card.summary,
-                        ),
-                    )
-                }
-                PhoneApproval.Request.Busy -> {
-                    log("event=phone-mcp action=file_offer ok=false reason=approval_busy")
-                    PhoneResult.refused(
-                        "file_offer",
-                        PhoneApproval.Reason.BUSY,
-                        "three approval cards are already waiting on the phone; nothing was raised " +
-                            "and nothing was offered",
-                        tier = PhoneTiers.APPROVAL,
-                    )
-                }
-                is PhoneApproval.Request.Unavailable -> {
-                    log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                    PhoneResult.refused(
-                        "file_offer",
-                        PhoneReason.UNAVAILABLE,
-                        request.detail,
-                        tier = PhoneTiers.APPROVAL,
-                    )
-                }
-            }
-        }
-
-        return when (
-            val grant = approvals.authorize(call.approvalId, PhoneApproval.FILE_ACTION, args, nowEpoch)
-        ) {
-            is PhoneApproval.Grant.Pending -> {
-                val card = grant.card
-                PhoneResult.refused(
-                    "file_offer",
-                    PhoneReason.APPROVAL,
-                    "the owner has not answered the card for ${card.label} yet; nothing was offered",
-                    tier = PhoneTiers.APPROVAL,
-                    facts = linkedMapOf<String, Any?>(
-                        "approval_id" to card.id,
-                        "expires_at" to card.expiresAtMs,
-                        "summary" to card.summary,
-                    ),
-                )
-            }
-            is PhoneApproval.Grant.Refused -> {
-                log("event=phone-mcp action=file_offer ok=false reason=${grant.reason}")
-                PhoneResult.refused(
-                    "file_offer",
-                    grant.reason,
-                    grant.detail,
-                    tier = PhoneTiers.APPROVAL,
-                )
-            }
-            is PhoneApproval.Grant.Allowed -> executeFileOffer(grant.card, folder)
-        }
-    }
-
-    /** The canonical arguments a file-offer card is bound to: the name and the granted folder. */
-    private fun fileApprovalArgs(name: String, folder: String): Map<String, Any?> = linkedMapOf(
-        "action" to PhoneApproval.FILE_ACTION,
-        "name" to name,
-        "folder" to folder,
-    )
-
     private fun executeFileOffer(
-        card: PhoneApproval.Card,
+        name: String,
         folder: PhonePlatform.GrantedFolder,
-    ): PhoneResult = when (val handoff = platform.fileOffer(folder, card.subject)) {
+    ): PhoneResult = when (val handoff = platform.fileOffer(folder, name)) {
         PhonePlatform.FileHandoff.Missing -> {
             log("event=phone-mcp action=file_offer ok=false reason=unavailable")
             PhoneResult.refused(
                 "file_offer", PhoneReason.UNAVAILABLE,
-                "no file named \"${card.subject}\" is in ${folder.label}; nothing was offered",
+                "no file named \"$name\" is in ${folder.label}; nothing was offered",
             )
         }
         PhonePlatform.FileHandoff.Outside -> {
@@ -1717,140 +1853,30 @@ class PhoneEngine(
         return handOff("open", target) { platform.startUri(target, call.uri) }
     }
 
-    // ---- apps: the one card-gated action ----
+    // ---- apps: the consequential action ----
 
     /**
-     * `uninstall`, in two steps on the same tool.
+     * `uninstall`, once the owner has allowed it — by the card at Ask, or by a standing Allow.
      *
-     * Without [PhoneTool.Call.Uninstall.approvalId] this is the **request**: the platform's label
-     * is read, the card is raised, and the refusal carries the id and expiry the agent needs for
-     * the second call. Nothing is removed. With an id this is the **execution** check: the desk
-     * decides whether it is the same action, the same canonical package, unexpired and unburnt.
-     * Only then does Android's own confirmation open — after our card, not instead of it.
+     * Android's own confirmation still opens: it asks "may this app be removed?", which is a
+     * different question from our card's "did you mean this app?". Opening it is the limit of what
+     * this phone can honestly claim — it cannot see the owner's answer there.
      */
-    private fun uninstall(call: PhoneTool.Call.Uninstall, nowEpoch: Long): PhoneResult {
-        val canonical = PhoneApproval.canonical(PhoneApproval.ACTION, approvalArgs(call.packageName))
-        val digest = PhoneApproval.digest(canonical)
-
-        if (call.approvalId == null) {
-            val label = platform.appLabel(call.packageName) ?: run {
-                log("event=phone-mcp action=uninstall ok=false reason=unavailable")
-                return PhoneResult.refused(
-                    "uninstall",
-                    PhoneReason.UNAVAILABLE,
-                    "no installed app has the package \"${call.packageName}\"; nothing was removed",
-                )
-            }
-            return when (
-                val request = approvals.request(
-                    PhoneApproval.ACTION,
-                    call.packageName,
-                    label,
-                    "",
-                    canonical,
-                    digest,
-                    nowEpoch,
-                )
-            ) {
-                is PhoneApproval.Request.Raised -> {
-                    val card = request.card
-                    log("event=phone-mcp action=uninstall ok=false reason=approval-required id=${card.id}")
-                    PhoneResult.refused(
-                        "uninstall",
-                        PhoneReason.APPROVAL,
-                        "the owner must approve removing ${card.label}; the card is up for " +
-                            "${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call uninstall again with " +
-                            "the same package and approval=\"${card.id}\" after they answer.",
-                        tier = PhoneTiers.APPROVAL,
-                        facts = linkedMapOf<String, Any?>(
-                            "approval_id" to card.id,
-                            "expires_at" to card.expiresAtMs,
-                            "summary" to card.summary,
-                        ),
-                    )
-                }
-                PhoneApproval.Request.Busy -> {
-                    log("event=phone-mcp action=uninstall ok=false reason=approval_busy")
-                    PhoneResult.refused(
-                        "uninstall",
-                        PhoneApproval.Reason.BUSY,
-                        "three approval cards are already waiting on the phone; nothing was raised " +
-                            "and nothing was removed",
-                        tier = PhoneTiers.APPROVAL,
-                    )
-                }
-                is PhoneApproval.Request.Unavailable -> {
-                    log("event=phone-mcp action=uninstall ok=false reason=unavailable")
-                    PhoneResult.refused(
-                        "uninstall",
-                        PhoneReason.UNAVAILABLE,
-                        request.detail,
-                        tier = PhoneTiers.APPROVAL,
-                    )
-                }
-            }
-        }
-
-        return when (
-            val grant = approvals.authorize(
-                call.approvalId,
-                PhoneApproval.ACTION,
-                approvalArgs(call.packageName),
-                nowEpoch,
-            )
-        ) {
-            is PhoneApproval.Grant.Pending -> {
-                val card = grant.card
-                PhoneResult.refused(
-                    "uninstall",
-                    PhoneReason.APPROVAL,
-                    "the owner has not answered the card for ${card.label} yet; nothing was removed",
-                    tier = PhoneTiers.APPROVAL,
-                    facts = linkedMapOf<String, Any?>(
-                        "approval_id" to card.id,
-                        "expires_at" to card.expiresAtMs,
-                        "summary" to card.summary,
-                    ),
-                )
-            }
-            is PhoneApproval.Grant.Refused -> {
-                log("event=phone-mcp action=uninstall ok=false reason=${grant.reason}")
-                PhoneResult.refused(
-                    "uninstall",
-                    grant.reason,
-                    grant.detail,
-                    tier = PhoneTiers.APPROVAL,
-                )
-            }
-            is PhoneApproval.Grant.Allowed -> executeUninstall(grant.card)
-        }
-    }
-
-    /** The canonical argument set the card is bound to: the action and the package, nothing else. */
-    private fun approvalArgs(packageName: String): Map<String, Any?> = linkedMapOf(
-        "action" to PhoneApproval.ACTION,
-        "package" to packageName,
-    )
-
-    /**
-     * The card said yes. Android's own confirmation still runs: it asks "may this app be removed?",
-     * which is a different question from our card's "did you mean this app?". Opening it is the
-     * limit of what this phone can honestly claim — it cannot see the owner's answer there.
-     */
-    private fun executeUninstall(card: PhoneApproval.Card): PhoneResult =
-        when (val outcome = platform.uninstall(card.subject)) {
+    private fun executeUninstall(packageName: String): PhoneResult {
+        val label = platform.appLabel(packageName).orEmpty().ifEmpty { packageName }
+        return when (val outcome = platform.uninstall(packageName)) {
             is PhonePlatform.Uninstall.Confirming -> {
-                log("event=phone-mcp action=uninstall ok=true package=${card.subject} confirming=true")
+                log("event=phone-mcp action=uninstall ok=true package=$packageName confirming=true")
                 PhoneResult.done(
                     "uninstall",
                     null,
                     linkedMapOf<String, Any?>(
-                        "package" to card.subject,
-                        "label" to card.label,
+                        "package" to packageName,
+                        "label" to label,
                         "platform_confirmation" to true,
                         "undoable" to false,
                         "note" to
-                            "Android is asking you to confirm removing ${card.label}; the phone " +
+                            "Android is asking you to confirm removing $label; the phone " +
                             "cannot see whether you do",
                     ),
                 )
@@ -1860,7 +1886,7 @@ class PhoneEngine(
                 PhoneResult.refused(
                     "uninstall",
                     PhoneReason.UNAVAILABLE,
-                    "${card.label} is not installed any more; nothing was removed",
+                    "$label is not installed any more; nothing was removed",
                     tier = PhoneTiers.APPROVAL,
                 )
             }
@@ -1874,6 +1900,7 @@ class PhoneEngine(
                 )
             }
         }
+    }
 
     /** Expire approval cards. The surface's timer calls this; the engine also ticks on each call. */
     fun tickApprovals(nowEpoch: Long) = approvals.tick(nowEpoch)
@@ -2156,7 +2183,8 @@ class PhoneEngine(
 
     /**
      * True when an entry of [kind] that was made by [origin] may be shown to — and reversed by —
-     * the mind. Ask is enough (it is not Off, and a Tier 1 group at Ask is on), but the entry must
+     * the mind. Ask is enough (it is not Off, and an action that ran behind a card is on), but the
+     * entry must
      * be the mind's own: an owner's action is never cleared by a group being on.
      */
     private fun mindSees(kind: String, origin: Origin): Boolean {
