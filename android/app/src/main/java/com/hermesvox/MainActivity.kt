@@ -1,9 +1,14 @@
 package com.hermesvox
 
 import android.Manifest
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -50,6 +55,23 @@ open class MainActivity : AppCompatActivity() {
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
     protected lateinit var avatar: AvatarView
+
+    // ---- picture-in-picture -------------------------------------------------------------
+    // The compact surface is a SECOND root laid over the full one (activity_pip.xml): the
+    // being and nothing else. Entering PiP hides the full surface and shows this, so the
+    // session, the turn in flight and every listener stay exactly as they are — a window,
+    // not a mode. `compact` guards every path that exists only to draw words.
+    private lateinit var pipSurface: View
+    private lateinit var pipAvatar: AvatarView
+    private var compact = false
+    /** Whether the speech-locked reveal was running when the window shrank. */
+    private var revealBeforeCompact = false
+    /** The Stop receiver exists only where PiP does; unregistered with the surface. */
+    private var pipReceiverRegistered = false
+
+    /** The being the window can see: the compact one while floating, the full one otherwise. */
+    private val being: AvatarView
+        get() = if (compact) pipAvatar else avatar
     protected val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var replyBuf = ""
     // #368: the crawl's finished-line ring (bounded) and the turn id that keeps a soul
@@ -128,6 +150,7 @@ open class MainActivity : AppCompatActivity() {
 
     private fun startReveal() {
         revealEpoch++                       // cancels any pending minRevealMs stop
+        if (compact) return                 // the window has nowhere to draw words
         if (revealActive) return
         revealActive = true
         revealStartedAt = android.os.SystemClock.uptimeMillis()
@@ -154,10 +177,10 @@ open class MainActivity : AppCompatActivity() {
             // the unspoken tail is left dim and is NEVER auto-completed.
             val txt = c.transcriptText()
             shown = if (txt.isNotBlank()) txt else replyBuf
-            if (txt.isNotBlank()) reply.setText(txt, c.speechCursor())
+            if (txt.isNotBlank() && !compact) reply.setText(txt, c.speechCursor())
         } else {
             shown = replyBuf
-            reply.setText(replyBuf)   // spoken through to the end -> the full reply, plainly
+            if (!compact) reply.setText(replyBuf)   // spoken through to the end -> the full reply, plainly
         }
         // #368: what was said (all of it, or the frozen part after a cut) becomes the
         // trail's newest line. The live slot is cleared so the same words are not drawn
@@ -304,11 +327,11 @@ open class MainActivity : AppCompatActivity() {
      *  constellation; the table keeps MainActivity's own motion in step so the
      *  repeating ambient "thinking" signals cannot quietly clear the wait. */
     private fun setMotionStall(on: Boolean, idleMs: Long) {
-        if (on == motionStalled) { if (on) avatar.setStall(true, idleMs); return }
+        if (on == motionStalled) { if (on) being.setStall(true, idleMs); return }
         // Nothing in flight -> a stall is meaningless; the table is the judge.
         if (on && MotionState.transition(motion, MotionState.Signal.STALL_ON) != MotionState.Motion.STALL) return
         motionStalled = on
-        avatar.setStall(on, idleMs)   // captures/restores the prior motion first
+        being.setStall(on, idleMs)   // captures/restores the prior motion first
         feed(if (on) MotionState.Signal.STALL_ON else MotionState.Signal.RESUME)
         // 0.6.8 (the car-run silence): a 5s gateway stall during a live call must
         // SAY it's still working — the alternative was the user barging a stalled
@@ -321,7 +344,7 @@ open class MainActivity : AppCompatActivity() {
     }
 
     private fun renderMotion() =
-        avatar.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
+        being.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
 
     /** Effort intensity: how deep into tool work this turn has gone. */
     private fun motionWorkload(): Float = minOf(1f, toolCount * 0.3f)
@@ -339,7 +362,7 @@ open class MainActivity : AppCompatActivity() {
         val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
         SoundCuePlayer.setVoiceActive(voicing)
         if (motion == MotionState.Motion.RECOIL) {
-            if (now < recoilUntil) { avatar.driveMotion(level, motionWorkload()); return }
+            if (now < recoilUntil) { being.driveMotion(level, motionWorkload()); return }
             motion = recoilPrior              // the one-shot is spent: back to the work
             val held = recoilPending          // ...and whatever it interrupted lands now
             recoilPending = null
@@ -356,7 +379,7 @@ open class MainActivity : AppCompatActivity() {
         // further SSE traffic, which is not a stall — that is the being working.
         val watching = !voicing && (motion == MotionState.Motion.THINKING ||
                 motion == MotionState.Motion.TOOL || motion == MotionState.Motion.TOOL_RESULT)
-        if (motionStalled) avatar.setStall(true, idle)          // deepen the wait as it runs
+        if (motionStalled) being.setStall(true, idle)          // deepen the wait as it runs
         else if (watching && lastSignalAt > 0L && idle >= MotionState.STALL_MS) setMotionStall(true, idle)
         else if (!voicing && idle >= QUIET_MS) {
             // Nothing at all for this long: whatever the being was doing is over. A hush
@@ -367,7 +390,7 @@ open class MainActivity : AppCompatActivity() {
         }
         // The per-frame refresh: drive values only. The one-shot setters (onTool's
         // re-seed, pulseTool's ramp) belong to the edges above, never to the frame.
-        avatar.driveMotion(level, motionWorkload())
+        being.driveMotion(level, motionWorkload())
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {
@@ -432,6 +455,7 @@ open class MainActivity : AppCompatActivity() {
         avatar = findViewById(R.id.avatar)
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
         avatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))   // #275: ink on the page
+        setUpPipSurface()
         conversation = findViewById(R.id.conversation)
         // #156 (D7): the being's procedural sound cues. On by default; CuePolicy owns
         // every judgement about whether a cue may be heard or felt right now.
@@ -723,6 +747,7 @@ open class MainActivity : AppCompatActivity() {
         CommRoute.select(this)
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
+        updatePip()   // the window may now float, and 12+ may auto-enter on a home swipe
         CallQuiet.begin(this, prefs)   // #325: off by default, Alpha only, restores what it changed
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.start(listener, prefs.getBoolean("duplex", true))
@@ -740,6 +765,7 @@ open class MainActivity : AppCompatActivity() {
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
         callLive = false
+        updatePip()   // no call -> no actions, and auto-enter off
         CallQuiet.end(this, prefs)
         mainHandler.removeCallbacks(routeRebuildTask)
         callHandler.removeCallbacks(callTicker)
@@ -789,6 +815,7 @@ open class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         callLive = true
         callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
+        updatePip()   // a call re-armed on resume may float again
         enterCallUi()
         setStatus("On call", false)
     }
@@ -809,6 +836,180 @@ open class MainActivity : AppCompatActivity() {
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.GONE
         updateCallButton()
         setCallTone(false)
+    }
+
+    // -----------------------------------------------------------------------
+    // Picture-in-picture: a window, not a mode.
+    //
+    // The compact view is the being and nothing else (PipCompactLayoutTest pins it). Enter
+    // it -> stop drawing words entirely; leave it -> repaint exactly what was suppressed.
+    // The session, the turn in flight and every listener are untouched in between, so an
+    // expand returns to the same call with no reconnect. The ONLY control that changes
+    // state is Stop, and it runs `endCall()` — the same teardown the on-screen hang-up
+    // uses, never a second one.
+    // -----------------------------------------------------------------------
+
+    /** May this window float? API 26 AND the feature, never either alone (Pip.supported). */
+    private fun pipSupported(): Boolean = Pip.supported(
+        Build.VERSION.SDK_INT,
+        packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE),
+    )
+
+    /**
+     * Whether the controller has a mute. It does not today: `VoiceController` has no
+     * mute, and adding one would be an audio-path change this feature must not make ("PiP
+     * is a window, not a mode"). Stop is therefore the only action a live call offers;
+     * [Pip] already carries Mute/Unmute for the day the controller grows one.
+     */
+    private fun controllerCanMute(): Boolean = false
+
+    /** The compact surface over the full one. GONE from launch; the root stays untouched. */
+    private fun setUpPipSurface() {
+        val content = findViewById<android.view.ViewGroup>(android.R.id.content)
+        pipSurface = layoutInflater.inflate(R.layout.activity_pip, content, false)
+        pipAvatar = pipSurface.findViewById(R.id.pip_avatar)
+        pipSurface.visibility = View.GONE
+        content.addView(pipSurface)
+        pipAvatar.applyLookPrefs(prefs)
+        pipAvatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))
+        // Without the feature there is nothing to register and nothing to change: the app
+        // takes exactly the path it took before PiP existed.
+        if (!pipSupported()) return
+        try {
+            ContextCompat.registerReceiver(this, pipReceiver, IntentFilter(ACTION_PIP_STOP), ContextCompat.RECEIVER_NOT_EXPORTED)
+            pipReceiverRegistered = true
+        } catch (e: Throwable) {
+            VoxLog.w("event=pip receiver-failed err=${e.message}")
+        }
+    }
+
+    /** A RemoteAction's tap. Only actions the window actually offers get one. */
+    private fun pipActionPending(action: Pip.Action): PendingIntent? = when (action) {
+        Pip.Action.STOP -> PendingIntent.getBroadcast(
+            this, REQ_PIP_STOP,
+            Intent(ACTION_PIP_STOP).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        else -> null   // no controller mute today: Mute/Unmute are not offered
+    }
+
+    private fun pipActions(): Map<Pip.Action, PendingIntent> {
+        val spec = Pip.params(callLive, canMute = controllerCanMute()) ?: return emptyMap()
+        return spec.actions.mapNotNull { a -> pipActionPending(a)?.let { a to it } }.toMap()
+    }
+
+    /**
+     * Ask the system to shrink this activity. False is a normal answer — no feature, no
+     * live call, or a window manager that refused — and every caller treats it as "the
+     * launch happens anyway" rather than as an error.
+     */
+    private fun enterPip(): Boolean {
+        if (!callLive || !pipSupported() || Build.VERSION.SDK_INT < Pip.MIN_API) return false
+        if (isInPictureInPictureMode) return true
+        val spec = Pip.params(callLive, canMute = controllerCanMute()) ?: return false
+        return try {
+            // auto-enter stays on: entering by hand must not disarm the caller's own home
+            // gesture for the rest of the call.
+            val ok = enterPictureInPictureMode(
+                PipWindow.params(this, spec, pipActions(), autoEnter = Pip.autoEnters(Build.VERSION.SDK_INT))
+            )
+            VoxLog.d("event=pip enter ok=$ok")
+            ok
+        } catch (e: Throwable) {
+            VoxLog.w("event=pip enter-failed err=${e.message}")
+            false
+        }
+    }
+
+    /**
+     * The window's description, refreshed with the call. On 31+ this also carries
+     * auto-enter: a swipe home during a live call shrinks Vox instead of hiding it. With
+     * no call the flag is cleared, so an idle app is never left smallable.
+     */
+    private fun updatePip() {
+        if (!pipSupported() || Build.VERSION.SDK_INT < Pip.MIN_API) return
+        try {
+            val spec = Pip.params(callLive, canMute = controllerCanMute())
+            setPictureInPictureParams(
+                if (spec != null) {
+                    PipWindow.params(this, spec, pipActions(), autoEnter = Pip.autoEnters(Build.VERSION.SDK_INT))
+                } else {
+                    // No call: no actions, and auto-enter explicitly off.
+                    PipWindow.params(
+                        this,
+                        Pip.Params(Pip.ASPECT_NUMERATOR, Pip.ASPECT_DENOMINATOR, emptyList(), Pip.DESCRIPTION),
+                        emptyMap(),
+                        autoEnter = false,
+                    )
+                }
+            )
+        } catch (e: Throwable) {
+            VoxLog.w("event=pip params-failed err=${e.message}")
+        }
+    }
+
+    /** Pre-12 only: the home gesture. 12+ owns this itself through auto-enter. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Pip.enterOnLeave(Build.VERSION.SDK_INT, callLive, pipSupported())) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) enterCompact() else leaveCompact()
+    }
+
+    /** Switch to the being-only surface and stop every piece of work that draws words. */
+    private fun enterCompact() {
+        if (compact || !::pipSurface.isInitialized) return
+        compact = true
+        revealBeforeCompact = revealActive
+        revealActive = false
+        mainHandler.removeCallbacks(revealTask)
+        mainHandler.removeCallbacks(fadeHeard)
+        if (::heardLine.isInitialized) {
+            heardLine.animate().cancel()
+            heardLine.visibility = View.INVISIBLE
+        }
+        // The compact being inherits the call's look and the motion in flight BEFORE it is
+        // shown, so the first frame is the presence at the right shape, not a reset orb.
+        pipAvatar.applyLookPrefs(prefs)
+        pipAvatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))
+        pipAvatar.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
+        findViewById<View>(R.id.main_root)?.visibility = View.GONE
+        pipSurface.visibility = View.VISIBLE
+        VoxLog.d("event=pip mode=compact callLive=$callLive")
+    }
+
+    /** Restore the full surface with the call intact: a repaint, never a reconnect. */
+    private fun leaveCompact() {
+        if (!compact) return
+        compact = false
+        pipSurface.visibility = View.GONE
+        findViewById<View>(R.id.main_root)?.visibility = View.VISIBLE
+        // Put back exactly what the compact window did not draw. The session and the turn
+        // in flight were never touched.
+        applyLayoutMode()
+        renderMotion()   // the full being may have missed a state change while it was hidden
+        paintTrail()
+        reply.setText(replyBuf)
+        paintTranscript()
+        if (revealBeforeCompact && replyBuf.isNotBlank() && liveController?.voiceWillSpeak() == true) startReveal()
+        revealBeforeCompact = false
+        VoxLog.d("event=pip mode=full callLive=$callLive")
+    }
+
+    /** The system's Stop button. The same `endCall()` the on-screen hang-up runs. */
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_PIP_STOP) return
+            VoxLog.d("event=pip action=stop callLive=$callLive")
+            if (!callLive) return
+            endCall()
+            // Nothing is left to show: close the window exactly as hanging up leaves an
+            // idle screen behind. `endCall()` already did the whole teardown.
+            if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
+        }
     }
 
     private fun updateCallButton() {
@@ -1607,6 +1808,10 @@ open class MainActivity : AppCompatActivity() {
         /** §B: the system file picker's request code (ACTION_OPEN_DOCUMENT). */
         const val REQ_FILE = 3271
 
+        /** The PiP Stop RemoteAction's broadcast. Internal: the intent is package-scoped. */
+        const val ACTION_PIP_STOP = "com.hermesvox.action.PIP_STOP"
+        const val REQ_PIP_STOP = 3272
+
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
         @Volatile var session: HermesSession? = null
@@ -2030,7 +2235,7 @@ open class MainActivity : AppCompatActivity() {
             replyBuf += text
             ambientWorking = false   // #251: the answer is arriving; the work is done
             markActivity()   // previewB: a delta is proof the provider is alive
-            if (!revealActive) reply.setText(replyBuf)
+            if (!revealActive && !compact) reply.setText(replyBuf)
             // #223: the transcript gets the reply as it arrives, not only when the turn
             // completes. The crawl above keeps its speech-locked reveal untouched: this
             // is the reading surface, and a reader must not wait on the audio.
@@ -2101,7 +2306,7 @@ open class MainActivity : AppCompatActivity() {
             // #368: no speech to wait for -> the reply is finished now; move it into the
             // trail. With speech, stopReveal() seals it when the voice has finished (or is
             // frozen by a cut), so the screen is never left with a duplicate.
-            if (!revealActive) { reply.setText(replyBuf); sealLiveReply(replyBuf) }
+            if (!revealActive) { if (!compact) reply.setText(replyBuf); sealLiveReply(replyBuf) }
             appendReplyFinal(finalText)
             // §B: only the agent can say the bytes did not match. Its reply settles the
             // file's state; the app never turns silence into success. Guarded by the ref so
@@ -2283,6 +2488,7 @@ open class MainActivity : AppCompatActivity() {
     /** Show the heard line: fade in, hold for its reading time (longer when a
      *  screen reader asks for it), fade out. A new turn replaces the old line. */
     private fun showHeard(text: String) {
+        if (compact) return   // no words in the compact window, heard or otherwise
         mainHandler.removeCallbacks(fadeHeard)
         heardLine.animate().cancel()
         heardLine.text = HeardLine.displayText(text)
@@ -2458,6 +2664,7 @@ open class MainActivity : AppCompatActivity() {
 
     /** The crawl's document: the resumed session's history, then this call's own scrollback. */
     private fun paintTrail() {
+        if (compact) return   // the trail is words; the window draws none
         reply.setHistory(CrawlDocument.join(resumedBlock(), crawlHistory.text()))
     }
 
@@ -2924,6 +3131,7 @@ open class MainActivity : AppCompatActivity() {
     // (a11y: Conversation gives a persistent, readable transcript instead of the
     // fading crawl). Persisted via Settings layout_mode (presence|conversation).
     private fun applyLayoutMode() {
+        if (compact) return   // restored on leaveCompact, when the words can be seen
         val conv = prefs.getString("layout_mode", "presence") == "conversation"
         conversation.visibility = if (conv) View.VISIBLE else View.GONE
         reply.visibility = if (conv) View.GONE else View.VISIBLE
@@ -2954,12 +3162,14 @@ open class MainActivity : AppCompatActivity() {
         paintTranscript()
     }
     private fun paintTranscript() {
+        if (compact) return   // the transcript is words; the window draws none
         if (conversation.visibility != View.VISIBLE) return
         convoText.text = transcript.text
         conversation.post { conversation.scrollTo(0, conversation.bottom) }
     }
 
     private fun appendStream(line: String) {
+        if (compact) return                          // nothing exists in the window but the being
         if (stream.visibility == View.GONE) return   // dev console off
         sseBuf = (sseBuf + "\n" + line).trim().takeLast(1600)
         stream.setText(sseBuf)
@@ -3086,6 +3296,9 @@ open class MainActivity : AppCompatActivity() {
     // one controller: Settings only writes prefs, the feed applies them.
     protected fun applyParticlePrefs() {
         avatar.applyLookPrefs(prefs)   // #225: one reader for the main screen and the Settings preview
+        // The compact being is a second view of the SAME look: a prefs change while a call
+        // floats must not leave the PiP window on the previous shape or palette.
+        if (::pipAvatar.isInitialized) pipAvatar.applyLookPrefs(prefs)
     }
 
     /** ~30 fps for the being, with slack so the check lands on the right vsync at 60/90/120 Hz. */
@@ -3109,7 +3322,7 @@ open class MainActivity : AppCompatActivity() {
                 val now = System.nanoTime()
                 if (now - lastDrawNs >= FRAME_BUDGET_NS - FRAME_SLACK_NS) {
                     lastDrawNs = now
-                    motionTick(); avatar.invalidate()
+                    motionTick(); being.invalidate()
                 }
                 avatar.postOnAnimation(this)
             }
@@ -3156,6 +3369,11 @@ open class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)   // the loop reposts itself — never outlive the view
+        // The Stop receiver lives with the surface; a window that cannot exist has none.
+        if (pipReceiverRegistered) {
+            try { unregisterReceiver(pipReceiver) } catch (_: Throwable) { }
+            pipReceiverRegistered = false
+        }
         // §B: the screen owns the offer. Leaving it stops the server and deletes the staged
         // copy — the spec's "deleted however the flow ends" includes this one.
         fileShareRef?.close()

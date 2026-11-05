@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The compact surface: the being, and nothing else.
+
+     Owner's decision, pinned by PipCompactLayoutTest: no text, no crawl, no status line,
+     no buttons drawn in the view, no title, no caption, no "tap to return" label. At
+     ~240 dp a line of speech is unreadable and the being IS the presence, so the compact
+     view is the whole design. The system draws the window chrome; Stop (and Mute, when
+     the controller has one) are RemoteActions in that chrome, never views here.
+
+     The surface is a second root laid over the full one: entering PiP hides the full
+     surface and shows this, so the call's session, turn and listeners are untouched —
+     a window, not a mode. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pip_surface"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/hv_bg"
+    android:importantForAccessibility="noHideDescendants">
+
+    <com.hermesvox.AvatarView
+        android:id="@+id/pip_avatar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+</FrameLayout>
