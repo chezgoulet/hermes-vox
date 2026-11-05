@@ -19,7 +19,7 @@
 
 ### #3 — CRITICAL: model integrity decorative; source unvalidated; "no protocol" not fully fixed
 - Only gemma-e2b has a non-empty `sha256`; `ModelDownloader.kt:83-86` skips verification when blank.
-- `ModelCatalog.source()` (lines 76-82) only handles blank. A user typing `models.house.lan` or `10.0.2.2:8899` still reaches `URL(urlStr)` at `ModelDownloader.kt:56` → `MalformedURLException: no protocol` / `unknown protocol`.
+- `ModelCatalog.source()` (lines 76-82) only handles blank. A user typing `models.example.lan` or `10.0.2.2:8899` still reaches `URL(urlStr)` at `ModelDownloader.kt:56` → `MalformedURLException: no protocol` / `unknown protocol`.
 - **Fix:** scheme validation + allowlist at the input (require `https?://`, reject scheme-less hosts in `source()`/URL build); populate a real pinned `sha256` for EVERY blessed model; verify-on-download AND verify-on-load (re-hash the installed file at init).
 
 ### #49 — 5/6 models lack integrity; the Gemma model URL is wrong
