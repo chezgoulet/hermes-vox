@@ -133,7 +133,9 @@ object PhoneTool {
             "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
             "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
             "needs the owner's approval on the phone); the detail says whether a card is waiting, " +
-            "and a refusal means nothing was performed. " +
+            "and a refusal means nothing was performed unless it carries `outcome_uncertain:true` " +
+            "— that means the work was already dispatched and may still complete, so call " +
+            "`status` instead of telling the caller nothing happened. " +
             NOTIFICATION_PRIVACY + " " +
             "Every action at Ask is two steps: call without `approval`, then call again with the " +
             "returned approval id and identical arguments once the owner answers the card."
@@ -1345,6 +1347,21 @@ data class PhoneResult(
         /** A performed action that cannot be undone (status), or carries no id. */
         fun info(action: String, facts: Map<String, Any?>): PhoneResult =
             PhoneResult(true, action, PhoneTiers.of(action), null, facts = facts)
+
+        /**
+         * The answer for an action whose work was already dispatched but whose outcome the caller
+         * no longer knows: it did not answer in time, or the dispatcher failed after starting it.
+         *
+         * This is deliberately **not** an ordinary refusal. `outcome_uncertain:true` says the
+         * action may still complete, so the mind must check `status` rather than telling the
+         * caller nothing happened. The wording never claims nothing was performed.
+         */
+        fun uncertain(action: String, detail: String): PhoneResult = refused(
+            action,
+            PhoneReason.UNAVAILABLE,
+            detail,
+            facts = linkedMapOf<String, Any?>("outcome_uncertain" to true),
+        )
 
         /** Nothing happened, and why. [facts] carries an approval request's id and expiry. */
         fun refused(

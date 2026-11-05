@@ -197,6 +197,13 @@
   file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
   match: 'fun statesFor\(tier: Int\): List<State> = listOf\(State\.OFF, State\.ASK, State\.ALLOW\)'
 
+# H5: the engine runs off the drawing thread, and a timeout is not proof nothing happened.
+- id: phone-timeout-is-uncertain
+  says: "A timeout is not a refusal of the work."
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'outcome_uncertain'
+
 # ---- #325 and the gate's edge: what is not an alpha set ----
 
 - id: quiet-calls-not-gated

@@ -55,6 +55,13 @@ grants are all Off must still be able to say so.
 `action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform said it
 performed the action, and a refusal never carries an `id`, a success fact or an `undo`.
 
+**A timeout is not a refusal of the work.** The phone runs one action at a time on its own thread,
+not on the thread that draws, and a caller's bound stops only its own waiting. When that bound
+expires the result is `ok:false`, `reason:"unavailable"` and **`outcome_uncertain:true`**: the action
+may still complete on the phone, so the mind must call `status` to learn what happened and must not
+tell the caller nothing was performed. The one exception is `outcome_uncertain:true`; every other
+refusal means the work was not dispatched.
+
 ### The tiers
 
 | tier | name | the description (what a card says, whether undo exists) |
@@ -97,7 +104,7 @@ export is the act. Those two are the actions with approval cards of their own (b
 | `bad_uri` | `open` was given a URI it will not hand to a viewer: `intent:`, `file:`, or no scheme at all. Nothing was resolved and no intent was built |
 | `not_text` | the file's bytes are not text; `file_read` returns text only |
 | `too_big` | a whole-file `file_read` is above the 64 KiB default; ask again with `offset`/`length` to read it in windows |
-| `unavailable` | the action was recognised and the platform refused, failed, or would not say |
+| `unavailable` | the action was recognised and the platform refused, failed, or would not say. A caller-timeout carries `outcome_uncertain:true`: the action may still complete, so call `status` |
 | `invalid-arguments` | the arguments do not describe a runnable action (bounds and shapes are below) |
 | `expired` | no undo is registered for that id any more |
 | `no_app` | nothing on the phone answers the intent: no `ACTION_SENDTO` app, no dialer, no launchable activity, or no app for the URI |

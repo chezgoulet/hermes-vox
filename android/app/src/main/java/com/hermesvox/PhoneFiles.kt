@@ -364,8 +364,8 @@ object PhoneFiles {
      * The match is the classic two-pointer wildcard scan: it walks the name once, remembering the
      * last `*` and where it started, so it is **linear in the name** whatever the pattern is.
      * Translating the glob into `.*`/`.` hands the engine a backtracking regex and lets a
-     * 255-character pattern like `*a*a*a…*b` spend exponential time per entry, on the main thread;
-     * this cannot. (Consecutive `*` collapse naturally: the second one is consumed as a no-op.)
+     * 255-character pattern like `*a*a*a…*b` spend exponential time per entry while the page is
+     * being built; this cannot. (Consecutive `*` collapse naturally: the second one is consumed as a no-op.)
      */
     fun matches(pattern: String?, name: String): Boolean {
         if (pattern.isNullOrEmpty()) return true
@@ -404,10 +404,16 @@ object PhoneFiles {
      * **What is enumerated, then what is shown.** The walk visits [path] and, while there is depth
      * left, each subdirectory below it; at every level directories come before files and each group
      * is alphabetical, so the order is stable and a page boundary never moves. [pattern] then hides
-     * files whose name does not match, and directories are never hidden. The full ordered set is
-     * what `offset` and `limit` page over, which is why `has_more` and `next_offset` exist rather
-     * than a large folder being refused: a page is a window on the truth, never a claim about the
-     * folder's size.
+     * files whose name does not match, and directories are never hidden. `offset` and `limit` page
+     * over that ordered stream, which is why `has_more` and `next_offset` exist rather than a large
+     * folder being refused: a page is a window on the truth, never a claim about the folder's size.
+     *
+     * **The walk stops at the page.** Only `offset + limit + 1` rows are ever materialised: the
+     * page itself, plus the one extra row that proves `has_more`. The old walk built the whole
+     * tree before slicing it, so every page re-walked everything and a large folder at depth 5
+     * made one child query per directory whether the caller asked for ten entries or a thousand
+     * (H5). Now a page costs a page — the provider is asked for the directories the page actually
+     * crosses, and no further.
      *
      * Depth 1 lists the requested directory's entries; depth 2 also lists each subdirectory's, and
      * so on. Every entry carries the relative [Row.path] it was found at, so a deep listing is
@@ -415,7 +421,8 @@ object PhoneFiles {
      *
      * A subdirectory that has vanished between the parent's listing and its own read is skipped (a
      * directory we no longer have is not an entry); a provider that **fails** while a page is being
-     * built is [ListResult.Failed], because a page with a hole in it would be a quiet lie.
+     * built is [ListResult.Failed], because a page with a hole in it would be a quiet lie. A
+     * failure beyond the page's last needed row has not been seen, and is not claimed about.
      */
     fun list(
         folder: String,
@@ -427,10 +434,17 @@ object PhoneFiles {
         reader: Reader,
     ): ListResult {
         val levels = depth.coerceIn(1, MAX_DEPTH)
-        val rows = ArrayList<Row>()
+        val fromOffset = offset.coerceAtLeast(0)
+        val pageLimit = limit.coerceIn(1, MAX_LIST_LIMIT)
+        // One row more than the page proves `has_more`; no more than that is ever collected.
+        val needed = (fromOffset.toLong() + pageLimit.toLong() + 1L)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val rows = ArrayList<Row>(needed.coerceAtMost(1024))
         var failure: String? = null
         var outside = false
         var missingRoot = false
+        /** True when the walk stopped because the page was full, not because something failed. */
+        var enough = false
 
         fun visit(rel: String, remaining: Int): Boolean {
             val children = when (val dir = reader.children(rel)) {
@@ -460,6 +474,9 @@ object PhoneFiles {
                             mime = if (e.dir) null else e.mime,
                         )
                     )
+                    // The page and its one proof row are known. Nothing below this point can
+                    // change the answer, so the provider is not asked again.
+                    if (rows.size >= needed) { enough = true; return false }
                 }
                 if (e.dir && remaining > 1 && !visit(childPath, remaining - 1)) return false
             }
@@ -467,7 +484,7 @@ object PhoneFiles {
         }
 
         val walked = visit(path, levels)
-        if (!walked) {
+        if (!walked && !enough) {
             return when {
                 outside -> ListResult.Outside
                 failure != null -> ListResult.Failed(failure!!)
@@ -477,10 +494,11 @@ object PhoneFiles {
         if (missingRoot) return ListResult.MissingPath
 
         val total = rows.size
-        val from = offset.coerceIn(0, total)
-        val to = (from + limit.coerceIn(1, MAX_LIST_LIMIT)).coerceAtMost(total)
+        val from = fromOffset.coerceIn(0, total)
+        val to = (from + pageLimit).coerceAtMost(total)
         val page = rows.subList(from, to)
-        val more = to < total
+        // `needed` is offset+limit+1, so a full page that stopped early has one row after it.
+        val more = rows.size > fromOffset + pageLimit
         return ListResult.Ok(
             Listing(
                 folder = folder,
