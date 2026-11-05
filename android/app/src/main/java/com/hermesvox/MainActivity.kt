@@ -38,6 +38,50 @@ open class MainActivity : AppCompatActivity() {
     private lateinit var approvalChoices: android.widget.LinearLayout
     private var approvalBusy = false
     private var approvalWaiting = false
+    /** The phone action card currently on screen ("" when the gateway's card is the one shown). */
+    private var phoneApprovalId = ""
+
+    /**
+     * The in-app half of [PhoneApprovals]. The notification half lives in that object; this is the
+     * same card the gateway's approvals use, with the phone action's own two words and timeout.
+     */
+    private val phoneApprovalUi = object : PhoneApprovals.Ui {
+        override fun show(card: PhoneApproval.Card): Boolean {
+            if (!::approvalCard.isInitialized || !AppFocus.inFront) return false
+            runOnUiThread {
+                phoneApprovalId = card.id
+                approvalBusy = false
+                approvalWaiting = true
+                approvalCard.visibility = View.VISIBLE
+                approvalLine.text = card.line
+                approvalLine.contentDescription = card.line
+                approvalState.text = "Two minutes"
+                approvalState.visibility = View.VISIBLE
+                buildApprovalButtons(card.prompt())
+                setStatus("Waiting for your approval", true)
+                if (callLive) VoiceService.update(this@MainActivity, "Waiting for your approval")
+                appendConvo("! Approval needed: ${card.prompt().action}")
+                // Spoken when a call is live: the card must not be a silent toast the owner misses.
+                if (callLive) {
+                    liveController?.speakGlue(card.line, source = "phone-approval")
+                }
+            }
+            return true
+        }
+
+        override fun withdraw(id: String) {
+            if (phoneApprovalId != id) return
+            phoneApprovalId = ""
+            runOnUiThread {
+                approvalBusy = false
+                approvalWaiting = false
+                approvalChoices.removeAllViews()
+                approvalChoices.visibility = View.GONE
+                approvalCard.visibility = View.GONE
+                setStatus("The entity is working…", approvalWaiting)
+            }
+        }
+    }
     private lateinit var warming: android.widget.TextView
     // #6/#12: voice models are a first-run REQUIREMENT (nothing works without
     // them). modelsGate = the blocking empty-state overlay shown when NONE of
@@ -451,6 +495,9 @@ open class MainActivity : AppCompatActivity() {
         approvalLine = findViewById(R.id.approval_line)
         approvalState = findViewById(R.id.approval_state)
         approvalChoices = findViewById(R.id.approval_choices)
+        // The uninstall card's in-app surface. The object itself falls back to the notification
+        // whenever this activity is not in front, so it is safe to attach for the window's life.
+        PhoneApprovals.ui = phoneApprovalUi
         agentName = findViewById(R.id.agent_name)
         // #174: the agent's name is where the active profile shows, so it is where it switches.
         agentName.setOnClickListener { profiles.showSwitcher() }
@@ -2449,6 +2496,7 @@ open class MainActivity : AppCompatActivity() {
         override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
             approvalBusy = false
             approvalWaiting = true
+            phoneApprovalId = ""
             approvalCard.visibility = View.VISIBLE
             approvalLine.text = prompt.line
             approvalLine.contentDescription = prompt.line
@@ -2530,7 +2578,7 @@ open class MainActivity : AppCompatActivity() {
         for (choice in prompt.choices) {
             val deny = choice == "deny"
             val b = Button(this)
-            b.text = ApprovalChoices.label(choice)
+            b.text = prompt.label(choice)
             b.textSize = 12f
             b.isAllCaps = false
             b.letterSpacing = 0.06f
@@ -2546,7 +2594,15 @@ open class MainActivity : AppCompatActivity() {
                 for (i in 0 until approvalChoices.childCount) approvalChoices.getChildAt(i).isEnabled = false
                 approvalState.text = "SENDING…"
                 approvalState.visibility = View.VISIBLE
-                liveController?.answerApproval(choice)
+                val phoneId = phoneApprovalId
+                if (phoneId.isNotEmpty()) {
+                    // The phone action's answer; the desk withdraws the card when it lands.
+                    if (!PhoneApprovals.answer(phoneId, choice != "deny", "tap")) {
+                        approvalState.text = "EXPIRED"
+                    }
+                } else {
+                    liveController?.answerApproval(choice)
+                }
             }
             approvalChoices.addView(b)
         }
@@ -3451,6 +3507,7 @@ open class MainActivity : AppCompatActivity() {
         cues?.release()                           // #156: free the cue AudioTrack with the surface
         cues = null
         PhoneHandoff.detach(phoneHost)            // a dead window answers no handoff
+        if (PhoneApprovals.ui === phoneApprovalUi) PhoneApprovals.ui = null
         if (active === this) active = null
         super.onDestroy()
     }
