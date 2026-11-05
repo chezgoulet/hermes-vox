@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import com.hermesvox.core.Entity
+import com.hermesvox.core.HermesException
 import com.hermesvox.core.JObj
 import com.hermesvox.core.Json
 import com.hermesvox.core.StreamRoute
@@ -11,11 +12,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.net.ConnectException
 import java.util.Collections
 
 /**
- * #430: the setup turn goes out on the active profile's client, a missing session is built rather
- * than failed, and a send that cannot be made says why.
+ * #430: the setup turn goes out on the active profile's client, and a send that cannot be made says
+ * why.
  *
  * Three properties, each a way this went wrong in the field:
  *
@@ -24,10 +27,10 @@ import java.util.Collections
  *     fake gateway that records the request it received.
  *  2. **a missing or stale session is a build, not a failure.** [PhoneSetupSend.plan] rides the
  *     live session only when it was built for the connection in force; otherwise it builds one from
- *     that connection. Only an unconfigured connection is a refusal.
+ *     that connection. Only an unconfigured connection is a refusal — and that has its own words.
  *  3. **each failure names itself.** "no connection configured", "key rejected", "your agent did not
- *     answer" and "turn failed: …" are four different lines, and the record keeps the one that
- *     happened; a reply — however confident — never becomes *Connected*.
+ *     answer" and "turn failed: …" are four different lines; a reply — however confident — never
+ *     becomes *Connected*.
  */
 class PhoneSetupSendTest {
 
@@ -209,10 +212,42 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1}
     }
 
     @Test
-    fun `a failed send is shown with the cause the record kept`() {
+    fun `an outcome is classified by what happened, not flattened`() {
+        // A 401 from the gateway's own status line.
+        assertEquals(
+            PhoneSetupSend.Failure.KEY_REJECTED,
+            PhoneSetupSend.classify(HermesException("hermes run 401 Unauthorized: {\"detail\":\"bad key\"}"), null),
+        )
+        // The transport never answered.
+        assertEquals(
+            PhoneSetupSend.Failure.NO_ANSWER,
+            PhoneSetupSend.classify(ConnectException("Failed to connect to /100.84.47.125:8642"), null),
+        )
+        assertEquals(
+            PhoneSetupSend.Failure.NO_ANSWER,
+            PhoneSetupSend.classify(HermesException("hermes run: no answer within 120s"), null),
+        )
+        // An empty answer with no error is still no answer, not a success.
+        assertEquals(PhoneSetupSend.Failure.NO_ANSWER, PhoneSetupSend.classify(null, "   "))
+        // The gateway answered something unusable: the turn failed, and its reason is kept.
+        assertEquals(
+            PhoneSetupSend.Failure.TURN_FAILED,
+            PhoneSetupSend.classify(HermesException("hermes run: unreadable body: want object"), null),
+        )
+        // A real reply is a success — for the turn, not for the connection.
+        assertNull(PhoneSetupSend.classify(null, "Done — added vox."))
+    }
+
+    @Test
+    fun `a failed send is recorded with its own line and the token scrubbed`() {
+        val error = IOException("connection reset: Bearer phone-token-123 went out")
+        val line = PhoneSetupSend.reason(error, null, token = "phone-token-123").orEmpty()
+        assertTrue(line, line.startsWith("Your agent did not answer"))
+        assertFalse("the phone's token must never reach the record or the screen", line.contains("phone-token-123"))
+        assertTrue("the transport's own words survive", line.contains("connection reset"))
+
         val now = 1_700_000_000_000L
         val tag = PhoneMcpToken.fingerprint("phone-token-123")
-        val line = PhoneSetupSend.message(PhoneSetupSend.Failure.KEY_REJECTED)
         val asked = PhoneSetup.begin(PhoneSetup.Record(), now, tag)
         val failed = PhoneSetup.failed(asked, line)
         assertNull("a failed turn has no reply to show", failed.reply)
@@ -234,6 +269,7 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1}
             PhoneSetup.begin(PhoneSetup.Record(), now, tag),
             "Connected. The gateway has the vox server and the handshake succeeded.",
         )
+        assertNull("the reply is not a failure", answered.failure)
         assertEquals(
             "an agent saying 'connected' is not a handshake",
             PhoneSetup.State.WAITING,
@@ -249,6 +285,6 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1}
         val sheet = java.io.File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
         assertTrue("the press resolves the connection in force", sheet.contains("PhoneSetupStore.session(act)"))
         assertFalse("no session is handed in at construction", sheet.contains("session: HermesSession"))
-        assertTrue("the press goes through the store, not a captured client", sheet.contains("PhoneSetupStore.session(act)"))
+        assertTrue("and the cause is the record's, not a fixed line", sheet.contains("record.failure"))
     }
 }

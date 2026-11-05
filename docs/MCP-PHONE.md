@@ -49,9 +49,14 @@ force: rotating the token clears it.
 | **not set up** | *Not set up yet* | **Set up with my agent** |
 | **waiting** | *Waiting for your agent to connect*, with the agent's reply beneath | **Ask again**; start a call, because the listener is only up while a call is |
 | **connected** | *Connected*, plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
-| **unreachable** | *Could not reach your agent* | Check the gateway connection in Settings, then **Try again** |
+| **unreachable** | the cause, in its own words: *No connection configured*, *Key rejected*, *Your agent did not answer: …*, or *Turn failed: …* | Fix what is named — the connection in Entity & Connection, the profile's key, the gateway — then **Try again** |
 | **refused** | *Your agent could not edit its configuration*, with its own explanation | Fix its file access and **Try again**, or use the manual fallback |
 | **timed out** | *Your agent was asked, but nothing connected in time* | **Try again**, or **Rotate token** and ask once more |
+
+A failure names what happened, never one line for every case: a local misconfiguration must not read
+as a network outage. The four are `no connection configured`, `key rejected`, `agent did not answer`
+(transport, timeout, or an empty answer) and `turn failed: <the gateway's own reason>`
+(`PhoneSetupSend`). The line is persisted with the record, so it survives reopening the sheet.
 
 A timeout is three minutes. A late handshake still wins: if the agent connects after the sheet has
 shown the timeout, the phone says Connected because the handshake is real. The reply stays readable

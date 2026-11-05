@@ -1,5 +1,7 @@
 package com.hermesvox
 
+import java.io.IOException
+
 /**
  * PhoneSetupSend — what the setup turn rides, and what the sheet says when it cannot go out (#430).
  *
@@ -88,8 +90,19 @@ object PhoneSetupSend {
     enum class Failure { NO_CONNECTION, KEY_REJECTED, NO_ANSWER, TURN_FAILED }
 
     /**
+     * The failure an outcome represents, or null when the agent answered. [reply] is what the turn
+     * returned; [error] what it threw. An empty answer is [Failure.NO_ANSWER], never a success.
+     */
+    fun classify(error: Throwable?, reply: String?): Failure? {
+        if (error == null) return if (reply.isNullOrBlank()) Failure.NO_ANSWER else null
+        if (keyRejected(error)) return Failure.KEY_REJECTED
+        if (error is IOException || neverAnswered(error)) return Failure.NO_ANSWER
+        return Failure.TURN_FAILED
+    }
+
+    /**
      * The one line for [f]. [detail] is the gateway's or the transport's own words, when it had
-     * any.
+     * any; it is scrubbed before it gets here (see [reason]).
      */
     fun message(f: Failure, detail: String = ""): String {
         val why = detail.trim().trimEnd('.')
@@ -105,5 +118,45 @@ object PhoneSetupSend {
             Failure.TURN_FAILED ->
                 "Turn failed: " + (why.ifBlank { "the agent's answer could not be read" }) + "."
         }
+    }
+
+    /**
+     * The failure line for an outcome (null when the agent answered). [token] is scrubbed out of
+     * the reason: the transport's words are the gateway's, but they travel to a persisted record
+     * and a screen, and the one secret on this path is the phone's own bearer token.
+     */
+    fun reason(error: Throwable?, reply: String?, token: String = "", max: Int = 160): String? {
+        val f = classify(error, reply) ?: return null
+        val detail = when (f) {
+            Failure.NO_CONNECTION, Failure.KEY_REJECTED -> ""
+            else -> scrub(error?.message.orEmpty(), token, max)
+        }
+        return message(f, detail)
+    }
+
+    /** The transport's message, without the token, on one line, bounded. */
+    fun scrub(text: String, token: String, max: Int = 160): String {
+        var s = text
+        if (token.isNotBlank()) s = s.replace(token, "[token]")
+        s = s.replace(Regex("\\s+"), " ").trim()
+        return if (s.length <= max) s else s.take(max).trimEnd() + "…"
+    }
+
+    /** 401/403 and the words gateways use for them. The status line is `"… 401 Unauthorized: …"`. */
+    private fun keyRejected(e: Throwable): Boolean {
+        val m = e.message.orEmpty().lowercase()
+        return m.contains(" 401") || m.contains(" 403") || m.contains("unauthorized") ||
+            m.contains("invalid api key") || m.contains("key rejected")
+    }
+
+    /**
+     * The turn never got an answer: the client's own timeout, the idle watchdog, or a socket that
+     * died with the run unread. These are "did not answer", not a malformed exchange.
+     */
+    private fun neverAnswered(e: Throwable): Boolean {
+        val m = e.message.orEmpty().lowercase()
+        return m.contains("timed out") || m.contains("no answer within") ||
+            m.contains("no data from the gateway") || m.contains("connection lost") ||
+            m.contains("did not answer")
     }
 }

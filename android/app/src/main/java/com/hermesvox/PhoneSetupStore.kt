@@ -110,11 +110,6 @@ object PhoneSetupStore {
         write(context, PhoneSetup.failed(read(context), reason))
     }
 
-    /** The turn never reached the agent and the cause is unknown here. */
-    fun unreachable(context: Context) {
-        write(context, PhoneSetup.unreachable(read(context)))
-    }
-
     /**
      * Replace the token and forget the old connection. The old credential stops working on the
      * next request, and the sheet stops saying Connected because that proof belonged to the old
@@ -147,13 +142,19 @@ object PhoneSetupStore {
         lastSent = prompt
         begin(app)
         Thread({
-            val reply = try {
-                session.turnStored(prompt)
-            } catch (_: Throwable) {
-                VoxLog.w("event=phone-setup result=unreachable")
-                null
+            var reply: String? = null
+            var error: Throwable? = null
+            try {
+                reply = session.turnStored(prompt)
+            } catch (t: Throwable) {
+                error = t
             }
-            if (reply == null) unreachable(app) else replied(app, reply)
+            val failure = PhoneSetupSend.reason(error, reply, token)
+            if (failure == null) replied(app, reply) else failed(app, failure)
+            VoxLog.w(
+                "event=phone-setup result=" +
+                    if (failure == null) "replied" else "failed cause=${PhoneSetupSend.classify(error, reply)}",
+            )
             sending.set(false)
             try { onDone() } catch (_: Throwable) { }
         }, "phone-setup").apply { isDaemon = true }.start()
