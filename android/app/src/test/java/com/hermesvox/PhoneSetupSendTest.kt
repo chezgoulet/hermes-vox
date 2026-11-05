@@ -259,6 +259,18 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1}
         )
     }
 
+    @Test
+    fun `a send that cannot be made still names its cause on screen`() {
+        // The IDLE -> refusal path: nothing is configured, so no turn is sent at all. The attempt
+        // is still stamped, because "not set up yet" would hide the reason the press did nothing.
+        val now = 1_700_000_000_000L
+        val tag = PhoneMcpToken.fingerprint("phone-token-123")
+        val line = PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION)
+        val attempted = PhoneSetup.failed(PhoneSetup.begin(PhoneSetup.Record(), now, tag), line)
+        assertEquals(PhoneSetup.State.UNREACHABLE, PhoneSetup.state(attempted, now + 1_000L, tag))
+        assertEquals(line, PhoneToolsView.setupHeadline(PhoneSetup.State.UNREACHABLE, attempted.failure))
+    }
+
     // ---- Connected is the handshake's, and nothing else's ----
 
     @Test

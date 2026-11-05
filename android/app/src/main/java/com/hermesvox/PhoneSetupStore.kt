@@ -111,6 +111,14 @@ object PhoneSetupStore {
     }
 
     /**
+     * The send could not even be attempted (nothing configured): the attempt is stamped and the
+     * cause kept, so the sheet shows that line rather than sliding back to "not set up yet".
+     */
+    fun failedBeforeSend(context: Context, reason: String, now: Long = System.currentTimeMillis()) {
+        write(context, PhoneSetup.failed(PhoneSetup.begin(read(context), now, PhoneMcp.tokenTag(context)), reason))
+    }
+
+    /**
      * Replace the token and forget the old connection. The old credential stops working on the
      * next request, and the sheet stops saying Connected because that proof belonged to the old
      * token.

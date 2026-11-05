@@ -463,7 +463,7 @@ class PhoneToolsSheet(
         if (s == null) {
             // Nothing configured to send to. Said plainly, and recorded so the state names it too.
             notice = null
-            PhoneSetupStore.failed(act, PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION))
+            PhoneSetupStore.failedBeforeSend(act, PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION))
             paint()
             return
         }
