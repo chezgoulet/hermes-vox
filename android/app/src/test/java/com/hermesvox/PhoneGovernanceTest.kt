@@ -34,6 +34,9 @@ class PhoneGovernanceTest {
         override fun adjustVolume(direction: Int): Int? = 30 + direction
         override fun saveNote(id: String, text: String, atEpochMs: Long): Boolean = true
         override fun deleteNote(id: String): Boolean = true
+        override fun mediaKey(key: PhoneEngine.PhonePlatform.MediaKey): Boolean = true
+        override fun playback(): PhoneEngine.PhonePlatform.Playback =
+            PhoneEngine.PhonePlatform.Playback(known = false, playing = null, packageName = null, title = null)
     }
 
     private val fake = Fake()

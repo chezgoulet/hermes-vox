@@ -29,7 +29,7 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
  * | 1 — reported | `note` | executed now (when granted), reported to the mind on the next turn, undoable; Ask or Off only |
  * | 2 — approval | `share`, `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
@@ -108,6 +108,10 @@ object PhoneTool {
         "dnd" to "Do not disturb on/off",
         "volume" to "media volume",
         "note" to "keep a short note",
+        "play" to "send the play key to the active player",
+        "pause" to "send the pause key to the active player",
+        "skip" to "next or previous track",
+        "now_playing" to "what the phone will admit to playing",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -161,8 +165,10 @@ object PhoneTool {
                 ),
                 "direction" to linkedMapOf(
                     "type" to "string",
-                    "enum" to listOf("up", "down"),
-                    "description" to "volume only, when level is omitted: one step up or down.",
+                    "enum" to listOf("up", "down", "next", "previous"),
+                    "description" to
+                        "volume only: up or down for one stream step. skip only: next (the " +
+                        "default) or previous. Each action accepts only its own pair.",
                 ),
                 "text" to linkedMapOf(
                     "type" to "string",
@@ -215,6 +221,20 @@ object PhoneTool {
 
         data class Note(val text: String) : Call() {
             override val action = "note"
+        }
+
+        /** `play` and `pause` are the same call with a different key; [pause] names which. */
+        data class PlayPause(val pause: Boolean) : Call() {
+            override val action: String = if (pause) "pause" else "play"
+        }
+
+        /** `skip` forward (the default) or back, as one transport key. */
+        data class Skip(val previous: Boolean) : Call() {
+            override val action = "skip"
+        }
+
+        object NowPlaying : Call() {
+            override val action = "now_playing"
         }
 
         data class Undo(val id: String) : Call() {
@@ -336,6 +356,17 @@ object PhoneTool {
                 else -> Parsed.Run(Call.Note(text))
             }
         }
+        "play" -> Parsed.Run(Call.PlayPause(pause = false))
+        "pause" -> Parsed.Run(Call.PlayPause(pause = true))
+        "skip" -> {
+            val dir = (args["direction"] as? String)?.trim()?.lowercase()
+            when (dir) {
+                null, "", "next" -> Parsed.Run(Call.Skip(previous = false))
+                "previous", "prev" -> Parsed.Run(Call.Skip(previous = true))
+                else -> bad(action, "direction must be next (the default) or previous")
+            }
+        }
+        "now_playing" -> Parsed.Run(Call.NowPlaying)
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -385,7 +416,11 @@ object PhoneTiers {
     /** Leaves the phone or cannot be undone: the owner's approval surface owns it. */
     const val APPROVAL = 2
 
-    private val TIER_0 = setOf("timer", "alarm", "dnd", "volume", "status", "undo")
+    private val TIER_0 = setOf(
+        "timer", "alarm", "dnd", "volume", "status", "undo",
+        // Media (#429 lane): transport keys, and a read of what the session will admit to.
+        "play", "pause", "skip", "now_playing",
+    )
     private val TIER_1 = setOf("note")
 
     /**

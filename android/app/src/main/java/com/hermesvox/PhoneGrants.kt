@@ -102,6 +102,7 @@ object PhoneGrants {
             label = "Media",
             tier = PhoneTiers.INSTANT,
             lets = "Play, pause, skip, and ask what is playing.",
+            actions = listOf("play", "pause", "skip", "now_playing"),
         ),
         Group(
             id = "device-state",

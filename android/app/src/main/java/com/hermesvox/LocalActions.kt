@@ -9,6 +9,7 @@ import android.media.RingtoneManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -36,6 +37,8 @@ import java.util.concurrent.TimeUnit
  * | do not disturb | `NotificationManager.setInterruptionFilter` | **the user's policy access**. `ACCESS_NOTIFICATION_POLICY` is declared, but the grant is a special access only the user can give in system settings. Without it the phone says so — it never pretends. The sheet shows the grant and opens the system screen. |
  * | volume | `AudioManager.setStreamVolume` / `adjustStreamVolume` (media stream) | **`MODIFY_AUDIO_SETTINGS`**, a normal permission declared in the manifest and granted at install; it is what the stream calls rely on. Some devices refuse a stream change while Do Not Disturb owns the stream; that is reported as a failure, not swallowed. The level is read back, so the result is the level in effect. |
  * | note | SharedPreferences, JSON list | **none.** A note is Tier 1: it is kept, reported to the mind on the next turn, and undoable. |
+ * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
+ * | now playing | `AudioManager.isMusicActive` | **none** for "is audio playing". A package and a title come from `MediaSessionManager.getActiveSessions`, a notification-listener special access this app does not hold, so the result is `known:false` with a sentence saying so. It never invents a title. |
  *
  * Tier 0 only for the grammar path: reversible, private, nothing outward-facing. No message, no call,
  * no purchase, no app launch.
@@ -330,6 +333,48 @@ class LocalActions(context: Context) {
         override fun saveNote(id: String, text: String, atEpochMs: Long): Boolean = true
 
         override fun deleteNote(id: String): Boolean = true
+
+        /**
+         * Dispatch one media key at whatever session is active — exactly what the phone's own
+         * media buttons do. No permission and no notification-listener access: the key goes to the
+         * platform, which routes it to the session that owns the media button receiver. False means
+         * no audio service would take it, never "playback changed".
+         */
+        override fun mediaKey(key: PhoneEngine.PhonePlatform.MediaKey): Boolean = try {
+            val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+            val code = when (key) {
+                PhoneEngine.PhonePlatform.MediaKey.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
+                PhoneEngine.PhonePlatform.MediaKey.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
+                PhoneEngine.PhonePlatform.MediaKey.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+                PhoneEngine.PhonePlatform.MediaKey.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            }
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+            true
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action media-key-denied reason=${t.javaClass.simpleName}")
+            false
+        }
+
+        /**
+         * `isMusicActive` is the one thing the phone will say about playback without special
+         * access, so it is the only thing reported. A package and a title come from
+         * `MediaSessionManager.getActiveSessions`, which needs notification-listener access this
+         * app deliberately does not hold; `known` is therefore always false here, and the result
+         * says the phone cannot see what is playing rather than inventing a title.
+         */
+        override fun playback(): PhoneEngine.PhonePlatform.Playback = try {
+            val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            PhoneEngine.PhonePlatform.Playback(
+                known = false,
+                playing = am?.isMusicActive,
+                packageName = null,
+                title = null,
+            )
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action playback-unreadable reason=${t.javaClass.simpleName}")
+            PhoneEngine.PhonePlatform.Playback(false, null, null, null)
+        }
     }
 
     // ---- ring ----

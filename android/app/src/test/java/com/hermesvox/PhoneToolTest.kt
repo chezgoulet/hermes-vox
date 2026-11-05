@@ -46,7 +46,7 @@ class PhoneToolTest {
 
     @Test fun the_action_enum_is_built_from_the_grants() {
         assertEquals(
-            listOf("timer", "alarm", "dnd", "volume", "note", "undo", "status"),
+            listOf("timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing", "undo", "status"),
             enumOf(),
         )
     }
@@ -133,8 +133,45 @@ class PhoneToolTest {
         assertEquals("0", ((props["level"] as JObj)["minimum"] as com.hermesvox.core.JNum).raw)
         assertEquals("100", ((props["level"] as JObj)["maximum"] as com.hermesvox.core.JNum).raw)
         val direction = ((props["direction"] as JObj)["enum"] as JArr).items.map { (it as JStr).value }
-        assertEquals(listOf("up", "down"), direction)
+        assertEquals(listOf("up", "down", "next", "previous"), direction)
         for (key in listOf("at", "on", "text", "id")) assertNotNull("$key must be documented", props[key])
+    }
+
+    // ---- the media group ----
+
+    @Test fun media_actions_are_absent_until_the_group_is_granted() {
+        val mediaOff = PhoneGrants.Source { g ->
+            if (g.id == "media") PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+        }
+        val offered = enumOf(mediaOff)
+        for (a in listOf("play", "pause", "skip", "now_playing")) {
+            assertFalse("$a must be absent while Media is off", a in offered)
+        }
+        assertTrue("the rest of the surface is untouched", "timer" in offered)
+
+        val mediaOn = PhoneGrants.Source { g ->
+            if (g.id == "media") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("play", "pause", "skip", "now_playing", "undo", "status"), enumOf(mediaOn))
+    }
+
+    @Test fun skip_defaults_to_next_and_accepts_only_its_own_directions() {
+        val next = PhoneTool.parse(mapOf("action" to "skip"), open)
+        assertEquals(false, ((next as PhoneTool.Parsed.Run).call as PhoneTool.Call.Skip).previous)
+
+        val explicit = PhoneTool.parse(mapOf("action" to "skip", "direction" to "next"), open) as PhoneTool.Parsed.Run
+        assertEquals(false, (explicit.call as PhoneTool.Call.Skip).previous)
+
+        val back = PhoneTool.parse(mapOf("action" to "skip", "direction" to "previous"), open) as PhoneTool.Parsed.Run
+        assertEquals(true, (back.call as PhoneTool.Call.Skip).previous)
+
+        // The two actions share the `direction` property; each rejects the other's words.
+        val up = PhoneTool.parse(mapOf("action" to "skip", "direction" to "up"), open)
+        assertEquals(PhoneReason.INVALID, (up as PhoneTool.Parsed.Refuse).result.reason)
+        val previousVolume = PhoneTool.parse(
+            mapOf("action" to "volume", "direction" to "previous"), open,
+        )
+        assertEquals(PhoneReason.INVALID, (previousVolume as PhoneTool.Parsed.Refuse).result.reason)
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {

@@ -46,6 +46,31 @@ class PhoneEngine(
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
     interface PhonePlatform {
+        /** A media transport key. Resolved to a platform key code by the implementation. */
+        enum class MediaKey { PLAY, PAUSE, NEXT, PREVIOUS }
+
+        /**
+         * What the platform will say about the active media session. [known] is false when it will
+         * not name the session — which is the case without notification-listener access — and
+         * [packageName]/[title] are null then. [playing] is the cheap reading
+         * (`AudioManager.isMusicActive`) that needs no access, and is null when even that fails.
+         */
+        data class Playback(
+            val known: Boolean,
+            val playing: Boolean?,
+            val packageName: String?,
+            val title: String?,
+        )
+
+        /**
+         * Send one media key to whichever session the platform considers active. False when the
+         * audio service refused or is absent — never a claim that playback changed.
+         */
+        fun mediaKey(key: MediaKey): Boolean
+
+        /** The active session, to the extent the platform will admit it. Never invent a title. */
+        fun playback(): Playback
+
         /** Arm a countdown. False means the phone refused. */
         fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean
 
@@ -141,6 +166,9 @@ class PhoneEngine(
             is PhoneTool.Call.Dnd -> setDnd(call.on, nowElapsed)
             is PhoneTool.Call.Volume -> setVolume(call.level, call.direction, nowElapsed)
             is PhoneTool.Call.Note -> saveNote(call.text, nowElapsed, nowEpoch)
+            is PhoneTool.Call.PlayPause -> pressMedia(call.pause)
+            is PhoneTool.Call.Skip -> skip(call.previous)
+            PhoneTool.Call.NowPlaying -> nowPlaying()
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -273,6 +301,98 @@ class PhoneEngine(
             ),
         )
     }
+
+    // ---- media ----
+
+    /**
+     * One transport key, dispatched to whatever session is active. `ok:true` means the platform
+     * accepted the key event — **not** that a track started, stopped or changed, which the phone
+     * cannot see without a listener it does not hold. No undo is registered on purpose: "play after
+     * pause" is another key press into an unknown state, not a reversal.
+     */
+    private fun pressMedia(pause: Boolean): PhoneResult {
+        val action = if (pause) "pause" else "play"
+        val key = if (pause) PhonePlatform.MediaKey.PAUSE else PhonePlatform.MediaKey.PLAY
+        if (!platform.mediaKey(key)) return mediaRefused(action)
+        log("event=phone-mcp action=$action ok=true")
+        return PhoneResult.info(
+            action,
+            linkedMapOf<String, Any?>(
+                "dispatched" to true,
+                "undoable" to false,
+                "note" to mediaNote(action),
+            ),
+        )
+    }
+
+    private fun skip(previous: Boolean): PhoneResult {
+        val key = if (previous) PhonePlatform.MediaKey.PREVIOUS else PhonePlatform.MediaKey.NEXT
+        if (!platform.mediaKey(key)) return mediaRefused("skip")
+        val direction = if (previous) "previous" else "next"
+        log("event=phone-mcp action=skip ok=true direction=$direction")
+        return PhoneResult.info(
+            "skip",
+            linkedMapOf<String, Any?>(
+                "direction" to direction,
+                "dispatched" to true,
+                "undoable" to false,
+                "note" to mediaNote("skip"),
+            ),
+        )
+    }
+
+    /**
+     * What the phone will say about playback. Without notification-listener access it will not name
+     * the session, so this returns `known:false` with the cheap `playing` reading and a sentence
+     * saying so — never a guessed title.
+     */
+    private fun nowPlaying(): PhoneResult {
+        val p = platform.playback()
+        if (p.known) {
+            // Reachable only when a platform (a later lane holding session access) really can name
+            // it; the shape is here so that lane does not have to invent a second one.
+            log("event=phone-mcp action=now_playing ok=true known=true")
+            return PhoneResult.info(
+                "now_playing",
+                linkedMapOf<String, Any?>(
+                    "known" to true,
+                    "playing" to p.playing,
+                    "package" to p.packageName,
+                    "title" to p.title,
+                ),
+            )
+        }
+        log("event=phone-mcp action=now_playing ok=true known=false")
+        return PhoneResult.info(
+            "now_playing",
+            linkedMapOf<String, Any?>(
+                "known" to false,
+                "playing" to p.playing,
+                "package" to null,
+                "title" to null,
+                "note" to when (p.playing) {
+                    true -> "audio is playing, but the phone cannot see which app it is or what it " +
+                        "is: that needs notification-listener access, which this app does not hold"
+                    false -> "no audio is playing right now, and the phone cannot see what was " +
+                        "last: that needs notification-listener access, which this app does not hold"
+                    null -> "the phone cannot see what is playing: that needs notification-listener " +
+                        "access, which this app does not hold"
+                },
+            ),
+        )
+    }
+
+    private fun mediaRefused(action: String): PhoneResult {
+        log("event=phone-mcp action=$action ok=false reason=unavailable")
+        return PhoneResult.refused(
+            action, PhoneReason.UNAVAILABLE,
+            "the phone could not send the media key; there was no audio service to take it",
+        )
+    }
+
+    private fun mediaNote(action: String): String =
+        "sent the $action key to whichever media session is active; the phone cannot see what that " +
+            "session did with it"
 
     // ---- tier 1 ----
 
