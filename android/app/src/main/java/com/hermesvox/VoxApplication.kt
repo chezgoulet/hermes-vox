@@ -25,6 +25,10 @@ class VoxApplication : Application() {
         // never leave the phone in Do Not Disturb.
         CallQuiet.recover(this, prefs)
         PresenceGate.migrate(prefs)
+        // L6 (0.9.1 review): an encryption that fell back to plaintext last time is retried
+        // now, and a pre-0.9.1 unversioned ciphertext is moved to the marked form.
+        upgradeStoredKey(prefs, "key")
+        upgradeStoredKey(prefs, KEY_STT_REMOTE_KEY)
         // #403: stage one of the hardware check, once per install, before any model is fetched.
         // It records and advises; it never enables anything.
         HardwareCheck.runOnce(this, prefs)
@@ -33,5 +37,13 @@ class VoxApplication : Application() {
         // install that never turned Presence on keeps its file exactly where it is, and the
         // next run with Presence on migrates it then.
         if (PresenceGate.enabled(prefs)) VoxMirror.migrate(this)
+    }
+
+    /** Rewrite one stored secret in the marked ciphertext form when it is not already. */
+    private fun upgradeStoredKey(prefs: android.content.SharedPreferences, key: String) {
+        val stored = prefs.getString(key, null) ?: return
+        val next = SecureStore.storageUpgrade(stored, SecureStore::decrypt, SecureStore::encrypt) ?: return
+        prefs.edit().putString(key, next).apply()
+        VoxLog.d("event=secure-store upgraded pref=$key")
     }
 }

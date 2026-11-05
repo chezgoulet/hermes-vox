@@ -1003,14 +1003,14 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   Samsung). Never promise a Samsung user that installing Vox rebinds their key
   (docs/ASSISTANT-ROLE.md:10 `the phone maker owns`).
 - **No full duplex.** It listens *or* speaks, with barge-in; it does not hear you while it is
-  talking (docs/ARCHITECTURE.md:203 `Half-duplex`).
+  talking (docs/ARCHITECTURE.md:206 `Half-duplex`).
 - **No streaming partials by default.** Recognition is batch: a turn is transcribed after it
   ends. Partials only trigger an early end, and the streaming arm is opt-in
   (docs/ARCHITECTURE.md:84 `Recognition is *batch*`).
 - **No semantic end-of-turn.** Endpointing is silence plus a conservative finished-sentence
-  check (docs/ARCHITECTURE.md:188 `not semantic`).
+  check (docs/ARCHITECTURE.md:191 `not semantic`).
 - **No emotion in the voice.** Mood moves speed and pauses only; Supertonic has no emotion
-  control (docs/ARCHITECTURE.md:200 `no emotion control`).
+  control (docs/ARCHITECTURE.md:203 `no emotion control`).
 - **No transcript editing or resend.** The words on screen track the voice; the text field sends
   a **new** turn rather than editing history (android/app/src/main/java/com/hermesvox/VoiceController.kt:1520 `A text turn`).
 - **No remote relay through the maintainers, no telemetry dashboard, no server-side logs.**
