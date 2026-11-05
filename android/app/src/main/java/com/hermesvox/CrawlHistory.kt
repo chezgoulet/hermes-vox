@@ -18,7 +18,9 @@ package com.hermesvox
  * What goes in:
  *   - [Kind.REPLY]  the agent's finished turn (a soul answer is the turn's reply too);
  *   - [Kind.ASIDE]  a line Presence voiced on its own, marked with [ASIDE] so the
- *                   scrollback reads like the transcript, not like an answer.
+ *                   scrollback reads like the transcript, not like an answer;
+ *   - [Kind.SAID]   the caller's own line, replayed from a resumed session's transcript
+ *                   (#437) — history the host wrote, not something this app said now.
  * State narration (thinking / listening / tool steps) never enters — the crawl is what
  * the entity said, not what it was doing.
  *
@@ -29,7 +31,14 @@ class CrawlHistory(
     private val maxChars: Int = MAX_CHARS,
 ) {
 
-    enum class Kind { REPLY, ASIDE }
+    enum class Kind { REPLY, ASIDE,
+        /**
+         * #437: a line from a resumed session's transcript that the caller said. It is not an
+         * aside (nothing was voiced on its own) and it is not this app's reply either — it is
+         * what the host's transcript holds, drawn in the same trail so the screen matches the
+         * session instead of starting blank.
+         */
+        SAID }
 
     data class Entry(val text: String, val kind: Kind, val turn: Long) {
         /** The line as the crawl draws it: asides keep the transcript's middle dot. */

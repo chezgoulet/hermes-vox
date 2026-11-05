@@ -99,8 +99,27 @@ class AlphaGateTest {
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
-    @Test fun quiet_calls_is_not_an_alpha_set_any_more() {
-        val gate = File(src, "AlphaGate.kt").readText()
+    /**
+     * #437: the session browser is a set of its own, the sibling of Switching profiles — the
+     * same class of unfinished surface, off until selected, with the owner's words on the panel.
+     */
+    @Test fun sessions_is_a_set_with_its_own_key_and_the_owners_words() {
+        val set = AlphaGate.FeatureSet.SESSIONS
+        assertEquals("alpha_set_sessions", set.key)
+        assertEquals("Sessions", set.label)
+        assertTrue(set.blurb, set.blurb.contains("See the conversations your agent already has"))
+        assertTrue(set.blurb, set.blurb.contains("including ones you started at your desk"))
+        assertTrue(set.blurb, set.blurb.contains("continues the same conversation"))
+        // Selecting it without the master is not enough, exactly like every other set.
+        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
+        assertTrue(AlphaGate.allows(Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, set.key to true)), set))
+        // It is the last set, after Switching profiles: the two leave Alpha together.
+        assertEquals(set, AlphaGate.FeatureSet.entries.last())
+        assertEquals(AlphaGate.FeatureSet.PROFILES,
+            AlphaGate.FeatureSet.entries[AlphaGate.FeatureSet.entries.size - 2])
+    }
+
+    @Test fun quiet_calls_is_not_an_alpha_set_any_more() {        val gate = File(src, "AlphaGate.kt").readText()
         val callQuiet = File(src, "CallQuiet.kt").readText()
         val settings = File(src, "SettingsActivity.kt").readText()
         assertFalse("no enum entry", gate.contains("QUIET_CALLS"))
@@ -108,6 +127,25 @@ class AlphaGateTest {
         assertFalse("enabled is its own preference alone", callQuiet.contains("AlphaGate"))
         assertFalse("the Hearing row is not gated", settings.contains("row_call_quiet, AlphaGate"))
         assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_quiet_calls" })
+    }
+
+    /**
+     * #437 §1: with the Sessions set off, the command is absent AND no other path adopts a
+     * session. The catalogue gate is one half; the last door is the other, and both refuse.
+     */
+    @Test fun sessions_are_gated_at_every_door() {
+        val main = File(src, "MainActivity.kt").readText()
+        // The pick refuses before it writes anything.
+        val adopt = main.substringAfter("private fun adoptSession(row: Sessions.Row): Boolean {")
+            .substringBefore("val s = session")
+        assertTrue(adopt, adopt.contains("Sessions.refusal(AlphaGate.reader(prefs))"))
+        assertTrue(adopt, adopt.contains("return false"))
+        // The card does not open either.
+        val show = main.substringAfter("protected fun showSessions() {").substringBefore("if (missingKeyPrompt())")
+        assertTrue(show, show.contains("Sessions.refusal(AlphaGate.reader(prefs))"))
+        // A typed or dictated word goes through the same catalogue gate as the sheet.
+        assertTrue(main.contains("Sessions.commandFor(text, commandGate())"))
+        assertTrue(main.contains("Sessions.COMMAND ->"))
     }
 
     @Test fun an_upgrade_that_had_presence_running_keeps_it() {
@@ -196,7 +234,9 @@ class AlphaGateTest {
         // The row, the search and the manage rows all ask the same question.
         assertTrue(commands.contains("gate = gate"))
         assertTrue(main.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
-        assertTrue(main.contains("CommandCatalog.Gate { c -> if (c.name == \"/profiles\") profiles else diagnostics.on(c) }"))
+        assertTrue(main.contains("CommandCatalog.Gate { c ->"))
+        assertTrue(main.contains("\"/profiles\" -> profiles"))
+        assertTrue(main.contains("diagnostics.on(c) && sessions.on(c)"))
         assertTrue(sheet.contains("if (!allowed())"))
         assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
         // The active profile is a connection fact, not a control: the header is not gated.
