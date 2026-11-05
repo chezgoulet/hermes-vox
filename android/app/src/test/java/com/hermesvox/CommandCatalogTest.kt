@@ -104,7 +104,7 @@ class CommandCatalogTest {
      */
     @Test fun aCommandThatLosesSomethingSaysWhatAndNoOtherDoes() {
         for (name in listOf("/new", "/clear", "/compress", "/models", "/profiles")) {
-            val cost = CommandCatalog.find(name)!!.cost
+            val cost = CommandCatalog.find(name, CommandCatalog.Gate.EVERYTHING)!!.cost
             assertTrue("$name loses something and must say what", cost != null)
             assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)
             assertTrue("$name's cost has no line break", !cost.text.contains('\n'))
