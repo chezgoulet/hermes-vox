@@ -766,6 +766,8 @@ open class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // #429 lane 2: the Phone tools sheet's calendar request. The sheet shows whether it landed.
+        if (PhoneToolsSheet.handlePermissionResult(this, requestCode)) return
         if (requestCode == REQ_MIC_CALL) {
             callStartPending = false
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -2548,6 +2550,8 @@ open class MainActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // #429 lane 2: the Phone tools sheet's folder picker, when the sheet was opened here.
+        if (PhoneToolsSheet.handleActivityResult(this, requestCode, resultCode, data)) return
         if (requestCode != REQ_FILE) return
         if (resultCode != RESULT_OK) return
         @Suppress("DEPRECATION")

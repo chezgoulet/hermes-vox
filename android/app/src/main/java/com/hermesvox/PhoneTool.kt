@@ -32,8 +32,8 @@ import com.hermesvox.core.Json
  * | tier | actions | what happens |
  * |---|---|---|
  * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
- * | 1 — reported | `note` | executed now (when granted), reported to the mind on the next turn, undoable; Ask or Off only |
- * | 2 — approval | `share`, `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
+ * | 1 — reported | `note`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
+ * | 2 — approval | `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
@@ -70,6 +70,16 @@ object PhoneTool {
 
     /** A clip is text meant to be pasted somewhere, not a document either. */
     const val MAX_CLIP_CHARS = 2_000
+
+    /** A file name, never a path. [PhoneFiles] owns the rule; the bound is named here too. */
+    const val MAX_FILE_NAME_CHARS = PhoneFiles.MAX_NAME_CHARS
+
+    /** An event's title is a label, not a description. */
+    const val MAX_EVENT_TITLE_CHARS = PhoneCalendar.MAX_TITLE_CHARS
+
+    /** `duration_min` is minutes, at least one and at most a day. */
+    const val MIN_EVENT_MINUTES = 1
+    const val MAX_EVENT_MINUTES = PhoneCalendar.MAX_DURATION_MIN
 
     /**
      * The actions a schema may offer right now — a pure function of the live grants. [PhoneToolTest]
@@ -119,6 +129,10 @@ object PhoneTool {
         "now_playing" to "what the phone will admit to playing",
         "state" to "battery, charging, screen, network, storage, volume, time",
         "clip" to "put text on the clipboard (never reads it)",
+        "file_read" to "read a named file's text inside the folder you granted",
+        "file_offer" to "offer a named file to your agent as an artifact",
+        "agenda" to "today's events (start, end, title, calendar)",
+        "event_create" to "create one event, undoable",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -187,6 +201,49 @@ object PhoneTool {
                     "type" to "string",
                     "description" to "undo only: the id an earlier result returned.",
                 ),
+                "name" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "file_read or file_offer only: the file's name inside the folder the " +
+                        "owner granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a " +
+                        "path: \"..\", an absolute path and a separator are refused.",
+                ),
+                "folder" to linkedMapOf(
+                    "type" to "string",
+                    "enum" to PhoneFiles.FOLDERS,
+                    "description" to
+                        "file_read or file_offer only: which granted folder to look in — " +
+                        "${PhoneFiles.FOLDERS.joinToString(" or ")} (the default is " +
+                        "${PhoneFiles.DEFAULT_FOLDER}). The name is looked up inside that folder " +
+                        "only; there is no directory walk.",
+                ),
+                "start" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "event_create only: the start as local ISO-8601, YYYY-MM-DDTHH:MM (seconds " +
+                        "optional), in the phone's own time zone. A trailing Z or an offset is " +
+                        "refused: this is the phone's local clock.",
+                ),
+                "duration_min" to linkedMapOf(
+                    "type" to "integer",
+                    "minimum" to MIN_EVENT_MINUTES,
+                    "maximum" to MAX_EVENT_MINUTES,
+                    "description" to
+                        "event_create only: how long the event lasts, in minutes — $MIN_EVENT_MINUTES " +
+                        "to $MAX_EVENT_MINUTES (one day). Zero and negative durations are refused.",
+                ),
+                "calendar" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "event_create only: the name of the calendar to create the event in. Omit " +
+                        "it for the phone's default calendar.",
+                ),
+                "title" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "event_create only: the event's title, at most $MAX_EVENT_TITLE_CHARS " +
+                        "characters. The audit stores it as a length, never as the text.",
+                ),
             ),
             "required" to listOf("action"),
             "additionalProperties" to false,
@@ -250,6 +307,29 @@ object PhoneTool {
 
         data class Clip(val text: String) : Call() {
             override val action = "clip"
+        }
+
+        /** One named file inside one granted folder. [folder] is the tool's word, not a path. */
+        data class FileRead(val name: String, val folder: String?) : Call() {
+            override val action = "file_read"
+        }
+
+        data class FileOffer(val name: String, val folder: String?) : Call() {
+            override val action = "file_offer"
+        }
+
+        object Agenda : Call() {
+            override val action = "agenda"
+        }
+
+        /** [start] is normalised local ISO-8601; [durationMin] is minutes, already bounded. */
+        data class EventCreate(
+            val title: String,
+            val start: String,
+            val durationMin: Int,
+            val calendar: String?,
+        ) : Call() {
+            override val action = "event_create"
         }
 
         data class Undo(val id: String) : Call() {
@@ -400,6 +480,46 @@ object PhoneTool {
                 else -> Parsed.Run(Call.Clip(text))
             }
         }
+        "file_read", "file_offer" -> {
+            val name = (args["name"] as? String)?.trim().orEmpty()
+            PhoneFiles.badPath(name)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
+            val folder = when (val raw = args["folder"]) {
+                null -> null
+                is String -> if (raw.isBlank()) null else PhoneFiles.FOLDERS.firstOrNull {
+                    it.equals(raw.trim(), ignoreCase = true)
+                } ?: return bad(
+                    action,
+                    "folder must be ${PhoneFiles.FOLDERS.joinToString(" or ")}",
+                )
+                else -> return bad(action, "folder must be a string")
+            }
+            Parsed.Run(
+                if (action == "file_read") Call.FileRead(name, folder)
+                else Call.FileOffer(name, folder),
+            )
+        }
+        "agenda" -> Parsed.Run(Call.Agenda)
+        "event_create" -> {
+            val title = (args["title"] as? String)?.trim().orEmpty()
+            when {
+                title.isEmpty() -> return bad(action, "title is required")
+                title.length > MAX_EVENT_TITLE_CHARS ->
+                    return bad(action, "title is longer than $MAX_EVENT_TITLE_CHARS characters")
+            }
+            val start = PhoneCalendar.parseLocal(args["start"] as? String)
+                ?: return bad(
+                    action,
+                    "start is required and must be local ISO-8601, YYYY-MM-DDTHH:MM with optional " +
+                        "seconds; a Z or an offset is not the phone's local clock",
+                )
+            val minutes = integer(args["duration_min"])
+                ?: return bad(action, "duration_min is required and must be whole minutes")
+            if (minutes < MIN_EVENT_MINUTES || minutes > MAX_EVENT_MINUTES) {
+                return bad(action, "duration_min must be between $MIN_EVENT_MINUTES and $MAX_EVENT_MINUTES")
+            }
+            val calendar = (args["calendar"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            Parsed.Run(Call.EventCreate(title, start.iso, minutes.toInt(), calendar))
+        }
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -417,6 +537,10 @@ object PhoneTool {
 
     private fun bad(action: String, detail: String): Parsed =
         Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, detail))
+
+    /** A refusal with a reason of its own — `bad_path`, `no_folder`, `not_text`, `too_big`. */
+    private fun refused(action: String, reason: String, detail: String): Parsed =
+        Parsed.Refuse(PhoneResult.refused(action, reason, detail))
 
     /** JSON numbers arrive as Long or Double depending on the reader; both are accepted as whole. */
     private fun integer(v: Any?): Long? = when (v) {
@@ -458,16 +582,32 @@ object PhoneTiers {
         // Clipboard (#429 lane): a write. Never a read.
         "clip",
     )
-    private val TIER_1 = setOf("note")
+    private val TIER_1 = setOf(
+        "note",
+        // Files (#429 lane 2): one named file inside the folder the owner granted.
+        "file_read", "file_offer",
+        // Calendar (#429 lane 2): today's events, and one event that can be undone.
+        "agenda", "event_create",
+    )
 
     /**
      * The consequential capabilities the phone deliberately does **not** execute for the mind.
      * They are named so a direct call gets "this needs the owner" rather than "unknown action".
      */
     private val TIER_2 = setOf(
-        "share", "message", "call", "email", "delete", "purchase", "pay", "launch", "send", "open",
-        "install", "uninstall", "transfer",
+        "message", "call", "email", "send", "purchase", "pay", "launch", "open", "install",
+        "uninstall", "transfer", "notifications", "contact",
+        // A file delete is a Tier 2 capability that this lane deliberately does not build: there
+        // is no undo, so it is named here and never advertised.
+        "delete",
     )
+
+    /** The names in one tier, sorted — the shape `status` reports without a second list. */
+    fun names(tier: Int): List<String> = when (tier) {
+        INSTANT -> TIER_0.sorted()
+        REPORTED -> TIER_1.sorted()
+        else -> TIER_2.sorted()
+    }
 
     /** The tier of [action], or null when it is not a phone action at all. */
     fun of(action: String): Int? {
@@ -486,6 +626,18 @@ object PhoneTiers {
 
 /** The machine-readable reasons a result can carry. Stable strings; the model reads them. */
 object PhoneReason {
+    /** The args name a path, a URI or a name that resolves outside the folder the owner granted. */
+    const val BAD_PATH = "bad_path"
+
+    /** No folder has been granted to the app yet (or not the one the call named). */
+    const val NO_FOLDER = "no_folder"
+
+    /** The file's bytes are not text; `file_read` returns text only. */
+    const val NOT_TEXT = "not_text"
+
+    /** The file is above `file_read`'s cap. It is refused, never truncated. */
+    const val TOO_BIG = "too_big"
+
     /** The phone does not hold a permission the action needs. */
     const val PERMISSION = "permission"
 

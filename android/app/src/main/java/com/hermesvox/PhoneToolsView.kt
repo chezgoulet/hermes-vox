@@ -44,6 +44,19 @@ object PhoneToolsView {
         if (granted) "Granted — the phone may change Do Not Disturb"
         else "Not granted — only you can give this in system settings"
 
+    /** The folder the system picker gave, or the plain fact that none has been given. */
+    fun files(folders: List<String>): String = when {
+        folders.isEmpty() ->
+            "No folder granted — your agent cannot read or offer a file until you pick one"
+        folders.size == 1 -> "Granted · ${folders.single()}"
+        else -> "Granted · ${folders.joinToString(", ")}"
+    }
+
+    /** The calendar's runtime permission, in the owner's words, naming Android's own string. */
+    fun calendar(granted: Boolean, missing: String?): String =
+        if (granted) "Granted — your agent may read today's events and create one"
+        else "Not granted — ${missing ?: "calendar access"} must be allowed before an action can run"
+
     fun volume(granted: Boolean): String =
         if (granted) "Granted — the phone may change the media volume"
         else "Not granted — volume changes will refuse with a reason"

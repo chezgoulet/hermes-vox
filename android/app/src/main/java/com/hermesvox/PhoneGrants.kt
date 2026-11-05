@@ -131,13 +131,14 @@ object PhoneGrants {
             tier = PhoneTiers.REPORTED,
             lets = "Read a file you name in Downloads or Documents, and offer a file to your agent.",
             warning = "Your agent could read a file in Downloads when you approve it.",
-            planned = listOf("share", "delete"),
+            actions = listOf("file_read", "file_offer"),
         ),
         Group(
             id = "calendar",
             label = "Calendar",
             tier = PhoneTiers.REPORTED,
             lets = "Read today's events and create an event, which it can undo.",
+            actions = listOf("agenda", "event_create"),
         ),
         Group(
             id = "notifications",
