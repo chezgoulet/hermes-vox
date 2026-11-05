@@ -9,7 +9,7 @@ assembled product.
 1. Install the **release APK** (not a debug build), settings untouched, on both devices.
 2. Cold start: force-stop, clear from recents, launch; place a call.
 3. One short turn ("what time is it?"), then a ten-minute call with ordinary use.
-4. Hang up. Settings → About → *Share full log*.
+4. Hang up. Settings → About & Diagnostics → *Debug / logs* → *Share full log*.
 5. `python3 scripts/baseline-report.py <log>` — paste the table below, one column per device.
 
 What the table reads (all logged by the app, none estimated): the `loaded:` lines for model
