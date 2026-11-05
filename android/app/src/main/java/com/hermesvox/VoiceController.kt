@@ -484,7 +484,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var erActive = false
     /** #222/D16: the host sets this from [PresenceGate] — the user asked for Presence AND
      *  its model is downloaded AND able to start. When false the app is normal operation:
-     *  no presence loop, no asides, and no call-register prefix on the voice turn. */
+     *  no presence loop, no asides, and no presence context on the voice turn. (A spoken turn
+     *  still carries the call register and the voice reasoning effort — see runStreamedTurn.) */
     @Volatile var presenceActive: Boolean =
         PresenceGate.enabled(context) && ModelCatalog.isInstalled(context, "gemma-e2b")
     // ER Phase 5: a live mind turn while Presence runs (the semantic barge scope
@@ -2292,16 +2293,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                 if (resume != null) VoxLog.d("event=resume-offer heardChars=${resume.first.heard.length} " +
                     "unsaidChars=${resume.first.unsaid.length} ageMs=${android.os.SystemClock.uptimeMillis() - resume.first.atMs}")
                 val turnText = if (resume != null) resume.second + text else text
-                // The voice turn's request: the register + presence context in `instructions`
-                // (ephemeral, never stored), and the reasoning effort the user chose (default
-                // low — a voice turn wants the fast answer, not the deepest one).
-                val instructions = if (voiceTurn) VoiceTurn.instructions(sync, presenceContextBlock()) else ""
-                val reasoning = if (voiceTurn)
+                // The voice turn's request: the register in `instructions` (ephemeral, never
+                // stored) plus, with Presence, the presence context; and the reasoning effort
+                // the user chose (default low — a voice turn wants the fast answer).
+                // Naturalness #1 (2026-11-05): this keys on SPOKEN, not on Presence. A spoken
+                // turn with Presence off used to ride startStream(text) bare — no register and
+                // no reasoning override — so the gateway ran its default effort and a long-form
+                // answer: first text 80–91 s on the Pixel 7 against 7–13 s for the same
+                // question with Presence on, both streams open in ~60 ms. The register and
+                // the effort are about being on a call, not about the being.
+                val instructions = when {
+                    voiceTurn -> VoiceTurn.instructions(sync, presenceContextBlock())
+                    fromVoice -> VoiceTurn.instructions()
+                    else -> ""
+                }
+                val reasoning = if (fromVoice)
                     com.hermesvox.core.ResponsesClient.reasoningOption(
                         prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT))
                 else null
-                val sid = if (voiceTurn) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)
-                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn reasoning=${prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT)}")
+                val sid = if (fromVoice) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)
+                VoxLog.d("startStream -> $sid spoken=$fromVoice presence=$voiceTurn reasoning=${if (fromVoice) prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT) else "-"}")
                 // THE RECEIPT (the reporter's check): one line per turn proving the mind was
                 // handed the turn, with the soul's decision that preceded it.
                 val handed = sid.isNotBlank()

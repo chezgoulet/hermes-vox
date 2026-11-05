@@ -67,4 +67,23 @@ class VoiceTurnTest {
         assertEquals("voice_reasoning_effort", VoiceTurn.PREF_REASONING)
         assertEquals("low", com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT)
     }
+
+    /**
+     * Naturalness #1 (2026-11-05): with Presence off a spoken turn went out bare — no register,
+     * no reasoning override — and its first text took 80–91 s where the same question with
+     * Presence on took 7–13 s. The register and the effort belong to every SPOKEN turn; only
+     * the presence context belongs to Presence. A typed turn still goes out bare.
+     */
+    @Test fun every_spoken_turn_carries_the_register_and_the_effort_presence_or_not() {
+        val vc = java.io.File("src/main/java/com/hermesvox/VoiceController.kt").readText()
+        val turn = vc.substringAfter("private fun runStreamedTurn(").substringBefore("private fun emitEvents(")
+        assertTrue(turn.contains("val sid = if (fromVoice) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)"))
+        assertTrue(turn.contains("val reasoning = if (fromVoice)"))
+        assertTrue("a spoken turn without Presence still gets the register",
+            turn.contains("fromVoice -> VoiceTurn.instructions()"))
+        assertTrue("the presence context stays Presence's",
+            turn.contains("voiceTurn -> VoiceTurn.instructions(sync, presenceContextBlock())"))
+        assertFalse("the submit must not key on Presence",
+            turn.contains("val sid = if (voiceTurn)"))
+    }
 }
