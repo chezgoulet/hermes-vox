@@ -52,6 +52,14 @@ object PhoneFileAccess {
     /** At most this many offers are held open at once; the oldest is closed to make room. */
     private const val MAX_OPEN_OFFERS = 4
 
+    /**
+     * The most bytes [countedSize] will stream to learn a file's size when the provider reports
+     * neither [DocumentsContract.Document.COLUMN_SIZE] nor a descriptor length. Above this the size
+     * is treated as unknowable rather than counted to the end on the main thread: a 500 MB log is
+     * not something to read twice in a voice call.
+     */
+    private const val MAX_COUNT_BYTES = 8L * 1024 * 1024
+
     /** One folder the owner granted. [label] is the folder's own name, never a path we invented. */
     data class Tree(val uri: String, val label: String)
 
@@ -280,7 +288,7 @@ object PhoneFileAccess {
             Lookup.Outside -> return PhoneEngine.PhonePlatform.FileText.Outside
             is Lookup.Failed -> return PhoneEngine.PhonePlatform.FileText.Failed(found.detail)
         }
-        val total = doc.size ?: countBytes(context, doc.uri) ?: return PhoneEngine.PhonePlatform
+        val total = doc.size ?: sizeOf(context, doc.uri) ?: return PhoneEngine.PhonePlatform
             .FileText.Failed("the file's size could not be read · nothing was read")
         val start = offset.coerceIn(0, total)
         if (start >= total) {
@@ -290,7 +298,11 @@ object PhoneFileAccess {
                 doc.displayName, total, start, 0, "",
             )
         }
-        val want = length.coerceAtLeast(1).coerceAtMost(total - start)
+        // Second line of defence: the tool refuses a `length` above the cap, and a caller that got
+        // here some other way is still held to it. A window is never larger than one whole read.
+        val want = length.coerceAtLeast(1)
+            .coerceAtMost(PhoneFiles.MAX_READ_BYTES)
+            .coerceAtMost(total - start)
         // Three bytes of slack on each side, so the inward snap in [PhoneFiles.window] has a whole
         // character to find on either side of the cut. The text itself never extends past `want`.
         val from = (start - 3).coerceAtLeast(0)
@@ -463,21 +475,59 @@ object PhoneFileAccess {
         null
     }
 
-    /** The file's whole size by counting it, for a provider that hides [COLUMN_SIZE]. */
-    private fun countBytes(context: Context, uri: Uri): Long? = try {
+    /**
+     * The file's whole size, asked of the provider before anything is read.
+     *
+     * A provider that hides [DocumentsContract.Document.COLUMN_SIZE] usually still knows the size of
+     * the file it is serving, and both a descriptor's declared length and its `statSize` answer it
+     * without moving a byte. Only when neither does is the stream counted — and then only up to
+     * [MAX_COUNT_BYTES], because counting a large file on the calling (main) thread is the thing
+     * this function exists to avoid. Above that the size is not knowable cheaply, and null says so.
+     */
+    private fun sizeOf(context: Context, uri: Uri): Long? =
+        declaredSize(context, uri) ?: countBytes(context, uri, MAX_COUNT_BYTES)
+
+    /** The size the provider declares for [uri], or null when it will not say. */
+    private fun declaredSize(context: Context, uri: Uri): Long? {
+        val declared = try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        } catch (_: Throwable) {
+            -1L
+        }
+        if (declared >= 0) return declared
+        return try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+                ?.takeIf { it >= 0 }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** The file's size by counting it, giving up (null) once it is above [cap]. */
+    private fun countBytes(context: Context, uri: Uri, cap: Long): Long? = try {
         context.contentResolver.openInputStream(uri)?.use { src ->
             val buf = ByteArray(8 * 1024)
-            var total = 0L
-            while (true) {
-                val n = src.read(buf)
-                if (n < 0) break
-                total += n
-            }
-            total
+            countedSize(cap) { src.read(buf) }
         }
     } catch (t: Throwable) {
         VoxLog.w("event=phone-files size-failed reason=${t.javaClass.simpleName}")
         null
+    }
+
+    /**
+     * Count what [step] yields until it ends or the count passes [cap]; null above the cap.
+     *
+     * Pure so the bound is a tested property rather than a comment: a stream far larger than the
+     * cap is abandoned after `cap` bytes, never read to its end.
+     */
+    internal fun countedSize(cap: Long, step: () -> Int): Long? {
+        var total = 0L
+        while (true) {
+            val n = step()
+            if (n < 0) return total
+            total += n
+            if (total > cap) return null
+        }
     }
 
     // ---- one document, inside the tree ----

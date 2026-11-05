@@ -768,6 +768,71 @@ class PhoneFileListTest {
         }
     }
 
+    // ---- a window has an upper bound (H2) ----
+
+    /**
+     * H2 of the 0.9.1 review. `length` was only checked `>= 1`, so one call could read a whole
+     * file into the answer while the contract promises at most 65 536 bytes per answer. The schema
+     * states the bound, and the parser refuses one byte more with the way to read the rest.
+     */
+    @Test
+    fun a_window_length_above_the_cap_is_refused_with_the_way_to_read_the_rest() {
+        val schema = Json.parse(Json.encode(PhoneTool.schema(PhoneGrants.ALL_OFF))) as JObj
+        val props = (schema["inputSchema"] as JObj)["properties"] as JObj
+        val length = props["length"] as JObj
+        assertEquals(
+            "the schema publishes the same maximum the parser enforces",
+            PhoneFiles.MAX_READ_BYTES,
+            (length["maximum"] as com.hermesvox.core.JNum).raw.toLong(),
+        )
+
+        for (over in listOf(PhoneFiles.MAX_READ_BYTES + 1, 9_000_000_000_000_000_000L)) {
+            val refused = PhoneTool.parse(
+                mapOf("action" to "file_read", "name" to "big.log", "offset" to 0, "length" to over),
+                only("files"),
+            )
+            val result = (refused as PhoneTool.Parsed.Refuse).result
+            assertEquals(PhoneReason.INVALID, result.reason)
+            assertTrue(
+                "the message says to read the rest with a later offset: ${result.detail}",
+                result.detail!!.contains("later offset"),
+            )
+        }
+
+        // Exactly the cap is the whole answer one call may return, and it is not refused.
+        val atCap = PhoneTool.parse(
+            mapOf(
+                "action" to "file_read", "name" to "big.log",
+                "offset" to 0, "length" to PhoneFiles.MAX_READ_BYTES,
+            ),
+            only("files"),
+        )
+        assertEquals(PhoneFiles.MAX_READ_BYTES, ((atCap as PhoneTool.Parsed.Run).call as PhoneTool.Call.FileRead).length)
+    }
+
+    /**
+     * The size probe must not read a file to its end on the main thread. When the provider hides
+     * `COLUMN_SIZE`, counting is bounded: a stream far larger than the bound is abandoned, and the
+     * caller is told the size is not knowable rather than being made to wait for a whole 500 MB log.
+     */
+    @Test
+    fun counting_a_size_stops_at_the_bound_instead_of_reading_the_whole_file() {
+        var pulled = 0L
+        val huge = PhoneFileAccess.countedSize(cap = 1_000) {
+            pulled += 100
+            if (pulled > 100_000_000) -1 else 100
+        }
+        assertNull("past the bound the size is not knowable", huge)
+        assertTrue("the stream was abandoned near the bound, not read to its end: $pulled", pulled <= 1_100)
+
+        var bytes = 0L
+        val small = PhoneFileAccess.countedSize(cap = 1_000) {
+            bytes += 100
+            if (bytes > 500) -1 else 100
+        }
+        assertEquals("a file inside the bound is counted exactly", 500L, small)
+    }
+
     @Test
     fun an_over_cap_whole_file_now_says_to_ask_for_a_window() {
         fake.folders = listOf(folder)

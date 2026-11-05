@@ -367,9 +367,13 @@ object PhoneTool {
                 "length" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
+                    // One answer is one cap's worth of text. A caller that wants more asks for the
+                    // next window; without a maximum one call reads a whole file into the answer.
+                    "maximum" to PhoneFiles.MAX_READ_BYTES,
                     "description" to
                         "file_read only: the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
-                        "by default. The result says truncated and the file's total bytes.",
+                        "by default and at most that. The result says truncated and the file's " +
+                        "total bytes; read the rest with a later offset.",
                 ),
                 "start" to linkedMapOf(
                     "type" to "string",
@@ -745,6 +749,15 @@ object PhoneTool {
                     val v = integer(raw)
                         ?: return bad(action, "length must be a whole number of bytes")
                     if (v < 1) return bad(action, "length must be at least one byte")
+                    // One answer is at most one cap of text. Asking for more is not a way to read
+                    // the whole file in one result; it is the next window's job.
+                    if (v > PhoneFiles.MAX_READ_BYTES) {
+                        return bad(
+                            action,
+                            "length is at most ${PhoneFiles.MAX_READ_BYTES} bytes; read the rest " +
+                                "with a later offset",
+                        )
+                    }
                     v
                 }
             }

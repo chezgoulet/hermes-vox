@@ -335,16 +335,17 @@ subdirectory is `unavailable`; a path, a name or a symlink that leaves the tree 
 **Listing never opens a file**: it reads names, kinds, sizes, modified times and MIME types through
 the provider's child query, and `PhoneFileListTest` pins that at source level.
 
-**The 64 KiB figure is a window size, not a refusal to read.** `file_read` returns at most
-65 536 bytes of text in one answer. Above that, a whole-file read says `too_big` and names the way in
-— `offset` and `length` — and a windowed read returns that slice with `truncated: true`, the `offset`
-it actually started at, and the file's total `bytes`, so the mind can keep asking until it has what
-it needs. `truncated` is false only when the returned text is the entire file. A window is cut at byte
-offsets, so it snaps to UTF-8 character boundaries **inward**: it begins at the first boundary at or
-after `offset` and ends at the last at or before `offset + length`, and reports where the text really
-starts. Stitching windows by the offsets asked for therefore never duplicates a character at a seam.
-`file_offer` has no such cap because it does not put the bytes in the result: it keeps the bridge's
-own 100 MB.
+**The 64 KiB figure is the size of one answer.** `file_read` returns at most 65 536 bytes of text in
+one answer: `length`'s schema `maximum` is 65 536 and the parser refuses more with "read the rest with
+a later offset", so no single call reads a whole large file. Above the cap, a whole-file read says
+`too_big` and names the way in — `offset` and `length` — and a windowed read returns that slice with
+`truncated: true`, the `offset` it actually started at, and the file's total `bytes`, so the mind can
+keep asking until it has what it needs. `truncated` is false only when the returned text is the entire
+file. A window is cut at byte offsets, so it snaps to UTF-8 character boundaries **inward**: it begins
+at the first boundary at or after `offset` and ends at the last at or before `offset + length`, and
+reports where the text really starts. Stitching windows by the offsets asked for therefore never
+duplicates a character at a seam. `file_offer` has no such cap because it does not put the bytes in
+the result: it keeps the bridge's own 100 MB.
 
 **Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns what the
 calendar holds: start, end, title, calendar name, description, location, and attendee **names**.
