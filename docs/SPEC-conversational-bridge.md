@@ -110,6 +110,7 @@ I am sharing one file with you. Fetch it now, verify it, and keep it.
 - **Verification is mandatory.** The agent compares bytes and hash and reports a mismatch as a failure — a truncated fetch must never be filed as a success by either side.
 - **If Tailscale is down** the app does not start a server nobody can reach; it says so and offers the inline path.
 - **Inline fallback**: text files under 8 KB travel inside the turn as a fenced block with the name in the fence label, so a small note never needs a network dance.
+- **One request has one total deadline** (L7, 0.9.1 review). The server handles one connection at a time, so a peer that trickles a header byte every few seconds could otherwise hold the only handler until the offer expired. A request must finish within 15 s of accept plus one second per 512 KB of body (so a large file on a slow link is not cut, while a trickler still cannot hold the handler), or its socket is closed and the listener moves on. The per-read timeout still applies inside that window.
 - **Our own private storage is not a share source** (L4, 0.9.1 review). A `file://` URI whose canonical path is under this app's `dataDir`, or a `content://` URI for this app's own authority, is refused with "that is Vox's own private file · nothing was sent". Otherwise another app could hand Vox a path into its keys, database or staged copies and have Vox read it with its own rights.
 
 ### What the user sees

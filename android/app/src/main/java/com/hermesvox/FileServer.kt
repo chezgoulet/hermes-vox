@@ -48,6 +48,7 @@ class FileServer private constructor(
     private val clock: () -> Long,
     private val log: (String) -> Unit,
     private val onTransfer: () -> Unit,
+    private val requestDeadlineMs: Long = FileServer.requestDeadlineFor(bytes),
 ) : AutoCloseable {
 
     /** The port the OS gave us. */
@@ -125,7 +126,25 @@ class FileServer private constructor(
         }
     }
 
+    /**
+     * One request, under a total deadline from accept (L7, 0.9.1 review). The per-read
+     * [READ_TIMEOUT_MS] only bounds each read, so a peer that trickles one byte at a time
+     * would otherwise hold the one-shot handler until expiry. The watchdog closes the
+     * socket at [requestDeadlineMs]; closing interrupts a blocked read or write, and the
+     * connection is logged and forgotten like any other dead peer.
+     */
     private fun handle(socket: Socket) {
+        val watchdog = deadlines.schedule({
+            try { socket.close() } catch (_: IOException) { }
+        }, requestDeadlineMs, TimeUnit.MILLISECONDS)
+        try {
+            handleRequest(socket)
+        } finally {
+            watchdog.cancel(false)
+        }
+    }
+
+    private fun handleRequest(socket: Socket) {
         socket.soTimeout = READ_TIMEOUT_MS
         val input = BufferedInputStream(socket.getInputStream())
         val requestLine = readLine(input, MAX_LINE) ?: return refuseConnection(socket, "empty")
@@ -318,6 +337,29 @@ class FileServer private constructor(
 
     companion object {
         private const val READ_TIMEOUT_MS = 10_000
+
+        /**
+         * L7: the whole request must complete inside this window, from accept, plus the
+         * body allowance in [requestDeadlineFor]. The per-read timeout is unchanged; this
+         * is the ceiling a trickling peer cannot stretch.
+         */
+        const val REQUEST_DEADLINE_MS = 15_000L
+
+        /**
+         * L7: the deadline is total, and it is fair to the file. Fifteen seconds covers the
+         * request and a small body; a large body additionally gets time at a floor rate of
+         * 512 KB/s, so a legitimate 100 MB transfer over a slow link is not cut while a
+         * trickler still cannot hold the only handler until the five-minute expiry.
+         */
+        const val BODY_BYTES_PER_SECOND = 512L * 1024L
+
+        fun requestDeadlineFor(bytes: Long): Long =
+            REQUEST_DEADLINE_MS + (bytes.coerceAtLeast(0) * 1000L / BODY_BYTES_PER_SECOND)
+
+        /** One daemon thread for every request's deadline; cancelling a fired task is cheap. */
+        private val deadlines = java.util.concurrent.ScheduledThreadPoolExecutor(1) { r ->
+            Thread(r, "file-offer-deadline").apply { isDaemon = true }
+        }.apply { removeOnCancelPolicy = true }
         private const val DRAIN_MS = 1_000
         private const val MAX_LINE = 8 * 1024
         private const val MAX_HEADERS = 32 * 1024
@@ -338,6 +380,7 @@ class FileServer private constructor(
             clock: () -> Long = System::currentTimeMillis,
             log: (String) -> Unit = {},
             onTransfer: () -> Unit = {},
+            requestDeadlineMs: Long = FileServer.requestDeadlineFor(bytes),
         ): FileServer {
             require(bind.isAnyLocalAddress.not()) { "refusing to bind 0.0.0.0 / :: — pick one address" }
             val socket = ServerSocket()
@@ -345,6 +388,7 @@ class FileServer private constructor(
             socket.bind(InetSocketAddress(bind, 0), 4)
             return FileServer(
                 socket, token, file, bytes, mime, sha256, expiresAtMs, clock, log, onTransfer,
+                requestDeadlineMs,
             )
         }
     }
