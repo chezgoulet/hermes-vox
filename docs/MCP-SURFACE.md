@@ -620,7 +620,7 @@ summarising function is the place a future action has to pass through.
     app opens; the being is still visible and Stop still works. If PiP cannot be entered, the app
     opens anyway. `launch` of a package with no launcher entry is `no_app`. `open` of
     `https://example.com` lands in the browser and reports its `package` and `component`; a bare
-    address is `invalid-arguments`.
+    address is `bad_uri`.
 19. **`uninstall` requests, approves, executes.** With Apps on, `uninstall` of Firefox is
     `ok:false, reason:"approval-required"` with `approval_id`, `expires_at` and
     `summary:"uninstall Firefox"`, and the card says *Your agent wants to remove Firefox.

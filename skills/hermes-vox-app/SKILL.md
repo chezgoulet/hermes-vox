@@ -1092,8 +1092,9 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   only expresses (android/app/src/main/java/com/hermesvox/VoxExpress.kt:7 `Gemma NEVER runs the agentic stream`).
 - **No consequential action from the agent.** The phone's MCP tool offers only the capability
   groups the owner has granted, and every group starts Off; Tier 0 actions may be Allow, Tier 1
-  stops at Ask, and Tier 2 is refused with `approval-required` and stays on the gateway's approval
-  surface. A call naming an action whose group is Off is refused with `not_granted` and the action
+  stops at Ask, and Tier 2 returns `approval-required` with an `approval_id`: the phone raises a card,
+  the owner answers it by tap or by voice, and the action executes only on a second call carrying that
+  id against the same arguments. Tier 2 actions with no card of their own (`install`) stay refused. A call naming an action whose group is Off is refused with `not_granted` and the action
   is absent from the advertised `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt:621 `PhoneTiers.APPROVAL ->`)
   (android/app/src/main/java/com/hermesvox/PhoneGrants.kt:188 `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
