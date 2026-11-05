@@ -614,6 +614,24 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 .setNegativeButton("Cancel", null).show()
         }
+        // #417: the report block. Everything on the clipboard is a setting, a device fact or
+        // a measured number — no transcript text, key, URL, hostname or path. Omitted metrics
+        // stay omitted rather than being printed as an invented zero.
+        findViewById<LinearLayout>(R.id.row_presence_diag).setOnClickListener {
+            val block = PresenceDiagnosticCollect.collect(
+                this, prefs, versionName(), currentDensity())
+            try {
+                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("vox-diag", block))
+                Toast.makeText(this,
+                    "Diagnostic summary copied — safe to paste in a public report",
+                    Toast.LENGTH_SHORT).show()
+            } catch (_: Throwable) {
+                Toast.makeText(this, "Could not copy the diagnostic summary",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
         // Echo guard slider: 0-6 steps -> 0,300,500,700,1000,1500,2500ms (0 = off).
         val echoSteps = intArrayOf(0, 300, 500, 700, 1000, 1500, 2500)
         val curEcho = prefs.getFloat("er_echo_skip_ms", 700f).toInt()

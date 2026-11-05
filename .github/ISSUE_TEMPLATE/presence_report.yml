@@ -72,8 +72,9 @@ body:
     attributes:
       label: Numbers, if you have them
       description: >
-        Settings → Presence → the tuning bar, or the session summary from the app menu. Paste whatever
-        it gave you — first audible sound, lost turns, how many turns the phone answered.
+        Settings → Presence → Advanced → Copy diagnostic summary. Paste it here; it carries the
+        configuration and the numbers the app actually measured. If a number is not there, the
+        build could not measure it — do not fill it in.
       render: text
     validations:
       required: false

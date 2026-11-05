@@ -459,4 +459,6 @@ one, which is cheap and asymmetric.
 - `docs/RESEARCH-2026-10-voice-agents.md` — the field evidence behind interruption classes, recovery,
   endpointing and power.
 - `docs/VOICE-BAKEOFF.md`, `docs/PRESENCE-BENCH.md` — the measured voice and model choices.
+- `docs/PRESENCE-REPORTS.md` — the `vox-diag` block, what it deliberately excludes, and the
+  daily sweep that turns `presence-report` issues into an aggregate (#417).
 - `docs/PLAN-0.9.2.md` — what the Presence release still owes.

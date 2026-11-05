@@ -27,8 +27,11 @@ export PATH="$JAVA_HOME/bin:$PATH"
 echo "== [0/6] fetch pinned runtime deps =="
 bash scripts/fetch-runtime.sh
 
-echo "== [1/6] presence report self-test =="
+echo "== [1/6] presence report self-tests =="
 python3 scripts/test_presence_session_report.py 2>&1 | tail -3
+# #417: the report pipeline's parser, grouping, counts and malformed handling — including the
+# daily script's "post only when the numbers changed" cadence, against the checked-in fixture.
+python3 scripts/test_presence_reports.py 2>&1 | tail -3
 # #256: the invention classifier's own tests. The measurement gates nothing; its code is kept honest.
 python3 scripts/test_invention_report.py 2>&1 | tail -3
 
