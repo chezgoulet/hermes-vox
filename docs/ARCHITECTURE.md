@@ -204,8 +204,8 @@ verifies the hash, and nothing leaves the phone until the card is confirmed.
 
 ### 8. The Alpha gate (#402, D29)
 **One gate for everything unfinished.** `AlphaGate` has a master switch, **off on a
-fresh install**, and five sets a tester selects individually: **Presence**, **Continuous
-listening**, **Turn-taking**, **Phone tools** and **Switching profiles**. A set runs only
+fresh install**, and six sets a tester selects individually: **Presence**, **Continuous
+listening**, **Turn-taking**, **Phone tools**, **Switching profiles** and **Sessions**. A set runs only
 when the master is on *and* that set is selected (`AlphaGate.allows`); with the master
 off every alpha surface is dimmed and unreachable, and the runtime readers ask
 `AlphaGate`, not the feature's own preference. A set's own prefs keep their meaning
@@ -280,9 +280,11 @@ in the dark theme.
   runnable on Android; see the bake-off.
 - **Half-duplex.** Vox listens *or* speaks (with barge-in), not both. Full-duplex
   models are the long-horizon path ([research][research]).
-- **The phone's surface is narrow on purpose.** Twelve capability groups are defined;
-  nine have no action yet, their grants are stored and their schema entries appear only
-  when the capability lands. Tier 2 stays on the gateway's approval surface.
+- **The phone's surface is narrow on purpose.** Thirteen capability groups are defined and
+  every advertised action is built. A group's actions appear in the schema only while its
+  grant is on; Off is absent, Ask raises the phone's card for every action, and Allow runs
+  without one. Tier 2 is a description, not a refusal: `uninstall` and `file_offer` run at
+  Allow or after their card, and the unbuilt names are never advertised.
 
 [sesame]: https://www.sesame.com/research/crossing_the_uncanny_valley_of_voice
 [er-design]: DESIGN-enhanced-realtime-voice.md

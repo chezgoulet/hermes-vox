@@ -238,3 +238,53 @@
   doc: docs/MCP-SURFACE.md
   file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
   match: 'BAD_URI = "bad_uri"'
+
+# ---- the 0.9.1 release-truth lane: the facts this release rests on ----
+
+- id: phone-surface-no-install
+  says: "**`install` is gone from the surface.**"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  absent: '\binstall\b'
+
+- id: phone-surface-apps-and-dismiss
+  says: "**Added by the apps-and-dismiss lane:**"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: '"apps" -> Parsed\.Run\(Call\.Apps\)[\s\S]*"notification_dismiss" ->'
+
+- id: phone-uniform-grants-stated
+  says: "The same three words for every group"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
+  match: 'fun statesFor\(tier: Int\): List<State> = listOf\(State\.OFF, State\.ASK, State\.ALLOW\)'
+
+- id: phone-presence-read-only
+  says: "Presence's scope."
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
+  match: 'interface PhoneReadout \{[\s\S]*?fun registry\('
+
+- id: alpha-six-sets
+  says: "lists six sets"
+  doc: docs/MILESTONES.md
+  file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
+  match: 'PRESENCE\([\s\S]*CONTINUOUS_LISTENING\([\s\S]*TURN_TAKING\([\s\S]*PHONE_TOOLS\([\s\S]*PROFILES\([\s\S]*SESSIONS\('
+
+- id: alpha-one-dependency
+  says: "six sets and one dependency"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
+  match: 'if \(set == FeatureSet\.CONTINUOUS_LISTENING && !selected\(r, FeatureSet\.PRESENCE\)\)'
+
+- id: files-grant-keyed-by-tree-id
+  says: "Each grant is keyed by its **tree id**"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneFileAccess.kt
+  match: 'next\.firstOrNull \{ it\.id == id \}'
+
+- id: file-read-cap-one-answer
+  says: "The 64 KiB figure is the size of one answer."
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneFiles.kt
+  match: 'const val MAX_READ_BYTES = 64 \* 1024L'
