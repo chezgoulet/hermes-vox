@@ -1,7 +1,10 @@
 # Documentation index — what is true for 0.9.1
 
 Set 2026-11-04 against `origin/testing` (`2dd7e56`, versionCode 147, `versionName` 0.9.1).
-Every file under `docs/` and the four root documents is listed once.
+Every file under `docs/` and the four root documents is classified here. The counts are a
+partition: a contradicted document is counted under **contradicted**, not also under historical.
+It appears in the historical groups by name, and again in the contradicted table with the reason,
+so a reader sees what changed without opening it.
 
 **Read this first.** Most of this tree is history: handoffs, briefs, investigations and build
 directives from earlier milestones. That history is kept — it is how the present was decided —
