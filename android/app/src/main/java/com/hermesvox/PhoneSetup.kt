@@ -19,6 +19,11 @@ package com.hermesvox
  * never to add a second one. Sending the same prompt twice therefore describes the same end state;
  * no entry is duplicated by construction.
  *
+ * **A failure names itself.** [Record.failure] carries the line [PhoneSetupSend] chose — no
+ * connection configured, key rejected, the agent did not answer, or the turn failed with the
+ * gateway's own reason. One "could not reach your agent" for every cause was #430: it reported a
+ * local misconfiguration as a network outage, so the owner checked a network that was fine.
+ *
  * Pure JVM. [PhoneSetupStore] is the Android side that persists the record; this file is what
  * [PhoneSetupTest] proves without a device.
  */
@@ -34,11 +39,14 @@ object PhoneSetup {
      * Everything the sheet remembers between launches. [tokenTag] is a non-reversible fingerprint
      * of the credential, so a rotation can invalidate a prior handshake without storing the token
      * twice; it is never shown and never logged.
+     *
+     * [failure] is the line the sheet shows when the turn did not reach an agent — one of
+     * [PhoneSetupSend]'s named failures, never a single "could not reach" for every cause.
      */
     data class Record(
         val requestedAt: Long = 0L,
         val reply: String? = null,
-        val sendFailed: Boolean = false,
+        val failure: String? = null,
         val refused: Boolean = false,
         val handshakeAt: Long = 0L,
         val handshakeTag: String? = null,
@@ -74,20 +82,33 @@ object PhoneSetup {
         }.trimEnd()
     }
 
-    /** A setup turn has been sent: waiting, with the old reply cleared. */
+    /** A setup turn has been sent: waiting, with the old answer and the old failure cleared. */
     fun begin(record: Record, now: Long, tokenTag: String): Record =
-        record.copy(requestedAt = now, reply = null, sendFailed = false, refused = false, tokenTag = tokenTag)
+        record.copy(requestedAt = now, reply = null, failure = null, refused = false, tokenTag = tokenTag)
 
     /** The agent answered. An empty answer is an unreachable agent, not a success. */
     fun replied(record: Record, reply: String?): Record {
         val text = reply?.trim().orEmpty()
-        if (text.isEmpty()) return record.copy(reply = null, sendFailed = true, refused = false)
-        return record.copy(reply = text, sendFailed = false, refused = looksRefused(text))
+        if (text.isEmpty()) {
+            return record.copy(
+                reply = null,
+                failure = PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER),
+                refused = false,
+            )
+        }
+        return record.copy(reply = text, failure = null, refused = looksRefused(text))
     }
 
-    /** The turn never reached the agent (transport failure, missing connection). */
+    /** The turn could not be made, or it failed. [reason] is the named cause ([PhoneSetupSend]). */
+    fun failed(record: Record, reason: String): Record =
+        record.copy(reply = null, failure = reason, refused = false)
+
+    /**
+     * The turn never reached the agent and the cause is unknown here — kept for callers that have
+     * only a null reply. It still names the failure instead of inventing a verdict.
+     */
     fun unreachable(record: Record): Record =
-        record.copy(reply = null, sendFailed = true, refused = false)
+        failed(record, PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER))
 
     /**
      * The phone's server saw a valid `initialize`. This is the only transition to [State.CONNECTED];
@@ -101,7 +122,7 @@ object PhoneSetup {
         record.copy(
             requestedAt = 0L,
             reply = null,
-            sendFailed = false,
+            failure = null,
             refused = false,
             handshakeAt = 0L,
             handshakeTag = null,
@@ -116,7 +137,7 @@ object PhoneSetup {
         val tag = currentTokenTag.ifBlank { record.tokenTag }
         if (record.handshakeAt > 0 && tag.isNotEmpty() && record.handshakeTag == tag) return State.CONNECTED
         if (record.requestedAt == 0L) return State.IDLE
-        if (record.sendFailed) return State.UNREACHABLE
+        if (record.failure != null) return State.UNREACHABLE
         if (record.refused) return State.REFUSED
         if (now - record.requestedAt >= TIMEOUT_MS) return State.TIMED_OUT
         return State.WAITING

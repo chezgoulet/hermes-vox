@@ -134,9 +134,10 @@ class PhoneSetupTest {
         val tag = PhoneMcpToken.fingerprint(token)
         val empty = PhoneSetup.replied(requested(), "   ")
         assertEquals(PhoneSetup.State.UNREACHABLE, PhoneSetup.state(empty, now + 2_000L, tag))
-        assertTrue(empty.sendFailed)
+        assertTrue(empty.failure.orEmpty().contains("did not answer"))
         val thrown = PhoneSetup.unreachable(requested())
         assertEquals(PhoneSetup.State.UNREACHABLE, PhoneSetup.state(thrown, now + 2_000L, tag))
+        assertTrue(thrown.failure.orEmpty().isNotBlank())
     }
 
     @Test fun nothing_connected_within_the_window_is_a_timeout_with_a_retry() {

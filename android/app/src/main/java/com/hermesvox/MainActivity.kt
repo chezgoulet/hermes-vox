@@ -1633,8 +1633,7 @@ open class MainActivity : AppCompatActivity() {
         /** Reset the canonical session's conversation and clear the display/reply
          *  buffers. Reaches the LIVE session (MainActivity + live controller), so a
          *  Settings "New conversation" clears the same context an active call sees. */
-        fun resetActiveConversation() {
-            // #252's class: stopping the controller while `callLive` stays true leaves a call
+        fun resetActiveConversation() {            // #252's class: stopping the controller while `callLive` stays true leaves a call
             // that looks live and hears nothing. A reset that ends the call ends it properly.
             active?.let { if (ConversationReset.plan(ConversationReset.Trigger.SETTINGS, it.callLive).endCall) it.endCall() }
             session?.resetConversation()
@@ -1801,9 +1800,11 @@ open class MainActivity : AppCompatActivity() {
             }, m)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
-        // #421 step 5: the setup sheet sends its turn through THIS session when one is live, so
-        // the agent's own configuration change is part of the same conversation chain.
-        PhoneSetupStore.attach(session)
+        // #421 step 5 / #430: the setup sheet sends its turn through THIS session when one is
+        // live, and the connection it was built from is handed over with it — a session keeps the
+        // address and key it was built with, so a later turn must be able to tell whether it still
+        // names the connection in force.
+        PhoneSetupStore.attach(session, PhoneSetupSend.Connection(u, k, m, p, sc))
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
         // gateway to actually answer.

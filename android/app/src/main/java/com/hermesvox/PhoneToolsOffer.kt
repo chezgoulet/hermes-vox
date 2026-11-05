@@ -43,7 +43,6 @@ object PhoneToolsOffer {
         }
         PhoneToolsSheet(
             activity,
-            session = PhoneSetupStore.session(activity),
             firstRun = true,
             onDismiss = onDone,
         ).show()
