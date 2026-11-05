@@ -3,10 +3,14 @@ package com.hermesvox
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.net.Uri
 import android.media.RingtoneManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -48,9 +52,13 @@ import java.util.concurrent.TimeUnit
  * | now playing | `AudioManager.isMusicActive`; `MediaSessionManager.getActiveSessions` with the listener | **none** for "is audio playing". A package and a title come from the active media session, which needs **notification-listener special access** — a grant the owner gives on Android's own screen, offered in the sheet. With it the result is `known:true` and the session's own package/title; without it `known:false` and a sentence saying so. It never invents a title. |
  * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
  * | clipboard | `ClipboardManager.setPrimaryClip` / `getPrimaryClip` | **none**, but Android decides what is readable: on 10+ an app that is not in front gets no clipboard at all, and a write from a backgrounded app is dropped silently. `clip` asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen; `clip_read` asks for the clip and reports the platform's own refusal — backgrounded, or an empty clip — rather than returning stale or empty text as though it were the clipboard. |
+ * | message | `ACTION_SENDTO` with `smsto:` and `sms_body` | **none.** Vox composes a draft and the owner's messaging app sends it: no `SEND_SMS`, no SMS manager API, and no default-SMS role. The result says `handed_off:true`, never "sent". |
+ * | dial | `ACTION_DIAL` with `tel:` | **none.** The dialer opens with the number and the owner presses call: no `CALL_PHONE` and no emergency special case, because Vox never dials. With a live Vox call, the being says one line, the call ends through the same teardown the hang-up uses, and then the dialer opens — the conversation itself lives on. |
+ * | launch / open | `PackageManager` launchable resolution; `ACTION_VIEW` for a URI | **none.** Only activities with a launcher entry are launchable, and the launch goes through [CallWindow] so a live call enters PiP first. If the window cannot shrink, the app still opens. |
  *
- * Tier 0 only for the grammar path: reversible, private, nothing outward-facing. No message, no call,
- * no purchase, no app launch.
+ * The **grammar path** is still Tier 0 only: timers, alarms, do-not-disturb and volume, matched
+ * locally with no round trip. `message`, `dial` and the app handoffs are **mind-initiated** only —
+ * they exist on the MCP wire, where the result is the reply, and never run from the caller's words.
  */
 class LocalActions(context: Context) {
 
@@ -564,6 +572,156 @@ class LocalActions(context: Context) {
          * Nothing else in the app reads the clipboard; this is the one read path, behind the
          * owner's `clipboard` grant.
          */
+        // ---- handoffs: messages, calls, apps ----
+
+        /**
+         * Resolve the contact name through the owner's address book. **Not built**: the Contacts
+         * group is declared and its grant is stored, but no provider read exists in this lane.
+         * Returning null makes the engine refuse with a sentence that asks for a number instead
+         * of opening `smsto: Mom`, which no messaging app could resolve.
+         */
+        override fun contactNumber(name: String): String? = null
+
+        /**
+         * `ACTION_SENDTO` with an `smsto:` URI and the draft in `sms_body`. **No send call of any
+         * kind** — no SMS permission, no SMS manager API, no default-SMS role. The owner's
+         * messaging app opens on the draft and its own send button is the only thing that sends.
+         */
+        override fun sendMessage(to: String, text: String): PhoneEngine.PhonePlatform.Handoff {
+            val intent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", to, null))
+                .putExtra("sms_body", text)
+            return startHandoff(intent, "message")
+        }
+
+        /** A dialer that can answer `ACTION_DIAL`, resolved before a live call is ended. */
+        override fun canDial(): Boolean = try {
+            app.packageManager.resolveActivity(
+                Intent(Intent.ACTION_DIAL, Uri.parse("tel:")),
+                PackageManager.MATCH_DEFAULT_ONLY,
+            ) != null
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action dial-resolve-failed reason=${t.javaClass.simpleName}")
+            false
+        }
+
+        /** `ACTION_DIAL` with the number filled in. The owner presses call; this never dials. */
+        override fun dial(number: String): Boolean = try {
+            app.startActivity(
+                Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (t: Throwable) {
+            VoxLog.w("event=local-action dial-failed reason=${t.javaClass.simpleName}")
+            false
+        }
+
+        /** Is Vox's own call live in the attached window right now? */
+        override fun callLive(): Boolean = PhoneHandoff.callLive()
+
+        /** Speak the handoff line through the being; the call ends when it is audible. */
+        override fun announce(line: String, after: () -> Unit) =
+            PhoneHandoff.announceDial(line, after)
+
+        /** The same teardown the on-screen hang-up runs, never a second one. */
+        override fun endCall() = PhoneHandoff.endCall()
+
+        /**
+         * Resolve [app] among **launchable** activities only: an exact package match first, then
+         * the label the launcher shows, case-insensitively. A package with no launcher entry is
+         * not an app the owner can open, so it is not a target.
+         */
+        override fun resolveLaunchable(name: String): PhoneEngine.PhonePlatform.AppTarget? = try {
+            val pm = app.packageManager
+            val launchables = pm.queryIntentActivities(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+                0,
+            )
+            val match = launchables.firstOrNull { it.activityInfo.packageName == name }
+                ?: launchables.firstOrNull {
+                    it.loadLabel(pm).toString().equals(name, ignoreCase = true)
+                }
+            match?.let {
+                PhoneEngine.PhonePlatform.AppTarget(
+                    it.activityInfo.packageName,
+                    it.activityInfo.name,
+                )
+            }
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action launch-resolve-failed reason=${t.javaClass.simpleName}")
+            null
+        }
+
+        override fun startApp(target: PhoneEngine.PhonePlatform.AppTarget): Boolean = try {
+            app.startActivity(
+                Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setClassName(target.packageName, target.className)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (t: Throwable) {
+            VoxLog.w("event=local-action launch-failed reason=${t.javaClass.simpleName}")
+            false
+        }
+
+        override fun resolveUri(
+            uri: String,
+            packageName: String?,
+        ): PhoneEngine.PhonePlatform.AppTarget? = try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+            packageName?.let { intent.setPackage(it) }
+            app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.let {
+                PhoneEngine.PhonePlatform.AppTarget(
+                    it.activityInfo.packageName,
+                    it.activityInfo.name,
+                )
+            }
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action open-resolve-failed reason=${t.javaClass.simpleName}")
+            null
+        }
+
+        override fun startUri(
+            target: PhoneEngine.PhonePlatform.AppTarget,
+            uri: String,
+        ): Boolean = try {
+            app.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                    .setClassName(target.packageName, target.className)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (t: Throwable) {
+            VoxLog.w("event=local-action open-failed reason=${t.javaClass.simpleName}")
+            false
+        }
+
+        override fun window(): CallWindow.Host? = PhoneHandoff.window()
+
+        /**
+         * Resolve an intent, then start it. The result names the package Android resolved, so the
+         * mind never has to infer which app it opened; no resolver is [Handoff.NoApp], and a
+         * platform refusal is described rather than claimed as success.
+         */
+        private fun startHandoff(
+            intent: Intent,
+            action: String,
+        ): PhoneEngine.PhonePlatform.Handoff = try {
+            val resolved = app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                ?: return PhoneEngine.PhonePlatform.Handoff.NoApp
+            app.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            VoxLog.d("event=local-action handoff action=$action package=${resolved.activityInfo.packageName}")
+            PhoneEngine.PhonePlatform.Handoff.Done(resolved.activityInfo.packageName)
+        } catch (e: ActivityNotFoundException) {
+            PhoneEngine.PhonePlatform.Handoff.NoApp
+        } catch (t: Throwable) {
+            VoxLog.w("event=local-action handoff-failed action=$action reason=${t.javaClass.simpleName}")
+            PhoneEngine.PhonePlatform.Handoff.Failed(
+                "Android refused to hand the ${action} to another app; nothing was opened",
+            )
+        }
+
         override fun readClip(): PhoneEngine.PhonePlatform.ClipRead {
             if (!AppFocus.inFront) {
                 return PhoneEngine.PhonePlatform.ClipRead.Unavailable(

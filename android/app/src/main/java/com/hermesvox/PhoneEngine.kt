@@ -45,7 +45,7 @@ class PhoneEngine(
 ) {
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
-    interface PhonePlatform {
+    interface PhonePlatform : DialHandoff.Host {
         /** A media transport key. Resolved to a platform key code by the implementation. */
         enum class MediaKey { PLAY, PAUSE, NEXT, PREVIOUS }
 
@@ -314,6 +314,64 @@ class PhoneEngine(
 
         /** Delete the event this phone created, for its undo. False when Android would not. */
         fun deleteEvent(id: String): Boolean = false
+
+        // ---- handoffs (#429: messages, calls, apps) ----
+
+        /** One activity that can actually be started: its package and its class. */
+        data class AppTarget(val packageName: String, val className: String) {
+            /** The stable `package/class` form a result reports, never a guessed one. */
+            val component: String get() = "$packageName/$className"
+        }
+
+        /** The outcome of handing something to an app that answers an intent. */
+        sealed class Handoff {
+            /** An app took the intent; [packageName] is the one Android resolved. */
+            data class Done(val packageName: String) : Handoff()
+
+            /** Nothing on this phone answers that intent. Nothing was started. */
+            data object NoApp : Handoff()
+
+            /** Android refused to start it; [detail] is the platform's own explanation. */
+            data class Failed(val detail: String) : Handoff()
+        }
+
+        /**
+         * A recipient name resolved through the owner's address book. Null means the Contacts
+         * capability is not built on this phone; the engine refuses rather than sending `smsto:`
+         * or `tel:` a name the dialer cannot read.
+         */
+        fun contactNumber(name: String): String? = null
+
+        /**
+         * Compose [text] to [to] and open the messaging app through `ACTION_SENDTO` (`smsto:`).
+         * **This never sends**: no `SEND_SMS`, no `SmsManager`, no default-SMS role. The owner
+         * presses send in their own app.
+         */
+        fun sendMessage(to: String, text: String): Handoff = Handoff.NoApp
+
+        /** Resolve an `ACTION_DIAL` target before anything is ended. False is `no_app`. */
+        override fun canDial(): Boolean = true
+
+        /** Open the dialer through `ACTION_DIAL` (`tel:`). Never `CALL_PHONE`. */
+        override fun dial(number: String): Boolean = false
+
+        /** Resolve [app] among **launchable** activities only: package name, then launcher label. */
+        fun resolveLaunchable(name: String): AppTarget? = null
+
+        /** Start the launchable activity [target] resolved to. */
+        fun startApp(target: AppTarget): Boolean = false
+
+        /** Resolve a URI among the apps that claim it, optionally restricted to [packageName]. */
+        fun resolveUri(uri: String, packageName: String?): AppTarget? = null
+
+        /** Start `ACTION_VIEW` for [uri] in the resolved [target]. */
+        fun startUri(target: AppTarget, uri: String): Boolean = false
+
+        /**
+         * The PiP-first window ([CallWindow]), when an activity is attached. Null means there is
+         * no window to shrink, so a launch starts immediately — PiP never fails a launch.
+         */
+        fun window(): CallWindow.Host? = null
     }
 
     private data class Armed(
@@ -387,6 +445,10 @@ class PhoneEngine(
             is PhoneTool.Call.FileOffer -> offerFile(call)
             PhoneTool.Call.Agenda -> agenda()
             is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch)
+            is PhoneTool.Call.Message -> message(call)
+            is PhoneTool.Call.Dial -> dial(call)
+            is PhoneTool.Call.Launch -> launch(call)
+            is PhoneTool.Call.Open -> open(call)
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -1067,6 +1129,156 @@ class PhoneEngine(
                 "undoable" to true,
             ),
         )
+    }
+
+    // ---- handoffs: messages, calls, apps ----
+
+    /**
+     * Compose the text and open the owner's messaging app. **Nothing is sent here.** The result
+     * says `handed_off:true` and carries the recipient and the text's length; the owner's tap
+     * in their own app is what sends it. `ACTION_SENDTO` with an `smsto:` URI is the only path,
+     * so no `SEND_SMS`, no `SmsManager` and no default-SMS role is involved.
+     */
+    private fun message(call: PhoneTool.Call.Message): PhoneResult {
+        val to = resolveRecipient(call.to, call.contact) ?: return contactUnbuilt("message")
+        return when (val handed = platform.sendMessage(to, call.text)) {
+            PhonePlatform.Handoff.NoApp -> noApp(
+                "message",
+                "no app on this phone answers ACTION_SENDTO for a text; the draft was not opened",
+            )
+            is PhonePlatform.Handoff.Failed -> {
+                log("event=phone-mcp action=message ok=false reason=unavailable")
+                PhoneResult.refused("message", PhoneReason.UNAVAILABLE, handed.detail)
+            }
+            is PhonePlatform.Handoff.Done -> {
+                log("event=phone-mcp action=message ok=true chars=${call.text.length}")
+                PhoneResult.info(
+                    "message",
+                    linkedMapOf<String, Any?>(
+                        "to" to to,
+                        "chars" to call.text.length,
+                        "handed_off" to true,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Open the dialer with the number ready. `ACTION_DIAL` only: the owner presses call, so
+     * there is no `CALL_PHONE`, no emergency-number case, and no call this tool can place.
+     *
+     * With a live Vox call, [DialHandoff] announces one line through the being, ends the call
+     * through the same teardown the hang-up runs, and then opens the dialer. Ending the call
+     * does not end the conversation: the thread lives on the gateway.
+     */
+    private fun dial(call: PhoneTool.Call.Dial): PhoneResult {
+        val to = resolveRecipient(call.to, call.contact) ?: return contactUnbuilt("dial")
+        return when (DialHandoff.run(platform, to)) {
+            DialHandoff.Outcome.NO_DIALER -> noApp(
+                "dial",
+                "no app on this phone answers ACTION_DIAL; nothing was opened and no call was ended",
+            )
+            DialHandoff.Outcome.DIAL_FAILED -> noApp(
+                "dial",
+                "the dialer could not be opened; nothing was dialled and no call was placed",
+            )
+            DialHandoff.Outcome.DIALED -> {
+                log("event=phone-mcp action=dial ok=true")
+                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+            }
+            DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> {
+                log("event=phone-mcp action=dial ok=true ended_call=true")
+                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+            }
+        }
+    }
+
+    /** Open one launchable app, entering PiP first when a call is live ([CallWindow]). */
+    private fun launch(call: PhoneTool.Call.Launch): PhoneResult {
+        val target = platform.resolveLaunchable(call.app) ?: return noApp(
+            "launch",
+            "no launchable app matches \"${call.app}\"; only an activity with a launcher entry " +
+                "can be started, and nothing was opened",
+        )
+        return handOff("launch", target) { platform.startApp(target) }
+    }
+
+    /** Open one URI, optionally in a named package, through the same PiP-first window. */
+    private fun open(call: PhoneTool.Call.Open): PhoneResult {
+        val target = platform.resolveUri(call.uri, call.packageName) ?: return noApp(
+            "open",
+            "no app on this phone opens that URI" +
+                (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
+        )
+        return handOff("open", target) { platform.startUri(target, call.uri) }
+    }
+
+    /**
+     * Start an app through [CallWindow]: PiP first when a call is live, otherwise at once.
+     * **A launch is never failed because PiP was unavailable** — the fallback starts it anyway.
+     * When the start is immediate its answer is reported; when it is posted behind the PiP
+     * transition the handoff has been arranged, and the window's own failure is logged rather
+     * than turned into a claim that the app is on screen.
+     */
+    private fun handOff(
+        action: String,
+        target: PhonePlatform.AppTarget,
+        start: () -> Boolean,
+    ): PhoneResult {
+        val host = platform.window()
+        var started = false
+        val begin = { started = start() }
+        val order = if (host == null) {
+            begin()
+            CallWindow.Order.LAUNCH_NOW
+        } else {
+            CallWindow.launch(host, begin)
+        }
+        if (order == CallWindow.Order.LAUNCH_NOW && !started) {
+            log("event=phone-mcp action=$action ok=false reason=unavailable")
+            return PhoneResult.refused(
+                action,
+                PhoneReason.UNAVAILABLE,
+                "Android refused to start ${target.packageName}; nothing was opened",
+            )
+        }
+        log(
+            "event=phone-mcp action=$action ok=true package=${target.packageName} " +
+                "pip=${order == CallWindow.Order.PIP_THEN_LAUNCH}"
+        )
+        return PhoneResult.info(
+            action,
+            linkedMapOf<String, Any?>(
+                "package" to target.packageName,
+                "component" to target.component,
+            ),
+        )
+    }
+
+    /** A number, or a name only when Contacts is on and the lookup exists. Null is a refusal. */
+    private fun resolveRecipient(raw: String, contact: Boolean): String? =
+        if (!contact) raw else platform.contactNumber(raw)
+
+    /**
+     * A contact name reached execution but this phone cannot read the address book. The group
+     * is granted, so this is not `not_granted`; it is the declared Contacts capability that is
+     * not built, and the honest answer is to ask for a number instead of sending `smsto: Mom`.
+     */
+    private fun contactUnbuilt(action: String): PhoneResult {
+        log("event=phone-mcp action=$action ok=false reason=unavailable contact=true")
+        return PhoneResult.refused(
+            action,
+            PhoneReason.UNAVAILABLE,
+            "the Contacts group is on, but looking a name up is not built on this phone; give " +
+                "the number instead. Nothing was opened.",
+        )
+    }
+
+    /** A handoff with nothing to receive it: no SENDTO app, no dialer, no launchable activity. */
+    private fun noApp(action: String, detail: String): PhoneResult {
+        log("event=phone-mcp action=$action ok=false reason=no_app")
+        return PhoneResult.refused(action, PhoneReason.NO_APP, detail)
     }
 
     // ---- undo ----

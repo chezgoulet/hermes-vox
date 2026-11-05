@@ -79,7 +79,7 @@ object PhoneGrants {
     }
 
     /**
-     * The twelve groups, in the order the screen and the schema read them: instant first, then
+     * The thirteen groups, in the order the screen and the schema read them: instant first, then
      * reported, then approval. One list; no second copy.
      */
     val GROUPS: List<Group> = listOf(
@@ -149,19 +149,26 @@ object PhoneGrants {
             warning = "Your agent could read every notification on this phone, including codes and messages.",
         ),
         Group(
-            id = "messages-calls",
-            label = "Messages and calls",
-            tier = PhoneTiers.APPROVAL,
-            lets = "Send a text message or place a call.",
-            warning = "Your agent could send a message or place a call as you when you approve it.",
-            planned = listOf("message", "call", "send", "email"),
+            id = "messages",
+            label = "Messages",
+            tier = PhoneTiers.INSTANT,
+            lets = "Write a text and hand it to your messaging app. You send it.",
+            actions = listOf("message"),
+        ),
+        Group(
+            id = "calls",
+            label = "Calls",
+            tier = PhoneTiers.INSTANT,
+            lets = "Open the dialer with a number ready. You make the call.",
+            actions = listOf("dial"),
         ),
         Group(
             id = "apps",
             label = "Apps",
-            tier = PhoneTiers.APPROVAL,
-            lets = "Open an app, or uninstall one. Uninstalling always needs your approval.",
-            planned = listOf("launch", "open", "install", "uninstall"),
+            tier = PhoneTiers.INSTANT,
+            lets = "Open an app or a link. Uninstalling still needs your approval, and is not built.",
+            actions = listOf("launch", "open"),
+            planned = listOf("install", "uninstall"),
         ),
         Group(
             id = "contacts",
@@ -188,8 +195,18 @@ object PhoneGrants {
         return GROUPS.firstOrNull { g -> a in g.actions || a in g.planned }
     }
 
-    /** The tier of [action], group first so planned names answer honestly too. */
-    fun tierOf(action: String): Int? = groupOf(action)?.tier ?: PhoneTiers.of(action)
+    /**
+     * The tier of [action], group first so planned names answer honestly too.
+     *
+     * A **planned** action keeps its own tier rather than inheriting the group's: the apps group
+     * is instant because `launch`/`open` are, while `uninstall` is still an approval action. A
+     * planned name is never advertised either way.
+     */
+    fun tierOf(action: String): Int? {
+        val a = action.trim().lowercase()
+        val group = groupOf(a) ?: return PhoneTiers.of(a)
+        return if (a in group.actions) group.tier else PhoneTiers.of(a) ?: group.tier
+    }
 
     /**
      * The states the owner may choose for [tier]. Allow exists for Tier 0 alone: Tier 1 is visible
