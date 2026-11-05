@@ -286,9 +286,12 @@ class FileShareTest {
      * answer `500` for until it expired.
      */
     @Test fun aTransferThatFinishesAfterTheNextOfferDeletesOnlyItsOwnCopy() {
-        // Large enough that A's body cannot fit the socket buffers: A's server is parked
-        // mid-write inside serve() — past its size check — until this client reads.
-        val (fileA, copyA) = staged("a.bin", ByteArray(16 * 1024 * 1024) { 1 })
+        // Larger than the client's 4 KB receive window, so A's server is parked mid-write
+        // inside serve() — past its size check — until this client reads. Deliberately not
+        // tens of MB: the property under test is "a transfer in flight", and a 16 MB body
+        // over a 4 KB window takes minutes, which would obscure the M5 assertion with the
+        // file server's own total deadline (L7).
+        val (fileA, copyA) = staged("a.bin", ByteArray(256 * 1024) { 1 })
         val (fileB, copyB) = staged("b.bin", ByteArray(4_000) { 2 })
         val f = flow()
         f.begin(fileA, copyA, null)
@@ -310,7 +313,7 @@ class FileShareTest {
         }
         val deadline = System.currentTimeMillis() + 3_000
         while (logs.none { it.startsWith("event=file-offer transferred") } && System.currentTimeMillis() < deadline) Thread.sleep(10)
-        assertTrue("A was transferred", logs.any { it.startsWith("event=file-offer transferred") })
+        assertTrue("A was transferred; logs=$logs", logs.any { it.startsWith("event=file-offer transferred") })
         assertFalse("A's copy is gone", copyA.exists())
         assertTrue("B's copy survives A's transfer", copyB.isFile)
         assertEquals(200, fetch(f.openServer!!.port, tokenOf(sent.last().first)))

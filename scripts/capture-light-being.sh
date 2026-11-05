@@ -2,7 +2,7 @@
 # #275 — capture the being on the light ground, state by state.
 #
 # A real device capture, not a mock: this drives the installed DEBUG build through the
-# debug-only harness extras `category` and `being` (MainActivity.handleDebugHarness), so
+# debug-only harness extras `category` and `being` (DebugHarnessActivity.handleHarness), so
 # each PNG is the GPU being rendered by the real renderer on the phone's own screen.
 # The harness also writes the state/family into the status pill, so every shot is
 # self-labelling. No gateway, key, mic or model is needed.
@@ -52,7 +52,7 @@ launch() {
   seed "$cat"
   adb shell cmd uimode night no >/dev/null 2>&1 || true
   adb shell am force-stop "$PKG"
-  adb shell am start -n "$PKG/com.hermesvox.MainActivity" \
+  adb shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" \
     --es category "$cat" --es being "$being" >/dev/null
   sleep "$SETTLE"
 }

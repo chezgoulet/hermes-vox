@@ -27,7 +27,7 @@ command -v adb >/dev/null || { echo "measure: adb not found"; exit 2; }
 [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] || { echo "measure: no booted device"; exit 2; }
 # A freshly installed app has no data directory yet, and run-as needs one: open it once.
 adb shell run-as "$PKG" true >/dev/null 2>&1 \
-  || { adb shell am start -n "$PKG/com.hermesvox.MainActivity" >/dev/null; sleep 3; }
+  || { adb shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" >/dev/null; sleep 3; }
 adb shell run-as "$PKG" true >/dev/null 2>&1 || { echo "measure: $PKG is not installed/debuggable"; exit 2; }
 
 seed_defaults() {
@@ -146,7 +146,7 @@ echo '| state | TOTAL PSS (kB) | frames rendered (cumulative) | wake locks held 
 echo '|---|---|---|---|'
 
 # 1. Settings home list: the process is up, the Being section was never opened.
-adb shell am start -n "$PKG/com.hermesvox.MainActivity" --es settings home >/dev/null
+adb shell am start -n "$PKG/com.hermesvox.DebugHarnessActivity" --es settings home >/dev/null
 wait_pid
 sample "settings-home"
 home_pss="${LAST_PSS:-0}"

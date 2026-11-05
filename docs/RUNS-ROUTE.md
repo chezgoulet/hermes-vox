@@ -67,6 +67,12 @@ unscoped `/v1/responses` conversation did.
   when neither the status nor the stop can be had does the done poll say
   `run_end:"lost"` — and that, not the loop's `done` flag, is what keeps a pending
   approval card on screen (`TurnApprovalHold.runEnded`).
+- **A truncated replay never leaves a hole in the answer** (0.9.1 review L3). If the
+  gateway no longer retains every event we missed, it says so with `replay.truncated`
+  (`oldest_retained_seq`). The replayed deltas then have a hole, so the reader does not
+  present them as the reply: the terminal `run.completed.output` is the whole answer and
+  replaces the gapped text (tool markers kept). If the terminal event carries no text,
+  the turn fails honestly rather than speaking the prefix and suffix around the hole.
 - `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
   scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
   nothing left to stop; nothing about the stop is ever thrown to the caller.
@@ -159,7 +165,9 @@ the conversation scope is not blank), or the turns ride responses and prove noth
 4. An approval: the card appears on a run that parks in `waiting_for_approval`, the
    answer posts once, and the run resumes. This is the capability the port exists for.
 5. A dropped socket: airplane mode mid-turn, restore, and the turn completes from
-   replay rather than the "voice stream was lost" error.
+   replay rather than the "voice stream was lost" error. If the drop outlives the
+   gateway's retained backlog, the reply still matches the run's final answer (or the
+   turn says it failed) — never a sentence with a missing middle.
 6. `/compress` after a runs turn: with no response id on the route, confirm the
    compaction targets the same conversation the run wrote to. If it does not, the
    stored-turn path needs its own route-aware chain before the flip.

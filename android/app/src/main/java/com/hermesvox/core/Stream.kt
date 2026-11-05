@@ -72,6 +72,12 @@ internal class StreamState {
     /** The last `seq` the runs stream delivered, so a reattach replays only the rest. */
     var lastSeq = -1L
     /**
+     * L3 (0.9.1 review): the gateway said its retained backlog starts after our last seq,
+     * so the replayed deltas have a hole. The accumulated text is then not the answer; the
+     * terminal `run.completed.output` is (or the turn fails honestly).
+     */
+    var replayTruncated = false
+    /**
      * H3 (0.9.1 review): how a FAILED runs turn left its run — [RUN_ENDED] when the run is
      * known to be over (it said so, the gateway's status is terminal, or the reader
      * stopped it), [RUN_LOST] when the reader failed and could neither confirm the end
@@ -784,11 +790,34 @@ internal object Streams {
                     ev.text = st.text.toString()
                 }
 
+                // L3: the reattach could not replay everything it missed. Do not present the
+                // gapped deltas as the answer: the terminal event carries the whole response.
+                "replay.truncated" -> {
+                    st.replayTruncated = true
+                    recoverOutcome?.invoke(st.runId, "replay.truncated oldest=${env.oldestRetainedSeq}")
+                    emit = false
+                }
+
                 "run.completed", "done" -> {
-                    if (plainText(st.text.toString()).isEmpty() && env.output.isNotEmpty()) {
+                    if (st.replayTruncated) {
+                        if (env.output.isNotEmpty()) {
+                            // Keep the tool markers the transcript rendered; replace the text
+                            // with the run's own final answer.
+                            val tools = toolMarkers(st.text.toString())
+                            st.text.setLength(0)
+                            st.text.append(tools).append(env.output)
+                            st.replayTruncated = false
+                        } else {
+                            // No whole answer to fall back to: never present the gapped text.
+                            st.failure = "hermes stream: the replayed events were truncated " +
+                                "and the run completed without text"
+                            st.text.setLength(0)
+                            ev.text = ""
+                        }
+                    } else if (plainText(st.text.toString()).isEmpty() && env.output.isNotEmpty()) {
                         st.text.append(env.output)
                     }
-                    markDone(st, ev)
+                    if (st.failure.isEmpty()) markDone(st, ev)
                 }
 
                 "run.failed", "run.cancelled", "run.interrupted" -> {
@@ -889,6 +918,12 @@ internal object Streams {
         ev.output = output
         st.text.append("\n[tool-done]\n")
         ev.text = st.text.toString()
+    }
+
+    /** The `[tool:…]` / `[tool-done]` lines a transcript rendered, in order. */
+    private fun toolMarkers(text: String): String {
+        val lines = text.lineSequence().filter { it.startsWith("[tool:") || it == "[tool-done]" }.toList()
+        return if (lines.isEmpty()) "" else "\n" + lines.joinToString("\n") + "\n"
     }
 
     /** The terminal success both routes share. */
@@ -1113,6 +1148,8 @@ internal class Envelope(
     val completed: Boolean? = null,
     /** The runs stream's own sequence number, for replay/re-attach. -1 when absent. */
     val seq: Long = -1L,
+    /** `replay.truncated`: the oldest seq the gateway still retains. -1 when absent. */
+    val oldestRetainedSeq: Long = -1L,
 ) {
     class Part(val type: String, val text: String)
     class Item(val id: String, val type: String, val phase: String, val name: String,
@@ -1194,6 +1231,7 @@ internal class Envelope(
                 interrupted = (o?.get("interrupted") as? JBool)?.value ?: false,
                 completed = (o?.get("completed") as? JBool)?.value,
                 seq = seq,
+                oldestRetainedSeq = (o?.get("oldest_retained_seq") as? JNum)?.raw?.toLongOrNull() ?: -1L,
             )
         }
 

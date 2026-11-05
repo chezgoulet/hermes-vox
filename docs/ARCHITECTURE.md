@@ -163,7 +163,10 @@ picks), the palettes and visual categories, and the eye, octopus and recoil stat
 ### 6. Lifecycle and trust
 - `VoiceService` (foreground, microphone type) owns the live call in the background.
 - The gateway key is user-entered and Keystore-encrypted (`SecureStore`); release
-  builds fail if a key injection is ever added. Backups are disabled.
+  builds fail if a key injection is ever added. Backups are disabled. The stored form
+  is marked (`enc1:`), so a legacy plaintext key containing `:` is read as plaintext
+  rather than lost; a fallback that had to store plaintext is logged and retried on the
+  next start.
 - Models download in-app through a foreground service (`ModelDownloadService`,
   `ModelDownloads`), so they survive leaving the screen. Downloads are resumable over HTTP
   `Range` (`DownloadResume`), wait out network loss without failing, and are sha256-verified

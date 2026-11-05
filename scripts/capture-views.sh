@@ -54,13 +54,13 @@ echo "=== 1/6 Onboarding (fresh install) ==="
 $A shell am force-stop com.hermesvox; sleep 1
 $A shell pm clear com.hermesvox >/dev/null 2>&1
 $A shell cmd uimode night yes >/dev/null 2>&1
-$A shell am start -n com.hermesvox/.MainActivity >/dev/null; sleep 4
+$A shell am start -n com.hermesvox/.DebugHarnessActivity >/dev/null; sleep 4
 shot 01_onboarding
 
 echo "=== 2/6 Main (connected) ==="
 seed_prefs
 $A shell am force-stop com.hermesvox; sleep 1
-$A shell am start -n com.hermesvox/.MainActivity >/dev/null; sleep 5
+$A shell am start -n com.hermesvox/.DebugHarnessActivity >/dev/null; sleep 5
 shot 02_main
 
 echo "=== 3/6 Settings ==="
@@ -79,7 +79,7 @@ $A shell input keyevent 4; sleep 1
 
 echo "=== 6/6 Pipeline-active Main (live SSE tool turn) ==="
 $A shell am force-stop com.hermesvox; sleep 1
-$A shell "am start -n com.hermesvox/.MainActivity --es url $URL --es key $KEY --es say 'Use your shell tool to run exactly: echo vox-ui-live and reply with just its output.'"
+$A shell "am start -n com.hermesvox/.DebugHarnessActivity --es url $URL --es key $KEY --es say 'Use your shell tool to run exactly: echo vox-ui-live and reply with just its output.'"
 sleep 11
 shot 06_pipeline_active
 echo "DONE: shots in $OUT"

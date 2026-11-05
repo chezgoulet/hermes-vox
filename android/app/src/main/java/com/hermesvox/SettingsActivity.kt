@@ -419,11 +419,22 @@ class SettingsActivity : AppCompatActivity() {
                         Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
                     }
+                    // M4 (0.9.1 review): a plain-HTTP endpoint is refused while the
+                    // tunnel is down, before anything is saved or sent.
+                    val u = eurl.text.toString().trim()
+                    com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
+                        Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
-                    prefs.edit().putString("url", eurl.text.toString().trim())
+                    prefs.edit().putString("url", u)
                         .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
+                    // L9 (0.9.1 review): a live call belonged to the connection it opened
+                    // on. Saving Entity ends it, exactly as a profile switch does, and the
+                    // shared session is rebuilt from the values just written.
+                    MainActivity.onEntitySaved()
                     refreshEntityVal()
                     dlg.dismiss()
                 }
@@ -784,13 +795,18 @@ class SettingsActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
             return
         }
+        // M6: a snapshot of the profile's own values, taken before the turn. A lazy pref read
+        // inside the thread could see a different active profile after a switch.
+        val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        val provider = prefs.getString("provider", "").orEmpty()
+        val scope = prefs.getString(SessionScope.PREF, "").orEmpty()
         val label = findViewById<TextView>(R.id.set_vox_val)
         label.text = "asking the entity…"
         // Off the UI thread: the directive turn is a real /v1/responses call
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
             // M6: declared like the live session (scope + provider), not a bare one.
-            val s = EntitySession.build(u, SecureStore.decrypt(k) ?: k, { prefs.getString(it, "").orEmpty() })
+            val s = EntitySession.of(u, SecureStore.decrypt(k) ?: k, model, provider, scope)
             // #220: one call does extract → repair → validate, so a document that arrives
             // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
             // instead of costing the user a second button press. The retry below stays as
