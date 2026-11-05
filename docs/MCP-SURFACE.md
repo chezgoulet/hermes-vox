@@ -15,7 +15,9 @@ already real (`timers-alarms`, `dnd-volume`, `notes`).
 **Built today (lane 2):** `files` and `calendar`.
 **Added by the listing lane:** `file_list`, and `file_read`'s `offset`/`length` window.
 **Added by the handoff lane:** `messages`, `calls`, and the safe half of `apps` (`launch`, `open`).
-**Declared, not built:** `notifications`, `apps`' `install`/`uninstall`, `contacts`.
+**Added by the approval lane:** `apps`' `uninstall` — the one Tier 2 action with a card on this
+phone, raised by [_PhoneApproval_](../android/app/src/main/java/com/hermesvox/PhoneApproval.kt).
+**Declared, not built:** `notifications`, `apps`' `install`, `contacts`.
 
 ---
 
@@ -28,16 +30,19 @@ built from [PhoneGrants](../android/app/src/main/java/com/hermesvox/PhoneGrants.
 | grant | the schema | a call that names it |
 |---|---|---|
 | **Off** (the default for every group) | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"`, and the detail names the group the owner must grant |
-| **Ask**, Tier 0 or Tier 2 | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
+| **Ask**, Tier 0 | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
+| **Ask**, Tier 2 `uninstall` | offered | the two-step card handshake below: a request raises the card, then the same call plus `approval` executes |
+| **Ask**, any other Tier 2 | offered | `ok:false, reason:"approval-required"`; no card exists for it and nothing is performed |
 | **Ask**, Tier 1 (reported) | offered | executed, audited, and reported — turning a reported group on *is* the grant |
 | **Allow** | offered | executed, audited, and reported |
 
 **Allow exists for Tier 0 only.** A stored Allow on a Tier 1 or Tier 2 group is read back as Ask: a
 grant that cannot be given is not a grant. **Ask is not one behaviour:** a Tier 0 group at Ask waits
 for the owner's card, and a Tier 2 group at Ask waits for a card on every use; a Tier 1 group at Ask
-runs, because the owner has already turned it on and sees what it did. `undo` and `status` belong to
-no group and are always offered, because a phone whose grants are all Off must still be able to say
-so.
+runs, because the owner has already turned it on and sees what it did. The apps group is Tier 0
+because `launch`/`open` are, but its `uninstall` action keeps its own Tier 2 rule: a grant to open
+apps is not a grant to remove one. `undo` and `status` belong to no group and are always offered,
+because a phone whose grants are all Off must still be able to say so.
 
 **A refusal is a result, not a transport error.** `isError` stays `false`; the JSON carries `ok`,
 `action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform said it
@@ -49,7 +54,7 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 |---|---|---|---|
 | **0** | instant | executes now, private, and reversible *where reversal is real* | Off / Ask / **Allow** |
 | **1** | reported | acts now when granted, is reported to the mind on the next turn, and is undoable | Off / Ask |
-| **2** | approval | **never executes from this wire.** The result says `approval-required` and names the surface that owns it | Off / Ask |
+| **2** | approval | **never executes without the owner's card.** `uninstall` has one on this phone; the rest still answer `approval-required` | Off / Ask |
 
 ### Why these hand off
 
@@ -61,14 +66,20 @@ filled in — never `CALL_PHONE` — and because Vox never dials, no emergency-n
 needed or wanted. Dialling **ends Vox's own call at the handoff**, after one spoken line, because the
 dialer is about to take the audio route; it does **not** end the conversation, which lives on the
 gateway and is resumed on the next call. The same reasoning keeps `apps` split: `launch`/`open` are
-instant, while `uninstall` waits for an approval card that is not built yet.
+instant, while `uninstall` is irreversible and has no app to hand it to — so it is the one action
+with an approval card of its own (below).
 
 ### The reason vocabulary
 
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
-| `approval-required` | the group is Ask, or the action is Tier 2; the owner's approval owns it and nothing was done |
+| `approval-required` | the group is Ask, or the action is Tier 2; the owner's approval owns it and nothing was done. For `uninstall` it carries `approval_id`, `expires_at` and `summary` |
+| `approval_denied` | the owner answered the `uninstall` card with no; nothing was removed and the id is burnt |
+| `approval_expired` | the card was not answered within two minutes (silence is no); nothing was removed |
+| `approval_mismatch` | the id was approved for one app and the call names another; nothing was removed |
+| `approval_unknown` | no such approval id, or it has already been used; nothing was removed |
+| `approval_busy` | three cards were already waiting, so no fourth was raised; nothing was removed |
 | `permission` | the phone does not hold a permission or special access the action needs |
 | `no_folder` | no folder has been granted with the system picker, so there is nothing to read inside |
 | `bad_path` | the name is a path, contains `..`, or resolves outside the folder the owner granted |
@@ -257,24 +268,89 @@ be undone, remains a Tier 2 name and is deliberately not built or advertised.
 
 ## Tier 2 — approval
 
-The phone **never executes** a Tier 2 action from the MCP wire. The result says
-`approval-required` and names the surface that owns it — the gateway's approval cards, or the
-owner's own hand. An MCP call carries no run id, so the phone cannot mint a card from this end;
-building a second approval surface inside the MCP server is exactly what #421 rules out.
+Tier 2 is for what cannot be undone and cannot be handed to another app. The phone **never
+executes** one on the first call. `uninstall` is the one action that now has a card on this phone;
+the rest still answer `approval-required` and name the surface that owns them.
 
-| action | group | arguments (the contract, when it exists) | result (when it lands) | undo | what it would need from the OS | refusals |
+### `uninstall`: two steps, on the same tool
+
+An MCP call carries no run id, so the approval cannot park a host run the way the gateway's
+`approval.request` does. The protocol is a handshake on the same action:
+
+1. **Request.** Call `uninstall` with `package` and **no** `approval`. The phone reads the app's
+   label, raises the card, and returns:
+
+   ```json
+   {"ok":false,"action":"uninstall","tier":2,"reason":"approval-required",
+    "detail":"the owner must approve removing Firefox; …",
+    "approval_id":"ap-7","expires_at":1767225600000,"summary":"uninstall Firefox"}
+   ```
+
+   Nothing is removed. `summary` names the action and the app's label; `expires_at` is epoch millis,
+   two minutes after the card was raised.
+
+2. **Execute.** Call **the same action with the same canonical arguments** plus
+   `approval:"ap-7"`. It runs only when the id is unexpired, unburnt, and the action and its
+   canonical arguments hash to the value the card was raised for.
+
+   ```json
+   {"action":"uninstall","package":"org.mozilla.firefox","approval":"ap-7"}
+   ```
+
+   The call executes only after the owner has approved. If the card is still up it returns
+   `approval-required` again with the same id; it does not burn the id. If the owner denied it the
+   answer is `approval_denied`; after two minutes `approval_expired`; a different package is
+   `approval_mismatch`; a reused or unknown id is `approval_unknown`.
+
+**Every refusal burns the id.** A denied, expired or mismatched id reports its reason once, then a
+second use is `approval_unknown`. **One card at a time**, three may wait behind it; the fourth
+request is `approval_busy` and raises nothing. A card that is dismissed without an answer is a deny;
+silence at expiry is a deny too.
+
+### The canonicalisation, and why it cannot be confused
+
+The card is bound to the text `action` + `\n` + every argument except `approval`, sorted by key,
+with string values trimmed and internal whitespace collapsed. That text is stored beside its
+SHA-256 digest, and the execution call must match **both**. Key order and whitespace therefore do
+not matter; a different package cannot hash the same by accident, and even a digest collision would
+still have to match the stored text. The package is also validated as a dotted package name before
+any card is raised, so a path or a URI never becomes one.
+
+### The card
+
+One line, in the owner's language: **“Your agent wants to remove Firefox. Approve?”** The app's
+label comes from the platform; the tool's name never appears. Two ways to answer:
+
+- **Tap** **APPROVE** or **DENY** on the card.
+- **Voice**, using `core/Approval.kt`'s allowlists — the same yes/no vocabulary as the gateway's
+  cards. A hedged answer (“I'm not sure”) is not an answer: the card stays up and is re-asked once
+  (“say approve or no”). Silence at two minutes is a no.
+
+The card is **spoken when a call is live**. When Vox has no screen, a full-screen dialog cannot be
+started from the background, so the card is a **heads-up notification with Approve and Deny
+actions** that opens Vox when tapped. If neither surface can be shown, the request fails
+`unavailable`, saying the owner could not be asked — never a silent timeout dressed as a denial.
+
+### Why Android's own confirmation still runs
+
+After our card says yes, `ACTION_DELETE` opens Android's uninstall confirmation. That is not double
+gating: the two screens ask different questions. Ours asks **“did you mean this app?”** — it carries
+the label, the voice answer and the two-minute window that the platform screen knows nothing about.
+Android asks **“may this app be removed?”** — the system-level consent that no app can give on the
+owner's behalf. Vox therefore reports `platform_confirmation:true`, not "removed": it cannot see the
+owner's answer on Android's own screen.
+
+| action | group | arguments | result | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
+| `uninstall` | apps | `package` string (a dotted package name); `approval` only on the second call | `package`, `label`, `platform_confirmation`, `note` | **no** — an uninstall cannot be undone | the app's label from `PackageManager`, then `ACTION_DELETE` and Android's own confirmation | `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_busy`, `unavailable` |
 | `notifications` | notifications | — | the notifications currently on the phone | **no** | **notification-listener special access**, which also reads every code and message on the phone | `permission`, `approval-required` |
 | `install` | apps | `app` string | `app`, `installed` | **no** | the package installer's own confirmation, which the owner answers | `approval-required` |
-| `uninstall` | apps | `app` string | `app`, `removed` | **no** — an uninstall always needs the owner, and is never silent | `ACTION_DELETE` on the package, with the system's confirmation. **Not built**: it needs the approval card, which does not exist on the MCP wire yet | `approval-required` |
 | `contact` | contacts | `name` string | `name`, `number` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission; the lookup is by name and returns one number | `permission`, `approval-required` |
 
-**Declared, not built:** `notifications`, `contact`, and the destructive half of `apps`
-(`install`, `uninstall`). `PhoneGrants` names `install` and `uninstall` in the apps group's
-`planned` list, and `PhoneTiers` still names them, so a direct call is refused as
-`approval-required`; neither is advertised, because a promise in an `enum` is a capability the
-phone must be able to keep. **`uninstall` is not in the handoff lane**: it needs the approval card
-and stays `approval-required` until that exists. `call`, `send` and `email` are gone with the old
+**Declared, not built:** `notifications`, `contact`, and `apps`' `install`. `PhoneGrants` names
+`install` in the apps group's `planned` list, and `PhoneTiers` still names it, so a direct call is
+refused as `approval-required`; it is never advertised, because a promise in an `enum` is a
+capability the phone must be able to keep. `call`, `send` and `email` are gone with the old
 `messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
 
 ---
@@ -294,7 +370,7 @@ and stays `approval-required` until that exists. `call`, `send` and `email` are 
 | `notifications` | 2 | `notifications` | **declared, not built** |
 | `messages` | 0 | `message` | **built by the handoff lane** |
 | `calls` | 0 | `dial` | **built by the handoff lane** |
-| `apps` | 0 | `launch`, `open` — `install`, `uninstall` planned | **safe half built; destructive half declared, not built** |
+| `apps` | 0 | `launch`, `open`, `uninstall` — `install` planned | **built; `uninstall` is Tier 2 and card-gated** |
 | `contacts` | 2 | `contact` | **declared, not built** |
 
 ---
@@ -316,6 +392,7 @@ and stays `approval-required` until that exists. `call`, `send` and `email` are 
 | `message` | — | — | Vox only composed a draft. A sent text cannot be recalled, and nothing was sent |
 | `dial` | — | — | the dialer opened; the owner's call is not Vox's to unplace |
 | `launch` / `open` | — | — | bringing an app or a link to the front is not a reversal, and there is no "previous screen" to restore |
+| `uninstall` | — | — | a removed app cannot be put back by this phone; the platform's installer owns a reinstall, and the card says so rather than inventing an undo |
 | `undo` / `status` | — | — | neither is a capability |
 | every Tier 1/2 write | as the row says | — | where the table says "no", there is no reversal and no invented one |
 
@@ -337,7 +414,11 @@ URI it asked for, so the owner can see the destination. A `file_list` row is the
 relative path and the count — `Downloads, 12 entries` — and **never a name it saw**, because the
 names in a folder are the owner's. Nothing in this surface logs a secret, a clipboard payload, a
 file's contents or a calendar's contents — a `file_read` row carries the name and folder it asked
-for, never the text it got back, and an event row carries the title's length, never the title. The
+for, never the text it got back, and an event row carries the title's length, never the title. An
+`uninstall` card writes **three** rows: the request, the decision (`approved`, `denied` or
+`expired`, and whether by tap or voice), and the execution. Each names the package and the app's
+label, and the decision row carries `via=tap|voice|silence`; the canonical arguments and the hash
+are never stored, because they are the guard, not something the owner needs to read. The
 audit's one summarising function is the place a future action has to pass through.
 
 ---
@@ -426,8 +507,16 @@ audit's one summarising function is the place a future action has to pass throug
 19. **A contact name with Contacts Off.** `message` to `"Mom"` is `not_granted` and the detail names
     **Contacts**; nothing is opened. A name with Contacts on is still `unavailable` because the
     contact lookup is declared, not built — the honest answer is to give a number.
-20. **`uninstall` stays refused.** With Apps at Allow, `uninstall` is **absent** from the `enum`;
-    a direct call returns `approval-required` and nothing is removed.
+20. **`uninstall` requests, approves, executes.** With Apps on, `uninstall` of Firefox is
+    `ok:false, reason:"approval-required"` with `approval_id`, `expires_at` and
+    `summary:"uninstall Firefox"`, and the card says *Your agent wants to remove Firefox.
+    Approve?* Nothing is removed. Tapping **APPROVE** (or saying *yes* on a live call) and calling
+    again with the same package plus `approval:"<id>"` opens Android's own confirmation; the result
+    is `ok:true` with `platform_confirmation:true`. **DENY**, a different package, or a second use
+    of the same id refuses and removes nothing. Let a card sit for two minutes: it expires, the
+    next call is `approval_expired`, and the audit shows request → expired. With Vox in the
+    background the same card is a heads-up notification with Approve/Deny actions; with Vox in
+    front it is the in-app card.
 21. **The declared groups stay refused.** `notifications` and `contact` return their documented
     refusals, `file_list` and `file_read` do the same while Files is Off, and no lane may make them
     advertise before the phone can keep the promise.

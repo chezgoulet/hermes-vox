@@ -49,7 +49,7 @@ class PhoneToolTest {
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
                 "state", "clip", "clip_read", "file_list", "file_read", "file_offer", "agenda",
-                "event_create", "message", "dial", "launch", "open",
+                "event_create", "message", "dial", "launch", "open", "uninstall",
                 "undo", "status",
             ),
             enumOf(),
@@ -142,16 +142,18 @@ class PhoneToolTest {
         for (name in enumOf()) {
             assertTrue(
                 "$name is offered but not executable",
-                name == "undo" || name == "status" || PhoneTiers.executable(name),
+                name == "undo" || name == "status" || name == "uninstall" ||
+                    PhoneTiers.executable(name),
             )
         }
     }
 
     @Test fun the_tier_two_capabilities_are_not_offered() {
         val offered = enumOf().toSet()
-        for (consequential in listOf("share", "call", "email", "delete", "send", "uninstall")) {
+        for (consequential in listOf("share", "call", "email", "delete", "send")) {
             assertFalse("$consequential must not be advertised", consequential in offered)
         }
+        assertTrue("uninstall is offered, because its card exists", "uninstall" in offered)
     }
 
     @Test fun action_is_required_and_unknown_arguments_are_refused() {
@@ -267,13 +269,16 @@ class PhoneToolTest {
     }
 
     @Test
-    fun apps_offers_its_safe_half_and_never_uninstall() {
+    fun apps_offers_its_actions_and_uninstall_still_asks() {
         val apps = PhoneGrants.Source { g ->
             if (g.id == "apps") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
         }
-        assertEquals(listOf("launch", "open", "undo", "status"), enumOf(apps))
-        assertFalse("uninstall waits for the approval card", "uninstall" in enumOf(apps))
+        assertEquals(listOf("launch", "open", "uninstall", "undo", "status"), enumOf(apps))
         assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("uninstall"))
+        // A granted Apps group does not grant removal: the action parses into the card handshake.
+        val parsed = PhoneTool.parse(mapOf("action" to "uninstall", "package" to "com.example.app"), apps)
+        assertTrue(parsed is PhoneTool.Parsed.Run)
+        assertEquals("uninstall", (parsed as PhoneTool.Parsed.Run).call.action)
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {

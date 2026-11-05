@@ -42,7 +42,26 @@ class PhoneEngine(
      * written *after* the result exists, so it records what happened rather than what was asked.
      */
     private val audit: (PhoneResult, Map<String, Any?>, Long) -> Unit = { _, _, _ -> },
+    /**
+     * Where the `uninstall` card is raised (the in-app card, else a heads-up notification). A
+     * surface that cannot show anything makes the request refuse `unavailable` rather than
+     * letting a two-minute silence look like a denial.
+     */
+    private val approvalSurface: PhoneApproval.Surface = PhoneApproval.Surface.NONE,
+    /** The approval lifecycle rows: request, decision (approved/denied/expired, and by tap/voice). */
+    private val auditRow: (PhoneAudit.Entry) -> Unit = {},
 ) {
+
+    /** The one approval desk. Its state outlives a call; the platform only shows the card. */
+    private val approvals = PhoneApprovalDesk(
+        surface = approvalSurface,
+        audit = { card, outcome, via, at ->
+            try {
+                auditRow(PhoneAudit.approvalEntry(at, card, outcome, via))
+            } catch (_: Throwable) {
+            }
+        },
+    )
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
     interface PhonePlatform : DialHandoff.Host {
@@ -367,6 +386,33 @@ class PhoneEngine(
         /** Start `ACTION_VIEW` for [uri] in the resolved [target]. */
         fun startUri(target: AppTarget, uri: String): Boolean = false
 
+        // ---- apps: uninstall (the one card-gated action) ----
+
+        /** The label the launcher shows for [packageName], or null when no such app is installed. */
+        fun appLabel(packageName: String): String? = null
+
+        /** The outcome of asking Android to remove one app. */
+        sealed class Uninstall {
+            /**
+             * Android's own confirmation screen is open. **The app is not removed yet** and this
+             * phone cannot see whether the owner confirms there; the result says exactly that.
+             */
+            data class Confirming(val packageName: String) : Uninstall()
+
+            /** No installed app has that package any more. */
+            data object Missing : Uninstall()
+
+            /** The platform would not open its confirmation screen. */
+            data class Unavailable(val detail: String) : Uninstall()
+        }
+
+        /**
+         * Open Android's own uninstall confirmation for [packageName] (`ACTION_DELETE`). The owner
+         * answers that screen; Vox never removes anything silently.
+         */
+        fun uninstall(packageName: String): Uninstall =
+            Uninstall.Unavailable("this phone cannot open the platform's uninstall confirmation")
+
         /**
          * The PiP-first window ([CallWindow]), when an activity is attached. Null means there is
          * no window to shrink, so a launch starts immediately — PiP never fails a launch.
@@ -412,15 +458,24 @@ class PhoneEngine(
         nowElapsed: Long,
         nowEpoch: Long,
     ): PhoneResult {
+        approvals.tick(nowEpoch)
         val result = when (val parsed = PhoneTool.parse(arguments, grants)) {
             is PhoneTool.Parsed.Refuse -> parsed.result
             is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch)
         }
         // The audit records refusals as well as successes, because "my agent says it tried" is a
         // claim the owner has to be able to check. A failure to record must not fail the call.
-        try {
-            audit(result, arguments, nowEpoch)
-        } catch (_: Throwable) {
+        // The initial approval request is the one exception: the desk already wrote its request row,
+        // and the "Recent actions" list must show request → decision → execution, not a duplicate.
+        val requestRowAlreadyWritten = result.action == PhoneApproval.ACTION &&
+            !result.ok &&
+            result.reason == PhoneReason.APPROVAL &&
+            result.facts["approval_id"] != null
+        if (!requestRowAlreadyWritten) {
+            try {
+                audit(result, arguments, nowEpoch)
+            } catch (_: Throwable) {
+            }
         }
         return result
     }
@@ -449,6 +504,7 @@ class PhoneEngine(
             is PhoneTool.Call.Dial -> dial(call)
             is PhoneTool.Call.Launch -> launch(call)
             is PhoneTool.Call.Open -> open(call)
+            is PhoneTool.Call.Uninstall -> uninstall(call, nowEpoch)
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -1213,6 +1269,170 @@ class PhoneEngine(
         )
         return handOff("open", target) { platform.startUri(target, call.uri) }
     }
+
+    // ---- apps: the one card-gated action ----
+
+    /**
+     * `uninstall`, in two steps on the same tool.
+     *
+     * Without [PhoneTool.Call.Uninstall.approvalId] this is the **request**: the platform's label
+     * is read, the card is raised, and the refusal carries the id and expiry the agent needs for
+     * the second call. Nothing is removed. With an id this is the **execution** check: the desk
+     * decides whether it is the same action, the same canonical package, unexpired and unburnt.
+     * Only then does Android's own confirmation open — after our card, not instead of it.
+     */
+    private fun uninstall(call: PhoneTool.Call.Uninstall, nowEpoch: Long): PhoneResult {
+        val canonical = PhoneApproval.canonical(PhoneApproval.ACTION, approvalArgs(call.packageName))
+        val digest = PhoneApproval.digest(canonical)
+
+        if (call.approvalId == null) {
+            val label = platform.appLabel(call.packageName) ?: run {
+                log("event=phone-mcp action=uninstall ok=false reason=unavailable")
+                return PhoneResult.refused(
+                    "uninstall",
+                    PhoneReason.UNAVAILABLE,
+                    "no installed app has the package \"${call.packageName}\"; nothing was removed",
+                )
+            }
+            return when (
+                val request = approvals.request(call.packageName, label, canonical, digest, nowEpoch)
+            ) {
+                is PhoneApproval.Request.Raised -> {
+                    val card = request.card
+                    log("event=phone-mcp action=uninstall ok=false reason=approval-required id=${card.id}")
+                    PhoneResult.refused(
+                        "uninstall",
+                        PhoneReason.APPROVAL,
+                        "the owner must approve removing ${card.label}; the card is up for " +
+                            "${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call uninstall again with " +
+                            "the same package and approval=\"${card.id}\" after they answer.",
+                        tier = PhoneTiers.APPROVAL,
+                        facts = linkedMapOf<String, Any?>(
+                            "approval_id" to card.id,
+                            "expires_at" to card.expiresAtMs,
+                            "summary" to card.summary,
+                        ),
+                    )
+                }
+                PhoneApproval.Request.Busy -> {
+                    log("event=phone-mcp action=uninstall ok=false reason=approval_busy")
+                    PhoneResult.refused(
+                        "uninstall",
+                        PhoneApproval.Reason.BUSY,
+                        "three approval cards are already waiting on the phone; nothing was raised " +
+                            "and nothing was removed",
+                        tier = PhoneTiers.APPROVAL,
+                    )
+                }
+                is PhoneApproval.Request.Unavailable -> {
+                    log("event=phone-mcp action=uninstall ok=false reason=unavailable")
+                    PhoneResult.refused(
+                        "uninstall",
+                        PhoneReason.UNAVAILABLE,
+                        request.detail,
+                        tier = PhoneTiers.APPROVAL,
+                    )
+                }
+            }
+        }
+
+        return when (
+            val grant = approvals.authorize(
+                call.approvalId,
+                PhoneApproval.ACTION,
+                approvalArgs(call.packageName),
+                nowEpoch,
+            )
+        ) {
+            is PhoneApproval.Grant.Pending -> {
+                val card = grant.card
+                PhoneResult.refused(
+                    "uninstall",
+                    PhoneReason.APPROVAL,
+                    "the owner has not answered the card for ${card.label} yet; nothing was removed",
+                    tier = PhoneTiers.APPROVAL,
+                    facts = linkedMapOf<String, Any?>(
+                        "approval_id" to card.id,
+                        "expires_at" to card.expiresAtMs,
+                        "summary" to card.summary,
+                    ),
+                )
+            }
+            is PhoneApproval.Grant.Refused -> {
+                log("event=phone-mcp action=uninstall ok=false reason=${grant.reason}")
+                PhoneResult.refused(
+                    "uninstall",
+                    grant.reason,
+                    grant.detail,
+                    tier = PhoneTiers.APPROVAL,
+                )
+            }
+            is PhoneApproval.Grant.Allowed -> executeUninstall(grant.card)
+        }
+    }
+
+    /** The canonical argument set the card is bound to: the action and the package, nothing else. */
+    private fun approvalArgs(packageName: String): Map<String, Any?> = linkedMapOf(
+        "action" to PhoneApproval.ACTION,
+        "package" to packageName,
+    )
+
+    /**
+     * The card said yes. Android's own confirmation still runs: it asks "may this app be removed?",
+     * which is a different question from our card's "did you mean this app?". Opening it is the
+     * limit of what this phone can honestly claim — it cannot see the owner's answer there.
+     */
+    private fun executeUninstall(card: PhoneApproval.Card): PhoneResult =
+        when (val outcome = platform.uninstall(card.packageName)) {
+            is PhonePlatform.Uninstall.Confirming -> {
+                log("event=phone-mcp action=uninstall ok=true package=${card.packageName} confirming=true")
+                PhoneResult.done(
+                    "uninstall",
+                    null,
+                    linkedMapOf<String, Any?>(
+                        "package" to card.packageName,
+                        "label" to card.label,
+                        "platform_confirmation" to true,
+                        "undoable" to false,
+                        "note" to
+                            "Android is asking you to confirm removing ${card.label}; the phone " +
+                            "cannot see whether you do",
+                    ),
+                )
+            }
+            PhonePlatform.Uninstall.Missing -> {
+                log("event=phone-mcp action=uninstall ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "uninstall",
+                    PhoneReason.UNAVAILABLE,
+                    "${card.label} is not installed any more; nothing was removed",
+                    tier = PhoneTiers.APPROVAL,
+                )
+            }
+            is PhonePlatform.Uninstall.Unavailable -> {
+                log("event=phone-mcp action=uninstall ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "uninstall",
+                    PhoneReason.UNAVAILABLE,
+                    outcome.detail,
+                    tier = PhoneTiers.APPROVAL,
+                )
+            }
+        }
+
+    /** Expire approval cards. The surface's timer calls this; the engine also ticks on each call. */
+    fun tickApprovals(nowEpoch: Long) = approvals.tick(nowEpoch)
+
+    /** The card on screen right now, for the Android surface and the voice path. */
+    fun currentApproval(): PhoneApproval.Card? = approvals.current()
+
+    /** Answer the current card by tap or voice. True when the id was still waiting. */
+    fun answerApproval(id: String, choice: String, via: String, nowEpoch: Long): Boolean =
+        approvals.decide(id, choice, via, nowEpoch) != null
+
+    /** One spoken utterance against the current card, using [PhoneApproval]'s allowlist. */
+    fun approvalVoice(text: String, nowEpoch: Long): PhoneApproval.Voice =
+        approvals.voice(text, nowEpoch)
 
     /**
      * Start an app through [CallWindow]: PiP first when a call is live, otherwise at once.
