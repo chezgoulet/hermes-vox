@@ -153,11 +153,11 @@ all read it. There is no second list to drift.
 | Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
 | Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
-| Notifications | 2 | — | read the notifications currently on the phone |
+| Notifications | 0 | `notifications`, `notification_read` | read counts per app while a call is open, then one notification's content by id |
 | Messages | 0 | `message` | compose a text and open the messaging app; you send it |
 | Calls | 0 | `dial` | open the dialer with a number ready; you make the call |
 | Apps | 0 | `launch`, `open`; `install`\*, `uninstall`\* | open an app or a link; installing/uninstalling needs an approval that is not built |
-| Contacts | 2 | — | look up a number by name |
+| Contacts | 0 | `contact` | look up a contact's number by name |
 
 `*` A planned action: the group and its refusal exist, the capability does not ship yet. A name in
 this column is **never advertised**; a direct call is refused as `not_granted` (group Off) or
@@ -379,6 +379,8 @@ off-device.
 | — (none new) | `media`, `device-state` and `clipboard` add **no** runtime permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard read or write are all available with what is already declared. `now_playing`'s package and title come from **notification-listener special access**, granted by the owner on Android's own screen (the sheet offers it); without it the result is `known:false`, not a refusal from this app. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `MediaListen`, `LocalActions.deviceState`, `LocalActions.clip`, `LocalActions.readClip` |
 | `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
 | `READ_CALENDAR`, `WRITE_CALENDAR` | the calendar group: `agenda` needs `READ_CALENDAR` alone; `event_create` needs write, and read to find a writable calendar. Both are runtime permissions, asked when Calendar is turned on; a missing one is a `permission` refusal naming Android's exact string, and denying write does not take the read away | `PhoneCalendarAccess`, `PhoneToolsSheet` |
+| `READ_CONTACTS` | the contacts group: a runtime permission asked when Contacts is turned on; a missing one is a `permission` refusal naming this exact string. The lookup uses `ContactsContract` only and returns display names and numbers with labels — never notes, addresses, photos or email | `ContactsAccess`, `PhoneToolsSheet` |
+| — (notification-listener special access) | the notifications group: **not** a runtime dialog and **not** `POST_NOTIFICATIONS`. The owner enables the app in Android's notification-access screen; the sheet shows whether it landed and opens that screen. The system grant is permanent, but the app's board attaches at call start and detaches at call end, so a read outside a call is `unavailable` | `MediaListenerService`, `PhoneNotifications`, `PhoneToolsSheet` |
 | — (none for files) | `files` declares **no** storage permission, and nothing requests `MANAGE_EXTERNAL_STORAGE`: the Storage Access Framework is the deliberate default, and the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, whose children `file_list` may list and from which only a named file is read. A future "all files" opt-in would use Android's own all-files access screen, with its own warning and its own grant — the owner's choice, not a capability this app withholds on their behalf | `PhoneFileAccess` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
