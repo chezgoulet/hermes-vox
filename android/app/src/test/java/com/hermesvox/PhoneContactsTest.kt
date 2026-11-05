@@ -52,7 +52,8 @@ class PhoneContactsTest {
             PhoneEngine.PhonePlatform.DeviceSnapshot(
                 null, null, null, null, null, null, null, null, null, null, null,
             )
-        override fun clip(text: String): Boolean = true
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite =
+            PhoneEngine.PhonePlatform.ClipWrite.Done
     }
 
     private val fake = Fake()

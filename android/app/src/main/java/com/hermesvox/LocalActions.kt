@@ -51,7 +51,7 @@ import java.util.concurrent.TimeUnit
  * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
  * | now playing | `AudioManager.isMusicActive`; `MediaSessionManager.getActiveSessions` with the listener | **none** for "is audio playing". A package and a title come from the active media session, which needs **notification-listener special access** — a grant the owner gives on Android's own screen, offered in the sheet. With it the result is `known:true` and the session's own package/title; without it `known:false` and a sentence saying so. It never invents a title. |
  * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
- * | clipboard | `ClipboardManager.setPrimaryClip` / `getPrimaryClip` | **none**, but Android decides what is readable: on 10+ an app that is not in front gets no clipboard at all, and a write from a backgrounded app is dropped silently. `clip` asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen; `clip_read` asks for the clip and reports the platform's own refusal — backgrounded, or an empty clip — rather than returning stale or empty text as though it were the clipboard. |
+ * | clipboard | `ClipboardManager.setPrimaryClip` / `getPrimaryClip` | **none.** Android restricts clipboard *reads*: on 10+ an app that is not focused gets no clipboard at all, while a write needs no focus and is permitted from the background or PiP. So `clip` always attempts the write and answers `unavailable` only when the platform refuses it, with the platform's reason; `clip_read` asks for the clip and reports the platform's own answer — no clip without focus (said as the likely cause, not a claim), no text, or an empty clipboard — rather than returning stale or empty text as though it were the clipboard. |
  * | message | `ACTION_SENDTO` with `smsto:` and `sms_body` | **none.** Vox composes a draft and the owner's messaging app sends it: no `SEND_SMS`, no SMS manager API, and no default-SMS role. The result says `handed_off:true`, never "sent". |
  * | dial | `ACTION_DIAL` with `tel:` | **none.** The dialer opens with the number and the owner presses call: no `CALL_PHONE` and no emergency special case, because Vox never dials. With a live Vox call, the being says one line, the call ends through the same teardown the hang-up uses, and then the dialer opens — the conversation itself lives on. |
  * | launch / open | `PackageManager` launchable resolution; `ACTION_VIEW` for a URI | **none.** Only activities with a launcher entry are launchable, and the launch goes through [CallWindow] so a live call enters PiP first. If the window cannot shrink, the app still opens. |
@@ -572,33 +572,21 @@ class LocalActions(context: Context) {
         }
 
         /**
-         * Write the text, and nothing else. The in-front check is done first because Android 10+
-         * drops a background write without saying so; reporting `ok` after a silent drop would be
-         * the one thing this tool must never do. The label is the app's name, never the caller's
-         * text at the OS layer either.
+         * Write the text, and nothing else. The write is attempted from wherever the call is:
+         * Android's restriction is on clipboard reads, not writes, so background and PiP are not
+         * reasons to refuse before asking. The label is the app's name, never the caller's text at
+         * the OS layer either.
          */
-        override fun clip(text: String): Boolean {
-            if (!AppFocus.inFront) return false
-            return try {
-                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: return false
-                cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
-                true
-            } catch (t: Throwable) {
-                VoxLog.d("event=local-action clip-denied reason=${t.javaClass.simpleName}")
-                false
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite = ClipboardRules.write {
+            val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: throw IllegalStateException("this phone has no clipboard service")
+            cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
+        }.also { result ->
+            if (result is PhoneEngine.PhonePlatform.ClipWrite.Refused) {
+                VoxLog.d("event=local-action clip-denied detail=${result.detail}")
             }
         }
 
-        /**
-         * Read the clipboard **when Android allows it**. The platform, not this app, decides: an
-         * app it does not consider in front gets no clipboard (Android 10+), so the read is
-         * refused with that reason rather than returning an empty clip as if it were the answer.
-         * An empty clipboard and a non-text item are refused too: "nothing" is not clipboard text.
-         *
-         * Nothing else in the app reads the clipboard; this is the one read path, behind the
-         * owner's `clipboard` grant.
-         */
         // ---- handoffs: messages, calls, apps ----
 
         /** The exact runtime permission `contact` needs, or null when the owner has granted it. */
@@ -791,36 +779,32 @@ class LocalActions(context: Context) {
             )
         }
 
+        /**
+         * Read the clipboard **when Android allows it**. The platform, not this app, decides: an
+         * app it does not consider focused gets no clipboard (Android 10+), so the read is asked
+         * for and refused with the platform's outcome rather than pre-empted. When the platform
+         * returns nothing while Vox is not focused, the sentence names focus as the likely cause
+         * without claiming to know it. An empty clipboard and a non-text item are refused too:
+         * "nothing" is not clipboard text.
+         *
+         * Nothing else in the app reads the clipboard; this is the one read path, behind the
+         * owner's `clipboard` grant.
+         */
         override fun readClip(): PhoneEngine.PhonePlatform.ClipRead {
-            if (!AppFocus.inFront) {
-                return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                    "Android does not let an app that is not in front read the clipboard; the " +
-                        "phone was backgrounded, so nothing was read",
+            val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                    "this phone has no clipboard service to read",
                 )
-            }
-            return try {
-                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                        "this phone has no clipboard service to read",
-                    )
-                val clip = cm.primaryClip
-                    ?: return PhoneEngine.PhonePlatform.ClipRead.Empty
-                if (clip.itemCount == 0) return PhoneEngine.PhonePlatform.ClipRead.Empty
+            return ClipboardRules.read(AppFocus.inFront) {
+                val clip = cm.primaryClip ?: return@read ClipboardRules.Reading.NoClip
+                if (clip.itemCount == 0) return@read ClipboardRules.Reading.NoClip
                 val text = clip.getItemAt(0).text?.toString()
-                if (text.isNullOrEmpty()) {
-                    PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                        "the clipboard holds no text (it may be an image or another app's " +
-                            "private content), so there was nothing to return",
-                    )
-                } else {
-                    PhoneEngine.PhonePlatform.ClipRead.Text(text)
+                if (text.isNullOrEmpty()) ClipboardRules.Reading.NoText
+                else ClipboardRules.Reading.Text(text)
+            }.also { result ->
+                if (result is PhoneEngine.PhonePlatform.ClipRead.Unavailable) {
+                    VoxLog.d("event=local-action clip-read-denied detail=${result.detail}")
                 }
-            } catch (t: Throwable) {
-                VoxLog.d("event=local-action clip-read-denied reason=${t.javaClass.simpleName}")
-                PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                    "Android refused the clipboard read (${t.javaClass.simpleName}); nothing " +
-                        "was read",
-                )
             }
         }
     }

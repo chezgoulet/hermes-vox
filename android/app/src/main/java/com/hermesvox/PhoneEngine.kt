@@ -119,16 +119,27 @@ class PhoneEngine(
         fun deviceState(): DeviceSnapshot
 
         /**
-         * Put [text] on the clipboard. False when the phone would not take it — an app that is not
-         * in front (Android 10+ drops such a write silently, so this is checked before writing)
-         * or a clipboard that threw.
+         * Put [text] on the clipboard. The write is attempted wherever the call is — Android's
+         * restriction is on clipboard **reads**, not writes, so background and PiP are not reasons
+         * to refuse before asking. [ClipWrite.Refused] carries the platform's own reason when it
+         * will not take the text.
          */
-        fun clip(text: String): Boolean
+        fun clip(text: String): ClipWrite
+
+        /** What happened to a clipboard write: accepted, or refused with the platform's reason. */
+        sealed class ClipWrite {
+            /** The platform took the text. */
+            data object Done : ClipWrite()
+
+            /** The platform would not take the text; [detail] is its reason, never a guess. */
+            data class Refused(val detail: String) : ClipWrite()
+        }
 
         /**
          * What the clipboard holds, **as far as the platform will let this app see it**. Android
-         * does not answer for an app it does not consider in front, so [ClipRead.Unavailable]
-         * carries the platform's own reason rather than a stale or empty stand-in.
+         * does not answer for an app that is not focused, so [ClipRead.Unavailable] carries the
+         * platform's own outcome rather than a stale or empty stand-in; when the answer is "no
+         * clip" while Vox is not focused, the detail says focus is the **likely** cause.
          */
         sealed class ClipRead {
             /** The clipboard's text, exactly as the platform handed it over. */
@@ -809,31 +820,33 @@ class PhoneEngine(
      * caller's, and neither the result, the log nor the audit row needs it. There is no undo —
      * reversing a clipboard write would mean having read what was there, which this action does
      * not do; [readClip] is a separate call with its own grant and its own result.
+     *
+     * The write is attempted, not predicted. Android restricts clipboard *reads*, not writes, so a
+     * backgrounded or PiP call writes like any other; a platform refusal is reported with the
+     * platform's own reason.
      */
-    private fun clip(text: String): PhoneResult {
-        if (!platform.clip(text)) {
-            log("event=phone-mcp action=clip ok=false reason=unavailable")
-            return PhoneResult.refused(
-                "clip", PhoneReason.UNAVAILABLE,
-                "the phone would not take the text: it only writes to the clipboard from an app " +
-                    "the owner can see, and nothing was written",
+    private fun clip(text: String): PhoneResult = when (val wrote = platform.clip(text)) {
+        PhoneEngine.PhonePlatform.ClipWrite.Done -> {
+            log("event=phone-mcp action=clip ok=true chars=${text.length}")
+            PhoneResult.info(
+                "clip",
+                linkedMapOf<String, Any?>(
+                    "chars" to text.length,
+                    "undoable" to false,
+                ),
             )
         }
-        log("event=phone-mcp action=clip ok=true chars=${text.length}")
-        return PhoneResult.info(
-            "clip",
-            linkedMapOf<String, Any?>(
-                "chars" to text.length,
-                "undoable" to false,
-            ),
-        )
+        is PhoneEngine.PhonePlatform.ClipWrite.Refused -> {
+            log("event=phone-mcp action=clip ok=false reason=unavailable")
+            PhoneResult.refused("clip", PhoneReason.UNAVAILABLE, wrote.detail)
+        }
     }
 
     /**
-     * The clipboard's text, when the platform allows the read. The decision is Android's: since
-     * Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer
-     * either. Both are `unavailable` with the platform's own reason — never empty text dressed up
-     * as what the clipboard holds.
+     * The clipboard's text, when the platform allows the read. The decision is Android's: an app
+     * that is not focused gets no clipboard, and an empty clip is no answer either. Both are
+     * `unavailable` with the platform's own outcome — never empty text dressed up as what the
+     * clipboard holds, and never a pre-emptive refusal in place of asking.
      */
     private fun readClip(): PhoneResult = when (val found = platform.readClip()) {
         is PhonePlatform.ClipRead.Text -> {
