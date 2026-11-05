@@ -15,7 +15,7 @@ class ConversationResetTest {
     }
 
     @Test fun commandsReArmTheCallSettingsDoesNot() {
-        assertEquals(listOf(Step.RESET_CHAIN, Step.REARM_CALL, Step.DELETE_SERVER_COPY),
+        assertEquals(listOf(Step.RESET_CHAIN, Step.REARM_CALL),
             ConversationReset.plan(Trigger.NEW, true).steps)
         assertEquals(listOf(Step.RESET_CHAIN, Step.REARM_CALL),
             ConversationReset.plan(Trigger.CLEAR, true).steps)
@@ -29,31 +29,17 @@ class ConversationResetTest {
     }
 
     /**
-     * #351 — the order is the fix. A live `/new` used to run the server-copy DELETE before
-     * the redial, so the line stayed down for a whole network round-trip (measured 2.4 s
-     * foreground and 13.6 s backgrounded on a Pixel 7; up to `GatewayClient.TIMEOUT_MS` =
-     * 20 s against a slow gateway). The plan must arm the call first and clean up after.
-     * See docs/evidence/252-new-mid-call-redial.md.
+     * A reset is local. It drops the client chain head and re-arms the line; it never
+     * sends the host a request, so there is no server-copy step to order and nothing to
+     * delete on the gateway. [NoDestructiveRequestsTest] holds the wire side of the same
+     * promise.
      */
-    @Test fun theRearmPrecedesTheServerCopyDelete_351() {
-        val plan = ConversationReset.plan(Trigger.NEW, callLive = true)
-        assertTrue("the re-arm is in the plan", plan.rearm)
-        assertTrue("the delete is in the plan", plan.deleteServerCopy)
-        assertTrue("the call is armed before the server copy is deleted",
-            plan.precedes(Step.REARM_CALL, Step.DELETE_SERVER_COPY))
-        assertEquals("the delete is the last step", plan.steps.size - 1,
-            plan.orderOf(Step.DELETE_SERVER_COPY))
-    }
-
-    /** The property, not one plan: no trigger may put housekeeping in front of the microphone. */
-    @Test fun noTriggerDeletesTheServerCopyBeforeArmingTheCall() {
+    @Test fun noResetPlanTouchesTheHost() {
+        val local = setOf(Step.RESET_CHAIN, Step.REARM_CALL)
         for (t in Trigger.values()) for (live in listOf(true, false)) for (ok in listOf(true, false)) {
             val p = ConversationReset.plan(t, live, ok)
-            assertFalse("$t live=$live ok=$ok: delete before re-arm",
-                p.precedes(Step.DELETE_SERVER_COPY, Step.REARM_CALL))
-            if (p.deleteServerCopy && p.rearm)
-                assertTrue("$t live=$live ok=$ok: re-arm before delete",
-                    p.precedes(Step.REARM_CALL, Step.DELETE_SERVER_COPY))
+            assertTrue("$t live=$live ok=$ok: ${p.steps}", local.containsAll(p.steps))
+            assertEquals("$t: a reset starts by dropping the local chain", Step.RESET_CHAIN, p.steps.first())
         }
     }
 

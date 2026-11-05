@@ -389,7 +389,11 @@ internal object Streams {
                 if (e is SocketTimeoutException) throw HermesException(STALLED)
                 throw e
             }
-            if (code != 200) throw HermesException("hermes stream ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+            if (code != 200) {
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes stream ${Entity.status(c)}: $err")
+            }
 
             val framer = SseFramer { name, data -> dispatch(st, name, data) }
             var readErr: IOException? = null
@@ -655,12 +659,22 @@ internal object Streams {
             }
             // 202 is the documented admission; 200 is accepted by older builds.
             if (code == 404) {
+                val err = Entity.readErrorBody(c)
+                // A `/p/<name>` the host does not serve answers 404 too. That is NOT "this
+                // gateway has no /v1/runs": falling back would hide the missing profile and
+                // (worse) remember a route lie for a profile that does not exist.
+                if (ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())) {
+                    if (st.cancelled) return ""
+                    throw HermesException("hermes run ${Entity.status(c)}: $err")
+                }
                 if (st.cancelled) return ""
                 throw NoRunsRoute()
             }
             if (code != 200 && code != 202) {
                 if (st.cancelled) return ""
-                throw HermesException("hermes run ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes run ${Entity.status(c)}: $err")
             }
             val raw = try {
                 c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
@@ -702,7 +716,11 @@ internal object Streams {
                 if (e is SocketTimeoutException) throw HermesException(STALLED)
                 throw e
             }
-            if (code != 200) throw HermesException("hermes events ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+            if (code != 200) {
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes events ${Entity.status(c)}: $err")
+            }
             val framer = SseFramer { name, data -> dispatchRun(st, name, data) }
             var readErr: IOException? = null
             try {

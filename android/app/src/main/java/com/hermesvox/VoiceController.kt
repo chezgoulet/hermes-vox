@@ -16,8 +16,11 @@ import com.hermesvox.core.ApprovalGate
 import com.hermesvox.core.ApprovalRequest
 import com.hermesvox.core.ApprovalNudge
 import com.hermesvox.core.ApprovalVoice
+import com.hermesvox.core.Entity
 import com.hermesvox.core.HermesSession
 import com.hermesvox.core.JsonException
+import com.hermesvox.core.ProfileReach
+import com.hermesvox.core.StreamRoute
 import com.hermesvox.core.TurnAbandon
 import com.hermesvox.core.TurnApprovalHold
 import com.hermesvox.core.TurnBudget
@@ -3673,12 +3676,19 @@ class VoiceController(private val context: Context, private val session: HermesS
         // field log's false 401.
         val u = prefString("url", ""); val k = gatewayKey()
         if (u.isBlank() || k.isBlank()) return ConnectionPhase.Probe.NOT_TESTED
-        var pingCode = ConnectionPhase.NO_RESPONSE; var pingRe = ""
+        var pingCode = ConnectionPhase.NO_RESPONSE; var pingRe = ""; var pingBody = ""
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection
             c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Authorization", "Bearer " + k)
             pingCode = c.responseCode
+            pingBody = try {
+                Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+            } catch (_: Throwable) { "" }
+            // A 200 here is the proof that clears "the host has no profile called <name>";
+            // the missing-profile 404 records it. Other answers leave the state alone.
+            if (pingCode == 200) ProfileReach.clearedByModels(u.trimEnd('/') + "/v1/models")
+            else ProfileReach.observe(pingCode, pingBody, u.trimEnd('/'), StreamRoute.currentProfile())
         } catch (e: Throwable) {
             // The CLASS NAME is the diagnosis when there is no message. Never "unknown".
             pingRe = ConnectionPhase.reason(e.javaClass.simpleName, e.message)
@@ -3699,9 +3709,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val payload = "{\"model\":\"\",\"stream\":false}"
                     c.outputStream.use { it.write(payload.toByteArray()) }
                     streamCode = c.responseCode
-                    // Close the response body as well, so no server-side run is left
-                    // streaming on for nobody once the status line has been read.
-                    try { (if (streamCode >= 400) c.errorStream else c.inputStream)?.close() } catch (_: Throwable) {}
+                    // Read the body (bounded) so a missing-profile 404 is recognised here
+                    // too, then close it so no server-side run is left streaming for nobody.
+                    val streamBody = try {
+                        Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+                    } catch (_: Throwable) { "" }
+                    ProfileReach.observe(streamCode, streamBody, u.trimEnd('/'), StreamRoute.currentProfile())
                 } finally {
                     c.disconnect()
                 }
@@ -3709,7 +3722,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 streamRe = ConnectionPhase.reason(e.javaClass.simpleName, e.message)
             }
         }
-        val raw = ConnectionPhase.classify(pingCode, pingRe, streamCode, streamRe)
+        // The host's missing-profile 404 is its own state — not a bad route, key or network.
+        val raw = if (ProfileReach.isMissingAnswer(pingCode, pingBody)) ConnectionPhase.Probe.PROFILE_MISSING
+            else ConnectionPhase.classify(pingCode, pingRe, streamCode, streamRe)
         // ...and the second half of the fix: the one-shot probe never gets the last
         // word on auth. If the LIVE voice channel has authorized (a real stream
         // delivered events over this same session), an `auth` verdict from a
