@@ -115,13 +115,20 @@ echo "== [3/6] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
 
-echo "== [4/6] stream parity harness ran =="
+echo "== [4/6] stream parity & mTLS verification harnesses =="
 # StreamParityTest replays testdata/stream/*.sse against the committed goldens.
 # A gate that passes because the harness silently stopped running is not a gate.
-parity=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.StreamParityTest.xml
-[ -f "$parity" ] || gate_die "StreamParityTest did not run ($parity missing)."
-grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$parity" \
-  || gate_die "StreamParityTest did not pass cleanly: $(grep -o 'tests="[^>]*' "$parity" | head -n1)"
+for suite in \
+  "TEST-com.hermesvox.core.StreamParityTest.xml" \
+  "TEST-com.hermesvox.core.MtlsConfigTest.xml" \
+  "TEST-com.hermesvox.core.MtlsKeyManagerTest.xml" \
+  "TEST-com.hermesvox.core.MtlsHandshakeTest.xml"; do
+  xml="android/app/build/test-results/testDebugUnitTest/$suite"
+  [ -f "$xml" ] || gate_die "Test suite $suite did not run ($xml missing)."
+  grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$xml" \
+    || gate_die "Test suite $suite did not pass cleanly: $(grep -o 'tests="[^>]*' "$xml" | head -n1)"
+  echo "gate: $suite OK ($(grep -o 'tests="[0-9]*"' "$xml" | head -n1))"
+done
 echo "gate: parity OK over $(ls testdata/stream/*.sse | wc -l) fixtures"
 
 echo "== [5/6] live gateway suite ran =="

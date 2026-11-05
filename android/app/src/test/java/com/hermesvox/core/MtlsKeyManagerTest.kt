@@ -33,8 +33,9 @@ class MtlsKeyManagerTest {
     fun testChooseClientAliasMatchesTargetOrigin() {
         val km = MtlsKeyManager("gateway.example.com", 443, "first", provider)
 
-        // Null socket returns configured alias
-        assertEquals("first", km.chooseClientAlias(null, null, null))
+        // Null socket fail-closed returns null (never leak alias without verified origin)
+        assertNull(km.chooseClientAlias(null, null, null))
+        assertNull(km.chooseEngineClientAlias(null, null, null))
 
         // Client aliases list
         assertArrayEquals(arrayOf("first"), km.getClientAliases(null, null))

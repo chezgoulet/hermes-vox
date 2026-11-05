@@ -44,7 +44,7 @@
          In release builds, this block is automatically ignored by the Android platform. -->
     <debug-overrides>
         <trust-anchors>
-            <certificates src="user"/>
+            <certificates src="user" overridePins="true"/>
         </trust-anchors>
     </debug-overrides>
 </network-security-config>

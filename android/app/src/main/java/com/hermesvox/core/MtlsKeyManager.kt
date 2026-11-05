@@ -28,30 +28,26 @@ class MtlsKeyManager(
 ) : X509ExtendedKeyManager() {
 
     internal fun matchesOrigin(socket: Socket?): Boolean {
-        if (socket == null) return true
-        val endpoint = socket.remoteSocketAddress as? InetSocketAddress
-        if (endpoint != null) {
-            val port = endpoint.port
-            if (port > 0 && port != targetPort) return false
-            val host = endpoint.hostString ?: endpoint.hostName
-            if (!host.isNullOrEmpty() && !host.equals(targetHost, ignoreCase = true)) {
-                // If endpoint host string is an IP and targetHost is a hostname, or vice versa,
-                // also check the socket's hostName if available
-                val altHost = endpoint.hostName
-                if (altHost.isNullOrEmpty() || !altHost.equals(targetHost, ignoreCase = true)) {
-                    return false
-                }
+        if (socket == null) return false
+        val endpoint = socket.remoteSocketAddress as? InetSocketAddress ?: return false
+        val port = endpoint.port
+        if (port <= 0 || port != targetPort) return false
+        val host = endpoint.hostString ?: endpoint.hostName ?: return false
+        if (!host.equals(targetHost, ignoreCase = true)) {
+            val altHost = endpoint.hostName
+            if (altHost.isNullOrEmpty() || !altHost.equals(targetHost, ignoreCase = true)) {
+                return false
             }
         }
         return true
     }
 
     internal fun matchesEngine(engine: SSLEngine?): Boolean {
-        if (engine == null) return true
+        if (engine == null) return false
         val port = engine.peerPort
-        if (port > 0 && port != targetPort) return false
-        val host = engine.peerHost
-        if (!host.isNullOrEmpty() && !host.equals(targetHost, ignoreCase = true)) return false
+        if (port <= 0 || port != targetPort) return false
+        val host = engine.peerHost ?: return false
+        if (!host.equals(targetHost, ignoreCase = true)) return false
         return true
     }
 

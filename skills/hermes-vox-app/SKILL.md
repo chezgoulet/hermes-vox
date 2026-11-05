@@ -885,7 +885,7 @@ Debug / crash log → Share full log).
   (docs/RELEASE-0.9.0.md `plain HTTP is refused`) (android/app/src/main/res/xml/network_security_config.xml `cleartextTrafficPermitted="false"`).
 - **Do:** serve the gateway over HTTPS (`tailscale serve`, Caddy, or any TLS terminator) and
   enter the HTTPS URL. For a tailnet certificate, install the CA and use the HTTPS name
-  (android/app/src/main/res/xml/network_security_config.xml `certificates src="user"`). Do
+  (android/app/src/main/res/xml/network_security_config.xml `<certificates src="user"/>`). Do
   not suggest uninstalling or downgrading.
 
 ### 6.2 The selected STT model "isn't working" — it never loaded
