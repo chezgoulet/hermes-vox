@@ -48,14 +48,14 @@ class LatencyStatsTest {
         for (i in 0L until 7L) { seed(); assertEquals(1, LatencyStats.summaryLines("turn", "stream-done", i).size) }
         seed()
         val eighth = LatencyStats.summaryLines("turn", "stream-done", 7L)
-        assertEquals(10, eighth.size)                                 // 1 turn + 9 event=lat lines (5 legacy + 4 speech-end)
+        assertEquals(11, eighth.size)                                 // 1 turn + 10 event=lat lines (5 legacy + 4 speech-end + first-sound)
         assertTrue(eighth[0], eighth[0].startsWith("event=turn"))
-        assertEquals(9, eighth.drop(1).count { it.startsWith("event=lat") })
+        assertEquals(10, eighth.drop(1).count { it.startsWith("event=lat") })
         val text = eighth.joinToString("\n")
         assertTrue(text, text.contains("metric=first-text"))
         // the conversational metrics have their own rolling rows, so a memory/cadence run
         // reads p50/p95 from the same 8-turn window as the legacy ones
-        for (m in listOf("speech-to-text", "speech-to-audio", "speech-to-render", "stt-decode"))
+        for (m in listOf("speech-to-text", "speech-to-audio", "speech-to-render", "stt-decode", "speech-to-first-sound"))
             assertTrue(text, text.contains("metric=$m"))
         // rolling window cleared after the 8th emit
         val cleared = LatencyStats.windowCounts()
@@ -126,5 +126,16 @@ class LatencyStatsTest {
         val next = LatencyStats.summaryLines("turn", "stream-done", 10L).first()
         assertTrue(next, next.contains("speechEndToFirstText=-"))
         assertTrue(next, next.contains("sttDecodeMs=-"))
+    }
+
+    /** Naturalness pass: the first sound of the turn, whoever made it, on the same line. */
+    @Test fun first_sound_rides_the_turn_line_with_its_source_and_clears() {
+        LatencyStats.reset()
+        LatencyStats.pushSpeechToFirstSound(180, "cue")
+        val line = LatencyStats.summaryLines("turn", "stream-done", 1L).first()
+        assertTrue(line, line.contains("speechEndToFirstSound=180 firstSoundBy=cue"))
+        assertTrue("the existing fields keep their order", line.contains("speechEndToRenderDone=- sttDecodeMs=- speechEndToFirstSound="))
+        val next = LatencyStats.summaryLines("turn", "stream-done", 2L).first()
+        assertTrue(next, next.contains("speechEndToFirstSound=- firstSoundBy=-"))
     }
 }

@@ -192,6 +192,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     // 0 until it lands; reset with the latch at every turn.
     @Volatile private var firstTextAtMs = 0L
     @Volatile private var firstAudioPushed = false  // C4: one first-audio push per turn (real audio)
+    @Volatile private var firstSoundPushed = false  // one speech-end → first-sound push per turn
     // C4: wall-clock launch (t0) of the current streamed turn — the streaming worker
     // reads this so time-to-first-AUDIO is measured from the same origin as stt/Byte/Text.
     @Volatile private var turnStartedAt = 0L
@@ -2227,6 +2228,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         firstTextLatch = false
         firstTextAtMs = 0L
         firstAudioPushed = false
+        firstSoundPushed = false
         turnToolCalls = 0; turnToolOutputs = 0
         genCancelled = false
         replyGen = gen
@@ -2936,6 +2938,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true
+                                noteFirstSound("reply")
                                 val audioAt = android.os.SystemClock.uptimeMillis()
                                 LatencyStats.pushFirstAudio(audioAt - turnStartedAt)
                                 // Phase 1: and the number the conversational target is written in.
@@ -3380,6 +3383,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // B1: the caller can hear it now, so the mind may be told about it.
                 lastHeardLine = text
                 lastHeardSource = source
+                noteFirstSound("glue:$source")
                 try { onPlayed?.invoke() } catch (_: Throwable) {}
             }) { _ ->
                 if (speakSeq.get() == seq) {
@@ -3407,6 +3411,20 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
     }
 
+    /**
+     * The first sound the caller could hear since they stopped talking, from any source — the
+     * thinking cue (the host calls this when the cue went to the speaker, not as a vibration),
+     * a glue line at its TTS start, the reply's first audible write. Once per turn, and only
+     * while the turn is live, so a later aside never reports against an old anchor.
+     */
+    fun noteFirstSound(by: String) {
+        if (firstSoundPushed || !(turnInFlight || speaking)) return
+        val se = turnSpeechEndAt
+        val now = android.os.SystemClock.uptimeMillis()
+        firstSoundPushed = true
+        if (se > 0L && now > se) LatencyStats.pushSpeechToFirstSound(now - se, by)
+    }
+
     private fun speak(text: String, gen: Long) {
         val host = ttsHost
         // #373: a stale completion (an utterance this speak replaced) must not clear the
@@ -3422,7 +3440,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (streamed) stopStreaming()
         speaking = true
         listener?.onState("speaking")
-        val took = host?.speak(text) { _ ->
+        val took = host?.speak(text, { noteFirstSound("reply-oneshot") }) { _ ->
             if (speakSeq.get() == seq) {
                 speaking = false
                 // #28: the TTS completion callback runs on the engine thread; the

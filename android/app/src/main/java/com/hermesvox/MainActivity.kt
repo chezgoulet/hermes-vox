@@ -263,7 +263,8 @@ open class MainActivity : AppCompatActivity() {
         lastCueState = state
         when (state) {
             "listening" -> cues?.play(CueSynth.Cue.LISTENING)
-            "thinking" -> cues?.play(CueSynth.Cue.THINKING)
+            "thinking" -> if (cues?.play(CueSynth.Cue.THINKING)?.action == CuePolicy.Action.AUDIO)
+                liveController?.noteFirstSound("cue")
         }
     }
 

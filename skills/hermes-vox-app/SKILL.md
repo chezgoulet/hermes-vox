@@ -628,6 +628,11 @@ Do not send a user hunting for these.
   is still `now - segStart`, so on an idle segment it reports idle time — use `sttDecodeMs=`
   or `event=stt-live` for decode cost
   (android/app/src/main/java/com/hermesvox/LatencyStats.kt `speechEndToFirstText=`).
+- `speechEndToFirstSound=` with `firstSoundBy=` is the first thing the caller could HEAR after
+  they stopped — the thinking cue (`cue`, only when it went to the speaker), a glue line at its
+  TTS start (`glue:<source>`), the reply (`reply`, `reply-oneshot`). It is the field the ~700 ms
+  target is written against; `speechEndToFirstAudio=` is only the reply's share of it
+  (android/app/src/main/java/com/hermesvox/LatencyStats.kt `speechEndToFirstSound=`).
 - `event=er-soul-first-token` is the presence render's first token, on the same stream as
   `event=turn`, so a soul render and the turn it belongs to can be compared directly
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `er-soul-first-token`).

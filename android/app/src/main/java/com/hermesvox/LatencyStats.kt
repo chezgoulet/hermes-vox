@@ -23,6 +23,11 @@ object LatencyStats {
     private val speechToAudio = ArrayList<Long>()
     private val speechToRender = ArrayList<Long>()
     private val sttDecode = ArrayList<Long>()
+    // Naturalness pass (2026-11-05): speech end → the FIRST thing the caller could hear this
+    // turn, whoever made it — the thinking cue, the being's beat, a wait line, the reply, or a
+    // repair. It is the number the ~700 ms target is about: silence after the caller stops is
+    // what reads as "not heard", and the reply is only one of the sounds that can end it.
+    private val speechToFirstSound = ArrayList<Long>()
     // The session copy of speech-to-audio. The ring above is the rolling 8-turn window the
     // per-turn log uses; it is cleared on every eighth emit, which makes it the wrong source
     // for a diagnostic summary copied at the end of a call. This ring is cleared only where
@@ -49,6 +54,8 @@ object LatencyStats {
     private var turnSpeechToAudio = -1L
     private var turnSpeechToRender = -1L
     private var turnSttDecode = -1L
+    private var turnSpeechToFirstSound = -1L
+    private var turnFirstSoundBy = ""
 
     fun pushFirstByte(ms: Long) { synchronized(lock) { firstByte.add(ms); trim(firstByte); turnFirstByte = ms } }
     fun pushFirstText(ms: Long) { synchronized(lock) { firstText.add(ms); trim(firstText); turnFirstText = ms } }
@@ -72,6 +79,13 @@ object LatencyStats {
      *  decode, or the whole-clip decode when the live stream could not finish. It is NOT
      *  wall clock between utterances — that is the `stt=` field's old, misleading meaning. */
     fun pushSttDecode(ms: Long) { synchronized(lock) { sttDecode.add(ms); trim(sttDecode); turnSttDecode = ms } }
+
+    /** speech_end → the first audible sound of the turn; [by] names its source
+     *  (`cue`, `glue:<source>`, `reply`, `reply-oneshot`). One per turn — the caller enforces it. */
+    fun pushSpeechToFirstSound(ms: Long, by: String) = synchronized(lock) {
+        speechToFirstSound.add(ms); trim(speechToFirstSound)
+        turnSpeechToFirstSound = ms; turnFirstSoundBy = by
+    }
 
     private fun trim(l: ArrayList<Long>) { while (l.size > MAX) l.removeAt(0) }
     private fun trimSession(l: ArrayList<Long>) { while (l.size > SESSION_MAX) l.removeAt(0) }
@@ -109,9 +123,11 @@ object LatencyStats {
                "firstByte=${fmt(turnFirstByte)} firstText=${fmt(turnFirstText)} firstAudio=${fmt(turnFirstAudio)} fullReply=${fmt(turnFullReply)} " +
                "speechEndToFirstText=${fmt(turnSpeechToText)} speechEndToFirstAudio=${fmt(turnSpeechToAudio)} " +
                "speechEndToRenderDone=${fmt(turnSpeechToRender)} sttDecodeMs=${fmt(turnSttDecode)} " +
+               "speechEndToFirstSound=${fmt(turnSpeechToFirstSound)} firstSoundBy=${turnFirstSoundBy.ifEmpty { "-" }} " +
                "session_turns=$sessionTurns"
         turnStt = -1L; turnFirstByte = -1L; turnFirstText = -1L; turnFirstAudio = -1L; turnFullReply = -1L
         turnSpeechToText = -1L; turnSpeechToAudio = -1L; turnSpeechToRender = -1L; turnSttDecode = -1L
+        turnSpeechToFirstSound = -1L; turnFirstSoundBy = ""
         if (turns % 8L == 0L) {
             out += "event=lat label=$label metric=first-byte p50=${pct(firstByte,0.50)} p95=${pct(firstByte,0.95)} n=${firstByte.size}"
             out += "event=lat label=$label metric=first-text p50=${pct(firstText,0.50)} p95=${pct(firstText,0.95)} n=${firstText.size}"
@@ -122,9 +138,10 @@ object LatencyStats {
             out += "event=lat label=$label metric=speech-to-audio p50=${pct(speechToAudio,0.50)} p95=${pct(speechToAudio,0.95)} n=${speechToAudio.size}"
             out += "event=lat label=$label metric=speech-to-render p50=${pct(speechToRender,0.50)} p95=${pct(speechToRender,0.95)} n=${speechToRender.size}"
             out += "event=lat label=$label metric=stt-decode p50=${pct(sttDecode,0.50)} p95=${pct(sttDecode,0.95)} n=${sttDecode.size}"
+            out += "event=lat label=$label metric=speech-to-first-sound p50=${pct(speechToFirstSound,0.50)} p95=${pct(speechToFirstSound,0.95)} n=${speechToFirstSound.size}"
             // rolling window
             firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear()
-            speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear()
+            speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear(); speechToFirstSound.clear()
         }
         out
     }
@@ -136,7 +153,7 @@ object LatencyStats {
     fun reset() {
         synchronized(lock) {
             firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear()
-            speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear()
+            speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear(); speechToFirstSound.clear()
             sessionSpeechToAudio.clear()
             turns = 0; sessionTurns = 0
         }
