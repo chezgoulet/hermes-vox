@@ -110,6 +110,21 @@ class CommandGlyphTest {
         val entry = Regex("""android:id="@\+id/commands"[\s\S]*?android:contentDescription="([^"]*)""")
             .find(layout)?.groupValues?.get(1)
         assertEquals("Commands", entry)
+        assertTrue(File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+            .contains("contentDescription = CommandGlyph.contentDescription(icon)"))
+    }
+
+    // ---- where it applies ----------------------------------------------------
+
+    @Test fun everyPlaceThatDrewTheCommandIsTheOneThatAsksThePref() {
+        // The main entry, the commands sheet's header, and the Appearance row: one pref
+        // read (CommandGlyph.current), asked wherever the glyph is drawn.
+        for (file in listOf("MainActivity.kt", "CommandsSheet.kt", "SettingsActivity.kt")) {
+            assertTrue("$file does not ask the pref",
+                File("src/main/java/com/hermesvox/$file").readText().contains("CommandGlyph.current("))
+        }
+        assertFalse("the fixed ⌘ resource is still shipped — a second drawing",
+            File("src/main/res/drawable/ic_command.xml").exists())
     }
 
     // ---- helpers -------------------------------------------------------------

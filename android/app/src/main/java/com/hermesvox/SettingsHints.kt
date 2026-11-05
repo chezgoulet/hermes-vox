@@ -80,6 +80,7 @@ object SettingsHints {
         // Appearance & Layout
         "row_theme" to "Light, dark, or follow the phone",
         "row_layout" to "The being, or a readable transcript",
+        "row_command_icon" to "The mark on the commands entry: five drawings, chosen by looking",
         "row_keep_screen_on" to "Stops the screen sleeping while a call is live",
         // Being
         "row_visual_category" to "The being's family: its colour, light and motion",

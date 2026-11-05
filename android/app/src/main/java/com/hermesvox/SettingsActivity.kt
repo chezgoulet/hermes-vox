@@ -2,6 +2,8 @@ package com.hermesvox
 
 import android.content.Context
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -1452,6 +1454,11 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
+        // The glyph on the commands entry. One pref (CommandGlyph.PREF), five drawings;
+        // the picker shows each one drawn live at the row's own size, and the row shows
+        // the current one the same way — the choice is made by looking.
+        findViewById<LinearLayout>(R.id.row_command_icon).setOnClickListener { pickCommandIcon() }
+        showCommandIcon(CommandGlyph.current(this))
         bindKeepScreenOn()
         findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
             val c = com.hermesvox.VoiceController(this, com.hermesvox.core.HermesSession(
@@ -1547,6 +1554,61 @@ class SettingsActivity : AppCompatActivity() {
             isChecked = prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
             setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, on).apply() }
         }
+    }
+
+    /**
+     * The chooser for the commands entry's glyph: each choice is drawn live at the row's
+     * own size with its name beside it, so the choice is made by looking. The pref written
+     * here is the one [CommandGlyph.current] reads everywhere the glyph appears.
+     */
+    private fun pickCommandIcon() {
+        val now = CommandGlyph.current(this)
+        val icons = CommandGlyph.Icon.entries
+        val density = resources.displayMetrics.density
+        fun px(v: Int) = (v * density).toInt()
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount(): Int = icons.size
+            override fun getItem(position: Int): Any = icons[position]
+            override fun getItemId(position: Int): Long = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val icon = icons[position]
+                val row = LinearLayout(this@SettingsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(px(20), px(12), px(20), px(12))
+                    minimumHeight = px(56)
+                }
+                row.addView(CommandMark(this@SettingsActivity).apply { this.icon = icon },
+                    LinearLayout.LayoutParams(px(26), px(26)).apply { marginEnd = px(16) })
+                row.addView(TextView(this@SettingsActivity).apply {
+                    text = icon.label
+                    textSize = 16f
+                    setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.hv_text))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                if (icon == now) row.addView(TextView(this@SettingsActivity).apply {
+                    text = "✓"
+                    textSize = 18f
+                    setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.hv_cyan))
+                })
+                return row
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Command icon")
+            .setAdapter(adapter) { dialog, which ->
+                val icon = icons[which]
+                prefs.edit().putString(CommandGlyph.PREF, icon.token).apply()
+                showCommandIcon(icon)
+                VoxLog.d("event=command-icon icon=${icon.token}")
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /** The row's own preview: the glyph the entry will draw, then its name. */
+    private fun showCommandIcon(icon: CommandGlyph.Icon) {
+        findViewById<CommandMark>(R.id.set_command_icon_mark)?.icon = icon
+        findViewById<TextView>(R.id.set_command_icon_val)?.text = icon.label
     }
 
     /** K2: the full runtime session as text — the rotated prior generation
@@ -2316,6 +2378,8 @@ class SettingsActivity : AppCompatActivity() {
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
                 .putBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
+                // The commands entry goes back to the glyph it shipped with (Steve's ⌘).
+                .remove(CommandGlyph.PREF)
                 .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
                 .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling
                 .putFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY)
@@ -2342,7 +2406,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
             // The theme is applied, not just written: a restore that left the screen dark
             // under a "Follow the phone" label would be a lie until the next launch.
-            GROUP_VISUALS -> { bindVisuals(); bindKeepScreenOn(); refreshFlowVals(); applyTheme("system") }
+            GROUP_VISUALS -> { bindVisuals(); bindKeepScreenOn(); showCommandIcon(CommandGlyph.DEFAULT); refreshFlowVals(); applyTheme("system") }
             GROUP_TTS -> { bindFlows(); bindSoundCues() }   // 0.6.5 speak toggle; the cue rows live here now
             GROUP_PRESENCE -> { refreshFlowVals(); bindErControls(); refreshGrpVals() }
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }

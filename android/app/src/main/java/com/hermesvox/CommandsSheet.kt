@@ -67,7 +67,11 @@ class CommandsSheet(
         state.entries.removeIf { it.value != CommandCatalog.RunState.RUNNING }
         val d = VoxSheet.dialog(act)
         val root = VoxSheet.root(act)
-        VoxSheet.header(root, "COMMANDS", "Close commands", { d.dismiss() })
+        // The header carries the same entry you tapped: the chosen glyph, drawn live in
+        // the theme's ink. The title below it is still the words "COMMANDS", so the sheet
+        // says what it is whatever the glyph is called.
+        VoxSheet.header(root, "COMMANDS", "Close commands", { d.dismiss() },
+            lead = CommandMark(act).apply { icon = CommandGlyph.current(act) })
         // #284: a search that teaches — find a command by what you want to do.
         val search = EditText(act).apply {
             hint = "What do you want to do?"
