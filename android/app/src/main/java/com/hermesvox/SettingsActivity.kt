@@ -1344,6 +1344,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+                .putString(ModelCatalog.KEY_STT_LANGUAGE, "")
                 .putInt(VoxThreads.PREF, VoxThreads.AUTO)   // 0.7.3: the thread override folds into the STT scope
                 .putString(KEY_STT_REMOTE_URL, "")
                 .putString(KEY_STT_REMOTE_MODEL, "")

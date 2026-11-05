@@ -45,7 +45,7 @@ enum class SherpaVoice(val modelId: String, val displayName: String) {
             "piper-siwis" -> PIPER_SIWIS
             "piper-tom" -> PIPER_TOM
             "piper-upmc" -> PIPER_UPMC
-            else -> null
+            else -> fromModelId(token)
         }
     }
 }

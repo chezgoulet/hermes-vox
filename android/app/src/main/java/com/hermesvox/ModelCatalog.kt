@@ -49,17 +49,17 @@ object ModelCatalog {
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
             "Speaks Hermes' replies aloud in a natural voice — fully offline"),
         ModelSpec("piper-siwis", "Piper · fr-FR (Siwis, medium)", "tts", "vits-piper-fr_FR-siwis-medium.tar.bz2", 64.1,
-            "Piper fr-FR canonical Siwis medium · clear natural French voice", true, 8,
+            "Piper fr-FR canonical Siwis medium · clear natural French voice (CC-BY-4.0)", true, 8,
             "375909aa30842b3a4efa10b1beb1d761af792960ae6873b4d53889f96c66195b", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2",
             "Speaks Hermes' replies aloud in French — natural, fully offline"),
         ModelSpec("piper-tom", "Piper · fr-FR (Tom, medium)", "tts", "vits-piper-fr_FR-tom-medium.tar.bz2", 64.1,
-            "Piper fr-FR Tom medium · alternative French voice", true, 9,
+            "Piper fr-FR Tom medium · alternative French voice (CC0)", true, 9,
             "3d8258ef8466b5d5f2cc46c06e1415d3d01c9cbaeed8b6d5b3d152073672472c", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tom-medium.tar.bz2",
             "Speaks Hermes' replies aloud in French — alternative voice, fully offline"),
         ModelSpec("piper-upmc", "Piper · fr-FR (UPMC, medium)", "tts", "vits-piper-fr_FR-upmc-medium.tar.bz2", 76.7,
-            "Piper fr-FR UPMC medium · French academic voice", true, 10,
+            "Piper fr-FR UPMC medium · French academic voice (CC-BY-NC-SA-4.0)", true, 10,
             "e9830a331a16f6cc5ef3116a287065e015d3495c3f56b974889a266da7f89a7f", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-upmc-medium.tar.bz2",
             "Speaks Hermes' replies aloud in French — fully offline"),
@@ -122,8 +122,8 @@ object ModelCatalog {
      *  on-device voice (Supertonic, then Piper), else the system voice. */
     fun defaultTts(context: Context): String = when {
         isInstalled(context, "supertonic") -> "supertonic"
-        isInstalled(context, "piper-siwis") -> "piper-siwis"
         isInstalled(context, "piper-lessac") -> "piper"
+        isInstalled(context, "piper-siwis") -> "piper-siwis"
         isInstalled(context, "piper-tom") -> "piper-tom"
         isInstalled(context, "piper-upmc") -> "piper-upmc"
         else -> "system"
