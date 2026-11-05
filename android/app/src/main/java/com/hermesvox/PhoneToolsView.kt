@@ -49,12 +49,18 @@ object PhoneToolsView {
         PhoneSetup.State.IDLE -> "set up"
     }
 
-    /** The one line under "Set up with your agent". */
-    fun setupHeadline(state: PhoneSetup.State): String = when (state) {
+    /**
+     * The one line under "Set up with your agent". [failure] is the record's own named cause
+     * ([PhoneSetupSend]); it is what an unreachable send says, because "could not reach" for every
+     * cause is the wrong-cause message #430 removed.
+     */
+    fun setupHeadline(state: PhoneSetup.State, failure: String? = null): String = when (state) {
         PhoneSetup.State.IDLE -> "Not set up yet"
         PhoneSetup.State.WAITING -> "Waiting for your agent to connect"
         PhoneSetup.State.CONNECTED -> "Connected"
-        PhoneSetup.State.UNREACHABLE -> "Could not reach your agent"
+        PhoneSetup.State.UNREACHABLE ->
+            failure?.takeIf { it.isNotBlank() }
+                ?: PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER)
         PhoneSetup.State.REFUSED -> "Your agent could not edit its configuration"
         PhoneSetup.State.TIMED_OUT -> "Your agent was asked, but nothing connected in time"
     }

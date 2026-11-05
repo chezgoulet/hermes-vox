@@ -8,13 +8,14 @@ import com.hermesvox.core.TestServer
 import com.hermesvox.core.TurnRoute
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
 
 /**
- * #430: the setup turn goes out on the active profile's client, and a missing session is built
- * rather than failed.
+ * #430: the setup turn goes out on the active profile's client, a missing session is built rather
+ * than failed, and a send that cannot be made says why.
  *
  * Three properties, each a way this went wrong in the field:
  *
@@ -24,8 +25,9 @@ import java.util.Collections
  *  2. **a missing or stale session is a build, not a failure.** [PhoneSetupSend.plan] rides the
  *     live session only when it was built for the connection in force; otherwise it builds one from
  *     that connection. Only an unconfigured connection is a refusal.
- *  3. **the state machine is untouched.** A reply — however confident — never becomes
- *     *Connected*; only the handshake does.
+ *  3. **each failure names itself.** "no connection configured", "key rejected", "your agent did not
+ *     answer" and "turn failed: …" are four different lines, and the record keeps the one that
+ *     happened; a reply — however confident — never becomes *Connected*.
  */
 class PhoneSetupSendTest {
 
@@ -185,6 +187,41 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1}
                 assertTrue("and the gateway in force saw nothing", newGateway.requests.isEmpty())
             }
         }
+    }
+
+    // ---- 3. each failure names itself ----
+
+    @Test
+    fun `each failure reason maps to a distinct message`() {
+        val noConnection = PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION)
+        val keyRejected = PhoneSetupSend.message(PhoneSetupSend.Failure.KEY_REJECTED)
+        val noAnswer = PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER)
+        val turnFailed = PhoneSetupSend.message(PhoneSetupSend.Failure.TURN_FAILED, "no output_text in response")
+
+        assertTrue(noConnection, noConnection.contains("No connection configured"))
+        assertTrue(keyRejected, keyRejected.contains("Key rejected"))
+        assertTrue(noAnswer, noAnswer.contains("did not answer"))
+        assertTrue(turnFailed, turnFailed.contains("Turn failed: no output_text in response"))
+
+        val four = setOf(noConnection, keyRejected, noAnswer, turnFailed)
+        assertEquals("a message per cause, never one for every case", 4, four.size)
+        for (line in four) assertFalse("no generic 'could not reach' left", line.contains("could not reach", true))
+    }
+
+    @Test
+    fun `a failed send is shown with the cause the record kept`() {
+        val now = 1_700_000_000_000L
+        val tag = PhoneMcpToken.fingerprint("phone-token-123")
+        val line = PhoneSetupSend.message(PhoneSetupSend.Failure.KEY_REJECTED)
+        val asked = PhoneSetup.begin(PhoneSetup.Record(), now, tag)
+        val failed = PhoneSetup.failed(asked, line)
+        assertNull("a failed turn has no reply to show", failed.reply)
+        assertEquals(PhoneSetup.State.UNREACHABLE, PhoneSetup.state(failed, now + 1_000L, tag))
+        assertEquals(
+            "the sheet says the cause, not a verdict of its own",
+            line,
+            PhoneToolsView.setupHeadline(PhoneSetup.state(failed, now + 1_000L, tag), failed.failure),
+        )
     }
 
     // ---- Connected is the handshake's, and nothing else's ----

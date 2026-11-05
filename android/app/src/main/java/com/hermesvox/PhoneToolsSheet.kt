@@ -32,6 +32,10 @@ import androidx.core.content.ContextCompat
  * one the app holds was built for a different connection (#430). Holding a client object in this
  * sheet would re-create that bug: a session keeps the address it was built with.
  *
+ * **A failure says what happened.** [PhoneToolsView.setupHeadline] shows the record's own line — no
+ * connection configured, key rejected, the agent did not answer, or the turn failed with the
+ * gateway's reason — so a local misconfiguration never reads as a network outage.
+ *
  * **Connected is earned by the handshake.** The headline stays *waiting for your agent to connect*
  * until the phone's own [PhoneMcpServer] has seen an authenticated MCP `initialize`; only then is
  * the state [PhoneSetup.State.CONNECTED]. The agent's reply is displayed beneath every state,
@@ -210,7 +214,7 @@ class PhoneToolsSheet(
                 "already exists, the turn says to update it in place, not to add a second one.",
         )
 
-        row(col, "Setup", PhoneToolsView.setupHeadline(state))
+        row(col, "Setup", PhoneToolsView.setupHeadline(state, record.failure))
         body(col, PhoneToolsView.setupNext(state), dim = true)
         notice?.let { body(col, it) }
 
@@ -457,7 +461,9 @@ class PhoneToolsSheet(
         // the owner just replaced, while the connection test (built from the same prefs) passes.
         val s = PhoneSetupStore.session(act)
         if (s == null) {
-            notice = "Connect the app to your gateway first (Entity & Connection), then try again."
+            // Nothing configured to send to. Said plainly, and recorded so the state names it too.
+            notice = null
+            PhoneSetupStore.failed(act, PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION))
             paint()
             return
         }

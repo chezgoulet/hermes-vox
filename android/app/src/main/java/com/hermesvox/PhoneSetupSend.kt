@@ -17,9 +17,15 @@ package com.hermesvox
  *
  * [plan] is the rule that ends that class of failure: the live session may be reused **only** when
  * it was built for exactly the connection in force; otherwise one is built there, from the active
- * connection, rather than failing. Only a genuinely unconfigured connection is a refusal.
+ * connection, rather than failing. Only a genuinely unconfigured connection is a refusal, and it
+ * has its own words ([Failure.NO_CONNECTION]).
  *
- * Pure JVM: the connection rule is proven off-device ([PhoneSetupSendTest]).
+ * **Each failure says what happened.** [classify] turns the turn's outcome into one of four named
+ * failures and [message] gives each its own line — "no connection configured", "key rejected",
+ * "your agent did not answer", "turn failed: <reason>". One sentence for every case is how a local
+ * misconfiguration reads as a network outage, which is what this release exists to remove.
+ *
+ * Pure JVM: the connection rule and the wording are proven off-device ([PhoneSetupSendTest]).
  */
 object PhoneSetupSend {
 
@@ -77,4 +83,27 @@ object PhoneSetupSend {
         provider = get(EntitySession.PREF_PROVIDER),
         scope = EntitySession.scope(get),
     )
+
+    /** The four ways a setup turn can fail to reach its agent. Each is named, none is generic. */
+    enum class Failure { NO_CONNECTION, KEY_REJECTED, NO_ANSWER, TURN_FAILED }
+
+    /**
+     * The one line for [f]. [detail] is the gateway's or the transport's own words, when it had
+     * any.
+     */
+    fun message(f: Failure, detail: String = ""): String {
+        val why = detail.trim().trimEnd('.')
+        return when (f) {
+            Failure.NO_CONNECTION ->
+                "No connection configured: set the gateway under Entity & Connection, then try again."
+            Failure.KEY_REJECTED ->
+                "Key rejected: the gateway refused this profile's key. Fix it under Profiles, then try again."
+            Failure.NO_ANSWER ->
+                "Your agent did not answer: " +
+                    (why.ifBlank { "the gateway was not reachable" }) +
+                    ". Check the connection, then try again."
+            Failure.TURN_FAILED ->
+                "Turn failed: " + (why.ifBlank { "the agent's answer could not be read" }) + "."
+        }
+    }
 }

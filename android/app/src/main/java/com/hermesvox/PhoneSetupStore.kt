@@ -25,15 +25,22 @@ import java.util.concurrent.atomic.AtomicBoolean
  * and nothing here treats the reply as proof: the proof is the MCP `initialize` recorded by
  * [PhoneMcp.recordHandshake].
  *
+ * **Every failure is named.** A thrown turn and an empty answer both used to become the same
+ * `unreachable` flag, which the sheet rendered as "could not reach your agent" whatever had
+ * actually happened — a local misconfiguration reporting itself as a network outage. The record
+ * now carries the line [PhoneSetupSend] chose: no connection configured, key rejected, agent did
+ * not answer, or turn failed with the gateway's own reason.
+ *
  * The prompt carries the bearer token. It is never logged: the failure line names only the class of
- * failure, and the sheet is the one place the turn is rendered, for the owner who is setting it up.
+ * failure (the token is scrubbed out of any transport text), and the sheet is the one place the
+ * turn is rendered, for the owner who is setting it up.
  */
 object PhoneSetupStore {
 
     private const val PREFS = "hv"
     private const val K_REQUESTED = "phone_setup_requested_at"
     private const val K_REPLY = "phone_setup_reply"
-    private const val K_SEND_FAILED = "phone_setup_send_failed"
+    private const val K_FAILURE = "phone_setup_failure"
     private const val K_REFUSED = "phone_setup_refused"
     private const val K_TOKEN_TAG = "phone_setup_token_tag"
 
@@ -68,7 +75,7 @@ object PhoneSetupStore {
         return PhoneSetup.Record(
             requestedAt = p.getLong(K_REQUESTED, 0L),
             reply = p.getString(K_REPLY, null),
-            sendFailed = p.getBoolean(K_SEND_FAILED, false),
+            failure = p.getString(K_FAILURE, null),
             refused = p.getBoolean(K_REFUSED, false),
             handshakeAt = PhoneMcp.handshakeAt(context),
             handshakeTag = PhoneMcp.handshakeTag(context),
@@ -80,7 +87,7 @@ object PhoneSetupStore {
         prefs(context).edit()
             .putLong(K_REQUESTED, record.requestedAt)
             .putString(K_REPLY, record.reply)
-            .putBoolean(K_SEND_FAILED, record.sendFailed)
+            .putString(K_FAILURE, record.failure)
             .putBoolean(K_REFUSED, record.refused)
             .putString(K_TOKEN_TAG, record.tokenTag)
             .apply()
@@ -98,6 +105,12 @@ object PhoneSetupStore {
         write(context, PhoneSetup.replied(read(context), reply))
     }
 
+    /** The send could not be made, or the turn failed: [reason] is the named cause. */
+    fun failed(context: Context, reason: String) {
+        write(context, PhoneSetup.failed(read(context), reason))
+    }
+
+    /** The turn never reached the agent and the cause is unknown here. */
     fun unreachable(context: Context) {
         write(context, PhoneSetup.unreachable(read(context)))
     }
