@@ -769,6 +769,14 @@ class LocalActions(context: Context) : PhoneReadout {
         /** Is Vox's own call live in the attached window right now? */
         override fun callLive(): Boolean = onMain("callLive") { PhoneHandoff.callLive() }
 
+        /**
+         * The one background-activity-launch gate. The window answers it: a resumed activity,
+         * or one in picture-in-picture and visible. Checked by the engine before a handoff
+         * resolves, ends or announces anything (B2).
+         */
+        override fun canStartActivity(): Boolean =
+            onMain("canStartActivity") { PhoneHandoff.canStartActivity() }
+
         /** Speak the handoff line through the being; the call ends when it is audible. */
         override fun announce(line: String, after: () -> Unit) =
             onMain("announce") { PhoneHandoff.announceDial(line, after) }
@@ -822,18 +830,27 @@ class LocalActions(context: Context) : PhoneReadout {
         override fun resolveUri(
             uri: String,
             packageName: String?,
-        ): PhoneEngine.PhonePlatform.AppTarget? = try {
+        ): PhoneEngine.PhonePlatform.UriTarget = try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
             packageName?.let { intent.setPackage(it) }
-            app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.let {
-                PhoneEngine.PhonePlatform.AppTarget(
-                    it.activityInfo.packageName,
-                    it.activityInfo.name,
+            val resolved = app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            when {
+                resolved == null -> PhoneEngine.PhonePlatform.UriTarget.None
+                // The platform's own chooser answers when several apps claim the link and none
+                // is the default. It is not an app, and starting its class would report
+                // `package:"android"` as though it were (M6).
+                resolved.activityInfo.packageName == "android" ->
+                    PhoneEngine.PhonePlatform.UriTarget.Ambiguous
+                else -> PhoneEngine.PhonePlatform.UriTarget.App(
+                    PhoneEngine.PhonePlatform.AppTarget(
+                        resolved.activityInfo.packageName,
+                        resolved.activityInfo.name,
+                    )
                 )
             }
         } catch (t: Throwable) {
             VoxLog.d("event=local-action open-resolve-failed reason=${t.javaClass.simpleName}")
-            null
+            PhoneEngine.PhonePlatform.UriTarget.None
         }
 
         override fun startUri(
@@ -871,8 +888,11 @@ class LocalActions(context: Context) : PhoneReadout {
 
         /**
          * Open Android's own confirmation (`ACTION_DELETE`). The owner answers *that* screen; this
-         * phone cannot see the answer, so the result says "confirming", not "removed". A background
-         * activity launch the platform refuses becomes `unavailable`, never a silent success.
+         * phone cannot see the answer, so the result says "confirming", not "removed".
+         *
+         * Android 10+ blocks a background activity start without throwing, so [PhoneEngine]
+         * refuses this before it is reached unless an activity of ours is visible. A notification
+         * approval therefore opens Vox first and answers from the activity ([PhoneApprovals]).
          */
         override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall = try {
             val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))

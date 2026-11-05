@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,6 +22,7 @@ class CallWindowTest {
     private class FakeHost(
         private var live: Boolean,
         private val accepts: Boolean = true,
+        private val acceptsPost: Boolean = true,
     ) : CallWindow.Host {
         val events = mutableListOf<String>()
         private val posted = mutableListOf<() -> Unit>()
@@ -32,10 +34,12 @@ class CallWindowTest {
             return accepts
         }
 
-        override fun post(delayMs: Long, action: () -> Unit) {
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
             assertTrue("a posted launch is not immediate", delayMs > 0)
             events += "post"
+            if (!acceptsPost) return false
             posted += action
+            return true
         }
 
         /** Run what the host posted — the device's main-thread handler, in the test. */
@@ -50,9 +54,10 @@ class CallWindowTest {
     fun apps_launch_enters_pip_before_the_intent_when_a_call_is_live() {
         val host = FakeHost(live = true)
         var launched = 0
-        val order = CallWindow.launch(host) { launched++; host.events += "launch" }
+        val plan = CallWindow.launch(host) { launched++; host.events += "launch" }
 
-        assertEquals(CallWindow.Order.PIP_THEN_LAUNCH, order)
+        assertEquals(CallWindow.Order.PIP_THEN_LAUNCH, plan.order)
+        assertTrue("the window took the posted start", plan.posted)
         assertEquals("PiP first", listOf("pip", "post"), host.events)
         assertEquals("the intent waits for the window", 0, launched)
 
@@ -62,11 +67,22 @@ class CallWindowTest {
     }
 
     @Test
+    fun a_window_that_is_closing_does_not_report_a_posted_launch() {
+        val host = FakeHost(live = true, acceptsPost = false)
+        var launched = 0
+        val plan = CallWindow.launch(host) { launched++ }
+
+        assertEquals(CallWindow.Order.PIP_THEN_LAUNCH, plan.order)
+        assertFalse("the host refused the post", plan.posted)
+        assertEquals("nothing ran", 0, launched)
+    }
+
+    @Test
     fun apps_launch_does_not_touch_pip_without_a_live_call() {
         val host = FakeHost(live = false)
-        val order = CallWindow.launch(host) { host.events += "launch" }
+        val plan = CallWindow.launch(host) { host.events += "launch" }
 
-        assertEquals(CallWindow.Order.LAUNCH_NOW, order)
+        assertEquals(CallWindow.Order.LAUNCH_NOW, plan.order)
         assertEquals(listOf("launch"), host.events)
     }
 
@@ -76,9 +92,9 @@ class CallWindowTest {
         // float: the call continues in the background exactly as before.
         val host = FakeHost(live = true, accepts = false)
         var launched = 0
-        val order = CallWindow.launch(host) { launched++; host.events += "launch" }
+        val plan = CallWindow.launch(host) { launched++; host.events += "launch" }
 
-        assertEquals(CallWindow.Order.LAUNCH_NOW, order)
+        assertEquals(CallWindow.Order.LAUNCH_NOW, plan.order)
         assertEquals(listOf("pip", "launch"), host.events)
         assertEquals(1, launched)
     }

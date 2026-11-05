@@ -20,7 +20,14 @@ object PhoneHandoff {
         fun callLive(): Boolean
 
         /**
-         * Voice [line] through the being and run [after] once it is audible — or once it is
+         * Is an activity of ours resumed, or in picture-in-picture and visible? This is the
+         * background-activity-launch gate: Android refuses a start from an app with no visible
+         * window without throwing, so the handoffs ask this before they act (B2).
+         */
+        fun canStartActivity(): Boolean
+
+        /**
+         * Voice [line] through the being and run [after] once it is done — or once it is
          * clear that nothing will speak, so a missing TTS engine never blocks a dial.
          */
         fun announceDial(line: String, after: () -> Unit)
@@ -46,6 +53,12 @@ object PhoneHandoff {
     }
 
     fun callLive(): Boolean = live?.callLive() ?: false
+
+    /**
+     * The one background-launch gate. No window means no visible activity, so the answer is
+     * false: a handoff with no screen to start from is refused rather than silently dropped.
+     */
+    fun canStartActivity(): Boolean = live?.canStartActivity() ?: false
 
     /** Announce through the being; with no window, run [after] immediately. */
     fun announceDial(line: String, after: () -> Unit) {

@@ -26,6 +26,7 @@ class PhoneHandoffTest {
     private class FakePhone : PhoneEngine.PhonePlatform {
         val events = mutableListOf<String>()
         var live = false
+        var canStart = true
         var dialer = true
         var dialStarts = true
         var contact: String? = null
@@ -33,18 +34,27 @@ class PhoneHandoffTest {
             PhoneEngine.PhonePlatform.Handoff.Done("com.example.sms")
         var launchTarget: PhoneEngine.PhonePlatform.AppTarget? =
             PhoneEngine.PhonePlatform.AppTarget("com.example.app", "com.example.app.Main")
-        var uriTarget: PhoneEngine.PhonePlatform.AppTarget? =
-            PhoneEngine.PhonePlatform.AppTarget("com.example.browser", "com.example.browser.View")
+        var uriTarget: PhoneEngine.PhonePlatform.UriTarget =
+            PhoneEngine.PhonePlatform.UriTarget.App(
+                PhoneEngine.PhonePlatform.AppTarget("com.example.browser", "com.example.browser.View"),
+            )
         var startResult = true
         var windowHost: CallWindow.Host? = null
+        /** When true, [announce] holds the continuation until the test runs [after]. */
+        var deferAnnounce = false
+        var after: (() -> Unit)? = null
+        var label: String? = "Example"
+        var uninstallResult: PhoneEngine.PhonePlatform.Uninstall =
+            PhoneEngine.PhonePlatform.Uninstall.Confirming("com.example.app")
 
         override fun callLive(): Boolean = live
+        override fun canStartActivity(): Boolean = canStart
         override fun canDial(): Boolean = dialer
 
         override fun announce(line: String, after: () -> Unit) {
             events += "announce"
             assertEquals(DialHandoff.LINE, line)
-            after()
+            if (deferAnnounce) this.after = after else after()
         }
 
         override fun endCall() {
@@ -74,7 +84,7 @@ class PhoneHandoffTest {
         override fun resolveUri(
             uri: String,
             packageName: String?,
-        ): PhoneEngine.PhonePlatform.AppTarget? = uriTarget
+        ): PhoneEngine.PhonePlatform.UriTarget = uriTarget
 
         override fun startUri(
             target: PhoneEngine.PhonePlatform.AppTarget,
@@ -82,6 +92,13 @@ class PhoneHandoffTest {
         ): Boolean {
             events += "open:$uri"
             return startResult
+        }
+
+        override fun appLabel(packageName: String): String? = label
+
+        override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall {
+            events += "uninstall:$packageName"
+            return uninstallResult
         }
 
         override fun window(): CallWindow.Host? = windowHost
@@ -113,7 +130,10 @@ class PhoneHandoffTest {
     }
 
     /** A PiP host that records `pip` and holds the posted start until the test runs it. */
-    private class FakeWindow(private val events: MutableList<String>) : CallWindow.Host {
+    private class FakeWindow(
+        private val events: MutableList<String>,
+        var acceptsPost: Boolean = true,
+    ) : CallWindow.Host {
         var posted: (() -> Unit)? = null
 
         override fun callLive(): Boolean = true
@@ -123,14 +143,23 @@ class PhoneHandoffTest {
             return true
         }
 
-        override fun post(delayMs: Long, action: () -> Unit) {
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
             events += "post"
+            if (!acceptsPost) return false
             posted = action
+            return true
         }
     }
 
     private val fake = FakePhone()
-    private val engine = PhoneEngine(fake, grants = PhoneGrants.Source { PhoneGrants.State.ALLOW })
+    private val audited = mutableListOf<PhoneAudit.Entry>()
+    private val engine = PhoneEngine(
+        fake,
+        grants = PhoneGrants.Source { PhoneGrants.State.ALLOW },
+        audit = { result, args, at ->
+            audited += PhoneAudit.entry(at, args, result)
+        },
+    )
     private val t0 = 1_000_000L
     private val e0 = 1_700_000_000_000L
 
@@ -217,6 +246,76 @@ class PhoneHandoffTest {
     }
 
     @Test
+    fun dial_with_a_live_call_reports_pending_before_it_ends_anything() {
+        fake.live = true
+        fake.deferAnnounce = true
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertTrue(r.json(), r.ok)
+        assertEquals("pending", r.facts["handoff"])
+        assertTrue(
+            "the reply says the dialer has not opened yet: ${r.facts}",
+            (r.facts["note"] as? String)?.contains("dialer") == true,
+        )
+        assertEquals("only the line was announced; nothing was ended or dialled", listOf("announce"), fake.events)
+        assertEquals("the pending reply is the only row so far", 1, audited.size)
+    }
+
+    @Test
+    fun dial_records_the_post_teardown_result_as_its_own_audit_row() {
+        fake.live = true
+        fake.deferAnnounce = true
+        fake.dialStarts = false
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(1, audited.size)
+
+        fake.after?.invoke()
+        assertEquals(listOf("announce", "end", "dial:123456"), fake.events)
+        assertEquals("the late outcome gets its own row", 2, audited.size)
+        val late = audited[1]
+        assertEquals("dial", late.action)
+        assertFalse("a dial that did not open is not a success", late.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, late.outcome)
+    }
+
+    @Test
+    fun the_announcement_continues_on_done_and_never_on_start() {
+        var fired = 0
+        val once = DialHandoff.AnnounceOnce { fired++ }
+        once.onStarted()
+        assertEquals("synthesis starting is not the line finishing", 0, fired)
+        once.onDone()
+        assertEquals(1, fired)
+        once.onFallback()
+        assertEquals("the bound cannot run the handoff twice", 1, fired)
+    }
+
+    @Test
+    fun the_announcement_falls_back_when_no_done_arrives() {
+        var fired = 0
+        val once = DialHandoff.AnnounceOnce { fired++ }
+        once.onFallback()
+        assertEquals(1, fired)
+        once.onDone()
+        assertEquals(1, fired)
+    }
+
+    @Test
+    fun the_dial_line_is_wired_to_done_not_to_start() {
+        val src = File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+        val announce = src.substringAfter("override fun announceDial(line: String, after: () -> Unit)")
+            .substringBefore("override fun endCall()")
+        assertTrue(
+            "the handoff waits for the utterance's done callback",
+            announce.contains("onDone = { once.onDone() }"),
+        )
+        assertFalse(
+            "a teardown fired on TTS start cuts the line that just began",
+            announce.contains("onPlayed"),
+        )
+    }
+
+    @Test
     fun dial_with_no_dialer_ends_nothing_and_says_no_app() {
         fake.live = true
         fake.dialer = false
@@ -224,6 +323,19 @@ class PhoneHandoffTest {
         assertFalse(r.ok)
         assertEquals(PhoneReason.NO_APP, r.reason)
         assertEquals("no line, no teardown, no launch", emptyList<String>(), fake.events)
+    }
+
+    @Test
+    fun a_dialer_that_will_not_start_is_unavailable_not_no_app() {
+        fake.dialStarts = false
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertFalse(r.json(), r.ok)
+        assertEquals(
+            "the dialer resolved but refused: that is the platform, not a missing app",
+            PhoneReason.UNAVAILABLE,
+            r.reason,
+        )
+        assertTrue(r.detail!!.contains("dialer"))
     }
 
     @Test
@@ -262,9 +374,30 @@ class PhoneHandoffTest {
         val r = run(mapOf("action" to "launch", "app" to "com.example.app"))
         assertTrue(r.json(), r.ok)
         assertEquals("PiP first, the start posted behind it", listOf("pip", "post"), fake.events)
+        assertEquals(
+            "the app has not opened yet; the result says so",
+            "pending",
+            r.facts["handoff"],
+        )
+        assertEquals("after_pip", r.facts["started"])
 
         window.posted?.invoke()
         assertEquals(listOf("pip", "post", "launch:com.example.app"), fake.events)
+    }
+
+    @Test
+    fun a_post_the_window_cannot_take_is_a_refusal_not_a_launch() {
+        fake.live = true
+        fake.windowHost = FakeWindow(fake.events, acceptsPost = false)
+        val r = run(mapOf("action" to "launch", "app" to "com.example.app"))
+        assertFalse(r.json(), r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertTrue("the detail says the window is closing: ${r.detail}", r.detail!!.contains("closing"))
+        assertEquals(
+            "nothing was started when the window refused the post",
+            listOf("pip", "post"),
+            fake.events,
+        )
     }
 
     @Test
@@ -320,10 +453,20 @@ class PhoneHandoffTest {
             PhoneReason.BAD_URI,
             run(mapOf("action" to "open", "uri" to "example.com")).reason,
         )
-        fake.uriTarget = null
+        fake.uriTarget = PhoneEngine.PhonePlatform.UriTarget.None
         val r = run(mapOf("action" to "open", "uri" to "https://example.com"))
         assertFalse(r.ok)
         assertEquals(PhoneReason.NO_APP, r.reason)
+    }
+
+    @Test
+    fun open_refuses_the_system_chooser_instead_of_naming_android_as_the_app() {
+        fake.uriTarget = PhoneEngine.PhonePlatform.UriTarget.Ambiguous
+        val r = run(mapOf("action" to "open", "uri" to "https://example.com/a"))
+        assertFalse(r.json(), r.ok)
+        assertEquals(PhoneReason.INVALID, r.reason)
+        assertEquals("several apps can open this; name a `package`", r.detail)
+        assertEquals("nothing was resolved into a class or started", emptyList<String>(), fake.events)
     }
 
     /**
@@ -392,4 +535,56 @@ class PhoneHandoffTest {
         assertTrue(result.detail!!.contains("Contacts"))
         assertFalse("nothing was handed off", result.ok)
     }
+
+    // ---- the background-launch gate (B2) ----
+
+    /**
+     * Android 10+ refuses a background activity start **without throwing**. Each handoff must
+     * therefore ask before it resolves a target, ends a call or announces anything, and the
+     * owner-facing refusal must say why rather than reporting a launch that never happened.
+     */
+    @Test
+    fun every_handoff_refuses_before_it_resolves_when_vox_is_not_on_screen() {
+        fake.canStart = false
+        fake.live = true   // even a live call must not be torn down for a start that cannot happen
+        for (call in listOf(
+            mapOf("action" to "message", "to" to "12345", "text" to "hi"),
+            mapOf("action" to "dial", "to" to "12345"),
+            mapOf("action" to "launch", "app" to "com.example.app"),
+            mapOf("action" to "open", "uri" to "https://example.com/a"),
+            mapOf("action" to "uninstall", "package" to "com.example.app"),
+        )) {
+            fake.events.clear()
+            val r = run(call)
+            assertFalse("${call["action"]} must be refused: ${r.json()}", r.ok)
+            assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+            assertTrue(
+                "${call["action"]} must say why: ${r.detail}",
+                r.detail!!.contains("on screen") && r.detail.contains("background"),
+            )
+            assertEquals(
+                "${call["action"]} must resolve, end and start nothing",
+                emptyList<String>(),
+                fake.events,
+            )
+        }
+    }
+
+    @Test
+    fun the_background_refusal_is_visible_and_the_gate_sits_on_the_platform() {
+        val engineSource = File("src/main/java/com/hermesvox/PhoneEngine.kt").readText()
+        assertTrue(
+            "one gate is checked before each handoff",
+            engineSource.contains("private fun backgroundRefusal(action: String)") &&
+                engineSource.countMatches("backgroundRefusal(\"") == 5,
+        )
+        assertTrue(
+            "the answer is resumed or PiP-visible",
+            File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+                .contains("AppFocus.inFront || isInPictureInPictureMode"),
+        )
+    }
+
+    private fun String.countMatches(needle: String): Int =
+        windowed(needle.length).count { it == needle }
 }
