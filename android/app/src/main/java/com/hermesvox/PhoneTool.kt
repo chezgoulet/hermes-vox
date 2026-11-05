@@ -23,7 +23,9 @@ import com.hermesvox.core.Json
  * (including mid-session).
  *
  * A call that still names a hidden action gets a described refusal rather than a transport error:
- * `reason:"not_granted"` when the group is Off, `reason:"approval-required"` when it is Ask.
+ * `reason:"not_granted"` when the group is Off, `reason:"approval-required"` when it is Ask and the
+ * tier waits for a card. A **reported** (Tier 1) group at Ask runs: the owner turned it on, and the
+ * result is reported back to them.
  *
  * ## The tier table (D32's bounds, extended by #421 steps 3–4 and #429)
  *
@@ -292,15 +294,22 @@ object PhoneTool {
                         tier = group.tier,
                     )
                 )
-                PhoneGrants.State.ASK -> Parsed.Refuse(
-                    PhoneResult.refused(
-                        action,
-                        PhoneReason.APPROVAL,
-                        "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
-                            "for the owner's approval on the phone and was not performed",
-                        tier = group.tier,
+                PhoneGrants.State.ASK ->
+                    // Ask means two different things by tier, and the difference is the whole
+                    // point of the tier: a Tier 0 group waits for the owner's card, while a
+                    // **Tier 1 (reported)** group acts when the owner turns it on and is reported
+                    // back to them — there is no per-use card to wait for, because the owner has
+                    // already said yes to the group and can see what it did.
+                    if (group.tier == PhoneTiers.REPORTED) parseArguments(action, args, grants)
+                    else Parsed.Refuse(
+                        PhoneResult.refused(
+                            action,
+                            PhoneReason.APPROVAL,
+                            "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
+                                "for the owner's approval on the phone and was not performed",
+                            tier = group.tier,
+                        )
                     )
-                )
                 PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
             }
         }

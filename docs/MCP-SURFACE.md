@@ -25,12 +25,16 @@ built from [PhoneGrants](../android/app/src/main/java/com/hermesvox/PhoneGrants.
 | grant | the schema | a call that names it |
 |---|---|---|
 | **Off** (the default for every group) | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"`, and the detail names the group the owner must grant |
-| **Ask** | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
+| **Ask**, Tier 0 or Tier 2 | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
+| **Ask**, Tier 1 (reported) | offered | executed, audited, and reported — turning a reported group on *is* the grant |
 | **Allow** | offered | executed, audited, and reported |
 
 **Allow exists for Tier 0 only.** A stored Allow on a Tier 1 or Tier 2 group is read back as Ask: a
-grant that cannot be given is not a grant. `undo` and `status` belong to no group and are always
-offered, because a phone whose grants are all Off must still be able to say so.
+grant that cannot be given is not a grant. **Ask is not one behaviour:** a Tier 0 group at Ask waits
+for the owner's card, and a Tier 2 group at Ask waits for a card on every use; a Tier 1 group at Ask
+runs, because the owner has already turned it on and sees what it did. `undo` and `status` belong to
+no group and are always offered, because a phone whose grants are all Off must still be able to say
+so.
 
 **A refusal is a result, not a transport error.** `isError` stays `false`; the JSON carries `ok`,
 `action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform said it
@@ -150,8 +154,9 @@ The audit row for a clip stores `text=NN chars`, never the text — the same rul
 
 ## Tier 1 — reported
 
-Executes only when the owner has put the group at Ask and approved that use; reported to the mind on
-the next turn through the presence context; undoable.
+Executes when the owner has put the group at **Ask** — turning a reported group on is the grant —
+and is reported to the mind on the next turn through the presence context and in the audit;
+undoable where the row says so.
 
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|

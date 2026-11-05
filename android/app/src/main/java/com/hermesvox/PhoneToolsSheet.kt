@@ -410,7 +410,7 @@ class PhoneToolsSheet(
         box.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { text = group.label })
         box.addView(TextView(act, null, 0, R.style.HvRowValue).apply { text = group.lets })
         box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-            text = PhoneToolsView.grantMeaning(state)
+            text = PhoneToolsView.grantMeaning(state, group.tier)
             setTextColor(color(R.color.hv_text_dim))
         })
         if (!group.built) {

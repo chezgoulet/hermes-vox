@@ -117,9 +117,11 @@ object PhoneToolsView {
         "${states.values.count { it != PhoneGrants.State.OFF }} of ${states.size} groups on"
 
     /** What a state means, in the row the owner is about to change. */
-    fun grantMeaning(state: PhoneGrants.State): String = when (state) {
+    fun grantMeaning(state: PhoneGrants.State, tier: Int = PhoneTiers.INSTANT): String = when (state) {
         PhoneGrants.State.OFF -> "Off hides it from your agent’s tool list."
-        PhoneGrants.State.ASK -> "Ask lets your agent try; every use waits for you."
+        PhoneGrants.State.ASK ->
+            if (tier == PhoneTiers.REPORTED) "Ask turns it on: your agent can use it, and every use is reported below."
+            else "Ask lets your agent try; every use waits for you."
         PhoneGrants.State.ALLOW -> "Allow runs it instantly, and it is reported below."
     }
 

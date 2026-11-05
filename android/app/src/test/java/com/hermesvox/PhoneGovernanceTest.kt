@@ -2,6 +2,7 @@ package com.hermesvox
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -79,6 +80,19 @@ class PhoneGovernanceTest {
         assertEquals(PhoneReason.APPROVAL, r.reason)
         assertNull(r.id)
         assertEquals(0, fake.timerArms)
+    }
+
+    @Test fun a_reported_group_at_ask_runs_and_lands_in_the_audit() {
+        // Tier 1 has no Allow: Ask is its on state, and the report is the audit row plus the
+        // result. Nothing waits for a card that this build cannot mint.
+        val r = engine(MutableGrants(PhoneGrants.State.ASK))
+            .dispatch(mapOf("action" to "note", "text" to "milk"), t0, e0)
+        assertTrue(r.json(), r.ok)
+        assertEquals("note", r.action)
+        assertNotNull(r.id)
+        val entry = entries.single()
+        assertEquals("done", entry.outcome)
+        assertTrue("a note is reported as a length, never its body", entry.arguments["text"] == "4 chars")
     }
 
     @Test fun revocation_takes_effect_on_the_very_next_call() {

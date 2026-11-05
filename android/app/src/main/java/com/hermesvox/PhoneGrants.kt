@@ -12,8 +12,10 @@ package com.hermesvox
  * | state | the schema | a call |
  * |---|---|---|
  * | **Off** | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"` |
- * | **Ask** | the actions are offered | `ok:false, reason:"approval-required"` — the owner's card owns it |
- * | **Allow** | the actions are offered | executed, and reported |
+ * | **Ask** (Tier 0) | the actions are offered | `ok:false, reason:"approval-required"` — the owner's card owns it |
+ * | **Ask** (Tier 1) | the actions are offered | executed, and reported: a reported group is on when the owner turns it on |
+ * | **Ask** (Tier 2) | the actions are offered | `ok:false, reason:"approval-required"` — every use is a card |
+ * | **Allow** (Tier 0 only) | the actions are offered | executed, and reported |
  *
  * **Every group defaults to [GrantState.OFF].** There is no allow-all; the closest shortcut,
  * [PhoneGrants.instantAll], can only touch Tier 0.
@@ -22,6 +24,11 @@ package com.hermesvox
  * phone or reads what is private, so both stop at Ask; [effective] coerces a stored Allow back to
  * Ask rather than trusting the caller. That is why the setting is validated on read *and* write:
  * a stale preference is not a grant.
+ *
+ * **Ask is not one behaviour.** It is "the owner said yes, once, at the group" for a Tier 1 group —
+ * which acts now and is reported, because there is nothing to wait for after the group was turned
+ * on — and "every use waits for a card" for Tier 0 and Tier 2. [PhoneTool.parse] is where that
+ * line is drawn.
  *
  * ## Which tier a group is
  *
@@ -255,8 +262,8 @@ object PhoneGrants {
             "Reversible and private. Off hides these actions from your agent; Ask makes it try and " +
                 "records the attempt; Allow lets them run and be reported."
         PhoneTiers.REPORTED ->
-            "Changes something you can see. Off or Ask only — Allow is not offered, because nothing " +
-                "reported should happen without you in the loop."
+            "Changes something you can see. Off, or Ask — and Ask means it runs, because a " +
+                "reported group is one you have already turned on. Every use is recorded below."
         else ->
             "Consequential or private to read. Off or Ask only, and every use is a card of its own " +
                 "even when the group is on."

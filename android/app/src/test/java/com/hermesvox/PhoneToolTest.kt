@@ -77,15 +77,34 @@ class PhoneToolTest {
         assertTrue("the reason vocabulary is named", desc.contains("not_granted"))
     }
 
-    @Test fun a_group_at_ask_is_offered_and_every_use_is_a_refusal() {
+    @Test fun a_reported_group_at_ask_is_offered_and_runs_because_the_owner_turned_it_on() {
         val notes = PhoneGrants.Source { g ->
             if (g.id == "notes") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
         assertTrue("note is advertised", "note" in enumOf(notes))
         val parsed = PhoneTool.parse(mapOf("action" to "note", "text" to "milk"), notes)
-        assertTrue(parsed is PhoneTool.Parsed.Refuse)
-        assertEquals(PhoneReason.APPROVAL, (parsed as PhoneTool.Parsed.Refuse).result.reason)
-        assertNull("nothing happened", parsed.result.id)
+        assertTrue("a reported group acts when it is on", parsed is PhoneTool.Parsed.Run)
+        assertEquals("note", (parsed as PhoneTool.Parsed.Run).call.action)
+    }
+
+    @Test fun a_tier_zero_or_tier_two_group_at_ask_still_waits_for_a_card() {
+        val timers = PhoneGrants.Source { g ->
+            if (g.id == "timers-alarms") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        }
+        val timer = PhoneTool.parse(mapOf("action" to "timer", "duration_ms" to 1_000), timers)
+        assertEquals(
+            PhoneReason.APPROVAL,
+            (timer as PhoneTool.Parsed.Refuse).result.reason,
+        )
+
+        val messages = PhoneGrants.Source { g ->
+            if (g.id == "messages-calls") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        }
+        val message = PhoneTool.parse(mapOf("action" to "message", "text" to "hi"), messages)
+        assertEquals(
+            PhoneReason.APPROVAL,
+            (message as PhoneTool.Parsed.Refuse).result.reason,
+        )
     }
 
     @Test fun an_action_in_an_off_group_is_refused_as_not_granted() {
