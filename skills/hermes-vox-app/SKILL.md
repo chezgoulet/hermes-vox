@@ -1097,9 +1097,8 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   Ask raises the phone's own card on every use, whatever the tier; Allow runs without a card. The
   owner answers by tap or by voice, and the action executes only on a second call carrying that id
   against the same arguments — so an Allow on a consequential action is a real permission, said
-  plainly on its row. Unbuilt consequential names (`install`) stay refused and unadvertised. A call
-  naming an action whose group is Off is absent from the advertised `enum`
-  (android/app/src/main/java/com/hermesvox/PhoneTool.kt `PhoneTiers.APPROVAL ->`)
+  plainly on its row. A call naming an action whose group is Off is absent from the advertised
+  `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt `PhoneTiers.APPROVAL ->`)
   (android/app/src/main/java/com/hermesvox/PhoneGrants.kt `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by

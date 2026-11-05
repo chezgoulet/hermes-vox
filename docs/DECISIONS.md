@@ -1011,7 +1011,7 @@ window or an OEM that says no all fall through to starting the app immediately.
 
 **`uninstall` is not in this lane.** It needs the owner's approval card, and it stays
 `approval-required` until that card exists on this wire. It is named in the apps group's `planned`
-list and is never advertised. `install` is in the same position.
+list and is never advertised.
 
 **Refusals are part of the decision.** A group that is Off is `not_granted`; bad arguments are
 `invalid-arguments`; and a handoff with nothing to receive it is `no_app` — no `ACTION_SENDTO` app,
@@ -1083,5 +1083,5 @@ answers **two** consent screens: Vox's and Android's. If Vox cannot show a card 
 the action is simply unavailable rather than silently denied later.
 
 **What it does not decide.** Whether the gateway's approval surface also gets an `uninstall` card
-(the phone's card is enough and does not need a run id), whether `install` gets one, and whether a
-later lane lets the owner remember a yes for a session. All are separate decisions.
+(the phone's card is enough and does not need a run id), and whether a later lane lets the owner
+remember a yes for a session. All are separate decisions.

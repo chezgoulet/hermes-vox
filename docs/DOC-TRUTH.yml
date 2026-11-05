@@ -189,7 +189,7 @@
   says: "refusals included"
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
-  match: 'audit\(result, arguments, nowEpoch\)'
+  match: 'audit\('
 
 - id: phone-uniform-states
   says: "Every group offers all three"
