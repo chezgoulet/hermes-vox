@@ -13,9 +13,9 @@ import java.util.Locale
  * conversion would silently move it. [parseLocal] is strict about the shape *and* about the date —
  * `2026-02-30` is not a day, and the phone will not invent one.
  *
- * `duration_min` is **minutes**, 1 to [MAX_DURATION_MIN] (a day). Zero, negatives and anything
- * longer than a day are refused: an event that never ends, or a "duration" in seconds, is not
- * something this action can honestly create.
+ * `duration_min` is **minutes**, at least one. There is no upper bound of this app's: the
+ * calendar provider stores what it will, and a duration it refuses is reported as `unavailable`.
+ * Zero and negatives are refused because an event with no duration is not an event.
  *
  * The platform edge is [PhoneCalendarAccess], which is `CalendarContract` and nothing else.
  */
@@ -23,9 +23,6 @@ object PhoneCalendar {
 
     /** An event's title is a label the owner will see. */
     const val MAX_TITLE_CHARS = 200
-
-    /** A day, in minutes — the longest event this action will create. */
-    const val MAX_DURATION_MIN = 24 * 60
 
     /** One local wall-clock instant, already validated. */
     data class Local(

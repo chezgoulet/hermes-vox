@@ -106,19 +106,26 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `now_playing` | 0 | – | `known`, `playing`, `package`, `title`, `note` when `known` is false |
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
+| `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
 | `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
-| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`), optional `offset`/`length` for a byte window | `name`, `folder`, `bytes`, `chars`, `text` (text only); a window adds `offset`, `length`, `truncated` and the total `bytes` |
+| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`), optional `offset`/`length` for a byte window | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
 | `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
-| `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`) |
-| `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (1–1440), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
+| `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
+| `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
 | `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
 
 `play`, `pause` and `skip` dispatch a platform media key to whichever session is active: no
-permission, and no notification-listener access. `dispatched` means the audio service took the key,
-never that playback changed. `now_playing` therefore answers `known:false` with the cheap
-`isMusicActive` reading and a sentence saying what it cannot see — a title would require the
-notification-listener special access this app does not hold, so it is never invented.
+permission. `dispatched` means the audio service took the key, never that playback changed.
+`now_playing` reports the cheap `isMusicActive` reading, and — when the owner has granted notification
+access in the sheet — the active session's real package and title. Without that grant it answers
+`known:false` with a sentence saying what it cannot see; a title is never invented. The sheet's *Now
+playing access* row opens Android's own notification-access screen, the same shape as the Do Not
+Disturb row.
+
+`clip` writes the clipboard; `clip_read` returns its text **when Android allows the read**. Since
+Android 10 a backgrounded app gets no clipboard, and an empty clip is no answer: both refuse with
+`reason:"unavailable"` and the platform's own explanation, never empty text presented as the clip.
 
 `status` is the discovery action: it answers "what can you do, and what is running right now" from
 the **same registry** the presence context block reports (`local_actions:`), so the mind never has to
@@ -143,8 +150,8 @@ all read it. There is no second list to drift.
 | Reminders and notes | 1 | `note` | keep a short note and report it back |
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
-| Clipboard | 0 | `clip` | write to the clipboard (never reads it) |
-| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it, offer a file to the agent |
+| Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
+| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |
 | Messages and calls | 2 | `message`\*, `call`\*, `send`\*, `email`\* | send a text, place a call |
@@ -367,10 +374,10 @@ off-device.
 | `ACCESS_NETWORK_STATE` | the app reads whether a network is usable before a model download and in the voice turn's context; not needed by the MCP listener itself | `ModelDownloader`, `VoiceController` |
 | `ACCESS_NOTIFICATION_POLICY` | **Do Not Disturb only.** This is a *special* access: the user grants it on Android's own screen, not in a runtime dialog. The sheet shows whether it is granted and opens `ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS`; `dnd` refuses with `reason:"permission"` when it is missing | `LocalActions.dndGranted`, `LocalActions.setDnd`, `PhoneToolsSheet` |
 | `POST_NOTIFICATIONS` | the timer/alarm notification on Android 13+. The ringtone is the signal that matters, so a denial is logged and the timer still rings | `LocalActions.fire` |
-| — (none new) | `media`, `device-state` and `clipboard` add **no** permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard write are all available with what is already declared. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `LocalActions.deviceState`, `LocalActions.clip` |
+| — (none new) | `media`, `device-state` and `clipboard` add **no** runtime permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard read or write are all available with what is already declared. `now_playing`'s package and title come from **notification-listener special access**, granted by the owner on Android's own screen (the sheet offers it); without it the result is `known:false`, not a refusal from this app. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `MediaListen`, `LocalActions.deviceState`, `LocalActions.clip`, `LocalActions.readClip` |
 | `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
-| `READ_CALENDAR`, `WRITE_CALENDAR` | the calendar group: read today's events and insert one. Both are runtime permissions, asked when Calendar is turned on; a missing one is a `permission` refusal naming Android's exact string | `PhoneCalendarAccess`, `PhoneToolsSheet` |
-| — (none for files) | `files` declares **no** storage permission and never requests `MANAGE_EXTERNAL_STORAGE`: the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, and only that folder is listed and only a named file inside it is read | `PhoneFileAccess` |
+| `READ_CALENDAR`, `WRITE_CALENDAR` | the calendar group: `agenda` needs `READ_CALENDAR` alone; `event_create` needs write, and read to find a writable calendar. Both are runtime permissions, asked when Calendar is turned on; a missing one is a `permission` refusal naming Android's exact string, and denying write does not take the read away | `PhoneCalendarAccess`, `PhoneToolsSheet` |
+| — (none for files) | `files` declares **no** storage permission, and nothing requests `MANAGE_EXTERNAL_STORAGE`: the Storage Access Framework is the deliberate default, and the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, whose children `file_list` may list and from which only a named file is read. A future "all files" opt-in would use Android's own all-files access screen, with its own warning and its own grant — the owner's choice, not a capability this app withholds on their behalf | `PhoneFileAccess` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
 | `RECORD_AUDIO` | the voice line (not a phone action) | `MainActivity`, `VoiceController` |

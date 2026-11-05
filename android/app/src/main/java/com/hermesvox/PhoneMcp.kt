@@ -68,6 +68,8 @@ object PhoneMcp {
         val calendarGranted: Boolean = false,
         /** The exact permission still missing, or null when both are held. */
         val calendarMissing: String? = null,
+        /** True when the owner has enabled the notification listener `now_playing` uses. */
+        val mediaListenerGranted: Boolean = false,
         /** Whether Alpha features' Phone tools set is selected. False means nothing here runs. */
         val allowed: Boolean = true,
     )
@@ -263,6 +265,11 @@ object PhoneMcp {
             folders = folders,
             calendarGranted = calendarMissing == null,
             calendarMissing = calendarMissing,
+            mediaListenerGranted = try {
+                MediaListen.granted(app)
+            } catch (_: Throwable) {
+                false
+            },
             allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS),
         )
     }

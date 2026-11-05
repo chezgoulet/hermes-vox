@@ -122,8 +122,8 @@ object PhoneGrants {
             id = "clipboard",
             label = "Clipboard",
             tier = PhoneTiers.INSTANT,
-            lets = "Put text on the clipboard. It never reads what is already there.",
-            actions = listOf("clip"),
+            lets = "Put text on the clipboard, and read what is there when the phone allows it.",
+            actions = listOf("clip", "clip_read"),
         ),
         Group(
             id = "files",

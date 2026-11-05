@@ -19,13 +19,15 @@ import java.util.TimeZone
  * [CalendarContract.Events] in a calendar that reports itself writable. A device with no writable
  * calendar answers `unavailable`, which is the truth, rather than falling back to a silent export.
  *
- * **Permissions are named exactly.** [permission] returns Android's own string for the first half
- * the app lacks — `android.permission.READ_CALENDAR` or `android.permission.WRITE_CALENDAR` — and
- * the engine puts that string in the refusal. The owner grants both in the sheet; the runtime
- * grant can be revoked at any moment, and the next call says so.
+ * **Permissions are named exactly.** [readPermission] and [permission] return Android's own strings —
+ * `android.permission.READ_CALENDAR` and `android.permission.WRITE_CALENDAR` — and the engine puts
+ * the first one the action needs in its refusal. `agenda` needs read alone; `event_create` needs
+ * both, because it must find a writable calendar before it inserts. The owner grants them in the
+ * sheet; the runtime grant can be revoked at any moment, and the next call says so.
  *
- * **What is read is only what the group promises:** begin, end, title, calendar name. There is no
- * attendees query, no description column and no contact lookup anywhere in this file.
+ * **What is read is what the calendar holds:** begin, end, title, calendar name, description,
+ * location and attendee **names**. Attendee addresses are never projected or returned; the group
+ * answers who, not how to reach them. A field the provider will not give is null.
  */
 object PhoneCalendarAccess {
 
@@ -36,12 +38,21 @@ object PhoneCalendarAccess {
     fun granted(context: Context, permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
-    /** The exact permission the app lacks, or null when it holds both. */
-    fun permission(context: Context): String? = when {
-        !granted(context, Manifest.permission.READ_CALENDAR) -> Manifest.permission.READ_CALENDAR
-        !granted(context, Manifest.permission.WRITE_CALENDAR) -> Manifest.permission.WRITE_CALENDAR
-        else -> null
+    /** The exact permission the app lacks to **read** the calendar, or null when it holds it. */
+    fun readPermission(context: Context): String? =
+        if (granted(context, Manifest.permission.READ_CALENDAR)) null else Manifest.permission.READ_CALENDAR
+
+    /**
+     * The first permission missing for **both** halves, or null when it holds both. Write needs
+     * read too, to find a writable calendar; read alone is enough for `agenda`.
+     */
+    fun permission(context: Context): String? = readPermission(context) ?: when {
+        granted(context, Manifest.permission.WRITE_CALENDAR) -> null
+        else -> Manifest.permission.WRITE_CALENDAR
     }
+
+    /** The write half: read first, then write, so the refusal names the first one to grant. */
+    fun writePermission(context: Context): String? = permission(context)
 
     /** True when any calendar can be written to, for the sheet's line and its refusal copy. */
     fun writableCalendarCount(context: Context): Int = try {
@@ -51,8 +62,9 @@ object PhoneCalendarAccess {
     }
 
     /**
-     * Today's events in the phone's own zone. Four fields, in start order. A title or a calendar
-     * name the provider will not give is null, never an invented label.
+     * Today's events in the phone's own zone, in start order. The four identity fields plus the
+     * description, location and attendee names the provider offers. A field the provider will not
+     * give is null, never an invented label.
      */
     fun agenda(context: Context): List<PhoneEngine.PhonePlatform.AgendaEvent>? = try {
         val from = startOfToday()
@@ -69,6 +81,9 @@ object PhoneCalendarAccess {
             CalendarContract.Instances.END,
             CalendarContract.Instances.TITLE,
             CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Instances.DESCRIPTION,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.EVENT_ID,
         )
         val out = ArrayList<PhoneEngine.PhonePlatform.AgendaEvent>()
         context.contentResolver.query(
@@ -77,12 +92,16 @@ object PhoneCalendarAccess {
             while (c.moveToNext()) {
                 val begin = c.getLong(0)
                 val end = c.getLong(1)
+                val eventId = if (c.isNull(6)) null else c.getLong(6)
                 out.add(
                     PhoneEngine.PhonePlatform.AgendaEvent(
                         start = PhoneEngine.localIso(begin, offsetMinutes(begin)),
                         end = PhoneEngine.localIso(end, offsetMinutes(end)),
                         title = if (c.isNull(2)) null else c.getString(2),
                         calendar = if (c.isNull(3)) null else c.getString(3),
+                        description = if (c.isNull(4)) null else c.getString(4),
+                        location = if (c.isNull(5)) null else c.getString(5),
+                        attendees = eventId?.let { names(context, it) },
                     ),
                 )
             }
@@ -147,6 +166,32 @@ object PhoneCalendarAccess {
     }
 
     // ---- internals ----
+
+    /**
+     * The attendee names the provider offers for one event, or null when it offers none.
+     * `ATTENDEE_NAME` only — an address is never in the projection, so it cannot travel into a
+     * tool result. Duplicates (the same person twice) are collapsed.
+     */
+    private fun names(context: Context, eventId: Long): List<String>? = try {
+        val out = ArrayList<String>()
+        context.contentResolver.query(
+            CalendarContract.Attendees.CONTENT_URI,
+            arrayOf(CalendarContract.Attendees.ATTENDEE_NAME),
+            "${CalendarContract.Attendees.EVENT_ID}=?",
+            arrayOf(eventId.toString()),
+            null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                if (c.isNull(0)) continue
+                val name = c.getString(0)?.trim().orEmpty()
+                if (name.isNotEmpty() && name !in out) out.add(name)
+            }
+        }
+        out.ifEmpty { null }
+    } catch (t: Throwable) {
+        VoxLog.d("event=phone-calendar attendees-unreadable reason=${t.javaClass.simpleName}")
+        null
+    }
 
     private data class Writable(val id: Long, val name: String?, val primary: Boolean)
 

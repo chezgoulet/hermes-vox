@@ -31,7 +31,7 @@ import com.hermesvox.core.Json
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow |
  * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
  * | 2 — approval | `message`, `call`, `email`, `delete`, `purchase`, `launch`, `send`, `pay` | **never executed from here.** The result says an approval is required and names the surface that owns it |
  * | not a phone action | anything else | refused as unknown, with the offered list |
@@ -77,9 +77,11 @@ object PhoneTool {
     /** An event's title is a label, not a description. */
     const val MAX_EVENT_TITLE_CHARS = PhoneCalendar.MAX_TITLE_CHARS
 
-    /** `duration_min` is minutes, at least one and at most a day. */
+    /**
+     * `duration_min` is whole minutes, at least one. There is no upper bound of ours: the
+     * calendar provider's own limits apply, and a duration it refuses comes back as `unavailable`.
+     */
     const val MIN_EVENT_MINUTES = 1
-    const val MAX_EVENT_MINUTES = PhoneCalendar.MAX_DURATION_MIN
 
     /**
      * The actions a schema may offer right now — a pure function of the live grants. [PhoneToolTest]
@@ -128,7 +130,8 @@ object PhoneTool {
         "skip" to "next or previous track",
         "now_playing" to "what the phone will admit to playing",
         "state" to "battery, charging, screen, network, storage, volume, time",
-        "clip" to "put text on the clipboard (never reads it)",
+        "clip" to "put text on the clipboard",
+        "clip_read" to "the clipboard's text, when the phone allows the read",
         "file_list" to "list a folder you granted (depth-limited, paged, names and sizes only)",
         "file_read" to "read a named file's text inside the folder you granted, in whole or a window",
         "file_offer" to "offer a named file to your agent as an artifact",
@@ -274,10 +277,10 @@ object PhoneTool {
                 "duration_min" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to MIN_EVENT_MINUTES,
-                    "maximum" to MAX_EVENT_MINUTES,
                     "description" to
-                        "event_create only: how long the event lasts, in minutes — $MIN_EVENT_MINUTES " +
-                        "to $MAX_EVENT_MINUTES (one day). Zero and negative durations are refused.",
+                        "event_create only: how long the event lasts, in minutes — at least " +
+                        "$MIN_EVENT_MINUTES. Zero and negative durations are refused; there is no " +
+                        "upper bound here, so the calendar provider's own limits apply.",
                 ),
                 "calendar" to linkedMapOf(
                     "type" to "string",
@@ -354,6 +357,10 @@ object PhoneTool {
 
         data class Clip(val text: String) : Call() {
             override val action = "clip"
+        }
+
+        object ClipRead : Call() {
+            override val action = "clip_read"
         }
 
         /** One named file inside one granted folder. [folder] is the tool's word, not a path. */
@@ -549,6 +556,7 @@ object PhoneTool {
                 else -> Parsed.Run(Call.Clip(text))
             }
         }
+        "clip_read" -> Parsed.Run(Call.ClipRead)
         "file_read", "file_offer" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
             PhoneFiles.badPath(name)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
@@ -649,8 +657,13 @@ object PhoneTool {
                 )
             val minutes = integer(args["duration_min"])
                 ?: return bad(action, "duration_min is required and must be whole minutes")
-            if (minutes < MIN_EVENT_MINUTES || minutes > MAX_EVENT_MINUTES) {
-                return bad(action, "duration_min must be between $MIN_EVENT_MINUTES and $MAX_EVENT_MINUTES")
+            if (minutes < MIN_EVENT_MINUTES) {
+                return bad(action, "duration_min must be at least $MIN_EVENT_MINUTES minute")
+            }
+            // No upper bound of ours: the calendar provider decides what it will store, and a
+            // duration it refuses is reported as unavailable rather than pre-empted here.
+            if (minutes > Int.MAX_VALUE) {
+                return bad(action, "duration_min is beyond what a calendar can hold")
             }
             val calendar = (args["calendar"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             Parsed.Run(Call.EventCreate(title, start.iso, minutes.toInt(), calendar))
@@ -732,8 +745,8 @@ object PhoneTiers {
         "play", "pause", "skip", "now_playing",
         // Device state (#429 lane): one read-only report, every field nullable.
         "state",
-        // Clipboard (#429 lane): a write. Never a read.
-        "clip",
+        // Clipboard (#429 lane): a write, and a read only when the platform allows it.
+        "clip", "clip_read",
     )
     private val TIER_1 = setOf(
         "note",

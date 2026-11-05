@@ -28,8 +28,9 @@ import java.io.File
  * `file_offer` has no such cap: it does not read the bytes into the answer, it stages them and
  * serves them, so it keeps [FileOffer.MAX_BYTES] (100 MB) from the bridge.
  *
- * The Android edge is [PhoneFileAccess]: Storage Access Framework only, no broad storage
- * permission, no `MANAGE_EXTERNAL_STORAGE`, and a tree the owner picked with the system picker.
+ * The Android edge is [PhoneFileAccess]: the Storage Access Framework, a tree the owner picked with
+ * the system picker, and no broad storage permission declared for it. All-files access would be a
+ * separate opt-in on Android's own screen, and the owner's decision — see `docs/MCP-SURFACE.md`.
  */
 object PhoneFiles {
 

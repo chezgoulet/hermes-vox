@@ -48,7 +48,8 @@ class PhoneToolTest {
         assertEquals(
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
-                "state", "clip", "file_list", "file_read", "file_offer", "agenda", "event_create",
+                "state", "clip", "clip_read", "file_list", "file_read", "file_offer", "agenda",
+                "event_create",
                 "undo", "status",
             ),
             enumOf(),
@@ -218,11 +219,15 @@ class PhoneToolTest {
         val on = PhoneGrants.Source { g ->
             if (g.id == "clipboard") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
         }
-        assertEquals(listOf("clip", "undo", "status"), enumOf(on))
+        assertEquals(listOf("clip", "clip_read", "undo", "status"), enumOf(on))
         val text = ((input(on)["properties"] as JObj)["text"] as JObj)["description"] as JStr
         assertTrue("the bound is in the schema", text.value.contains(PhoneTool.MAX_CLIP_CHARS.toString()))
         assertTrue("and the action is named", text.value.contains("clip"))
         assertTrue(PhoneTool.parse(mapOf("action" to "clip", "text" to "hi"), on) is PhoneTool.Parsed.Run)
+        assertTrue(
+            "the read is offered by the same group and takes no text",
+            PhoneTool.parse(mapOf("action" to "clip_read"), on) is PhoneTool.Parsed.Run,
+        )
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {

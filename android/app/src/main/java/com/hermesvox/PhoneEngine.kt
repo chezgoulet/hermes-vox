@@ -60,6 +60,12 @@ class PhoneEngine(
             val playing: Boolean?,
             val packageName: String?,
             val title: String?,
+            /**
+             * True when the phone has granted this app the session list (notification-listener
+             * access), whether or not a session is publishing right now. It separates "the phone
+             * cannot see" from "the phone can see, and nothing is publishing".
+             */
+            val listenerGranted: Boolean = false,
         )
 
         /**
@@ -96,9 +102,28 @@ class PhoneEngine(
         /**
          * Put [text] on the clipboard. False when the phone would not take it — an app that is not
          * in front (Android 10+ drops such a write silently, so this is checked before writing)
-         * or a clipboard that threw. There is deliberately no read of the clipboard anywhere.
+         * or a clipboard that threw.
          */
         fun clip(text: String): Boolean
+
+        /**
+         * What the clipboard holds, **as far as the platform will let this app see it**. Android
+         * does not answer for an app it does not consider in front, so [ClipRead.Unavailable]
+         * carries the platform's own reason rather than a stale or empty stand-in.
+         */
+        sealed class ClipRead {
+            /** The clipboard's text, exactly as the platform handed it over. */
+            data class Text(val text: String) : ClipRead()
+
+            /** There is a clipboard, and it holds nothing. */
+            data object Empty : ClipRead()
+
+            /** The platform would not let this app read it; [detail] is the platform's reason. */
+            data class Unavailable(val detail: String) : ClipRead()
+        }
+
+        fun readClip(): ClipRead =
+            ClipRead.Unavailable("the platform does not let this app read the clipboard")
 
         /** Arm a countdown. False means the phone refused. */
         fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean
@@ -238,6 +263,15 @@ class PhoneEngine(
             val end: String,
             val title: String?,
             val calendar: String?,
+            /** The event's own description, when the provider offers it. */
+            val description: String? = null,
+            /** The event's location, when the provider offers it. */
+            val location: String? = null,
+            /**
+             * Attendee **names**, when the provider offers them. Addresses are never read: the
+             * group returns who, not how to reach them.
+             */
+            val attendees: List<String>? = null,
         )
 
         /** The event the platform inserted, with the times it actually stored. */
@@ -255,6 +289,17 @@ class PhoneEngine(
          * both. The string is the platform's own, e.g. `android.permission.READ_CALENDAR`.
          */
         fun calendarPermission(): String? = null
+
+        /**
+         * The permission `agenda` needs: `READ_CALENDAR` alone. A read does not require the write
+         * grant, and denying write must not take the owner's read away.
+         */
+        fun calendarReadPermission(): String? = calendarPermission()
+
+        /**
+         * The permissions `event_create` needs: read (to find a writable calendar) and write.
+         */
+        fun calendarWritePermission(): String? = calendarPermission()
 
         /** Today's events, in the phone's zone. Null when the platform would not answer. */
         fun agenda(): List<AgendaEvent>? = null
@@ -336,6 +381,7 @@ class PhoneEngine(
             PhoneTool.Call.NowPlaying -> nowPlaying()
             PhoneTool.Call.State -> deviceState(nowEpoch)
             is PhoneTool.Call.Clip -> clip(call.text)
+            PhoneTool.Call.ClipRead -> readClip()
             is PhoneTool.Call.FileList -> listFiles(call)
             is PhoneTool.Call.FileRead -> readFile(call)
             is PhoneTool.Call.FileOffer -> offerFile(call)
@@ -514,15 +560,14 @@ class PhoneEngine(
     }
 
     /**
-     * What the phone will say about playback. Without notification-listener access it will not name
-     * the session, so this returns `known:false` with the cheap `playing` reading and a sentence
-     * saying so — never a guessed title.
+     * What the phone will say about playback. The listener's grant separates the two honest
+     * answers: without it the session is invisible and only `isMusicActive` is available; with it
+     * the package and title are the platform's own, and an empty session list is said plainly —
+     * never a guessed title.
      */
     private fun nowPlaying(): PhoneResult {
         val p = platform.playback()
         if (p.known) {
-            // Reachable only when a platform (a later lane holding session access) really can name
-            // it; the shape is here so that lane does not have to invent a second one.
             log("event=phone-mcp action=now_playing ok=true known=true")
             return PhoneResult.info(
                 "now_playing",
@@ -534,7 +579,7 @@ class PhoneEngine(
                 ),
             )
         }
-        log("event=phone-mcp action=now_playing ok=true known=false")
+        log("event=phone-mcp action=now_playing ok=true known=false listen=${p.listenerGranted}")
         return PhoneResult.info(
             "now_playing",
             linkedMapOf<String, Any?>(
@@ -542,12 +587,22 @@ class PhoneEngine(
                 "playing" to p.playing,
                 "package" to null,
                 "title" to null,
-                "note" to when (p.playing) {
-                    true -> "audio is playing, but the phone cannot see which app it is or what it " +
-                        "is: that needs notification-listener access, which this app does not hold"
-                    false -> "no audio is playing right now, and the phone cannot see what was " +
-                        "last: that needs notification-listener access, which this app does not hold"
-                    null -> "the phone cannot see what is playing: that needs notification-listener " +
+                "note" to when {
+                    // The access is held; no app is publishing a session this reading can name.
+                    p.listenerGranted ->
+                        if (p.playing == true) {
+                            "audio is playing, but no app is publishing a media session the " +
+                                "phone can name"
+                        } else {
+                            "the phone can see media sessions, and none is publishing one right now"
+                        }
+                    p.playing == true -> "audio is playing, but the phone cannot see which app it " +
+                        "is or what it is: that needs notification-listener access, which this " +
+                        "app does not hold"
+                    p.playing == false -> "no audio is playing right now, and the phone cannot see " +
+                        "what was last: that needs notification-listener access, which this app " +
+                        "does not hold"
+                    else -> "the phone cannot see what is playing: that needs notification-listener " +
                         "access, which this app does not hold"
                 },
             ),
@@ -602,8 +657,8 @@ class PhoneEngine(
     /**
      * Put the text on the clipboard. The result carries **only the length**: the text is the
      * caller's, and neither the result, the log nor the audit row needs it. There is no undo —
-     * reversing a clipboard write would mean having read what was there, which this phone never
-     * does.
+     * reversing a clipboard write would mean having read what was there, which this action does
+     * not do; [readClip] is a separate call with its own grant and its own result.
      */
     private fun clip(text: String): PhoneResult {
         if (!platform.clip(text)) {
@@ -622,6 +677,37 @@ class PhoneEngine(
                 "undoable" to false,
             ),
         )
+    }
+
+    /**
+     * The clipboard's text, when the platform allows the read. The decision is Android's: since
+     * Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer
+     * either. Both are `unavailable` with the platform's own reason — never empty text dressed up
+     * as what the clipboard holds.
+     */
+    private fun readClip(): PhoneResult = when (val found = platform.readClip()) {
+        is PhonePlatform.ClipRead.Text -> {
+            log("event=phone-mcp action=clip_read ok=true chars=${found.text.length}")
+            PhoneResult.info(
+                "clip_read",
+                linkedMapOf<String, Any?>(
+                    "text" to found.text,
+                    "chars" to found.text.length,
+                    "undoable" to false,
+                ),
+            )
+        }
+        PhonePlatform.ClipRead.Empty -> {
+            log("event=phone-mcp action=clip_read ok=false reason=unavailable")
+            PhoneResult.refused(
+                "clip_read", PhoneReason.UNAVAILABLE,
+                "the clipboard is empty, so there was nothing to read",
+            )
+        }
+        is PhonePlatform.ClipRead.Unavailable -> {
+            log("event=phone-mcp action=clip_read ok=false reason=unavailable")
+            PhoneResult.refused("clip_read", PhoneReason.UNAVAILABLE, found.detail)
+        }
     }
 
     // ---- tier 1 ----
@@ -888,27 +974,32 @@ class PhoneEngine(
     // ---- tier 1: calendar ----
 
     /**
-     * The runtime permission this phone lacks, as a refusal that names it exactly. Null when both
-     * halves are held. No provider-specific path exists: this is `CalendarContract`, the platform's
-     * own provider, and the permission strings are Android's.
+     * The runtime permission this phone lacks for [action], as a refusal that names it exactly.
+     * Null when the action's halves are held. `agenda` asks only for READ_CALENDAR; `event_create`
+     * asks for both, because it must find a writable calendar before it inserts. No
+     * provider-specific path exists: this is `CalendarContract`, the platform's own provider, and
+     * the permission strings are Android's.
      */
-    private fun calendarRefusal(action: String): PhoneResult? {
-        val missing = platform.calendarPermission() ?: return null
+    private fun calendarRefusal(action: String, write: Boolean): PhoneResult? {
+        val missing = (
+            if (write) platform.calendarWritePermission() else platform.calendarReadPermission()
+            ) ?: return null
         log("event=phone-mcp action=$action ok=false reason=permission")
+        val what = if (write) "write the calendar" else "read the calendar"
         return PhoneResult.refused(
             action, PhoneReason.PERMISSION,
-            "the phone does not hold $missing, so it cannot read the calendar; only the owner can " +
-                "grant it in system settings (Phone tools → Calendar shows whether it is granted)",
+            "the phone does not hold $missing, so it cannot $what; only the owner can grant it in " +
+                "system settings (Phone tools → Calendar shows whether it is granted)",
         )
     }
 
     /**
-     * Today's events, and only the four fields the group promises: start, end, title and the
-     * calendar's name. No attendees, no description, nothing about contacts. A field the provider
-     * will not answer is null.
+     * Today's events, with what the calendar holds: start, end, title, the calendar's name, and —
+     * when the provider offers them — the description, the location and the attendee names. Names
+     * only: an attendee's address is not read. A field the provider will not answer is null.
      */
     private fun agenda(): PhoneResult {
-        calendarRefusal("agenda")?.let { return it }
+        calendarRefusal("agenda", write = false)?.let { return it }
         val events = platform.agenda() ?: run {
             log("event=phone-mcp action=agenda ok=false reason=unavailable")
             return PhoneResult.refused(
@@ -922,6 +1013,9 @@ class PhoneEngine(
                 "end" to e.end,
                 "title" to e.title,
                 "calendar" to e.calendar,
+                "description" to e.description,
+                "location" to e.location,
+                "attendees" to e.attendees,
             )
         }
         log("event=phone-mcp action=agenda ok=true events=${rows.size}")
@@ -945,7 +1039,7 @@ class PhoneEngine(
         nowElapsed: Long,
         nowEpoch: Long,
     ): PhoneResult {
-        calendarRefusal("event_create")?.let { return it }
+        calendarRefusal("event_create", write = true)?.let { return it }
         val created = platform.createEvent(
             call.title, call.start, call.durationMin, call.calendar,
         ) ?: run {

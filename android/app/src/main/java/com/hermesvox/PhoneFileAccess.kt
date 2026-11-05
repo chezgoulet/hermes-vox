@@ -19,8 +19,10 @@ import java.io.File
  * **The grant is the owner's, made in the system picker.** [intent] is `ACTION_OPEN_DOCUMENT_TREE`
  * (read-only — this app never writes into the tree); [accept] takes the persistable permission the
  * picker returned and remembers the tree's own display name. Without that grant all three actions
- * refuse `no_folder`, and there is no other way in: **no broad storage permission, and
- * `MANAGE_EXTERNAL_STORAGE` is never declared or requested.**
+ * refuse `no_folder`, and there is no other way in: **the Storage Access Framework is the deliberate
+ * default, and this app declares no broad storage permission for it.** An all-files mode is a
+ * decision the owner could be offered later through Android's own `MANAGE_EXTERNAL_STORAGE` screen;
+ * it is not a capability this file withholds on their behalf.
  *
  * **A name is looked up, never walked.** The document id is `treeDocumentId + "/" + name`, which is
  * one child of the granted tree by construction; [PhoneFiles.contained] re-checks the id the

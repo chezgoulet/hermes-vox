@@ -184,6 +184,38 @@ class PhoneMcpWiringTest {
         assertTrue("the sheet states the listener's lifetime", sheet.contains("only while a call is"))
     }
 
+    @Test fun the_sheet_offers_the_listener_access_now_playing_needs() {
+        val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
+        val listen = File("src/main/java/com/hermesvox/MediaListen.kt").readText()
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+        assertTrue("the sheet shows the access", sheet.contains("Now playing access"))
+        assertTrue(
+            "the row names what the grant changes",
+            sheet.contains("PhoneToolsView.nowPlaying("),
+        )
+        assertTrue(
+            "the owner's own words offer it",
+            sheet.contains("LET VOX SEE WHAT IS PLAYING"),
+        )
+        assertTrue(
+            "the button opens the system screen",
+            sheet.contains("MediaListen.settingsIntent()"),
+        )
+        assertTrue(
+            "it is offered only while the media group is on",
+            sheet.contains("states[\"media\"]"),
+        )
+        assertTrue("the session list is read through the grant", listen.contains("getActiveSessions"))
+        assertTrue(
+            "the listener service is what the grant attaches to",
+            manifest.contains("android:name=\".MediaListenerService\""),
+        )
+        assertTrue(
+            "and it is not a second capability",
+            manifest.contains("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"),
+        )
+    }
+
     // ---- #429 step 1: one registry, read live ----
 
     @Test fun the_schema_the_screen_and_the_engine_read_the_same_registry() {

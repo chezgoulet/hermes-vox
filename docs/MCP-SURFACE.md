@@ -85,9 +85,10 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `play` | media | — | `dispatched` | **no.** This is the row to read twice: "play after pause" is not an undo, and the phone does not pretend it is. It cannot even see whether playback changed | `AudioManager.dispatchMediaKeyEvent` with `KEYCODE_MEDIA_PLAY`. **No permission, no notification-listener access.** The key goes to whichever session the platform considers active | `unavailable` |
 | `pause` | media | — | `dispatched` | **no** — the same reasoning as `play` | the same call with `KEYCODE_MEDIA_PAUSE` | `unavailable` |
 | `skip` | media | `direction` `next` (default) or `previous` | `direction`, `dispatched` | **no** — there is no "unskip" the phone can perform | the same call with `KEYCODE_MEDIA_NEXT` / `KEYCODE_MEDIA_PREVIOUS` | `invalid-arguments`, `unavailable` |
-| `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | **nothing beyond the ordinary APIs.** `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which is a notification-listener special access this app does **not** hold, so they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
+| `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which needs **notification-listener special access**; the sheet offers that grant and opens Android's screen. With it they are the session's own values and `known` is `true`; without it they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
 | `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
 | `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
+| `clip_read` | clipboard | — | `text`, `chars` | **no** — reading changes nothing | `ClipboardManager.getPrimaryClip`. **No permission**, but **the platform decides**: since Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer. Both are `unavailable` with the platform's own reason; the phone never returns empty text as though it were the clipboard | `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
 
@@ -97,23 +98,35 @@ and `status` only reports. They are therefore always advertised, even with every
 ### Media, precisely
 
 `play`, `pause` and `skip` **dispatch a platform media key** and nothing else. They act on
-whatever session Android considers active; the phone does not choose a player, does not start one,
-and does not hold a notification listener. The result's `dispatched` is exactly that: the audio
-service accepted the key event. It is **not** a claim that a track started, a track stopped, or a
-track changed — the phone cannot see playback state without a listener, and it does not invent one.
+whatever session Android considers active; the phone does not choose a player and does not start
+one. The result's `dispatched` is exactly that: the audio service accepted the key event. It is
+**not** a claim that a track started, a track stopped, or a track changed.
 
-`now_playing` is deliberately honest about the same limit:
+`now_playing` asks the phone, and reports what the phone will say:
+
+```json
+{"ok":true,"action":"now_playing","tier":0,"known":true,"playing":true,
+ "package":"com.example.player","title":"A Track"}
+```
+
+- **With notification-listener access**, the active session's own package and title are returned,
+  and `known` is `true`. The sheet shows whether that access is held and offers **Let Vox see what
+  is playing**, which opens Android's notification-access screen — the same shape as the Do Not
+  Disturb row. Turning the Media group on offers it too.
+- **Without it**, the platform will not name the session, so the result is the honest refusal below:
+  `known:false`, `package` and `title` `null`, with a sentence saying what the phone cannot see.
+  There is no prompt hidden behind a tool call; the grant is the owner's to give in the sheet.
 
 ```json
 {"ok":true,"action":"now_playing","tier":0,"known":false,"playing":true,"package":null,
- "title":null,"note":"the phone can see that audio is playing, but not which app or what it is: that needs notification-listener access, which this app does not hold"}
+ "title":null,"note":"audio is playing, but the phone cannot see which app it is or what it is: that needs notification-listener access, which this app does not hold"}
 ```
 
-- `known:true` (with a package and a title) is only ever returned when the platform will say, which
-  today it will not; the field exists so a later lane can fill it without changing the shape.
 - `playing` is `isMusicActive` — a boolean the phone is allowed to read, and `null` when even that
   cannot be read.
-- `package` and `title` are `null` when `known` is `false`. **The phone never invents a title.**
+- `package` and `title` are `null` when `known` is `false`. **The phone never invents a title.** When
+  the access is granted but no app is publishing a session, the note says *that* rather than
+  blaming a missing grant.
 
 `skip`'s `direction` defaults to `next` when omitted; any other value is `invalid-arguments`. It
 shares the `direction` property with `volume`, so the schema lists `up`, `down`, `next` and
@@ -142,19 +155,20 @@ shares the `direction` property with `volume`, so the schema lists `up`, `down`,
 `state` is read-only and changes nothing. It reads no file, lists nothing, and reports no serial
 number, IMEI, phone number or account.
 
-### The clipboard writes, and never reads
+### The clipboard: a write, and a read only when Android allows it
 
 `clip` puts `text` on the clipboard and reports only its length (`chars`).
 
-The group's line — *It never reads what is already there* — is a rule, not a preference:
-
-**the phone tool never reads the clipboard.**
-
-`getPrimaryClip` appears nowhere in `PhoneTool`, `PhoneEngine`, `PhoneGrants`, `LocalActions`,
-`PhoneMcp` or `PhoneMcpServer`, and `PhoneSurfaceTest` asserts exactly that at source level, so a
-later lane cannot quietly add a read.
+`clip_read` returns the clipboard's `text` and `chars` — when the platform allows the read. The
+boundary is Android's, not ours: since Android 10 an app that is not in the foreground cannot read
+the clipboard, and an empty clipboard is no answer either. Both cases are
+`ok:false, reason:"unavailable"` with the platform's own explanation; the tool never returns stale
+or empty content dressed up as what the clipboard holds. The owner granted the `clipboard` group, so
+the read is offered with the write, and the OS decides whether this call may use it.
 
 The audit row for a clip stores `text=NN chars`, never the text — the same rule as a note's body.
+A `clip_read` row stores no payload at all: the result carries the text, the audit carries the
+action and its outcome.
 
 ---
 
@@ -167,11 +181,11 @@ undoable where the row says so.
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `note` | notes | `text` string, 1 – 500 characters | `id`, `text`, `reported_next_turn`, `undoable` | **yes** — deletes it; lives 24 hours, because the note outlives the turn | none: private app storage | `unavailable` |
-| `file_list` | files | optional `folder` `Downloads` (the default) or `Documents`; optional `path`, a **relative** subdirectory (`""` = the folder itself); optional `depth` integer 1–5 (default 1); optional `pattern`, a case-insensitive glob on the file name (`*.pdf`); `offset` integer ≥ 0 (default 0) and `limit` integer 1–1000 (default 200) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` — each entry `name`, `path` (relative), `kind` (`file`/`dir`), `bytes` (null for a directory), `modified` (local ISO-8601, null when the provider will not say), `mime` (files, when offered) | **no** — listing reads directory metadata and changes nothing | **Storage Access Framework only**, inside the same granted tree as `file_read`; the child query is `DocumentsContract` metadata, never a file's contents. No storage permission, and `MANAGE_EXTERNAL_STORAGE` is never used | `no_folder`, `bad_path`, `unavailable` |
-| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents`, optional `offset` (bytes, ≥ 0) and `length` (bytes, ≥ 1; default 65 536) | whole file: `name`, `folder`, `bytes`, `chars`, `text`. A window: the same plus `offset`, `length` and `truncated` — with `bytes` the file's **total** size | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework only.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared, and `MANAGE_EXTERNAL_STORAGE` is never used. Text only | `no_folder`, `bad_path`, `not_text`, `too_big` (whole-file only), `unavailable` |
+| `file_list` | files | optional `folder` `Downloads` (the default) or `Documents`; optional `path`, a **relative** subdirectory (`""` = the folder itself); optional `depth` integer 1–5 (default 1); optional `pattern`, a case-insensitive glob on the file name (`*.pdf`); `offset` integer ≥ 0 (default 0) and `limit` integer 1–1000 (default 200) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` — each entry `name`, `path` (relative), `kind` (`file`/`dir`), `bytes` (null for a directory), `modified` (local ISO-8601, null when the provider will not say), `mime` (files, when offered) | **no** — listing reads directory metadata and changes nothing | **Storage Access Framework is the deliberate default**, and only inside the same granted tree as `file_read`: the child query is `DocumentsContract` metadata, never a file's contents, one directory at a time, and no storage permission is declared for it | `no_folder`, `bad_path`, `unavailable` |
+| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents`, optional `offset` (bytes, ≥ 0) and `length` (bytes, ≥ 1; default 65 536) | whole file: `name`, `folder`, `bytes`, `chars`, `text`. A window: the same plus `offset`, `length` and `truncated` — with `bytes` the file's **total** size | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework is the deliberate default.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared for it. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`), with its own warning and its own grant — the owner's decision to make, not a capability withheld on their behalf. Text only: a whole read is capped (below), a window is not | `no_folder`, `bad_path`, `not_text`, `too_big` (whole-file only), `unavailable` |
 | `file_offer` | files | the same `name` and `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob | `no_folder`, `bad_path`, `too_big`, `unavailable` |
-| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
-| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer 1 – 1 440, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
+| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` (names only), and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
+| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer ≥ 1, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
 
 **Files, precisely.** A file's name is a **name, not a path**: `..`, an absolute path, a separator and
 a URI are refused `bad_path` before the platform is asked, and a document that resolves outside the
@@ -205,13 +219,16 @@ and an incomplete trailing sequence is trimmed, and the result reports where the
 rather than pretending the cut was clean. `file_offer` has no such cap because it does not put the
 bytes in the result: it keeps the bridge's own 100 MB.
 
-**Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns only
-start, end, title and calendar name — no attendees, no description, no contact lookup. `start` is
-local ISO-8601: a trailing `Z` or an offset is refused rather than converted, because "local" is
-the contract and a conversion would move the event. `duration_min` is minutes; zero, negatives and
-anything over a day are refused `invalid-arguments`. A phone with no writable calendar is
-`unavailable`, which is the truth rather than a silent export. The undo deletes the event it
-created and nothing else.
+**Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns what the
+calendar holds: start, end, title, calendar name, description, location, and attendee **names**.
+Attendee addresses are never projected, so they cannot leak into a result; a field the provider will
+not give is `null`, never an invented one. `start` is local ISO-8601: a trailing `Z` or an offset is
+refused rather than converted, because "local" is the contract and a conversion would move the
+event. `duration_min` is minutes and must be at least 1; zero and negatives are refused
+`invalid-arguments`. There is **no upper bound of ours** — the calendar provider's own limits apply,
+and a duration it will not store is `unavailable` rather than pre-empted by a cap. A phone with no
+writable calendar is `unavailable`, which is the truth rather than a silent export. The undo deletes
+the event it created and nothing else.
 
 **Built in lane 2:** `files` and `calendar`. Their actions are advertised only while the group is
 on, and both groups are reported: turning one on is the grant. `delete`, a file delete that cannot
@@ -257,7 +274,7 @@ be able to keep.
 | `notes` | 1 | `note` | **built** |
 | `media` | 0 | `play`, `pause`, `skip`, `now_playing` | **built in lane 1** |
 | `device-state` | 0 | `state` | **built in lane 1** |
-| `clipboard` | 0 | `clip` | **built in lane 1** |
+| `clipboard` | 0 | `clip`, `clip_read` | **built in lane 1** |
 | `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane** |
 | `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
 | `notifications` | 2 | `notifications` | **declared, not built** |
@@ -279,7 +296,8 @@ be able to keep.
 | `event_create` | deletes the event it created | until the event starts, or ten minutes, whichever is longer | deleting the one event the phone inserted is its exact reverse; it never touches another event |
 | `play` / `pause` / `skip` | — | — | **`play` after `pause` is not an undo.** It is another key press into whatever the session is doing now; the phone has no "previous playback state" it could honestly restore, and it cannot see playback at all without a listener |
 | `now_playing` / `state` | — | — | reporting changed nothing |
-| `clip` | — | — | a clipboard write cannot be reversed: the phone would have to have kept what it replaced, and it deliberately does not read the clipboard |
+| `clip` | — | — | a clipboard write cannot be reversed: the phone would have to have kept what it replaced, and a clip keeps no history of the clipboard |
+| `clip_read` | — | — | reading the clipboard changes nothing, so there is nothing to reverse |
 | `undo` / `status` | — | — | neither is a capability |
 | every Tier 1/2 write | as the row says | — | where the table says "no", there is no reversal and no invented one |
 
@@ -315,27 +333,36 @@ audit's one summarising function is the place a future action has to pass throug
    `pause` → the player stops. `skip` with no `direction` → the next track; with
    `direction:"previous"` → the previous one. Each result carries `undoable:false` and **no** `undo`
    object.
-4. **`now_playing` on any phone.** `ok:true, known:false`, `package` and `title` `null`, `note`
-   saying the phone cannot see which app or what it is; `playing` is `true` while audio is audible
-   and `false` otherwise. The title must never be invented, and no "notification access" prompt
-   appears.
-5. **`state` on a charging phone.** `battery_percent` matches Android's own battery figure,
+4. **`now_playing` without notification access.** `ok:true, known:false`, `package` and `title`
+   `null`, `note` saying the phone cannot see which app or what it is; `playing` is `true` while
+   audio is audible and `false` otherwise. The title must never be invented, and no prompt appears
+   behind a tool call. The sheet's *Now playing access* row says **Not granted** while Media is on,
+   and **Let Vox see what is playing** opens Android's notification-access screen.
+5. **`now_playing` with notification access granted.** The same call returns `known:true`, the real
+   package and title of the active session, and no `note`. With nothing publishing, `known:false`
+   and a note that says the phone can see sessions and none is publishing — not that the grant is
+   missing. The sheet's row says **Granted**.
+6. **`state` on a charging phone.** `battery_percent` matches Android's own battery figure,
    `charging_source` is `ac`/`usb`/`wireless`, `charging_status` is `charging`, `screen_on` follows
    the screen, `network` is `wifi` or `cellular` (and `none` in aeroplane mode), `tailnet_present` is
    `true` with Tailscale up, `free_storage_bytes` matches Settings' free space within a rounding,
    `media_volume` matches the volume slider, and `time` is the phone's own clock.
-6. **`state` without Do Not Disturb access.** `dnd` is `null`, and every other field is still
+7. **`state` without Do Not Disturb access.** `dnd` is `null`, and every other field is still
    filled. Nothing is guessed as "off".
-7. **`clip` then paste by hand.** The text is on the clipboard, the result says `ok:true` with
+8. **`clip` then paste by hand.** The text is on the clipboard, the result says `ok:true` with
    `chars` only, Recent actions shows `text=NN chars`, and the clipboard's previous contents are not
-   anywhere in the app.
-8. **`clip` from a backgrounded phone** (a call that lost focus). `ok:false,
-   reason:"unavailable"`, and nothing was written.
-9. **Files with no folder granted.** The sheet says *No folder granted*; `file_list`, `file_read` and
-   `file_offer` are `ok:false, reason:"no_folder"` and say to pick a folder in Phone tools → Files.
-   Turning Files on opens the system folder picker, and after picking, the sheet names the folder it
-   got (`Granted · Download`). No storage permission prompt ever appears.
-10. **Files with a folder granted.** `file_list` on a folder with subdirectories answers `folder`,
+   anywhere in the app. A following `clip_read` in the foreground returns that same text and its
+   `chars`.
+9. **`clip` and `clip_read` from a backgrounded phone** (a call that lost focus). `clip` is
+   `ok:false, reason:"unavailable"`, and nothing was written. `clip_read` is `ok:false,
+   reason:"unavailable"` with Android's own explanation that a foreground app is required — and no
+   `text` field, so no empty or stale clip is mistaken for the clipboard. With the clipboard empty
+   in the foreground, `clip_read` also refuses, saying the clipboard is empty.
+10. **Files with no folder granted.** The sheet says *No folder granted*; `file_list`, `file_read`
+    and `file_offer` are `ok:false, reason:"no_folder"` and say to pick a folder in Phone tools →
+    Files. Turning Files on opens the system folder picker, and after picking, the sheet names the
+    folder it got (`Granted · Download`). No storage permission prompt ever appears.
+11. **Files with a folder granted.** `file_list` on a folder with subdirectories answers `folder`,
     `path:""`, `depth:1`, `count`, `has_more:false` and one entry per child: directories first
     (`kind:"dir"`, `bytes:null`), then files alphabetically with their sizes, `modified` when the
     provider gives it and `mime` for files. `depth:2` adds `"reports/2026"`-shaped paths for the
@@ -343,23 +370,27 @@ audit's one summarising function is the place a future action has to pass throug
     only the PDFs. A folder of 500 files at `limit:100` answers `has_more:true` and
     `next_offset:100`, and walking the offsets returns every entry exactly once; it does not refuse.
     A `file_read` of a text file returns `text`, `chars` and `bytes` with no `undo`; a 70 KB file is
-    `too_big` and names `offset`/`length`, and `offset:0, length:4096` returns the first 4 KiB with
-    `truncated:true` and `bytes:70000`. A PNG is `not_text`; `name:"../secret.txt"`,
-    `path:"../Documents"` and an absolute path are `bad_path` and never read. `file_offer` returns a
-    `url`/`sha256` that the agent can fetch, with no bytes in the result.
-11. **Calendar without permission.** The sheet says *Not granted* and names
+    `too_big` with nothing cut short, and the result names `offset`/`length`, while
+    `offset:0, length:4096` returns the first 4 KiB with `truncated:true` and `bytes:70000`. A PNG
+    is `not_text`; `name:"../secret.txt"`, `path:"../Documents"` and an absolute path are `bad_path`
+    and never read. `file_offer` returns a `url`/`sha256` that the agent can fetch, with no bytes in
+    the result.
+12. **Calendar without permission.** The sheet says *Not granted* and names
     `android.permission.READ_CALENDAR`; `agenda` and `event_create` both refuse `permission`, and
     nothing is created. Turning Calendar on asks for both permissions and the sheet shows the
     answer.
-12. **Calendar with permission.** `agenda` lists today's events with start, end, title and calendar
-    only — no attendees, no description; `event_create` with `start:"2026-11-05T09:30"` and
-    `duration_min:30` returns an `id`, and the event appears in the phone's own calendar app. Its
-    `undo` deletes that event and nothing else; Recent actions shows the title as `NN chars`.
-13. **Recent actions.** One row per call, successes and refusals, with the summarised arguments and
+13. **Calendar with permission.** `agenda` lists today's events with start, end, title, calendar,
+    description, location and attendee **names** — no attendee addresses — and `null` for anything
+    the provider does not give. `event_create` with `start:"2026-11-05T09:30"` and
+    `duration_min:30` returns an `id`, and the event appears in the phone's own calendar app. A
+    `duration_min` above 1 440 is accepted by the tool and either stored by the provider or refused
+    by it as `unavailable` — never pre-empted by a cap of ours. Its `undo` deletes that event and
+    nothing else; Recent actions shows the title as `NN chars`.
+14. **Recent actions.** One row per call, successes and refusals, with the summarised arguments and
     the outcome; no row carries a note's text, a clipboard payload, a file's contents, an event's
     title or a file path's contents.
-14. **Revoke mid-call.** Turn Media Off while the call is live: the next `tools/list` no longer
+15. **Revoke mid-call.** Turn Media Off while the call is live: the next `tools/list` no longer
     lists `play`, and the next call is `not_granted` with no key dispatched.
-15. **The declared groups stay refused.** With Messages and calls at Ask, `message` returns
+16. **The declared groups stay refused.** With Messages and calls at Ask, `message` returns
     `approval-required` and nothing is sent; `file_list` and `file_read` do the same while Files is
     Off. No lane may make these advertise before the phone can keep the promise.
