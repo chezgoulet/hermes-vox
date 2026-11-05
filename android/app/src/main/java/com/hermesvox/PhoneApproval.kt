@@ -187,18 +187,18 @@ object PhoneApproval {
         PhoneTool.Call.ClipRead ->
             Description("clipboard", "", "read your clipboard")
         is PhoneTool.Call.FileList -> {
-            val folder = call.folder ?: PhoneFiles.DEFAULT_FOLDER
+            val folder = call.folder ?: "the folder you granted"
             val at = if (call.path.isEmpty()) folder else "$folder/${call.path}"
             Description(folder, call.path, "list the files in $at")
         }
         is PhoneTool.Call.FileRead -> {
-            val folder = call.folder ?: PhoneFiles.DEFAULT_FOLDER
+            val folder = call.folder ?: "the folder you granted"
             Description(call.name, folder, "read ${call.name} in $folder")
         }
         is PhoneTool.Call.FileOffer -> Description(
             call.name,
-            call.folder ?: PhoneFiles.DEFAULT_FOLDER,
-            "read ${call.name} in ${call.folder ?: PhoneFiles.DEFAULT_FOLDER}",
+            call.folder ?: "the folder you granted",
+            "read ${call.name} in ${call.folder ?: "the folder you granted"}",
         )
         PhoneTool.Call.Agenda ->
             Description("calendar", "today", "read today's events")

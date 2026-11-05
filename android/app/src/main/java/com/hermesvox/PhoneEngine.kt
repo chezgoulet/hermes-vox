@@ -695,7 +695,10 @@ class PhoneEngine(
         var described: PhoneApproval.Description
         when (call) {
             is PhoneTool.Call.FileOffer -> {
-                val folder = folderFor(call.folder) ?: return noFolder("file_offer", call.folder)
+                val folder = when (val pick = folderFor("file_offer", call.folder)) {
+                    is FolderPick.Found -> pick.folder
+                    is FolderPick.Refused -> return pick.result
+                }
                 val info = when (val found = platform.fileInfo(folder, call.name)) {
                     PhonePlatform.FileInfo.Missing -> {
                         log("event=phone-mcp action=file_offer ok=false reason=unavailable")
