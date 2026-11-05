@@ -4,7 +4,9 @@ Presence is the layer that makes Hermes Vox a being you are talking to rather th
 answers. It is the on-device voice that hears you, keeps the line alive while the agent thinks,
 yields when you interrupt, and sounds like *your* agent rather than a generic assistant.
 
-It is on by default. It is not a second agent, and it does not know anything the agent does not know.
+It is **alpha in 0.9.1**: nothing Presence owns runs until **Alpha features** is on and the
+Presence set is selected. It is not a second agent, and it does not know anything the agent does
+not know.
 
 ---
 
@@ -141,7 +143,9 @@ a confirmation is answered as a turn rather than acknowledged with a non-sequitu
 `commentary` is the working line instead of a 2B's guess about it; and no turn ends in silence.
 
 **October 2026 — the name, and the guard's premise questioned.** D16 retired the two-mode framing:
-"Enhanced Realtime" is not a mode, it is Presence, a layer on normal operation, on by default. D17
+"Enhanced Realtime" is not a mode, it is Presence, a layer on normal operation, on by default.
+(0.9.1 puts the layer behind the Alpha gate, off on a fresh install; D28 leaves "on by default" to
+0.9.2.) D17
 put latency on a conversational footing. D19 recorded that the guard's central premise — *a 2B will
 invent numbers and facts, so ban them lexically* — is an **assumption**, and nothing measured it. D20
 inverted the guard's job: **content is policed, format is repaired** — an eleven-word line is cut and
@@ -248,6 +252,10 @@ streamed turn would even have opened its connection, so it is matched by a **det
 not a model** (`LocalActionGrammar`) and taken on the phone: the action runs, the caller hears one
 short line, and the registry the presence context reports is updated so the mind can answer
 follow-ups ("how long left?").
+
+The grammar is tried on any live voice turn, before the Alpha gate is consulted for Presence: it is
+the caller's own instruction, not the soul speaking, and it has no switch of its own today. The
+MCP server and the capability grants (below) are behind the **Phone tools** set.
 
 **Four actions, Tier 0 only — reversible, private, nothing outward-facing:**
 

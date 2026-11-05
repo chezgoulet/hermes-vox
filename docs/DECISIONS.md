@@ -937,7 +937,7 @@ rather than pretending.
   own warnings, and they are absent from the schema until granted. There is no background read and no
   "just this once" that skips the card.
 
-**What it costs, stated.** Eight of the twelve groups have no action in this lane; their grants are
+**What it costs, stated.** Nine of the twelve groups have no action in this lane; their grants are
 stored and shown, and their schema entries appear only when their capability lands (a planned action
 name is never advertised; a direct call is refused as not granted). The screen says which groups have
 nothing yet. The grant is not a permission: Android's own runtime and special-access grants still
