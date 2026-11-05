@@ -42,6 +42,13 @@ open class MainActivity : AppCompatActivity() {
     private var phoneApprovalId = ""
 
     /**
+     * An approval answer carried by the notification's Approve action, waiting for this activity
+     * to be resumed. The answer is delivered **here**, not from the receiver, because the action
+     * it authorises starts another activity and Android blocks that from the background (B2).
+     */
+    private var pendingApprovalAnswer: String? = null
+
+    /**
      * The in-app half of [PhoneApprovals]. The notification half lives in that object; this is the
      * same card the gateway's approvals use, with the phone action's own two words and timeout.
      */
@@ -439,12 +446,36 @@ open class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent); setIntent(intent)
+        // A notification's Approve action opens Vox with the card's id; answer from here.
+        captureApprovalAnswer(intent)
         // #329: the assist gesture, arriving at a call screen that already exists (the
         // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
         // second one). Deferred like the harness so the intent never runs inside dispatch.
         if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
         // §B: a file shared to Vox while the call screen is already up.
         handleShareIntent(intent)
+    }
+
+    /**
+     * Read the notification's Approve action. It is answered once this activity is resumed, so
+     * the platform's own uninstall confirmation has a visible window to open from (B2).
+     */
+    private fun captureApprovalAnswer(intent: Intent?) {
+        if (intent == null) return
+        if (!intent.getBooleanExtra(PhoneApprovals.EXTRA_APPROVE, false)) return
+        pendingApprovalAnswer = intent.getStringExtra(PhoneApprovals.EXTRA_ID)
+            ?.takeIf { it.isNotEmpty() }
+        // Consume the flag: a rotation or a later onNewIntent must not answer twice.
+        intent.removeExtra(PhoneApprovals.EXTRA_APPROVE)
+        mainHandler.post { answerPendingApproval() }
+    }
+
+    /** Deliver a captured approval answer from the resumed activity. Nothing else answers it. */
+    private fun answerPendingApproval() {
+        val id = pendingApprovalAnswer ?: return
+        pendingApprovalAnswer = null
+        val outcome = PhoneApprovals.answer(id, approve = true, via = "notification")
+        VoxLog.d("event=phone-approval source=activity outcome=${outcome.name.lowercase()}")
     }
 
     /**
@@ -477,6 +508,8 @@ open class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
+        // A notification's Approve action arrives as this intent; answer it from the activity.
+        captureApprovalAnswer(intent)
         active = this
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
@@ -839,6 +872,9 @@ open class MainActivity : AppCompatActivity() {
         // default (MemoryBudget.release) — whether the trade is worth it is the owner's
         // decision, not this branch's.
         (express as? GemmaExpress)?.requestUnload("call-end")
+        // A dial handoff ends the call from inside PiP. Leaving an idle app floating
+        // contradicts CallWindow's own rule: an idle app must never float (H1).
+        if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
         // #384: a profile refresh that arrived during the call waited for exactly this
         // moment — the conversation is over, so asking now cannot disturb it.
         profiles.runDeferredAsk()
@@ -1066,27 +1102,35 @@ open class MainActivity : AppCompatActivity() {
      * still happens, immediately.
      */
     private fun launchOutside(start: () -> Unit) {
-        val order = CallWindow.launch(pipHost, start)
-        if (order == CallWindow.Order.PIP_THEN_LAUNCH) VoxLog.d("event=launch pip-first callLive=$callLive")
+        val plan = CallWindow.launch(pipHost, start)
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH) {
+            VoxLog.d("event=launch pip-first callLive=$callLive posted=${plan.posted}")
+        }
     }
 
     private val pipHost = object : CallWindow.Host {
         override fun callLive(): Boolean = callLive
         override fun enterPip(): Boolean = this@MainActivity.enterPip()
-        override fun post(delayMs: Long, action: () -> Unit) {
-            mainHandler.postDelayed({ if (!isFinishing && !isDestroyed) action() }, delayMs)
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
+            if (isFinishing || isDestroyed) return false
+            return mainHandler.postDelayed({
+                if (!isFinishing && !isDestroyed) action()
+            }, delayMs)
         }
     }
 
     /**
      * The screen's half of the phone's handoff actions. The dial line is voiced through the
      * **existing being** ([VoiceController.speakGlue]) and the rest of the handoff — the
-     * hang-up teardown, then the dialer — runs when that line is audible. A short fallback
-     * fires if nothing can speak, because a dial must never wait on TTS: the line is a courtesy
-     * at the handoff, not a gate on the owner's call.
+     * hang-up teardown, then the dialer — runs when that line is **done**. Firing on start
+     * would let the teardown cut the line that has just begun (H1). A bounded fallback fires
+     * if the engine never reports done, because a dial must never wait on TTS forever.
      */
     private val phoneHost = object : PhoneHandoff.Host {
         override fun callLive(): Boolean = callLive
+
+        override fun canStartActivity(): Boolean =
+            !isFinishing && !isDestroyed && (AppFocus.inFront || isInPictureInPictureMode)
 
         override fun announceDial(line: String, after: () -> Unit) {
             val c = liveController
@@ -1094,12 +1138,14 @@ open class MainActivity : AppCompatActivity() {
                 after()
                 return
             }
-            val fired = java.util.concurrent.atomic.AtomicBoolean(false)
-            val go = {
-                if (fired.compareAndSet(false, true)) mainHandler.post(after)
-            }
-            c.speakGlue(line, critical = true, source = "dial-handoff", onPlayed = { go() })
-            mainHandler.postDelayed({ go() }, ANNOUNCE_FALLBACK_MS)
+            val once = DialHandoff.AnnounceOnce { mainHandler.post(after) }
+            c.speakGlue(
+                line,
+                critical = true,
+                source = "dial-handoff",
+                onDone = { once.onDone() },
+            )
+            mainHandler.postDelayed({ once.onFallback() }, ANNOUNCE_FALLBACK_MS)
         }
 
         override fun endCall() = this@MainActivity.endCall()
@@ -1925,7 +1971,13 @@ open class MainActivity : AppCompatActivity() {
          * call anyway. A courtesy, not a gate: no TTS engine, or a reply already owning the
          * voice, must never leave the owner waiting on a dialer.
          */
-        const val ANNOUNCE_FALLBACK_MS = 900L
+        /**
+         * The bound on waiting for the dial line to finish, measured from the moment it is
+         * handed to TTS. Long enough for a short line to synthesise and play; the no-engine
+         * path settles immediately, so this only catches an engine that never reports done.
+         * A longer synthesis than this must not cut the line at 900 ms (H1).
+         */
+        const val ANNOUNCE_FALLBACK_MS = 5_000L
 
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
@@ -3326,7 +3378,7 @@ open class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
+    override fun onResume() { super.onResume(); runOnUiThread { answerPendingApproval(); updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
 
     /**
      * #437 §5: a resumed session may be written by another surface while the phone is in a

@@ -449,6 +449,13 @@ class PhoneEngine(
          */
         fun sendMessage(to: String, text: String): Handoff = Handoff.NoApp
 
+        /**
+         * May this phone start an activity right now? Android 10+ refuses a background activity
+         * start **without throwing**, so "no exception" is not proof it happened. True when an
+         * activity of ours is resumed, or in picture-in-picture and visible.
+         */
+        fun canStartActivity(): Boolean = true
+
         /** Resolve an `ACTION_DIAL` target before anything is ended. False is `no_app`. */
         override fun canDial(): Boolean = true
 
@@ -461,8 +468,18 @@ class PhoneEngine(
         /** Start the launchable activity [target] resolved to. */
         fun startApp(target: AppTarget): Boolean = false
 
+        /**
+         * What claims [uri]. [None] is "nothing answers"; [Ambiguous] is Android's own chooser —
+         * several apps claim the link and none is the default, so there is no single app to name.
+         */
+        sealed class UriTarget {
+            data class App(val target: AppTarget) : UriTarget()
+            data object Ambiguous : UriTarget()
+            data object None : UriTarget()
+        }
+
         /** Resolve a URI among the apps that claim it, optionally restricted to [packageName]. */
-        fun resolveUri(uri: String, packageName: String?): AppTarget? = null
+        fun resolveUri(uri: String, packageName: String?): UriTarget = UriTarget.None
 
         /** Start `ACTION_VIEW` for [uri] in the resolved [target]. */
         fun startUri(target: AppTarget, uri: String): Boolean = false
@@ -901,7 +918,7 @@ class PhoneEngine(
             PhoneTool.Call.Apps -> AppsAccess.result(platform)
             is PhoneTool.Call.Contact -> contacts(call)
             is PhoneTool.Call.Message -> message(call)
-            is PhoneTool.Call.Dial -> dial(call)
+            is PhoneTool.Call.Dial -> dial(call, nowEpoch)
             is PhoneTool.Call.Launch -> launch(call)
             is PhoneTool.Call.Open -> open(call)
             is PhoneTool.Call.Uninstall -> executeUninstall(call.packageName)
@@ -1792,12 +1809,28 @@ class PhoneEngine(
     // ---- handoffs: messages, calls, apps ----
 
     /**
+     * The one background-activity-launch gate (B2).
+     *
+     * Android 10+ refuses a start from an app with no visible window **without throwing**, so
+     * `startActivity` returning is not proof anything opened. Every handoff asks this before it
+     * resolves a target, ends a call or announces anything, and a "no" is a refusal — never a
+     * silent success. On device the answer is "an activity of ours is resumed, or in
+     * picture-in-picture and visible"; the microphone service does not exempt us.
+     */
+    private fun backgroundRefusal(action: String): PhoneResult? {
+        if (platform.canStartActivity()) return null
+        log("event=phone-mcp action=$action ok=false reason=unavailable background=true")
+        return PhoneResult.refused(action, PhoneReason.UNAVAILABLE, BACKGROUND_DETAIL)
+    }
+
+    /**
      * Compose the text and open the owner's messaging app. **Nothing is sent here.** The result
      * says `handed_off:true` and carries the recipient and the text's length; the owner's tap
      * in their own app is what sends it. `ACTION_SENDTO` with an `smsto:` URI is the only path,
      * so no `SEND_SMS`, no `SmsManager` and no default-SMS role is involved.
      */
     private fun message(call: PhoneTool.Call.Message): PhoneResult {
+        backgroundRefusal("message")?.let { return it }
         val to = when (val r = resolveRecipient("message", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
@@ -1833,33 +1866,81 @@ class PhoneEngine(
      * through the same teardown the hang-up runs, and then opens the dialer. Ending the call
      * does not end the conversation: the thread lives on the gateway.
      */
-    private fun dial(call: PhoneTool.Call.Dial): PhoneResult {
+    private fun dial(call: PhoneTool.Call.Dial, nowEpoch: Long): PhoneResult {
+        // Pre-flight the gate before resolving, announcing or tearing anything down: a blocked
+        // start must not cost the owner the call they are on (H1).
+        backgroundRefusal("dial")?.let { return it }
         val to = when (val r = resolveRecipient("dial", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
         }
-        return when (DialHandoff.run(platform, to)) {
+        return when (DialHandoff.run(platform, to) { started ->
+            // The live-call path answers before this runs: the dial happens after the line is
+            // done. Its own result is audited as its own row rather than lost (H1).
+            auditLateDial(to, started, nowEpoch)
+        }) {
             DialHandoff.Outcome.NO_DIALER -> noApp(
                 "dial",
                 "no app on this phone answers ACTION_DIAL; nothing was opened and no call was ended",
             )
-            DialHandoff.Outcome.DIAL_FAILED -> noApp(
-                "dial",
-                "the dialer could not be opened; nothing was dialled and no call was placed",
-            )
+            DialHandoff.Outcome.DIAL_FAILED -> {
+                log("event=phone-mcp action=dial ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "dial",
+                    PhoneReason.UNAVAILABLE,
+                    "the dialer is on this phone but Android would not open it; nothing was " +
+                        "dialled and no call was placed",
+                )
+            }
             DialHandoff.Outcome.DIALED -> {
                 log("event=phone-mcp action=dial ok=true")
                 PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
             }
             DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> {
-                log("event=phone-mcp action=dial ok=true ended_call=true")
-                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+                log("event=phone-mcp action=dial ok=true pending=true ended_call=true")
+                PhoneResult.info(
+                    "dial",
+                    linkedMapOf<String, Any?>(
+                        "to" to to,
+                        // Not a claim that the dialer opened: the line is still being spoken and
+                        // the start happens after the teardown. Its result follows as its own row.
+                        "handoff" to "pending",
+                        "note" to
+                            "our call is ending and the dialer opens when the line is done; " +
+                            "the dialer's own result is recorded in Recent actions",
+                    ),
+                )
             }
+        }
+    }
+
+    /**
+     * The dial that runs after a live call was ended. It is a second outcome, so it gets a
+     * second audit row: the owner can see whether the dialer actually opened, and a failure is
+     * never hidden behind the pending reply (H1).
+     */
+    private fun auditLateDial(to: String, started: Boolean, nowEpoch: Long) {
+        val result = if (started) {
+            log("event=phone-mcp action=dial ok=true after_teardown=true")
+            PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to, "handoff" to "opened"))
+        } else {
+            log("event=phone-mcp action=dial ok=false reason=unavailable after_teardown=true")
+            PhoneResult.refused(
+                "dial",
+                PhoneReason.UNAVAILABLE,
+                "our call ended but the dialer did not open; nothing was dialled. The " +
+                    "conversation is still on the gateway — call again to resume it.",
+            )
+        }
+        try {
+            audit(result, linkedMapOf<String, Any?>("action" to "dial", "to" to to), nowEpoch)
+        } catch (_: Throwable) {
         }
     }
 
     /** Open one launchable app, entering PiP first when a call is live ([CallWindow]). */
     private fun launch(call: PhoneTool.Call.Launch): PhoneResult {
+        backgroundRefusal("launch")?.let { return it }
         val target = platform.resolveLaunchable(call.app) ?: return noApp(
             "launch",
             "no launchable app matches \"${call.app}\"; only an activity with a launcher entry " +
@@ -1870,11 +1951,27 @@ class PhoneEngine(
 
     /** Open one URI, optionally in a named package, through the same PiP-first window. */
     private fun open(call: PhoneTool.Call.Open): PhoneResult {
-        val target = platform.resolveUri(call.uri, call.packageName) ?: return noApp(
-            "open",
-            "no app on this phone opens that URI" +
-                (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
-        )
+        backgroundRefusal("open")?.let { return it }
+        val claimed = platform.resolveUri(call.uri, call.packageName)
+        val target = when (claimed) {
+            PhoneEngine.PhonePlatform.UriTarget.None -> return noApp(
+                "open",
+                "no app on this phone opens that URI" +
+                    (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
+            )
+            PhoneEngine.PhonePlatform.UriTarget.Ambiguous -> {
+                // Android resolved its own chooser, not an app. Starting it explicitly would
+                // report `package:"android"` as though the chooser were the app; name the
+                // ambiguity and let the caller choose (M6).
+                log("event=phone-mcp action=open ok=false reason=invalid-arguments chooser=true")
+                return PhoneResult.refused(
+                    "open",
+                    PhoneReason.INVALID,
+                    "several apps can open this; name a `package`",
+                )
+            }
+            is PhoneEngine.PhonePlatform.UriTarget.App -> claimed.target
+        }
         return handOff("open", target) { platform.startUri(target, call.uri) }
     }
 
@@ -1888,6 +1985,7 @@ class PhoneEngine(
      * this phone can honestly claim — it cannot see the owner's answer there.
      */
     private fun executeUninstall(packageName: String): PhoneResult {
+        backgroundRefusal("uninstall")?.let { return it }
         val label = platform.appLabel(packageName).orEmpty().ifEmpty { packageName }
         return when (val outcome = platform.uninstall(packageName)) {
             is PhonePlatform.Uninstall.Confirming -> {
@@ -1956,13 +2054,13 @@ class PhoneEngine(
         val host = platform.window()
         var started = false
         val begin = { started = start() }
-        val order = if (host == null) {
+        val plan = if (host == null) {
             begin()
-            CallWindow.Order.LAUNCH_NOW
+            CallWindow.Plan(CallWindow.Order.LAUNCH_NOW, posted = true)
         } else {
             CallWindow.launch(host, begin)
         }
-        if (order == CallWindow.Order.LAUNCH_NOW && !started) {
+        if (plan.order == CallWindow.Order.LAUNCH_NOW && !started) {
             log("event=phone-mcp action=$action ok=false reason=unavailable")
             return PhoneResult.refused(
                 action,
@@ -1970,15 +2068,29 @@ class PhoneEngine(
                 "Android refused to start ${target.packageName}; nothing was opened",
             )
         }
+        // The posted start is only arranged, never observed. If the window refused to take it
+        // (finishing/destroyed) nothing will run, so this is a refusal; if it took it, the
+        // result says `pending` rather than claiming the app is on screen (M6).
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH && !plan.posted) {
+            log("event=phone-mcp action=$action ok=false reason=unavailable window=finishing")
+            return PhoneResult.refused(
+                action,
+                PhoneReason.UNAVAILABLE,
+                "the Vox window is closing, so ${target.packageName} was not opened; nothing was opened",
+            )
+        }
+        val pending = plan.order == CallWindow.Order.PIP_THEN_LAUNCH
         log(
             "event=phone-mcp action=$action ok=true package=${target.packageName} " +
-                "pip=${order == CallWindow.Order.PIP_THEN_LAUNCH}"
+                "pip=$pending pending=$pending"
         )
         return PhoneResult.info(
             action,
             linkedMapOf<String, Any?>(
                 "package" to target.packageName,
                 "component" to target.component,
+                "started" to if (pending) "after_pip" else "now",
+                "handoff" to if (pending) "pending" else "opened",
             ),
         )
     }
@@ -2245,6 +2357,15 @@ class PhoneEngine(
     companion object {
         /** How long a dnd/volume undo stays meaningful. Long enough for the next turn to correct it. */
         const val CHANGE_UNDO_MS = 10 * 60_000L
+
+        /**
+         * The one background-launch refusal. Android blocks an activity start from an app that
+         * is not visible without throwing, so the handoffs say this rather than claiming a
+         * launch that never happened (B2).
+         */
+        const val BACKGROUND_DETAIL =
+            "Vox has to be on screen to open another app; Android blocks it from the background. " +
+                "Nothing was opened."
 
         /** A note's undo outlives the turn that made it, because the note itself does. */
         const val NOTE_UNDO_MS = 24 * 60 * 60_000L
