@@ -2908,9 +2908,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // beat is a few trailing words: let it land (bounded), cut it if it
                             // runs long, then re-open the stream so this chunk plays whole. A
                             // mid-run aside is filler about the wait that just ended: cut at once.
+                            // Naturalness (2026-11-05): so is a beat the caller has not heard yet —
+                            // one still synthesizing when the answer is ready is abandoned cleanly
+                            // (nothing of it was audible), instead of holding the reply's first
+                            // audio for up to HANDOFF_WAIT_MS while it renders and plays.
                             if (glueSpeaking) {
                                 val t0h = android.os.SystemClock.uptimeMillis()
-                                while (glueSpeaking && !glueCutAtHandoff && !genCancelled && !sClosed &&
+                                val heard = glueAudible
+                                while (glueSpeaking && heard && !glueCutAtHandoff && !genCancelled && !sClosed &&
                                     android.os.SystemClock.uptimeMillis() - t0h < HANDOFF_WAIT_MS) {
                                     try { Thread.sleep(20) } catch (_: InterruptedException) { break }
                                 }
@@ -2918,7 +2923,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 if (cut) { stopTts(); glueSpeaking = false }
                                 if (genCancelled || sClosed) { VoxLog.d("event=tts-stop gen=$turnGen worker-break chunkIdx=$chunkIdx"); break }
                                 try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
-                                VoxLog.er("event=er-audio-handoff gen=$turnGen waitedMs=${android.os.SystemClock.uptimeMillis() - t0h} cut=$cut chunkIdx=$chunkIdx")
+                                VoxLog.er("event=er-audio-handoff gen=$turnGen waitedMs=${android.os.SystemClock.uptimeMillis() - t0h} cut=$cut heard=$heard chunkIdx=$chunkIdx")
                             }
                             replyOwnsTrack = true   // from here a glue's late reopen must not reset the track
                             speaking = true
@@ -3227,6 +3232,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var replyOwnsTrack = false
     /** The glue playing is a mid-run aside: the reply's first audio cuts it without waiting. */
     @Volatile private var glueCutAtHandoff = false
+    /** The glue line has reached the speaker (its TTS start callback fired). A beat that is
+     *  still synthesizing when the reply is ready is abandoned, not waited for. */
+    @Volatile private var glueAudible = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
     private val HANDOFF_WAIT_MS = 1200L
     // Streaming TTS: speak the reply as it streams (sync with the crawl), not after the
@@ -3366,6 +3374,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             stopTts()
         }
         glueSpeaking = true
+        glueAudible = false
         glueSource = source
         glueCutAtHandoff = source == SOURCE_WORKING || source == SOURCE_WAIT
         // #223: every line the presence layer actually voices is conversation, in the
@@ -3383,6 +3392,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // B1: the caller can hear it now, so the mind may be told about it.
                 lastHeardLine = text
                 lastHeardSource = source
+                if (speakSeq.get() == seq) glueAudible = true
                 noteFirstSound("glue:$source")
                 try { onPlayed?.invoke() } catch (_: Throwable) {}
             }) { _ ->
