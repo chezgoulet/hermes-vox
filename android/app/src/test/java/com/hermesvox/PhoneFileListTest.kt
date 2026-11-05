@@ -434,6 +434,54 @@ class PhoneFileListTest {
     }
 
     @Test
+    fun a_depth_five_page_asks_the_platform_only_for_the_directories_it_crosses() {
+        // Every level has four directories and four files, so a full depth-5 walk is 1+4+16+64+256
+        // child queries. A page of ten must not pay that: it stops as soon as it has the page plus
+        // the one row that proves there is more.
+        var calls = 0
+        val reader = PhoneFiles.Reader { _ ->
+            calls++
+            PhoneFiles.Dir.Found(
+                listOf(
+                    PhoneFiles.Entry("d0", true, null),
+                    PhoneFiles.Entry("d1", true, null),
+                    PhoneFiles.Entry("d2", true, null),
+                    PhoneFiles.Entry("d3", true, null),
+                    PhoneFiles.Entry("f0.txt", false, 1),
+                    PhoneFiles.Entry("f1.txt", false, 1),
+                    PhoneFiles.Entry("f2.txt", false, 1),
+                    PhoneFiles.Entry("f3.txt", false, 1),
+                )
+            )
+        }
+
+        val page = ok(PhoneFiles.list("Download", "", 5, null, 0, 10, reader))
+        assertEquals(10, page.count)
+        assertTrue("the eleventh row proves there is more", page.hasMore)
+        assertEquals(10, page.nextOffset)
+        assertEquals(
+            "the page is the start of the depth-first order, not a whole-tree slice",
+            listOf(
+                "d0", "d0/d0", "d0/d0/d0", "d0/d0/d0/d0", "d0/d0/d0/d0/d0",
+                "d0/d0/d0/d0/d1", "d0/d0/d0/d0/d2", "d0/d0/d0/d0/d3",
+                "d0/d0/d0/d0/f0.txt", "d0/d0/d0/d0/f1.txt",
+            ),
+            page.entries.map { it.path },
+        )
+        assertTrue(
+            "a first page must cost the directories it crosses, not the tree: $calls queries",
+            calls <= 5,
+        )
+
+        // A later page walks only up to its own last needed row, never the rest of the tree.
+        calls = 0
+        val later = ok(PhoneFiles.list("Download", "", 5, null, 20, 10, reader))
+        assertEquals(10, later.count)
+        assertTrue(later.hasMore)
+        assertTrue("page 3 still stops early: $calls queries", calls <= 10)
+    }
+
+    @Test
     fun a_page_can_start_inside_the_walk_and_each_page_is_the_same_page_as_the_unpaged_walk() {
         val t = tree {
             dir("a")

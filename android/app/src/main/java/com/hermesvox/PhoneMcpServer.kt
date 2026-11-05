@@ -329,7 +329,9 @@ class PhoneMcpServer private constructor(
             "instructions" to
                 "This is the phone the conversation is happening on. Use the `phone` tool to act on " +
                 "it; every call returns what actually happened. Only the actions the owner has " +
-                "granted are offered; a refusal names its reason and means nothing was performed.",
+                "granted are offered; a refusal names its reason and means nothing was performed, " +
+                "unless it carries `outcome_uncertain:true` — then the action may still complete " +
+                "and `status` says what did.",
         )
     )
 
