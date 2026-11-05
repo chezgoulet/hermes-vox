@@ -1,15 +1,16 @@
 # The phone as an MCP server (#421 steps 3–5)
 
-Presence has two ways of acting on the phone, and they deliberately do not share a wire:
+The mind is the only initiator. The phone does not parse the caller's words, so there is one wire:
 
 | initiator | path | guarantee |
 |---|---|---|
-| **the caller** — "set a timer for five minutes" | `LocalActionGrammar` → `LocalActions.run` | instant, no round trip; the mind learns about it from the presence context on the next turn (D32) |
-| **the mind** — "I'll remind you in an hour" | MCP `tools/call` on this server → `LocalActions.phone` | a request and a **result**; the mind knows whether it happened |
+| **the mind** — "set a timer for five minutes", or "I'll remind you in an hour" | MCP `tools/call` on this server → `LocalActions.phone` | a request and a **result**; the mind knows whether it happened, and the caller hears what actually occurred (D38) |
 
-This document is the second one: what the phone exposes, how the agent is asked to add it, what
-happens when it cannot, and what the manifest actually needs. The setup turn changes the agent's own
-configuration; the manual block remains for an agent that cannot.
+Presence may read the registry this server maintains, so the being can say what is running and how
+long is left. It may not act: `PhoneReadout` exposes no mutating call. This document is the MCP
+surface: what the phone exposes, how the agent is asked to add it, what happens when it cannot, and
+what the manifest actually needs. The setup turn changes the agent's own configuration; the manual
+block remains for an agent that cannot.
 
 
 ---

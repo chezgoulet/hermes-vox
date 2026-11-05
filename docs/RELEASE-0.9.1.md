@@ -64,10 +64,11 @@ sets a tester takes one at a time. This document is ordered that way.
 - **The hardware check** runs at first run for everyone and advises in the Alpha panel; it never
   enables anything.
 
-### The phone, without Alpha
-- **The caller's four local actions** (timer, alarm, Do Not Disturb, volume) are matched on any
-  live voice turn and executed on the phone with no round trip; there is no separate switch for
-  them today. The MCP server and the capability-grant screen are behind the **Phone tools** set.
+### The phone is not a second decision-maker
+- The phone no longer matches your words against a local phrase list. *"Set a timer"* goes to
+  Hermes like every other turn: with **Phone tools** set up and the timer group granted, Hermes
+  calls the phone tool; without it, Hermes says what it cannot do instead of the phone acting
+  behind the conversation's back (D38).
 
 ### Fixed earlier in the 0.9.x line, still shipping here
 `#328` cold-start listening retry, `#330` a failed TTS engine must not block a call, `#346` TTS
@@ -86,6 +87,9 @@ Each set is selected on its own; with the master off, everything below is dimmed
 - It hears tone through the model's own audio encoder; mood steers delivery.
 - The handoff receipt (`event=er-handoff`) proves what the mind was handed; queued words
   (`event=er-pending`) prove the caller was not dropped.
+- Presence may read what the phone is doing — a running timer, the time left, the device facts —
+  so it can say *"your timer has about four minutes left"*. It may not set, cancel or change
+  anything: phone actions belong to the mind. Presence and **Phone tools** are independent sets.
 - Presence is unfinished and says so. It needs the 2.6 GB presence model and a phone with 8 GB of
   memory; the hardware check advises and the first real load can demote the choice.
 
@@ -94,6 +98,9 @@ Each set is selected on its own; with the master off, everything below is dimmed
   and semantic endpointing judges the end of a turn instead of waiting out a fixed silence. Both
   switches default **on inside this set**; about 300 MB more memory during a call. With the gate
   off, the old 800 ms endpoint runs unchanged.
+- This set **requires Presence**, because continuous listening is how the being hears. It cannot
+  be selected without Presence; a stored selection from an earlier build is inert and the picker
+  says why. Turning Presence off leaves it inert.
 
 ### Turn-taking
 - **Backchannels (#245)** — a recorded nonverbal acknowledgement in a mid-thought pause, capped,
@@ -104,19 +111,27 @@ Each set is selected on its own; with the master off, everything below is dimmed
   and listen, or start a new turn.
 
 ### Phone tools
+- This is the mind acting on the phone, and it is independent of Presence: take either set without
+  the other.
 - The mind acts on the phone through **one MCP tool**, `phone`, on the tailnet, with a result for
-  every call and an undo for every reversible one. The tool schema is built from **twelve
-  capability groups**, each Off / Ask / Allow and **all Off by default**; Allow is a Tier 0 word.
-  Tier 2 is refused and stays on the gateway's approval surface. The app sets the server up by
-  asking the agent to edit its own configuration, and says **Connected** only after its own server
-  has seen an authenticated MCP handshake.
-- The caller's local lane (timer, alarm, Do Not Disturb, volume) executes instantly and reports to
-  the mind through the presence context.
+  every call and an undo for every reversible one. The tool schema is built from **thirteen
+  capability groups**, each Off / Ask / Allow and **all Off by default**. Tier 2 is refused and
+  stays on the gateway's approval surface. The app sets the server up by asking the agent to edit
+  its own configuration, and says **Connected** only after its own server has seen an authenticated
+  MCP handshake.
+- There is no local phone lane any more. A timer now costs a round trip and needs this set plus the
+  timer group; that is the price of the mind being the only decision-maker (D38).
 
 ### Switching profiles
 - The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
   you would be talking to, with **IN USE** on the active one, and a switch ends the live call and
   starts a fresh conversation. Unfinished until a host's own profile list arrives reliably (#436).
+- It leaves Alpha once a device pass shows profile switching works as intended.
+
+### Sessions
+- The conversations your agent already has, including ones started at your desk, can be picked up
+  on the phone; resuming shows what was said and continues the same conversation.
+- It leaves Alpha once a device pass shows conversation switching works as intended.
 
 ## Not in this release
 

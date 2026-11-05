@@ -53,14 +53,13 @@ cost controls (dormant), the first-run hardware check that advises.
 (#217), a Presence transcript that is not empty (#223), the invention measurement (#256), and a
 fresh pass on the presence directive and its rails.
 
-**Presence — its tool use (D32–D34).** The layer is not finished at "the phone talks and the mind
-acts". It includes: the mind's **ongoing context** of what the phone is doing (local actions
-running, what the soul last said, device state) carried on every voice turn in the ephemeral
-instructions; the phone's **own capabilities** — timer, alarm, reminder, DND, volume, share —
-executed instantly when the caller asks for them and reported to the mind as context; the mind's
-**direction** of those capabilities, with results, over MCP rather than by rewriting the user's
-words; and the mind's **veto**, pre-execution for consequential acts and post-hoc undo for
-reversible ones. #421 carries the design.
+**Presence — its tool use (D38, which supersedes D32–D34's two-lane shape).** The layer is not
+finished at "the phone talks and the mind acts". It includes: the mind's **ongoing context** of what
+the phone is doing (actions running, what the soul last said, device state) carried on every voice
+turn in the ephemeral instructions; the phone's capabilities — timer, alarm, reminder, DND, volume,
+share — reached by the mind through MCP, with a result for every call; and the mind's **veto**,
+pre-execution for consequential acts and post-hoc undo for reversible ones. Presence may read that
+context and may not act on the phone. #421 carries the design.
 
 **VOX.md per profile**, presence-gated: fetched on the first call for a profile when Presence is
 on, and the correct soul loaded into the local model when the profile switches.

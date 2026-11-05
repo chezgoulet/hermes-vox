@@ -3,17 +3,15 @@ package com.hermesvox
 /**
  * PhoneEngine — the state and the rules behind [PhoneTool], with the platform behind an interface.
  *
- * Everything the phone does to itself passes through here: the **user-initiated** path
- * (`LocalActionGrammar` → [LocalActions.run]) and the **mind-initiated** path (MCP `tools/call`).
- * One registry, one set of ids, one undo table — because the presence context block and the
- * `phone` tool must never disagree about what is running. #421's duplicate-authority risk is a
- * divergence between two memories of the same fact; this class is the only memory.
+ * Everything the phone does to itself passes through here: the **mind-initiated** path (MCP
+ * `tools/call`) and the owner-initiated lane [LocalActions.run] serves. One registry, one set of
+ * ids, one undo table — because the presence context block and the `phone` tool must never
+ * disagree about what is running. #421's duplicate-authority risk is a divergence between two
+ * memories of the same fact; this class is the only memory.
  *
- * The two paths keep different guarantees, as D32 says:
- *
- *  * user-initiated: no round trip, and the confirmation is spoken from the result;
- *  * mind-initiated: the result is the reply. A tool call that fails returns `ok: false` with a
- *    reason, and the mind is expected to say so rather than to claim the action.
+ * Since D38 the phone parses no utterance. The mind decides what the owner meant and calls the
+ * `phone` tool; the result is the reply. A tool call that fails returns `ok: false` with a reason,
+ * and the mind is expected to say so rather than to claim the action.
  *
  * Ids and undo lifetimes:
  *

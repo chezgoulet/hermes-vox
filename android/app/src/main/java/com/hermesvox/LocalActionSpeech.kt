@@ -1,7 +1,7 @@
 package com.hermesvox
 
 /**
- * LocalActionSpeech — what the phone says after taking a local action (B2, #421 step 2).
+ * LocalActionSpeech — the words for a phone action and its result (#421, D38).
  *
  * Two rules, both from the review's invariants:
  *
@@ -9,8 +9,8 @@ package com.hermesvox
  *     says "I've set a timer" when it did not is worse than one that says nothing. So a failure has
  *     its own line, naming what failed, and a permission the app does not have is named as a
  *     permission — never dressed up as a success.
- *  2. **One short line.** It is spoken while the caller is holding the phone to their ear, on the
- *     path whose entire purpose is that it is instant.
+ *  2. **One short line.** It is what the caller hears when the mind reports a phone action, or what
+ *     the phone says when that action rings.
  *
  * Pure JVM, unit-tested in LocalActionSpeechTest.
  */

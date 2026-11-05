@@ -25,19 +25,31 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * LocalActions — the Android side of the phone's own actions, for both initiators (#421 steps 2–4).
+ * What Presence may read from the phone: the registry, and nothing that changes it.
  *
- * There are two ways an action starts, and they keep different guarantees (D32, #421):
+ * The interface is the rule. A mutating capability — a timer, an alarm, Do Not Disturb, volume, a
+ * clipboard write, a message — is deliberately absent, so the presence path cannot reach one by
+ * accident. The being may say "your timer has about four minutes left"; the mind is what acts.
+ */
+interface PhoneReadout {
+    /** Active actions, newest first, compact — what B1's `local_actions:` line carries. */
+    fun registry(nowElapsed: Long, nowEpoch: Long): List<String>
+}
+
+/**
+ * LocalActions — the Android side of the phone's own actions (#421 steps 3–4).
  *
- *  * **user-initiated** — [LocalActionGrammar] matches the caller's words and [run] executes here,
- *    with **no network round trip**. The caller hears one short line ([LocalActionSpeech]) and the
- *    turn never reaches the mind.
- *  * **mind-initiated** — the agent calls the MCP `phone` tool ([PhoneMcpServer]); [phone] executes
- *    the same call through the same engine, and **returns a result** the mind reasons about.
+ * **The mind initiates.** The agent calls the MCP `phone` tool ([PhoneMcpServer]); [phone]
+ * executes the call through [PhoneEngine] and **returns a result** the mind reasons about. The
+ * owner's own words are not parsed on the phone: every voice turn goes to the mind, which decides
+ * whether to call this tool (D38). [run] remains the owner-initiated entry point to the same
+ * engine, and the registry remains the one memory the `status` action, the sheet's Undo and the
+ * presence context read.
  *
- * Both go through [PhoneEngine], which owns the ids, the registry and the undo table. That is the
- * single-source-of-truth rule from #421: the presence context the mind reads and the `status` the
- * mind asks for are the same memory, so the phone can never contradict itself.
+ * [PhoneEngine] owns the ids, the registry and the undo table. That is the single-source-of-truth
+ * rule from #421: the presence context the mind reads and the `status` the mind asks for are the
+ * same memory, so the phone can never contradict itself. [PhoneReadout] is the only half Presence
+ * is given, so the being may say what is running and may not change it.
  *
  * **What each action costs, precisely** — because the honest answer decides what ships:
  *
@@ -56,14 +68,42 @@ import java.util.concurrent.TimeUnit
  * | dial | `ACTION_DIAL` with `tel:` | **none.** The dialer opens with the number and the owner presses call: no `CALL_PHONE` and no emergency special case, because Vox never dials. With a live Vox call, the being says one line, the call ends through the same teardown the hang-up uses, and then the dialer opens — the conversation itself lives on. |
  * | launch / open | `PackageManager` launchable resolution; `ACTION_VIEW` for a URI | **none.** Only activities with a launcher entry are launchable, and the launch goes through [CallWindow] so a live call enters PiP first. If the window cannot shrink, the app still opens. |
  *
- * The **grammar path** is still Tier 0 only: timers, alarms, do-not-disturb and volume, matched
- * locally with no round trip. `message`, `dial` and the app handoffs are **mind-initiated** only —
- * they exist on the MCP wire, where the result is the reply, and never run from the caller's words.
+ * Every action is **mind-initiated** on the MCP wire, where the result is the reply. A caller's
+ * words are never matched against a local grammar: a timer the owner asks for is the mind's call,
+ * with the grant and the card that path enforces (D38).
  */
-class LocalActions(context: Context) {
+class LocalActions(context: Context) : PhoneReadout {
 
     /** What happened, and the one line to say about it — always true. */
     data class Outcome(val ok: Boolean, val line: String)
+
+    /**
+     * What the owner's own lane can ask [run] to execute. These are typed actions, not a parser:
+     * the turn path no longer maps an utterance onto one (D38).
+     */
+    sealed class LocalAction {
+        abstract val kind: String
+
+        data class Timer(val durationMs: Long) : LocalAction() {
+            override val kind = "timer"
+        }
+
+        data class Alarm(val hour: Int, val minute: Int) : LocalAction() {
+            override val kind = "alarm"
+        }
+
+        data class Dnd(val on: Boolean) : LocalAction() {
+            override val kind = "dnd"
+        }
+
+        data class VolumeStep(val direction: Int) : LocalAction() {
+            override val kind = "volume"
+        }
+
+        data class SetVolume(val percent: Int) : LocalAction() {
+            override val kind = "volume"
+        }
+    }
 
     private val app: Context = context.applicationContext ?: context
     private val main = Handler(Looper.getMainLooper())
@@ -134,11 +174,14 @@ class LocalActions(context: Context) {
     }
 
     /**
-     * Take the action now (user-initiated path). [nowElapsed]/[nowEpoch] are injectable so the
-     * registry maths is testable off-device.
+     * Take an action on the owner's behalf, for the owner-initiated entry point to this engine.
+     * [nowElapsed]/[nowEpoch] are injectable so the registry maths is testable off-device.
+     *
+     * This is not a turn path (D38): the caller's words are never parsed into a [LocalAction], and
+     * no voice turn reaches this method.
      */
     fun run(
-        intent: LocalActionGrammar.Intent,
+        intent: LocalAction,
         nowElapsed: Long = SystemClock.elapsedRealtime(),
         nowEpoch: Long = System.currentTimeMillis(),
     ): Outcome = try {
@@ -215,10 +258,8 @@ class LocalActions(context: Context) {
      * entries are dropped here, so the registry cannot report a timer that already rang. It is the
      * same registry the `phone` tool's `status` explains in full.
      */
-    fun registry(
-        nowElapsed: Long = SystemClock.elapsedRealtime(),
-        nowEpoch: Long = System.currentTimeMillis(),
-    ): List<String> = engine.registry(nowElapsed, nowEpoch)
+    override fun registry(nowElapsed: Long, nowEpoch: Long): List<String> =
+        engine.registry(nowElapsed, nowEpoch)
 
     // ---- the uninstall card ----
 
@@ -236,33 +277,33 @@ class LocalActions(context: Context) {
 
     // ---- the user path's words ----
 
-    private fun call(intent: LocalActionGrammar.Intent): PhoneTool.Call = when (intent) {
-        is LocalActionGrammar.Intent.Timer -> PhoneTool.Call.Timer(intent.durationMs)
-        is LocalActionGrammar.Intent.Alarm -> PhoneTool.Call.Alarm(intent.hour, intent.minute)
-        is LocalActionGrammar.Intent.Dnd -> PhoneTool.Call.Dnd(intent.on)
-        is LocalActionGrammar.Intent.VolumeStep -> PhoneTool.Call.Volume(null, intent.direction)
-        is LocalActionGrammar.Intent.SetVolume -> PhoneTool.Call.Volume(intent.percent, 0)
+    private fun call(intent: LocalAction): PhoneTool.Call = when (intent) {
+        is LocalAction.Timer -> PhoneTool.Call.Timer(intent.durationMs)
+        is LocalAction.Alarm -> PhoneTool.Call.Alarm(intent.hour, intent.minute)
+        is LocalAction.Dnd -> PhoneTool.Call.Dnd(intent.on)
+        is LocalAction.VolumeStep -> PhoneTool.Call.Volume(null, intent.direction)
+        is LocalAction.SetVolume -> PhoneTool.Call.Volume(intent.percent, 0)
     }
 
     /**
      * The one line the caller hears. It is derived from the result, so a refusal can never be spoken
      * as a success: the ok branch is only reachable when [PhoneEngine] actually performed the action.
      */
-    private fun speech(intent: LocalActionGrammar.Intent, result: PhoneResult): String {
+    private fun speech(intent: LocalAction, result: PhoneResult): String {
         if (!result.ok) {
             return when {
-                intent is LocalActionGrammar.Intent.Dnd && result.reason == PhoneReason.PERMISSION ->
+                intent is LocalAction.Dnd && result.reason == PhoneReason.PERMISSION ->
                     LocalActionSpeech.dndDenied()
-                intent is LocalActionGrammar.Intent.VolumeStep || intent is LocalActionGrammar.Intent.SetVolume ->
+                intent is LocalAction.VolumeStep || intent is LocalAction.SetVolume ->
                     LocalActionSpeech.volumeDenied()
                 else -> LocalActionSpeech.failed(intent.kind)
             }
         }
         return when (intent) {
-            is LocalActionGrammar.Intent.Timer -> LocalActionSpeech.timerSet(intent.durationMs)
-            is LocalActionGrammar.Intent.Alarm -> LocalActionSpeech.alarmSet(intent.hour, intent.minute)
-            is LocalActionGrammar.Intent.Dnd -> LocalActionSpeech.dnd(intent.on)
-            is LocalActionGrammar.Intent.VolumeStep, is LocalActionGrammar.Intent.SetVolume ->
+            is LocalAction.Timer -> LocalActionSpeech.timerSet(intent.durationMs)
+            is LocalAction.Alarm -> LocalActionSpeech.alarmSet(intent.hour, intent.minute)
+            is LocalAction.Dnd -> LocalActionSpeech.dnd(intent.on)
+            is LocalAction.VolumeStep, is LocalAction.SetVolume ->
                 LocalActionSpeech.volume((result.facts["level"] as? Int) ?: 0)
         }
     }

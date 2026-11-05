@@ -6,8 +6,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * #421 steps 3–4's wiring, pinned at source level the way [LocalActionWiringTest] and
- * [GlueClaimGuardTest] pin theirs: the parts that matter are Android-bound (a foreground service's
+ * #421 steps 3–4's wiring, pinned at source level the way [GlueClaimGuardTest] pins its:
+ * the parts that matter are Android-bound (a foreground service's
  * lifetime, a keystore, a tailnet interface), so what can be checked off-device is the ORDER, the
  * OWNERSHIP, and the one address.
  *
@@ -31,8 +31,9 @@ class PhoneMcpWiringTest {
             vc.contains("PhoneMcp.start(context) { args -> localActions.phone(args) }"),
         )
         assertTrue(
-            "the presence context must report the same instance",
-            vc.contains("actions = localActions.registry()"),
+            "the presence context must report the same instance, read-only",
+            vc.contains("private val presenceReadout: PhoneReadout by lazy { localActions }") &&
+                vc.contains("actions = presenceReadout.registry("),
         )
         assertTrue("one lazy instance, not two", vc.contains("private val localActions: LocalActions by lazy"))
     }
@@ -86,13 +87,6 @@ class PhoneMcpWiringTest {
         assertTrue("the first-run offer is gated too",
             offer.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)"))
         assertTrue("status rows say why they are off", view.contains("const val ALPHA_OFF"))
-    }
-
-    @Test fun the_user_initiated_path_is_untouched_and_still_local() {
-        val parse = vc.indexOf("LocalActionGrammar.parse(text)")
-        val submit = vc.indexOf("session.voiceTurn(")
-        assertTrue("the grammar still runs before the mind is asked", parse > 0 && parse < submit)
-        assertTrue("and it still ends the turn locally", vc.contains("if (local != null) { takeLocalAction(text, local, gen); return }"))
     }
 
     @Test fun the_settings_row_opens_the_setup_sheet_not_a_paste_block() {
