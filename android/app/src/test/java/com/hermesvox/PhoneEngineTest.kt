@@ -116,6 +116,11 @@ class PhoneEngineTest {
      * pretending the MCP wire can grant Allow where the design does not.
      */
     private val grants = PhoneGrants.Source { PhoneGrants.State.ALLOW }
+
+    /** The notes group on, for the mind's view: Tier 1, so Ask is its on state. */
+    private val notesOn = PhoneGrants.Source { g ->
+        if (g.id == "notes") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+    }
     private val engine = PhoneEngine(fake, grants = grants)
     private val t0 = 1_000_000L        // elapsed millis
     private val e0 = 1_700_000_000_000L // epoch millis
@@ -250,7 +255,7 @@ class PhoneEngineTest {
     // ---- note (tier 1) ----
 
     @Test fun a_note_is_saved_reported_and_undoable() {
-        val r = engine.execute(PhoneTool.Call.Note("plumber Thursday 9am"), t0, e0)
+        val r = engine.execute(PhoneTool.Call.Note("plumber Thursday 9am"), t0, e0, PhoneEngine.Origin.MIND)
         assertTrue(r.json(), r.ok)
         assertEquals(PhoneTiers.REPORTED, r.tier)
         assertEquals("plumber Thursday 9am", r.facts["text"])
@@ -265,12 +270,16 @@ class PhoneEngineTest {
     }
 
     @Test fun a_note_outlives_the_process_it_was_made_in() {
-        val r = engine.execute(PhoneTool.Call.Note("milk"), t0, e0)
-        val restored = PhoneEngine(Fake())
-        restored.restoreNotes(listOf(PhoneEngine.Note(r.id!!, "milk", e0)), t0)
+        val r = engine.execute(PhoneTool.Call.Note("milk"), t0, e0, PhoneEngine.Origin.MIND)
+        // The restored phone is the mind's view, so it is given the grant the note was made under.
+        val restored = PhoneEngine(Fake(), grants = notesOn)
+        restored.restoreNotes(
+            listOf(PhoneEngine.Note(r.id!!, "milk", e0, PhoneEngine.Origin.MIND)),
+            t0,
+        )
         assertTrue(restored.registry(t0, e0).contains("note(id=note-1)"))
         // A new note must not collide with the restored id.
-        val next = restored.execute(PhoneTool.Call.Note("eggs"), t0, e0)
+        val next = restored.execute(PhoneTool.Call.Note("eggs"), t0, e0, PhoneEngine.Origin.MIND)
         assertEquals("note-2", next.id)
     }
 
@@ -379,7 +388,7 @@ class PhoneEngineTest {
 
     @Test fun status_reports_the_action_list_the_tiers_and_what_is_running() {
         timer(300_000)
-        engine.execute(PhoneTool.Call.Note("call the vet"), t0, e0)
+        engine.execute(PhoneTool.Call.Note("call the vet"), t0, e0, PhoneEngine.Origin.MIND)
         val s = engine.status(t0 + 60_000, e0 + 60_000)
         assertTrue(s.json(), s.ok)
         assertEquals(PhoneTool.offeredActions(grants), s.facts["offered"])

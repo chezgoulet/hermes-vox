@@ -23,8 +23,13 @@ class PhoneContactsTest {
         var permission: String? = null
         var matches: List<PhoneEngine.PhonePlatform.ContactMatch>? = emptyList()
         val asked = ArrayList<String>()
+        /** Every reach for the address book, permission included — so "no read" is proven. */
+        var permissionAsks = 0
 
-        override fun contactsPermission(): String? = permission
+        override fun contactsPermission(): String? {
+            permissionAsks++
+            return permission
+        }
 
         override fun contactMatches(
             name: String,
@@ -32,6 +37,12 @@ class PhoneContactsTest {
         ): List<PhoneEngine.PhonePlatform.ContactMatch>? {
             asked.add(name)
             return matches?.take(limit)
+        }
+
+        /** The handoff path's single-number lookup: the same accessor, so a test can prove no read. */
+        override fun contactNumber(name: String): String? {
+            asked.add(name)
+            return matches?.firstOrNull()?.numbers?.firstOrNull()?.number
         }
 
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean = true
@@ -184,5 +195,58 @@ class PhoneContactsTest {
         assertEquals(PhoneReason.NOT_GRANTED, r.reason)
         assertTrue(r.detail!!.contains("Contacts"))
         assertTrue(fake.asked.isEmpty())
+    }
+
+    // ---- H3: a name is a Contacts read whatever action asked for it ----
+
+    /** Contacts=Ask, Calls=Allow: the dial is refused and the address book is never opened. */
+    @Test fun dialling_a_name_at_ask_reads_no_address_book() {
+        val grants = PhoneGrants.Source { g ->
+            when (g.id) {
+                "contacts" -> PhoneGrants.State.ASK
+                "calls" -> PhoneGrants.State.ALLOW
+                else -> PhoneGrants.State.OFF
+            }
+        }
+        val r = engine(grants).dispatch(mapOf("action" to "dial", "to" to "Mom"), t0, e0)
+        assertFalse(r.ok)
+        assertEquals("Ask is not Allow for a lookup", PhoneReason.APPROVAL, r.reason)
+        assertTrue("the refusal names Contacts: ${r.detail}", r.detail!!.contains("Contacts"))
+        assertEquals("the permission was never even asked for", 0, fake.permissionAsks)
+        assertTrue("the address book was never queried", fake.asked.isEmpty())
+    }
+
+    /** Contacts=Off, Messages=Allow: same refusal, as `not_granted`, and no read. */
+    @Test fun messaging_a_name_at_off_is_not_granted_and_reads_no_address_book() {
+        val grants = PhoneGrants.Source { g ->
+            if (g.id == "messages") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        val r = engine(grants)
+            .dispatch(mapOf("action" to "message", "to" to "Mom", "text" to "hi"), t0, e0)
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, r.reason)
+        assertTrue("the refusal names Contacts: ${r.detail}", r.detail!!.contains("Contacts"))
+        assertEquals(0, fake.permissionAsks)
+        assertTrue(fake.asked.isEmpty())
+    }
+
+    /** The positive control for the two tests above: Allow does reach the address book. */
+    @Test fun dialling_a_name_at_allow_resolves_it() {
+        val grants = PhoneGrants.Source { g ->
+            when (g.id) {
+                "contacts" -> PhoneGrants.State.ALLOW
+                "calls" -> PhoneGrants.State.ALLOW
+                else -> PhoneGrants.State.OFF
+            }
+        }
+        fake.matches = listOf(
+            PhoneEngine.PhonePlatform.ContactMatch(
+                "Mom",
+                listOf(PhoneEngine.PhonePlatform.ContactNumber("mobile", "+15551234567")),
+            ),
+        )
+        val r = engine(grants).dispatch(mapOf("action" to "dial", "to" to "Mom"), t0, e0)
+        assertEquals(r.json(), "Mom", fake.asked.single())
+        assertFalse("the refusal path was not taken: ${r.json()}", r.reason == PhoneReason.APPROVAL)
     }
 }

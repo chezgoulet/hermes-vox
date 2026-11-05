@@ -207,9 +207,10 @@ class PhoneToolsSheet(
         col.addView(VoxSheet.subhead(act, "Capabilities"))
         body(
             col,
-            "Off hides a group from your agent. Ask lets it try, and every use waits for you. " +
-                "Allow runs it instantly and reports it in Recent actions — and Allow is offered " +
-                "for instant, reversible groups only. ${PhoneToolsView.grantSummary(states)}.",
+            "Off hides a group from your agent. Ask refuses the call unless an approval card can " +
+                "answer it — only removing an app has one. Allow runs it instantly and reports it " +
+                "in Recent actions — and Allow is offered for instant, reversible groups only. " +
+                "${PhoneToolsView.grantSummary(states)}.",
             dim = true,
         )
         body(

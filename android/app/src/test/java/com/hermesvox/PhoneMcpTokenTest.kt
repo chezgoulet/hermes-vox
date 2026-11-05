@@ -64,8 +64,13 @@ class PhoneMcpTokenTest {
 
     @Test fun notes_round_trip_and_a_bad_entry_costs_only_itself() {
         val notes = listOf(
-            PhoneEngine.Note("note-1", "plumber Thursday 9am", 1_700_000_000_000L),
-            PhoneEngine.Note("note-2", "quotes \"inside\" and a\nnewline", 1_700_000_001_000L),
+            PhoneEngine.Note(
+                "note-1", "plumber Thursday 9am", 1_700_000_000_000L, PhoneEngine.Origin.MIND,
+            ),
+            PhoneEngine.Note(
+                "note-2", "quotes \"inside\" and a\nnewline", 1_700_000_001_000L,
+                PhoneEngine.Origin.OWNER,
+            ),
         )
         assertEquals(notes, Notes.decode(Notes.encode(notes)))
         assertEquals(emptyList<PhoneEngine.Note>(), Notes.decode(null))

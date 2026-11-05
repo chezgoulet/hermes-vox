@@ -149,14 +149,66 @@ class PhoneGrantsTest {
         assertEquals(listOf("timer", "alarm", "note", "undo", "status"), PhoneGrants.advertised(both))
     }
 
-    @Test fun the_one_bulk_shortcut_touches_tier_zero_only() {
+    /**
+     * M8 of the 0.9.1 review: an entry in the enum is a capability the phone must be able to
+     * keep. Ask on a Tier 0 group has no card behind it, so it advertises nothing; the one
+     * Tier 0 action that raises its own card (`uninstall`) is still offered.
+     */
+    @Test fun ask_advertises_only_what_a_card_can_answer() {
+        val tierZero = listOf(
+            "timers-alarms", "dnd-volume", "media", "device-state", "clipboard",
+            "notifications", "messages", "calls", "contacts",
+        )
+        for (id in tierZero) {
+            val group = PhoneGrants.GROUPS.first { it.id == id }
+            assertEquals("$id is Tier 0", PhoneTiers.INSTANT, group.tier)
+            val on = PhoneGrants.Source { g -> if (g.id == id) PhoneGrants.State.ASK else PhoneGrants.State.OFF }
+            assertEquals(
+                "$id at Ask has no card, so it must not be advertised",
+                listOf("undo", "status"),
+                PhoneGrants.advertised(on),
+            )
+        }
+
+        val apps = PhoneGrants.Source { g ->
+            if (g.id == "apps") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        }
+        assertEquals(
+            "only the action with its own card survives Ask",
+            listOf("uninstall", "undo", "status"),
+            PhoneGrants.advertised(apps),
+        )
+    }
+
+    /**
+     * L7 of the 0.9.1 review: the one bulk shortcut must not grant the privacy-read groups. A tap
+     * that turned Notifications, Contacts and Apps on at once would hand over other people's words
+     * and the uninstall request path without the owner deciding to.
+     */
+    @Test fun the_one_bulk_shortcut_touches_tier_zero_but_not_the_private_groups() {
+        assertEquals(
+            "the exempt set is exactly the groups a bulk tap must not decide",
+            setOf("notifications", "contacts", "apps"),
+            PhoneGrants.BULK_EXEMPT,
+        )
+        for (id in PhoneGrants.BULK_EXEMPT) {
+            val group = PhoneGrants.GROUPS.first { it.id == id }
+            assertEquals("$id is Tier 0, so the exemption has to be explicit", PhoneTiers.INSTANT, group.tier)
+        }
+
         val before = PhoneGrants.GROUPS.associate { it.id to PhoneGrants.State.OFF }
         val after = PhoneGrants.instantAll(before)
         for (group in PhoneGrants.GROUPS) {
-            if (group.tier == PhoneTiers.INSTANT) {
-                assertEquals("${group.id} is instant", PhoneGrants.State.ALLOW, after[group.id])
-            } else {
-                assertEquals("${group.id} must stay Off", PhoneGrants.State.OFF, after[group.id])
+            when {
+                group.id in PhoneGrants.BULK_EXEMPT -> assertEquals(
+                    "${group.id} stays a decision of its own",
+                    PhoneGrants.State.OFF,
+                    after[group.id],
+                )
+                group.tier == PhoneTiers.INSTANT ->
+                    assertEquals("${group.id} is instant", PhoneGrants.State.ALLOW, after[group.id])
+                else ->
+                    assertEquals("${group.id} must stay Off", PhoneGrants.State.OFF, after[group.id])
             }
         }
     }
