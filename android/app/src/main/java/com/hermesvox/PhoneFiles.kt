@@ -440,39 +440,51 @@ object PhoneFiles {
 
     // ---- a window of a file ----
 
-    /** The text one window actually yielded, and the bytes it covers. */
+    /** The text one window actually yielded, and where it really begins and ends. */
     data class TextWindow(
-        /** Bytes skipped at the front because they continued a character before the window. */
-        val skipped: Int,
-        /** Bytes covered by [text]; may be a little less than the slice's length at the tail. */
+        /** The absolute byte offset of [text]'s first byte — never before the requested start. */
+        val offset: Long,
+        /** Bytes covered by [text]; at most the requested length, never a byte more. */
         val bytes: Int,
         val text: String,
     )
 
     /**
-     * The text of a byte window that may begin and end mid-character.
+     * The window `[start, start + want)` of a file, chosen **inward**: [bytes] was read from
+     * absolute offset [from], and the result is trimmed to the first character boundary at or after
+     * [start] and the last boundary at or before `start + want`.
      *
-     * A window is cut at byte offsets the caller chose, so the first bytes may continue a character
-     * that started before it and the last may be an incomplete character. Unlike [asText] — which
-     * is strict, because a whole file that is not UTF-8 is not text — a window **snaps to character
-     * boundaries**: up to three leading continuation bytes are skipped and an incomplete trailing
-     * sequence is trimmed. That is not leniency about the file; it is the honest reading of a slice
-     * that was cut on purpose. A NUL byte, or a malformed sequence in the middle, is still not text.
+     * A window is cut at byte offsets the caller chose, so the cut may fall inside a character.
+     * Snapping **inward** is what makes stitching honest: an agent that asks for `[0, 4)` and then
+     * `[4, 8)` gets four bytes and four bytes, with no character duplicated at the seam. Snapping
+     * outward (keeping the slack bytes on either side) would repeat up to three characters at every
+     * seam while reporting an offset the text does not start at.
+     *
+     * The three bytes of slack the caller reads on each side are what makes the inward snap
+     * possible: a UTF-8 character is at most four bytes, so a boundary within three bytes of each
+     * cut is always inside the buffer. A malformed sequence inside the window is still not text
+     * (unlike [asText], which decides that for a whole file); a NUL byte anywhere in the buffer is
+     * binary whatever the decoder thinks.
      */
-    fun windowText(bytes: ByteArray, wholeFile: Boolean): TextWindow? {
+    fun window(bytes: ByteArray, from: Long, start: Long, want: Long): TextWindow? {
         if (bytes.any { it == 0.toByte() }) return null
-        var skip = 0
-        if (!wholeFile) {
-            while (skip < bytes.size && skip < 3 && (bytes[skip].toInt() and 0xC0) == 0x80) skip++
-        }
-        for (trim in 0..3) {
-            val size = bytes.size - skip - trim
-            if (size < 0) continue
-            val text = strictUtf8(bytes, skip, size) ?: continue
-            return TextWindow(skip, size, text)
-        }
-        return null
+        val begin = (start - from).coerceIn(0L, bytes.size.toLong()).toInt()
+        val end = (begin.toLong() + want.coerceAtLeast(0)).coerceAtMost(bytes.size.toLong()).toInt()
+        // First boundary at or after the requested start: a character never begins on a
+        // continuation byte, so skip the ones that continue the character before the cut.
+        var a = begin
+        while (a < end && continuation(bytes[a])) a++
+        // Last boundary at or before the requested end: if the cut landed inside a character,
+        // back up to that character's first byte and leave the whole character out. At the end of
+        // the buffer there is nothing to trim against: that is where the file stops.
+        var b = end
+        while (b > a && b < bytes.size && continuation(bytes[b])) b--
+        val text = strictUtf8(bytes, a, b - a) ?: return null
+        return TextWindow(from + a, b - a, text)
     }
+
+    /** True for a UTF-8 continuation byte (`10xxxxxx`): such a byte never begins a character. */
+    private fun continuation(b: Byte): Boolean = (b.toInt() and 0xC0) == 0x80
 
     /** Strict UTF-8 for exactly [len] bytes at [off]; null when they are not. */
     private fun strictUtf8(bytes: ByteArray, off: Int, len: Int): String? = try {

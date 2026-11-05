@@ -210,9 +210,11 @@ class PhoneEngine(
 
             /**
              * A window of a file: [text] begins at byte [offset] of a file whose whole size is
-             * [totalBytes], and covers [windowBytes] bytes. [text] may start a byte or two after
-             * [offset] when the caller's cut fell inside a character, and the engine reports the
-             * offset it actually used rather than the one that was asked for.
+             * [totalBytes], and covers [windowBytes] bytes — exactly `[offset, offset + windowBytes)`
+             * of the file. [offset] is never before the requested start and the window never ends
+             * after the requested start plus length, so windows stitched by the offsets asked for
+             * never repeat a character; the engine reports the offset it actually used rather than
+             * the one that was asked for, because a cut inside a character cannot be honoured.
              */
             data class Window(
                 val name: String,

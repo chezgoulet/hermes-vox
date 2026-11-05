@@ -258,8 +258,9 @@ object PhoneFileAccess {
     }
 
     /**
-     * One window of [name] inside [tree]: [length] bytes from [offset], snapped to character
-     * boundaries, with the file's **total** size so the result can say whether it is a window.
+     * One window of [name] inside [tree]: [length] bytes from [offset], snapped **inward** to
+     * character boundaries, with the file's **total** size so the result can say whether it is a
+     * window.
      *
      * This is the answer for a file above [PhoneFiles.MAX_READ_BYTES]: the caller asks for a piece
      * small enough to use, and keeps asking until it has what it needs. Nothing is cut silently and
@@ -290,19 +291,19 @@ object PhoneFileAccess {
             )
         }
         val want = length.coerceAtLeast(1).coerceAtMost(total - start)
-        // Three bytes of slack on each side: a character is at most four bytes in UTF-8, so this is
-        // enough to start and finish on character boundaries rather than splitting one.
+        // Three bytes of slack on each side, so the inward snap in [PhoneFiles.window] has a whole
+        // character to find on either side of the cut. The text itself never extends past `want`.
         val from = (start - 3).coerceAtLeast(0)
         val slice = readRange(context, doc.uri, from, (start - from) + want + 3)
             ?: return PhoneEngine.PhonePlatform.FileText.Failed(
                 "the file could not be read · nothing was read",
             )
-        val window = PhoneFiles.windowText(slice, wholeFile = from == 0L)
+        val window = PhoneFiles.window(slice, from, start, want)
             ?: return PhoneEngine.PhonePlatform.FileText.NotText
         return PhoneEngine.PhonePlatform.FileText.Window(
             name = doc.displayName,
             totalBytes = total,
-            offset = from + window.skipped,
+            offset = window.offset,
             windowBytes = window.bytes.toLong(),
             text = window.text,
         )

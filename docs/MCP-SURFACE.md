@@ -340,10 +340,11 @@ the provider's child query, and `PhoneFileListTest` pins that at source level.
 — `offset` and `length` — and a windowed read returns that slice with `truncated: true`, the `offset`
 it actually started at, and the file's total `bytes`, so the mind can keep asking until it has what
 it needs. `truncated` is false only when the returned text is the entire file. A window is cut at byte
-offsets, so it snaps to UTF-8 character boundaries: up to three leading continuation bytes are skipped
-and an incomplete trailing sequence is trimmed, and the result reports where the text really starts
-rather than pretending the cut was clean. `file_offer` has no such cap because it does not put the
-bytes in the result: it keeps the bridge's own 100 MB.
+offsets, so it snaps to UTF-8 character boundaries **inward**: it begins at the first boundary at or
+after `offset` and ends at the last at or before `offset + length`, and reports where the text really
+starts. Stitching windows by the offsets asked for therefore never duplicates a character at a seam.
+`file_offer` has no such cap because it does not put the bytes in the result: it keeps the bridge's
+own 100 MB.
 
 **Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns what the
 calendar holds: start, end, title, calendar name, description, location, and attendee **names**.

@@ -629,6 +629,70 @@ class PhoneFileListTest {
 
     // ---- file_read windows ----
 
+    /**
+     * M11 of the 0.9.1 review. The window is a slice of `[start, start + want)` **snapped inward**:
+     * it never begins before `start` and never ends after `start + want`, so an agent stitching by
+     * the offsets it asked for gets every character exactly once. These assertions are on the
+     * arithmetic itself — [PhoneFiles.window] with the real slack buffer — not on a slice the test
+     * cut by hand, because the old test cut the slice the old way and could not see the bug.
+     */
+    @Test
+    fun a_window_never_reaches_outside_the_length_it_asked_for() {
+        val bytes = "abcdefghij".toByteArray()
+        // The caller read three bytes of slack on each side, exactly as readWindow does.
+        val from = 0L
+        val got = PhoneFiles.window(bytes, from, start = 3, want = 4)!!
+        assertEquals("the four bytes asked for, not the three of slack on either side", "defg", got.text)
+        assertEquals("the text begins at the requested offset", 3L, got.offset)
+        assertEquals("and covers no more than the requested length", 4, got.bytes)
+
+        assertNull(
+            "a NUL is binary in a window too",
+            PhoneFiles.window(byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()), 0, 0, 3),
+        )
+    }
+
+    @Test
+    fun a_window_snaps_to_character_boundaries_instead_of_splitting_one() {
+        // "héllo wörld": h C3 A9 l l o ␠ w C3 B6 r l d — cuts below land inside a character.
+        val text = "héllo wörld"
+        val bytes = text.toByteArray()
+
+        val exact = PhoneFiles.window(bytes, 0, start = 1, want = 2)!!
+        assertEquals("a cut on both sides of a two-byte character returns it", "é", exact.text)
+        assertEquals(1L, exact.offset)
+        assertEquals(2, exact.bytes)
+
+        // A start inside the é cannot be honoured outward: the first boundary at or after it is
+        // after the whole character, so the é is left out rather than repeated.
+        val midStart = PhoneFiles.window(bytes, 0, start = 2, want = 5)!!
+        assertEquals("the character the cut fell inside is not returned", "llo ", midStart.text)
+        assertEquals("the window begins after the requested offset, never before", 3L, midStart.offset)
+        assertTrue("and never before it", midStart.offset >= 2L)
+
+        // An end inside the ö leaves the whole character out rather than keeping its first byte.
+        val cutEnd = PhoneFiles.window(bytes, 0, start = 6, want = 3)!!
+        assertEquals("a character cut at its end is not half-returned", " w", cutEnd.text)
+        assertTrue(
+            "the window ends at or before the requested end",
+            cutEnd.offset + cutEnd.bytes <= 6L + 3L,
+        )
+
+        // The same file, read in windows the size the caller asked for, stitches back to itself
+        // with nothing duplicated at a seam and nothing dropped.
+        val stitched = StringBuilder()
+        var cursor = 0L
+        while (cursor < bytes.size) {
+            // Production reads three bytes of slack on each side; the full buffer here is that
+            // window with the slack already in hand.
+            val w = PhoneFiles.window(bytes, from = 0, start = cursor, want = 4)!!
+            assertTrue("a window that yields nothing would never advance", w.bytes > 0)
+            stitched.append(w.text)
+            cursor = w.offset + w.bytes
+        }
+        assertEquals("every character exactly once", text, stitched.toString())
+    }
+
     @Test
     fun a_window_read_returns_the_slice_and_the_total_the_truth_needs() {
         fake.folders = listOf(folder)
@@ -702,26 +766,6 @@ class PhoneFileListTest {
                 (refused as PhoneTool.Parsed.Refuse).result.reason,
             )
         }
-    }
-
-    @Test
-    fun a_window_snaps_to_character_boundaries_instead_of_splitting_one() {
-        val bytes = "héllo".toByteArray()
-        val fromStart = PhoneFiles.windowText(bytes.copyOfRange(1, bytes.size), wholeFile = false)!!
-        assertEquals("éllo", fromStart.text)
-
-        val midCharacter = PhoneFiles.windowText(bytes.copyOfRange(2, bytes.size), wholeFile = false)!!
-        assertEquals("the bytes before the window cannot be invented", "llo", midCharacter.text)
-        assertEquals(1, midCharacter.skipped)
-
-        val cutShort = PhoneFiles.windowText(bytes.copyOfRange(0, 2), wholeFile = false)!!
-        assertEquals("an incomplete trailing character is trimmed, not replaced", "h", cutShort.text)
-        assertEquals(1, cutShort.bytes)
-
-        assertNull(
-            "a NUL is binary in a window too",
-            PhoneFiles.windowText(byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()), false),
-        )
     }
 
     @Test
