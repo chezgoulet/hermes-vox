@@ -196,3 +196,18 @@
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
   match: 'if \(state == State\.ALLOW && !permits\(group\.tier, state\)\) State\.ASK'
+
+# ---- #325 and the gate's edge: what is not an alpha set ----
+
+- id: quiet-calls-not-gated
+  says: "no master gate in front of it"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/CallQuiet.kt
+  match: 'fun enabled\(getBoolean'
+
+- id: quiet-calls-off-by-default
+  says: "its own switch in Hearing"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/CallQuiet.kt
+  match: 'DEFAULT_ON = false'
+
