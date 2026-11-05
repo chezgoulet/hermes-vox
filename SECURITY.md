@@ -7,16 +7,17 @@ protected, what is deliberately out of scope, and how to report a vulnerability.
 Every control named here exists in the code — read the cited anchors rather than
 trusting the summary.
 
-**Current supported release line: 0.5.x** (HEAD 0.5.7, versionCode 103).
+**Current supported release line: 0.9.x** (latest release 0.9.0.3, versionCode 146; 0.9.1 is
+prepared, versionCode 147).
 
 ---
 
 ## Reporting a vulnerability
 
 **Do not open a public issue or PR for a vulnerability.** This repository is
-private, but every collaborator can read the issue tracker — and the details of
-a live exploit (especially one involving the gateway credential or the agent's
-tool access) must not sit in a shared tracker before a fix ships.
+public, so the issue tracker is public too — and the details of a live exploit
+(especially one involving the gateway credential or the agent's tool access) must
+not sit in a public thread before a fix ships. Use the private address below.
 
 Report privately to the maintainer at the address used on the repository's
 release commits:
@@ -195,11 +196,11 @@ The security boundary therefore has three sides:
 
 ## Supported versions and how fixes are released
 
-- The **current 0.5.x line** is supported. This is a single-maintainer House
+- The **current 0.9.x line** is supported. This is a single-maintainer House
   project with no LTS/backport promises — fixes ship on the current line, as
   fast point releases when the issue warrants.
-- Release mechanics: version bump in `android/app/build.gradle:23-24`, release
-  notes in `docs/RELEASE-<version>.md`, commit
+- Release mechanics: version bump in `android/app/build.gradle`,
+  release notes in `docs/RELEASE-<version>.md`, commit
   `chore(release): <version> (<code>) — ...`, tag === versionName === APK (no
   leading `v`), release-signed APK named `hermes-vox-<versionName>.apk`.
 - Security fixes are documented honestly in the release notes (including the
