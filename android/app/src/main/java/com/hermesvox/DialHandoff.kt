@@ -19,10 +19,10 @@ package com.hermesvox
  * ## Why the announcement takes a continuation
  *
  * [Host.announce] receives the rest of the handoff as `after`. On device the line is voiced
- * through the being and `after` runs when TTS starts — with a bounded fallback when nothing
- * can speak. Ending the call is what stops TTS, so calling it before the line is audible
- * would make the announcement a sentence the owner never hears. The test host calls `after`
- * immediately, which is what makes the order assertable without a clock.
+ * through the being and `after` runs when TTS **finishes** the utterance — with a bounded
+ * fallback when nothing can speak or the engine never reports completion. Ending the call is
+ * what stops TTS, so firing on *start* would cut the line that has just begun. The test host
+ * calls `after` immediately, which is what makes the order assertable without a clock.
  *
  * ## Why it does not wait for the telephony call
  *
@@ -45,7 +45,11 @@ object DialHandoff {
         /** Can this phone resolve an `ACTION_DIAL` intent at all? False is `no_app`. */
         fun canDial(): Boolean = true
 
-        /** Say [line] through the being, then run [after]. The device waits for TTS to start. */
+        /**
+         * Say [line] through the being, then run [after] **when the line is done** — not when
+         * it starts. On device the done callback is [VoxTts]'s completion; a host that cannot
+         * speak runs [after] at once.
+         */
         fun announce(line: String, after: () -> Unit) {
             after()
         }
@@ -56,6 +60,31 @@ object DialHandoff {
         /** Start `ACTION_DIAL` with [number]. False when the intent could not be started. */
         fun dial(number: String): Boolean = false
     }
+
+    /**
+     * The one-shot that runs the rest of a live-call handoff.
+     *
+     * TTS reports *start* and *done* separately, and the teardown cuts whatever is playing, so
+     * only **done** may trigger [after]. [onFallback] is the bound measured from the start for an
+     * engine that never reports either. Whichever arrives first wins; the rest are ignored.
+     */
+    class AnnounceOnce(private val after: () -> Unit) {
+        private val fired = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** Synthesis started. Deliberately does nothing: the line is not over. */
+        fun onStarted() = Unit
+
+        /** The line finished (or was cut). Run the handoff now. */
+        fun onDone() = fire()
+
+        /** The bound from the start expired. Run the handoff now. */
+        fun onFallback() = fire()
+
+        private fun fire() {
+            if (fired.compareAndSet(false, true)) after()
+        }
+    }
+
 
     /** Which path the handoff took. The tests assert it; callers do not branch on it. */
     enum class Outcome {
@@ -76,13 +105,21 @@ object DialHandoff {
      * Hand [number] to the dialer, ending a live Vox call at the handoff. The dialer is
      * resolved **before** anything is ended, so a phone with no dialer is `no_app` rather
      * than a call lost for nothing.
+     *
+     * [onLiveDial] is called with the dialer's own result only on the live-call path, after
+     * [Host.endCall]. The caller has already answered with a pending handoff by then, so this
+     * is how the post-teardown outcome becomes its own audited row rather than being lost (H1).
      */
-    fun run(host: Host, number: String): Outcome {
+    fun run(
+        host: Host,
+        number: String,
+        onLiveDial: (Boolean) -> Unit = {},
+    ): Outcome {
         if (!host.canDial()) return Outcome.NO_DIALER
         if (!host.callLive()) return if (host.dial(number)) Outcome.DIALED else Outcome.DIAL_FAILED
         host.announce(LINE) {
             host.endCall()
-            host.dial(number)
+            onLiveDial(host.dial(number))
         }
         return Outcome.ANNOUNCED_END_THEN_DIAL
     }

@@ -87,4 +87,14 @@ class PipWiringTest {
         assertFalse("a second teardown", receiver.contains("liveController?.stop()"))
         assertFalse(receiver.contains("VoiceService.stop("))
     }
+
+    @Test
+    fun ending_the_call_from_pip_closes_the_window() {
+        val src = mainActivitySource()
+        val endCall = src.substringAfter("private fun endCall()")
+            .substringBefore("override fun onRequestPermissionsResult")
+        // A dial handoff ends the call from inside PiP; an idle app must never float.
+        assertTrue("the teardown notices PiP", endCall.contains("isInPictureInPictureMode"))
+        assertTrue("and closes the window", endCall.contains("finish()"))
+    }
 }

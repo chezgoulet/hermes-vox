@@ -3233,7 +3233,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
     fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified",
-                  onPlayed: (() -> Unit)? = null) {
+                  onPlayed: (() -> Unit)? = null, onDone: (() -> Unit)? = null) {
         if (text.isBlank()) return
         // 0.8/M3: RECORD the glue text and its source. The 09-10 field session produced a
         // 60-character spoken line during the mind-work window that matched no ErFillers
@@ -3321,6 +3321,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 lastHeardSource = source
                 try { onPlayed?.invoke() } catch (_: Throwable) {}
             }) { _ ->
+                // The utterance is over (spoken, or cut). This is when a handoff that must
+                // not cut the line may tear down; TTS start is too early (H1).
+                try { onDone?.invoke() } catch (_: Throwable) {}
                 if (speakSeq.get() == seq) {
                     glueSpeaking = false
                     // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
@@ -3340,6 +3343,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // #373: nothing could speak the line (the host logged which engine and why).
                 // Release the glue latch so the next line is not refused by our own gate.
                 glueSpeaking = false
+                // There is no utterance to finish; settle the caller's continuation now
+                // rather than making a handoff wait for the fallback bound.
+                try { onDone?.invoke() } catch (_: Throwable) {}
                 VoxLog.er("event=er-glue-skip source=$source reason=no-engine")
             }
         }

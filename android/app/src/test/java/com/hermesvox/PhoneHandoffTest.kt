@@ -52,7 +52,7 @@ class PhoneHandoffTest {
         override fun announce(line: String, after: () -> Unit) {
             events += "announce"
             assertEquals(DialHandoff.LINE, line)
-            after()
+            if (deferAnnounce) this.after = after else after()
         }
 
         override fun endCall() {
@@ -145,7 +145,14 @@ class PhoneHandoffTest {
     }
 
     private val fake = FakePhone()
-    private val engine = PhoneEngine(fake, grants = PhoneGrants.Source { PhoneGrants.State.ALLOW })
+    private val audited = mutableListOf<PhoneAudit.Entry>()
+    private val engine = PhoneEngine(
+        fake,
+        grants = PhoneGrants.Source { PhoneGrants.State.ALLOW },
+        audit = { result, args, at ->
+            audited += PhoneAudit.entry(at, args, result)
+        },
+    )
     private val t0 = 1_000_000L
     private val e0 = 1_700_000_000_000L
 
@@ -229,6 +236,76 @@ class PhoneHandoffTest {
         assertTrue(r.json(), r.ok)
         assertEquals("123456", r.facts["to"])
         assertEquals(listOf("announce", "end", "dial:123456"), fake.events)
+    }
+
+    @Test
+    fun dial_with_a_live_call_reports_pending_before_it_ends_anything() {
+        fake.live = true
+        fake.deferAnnounce = true
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertTrue(r.json(), r.ok)
+        assertEquals("pending", r.facts["handoff"])
+        assertTrue(
+            "the reply says the dialer has not opened yet: ${r.facts}",
+            (r.facts["note"] as? String)?.contains("dialer") == true,
+        )
+        assertEquals("only the line was announced; nothing was ended or dialled", listOf("announce"), fake.events)
+        assertEquals("the pending reply is the only row so far", 1, audited.size)
+    }
+
+    @Test
+    fun dial_records_the_post_teardown_result_as_its_own_audit_row() {
+        fake.live = true
+        fake.deferAnnounce = true
+        fake.dialStarts = false
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(1, audited.size)
+
+        fake.after?.invoke()
+        assertEquals(listOf("announce", "end", "dial:123456"), fake.events)
+        assertEquals("the late outcome gets its own row", 2, audited.size)
+        val late = audited[1]
+        assertEquals("dial", late.action)
+        assertFalse("a dial that did not open is not a success", late.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, late.outcome)
+    }
+
+    @Test
+    fun the_announcement_continues_on_done_and_never_on_start() {
+        var fired = 0
+        val once = DialHandoff.AnnounceOnce { fired++ }
+        once.onStarted()
+        assertEquals("synthesis starting is not the line finishing", 0, fired)
+        once.onDone()
+        assertEquals(1, fired)
+        once.onFallback()
+        assertEquals("the bound cannot run the handoff twice", 1, fired)
+    }
+
+    @Test
+    fun the_announcement_falls_back_when_no_done_arrives() {
+        var fired = 0
+        val once = DialHandoff.AnnounceOnce { fired++ }
+        once.onFallback()
+        assertEquals(1, fired)
+        once.onDone()
+        assertEquals(1, fired)
+    }
+
+    @Test
+    fun the_dial_line_is_wired_to_done_not_to_start() {
+        val src = File("src/main/java/com/hermesvox/MainActivity.kt").readText()
+        val announce = src.substringAfter("override fun announceDial(line: String, after: () -> Unit)")
+            .substringBefore("override fun endCall()")
+        assertTrue(
+            "the handoff waits for the utterance's done callback",
+            announce.contains("onDone = { once.onDone() }"),
+        )
+        assertFalse(
+            "a teardown fired on TTS start cuts the line that just began",
+            announce.contains("onPlayed"),
+        )
     }
 
     @Test

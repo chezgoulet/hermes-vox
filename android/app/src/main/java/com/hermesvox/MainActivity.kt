@@ -872,6 +872,9 @@ open class MainActivity : AppCompatActivity() {
         // default (MemoryBudget.release) — whether the trade is worth it is the owner's
         // decision, not this branch's.
         (express as? GemmaExpress)?.requestUnload("call-end")
+        // A dial handoff ends the call from inside PiP. Leaving an idle app floating
+        // contradicts CallWindow's own rule: an idle app must never float (H1).
+        if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
         // #384: a profile refresh that arrived during the call waited for exactly this
         // moment — the conversation is over, so asking now cannot disturb it.
         profiles.runDeferredAsk()
@@ -1114,9 +1117,9 @@ open class MainActivity : AppCompatActivity() {
     /**
      * The screen's half of the phone's handoff actions. The dial line is voiced through the
      * **existing being** ([VoiceController.speakGlue]) and the rest of the handoff — the
-     * hang-up teardown, then the dialer — runs when that line is audible. A short fallback
-     * fires if nothing can speak, because a dial must never wait on TTS: the line is a courtesy
-     * at the handoff, not a gate on the owner's call.
+     * hang-up teardown, then the dialer — runs when that line is **done**. Firing on start
+     * would let the teardown cut the line that has just begun (H1). A bounded fallback fires
+     * if the engine never reports done, because a dial must never wait on TTS forever.
      */
     private val phoneHost = object : PhoneHandoff.Host {
         override fun callLive(): Boolean = callLive
@@ -1130,12 +1133,14 @@ open class MainActivity : AppCompatActivity() {
                 after()
                 return
             }
-            val fired = java.util.concurrent.atomic.AtomicBoolean(false)
-            val go = {
-                if (fired.compareAndSet(false, true)) mainHandler.post(after)
-            }
-            c.speakGlue(line, critical = true, source = "dial-handoff", onPlayed = { go() })
-            mainHandler.postDelayed({ go() }, ANNOUNCE_FALLBACK_MS)
+            val once = DialHandoff.AnnounceOnce { mainHandler.post(after) }
+            c.speakGlue(
+                line,
+                critical = true,
+                source = "dial-handoff",
+                onDone = { once.onDone() },
+            )
+            mainHandler.postDelayed({ once.onFallback() }, ANNOUNCE_FALLBACK_MS)
         }
 
         override fun endCall() = this@MainActivity.endCall()
@@ -1961,7 +1966,13 @@ open class MainActivity : AppCompatActivity() {
          * call anyway. A courtesy, not a gate: no TTS engine, or a reply already owning the
          * voice, must never leave the owner waiting on a dialer.
          */
-        const val ANNOUNCE_FALLBACK_MS = 900L
+        /**
+         * The bound on waiting for the dial line to finish, measured from the moment it is
+         * handed to TTS. Long enough for a short line to synthesise and play; the no-engine
+         * path settles immediately, so this only catches an engine that never reports done.
+         * A longer synthesis than this must not cut the line at 900 ms (H1).
+         */
+        const val ANNOUNCE_FALLBACK_MS = 5_000L
 
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.

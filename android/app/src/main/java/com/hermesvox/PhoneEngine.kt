@@ -908,7 +908,7 @@ class PhoneEngine(
             PhoneTool.Call.Apps -> AppsAccess.result(platform)
             is PhoneTool.Call.Contact -> contacts(call)
             is PhoneTool.Call.Message -> message(call)
-            is PhoneTool.Call.Dial -> dial(call)
+            is PhoneTool.Call.Dial -> dial(call, nowEpoch)
             is PhoneTool.Call.Launch -> launch(call)
             is PhoneTool.Call.Open -> open(call)
             is PhoneTool.Call.Uninstall -> executeUninstall(call.packageName)
@@ -1856,13 +1856,19 @@ class PhoneEngine(
      * through the same teardown the hang-up runs, and then opens the dialer. Ending the call
      * does not end the conversation: the thread lives on the gateway.
      */
-    private fun dial(call: PhoneTool.Call.Dial): PhoneResult {
+    private fun dial(call: PhoneTool.Call.Dial, nowEpoch: Long): PhoneResult {
+        // Pre-flight the gate before resolving, announcing or tearing anything down: a blocked
+        // start must not cost the owner the call they are on (H1).
         backgroundRefusal("dial")?.let { return it }
         val to = when (val r = resolveRecipient("dial", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
         }
-        return when (DialHandoff.run(platform, to)) {
+        return when (DialHandoff.run(platform, to) { started ->
+            // The live-call path answers before this runs: the dial happens after the line is
+            // done. Its own result is audited as its own row rather than lost (H1).
+            auditLateDial(to, started, nowEpoch)
+        }) {
             DialHandoff.Outcome.NO_DIALER -> noApp(
                 "dial",
                 "no app on this phone answers ACTION_DIAL; nothing was opened and no call was ended",
@@ -1876,9 +1882,44 @@ class PhoneEngine(
                 PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
             }
             DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> {
-                log("event=phone-mcp action=dial ok=true ended_call=true")
-                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+                log("event=phone-mcp action=dial ok=true pending=true ended_call=true")
+                PhoneResult.info(
+                    "dial",
+                    linkedMapOf<String, Any?>(
+                        "to" to to,
+                        // Not a claim that the dialer opened: the line is still being spoken and
+                        // the start happens after the teardown. Its result follows as its own row.
+                        "handoff" to "pending",
+                        "note" to
+                            "our call is ending and the dialer opens when the line is done; " +
+                            "the dialer's own result is recorded in Recent actions",
+                    ),
+                )
             }
+        }
+    }
+
+    /**
+     * The dial that runs after a live call was ended. It is a second outcome, so it gets a
+     * second audit row: the owner can see whether the dialer actually opened, and a failure is
+     * never hidden behind the pending reply (H1).
+     */
+    private fun auditLateDial(to: String, started: Boolean, nowEpoch: Long) {
+        val result = if (started) {
+            log("event=phone-mcp action=dial ok=true after_teardown=true")
+            PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to, "handoff" to "opened"))
+        } else {
+            log("event=phone-mcp action=dial ok=false reason=unavailable after_teardown=true")
+            PhoneResult.refused(
+                "dial",
+                PhoneReason.UNAVAILABLE,
+                "our call ended but the dialer did not open; nothing was dialled. The " +
+                    "conversation is still on the gateway — call again to resume it.",
+            )
+        }
+        try {
+            audit(result, linkedMapOf<String, Any?>("action" to "dial", "to" to to), nowEpoch)
+        } catch (_: Throwable) {
         }
     }
 
