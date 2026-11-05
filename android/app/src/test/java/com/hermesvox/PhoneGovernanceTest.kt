@@ -37,6 +37,12 @@ class PhoneGovernanceTest {
         override fun mediaKey(key: PhoneEngine.PhonePlatform.MediaKey): Boolean = true
         override fun playback(): PhoneEngine.PhonePlatform.Playback =
             PhoneEngine.PhonePlatform.Playback(known = false, playing = null, packageName = null, title = null)
+        override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot =
+            PhoneEngine.PhonePlatform.DeviceSnapshot(
+                batteryPercent = null, chargingSource = null, chargingStatus = null, screenOn = null,
+                network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
+                dnd = null, timeZoneId = null, utcOffsetMinutes = null,
+            )
     }
 
     private val fake = Fake()

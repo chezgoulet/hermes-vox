@@ -109,6 +109,7 @@ object PhoneGrants {
             label = "Device state",
             tier = PhoneTiers.INSTANT,
             lets = "Read battery, charging, connectivity, screen and storage state.",
+            actions = listOf("state"),
         ),
         Group(
             id = "clipboard",

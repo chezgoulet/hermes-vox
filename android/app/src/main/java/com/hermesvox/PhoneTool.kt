@@ -112,6 +112,7 @@ object PhoneTool {
         "pause" to "send the pause key to the active player",
         "skip" to "next or previous track",
         "now_playing" to "what the phone will admit to playing",
+        "state" to "battery, charging, screen, network, storage, volume, time",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -235,6 +236,10 @@ object PhoneTool {
 
         object NowPlaying : Call() {
             override val action = "now_playing"
+        }
+
+        object State : Call() {
+            override val action = "state"
         }
 
         data class Undo(val id: String) : Call() {
@@ -367,6 +372,7 @@ object PhoneTool {
             }
         }
         "now_playing" -> Parsed.Run(Call.NowPlaying)
+        "state" -> Parsed.Run(Call.State)
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -420,6 +426,8 @@ object PhoneTiers {
         "timer", "alarm", "dnd", "volume", "status", "undo",
         // Media (#429 lane): transport keys, and a read of what the session will admit to.
         "play", "pause", "skip", "now_playing",
+        // Device state (#429 lane): one read-only report, every field nullable.
+        "state",
     )
     private val TIER_1 = setOf("note")
 

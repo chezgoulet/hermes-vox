@@ -46,7 +46,7 @@ class PhoneToolTest {
 
     @Test fun the_action_enum_is_built_from_the_grants() {
         assertEquals(
-            listOf("timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing", "undo", "status"),
+            listOf("timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing", "state", "undo", "status"),
             enumOf(),
         )
     }
@@ -155,8 +155,7 @@ class PhoneToolTest {
         assertEquals(listOf("play", "pause", "skip", "now_playing", "undo", "status"), enumOf(mediaOn))
     }
 
-    @Test fun skip_defaults_to_next_and_accepts_only_its_own_directions() {
-        val next = PhoneTool.parse(mapOf("action" to "skip"), open)
+    @Test fun skip_defaults_to_next_and_accepts_only_its_own_directions() {        val next = PhoneTool.parse(mapOf("action" to "skip"), open)
         assertEquals(false, ((next as PhoneTool.Parsed.Run).call as PhoneTool.Call.Skip).previous)
 
         val explicit = PhoneTool.parse(mapOf("action" to "skip", "direction" to "next"), open) as PhoneTool.Parsed.Run
@@ -172,6 +171,19 @@ class PhoneToolTest {
             mapOf("action" to "volume", "direction" to "previous"), open,
         )
         assertEquals(PhoneReason.INVALID, (previousVolume as PhoneTool.Parsed.Refuse).result.reason)
+    }
+
+    @Test fun the_state_action_is_offered_only_when_device_state_is_granted_and_takes_no_arguments() {
+        val off = PhoneGrants.Source { g ->
+            if (g.id == "device-state") PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+        }
+        assertFalse("state must be absent while the group is off", "state" in enumOf(off))
+
+        val on = PhoneGrants.Source { g ->
+            if (g.id == "device-state") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertEquals(listOf("state", "undo", "status"), enumOf(on))
+        assertTrue(PhoneTool.parse(mapOf("action" to "state"), on) is PhoneTool.Parsed.Run)
     }
 
     @Test fun the_tool_is_marked_write_capable_so_untrusted_mode_can_gate_it() {

@@ -95,6 +95,13 @@ class PhoneEngineTest {
         }
 
         override fun playback(): PhoneEngine.PhonePlatform.Playback = playback
+
+        override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot =
+            PhoneEngine.PhonePlatform.DeviceSnapshot(
+                batteryPercent = null, chargingSource = null, chargingStatus = null, screenOn = null,
+                network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
+                dnd = null, timeZoneId = null, utcOffsetMinutes = null,
+            )
     }
 
     private val fake = Fake()

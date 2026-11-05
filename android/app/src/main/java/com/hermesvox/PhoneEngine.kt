@@ -71,6 +71,28 @@ class PhoneEngine(
         /** The active session, to the extent the platform will admit it. Never invent a title. */
         fun playback(): Playback
 
+        /**
+         * One read of the phone's own state. **Every field is nullable, and null means "the
+         * platform would not say"** — it is never a plausible zero. `network` and `charging_source`
+         * distinguish "read, and the answer is none" from "could not read".
+         */
+        data class DeviceSnapshot(
+            val batteryPercent: Int?,
+            val chargingSource: String?,
+            val chargingStatus: String?,
+            val screenOn: Boolean?,
+            val network: String?,
+            val tailnetPresent: Boolean?,
+            val freeStorageBytes: Long?,
+            val mediaVolume: Int?,
+            val dnd: String?,
+            val timeZoneId: String?,
+            val utcOffsetMinutes: Int?,
+        )
+
+        /** The state now. Implementations catch their own failures and answer null for them. */
+        fun deviceState(): DeviceSnapshot
+
         /** Arm a countdown. False means the phone refused. */
         fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean
 
@@ -169,6 +191,7 @@ class PhoneEngine(
             is PhoneTool.Call.PlayPause -> pressMedia(call.pause)
             is PhoneTool.Call.Skip -> skip(call.previous)
             PhoneTool.Call.NowPlaying -> nowPlaying()
+            PhoneTool.Call.State -> deviceState(nowEpoch)
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -394,6 +417,37 @@ class PhoneEngine(
         "sent the $action key to whichever media session is active; the phone cannot see what that " +
             "session did with it"
 
+    // ---- device state ----
+
+    /**
+     * One read-only report. **Every field is present; an unanswered one is `null`**, so a caller
+     * can tell "the phone says none" (`network:"none"`) from "the phone will not say" (`null`) and
+     * never receives an invented value. The log line carries no values: battery, network and the
+     * clock are the owner's business, and the result is where they belong.
+     */
+    private fun deviceState(nowEpoch: Long): PhoneResult {
+        val d = platform.deviceState()
+        log("event=phone-mcp action=state ok=true")
+        return PhoneResult.info(
+            "state",
+            linkedMapOf<String, Any?>(
+                "battery_percent" to d.batteryPercent,
+                "charging_source" to d.chargingSource,
+                "charging_status" to d.chargingStatus,
+                "screen_on" to d.screenOn,
+                "network" to d.network,
+                "tailnet_present" to d.tailnetPresent,
+                "free_storage_bytes" to d.freeStorageBytes,
+                "media_volume" to d.mediaVolume,
+                "dnd" to d.dnd,
+                "timezone" to d.timeZoneId,
+                "utc_offset_minutes" to d.utcOffsetMinutes,
+                // Time needs the offset; without one there is no honest clock to report.
+                "time" to d.utcOffsetMinutes?.let { localIso(nowEpoch, it) },
+            ),
+        )
+    }
+
     // ---- tier 1 ----
 
     private fun saveNote(text: String, nowElapsed: Long, nowEpoch: Long): PhoneResult {
@@ -537,9 +591,28 @@ class PhoneEngine(
         /** A note's undo outlives the turn that made it, because the note itself does. */
         const val NOTE_UNDO_MS = 24 * 60 * 60_000L
 
+        /**
+         * [epochMs] in a fixed [offsetMinutes] east of UTC, as local `YYYY-MM-DDTHH:MM:SS`.
+         * `SimpleTimeZone` rather than `java.time`: the app's minSdk is 24, and a fixed offset needs
+         * no zone database. Pure, so the clock shape is pinned without a phone.
+         */
+        fun localIso(epochMs: Long, offsetMinutes: Int): String {
+            val zone = java.util.SimpleTimeZone(offsetMinutes * 60_000, "local")
+            val cal = java.util.Calendar.getInstance(zone).apply { timeInMillis = epochMs }
+            return String.format(
+                java.util.Locale.US,
+                "%04d-%02d-%02dT%02d:%02d:%02d",
+                cal.get(java.util.Calendar.YEAR),
+                cal.get(java.util.Calendar.MONTH) + 1,
+                cal.get(java.util.Calendar.DAY_OF_MONTH),
+                cal.get(java.util.Calendar.HOUR_OF_DAY),
+                cal.get(java.util.Calendar.MINUTE),
+                cal.get(java.util.Calendar.SECOND),
+            )
+        }
+
         /** The next occurrence of [hour]:[minute] strictly after [nowEpoch] (1 s of slack). */
-        fun nextOccurrence(hour: Int, minute: Int, nowEpoch: Long): Long {
-            val cal = java.util.Calendar.getInstance().apply {
+        fun nextOccurrence(hour: Int, minute: Int, nowEpoch: Long): Long {            val cal = java.util.Calendar.getInstance().apply {
                 timeInMillis = nowEpoch
                 set(java.util.Calendar.HOUR_OF_DAY, hour)
                 set(java.util.Calendar.MINUTE, minute)

@@ -30,6 +30,11 @@ class PhoneSurfaceTest {
         var playback = PhoneEngine.PhonePlatform.Playback(
             known = false, playing = null, packageName = null, title = null,
         )
+        var snapshot = PhoneEngine.PhonePlatform.DeviceSnapshot(
+            batteryPercent = null, chargingSource = null, chargingStatus = null, screenOn = null,
+            network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
+            dnd = null, timeZoneId = null, utcOffsetMinutes = null,
+        )
 
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean = true
         override fun startAlarm(id: String, hour: Int, minute: Int, atEpochMs: Long): Boolean = true
@@ -49,6 +54,8 @@ class PhoneSurfaceTest {
         }
 
         override fun playback(): PhoneEngine.PhonePlatform.Playback = playback
+
+        override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot = snapshot
     }
 
     private val fake = Fake()
@@ -182,4 +189,110 @@ class PhoneSurfaceTest {
         assertEquals("done", entry.outcome)
         assertNull("a media key is not undoable, so there is no undo id", entry.undoId)
     }
+
+    // ---- device-state ----
+
+    /** The fields `state` reports, in the order the result reads them. */
+    private val stateFields = listOf(
+        "battery_percent", "charging_source", "charging_status", "screen_on", "network",
+        "tailnet_present", "free_storage_bytes", "media_volume", "dnd", "timezone",
+        "utc_offset_minutes", "time",
+    )
+
+    @Test fun state_reports_every_field_the_phone_answered() {
+        fake.snapshot = fullSnapshot()
+        val r = call(mapOf("action" to "state"), only("device-state"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(82, r.facts["battery_percent"])
+        assertEquals("usb", r.facts["charging_source"])
+        assertEquals("charging", r.facts["charging_status"])
+        assertEquals(true, r.facts["screen_on"])
+        assertEquals("wifi", r.facts["network"])
+        assertEquals(true, r.facts["tailnet_present"])
+        assertEquals(9_000_000_000L, r.facts["free_storage_bytes"])
+        assertEquals(42, r.facts["media_volume"])
+        assertEquals("off", r.facts["dnd"])
+        assertEquals("Europe/Berlin", r.facts["timezone"])
+        assertEquals(60, r.facts["utc_offset_minutes"])
+        // 2023-11-14T22:13:20Z + 60 minutes.
+        assertEquals("2023-11-14T23:13:20", r.facts["time"])
+    }
+
+    @Test fun state_reports_null_for_everything_the_platform_will_not_say() {
+        fake.snapshot = PhoneEngine.PhonePlatform.DeviceSnapshot(
+            batteryPercent = null, chargingSource = null, chargingStatus = null, screenOn = null,
+            network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
+            dnd = null, timeZoneId = null, utcOffsetMinutes = null,
+        )
+        val r = call(mapOf("action" to "state"), only("device-state"))
+        assertTrue("an unreadable phone is still an answer", r.ok)
+        val wire = r.toMap()
+        for (field in stateFields) {
+            assertTrue("$field must be present, not omitted", wire.containsKey(field))
+            assertNull("$field must be null, never a plausible zero", wire[field])
+        }
+    }
+
+    @Test fun state_keeps_the_difference_between_none_and_cannot_read() {
+        fake.snapshot = fullSnapshot().copy(
+            network = "none",
+            chargingSource = "none",
+            dnd = null,
+            timeZoneId = null,
+            utcOffsetMinutes = null,
+        )
+        val r = call(mapOf("action" to "state"), only("device-state"))
+        assertEquals("read, and nothing is connected", "none", r.facts["network"])
+        assertEquals("read, and the phone is not plugged in", "none", r.facts["charging_source"])
+        assertNull("Do Not Disturb access is not held", r.facts["dnd"])
+        assertNull("with no offset there is no honest clock", r.facts["time"])
+    }
+
+    @Test fun state_needs_its_group_like_every_other_action() {
+        val off = call(mapOf("action" to "state"), PhoneGrants.ALL_OFF)
+        assertFalse(off.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, off.reason)
+        assertTrue(off.detail!!.contains("Device state"))
+
+        val ask = call(mapOf("action" to "state"), PhoneGrants.Source { PhoneGrants.State.ASK })
+        assertFalse(ask.ok)
+        assertEquals(PhoneReason.APPROVAL, ask.reason)
+    }
+
+    @Test fun state_is_read_only_and_writes_one_audit_row() {
+        fake.snapshot = fullSnapshot()
+        val r = call(mapOf("action" to "state"), only("device-state"))
+        assertEquals("state", r.action)
+        assertEquals(PhoneTiers.INSTANT, r.tier)
+        assertNull("a report carries no id", r.id)
+        assertNull("and no undo", r.facts["undoable"])
+        val entry = entries.single()
+        assertEquals("state", entry.action)
+        assertTrue("state takes no arguments to summarise", entry.arguments.isEmpty())
+        assertEquals("done", entry.outcome)
+        assertNull(entry.undoId)
+    }
+
+    @Test fun local_time_is_the_injected_clock_in_the_reported_offset() {
+        // 2023-11-14T22:13:20Z.
+        assertEquals("2023-11-14T22:13:20", PhoneEngine.localIso(e0, 0))
+        assertEquals("2023-11-14T23:13:20", PhoneEngine.localIso(e0, 60))
+        assertEquals("2023-11-14T17:13:20", PhoneEngine.localIso(e0, -300))
+        assertEquals("2023-11-14T22:28:20", PhoneEngine.localIso(e0, 15))
+        assertEquals("2023-11-15T08:13:20", PhoneEngine.localIso(e0, 600))
+    }
+
+    private fun fullSnapshot() = PhoneEngine.PhonePlatform.DeviceSnapshot(
+        batteryPercent = 82,
+        chargingSource = "usb",
+        chargingStatus = "charging",
+        screenOn = true,
+        network = "wifi",
+        tailnetPresent = true,
+        freeStorageBytes = 9_000_000_000L,
+        mediaVolume = 42,
+        dnd = "off",
+        timeZoneId = "Europe/Berlin",
+        utcOffsetMinutes = 60,
+    )
 }

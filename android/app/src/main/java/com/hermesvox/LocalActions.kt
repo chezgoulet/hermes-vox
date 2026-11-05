@@ -6,8 +6,13 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioManager
 import android.media.RingtoneManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.StatFs
 import android.os.SystemClock
 import android.view.KeyEvent
 import java.util.concurrent.CountDownLatch
@@ -39,6 +44,7 @@ import java.util.concurrent.TimeUnit
  * | note | SharedPreferences, JSON list | **none.** A note is Tier 1: it is kept, reported to the mind on the next turn, and undoable. |
  * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
  * | now playing | `AudioManager.isMusicActive` | **none** for "is audio playing". A package and a title come from `MediaSessionManager.getActiveSessions`, a notification-listener special access this app does not hold, so the result is `known:false` with a sentence saying so. It never invents a title. |
+ * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
  *
  * Tier 0 only for the grammar path: reversible, private, nothing outward-facing. No message, no call,
  * no purchase, no app launch.
@@ -375,7 +381,91 @@ class LocalActions(context: Context) {
             VoxLog.d("event=local-action playback-unreadable reason=${t.javaClass.simpleName}")
             PhoneEngine.PhonePlatform.Playback(false, null, null, null)
         }
+
+        /**
+         * One read of the phone's state, each field answered or `null`. Nothing here needs a
+         * permission the manifest does not already declare: the battery comes from the sticky
+         * `ACTION_BATTERY_CHANGED` broadcast, the screen from `PowerManager.isInteractive`, the
+         * transport from `ACCESS_NETWORK_STATE`, storage from `StatFs`, volume from the media
+         * stream, and the clock from the device's own zone. Do Not Disturb is the one field that
+         * can be absent because a special access is missing, and it is `null` rather than "off".
+         */
+        override fun deviceState(): PhoneEngine.PhonePlatform.DeviceSnapshot {
+            val battery = attempt("battery") { batteryReadings() }
+            val zone = attempt("zone") { java.util.TimeZone.getDefault() }
+            return PhoneEngine.PhonePlatform.DeviceSnapshot(
+                batteryPercent = battery?.percent,
+                chargingSource = battery?.source,
+                chargingStatus = battery?.status,
+                screenOn = attempt("screen") {
+                    (app.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive
+                },
+                network = attempt("network") { networkTransport() },
+                tailnetPresent = attempt("tailnet") { Tailnet.address() != null },
+                freeStorageBytes = attempt("storage") {
+                    StatFs(app.filesDir.absolutePath).availableBytes
+                },
+                mediaVolume = attempt("volume") { currentVolume() },
+                dnd = attempt("dnd") { if (dndGranted()) currentDnd()?.let { if (it) "on" else "off" } else null },
+                timeZoneId = zone?.id,
+                utcOffsetMinutes = zone?.let { attempt("offset") { it.getOffset(System.currentTimeMillis()) / 60_000 } },
+            )
+        }
+
+        /** The battery broadcast's three answers. Any field it does not carry stays null. */
+        private fun batteryReadings(): BatteryReadings? {
+            val i = app.registerReceiver(
+                null,
+                android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED),
+            ) ?: return null
+            val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            return BatteryReadings(
+                percent = if (level >= 0 && scale > 0) level * 100 / scale else null,
+                source = when (i.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
+                    0 -> "none"
+                    1 -> "ac"        // BATTERY_PLUGGED_AC
+                    2 -> "usb"       // BATTERY_PLUGGED_USB
+                    4 -> "wireless"  // BATTERY_PLUGGED_WIRELESS
+                    8 -> "dock"      // BATTERY_PLUGGED_DOCK (API 33; the value is stable)
+                    else -> null
+                },
+                status = when (i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
+                    2 -> "charging"      // BATTERY_STATUS_CHARGING
+                    3 -> "discharging"   // BATTERY_STATUS_DISCHARGING
+                    4 -> "not-charging"  // BATTERY_STATUS_NOT_CHARGING
+                    5 -> "full"          // BATTERY_STATUS_FULL
+                    else -> null         // unknown is not a state; say nothing
+                },
+            )
+        }
+
+        /** `wifi` / `cellular` / `ethernet` / `vpn` / `other`, or `none` when nothing is connected. */
+        private fun networkTransport(): String? {
+            val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return null
+            val active = cm.activeNetwork ?: return "none"
+            val caps = cm.getNetworkCapabilities(active) ?: return null
+            return when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+                else -> "other"
+            }
+        }
+
+        /** One field's read: a failure is that field's null, never the whole report's failure. */
+        private fun <T> attempt(field: String, read: () -> T?): T? = try {
+            read()
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action device-state-unreadable field=$field reason=${t.javaClass.simpleName}")
+            null
+        }
     }
+
+    /** The battery broadcast, decoded. */
+    private data class BatteryReadings(val percent: Int?, val source: String?, val status: String?)
 
     // ---- ring ----
 
