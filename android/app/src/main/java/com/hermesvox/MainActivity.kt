@@ -118,10 +118,6 @@ open class MainActivity : AppCompatActivity() {
     private val revealTask = object : Runnable {
         override fun run() {
             if (!revealActive) return
-            // The compact window draws no words. The loop is HELD rather than destroyed so
-            // the turn's own end still seals the reply (stopReveal) and an expand resumes
-            // exactly at the voice; while compact this returns without touching text.
-            if (compact) { mainHandler.postDelayed(this, REVEAL_TICK_MS); return }
             val c = liveController
             if (c != null) {
                 val spoken = c.speechCursor()
@@ -155,6 +151,9 @@ open class MainActivity : AppCompatActivity() {
         if (revealActive) return
         revealActive = true
         revealStartedAt = android.os.SystemClock.uptimeMillis()
+        // The compact window draws no words: the reveal is ARMED but its clock does not
+        // start. leaveCompact starts it, so an expand resumes exactly at the voice.
+        if (compact) return
         mainHandler.post(revealTask)
     }
 
@@ -966,6 +965,9 @@ open class MainActivity : AppCompatActivity() {
     private fun enterCompact() {
         if (compact || !::pipSurface.isInitialized) return
         compact = true
+        // Stop the reveal clock. revealActive stays true on purpose: the turn's own end
+        // still reaches stopReveal(), which seals the reply without painting it.
+        mainHandler.removeCallbacks(revealTask)
         mainHandler.removeCallbacks(fadeHeard)
         if (::heardLine.isInitialized) {
             heardLine.animate().cancel()
@@ -992,8 +994,15 @@ open class MainActivity : AppCompatActivity() {
         applyLayoutMode()
         renderMotion()   // the full being may have missed a state change while it was hidden
         paintTrail()
-        if (!revealActive) reply.setText(replyBuf)   // a held reveal repaints from its own clock
         paintTranscript()
+        if (revealActive) {
+            // The reveal was armed (and its clock stopped) for the compact window. Start it
+            // again: the cursor is where the voice actually is, so nothing is repainted ahead.
+            mainHandler.removeCallbacks(revealTask)
+            mainHandler.post(revealTask)
+        } else {
+            reply.setText(replyBuf)
+        }
         VoxLog.d("event=pip mode=full callLive=$callLive")
     }
 
