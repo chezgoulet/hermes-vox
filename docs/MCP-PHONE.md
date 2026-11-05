@@ -123,9 +123,12 @@ access in the sheet — the active session's real package and title. Without tha
 playing access* row opens Android's own notification-access screen, the same shape as the Do Not
 Disturb row.
 
-`clip` writes the clipboard; `clip_read` returns its text **when Android allows the read**. Since
-Android 10 a backgrounded app gets no clipboard, and an empty clip is no answer: both refuse with
-`reason:"unavailable"` and the platform's own explanation, never empty text presented as the clip.
+`clip` writes the clipboard from wherever the call is — foreground, background or picture-in-picture
+— because Android restricts clipboard **reads**, not writes; a platform refusal is
+`reason:"unavailable"` with the platform's own reason. `clip_read` returns the text **when Android
+allows the read**: a backgrounded app gets no clipboard, and an empty clip is no answer. Both refuse
+with `reason:"unavailable"` and the platform's own outcome; when Vox is not focused, the sentence
+names that as the **likely** cause of the missing clip — never empty text presented as the clip.
 
 `status` is the discovery action: it answers "what can you do, and what is running right now" from
 the **same registry** the presence context block reports (`local_actions:`), so the mind never has to
