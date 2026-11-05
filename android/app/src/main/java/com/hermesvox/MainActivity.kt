@@ -1102,15 +1102,20 @@ open class MainActivity : AppCompatActivity() {
      * still happens, immediately.
      */
     private fun launchOutside(start: () -> Unit) {
-        val order = CallWindow.launch(pipHost, start)
-        if (order == CallWindow.Order.PIP_THEN_LAUNCH) VoxLog.d("event=launch pip-first callLive=$callLive")
+        val plan = CallWindow.launch(pipHost, start)
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH) {
+            VoxLog.d("event=launch pip-first callLive=$callLive posted=${plan.posted}")
+        }
     }
 
     private val pipHost = object : CallWindow.Host {
         override fun callLive(): Boolean = callLive
         override fun enterPip(): Boolean = this@MainActivity.enterPip()
-        override fun post(delayMs: Long, action: () -> Unit) {
-            mainHandler.postDelayed({ if (!isFinishing && !isDestroyed) action() }, delayMs)
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
+            if (isFinishing || isDestroyed) return false
+            return mainHandler.postDelayed({
+                if (!isFinishing && !isDestroyed) action()
+            }, delayMs)
         }
     }
 

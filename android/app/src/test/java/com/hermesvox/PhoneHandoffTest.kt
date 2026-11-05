@@ -34,8 +34,10 @@ class PhoneHandoffTest {
             PhoneEngine.PhonePlatform.Handoff.Done("com.example.sms")
         var launchTarget: PhoneEngine.PhonePlatform.AppTarget? =
             PhoneEngine.PhonePlatform.AppTarget("com.example.app", "com.example.app.Main")
-        var uriTarget: PhoneEngine.PhonePlatform.AppTarget? =
-            PhoneEngine.PhonePlatform.AppTarget("com.example.browser", "com.example.browser.View")
+        var uriTarget: PhoneEngine.PhonePlatform.UriTarget =
+            PhoneEngine.PhonePlatform.UriTarget.App(
+                PhoneEngine.PhonePlatform.AppTarget("com.example.browser", "com.example.browser.View"),
+            )
         var startResult = true
         var windowHost: CallWindow.Host? = null
         /** When true, [announce] holds the continuation until the test runs [after]. */
@@ -82,7 +84,7 @@ class PhoneHandoffTest {
         override fun resolveUri(
             uri: String,
             packageName: String?,
-        ): PhoneEngine.PhonePlatform.AppTarget? = uriTarget
+        ): PhoneEngine.PhonePlatform.UriTarget = uriTarget
 
         override fun startUri(
             target: PhoneEngine.PhonePlatform.AppTarget,
@@ -128,7 +130,10 @@ class PhoneHandoffTest {
     }
 
     /** A PiP host that records `pip` and holds the posted start until the test runs it. */
-    private class FakeWindow(private val events: MutableList<String>) : CallWindow.Host {
+    private class FakeWindow(
+        private val events: MutableList<String>,
+        var acceptsPost: Boolean = true,
+    ) : CallWindow.Host {
         var posted: (() -> Unit)? = null
 
         override fun callLive(): Boolean = true
@@ -138,9 +143,11 @@ class PhoneHandoffTest {
             return true
         }
 
-        override fun post(delayMs: Long, action: () -> Unit) {
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
             events += "post"
+            if (!acceptsPost) return false
             posted = action
+            return true
         }
     }
 
@@ -354,9 +361,30 @@ class PhoneHandoffTest {
         val r = run(mapOf("action" to "launch", "app" to "com.example.app"))
         assertTrue(r.json(), r.ok)
         assertEquals("PiP first, the start posted behind it", listOf("pip", "post"), fake.events)
+        assertEquals(
+            "the app has not opened yet; the result says so",
+            "pending",
+            r.facts["handoff"],
+        )
+        assertEquals("after_pip", r.facts["started"])
 
         window.posted?.invoke()
         assertEquals(listOf("pip", "post", "launch:com.example.app"), fake.events)
+    }
+
+    @Test
+    fun a_post_the_window_cannot_take_is_a_refusal_not_a_launch() {
+        fake.live = true
+        fake.windowHost = FakeWindow(fake.events, acceptsPost = false)
+        val r = run(mapOf("action" to "launch", "app" to "com.example.app"))
+        assertFalse(r.json(), r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertTrue("the detail says the window is closing: ${r.detail}", r.detail!!.contains("closing"))
+        assertEquals(
+            "nothing was started when the window refused the post",
+            listOf("pip", "post"),
+            fake.events,
+        )
     }
 
     @Test
@@ -412,10 +440,20 @@ class PhoneHandoffTest {
             PhoneReason.BAD_URI,
             run(mapOf("action" to "open", "uri" to "example.com")).reason,
         )
-        fake.uriTarget = null
+        fake.uriTarget = PhoneEngine.PhonePlatform.UriTarget.None
         val r = run(mapOf("action" to "open", "uri" to "https://example.com"))
         assertFalse(r.ok)
         assertEquals(PhoneReason.NO_APP, r.reason)
+    }
+
+    @Test
+    fun open_refuses_the_system_chooser_instead_of_naming_android_as_the_app() {
+        fake.uriTarget = PhoneEngine.PhonePlatform.UriTarget.Ambiguous
+        val r = run(mapOf("action" to "open", "uri" to "https://example.com/a"))
+        assertFalse(r.json(), r.ok)
+        assertEquals(PhoneReason.INVALID, r.reason)
+        assertEquals("several apps can open this; name a `package`", r.detail)
+        assertEquals("nothing was resolved into a class or started", emptyList<String>(), fake.events)
     }
 
     /**

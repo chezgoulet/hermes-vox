@@ -468,8 +468,18 @@ class PhoneEngine(
         /** Start the launchable activity [target] resolved to. */
         fun startApp(target: AppTarget): Boolean = false
 
+        /**
+         * What claims [uri]. [None] is "nothing answers"; [Ambiguous] is Android's own chooser —
+         * several apps claim the link and none is the default, so there is no single app to name.
+         */
+        sealed class UriTarget {
+            data class App(val target: AppTarget) : UriTarget()
+            data object Ambiguous : UriTarget()
+            data object None : UriTarget()
+        }
+
         /** Resolve a URI among the apps that claim it, optionally restricted to [packageName]. */
-        fun resolveUri(uri: String, packageName: String?): AppTarget? = null
+        fun resolveUri(uri: String, packageName: String?): UriTarget = UriTarget.None
 
         /** Start `ACTION_VIEW` for [uri] in the resolved [target]. */
         fun startUri(target: AppTarget, uri: String): Boolean = false
@@ -1937,11 +1947,26 @@ class PhoneEngine(
     /** Open one URI, optionally in a named package, through the same PiP-first window. */
     private fun open(call: PhoneTool.Call.Open): PhoneResult {
         backgroundRefusal("open")?.let { return it }
-        val target = platform.resolveUri(call.uri, call.packageName) ?: return noApp(
-            "open",
-            "no app on this phone opens that URI" +
-                (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
-        )
+        val claimed = platform.resolveUri(call.uri, call.packageName)
+        val target = when (claimed) {
+            PhoneEngine.PhonePlatform.UriTarget.None -> return noApp(
+                "open",
+                "no app on this phone opens that URI" +
+                    (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
+            )
+            PhoneEngine.PhonePlatform.UriTarget.Ambiguous -> {
+                // Android resolved its own chooser, not an app. Starting it explicitly would
+                // report `package:"android"` as though the chooser were the app; name the
+                // ambiguity and let the caller choose (M6).
+                log("event=phone-mcp action=open ok=false reason=invalid-arguments chooser=true")
+                return PhoneResult.refused(
+                    "open",
+                    PhoneReason.INVALID,
+                    "several apps can open this; name a `package`",
+                )
+            }
+            is PhoneEngine.PhonePlatform.UriTarget.App -> claimed.target
+        }
         return handOff("open", target) { platform.startUri(target, call.uri) }
     }
 
@@ -2024,13 +2049,13 @@ class PhoneEngine(
         val host = platform.window()
         var started = false
         val begin = { started = start() }
-        val order = if (host == null) {
+        val plan = if (host == null) {
             begin()
-            CallWindow.Order.LAUNCH_NOW
+            CallWindow.Plan(CallWindow.Order.LAUNCH_NOW, posted = true)
         } else {
             CallWindow.launch(host, begin)
         }
-        if (order == CallWindow.Order.LAUNCH_NOW && !started) {
+        if (plan.order == CallWindow.Order.LAUNCH_NOW && !started) {
             log("event=phone-mcp action=$action ok=false reason=unavailable")
             return PhoneResult.refused(
                 action,
@@ -2038,15 +2063,29 @@ class PhoneEngine(
                 "Android refused to start ${target.packageName}; nothing was opened",
             )
         }
+        // The posted start is only arranged, never observed. If the window refused to take it
+        // (finishing/destroyed) nothing will run, so this is a refusal; if it took it, the
+        // result says `pending` rather than claiming the app is on screen (M6).
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH && !plan.posted) {
+            log("event=phone-mcp action=$action ok=false reason=unavailable window=finishing")
+            return PhoneResult.refused(
+                action,
+                PhoneReason.UNAVAILABLE,
+                "the Vox window is closing, so ${target.packageName} was not opened; nothing was opened",
+            )
+        }
+        val pending = plan.order == CallWindow.Order.PIP_THEN_LAUNCH
         log(
             "event=phone-mcp action=$action ok=true package=${target.packageName} " +
-                "pip=${order == CallWindow.Order.PIP_THEN_LAUNCH}"
+                "pip=$pending pending=$pending"
         )
         return PhoneResult.info(
             action,
             linkedMapOf<String, Any?>(
                 "package" to target.packageName,
                 "component" to target.component,
+                "started" to if (pending) "after_pip" else "now",
+                "handoff" to if (pending) "pending" else "opened",
             ),
         )
     }

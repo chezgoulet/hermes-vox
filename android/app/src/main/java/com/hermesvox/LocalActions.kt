@@ -830,18 +830,27 @@ class LocalActions(context: Context) : PhoneReadout {
         override fun resolveUri(
             uri: String,
             packageName: String?,
-        ): PhoneEngine.PhonePlatform.AppTarget? = try {
+        ): PhoneEngine.PhonePlatform.UriTarget = try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
             packageName?.let { intent.setPackage(it) }
-            app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.let {
-                PhoneEngine.PhonePlatform.AppTarget(
-                    it.activityInfo.packageName,
-                    it.activityInfo.name,
+            val resolved = app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            when {
+                resolved == null -> PhoneEngine.PhonePlatform.UriTarget.None
+                // The platform's own chooser answers when several apps claim the link and none
+                // is the default. It is not an app, and starting its class would report
+                // `package:"android"` as though it were (M6).
+                resolved.activityInfo.packageName == "android" ->
+                    PhoneEngine.PhonePlatform.UriTarget.Ambiguous
+                else -> PhoneEngine.PhonePlatform.UriTarget.App(
+                    PhoneEngine.PhonePlatform.AppTarget(
+                        resolved.activityInfo.packageName,
+                        resolved.activityInfo.name,
+                    )
                 )
             }
         } catch (t: Throwable) {
             VoxLog.d("event=local-action open-resolve-failed reason=${t.javaClass.simpleName}")
-            null
+            PhoneEngine.PhonePlatform.UriTarget.None
         }
 
         override fun startUri(
