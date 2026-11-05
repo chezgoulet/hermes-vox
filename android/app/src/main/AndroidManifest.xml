@@ -35,9 +35,11 @@
          CalendarContract is used; no provider-specific access. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-    <!-- #429 lane 2: deliberately NO storage permission at all — not READ_EXTERNAL_STORAGE and not
-         MANAGE_EXTERNAL_STORAGE. Files are read through a Storage Access Framework tree the owner
-         picks with ACTION_OPEN_DOCUMENT_TREE; see docs/MCP-SURFACE.md. -->
+    <!-- #429 lane 2: the Storage Access Framework is the deliberate default, so no storage
+         permission is declared for it (not READ_EXTERNAL_STORAGE, not MANAGE_EXTERNAL_STORAGE).
+         Files are read through a tree the owner picks with ACTION_OPEN_DOCUMENT_TREE; an all-files
+         opt-in would be a separate decision taken on Android's own screen. See
+         docs/MCP-SURFACE.md. -->
     <!-- #421: deliberately NO SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM. Timers and alarms use
          AlarmManager's OnAlarmListener form, which the exact-alarm restriction exempts; the
          Clock app's intents were rejected because they cannot return a verifiable result or an
