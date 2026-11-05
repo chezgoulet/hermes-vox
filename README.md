@@ -17,6 +17,7 @@
 <p align="center">
   <a href="https://hermesvox.org">hermesvox.org</a> ·
   <a href="https://github.com/chezgoulet/hermes-vox/releases/latest">Latest release</a> ·
+  <a href="docs/INDEX.md">Documentation index</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
   <a href="ROADMAP.md">Roadmap</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -100,9 +101,29 @@ and a face without adding a second brain:
 
 - **Hands-free calls.** An open line, voice-activity gated, with barge-in: talk over a
   reply and it stops and listens. Your interrupting words become the next turn.
-- **On-device hearing.** Silero VAD plus Whisper (int8) or NVIDIA Parakeet-TDT, via
-  sherpa-onnx. Hermes always receives the **whole** utterance, validated against
-  Whisper's known hallucinations, and a dim "heard" line shows what was sent.
+- **Approvals, on the phone.** When Hermes stops to ask before a consequential command,
+  the request reaches the call: what is being approved, why, and yes/no by voice or touch.
+  Timeout means *no*.
+- **Share with agent.** The clipboard, a file, or another app's share becomes a named
+  artifact for the agent. The phone stages, hashes and serves the file once on your
+  tailnet; the agent fetches and verifies it, and nothing is sent until you confirm.
+- **Profiles (Alpha).** Switch between the agents your host serves without leaving the
+  app: each profile carries its own address, key, model, voice and look, and a switch
+  starts a fresh conversation.
+- **Your agent can act on the phone (Alpha).** A timer, an alarm, Do Not Disturb or the
+  volume, executed instantly when you ask, and a small MCP server on your tailnet so the
+  mind can ask for the same actions and get a result. Off until you set it up and grant
+  each capability group.
+- **On-device hearing.** Silero VAD plus Whisper (int8), NVIDIA Parakeet-TDT or the
+  streaming Nemotron model, via sherpa-onnx. Hermes always receives the **whole**
+  utterance, validated against Whisper's known hallucinations, and a dim "heard" line
+  shows what was sent.
+- **Continuous listening (Alpha).** The microphone and recogniser stay live for the whole
+  call, with semantic end-of-turn judgement instead of a fixed silence. A separate Alpha
+  set, on by default inside the gate; about 300 MB more memory during a call.
+- **Quiet calls.** An optional switch silences notifications, in the phone's priority
+  Do Not Disturb mode, for the length of a call only, and restores what it changed. Off by
+  default; it is not an Alpha feature.
 - **On-device voice.** [Supertonic](https://huggingface.co/Supertone/supertonic-2), with
   ten voices at 44.1 kHz, about ten times faster than real time. It was chosen by a
   [measured bake-off](docs/VOICE-BAKEOFF.md). Piper is the lighter option and the
@@ -133,11 +154,15 @@ There is one way to talk: on-device STT, VAD and TTS with Hermes behind them, on
 hands-free line with barge-in. It feels like a live call.
 
 **Presence** is a layer on that, not a second mode. It is unfinished, so in 0.9.1 it sits
-behind **Settings → Alpha features** (off on a fresh install; Presence is the first set in
-the panel). With it on, the on-device Gemma 4 E2B model greets you, speaks the first beat
-of each turn while Hermes thinks, and answers small talk itself; Hermes can then stay
-silent (`<<SKIP>>`) instead of answering twice. It needs the 2.6 GB presence model and a
-phone with 8 GB of memory — first run checks, and says so if this phone falls short.
+behind **Settings → Alpha features** (off on a fresh install). The panel lists five sets:
+**Presence** first, then **Continuous listening**, **Turn-taking**, **Phone tools** and
+**Switching profiles**; each is selected on its own. With Presence on, the on-device Gemma 4
+E2B model greets you and speaks the opening beat of a turn in the agent's voice while Hermes
+thinks. It is a companion, not a gatekeeper: every turn still goes to Hermes, which answers
+(D30). It needs the 2.6 GB presence model and a phone with 8 GB of memory — first run checks,
+and says so if this phone falls short.
+
+(Quiet calls is not in that panel: it is its own switch in Hearing, off by default.)
 
 **The entity is Hermes either way.** Only the foreground voice changes.
 
@@ -282,20 +307,31 @@ Bugs and concrete feature requests belong in
 
 ## Status
 
-**0.8.1 — "the headset release"** is the current release
-([notes](docs/RELEASE-0.8.1.md)). What is in progress, honestly:
+**0.9.0.3 — "the hearing fix"** is the current release
+([notes](docs/RELEASE-0.9.0.3.md)). **0.9.1 is prepared, not cut:** version 0.9.1
+(versionCode 147) is built and gated from `testing`, and the release run is the owner's.
+What is in it, by real status, is in [`docs/0.9.1-SCOPE.md`](docs/0.9.1-SCOPE.md) and
+[`docs/RELEASE-0.9.1.md`](docs/RELEASE-0.9.1.md).
 
-- **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
-  GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
-  added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
-- **0.9 — the last series before 1.0:** streaming speech recognition, a measured
-  presence model (Gemma 4 E2B stays the default; Qwen was rejected on Mali —
-  see `docs/PRESENCE-BENCH.md`), a wake word, procedural audio cues, F-Droid
-  inclusion, and reproducible builds. Every 1.0 feature ships during
-  0.9.x first; 1.0 is cut when the set, the polish and the measured performance are
-  all acceptable. The decisions are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
-- **Distribution:** GitHub Releases and Obtainium today; F-Droid in preparation.
-- **Longer horizon:** full-duplex conversation.
+What is honestly outstanding before the cut:
+
+- **The device pass for the turn route.** Turns ride `/v1/runs` by default now (with a
+  `/v1/responses` fallback for a gateway that has no such route), and the nine checks in
+  [`docs/RUNS-ROUTE.md`](docs/RUNS-ROUTE.md) need a real phone and a live gateway.
+- **Approval cards on the device.** The route that carries them is the default; the
+  acceptance cards in [`docs/APPROVALS-ACCEPTANCE.md`](docs/APPROVALS-ACCEPTANCE.md) are
+  the proof.
+- **The Alpha sets in real use** — Presence, continuous listening, turn-taking, phone tools
+  and profile switching are built and behind the gate, and each has a device check.
+- **F-Droid.** The app is not listed yet; D29 makes the listing 0.9.1 work. Until then
+  GitHub Releases and Obtainium carry the signed APK.
+- **A second handset.** #208 is carried; the behaviour matrix is single-device and says so.
+
+Where this is going: 0.9.x is beta and 1.0 arrives when the owner says so. Every 1.0
+feature ships during 0.9.x first; 1.0 is cut when the set, the polish and the measured
+performance are all acceptable. The decisions are recorded in
+[`docs/DECISIONS.md`](docs/DECISIONS.md); the document index says which page is true
+today ([`docs/INDEX.md`](docs/INDEX.md)).
 
 The details are in [ROADMAP.md](ROADMAP.md).
 
