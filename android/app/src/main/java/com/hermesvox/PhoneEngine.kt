@@ -217,6 +217,15 @@ class PhoneEngine(
             val end: String,
             val title: String?,
             val calendar: String?,
+            /** The event's own description, when the provider offers it. */
+            val description: String? = null,
+            /** The event's location, when the provider offers it. */
+            val location: String? = null,
+            /**
+             * Attendee **names**, when the provider offers them. Addresses are never read: the
+             * group returns who, not how to reach them.
+             */
+            val attendees: List<String>? = null,
         )
 
         /** The event the platform inserted, with the times it actually stored. */
@@ -813,9 +822,9 @@ class PhoneEngine(
     }
 
     /**
-     * Today's events, and only the four fields the group promises: start, end, title and the
-     * calendar's name. No attendees, no description, nothing about contacts. A field the provider
-     * will not answer is null.
+     * Today's events, with what the calendar holds: start, end, title, the calendar's name, and —
+     * when the provider offers them — the description, the location and the attendee names. Names
+     * only: an attendee's address is not read. A field the provider will not answer is null.
      */
     private fun agenda(): PhoneResult {
         calendarRefusal("agenda")?.let { return it }
@@ -832,6 +841,9 @@ class PhoneEngine(
                 "end" to e.end,
                 "title" to e.title,
                 "calendar" to e.calendar,
+                "description" to e.description,
+                "location" to e.location,
+                "attendees" to e.attendees,
             )
         }
         log("event=phone-mcp action=agenda ok=true events=${rows.size}")

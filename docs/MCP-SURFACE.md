@@ -167,10 +167,10 @@ undoable where the row says so.
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `note` | notes | `text` string, 1 – 500 characters | `id`, `text`, `reported_next_turn`, `undoable` | **yes** — deletes it; lives 24 hours, because the note outlives the turn | none: private app storage | `unavailable` |
-| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents` | `name`, `folder`, `bytes`, `chars`, `text` | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework only.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared, and `MANAGE_EXTERNAL_STORAGE` is never used. Text only, capped (below) | `no_folder`, `bad_path`, `not_text`, `too_big`, `unavailable` |
+| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents` | `name`, `folder`, `bytes`, `chars`, `text` | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework is the deliberate default.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared for it. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`), with its own warning and its own grant — the owner's decision to make, not a capability withheld on their behalf. Text only, capped (below) | `no_folder`, `bad_path`, `not_text`, `too_big`, `unavailable` |
 | `file_offer` | files | the same `name` and `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob | `no_folder`, `bad_path`, `too_big`, `unavailable` |
-| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
-| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer 1 – 1 440, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
+| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` (names only), and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
+| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer ≥ 1, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
 
 **Files, precisely.** The name is a **name, not a path**: `..`, an absolute path, a separator and a
 URI are refused `bad_path` before the platform is asked, and a document that resolves outside the
@@ -187,13 +187,16 @@ conversation or have to be silently cut, and a cut answer would be a lie about t
 result says `too_big`, gives the size when the provider gave it, and returns nothing. `file_offer`
 has no such cap because it does not put the bytes in the result: it keeps the bridge's own 100 MB.
 
-**Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns only
-start, end, title and calendar name — no attendees, no description, no contact lookup. `start` is
-local ISO-8601: a trailing `Z` or an offset is refused rather than converted, because "local" is
-the contract and a conversion would move the event. `duration_min` is minutes; zero, negatives and
-anything over a day are refused `invalid-arguments`. A phone with no writable calendar is
-`unavailable`, which is the truth rather than a silent export. The undo deletes the event it
-created and nothing else.
+**Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns what the
+calendar holds: start, end, title, calendar name, description, location, and attendee **names**.
+Attendee addresses are never projected, so they cannot leak into a result; a field the provider will
+not give is `null`, never an invented one. `start` is local ISO-8601: a trailing `Z` or an offset is
+refused rather than converted, because "local" is the contract and a conversion would move the
+event. `duration_min` is minutes and must be at least 1; zero and negatives are refused
+`invalid-arguments`. There is **no upper bound of ours** — the calendar provider's own limits apply,
+and a duration it will not store is `unavailable` rather than pre-empted by a cap. A phone with no
+writable calendar is `unavailable`, which is the truth rather than a silent export. The undo deletes
+the event it created and nothing else.
 
 **Built in lane 2:** `files` and `calendar`. Their actions are advertised only while the group is
 on, and both groups are reported: turning one on is the grant. `delete`, a file delete that cannot

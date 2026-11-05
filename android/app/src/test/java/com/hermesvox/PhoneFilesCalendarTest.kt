@@ -315,13 +315,16 @@ class PhoneFilesCalendarTest {
         assertNull("no insert was attempted", fake.createdArgs)
     }
 
-    @Test fun agenda_returns_start_end_title_and_calendar_only() {
+    @Test fun agenda_returns_what_the_calendar_holds_including_names_but_no_addresses() {
         fake.agendaRows = listOf(
             PhoneEngine.PhonePlatform.AgendaEvent(
                 start = "2026-11-05T09:30:00",
                 end = "2026-11-05T10:30:00",
                 title = "Dentist",
                 calendar = "Home",
+                description = "Bring the referral letter",
+                location = "Hauptstrasse 4",
+                attendees = listOf("Sam", "Alex"),
             ),
             PhoneEngine.PhonePlatform.AgendaEvent(
                 start = "2026-11-05T15:00:00",
@@ -335,9 +338,19 @@ class PhoneFilesCalendarTest {
         assertEquals(2, r.facts["count"])
         val rows = r.facts["events"] as List<*>
         val first = rows.first() as Map<*, *>
-        assertEquals(setOf("start", "end", "title", "calendar"), first.keys)
+        assertEquals(
+            setOf("start", "end", "title", "calendar", "description", "location", "attendees"),
+            first.keys,
+        )
         assertEquals("Dentist", first["title"])
-        assertNull("a field the provider will not say is null", (rows[1] as Map<*, *>)["title"])
+        assertEquals("Bring the referral letter", first["description"])
+        assertEquals("Hauptstrasse 4", first["location"])
+        assertEquals(listOf("Sam", "Alex"), first["attendees"])
+        val second = rows[1] as Map<*, *>
+        assertNull("a field the provider will not say is null", second["title"])
+        assertNull("no invented description", second["description"])
+        assertNull("no invented location", second["location"])
+        assertNull("no invented attendees", second["attendees"])
         assertFalse("reading has no undo", r.toMap().containsKey("undo"))
     }
 
@@ -393,18 +406,27 @@ class PhoneFilesCalendarTest {
         assertNull(r.id)
     }
 
-    @Test fun duration_is_minutes_and_zero_negative_or_over_a_day_is_refused() {
+    @Test fun duration_is_minutes_and_only_zero_or_negative_is_refused() {
         val base = mapOf(
             "action" to "event_create",
             "title" to "Dentist",
             "start" to "2026-11-05T09:30",
         )
-        for (minutes in listOf(0, -5, PhoneCalendar.MAX_DURATION_MIN + 1)) {
+        for (minutes in listOf(0, -5)) {
             val parsed = PhoneTool.parse(base + ("duration_min" to minutes), only("calendar"))
             assertEquals(
                 "duration_min=$minutes must be invalid",
                 PhoneReason.INVALID,
                 (parsed as PhoneTool.Parsed.Refuse).result.reason,
+            )
+        }
+        // There is no bound of ours above a day: the calendar provider's own limits apply, so a
+        // week-long event parses and is offered to the platform.
+        for (minutes in listOf(1_440, 1_441, 7 * 24 * 60)) {
+            assertTrue(
+                "duration_min=$minutes must be accepted by the tool",
+                PhoneTool.parse(base + ("duration_min" to minutes), only("calendar"))
+                    is PhoneTool.Parsed.Run,
             )
         }
     }

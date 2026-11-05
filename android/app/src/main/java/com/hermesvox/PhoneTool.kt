@@ -77,9 +77,11 @@ object PhoneTool {
     /** An event's title is a label, not a description. */
     const val MAX_EVENT_TITLE_CHARS = PhoneCalendar.MAX_TITLE_CHARS
 
-    /** `duration_min` is minutes, at least one and at most a day. */
+    /**
+     * `duration_min` is whole minutes, at least one. There is no upper bound of ours: the
+     * calendar provider's own limits apply, and a duration it refuses comes back as `unavailable`.
+     */
     const val MIN_EVENT_MINUTES = 1
-    const val MAX_EVENT_MINUTES = PhoneCalendar.MAX_DURATION_MIN
 
     /**
      * The actions a schema may offer right now — a pure function of the live grants. [PhoneToolTest]
@@ -228,10 +230,10 @@ object PhoneTool {
                 "duration_min" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to MIN_EVENT_MINUTES,
-                    "maximum" to MAX_EVENT_MINUTES,
                     "description" to
-                        "event_create only: how long the event lasts, in minutes — $MIN_EVENT_MINUTES " +
-                        "to $MAX_EVENT_MINUTES (one day). Zero and negative durations are refused.",
+                        "event_create only: how long the event lasts, in minutes — at least " +
+                        "$MIN_EVENT_MINUTES. Zero and negative durations are refused; there is no " +
+                        "upper bound here, so the calendar provider's own limits apply.",
                 ),
                 "calendar" to linkedMapOf(
                     "type" to "string",
@@ -520,8 +522,13 @@ object PhoneTool {
                 )
             val minutes = integer(args["duration_min"])
                 ?: return bad(action, "duration_min is required and must be whole minutes")
-            if (minutes < MIN_EVENT_MINUTES || minutes > MAX_EVENT_MINUTES) {
-                return bad(action, "duration_min must be between $MIN_EVENT_MINUTES and $MAX_EVENT_MINUTES")
+            if (minutes < MIN_EVENT_MINUTES) {
+                return bad(action, "duration_min must be at least $MIN_EVENT_MINUTES minute")
+            }
+            // No upper bound of ours: the calendar provider decides what it will store, and a
+            // duration it refuses is reported as unavailable rather than pre-empted here.
+            if (minutes > Int.MAX_VALUE) {
+                return bad(action, "duration_min is beyond what a calendar can hold")
             }
             val calendar = (args["calendar"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             Parsed.Run(Call.EventCreate(title, start.iso, minutes.toInt(), calendar))

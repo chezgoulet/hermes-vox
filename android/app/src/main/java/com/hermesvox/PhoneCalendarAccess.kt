@@ -24,8 +24,9 @@ import java.util.TimeZone
  * the engine puts that string in the refusal. The owner grants both in the sheet; the runtime
  * grant can be revoked at any moment, and the next call says so.
  *
- * **What is read is only what the group promises:** begin, end, title, calendar name. There is no
- * attendees query, no description column and no contact lookup anywhere in this file.
+ * **What is read is what the calendar holds:** begin, end, title, calendar name, description,
+ * location and attendee **names**. Attendee addresses are never projected or returned; the group
+ * answers who, not how to reach them. A field the provider will not give is null.
  */
 object PhoneCalendarAccess {
 
@@ -51,8 +52,9 @@ object PhoneCalendarAccess {
     }
 
     /**
-     * Today's events in the phone's own zone. Four fields, in start order. A title or a calendar
-     * name the provider will not give is null, never an invented label.
+     * Today's events in the phone's own zone, in start order. The four identity fields plus the
+     * description, location and attendee names the provider offers. A field the provider will not
+     * give is null, never an invented label.
      */
     fun agenda(context: Context): List<PhoneEngine.PhonePlatform.AgendaEvent>? = try {
         val from = startOfToday()
@@ -69,6 +71,9 @@ object PhoneCalendarAccess {
             CalendarContract.Instances.END,
             CalendarContract.Instances.TITLE,
             CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Instances.DESCRIPTION,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.EVENT_ID,
         )
         val out = ArrayList<PhoneEngine.PhonePlatform.AgendaEvent>()
         context.contentResolver.query(
@@ -77,12 +82,16 @@ object PhoneCalendarAccess {
             while (c.moveToNext()) {
                 val begin = c.getLong(0)
                 val end = c.getLong(1)
+                val eventId = if (c.isNull(6)) null else c.getLong(6)
                 out.add(
                     PhoneEngine.PhonePlatform.AgendaEvent(
                         start = PhoneEngine.localIso(begin, offsetMinutes(begin)),
                         end = PhoneEngine.localIso(end, offsetMinutes(end)),
                         title = if (c.isNull(2)) null else c.getString(2),
                         calendar = if (c.isNull(3)) null else c.getString(3),
+                        description = if (c.isNull(4)) null else c.getString(4),
+                        location = if (c.isNull(5)) null else c.getString(5),
+                        attendees = eventId?.let { names(context, it) },
                     ),
                 )
             }
@@ -147,6 +156,32 @@ object PhoneCalendarAccess {
     }
 
     // ---- internals ----
+
+    /**
+     * The attendee names the provider offers for one event, or null when it offers none.
+     * `ATTENDEE_NAME` only — an address is never in the projection, so it cannot travel into a
+     * tool result. Duplicates (the same person twice) are collapsed.
+     */
+    private fun names(context: Context, eventId: Long): List<String>? = try {
+        val out = ArrayList<String>()
+        context.contentResolver.query(
+            CalendarContract.Attendees.CONTENT_URI,
+            arrayOf(CalendarContract.Attendees.ATTENDEE_NAME),
+            "${CalendarContract.Attendees.EVENT_ID}=?",
+            arrayOf(eventId.toString()),
+            null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                if (c.isNull(0)) continue
+                val name = c.getString(0)?.trim().orEmpty()
+                if (name.isNotEmpty() && name !in out) out.add(name)
+            }
+        }
+        out.ifEmpty { null }
+    } catch (t: Throwable) {
+        VoxLog.d("event=phone-calendar attendees-unreadable reason=${t.javaClass.simpleName}")
+        null
+    }
 
     private data class Writable(val id: Long, val name: String?, val primary: Boolean)
 
