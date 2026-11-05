@@ -108,11 +108,21 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
 | `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
+| `notifications` | 0 | – | `sensitive:true`, `count`, `apps` (`app`, `count`, `latest_at`, opaque `ids`); **no title and no text** |
+| `notification_read` | 0 | `id` from a summary of this call | `sensitive:true`, `app`, `posted_at`, `title`, `text` |
+| `notification_dismiss` | 1 | exactly one of `id` (from a summary) or `app` | `app`, `count`, `undoable:false`, `note`, and `failed` when some remained |
 | `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
 | `file_read` | 1 | `name`, optional `folder` (a granted folder's label), optional `offset`/`length` for a byte window (1 – 65 536) | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
 | `file_offer` | 2 | `name`, optional `folder` (a granted folder's label); `approval` on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
 | `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
+| `contact` | 0 | `name` (full or partial, case-insensitive, ≤ 200 chars) | `count`, `matches` (`display_name`, `numbers` with `label`/`number`); ≤ 20, numbers only |
+| `message` | 0 | `to` (number, or a contact name with Contacts on), `text` (≤ 1 000 chars) | `to`, `chars`, `handed_off:true` — the owner's app sends |
+| `dial` | 0 | `to` (number, or a contact name with Contacts on) | `to` — the dialer opens; the owner presses call |
+| `launch` | 0 | `app` (package or launcher label) | `package`, `component` |
+| `open` | 0 | `uri`, optional `package` | `package`, `component` |
+| `apps` | 0 | – | `apps` (`package`, `label`), `total`, `truncated`; with usage access `can_see_running:true`, `foreground`, `recent`; without it `can_see_running:false`, `running_detail`, `usage_settings` |
+| `uninstall` | 2 | `package`; `approval` on the second call | `package`, `label`, `platform_confirmation`, `note` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
 | `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
 
@@ -155,12 +165,12 @@ all read it. There is no second list to drift.
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
 | Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
-| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent (Tier 2, with a card) |
+| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent (Tier 2; a card at Ask, no card at Allow) |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 0 | `notifications`, `notification_read`, `notification_dismiss` | read counts per app while a call is open, read one notification's content by id, and dismiss one or all of an app's (not undoable) |
 | Messages | 0 | `message` | compose a text and open the messaging app; you send it |
 | Calls | 0 | `dial` | open the dialer with a number ready; you make the call |
-| Apps | 0 | `apps`, `launch`, `open`, `uninstall` | see what is installed and what the phone can honestly see running, open an app or a link, or remove an app (Tier 2, with a card) |
+| Apps | 0 | `apps`, `launch`, `open`, `uninstall` | see what is installed and what the phone can honestly see running, open an app or a link, or remove an app (Tier 2; a card at Ask, no card at Allow) |
 | Contacts | 0 | `contact` | look up a contact's number by name |
 
 No group currently holds a **planned** action: every name in the table above is built, and the
@@ -193,7 +203,9 @@ permission the owner granted is a permission. There is no hidden veto and no sho
 that always ask behind an Allow row.
 
 **There is no allow-all.** The one bulk shortcut the design permits is *Allow all instant actions*,
-and it touches Tier 0 groups alone. (The sheet does not need to show it for the promise to hold.)
+and it touches Tier 0 groups except **Notifications**, **Contacts** and **Apps** — the three whose
+Allow would also expose other people's words or removal. (The sheet does not need to show it for
+the promise to hold.)
 
 **The grant is read at call time.** `PhoneGrantStore.source` consults SharedPreferences on every
 `tools/call` and every `tools/list`; nothing is cached for the life of the session. Turning a group
@@ -209,9 +221,10 @@ same three choices everywhere:
 - **Ask — the agent asks you first, by tap or by voice.**
 - **Allow — the agent acts without asking.**
 
-The tier is the description above the rows, not a limit on the choice: Instant actions are
-reversible and carry an undo, Reported actions are shown in Recent actions, Consequential ones have
-no undo. Files, Notifications, Clipboard, Messages, Calls, Apps and Contacts carry a second warning
+The tier is the description above the rows, not a limit on the choice: Instant describes cheap,
+private actions and carries an undo **only where reversal is real** (a timer, a DND/volume change)
+— media keys, reads and handoffs have none; Reported actions are shown in Recent actions;
+Consequential ones have no undo. Files, Notifications, Clipboard, Messages, Calls, Apps and Contacts carry a second warning
 that appears **only while the row is Allow**, because that is the state in which the consequence
 happens without a card: a Messages row at Allow says Vox may write a text and open the messaging app
 without asking (the owner still presses send), and an Apps row at Allow says an app can be removed
@@ -246,7 +259,7 @@ The reason vocabulary is stable and small:
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the capability group is Off; the action is not offered and was not performed |
-| `permission` | the phone does not hold a permission the action needs (Do Not Disturb only, today) |
+| `permission` | the phone does not hold a runtime permission or special access the action needs (Do Not Disturb, notification access, calendar or contacts), named in `detail` |
 | `unavailable` | the action was recognised and the platform refused or failed |
 | `expired` | no undo is registered for that id any more (it fired, was superseded, or was never this phone's) |
 | `invalid-arguments` | the arguments do not describe a runnable action |
@@ -282,15 +295,16 @@ choose. Every tier offers Off, Ask and Allow.
 
 | tier | actions | what the phone does | undo |
 |---|---|---|---|
-| **0 — instant** | timer, alarm, dnd, volume, status, undo, media, state, clipboard, notifications, contacts, message, dial, launch, open | executes now at Allow, or after its card at Ask; reversible and private | yes, where the action has a reversal |
-| **1 — reported** | note, file_list, file_read, agenda, event_create | executes now at Allow, or after its card at Ask; the result is reported in the next turn's presence context | yes, where the row says |
-| **2 — consequential** | uninstall, file_offer; install, delete, purchase, pay, transfer (unbuilt) | executes now at Allow, or after its card at Ask, through the same two-step handshake as every other action | no |
+| **0 — instant** | timer, alarm, dnd, volume, status, undo, play, pause, skip, now_playing, state, clip, clip_read, notifications, notification_read, contact, message, dial, launch, open, apps | executes now at Allow, or after its card at Ask; cheap and private | yes where the action has a reversal (timer, alarm, dnd, volume); reads, media keys and handoffs do not |
+| **1 — reported** | note, file_list, file_read, agenda, event_create, notification_dismiss | executes now at Allow, or after its card at Ask; the result is reported in the next turn's presence context | yes, where the row says |
+| **2 — consequential** | uninstall, file_offer; delete, purchase, pay, transfer (unbuilt) | executes now at Allow, or after its card at Ask, through the same two-step handshake as every other action | no |
 
 The unbuilt Tier 2 names are never advertised: an entry in the `enum` is a capability the phone must
 be able to keep, and a card cannot be raised for something the phone cannot do. `uninstall` and
-`file_offer` can raise one, so they are offered and run at Allow or after the card. The card's
-notification is private and a yes needs an unlocked device. An owner who wants *every* phone call
-behind the gateway's card can have that without any code change:
+`file_offer` can raise one, so they are offered and run at Allow or after the card. `install` is not
+one of the unbuilt names: it left the surface entirely and a direct call is `unknown-action`. The
+card's notification is private and a yes needs an unlocked device. An owner who wants *every* phone
+call behind the gateway's card can have that without any code change:
 
 ```yaml
     trust: untrusted    # every write-capable tool call asks through the standard approval surface
@@ -327,8 +341,9 @@ mcp_servers:
 - `timeout: 30` is the documented per-server tool-call timeout (the MCP config reference's `timeout`
   key). `tool_timeout` is not a server key: an unknown key is ignored, so a block that names it reads
   as though the timeout were set when nothing was.
-- `trust: full` is what makes Tier 0 instant. `untrusted` routes every call through the approval
-  surface first — correct for a cautious owner, and it costs the "instant" part of the tier.
+- `trust: full` leaves the phone's own grants in charge: Off refuses, Ask raises the phone's card,
+  Allow runs. `untrusted` adds the gateway's approval surface in front of every call — correct for
+  a cautious owner, and it means an Allow group still asks at the gateway.
 
 Prefer the environment reference for the token if the config file is synced or shared:
 
@@ -374,8 +389,8 @@ What that means, in order of who notices:
 2. **A call starts.** The phone binds again; the next connect (or the gateway's retry) finds the tool.
 3. **The tool is missing or the call fails.** The mind must not claim the action. There is no second
    path — a directive-in-reply fallback would be the fire-and-forget shape #421 rejected, and the
-   phone's own answer to "could you set a timer" is still the local path, which does not need the
-   gateway at all.
+   phone does not parse the caller's words (D38): every voice turn goes to the mind, so a mind that
+   cannot reach the phone says what it cannot do instead of the phone acting on its own.
 
 If the phone has no tailnet address, nothing binds and the log says
 `event=phone-mcp unavailable reason=no-tailnet`. If the port is taken, `reason=bind`. In both cases
@@ -442,10 +457,13 @@ token, or the API key of the connection it talks to (#452) — and everything el
 of body is parsed. Both are compared in constant time and both comparisons always run, so the 401
 carries no hint of which one was presented.
 
-**Why the tiers are the third layer.** Neither of the first two says *what* an authenticated client
-may do. The tier table does: Tier 0 is reversible and private, Tier 1 is reversible and visible, and
-Tier 2 is refused because it leaves the phone or cannot be undone. The phone will not send a message
-or place a call for the mind however it authenticates.
+**Why the grants are the third layer.** Neither of the first two says *what* an authenticated client
+may do. The grant table does: a group is Off until the owner grants it, Ask raises the phone's card,
+and Allow is the owner's standing permission — including for the consequential actions. Tier 2 is
+not a refusal: `uninstall` and `file_offer` run at Allow or after the card, and the unbuilt Tier 2
+names are never advertised. The phone still never sends a message or places a call for the mind,
+however it authenticates: `message` and `dial` hand a draft or a number to the owner's own app, and
+the owner presses send or call.
 
 **What is deliberately absent.** No MCP resources and no resource listing, no second route, no SSE
 stream, no server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no
@@ -510,7 +528,9 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 11. **`message`** → `not_granted` while Messages is Off, `approval-required` with a card at Ask; at
     Allow the owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted`
     while Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after
-    the being says *dialling — ending our call*.
+    the being says *dialling — ending our call*. **Open edge:** ending the call also closes the MCP
+    listener, so the `dial` result may not reach the mind; and with Vox backgrounded Android may
+    refuse the activity start silently — `ok:true` is the handover, not proof an app came forward.
 12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
     summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
     undoable row: the action is reversed, or the toast says the undo expired.
