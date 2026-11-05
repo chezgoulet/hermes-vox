@@ -30,10 +30,11 @@ import com.hermesvox.core.Json
  * handoff's recipient is stored because the owner needs to see who the draft was for. [summarise]
  * is the one function a future action must go through.
  *
- * **The two read groups are narrower than [summarise].** A notifications summary stores
+ * **The three read groups are narrower than [summarise].** A notifications summary stores
  * `notification_count`; a single read stores the `app` and `notification_count=1`, never the
- * title, body or id it returned. A contact lookup stores `count`, never the query name, a display
- * name or a number. Those fields are the owner's data, not a fact this list may keep.
+ * title, body or id it returned. An `apps` listing stores `app_count`, never a package or label.
+ * A contact lookup stores `count`, never the query name, a display name or a number. Those fields
+ * are the owner's data, not a fact this list may keep.
  *
  * Pure JVM. [PhoneAuditStore] is the Android side that persists it; this file is what
  * [PhoneAuditTest] pins.
@@ -90,6 +91,8 @@ object PhoneAudit {
             // listener's ids, so they are not a fact this list may keep.
             result.action == "notifications" -> notificationCountRow(result)
             result.action == "notification_read" -> notificationReadRow(result)
+            // An app listing is a count of launchable entries, never the packages or labels.
+            result.action == "apps" -> appCountRow(result)
             // A contact lookup is the owner's address book, so the row is its count alone: never
             // the name that was asked for and never a number or display name it found.
             result.action == "contact" -> contactRow(result)
@@ -122,12 +125,20 @@ object PhoneAudit {
         return out
     }
 
+    /** The app listing's row: how many launchable apps, never their packages or labels. */
+    private fun appCountRow(result: PhoneResult): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        if (result.ok) {
+            (result.facts["total"] as? Number)?.let { out["app_count"] = "${it.toLong()}" }
+        }
+        return out
+    }
+
     /**
      * The read row: the app and `notification_count` of one. **Never the id** — an id the owner
      * cannot see is not a fact to keep — and never the title or body it returned.
      */
-    private fun notificationReadRow(result: PhoneResult): Map<String, String> {
-        val out = LinkedHashMap<String, String>()
+    private fun notificationReadRow(result: PhoneResult): Map<String, String> {        val out = LinkedHashMap<String, String>()
         if (!result.ok) return out
         (result.facts["app"] as? String)?.takeIf { it.isNotBlank() }?.let { out["app"] = clip(it) }
         out["notification_count"] = "1"

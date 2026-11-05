@@ -47,8 +47,9 @@ class PhoneToolTest {
             listOf(
                 "timer", "alarm", "dnd", "volume", "note", "play", "pause", "skip", "now_playing",
                 "state", "clip", "clip_read", "file_list", "file_read", "file_offer", "agenda",
-                "event_create", "notifications", "notification_read", "message", "dial",
-                "launch", "open", "uninstall", "contact", "undo", "status",
+                "event_create", "notifications", "notification_read", "notification_dismiss",
+                "message", "dial", "apps", "launch", "open", "uninstall", "contact", "undo",
+                "status",
             ),
             enumOf(),
         )
@@ -126,8 +127,8 @@ class PhoneToolTest {
         val apps = PhoneGrants.Source { g ->
             if (g.id == "apps") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
-        assertEquals(listOf("launch", "open", "uninstall", "undo", "status"), enumOf(apps))
-        for (action in listOf("launch", "open", "uninstall")) {
+        assertEquals(listOf("apps", "launch", "open", "uninstall", "undo", "status"), enumOf(apps))
+        for (action in listOf("apps", "launch", "open", "uninstall")) {
             val parsed = PhoneTool.parse(
                 when (action) {
                     "launch" -> mapOf("action" to action, "app" to "Firefox")
@@ -292,12 +293,31 @@ class PhoneToolTest {
         val apps = PhoneGrants.Source { g ->
             if (g.id == "apps") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
         }
-        assertEquals(listOf("launch", "open", "uninstall", "undo", "status"), enumOf(apps))
+        assertEquals(listOf("apps", "launch", "open", "uninstall", "undo", "status"), enumOf(apps))
         assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("uninstall"))
         // An Allow on Apps is a real permission: it reaches the engine, where Ask would card it.
         val parsed = PhoneTool.parse(mapOf("action" to "uninstall", "package" to "com.example.app"), apps)
         assertTrue(parsed is PhoneTool.Parsed.Run)
         assertEquals("uninstall", (parsed as PhoneTool.Parsed.Run).call.action)
+    }
+
+    @Test
+    fun install_left_the_surface_and_is_unknown_not_a_governance_refusal() {
+        val apps = PhoneGrants.Source { g ->
+            if (g.id == "apps") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        }
+        assertFalse("install must not be advertised", "install" in enumOf(apps))
+        assertNull("install belongs to no group", PhoneGrants.groupOf("install"))
+        assertNull("install is not a phone action", PhoneTiers.of("install"))
+
+        val parsed = PhoneTool.parse(mapOf("action" to "install", "app" to "com.example.app"), apps)
+        assertTrue("a direct call must be an unknown-action refusal", parsed is PhoneTool.Parsed.Refuse)
+        val result = (parsed as PhoneTool.Parsed.Refuse).result
+        assertEquals(PhoneReason.UNKNOWN, result.reason)
+        assertTrue(
+            "the refusal says it is not a phone action: ${result.detail}",
+            result.detail!!.contains("not a phone action"),
+        )
     }
 
     @Test fun notifications_is_an_instant_group_with_allow_and_two_steps() {
@@ -315,7 +335,10 @@ class PhoneToolTest {
         val on = PhoneGrants.Source { g ->
             if (g.id == "notifications") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
         }
-        assertEquals(listOf("notifications", "notification_read", "undo", "status"), enumOf(on))
+        assertEquals(
+            listOf("notifications", "notification_read", "notification_dismiss", "undo", "status"),
+            enumOf(on),
+        )
         assertTrue(PhoneTool.parse(mapOf("action" to "notifications"), on) is PhoneTool.Parsed.Run)
         assertTrue(
             PhoneTool.parse(mapOf("action" to "notification_read", "id" to "n1"), on)

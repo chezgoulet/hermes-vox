@@ -23,7 +23,11 @@ actions with cards on this phone, raised by
 [_PhoneApproval_](../android/app/src/main/java/com/hermesvox/PhoneApproval.kt). The card's
 notification is private and cannot be approved while the phone is locked. Since the uniform-grants
 change, this is the same card **every** action at Ask goes through, not a Tier 2 exception.
-**Declared, not built:** `apps`' `install`.
+**Added by the apps-and-dismiss lane:** `apps`' `apps` listing and `notifications`'
+`notification_dismiss`.
+**Gone from the surface:** `apps`' `install`. An ordinary app cannot install a package — Android
+shows its own installer confirmation and never says whether the owner accepted — so it is not a
+declared capability, not advertised, and a direct call is `unknown-action`.
 
 ---
 
@@ -136,6 +140,7 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to` | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens | `no_app`; `not_granted` naming **Contacts** for a name without that group |
 | `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the launch still happens | `no_app` |
 | `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live. `intent:` (explicit component, arbitrary extras and flags), `file:` (a path on disk) and a string with **no scheme** are refused `bad_uri` before the intent exists — nothing is guessed into `https://`; `content:` and `http(s):` pass through | `invalid-arguments`, `bad_uri`, `no_app` |
+| `apps` | apps | — | `apps` — each `package` and `label`; `total`, `truncated`; with usage access `can_see_running: true`, `foreground` and `recent`; without it `can_see_running: false`, `running_detail`, `usage_settings` | **no** — reading the launchable list changes nothing | the launcher query `ACTION_MAIN` / `CATEGORY_LAUNCHER` from the manifest's `<queries>` (no `QUERY_ALL_PACKAGES`). What is **running** needs **usage access** (`PACKAGE_USAGE_STATS`), a special access the owner grants on Android's own screen; without it the result says it cannot see what is running and never returns an empty list as "nothing is running" | none of its own: it always answers the installed half; the running half is absent and explained |
 | `contact` | contacts | `name` — a full or partial name, case-insensitive, 1 – 200 characters | `count`, `matches` — each `display_name` and `numbers`, each number `{label, number}` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission asked when Contacts is turned on; **[ContactsContract](https://developer.android.com/reference/android/provider/ContactsContract) only**. The projection is a display name and the numbers with their labels; **no note, address, photo or email** is read. Up to 20 matches; no match is `ok:true, count:0` | `permission` (naming `android.permission.READ_CONTACTS`), `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
 | `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
@@ -322,6 +327,7 @@ through the presence context and in the audit; undoable where the row says so.
 | `file_offer` | files | the same `name` and `folder`; `approval` only on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone, but it exports the owner's file to the agent, so it is **Tier 2** and every offer needs the card | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob. The folder grant makes the export possible, not intended | `no_folder`, `bad_path`, `too_big`, `unavailable`, `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy` |
 | `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` (names only), and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
 | `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer ≥ 1, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
+| `notification_dismiss` | notifications | exactly one of `id` (≤ 80 characters, from a `notifications` summary of this call) or `app` (≤ 200 characters, launcher label or package, case-insensitive) | `app`, `count`, `undoable: false`, `note` — not undoable: a dismissed notification cannot be restored | **no** — Android cannot restore a cancelled notification | the same call-scoped listener; only the bound service can call `cancelNotification(key)`, and its absence is `unavailable`. Never returns a title, a body or a listener id | `unavailable` (no live call / no bound listener), `unknown-id` (id never summarised, app has no notification, or Vox's own), `invalid-arguments` |
 
 **The folder is the grant, by its own name.** The `folder` enum is the labels the owner actually
 granted, built per `tools/list` from the persisted grants; there is no built-in `Downloads`/
@@ -397,7 +403,7 @@ id. Neither group stores its payload in the audit.
 
 Tier 2 is for what cannot be undone and cannot be handed to another app. `uninstall` and
 `file_offer` are built and use the same card as every action at Ask; the unbuilt names
-(`install`, `delete`, `purchase`, `pay`, `transfer`) are never advertised, because a card cannot be
+(`delete`, `purchase`, `pay`, `transfer`) are never advertised, because a card cannot be
 raised for something the phone cannot do.
 
 `file_offer` is here because offering a file **exports** it: the bytes leave the granted folder,
@@ -512,13 +518,13 @@ owner's answer on Android's own screen.
 |---|---|---|---|---|---|---|
 | `uninstall` | apps | `package` string (a dotted package name); `approval` only on the second call | `package`, `label`, `platform_confirmation`, `note` | **no** — an uninstall cannot be undone | the app's label from `PackageManager`, then `ACTION_DELETE` and Android's own confirmation | `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy`, `unavailable` |
 | `file_offer` | files | `name` and `folder`; `approval` only on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — the export cannot be recalled | the file's own name, type and size from the granted tree, then the file bridge over the tailnet | `no_folder`, `bad_path`, `too_big`, `unavailable`, `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy` |
-| `install` | apps | `app` string | `app`, `installed` | **no** | the package installer's own confirmation, which the owner answers | `approval-required` |
 
-**Declared, not built:** `apps`' `install`. `PhoneGrants` names `install` in the apps group's
-`planned` list, and `PhoneTiers` still names it, so a direct call is refused as
-`approval-required`; it is never advertised, because a promise in an `enum` is a capability the
-phone must be able to keep. `call`, `send` and `email` are gone with the old `messages-calls`
-group: calls are `dial`, messages are `message`, and there is no other path.
+**`install` is gone from the surface.** An ordinary app cannot install a package: Android always
+shows the system's own installer confirmation and the app never learns whether the owner accepted,
+so a result could not honestly say "installed". It is no longer in any group's `actions` or
+`planned` list, is never advertised, and a direct call is `unknown-action` — not a governance
+refusal for a capability nobody built. `call`, `send` and `email` are gone with the old
+`messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
 
 **Why the reads are not Tier 2.** `notifications` and `contact` change nothing and can be undone by
 doing nothing, so they are instant and offer Allow. Their privacy is designed into their scope
@@ -556,10 +562,10 @@ These are the behaviours the shipped card implements, not requirements for a lat
 | `clipboard` | 0 | `clip`, `clip_read` | **built in lane 1** |
 | `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane; `file_offer` is Tier 2 and is carded at Ask like every action** |
 | `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
-| `notifications` | 0 | `notifications`, `notification_read` | **built by the read lane; listener call-scoped** |
+| `notifications` | 0 | `notifications`, `notification_read`, `notification_dismiss` | **built by the read lane; listener call-scoped; dismissal is Tier 1 and not undoable** |
 | `messages` | 0 | `message` | **built by the handoff lane** |
 | `calls` | 0 | `dial` | **built by the handoff lane** |
-| `apps` | 0 | `launch`, `open`, `uninstall` — `install` planned | **built; `uninstall` is Tier 2, so its card describes a removal and an Allow covers it** |
+| `apps` | 0 | `apps`, `launch`, `open`, `uninstall` | **built; `apps` is a read, `uninstall` is Tier 2, so its card describes a removal and an Allow covers it** |
 | `contacts` | 0 | `contact` | **built by the read lane; numbers only** |
 
 ---
@@ -755,6 +761,7 @@ summarising function is the place a future action has to pass through.
     may say **Granted** while the phone is idle, and the actions still refuse `unavailable`; that is
     the design, not a bug. Turning Notifications on offers Android's notification-access screen and
     the row shows whether it landed.
-27. **The remaining declared capability stays refused.** `install` is **absent** from the `enum`
-    and a direct call returns `approval-required`; `file_list` and `file_read` do the same while
-    Files is Off, and no lane may make them advertise before the phone can keep the promise.
+27. **`install` is not a capability.** It is **absent** from the `enum`, has no group and no tier,
+    and a direct call returns `unknown-action` (not `approval-required` for a name nobody built);
+    `file_list` and `file_read` do the same while Files is Off, and no lane may make them advertise
+    before the phone can keep the promise.

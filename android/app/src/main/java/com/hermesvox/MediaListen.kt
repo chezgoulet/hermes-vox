@@ -47,15 +47,26 @@ class MediaListenerService : NotificationListenerService() {
         // The service can stay bound across calls. Registering the seed lets a call start ask for
         // the notifications already on the phone, not only the ones posted after it began.
         PhoneNotifications.setResync { seed() }
+        // The listener is the only thing that can cancel: the board stays pure JVM and asks here.
+        PhoneNotifications.setDismisser { key ->
+            try {
+                cancelNotification(key)
+                true
+            } catch (_: Throwable) {
+                false
+            }
+        }
         seed()
     }
 
     override fun onListenerDisconnected() {
         PhoneNotifications.setResync(null)
+        PhoneNotifications.setDismisser(null)
     }
 
     override fun onDestroy() {
         PhoneNotifications.setResync(null)
+        PhoneNotifications.setDismisser(null)
         super.onDestroy()
     }
 

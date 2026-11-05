@@ -156,13 +156,14 @@ object PhoneGrants {
             id = "notifications",
             label = "Notifications",
             tier = PhoneTiers.INSTANT,
-            lets = "Read the notifications currently on this phone while a call is open — " +
-                "codes, messages and anything else on your lock screen go to your agent.",
+            lets = "Read the notifications currently on this phone while a call is open, and " +
+                "dismiss one or all of an app's — codes, messages and anything else on your lock " +
+                "screen go to your agent.",
             warning = "Your agent could read every notification on this phone. Codes, messages " +
                 "and anything else on your lock screen go to your agent.",
             allowWarning = "Allow: Vox can read the notifications on this phone without asking — " +
                 "codes, messages and anything else on your lock screen.",
-            actions = listOf("notifications", "notification_read"),
+            actions = listOf("notifications", "notification_read", "notification_dismiss"),
         ),
         Group(
             id = "messages",
@@ -186,12 +187,12 @@ object PhoneGrants {
             id = "apps",
             label = "Apps",
             tier = PhoneTiers.INSTANT,
-            lets = "Open an app or a link, or remove an app, which Android then confirms.",
+            lets = "See which apps are installed, open an app or a link, or remove an app, which " +
+                "Android then confirms.",
             warning = "This group includes removing an app: consequential, and there is no undo.",
             allowWarning = "Allow: Vox can remove an app without asking you first. Android shows " +
                 "its own confirmation, and a removed app cannot be put back by an undo.",
-            actions = listOf("launch", "open", "uninstall"),
-            planned = listOf("install"),
+            actions = listOf("apps", "launch", "open", "uninstall"),
         ),
         Group(
             id = "contacts",

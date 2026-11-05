@@ -55,7 +55,7 @@ class PhoneGrantsTest {
 
     @Test fun the_two_read_groups_are_instant_and_offer_allow() {
         for ((id, actions) in listOf(
-            "notifications" to listOf("notifications", "notification_read"),
+            "notifications" to listOf("notifications", "notification_read", "notification_dismiss"),
             "contacts" to listOf("contact"),
         )) {
             val group = PhoneGrants.GROUPS.first { it.id == id }
@@ -228,7 +228,7 @@ class PhoneGrantsTest {
         }
     }
 
-    @Test fun planned_actions_resolve_to_their_group_but_are_never_advertised() {
+    @Test fun uninstall_resolves_to_apps_and_install_is_no_longer_an_action() {
         val apps = PhoneGrants.groupOf("uninstall")
         assertEquals("apps", apps?.id)
         assertEquals(PhoneTiers.APPROVAL, PhoneGrants.tierOf("uninstall"))
@@ -237,17 +237,15 @@ class PhoneGrantsTest {
             "the card's action is offered when its group is on",
             "uninstall" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
         )
-        val install = PhoneGrants.groupOf("install")
-        assertEquals("apps", install?.id)
-        assertFalse("install is still planned", "install" in install!!.actions)
+        // `install` left the surface with the apps-and-dismiss lane: no group, no tier, no promise.
+        assertNull("install belongs to no group", PhoneGrants.groupOf("install"))
+        assertNull("install is not a phone action", PhoneGrants.tierOf("install"))
         for (g in PhoneGrants.GROUPS) {
-            for (planned in g.planned) {
-                assertFalse("$planned is planned, not built", planned in g.actions)
-                assertFalse(
-                    "$planned must not be advertised even when its group is allowed",
-                    planned in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
-                )
-            }
+            assertTrue("${g.id} must have no planned actions left", g.planned.isEmpty())
+            assertFalse(
+                "install must not be advertised even when every group is allowed",
+                "install" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
+            )
         }
         assertNull(PhoneGrants.groupOf("fly"))
         assertNull(PhoneGrants.tierOf("fly"))

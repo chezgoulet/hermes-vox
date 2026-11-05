@@ -329,8 +329,8 @@ class PhoneEngineTest {
             "the phone can perform file_offer — at Allow directly, at Ask after the card",
             PhoneTiers.executable("file_offer"),
         )
-        for (a in listOf("message", "dial", "launch", "open")) {
-            assertEquals("$a hands off to the owner's own app", PhoneTiers.INSTANT, PhoneTiers.of(a))
+        for (a in listOf("message", "dial", "apps", "launch", "open")) {
+            assertEquals("$a hands off to the owner's own app, or reads launchable entries", PhoneTiers.INSTANT, PhoneTiers.of(a))
             assertTrue("$a is executable by the phone", PhoneTiers.executable(a))
         }
         assertEquals("a contact lookup is a read", PhoneTiers.INSTANT, PhoneTiers.of("contact"))
@@ -339,7 +339,13 @@ class PhoneEngineTest {
             assertEquals("$a is a read", PhoneTiers.INSTANT, PhoneTiers.of(a))
             assertTrue("the phone may perform $a", PhoneTiers.executable(a))
         }
-        for (a in listOf("uninstall", "install", "delete", "purchase")) {
+        assertEquals(
+            "a dismissal changes something visible and cannot be undone",
+            PhoneTiers.REPORTED,
+            PhoneTiers.of("notification_dismiss"),
+        )
+        assertTrue("the phone may dismiss a notification", PhoneTiers.executable("notification_dismiss"))
+        for (a in listOf("uninstall", "delete", "purchase")) {
             assertEquals("$a is consequential", PhoneTiers.APPROVAL, PhoneTiers.of(a))
             assertEquals(
                 "uninstall is built and can raise a card; the rest are never built",

@@ -211,6 +211,15 @@ object PhoneApproval {
             Description("notifications", "", "read the notifications on this phone")
         is PhoneTool.Call.NotificationRead ->
             Description("notifications", "one", "read one notification on this phone")
+        is PhoneTool.Call.NotificationDismiss -> Description(
+            "notifications",
+            call.app ?: "one",
+            if (call.app != null) {
+                "dismiss all notifications from ${call.app} on this phone"
+            } else {
+                "dismiss one notification on this phone"
+            },
+        )
         is PhoneTool.Call.Contact ->
             Description("contact lookup", "", "look up \"${call.name}\" in your contacts")
         is PhoneTool.Call.Message -> Description(
@@ -222,6 +231,8 @@ object PhoneApproval {
             Description("dialer", call.to, "open the dialer for ${call.to}")
         is PhoneTool.Call.Launch ->
             Description("app", call.app, "open ${call.app}")
+        PhoneTool.Call.Apps ->
+            Description("apps", "", "list the apps on your phone")
         is PhoneTool.Call.Open ->
             Description("link", call.uri, "open ${call.uri}")
         is PhoneTool.Call.Uninstall ->

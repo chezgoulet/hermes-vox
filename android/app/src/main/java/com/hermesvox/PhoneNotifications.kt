@@ -37,6 +37,8 @@ object PhoneNotifications {
         val title: String,
         val text: String,
         val postedAt: Long,
+        /** Vox's own notification. It is never recorded, and never dismissed if it ever were. */
+        val own: Boolean = false,
     )
 
     /** One app's row in a summary: counts and opaque ids, never a title or a body. */
@@ -71,6 +73,13 @@ object PhoneNotifications {
      */
     private var resync: (() -> Unit)? = null
 
+    /**
+     * The bound listener's way to dismiss one notification by its Android key. It is a callback,
+     * not a stored Android object, so this board stays pure JVM and the listener owns the platform
+     * call. `null` means nothing is bound.
+     */
+    private var dismisser: ((String) -> Boolean)? = null
+
     /** A call began. Idempotent, because the voice controller re-enters `start()` while warming. */
     fun attach() {
         synchronized(lock) {
@@ -84,6 +93,15 @@ object PhoneNotifications {
     /** The listener service binds or unbinds; it is the only thing that can answer `activeNotifications`. */
     fun setResync(callback: (() -> Unit)?) {
         synchronized(lock) { resync = callback }
+    }
+
+    /**
+     * The bound listener's dismissal door. The service registers it on connect and clears it on
+     * disconnect, so a board with no listener can never pretend a notification went away. The
+     * callback returns true only when Android accepted the cancellation.
+     */
+    fun setDismisser(callback: ((String) -> Boolean)?) {
+        synchronized(lock) { dismisser = callback }
     }
 
     /** Ask the bound listener to hand over what is on the phone now, if anything is bound. */
@@ -132,6 +150,7 @@ object PhoneNotifications {
             title = title.orEmpty(),
             text = text.orEmpty(),
             postedAt = postedAt,
+            own = own,
         )
     }
 
@@ -177,6 +196,174 @@ object PhoneNotifications {
         if (!live || id !in summarised) return@synchronized null
         items[id]
     }
+
+    // ---- dismissal (#apps-and-dismiss) ----
+
+    /** The action name the tool offers; the parent wires it into [PhoneTool] and the engine. */
+    const val ACTION_DISMISS = "notification_dismiss"
+
+    /** An id from a summary is short. The parent's schema uses the same bound. */
+    const val MAX_ID_CHARS = 80
+
+    /** An app label or package is a name, not a payload. */
+    const val MAX_APP_CHARS = 200
+
+    /** No live call is the same answer `notifications` gives: the listener is only open in a call. */
+    const val CLOSED_DETAIL =
+        "the notification listener is only open during a call; no call is live, so nothing was " +
+            "dismissed"
+
+    /** A live call whose listener is not bound cannot dismiss anything either. */
+    const val NOT_BOUND_DETAIL =
+        "no notification listener is bound right now, so nothing was dismissed; the system " +
+            "notification access may have been revoked"
+
+    /**
+     * Dismiss one notification by [id] from a summary of this call, or every notification from
+     * [app] (its label or package, case-insensitive). Give exactly one of the two.
+     *
+     * This is destructive: Android cannot restore a cancelled notification, so the result carries
+     * `undoable:false` and says so in words. It names the **app and the count**, never a title and
+     * never a body, and [auditArguments] keeps the audit row to the same two facts.
+     *
+     * No call is `unavailable` with [CLOSED_DETAIL], exactly as `notifications` refuses. An id no
+     * summary has shown is `unknown-id`, so a guessed handle cannot vacuum the lock screen. Vox's
+     * own notifications are excluded both by [record] and by the [Record.own] guard below.
+     */
+    fun dismiss(id: String? = null, app: String? = null): PhoneResult {
+        if (!attached()) {
+            return refused(PhoneReason.UNAVAILABLE, CLOSED_DETAIL)
+        }
+        val callback = synchronized(lock) { dismisser }
+            ?: return refused(PhoneReason.UNAVAILABLE, NOT_BOUND_DETAIL)
+
+        val byId = id?.trim()?.takeIf { it.isNotEmpty() }
+        val byApp = app?.trim()?.takeIf { it.isNotEmpty() }
+        if (byId != null && byApp != null) {
+            return refused(
+                PhoneReason.INVALID,
+                "give id or app, not both: an id dismisses one notification, an app dismisses all " +
+                    "of that app's",
+            )
+        }
+        if (byId == null && byApp == null) {
+            return refused(
+                PhoneReason.INVALID,
+                "id or app is required: an id from a notifications summary, or an app name",
+            )
+        }
+        if (byId != null && byId.length > MAX_ID_CHARS) {
+            return refused(PhoneReason.INVALID, "id is longer than $MAX_ID_CHARS characters")
+        }
+        if (byApp != null && byApp.length > MAX_APP_CHARS) {
+            return refused(PhoneReason.INVALID, "app is longer than $MAX_APP_CHARS characters")
+        }
+
+        val targets: List<Record>
+        val label: String?
+        if (byId != null) {
+            val record = synchronized(lock) {
+                if (byId !in summarised) null else items[byId]
+            } ?: return refused(
+                PhoneReason.UNKNOWN_ID,
+                "no notification with that id is in a summary from this call; the id must come " +
+                    "from a `notifications` summary while the call is open",
+            )
+            if (record.own) {
+                return refused(
+                    PhoneReason.UNKNOWN_ID,
+                    "that notification is Vox's own; Vox never dismisses itself",
+                )
+            }
+            targets = listOf(record)
+            label = record.app
+        } else {
+            val wanted = byApp!!
+            val found = synchronized(lock) {
+                items.values.filter {
+                    !it.own &&
+                        (it.app.equals(wanted, ignoreCase = true) ||
+                            it.packageName.equals(wanted, ignoreCase = true))
+                }
+            }
+            if (found.isEmpty()) {
+                return refused(
+                    PhoneReason.UNKNOWN_ID,
+                    "no notification from \"$wanted\" is on the phone in this call; a summary " +
+                        "names the apps that have one",
+                    app = wanted,
+                )
+            }
+            targets = found
+            label = found.first().app
+        }
+
+        var count = 0
+        for (record in targets) {
+            if (record.own) continue
+            val gone = try {
+                callback(record.key)
+            } catch (_: Throwable) {
+                false
+            }
+            if (!gone) continue
+            count++
+            // Android has accepted the cancellation; the board must not keep a record the phone
+            // no longer has, or the next summary would count a notification that is gone.
+            synchronized(lock) {
+                items.remove(record.id)
+                byKey.remove(record.key)
+            }
+        }
+
+        if (count == 0) {
+            return refused(
+                PhoneReason.UNAVAILABLE,
+                "Android did not dismiss the notification; nothing was dismissed",
+                app = byApp,
+            )
+        }
+        val facts = linkedMapOf<String, Any?>(
+            "app" to (label ?: byApp.orEmpty()),
+            "count" to count,
+            // There is no undo for a dismissed notification, and the reply has to say so rather
+            // than leave the mind to infer it from a missing undo handle.
+            "undoable" to false,
+            "note" to "not undoable: a dismissed notification cannot be restored",
+        )
+        val failed = targets.size - count
+        if (failed > 0) facts["failed"] = failed
+        return PhoneResult(
+            ok = true,
+            action = ACTION_DISMISS,
+            tier = PhoneTiers.REPORTED,
+            id = null,
+            facts = facts,
+        )
+    }
+
+    /**
+     * The audit row's whole content for a dismissal: the app and the count, nothing else. The
+     * dispatch path replaces the raw arguments (which may carry an id) with this map before
+     * [PhoneAudit] sees them, so a listener id can never become an owner-visible record.
+     */
+    fun auditArguments(result: PhoneResult): Map<String, Any?> {
+        if (result.action != ACTION_DISMISS) return emptyMap()
+        val app = result.facts["app"] as? String ?: return emptyMap()
+        val count = (result.facts["count"] as? Number)?.toLong() ?: 0L
+        return linkedMapOf("app" to app, "notification_count" to count.toString())
+    }
+
+    /** A dismissal refusal. The app is included only when the call named one; an id never is. */
+    private fun refused(reason: String, detail: String, app: String? = null): PhoneResult =
+        PhoneResult(
+            ok = false,
+            action = ACTION_DISMISS,
+            tier = PhoneTiers.REPORTED,
+            reason = reason,
+            detail = detail,
+            facts = if (app == null) emptyMap() else linkedMapOf("app" to app),
+        )
 
     private fun reset() {
         items.clear()

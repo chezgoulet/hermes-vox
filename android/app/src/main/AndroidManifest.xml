@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- #346: Android 11+ package visibility. A TTS engine is another package's service,
          and without this intent the app cannot see or bind to it — TextToSpeech init then
@@ -15,9 +16,11 @@
         <intent>
             <action android:name="android.intent.action.ASSIST" />
         </intent>
-        <!-- #429 handoff lane: `launch` resolves an app only among LAUNCHABLE activities. This
-             is a declared visibility question — the app may see launcher entries, not every
-             installed package — and it is why a package with no launcher entry is no_app. -->
+        <!-- #429 handoff lane: `launch` resolves an app only among LAUNCHABLE activities, and
+             the `apps` action lists the same set. This is a declared visibility question — the
+             app may see launcher entries, not every installed package — and it is why a package
+             with no launcher entry is no_app. QUERY_ALL_PACKAGES is deliberately not requested:
+             "what's installed" means what a person can open. -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -68,6 +71,14 @@
          only, and the lookup returns names, numbers and labels — never notes, addresses, photos
          or email. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- `apps` running half: usage access is a SPECIAL access, not a runtime dialog. Declaring
+         PACKAGE_USAGE_STATS is what makes Vox appear in Settings → Special app access → Usage
+         access; the action itself reports the system's AppOps answer (AppsAccess.usageAllowed)
+         and says "cannot see what is running" until the owner grants it there. It is not
+         QUERY_ALL_PACKAGES: it reveals recent usage, not every installed package. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
     <!-- #429 lane 2: the Storage Access Framework is the deliberate default, so no storage
          permission is declared for it (not READ_EXTERNAL_STORAGE, not MANAGE_EXTERNAL_STORAGE).
          Files are read through a tree the owner picks with ACTION_OPEN_DOCUMENT_TREE; an all-files

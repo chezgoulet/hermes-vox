@@ -157,16 +157,15 @@ all read it. There is no second list to drift.
 | Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
 | Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent (Tier 2, with a card) |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
-| Notifications | 0 | `notifications`, `notification_read` | read counts per app while a call is open, then one notification's content by id |
+| Notifications | 0 | `notifications`, `notification_read`, `notification_dismiss` | read counts per app while a call is open, read one notification's content by id, and dismiss one or all of an app's (not undoable) |
 | Messages | 0 | `message` | compose a text and open the messaging app; you send it |
 | Calls | 0 | `dial` | open the dialer with a number ready; you make the call |
-| Apps | 0 | `launch`, `open`, `uninstall`; `install`\* | open an app or a link; removing an app needs its own card |
+| Apps | 0 | `apps`, `launch`, `open`, `uninstall` | see what is installed and what the phone can honestly see running, open an app or a link, or remove an app (Tier 2, with a card) |
 | Contacts | 0 | `contact` | look up a contact's number by name |
 
-`*` A planned action: the group and its refusal exist, the capability does not ship yet. A name in
-this column is **never advertised**; a direct call is refused as `not_granted` (group Off) or
-`approval-required` (group Ask) rather than executed. The empty action column is the honest one for
-a group whose capability lands in a later lane.
+No group currently holds a **planned** action: every name in the table above is built, and the
+schema advertises it only while its group is on. `install` left the surface entirely — an ordinary
+app cannot install a package — so a direct call is `unknown-action`, not a governance refusal.
 
 ### The three states
 

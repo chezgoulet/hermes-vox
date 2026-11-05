@@ -74,7 +74,7 @@ class PhoneEngine(
     )
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
-    interface PhonePlatform : DialHandoff.Host {
+    interface PhonePlatform : DialHandoff.Host, AppsAccess.Host {
         /** A media transport key. Resolved to a platform key code by the implementation. */
         enum class MediaKey { PLAY, PAUSE, NEXT, PREVIOUS }
 
@@ -589,7 +589,15 @@ class PhoneEngine(
             result.facts["approval_id"] != null
         if (!requestRowAlreadyWritten) {
             try {
-                audit(result, arguments, nowEpoch)
+                audit(
+                    result,
+                    if (result.action == PhoneNotifications.ACTION_DISMISS) {
+                        PhoneNotifications.auditArguments(result)
+                    } else {
+                        arguments
+                    },
+                    nowEpoch,
+                )
             } catch (_: Throwable) {
             }
         }
@@ -889,6 +897,8 @@ class PhoneEngine(
             is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Notifications -> notifications()
             is PhoneTool.Call.NotificationRead -> notificationRead(call.id)
+            is PhoneTool.Call.NotificationDismiss -> notificationDismiss(call)
+            PhoneTool.Call.Apps -> AppsAccess.result(platform)
             is PhoneTool.Call.Contact -> contacts(call)
             is PhoneTool.Call.Message -> message(call)
             is PhoneTool.Call.Dial -> dial(call)
@@ -1685,6 +1695,23 @@ class PhoneEngine(
                 "text" to record.text,
             ),
         )
+    }
+
+    /**
+     * Dismiss by id or app. The lifetime check comes first, exactly as `notifications` does, so a
+     * phone with no live call answers `unavailable` even if the system grant is also missing.
+     */
+    private fun notificationDismiss(call: PhoneTool.Call.NotificationDismiss): PhoneResult {
+        if (!PhoneNotifications.attached()) {
+            return listenerClosed(PhoneNotifications.ACTION_DISMISS)
+        }
+        listenerPermission(PhoneNotifications.ACTION_DISMISS)?.let { return it }
+        val result = PhoneNotifications.dismiss(call.id, call.app)
+        log(
+            "event=phone-mcp action=${PhoneNotifications.ACTION_DISMISS} ok=${result.ok} " +
+                "count=${result.facts["count"] ?: 0}",
+        )
+        return result
     }
 
     /**
