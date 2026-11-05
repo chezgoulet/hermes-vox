@@ -42,7 +42,7 @@ the line that proves it.
 - [ ] **1.2 The what's-new banner.** *Pass:* appears exactly once, on the first launch
       after the upgrade; carries the HTTPS alert; tapping it lands on Entity &
       Connection; force-stop and relaunch → gone; a fresh install → never shown.
-- [ ] **1.3 The old endpoint.** Point at `http://192.168.1.11:8642`.
+- [ ] **1.3 The old endpoint.** Point at `http://<lan-ip>:8642`.
       *Pass:* refused in well under a second, and **the user sees** copy naming the
       cause and the fix. ⚠️ #182: the streaming path may fail to produce or show it —
       either way, record what you actually see.

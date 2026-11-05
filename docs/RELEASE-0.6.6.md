@@ -30,4 +30,4 @@ inside a live call.
 
 ## Verification
 
-Thelio gate on a clean clone. versionCode 110 / 0.6.6.
+the build host gate on a clean clone. versionCode 110 / 0.6.6.

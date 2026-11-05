@@ -23,7 +23,7 @@ is the same one a rebuild produces.
    user must act on is not finished until that entry exists — the banner is the only
    place the app can say so before the user hits it.
 
-3. **Gate the full tree** — the authoritative build is on the Thelio (`the build host`):
+3. **Gate the full tree** — the authoritative build is on the the build host:
    - **A fresh checkout must fetch the runtime first:** `bash scripts/fetch-runtime.sh`.
      `android/app/libs/sherpa-onnx-1.13.6.aar` is gitignored, so on a clean tree both
      `:app` and `:bench` fail to compile with `Unresolved reference 'k2fsa'` — which
@@ -134,12 +134,12 @@ matches. That makes step 4 the gate for F-Droid as well as for us.
   fails on a doubled path (`<repo>/<absolute path>`) that looks like a missing file.
   (Learned cutting 0.9.0.)
 - **Never** commit `keystore/release.keystore` or `keystore/keystore.properties` — they
-  live on the Thelio and in the env store. Keep a backup off-repo.
+  live on the the build host and in the env store. Keep a backup off-repo.
 - The C0 guard fails any release build (`assembleRelease` or `bundleRelease`) that has a
   baked-in `API_SERVER_KEY`, so users only ever enter their own.
 
 ## Known landmines
 
-- **Gradle wrapper:** the checked-in wrapper can be stale; the Thelio uses
+- **Gradle wrapper:** the checked-in wrapper can be stale; the the build host uses
   `~/gradle-8.12.1/bin/gradle`.
 - **Build logs are never committed** — `.gitignore` covers `*.log`/`*.out`/`artifacts/`.

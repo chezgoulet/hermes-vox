@@ -27,5 +27,5 @@ instead of dividing. Crash path closed.
 
 ## Verification
 
-Thelio gate on a clean clone: 32 suites / 250 tests / 0 failures,
+the build host gate on a clean clone: 32 suites / 250 tests / 0 failures,
 assembleRelease + bundleRelease green. versionCode 108 / 0.6.4.

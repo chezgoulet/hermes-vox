@@ -79,7 +79,7 @@ bash scripts/presence-bench-gpu-probe.sh                  # memory during an ini
 python3 scripts/presence-bench-report.py presence-bench-results
 ```
 
-The drivers take `/home/c/phone.lock` for the whole install-and-measure window: the phone is
+The drivers take `$HOME/phone.lock` for the whole install-and-measure window: the phone is
 shared with other agents, and the first attempt at this bench died because another agent's
 install landed under the instrumented process mid-run.
 

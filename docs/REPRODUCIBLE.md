@@ -85,12 +85,12 @@ ordering; only as a last, documented resort disable optimisation
 Build-host gate and reproducibility check:
 
 ```sh
-export JAVA_HOME=/home/c/jdk-17
-export ANDROID_HOME=/home/c/Android/Sdk
+export JAVA_HOME=$HOME/jdk-17
+export ANDROID_HOME=$HOME/Android/Sdk
 export PATH="$JAVA_HOME/bin:/usr/local/bin:/usr/bin:/bin"
 
-flock /home/c/build.lock -c 'bash scripts/gate.sh'
-flock /home/c/build.lock -c 'bash scripts/repro-check.sh'
+flock $HOME/build.lock -c 'bash scripts/gate.sh'
+flock $HOME/build.lock -c 'bash scripts/repro-check.sh'
 ```
 
 Compare two APKs you already have (used to prove the comparator rejects a

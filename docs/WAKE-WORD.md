@@ -69,8 +69,8 @@ Inputs:
 Compute **[est]**: clip generation scales from the measured ~10 min per 1,000 clips on
 a T4 → ~3–8 GPU-hours for 20–50 k clips; augmentation + feature extraction is the
 same order; training 10–50 k steps on a small classifier is minutes to an hour.
-Realistically **half a day to a day on the Thelio's GPU**, dominated by synthesis, and
-the 17 GB negative-feature download. Not viable on the Odroid's CPU.
+Realistically **half a day to a day on the the build host's GPU**, dominated by synthesis, and
+the 17 GB negative-feature download. Not viable on the gateway host's CPU.
 
 Output: `hey_hermes.onnx` (~1 MB), versioned and checksummed like our other models.
 

@@ -208,7 +208,7 @@ device verification steps.
 
 ## Verification
 
-- Gate on the Thelio: `go vet` → `go test ./voice/...` → `gomobile bind` →
+- Gate on the the build host: `go vet` → `go test ./voice/...` → `gomobile bind` →
   `assembleRelease` + `testReleaseUnitTest` + `bundleRelease`, test roll-up, APK
   badging/signer/md5 on both boxes.
 - New unit tests: `VoxThreadsTest` (derived defaults, override passthrough, out-of-range

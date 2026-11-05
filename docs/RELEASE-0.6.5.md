@@ -37,4 +37,4 @@ Two bugs, one class:
 
 ## Verification
 
-Thelio gate on a clean clone. versionCode 109 / 0.6.5.
+the build host gate on a clean clone. versionCode 109 / 0.6.5.

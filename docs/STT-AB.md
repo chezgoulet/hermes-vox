@@ -410,7 +410,7 @@ Before shipping, decide two things this study cannot:
 
 ```bash
 # download + verify (sha256 and size) + extract the arm tarballs
-python3 tools/sttbench-stream/run_ab.py --fetch --arms nemotron160 --models /home/c/stt-ab-models
+python3 tools/sttbench-stream/run_ab.py --fetch --arms nemotron160 --models $HOME/stt-ab-models
 
 # one arm, all four conditions, build included; installs under the phone lock
 scripts/stt-ab.sh --arms nemotron160 --conditions quiet,tv,kitchen,accent

@@ -20,5 +20,5 @@ render rails.
 
 ## Verification
 
-Thelio gate on a clean clone: 31 suites / 244 tests / 0 failures,
+the build host gate on a clean clone: 31 suites / 244 tests / 0 failures,
 assembleRelease green. versionCode 107 / 0.6.3.

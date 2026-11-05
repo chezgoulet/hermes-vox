@@ -294,7 +294,7 @@ After `./gradlew assembleRelease`:
          Hermes relay/gateway you run). -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false"><your-gateway-host></domain>
-        <domain includeSubdomains="false">192.168.1.1</domain>
+        <domain includeSubdomains="false"><lan-ip></domain>
         <!-- add your LAN gateway / tailnet host(s) here -->
     </domain-config>
 </network-security-config>

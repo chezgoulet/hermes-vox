@@ -97,7 +97,7 @@ The API accepts text and inline images; it refuses `file` parts by design. But t
 
 ```
 [[vox:file]] name=meeting-notes.md type=text/markdown bytes=8123
-sha256=9f2c… url=http://100.82.156.1:49152/6b1f…e0 expires=1793650000
+sha256=9f2c… url=http://100.x.y.z:49152/6b1f…e0 expires=1793650000
 I am sharing one file with you. Fetch it now, verify it, and keep it.
 ```
 

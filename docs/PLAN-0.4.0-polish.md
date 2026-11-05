@@ -70,7 +70,7 @@ cleanup-thread vs new-call start (F1 new thread), pause-first on BT routes.
 
 ## Definition of done for 0.4.0
 All commits gated (:app:testDebugUnitTest exit 0, never weaken tests); grep proof of
-no-baked-key and no-walkie; onboarding flows tested on the Thelio-built signed APK;
+no-baked-key and no-walkie; onboarding flows tested on the build-host signed APK;
 GitHub release (the standard chain) + README truth. THEN — and only then —
 Enhanced Realtime planning resumes (END_SENTENCE streaming, thermal gating,
 presence glue, TurnBench).

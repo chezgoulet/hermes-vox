@@ -77,6 +77,6 @@ build from a fresh clone). README FAQ has the recipe. Thank you,
 ## Verification
 
 Every change rode the nightly CI: five green nightlies, each gated on a clean
-Thelio build (go vet/test → gomobile bind → assembleRelease +
+the build host build (go vet/test → gomobile bind → assembleRelease +
 testReleaseUnitTest), final gate 34 suites / 258 tests / 0 failures. APK
 versionCode 112 / 0.7.0, signer CN=Hermes Vox.

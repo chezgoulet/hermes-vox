@@ -17,7 +17,7 @@ with **zero Ebitengine**.
   (the Android↔Go bind bridge, load-bearing) + `ebitengine/gomobile` (the `gobind` tool).
 - **`gate.sh`** — removed the Ebitengine js-wasm/`cmd/app` build step.
 
-## Verified (the authoritative gate, on the Thelio)
+## Verified (the authoritative gate, on the the build host)
 - The rebuilt `mobile.aar` exports **only** `com/hermesvox/mobile/HermesSession` + `Mobile`
   — **no `Start`/`IsRunning`/ebiten symbols.** It shrank (~22MB → 20MB, and the dead native
   surface + the X11/GLFW build hazard are gone).

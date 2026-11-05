@@ -2,7 +2,7 @@
 
 > **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
-Built by qwen3.8-max (agentic build on the Thelio) from the Opus review sprint map.
+Built by qwen3.8-max (agentic build on the the build host) from the Opus review sprint map.
 These are the FOUR highest-priority findings from the adversarial code review
 (2026-09-07) — the ones that fix real, user-visible reliability problems.
 

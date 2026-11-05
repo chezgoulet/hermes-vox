@@ -57,7 +57,7 @@ cd android && ./gradlew -Phermesvox.sherpaSource=../sherpa-src assembleRelease
 
 ## What was verified (2026-11-03, the submodule build)
 
-- From `third_party/sherpa-onnx` on sasquatch (NDK r28c, CMake 3.28), with no
+- From `third_party/sherpa-onnx` on the build host (NDK r28c, CMake 3.28), with no
   `android/app/libs/` present: arm64-v8a `3a8662e6…f634ca` — **the same bytes as the
   2026-10-22 clone build** — and armeabi-v7a `d70b6f21…cd7e81`.
 - `./gradlew -Phermesvox.sherpaSource=../sherpa-src -Phermesvox.unsigned :app:assembleRelease`:

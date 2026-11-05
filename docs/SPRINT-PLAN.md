@@ -2,7 +2,7 @@
 
 > **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/sprint1-model-downloader
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (the build host) · **Branch:** feature/sprint1-model-downloader
 **Model (plan + build):** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API, vision) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial code review + compile + emulator test (`emulator-5554`). **Merge target:** `main` (Vox releases by tag-on-main).
 

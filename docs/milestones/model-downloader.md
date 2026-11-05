@@ -2,7 +2,7 @@
 
 > **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
-Date: 2026-08-25 · Emulator-5554 (Android 15) · store hosted on Thelio (`100.68.43.34:8899`)
+Date: 2026-08-25 · Emulator-5554 (Android 15) · store hosted on the build host (`<model-store-host>:8899`)
 
 ## What shipped
 The user can download the on-device models **from inside the app** (no sideload,
@@ -22,7 +22,7 @@ inference is fully offline.
   (blessed)", and per-model cards (★ RECOMMENDED badge, size, Not installed /
   Downloading % / ✓ Installed / Error→Retry).
 - Settings → "Voice models" row (live "N/3 installed"). Default pipeline = blessed.
-- The model **source is user-configurable** — default is the house Thelio model
+- The model **source is user-configurable** — default is the house the build host model
   store (sovereign/LAN), adjustable to `http://127.0.0.1:8899` for a local backend.
 - `scripts/model-store.sh` + `finalize-store.sh` — fetch the blessed set from the
   verified open-source endpoints, repackage as flat ZIPs, write the manifest, serve

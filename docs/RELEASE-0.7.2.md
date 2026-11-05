@@ -49,7 +49,7 @@ per-category halo sizing; only the invisible tail died.
 
 Field-confirmed by the maintainer on both phones under **both** Natural and
 Adaptive colour profiles, on the hardware-layer-free nightly
-(`nightly-20260910-000519-70bdeac`). Promotion gate on a clean Thelio clone of
+(`nightly-20260910-000519-70bdeac`). Promotion gate on a clean the build host clone of
 `testing`: go vet/test → gomobile bind → `assembleRelease` +
 `testReleaseUnitTest` + `bundleRelease` — 34 suites / 258 tests / 0 failures.
 Version 0.7.2, versionCode 114, signer CN=Hermes Vox.

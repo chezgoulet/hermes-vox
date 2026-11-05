@@ -4,7 +4,7 @@
 
 You are reviewing a COPY of the Hermes Agent codebase at ~/hermes-review
 (HEAD fdc342c0), cloned into an isolated sandbox. DO NOT modify, commit, or
-"fix" anything. DO NOT touch /home/robot/.hermes/hermes-agent (the LIVE gateway
+"fix" anything. DO NOT touch ~/.hermes/hermes-agent (the LIVE gateway
 this review is about). Your ONLY deliverable is a findings REPORT. You may read
 any file, run read-only commands, and inspect databases/logs under the sandbox,
 but you must not write to the live system or change the sandbox's tracked files.

@@ -2,7 +2,7 @@
 
 > **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/release-security
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (the build host) · **Branch:** feature/release-security
 **Plan + build model:** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial read + compile + emulator smoke + one on-device run.
 
@@ -10,7 +10,7 @@
 **"Ship it right."** Sprint 2 (0.3.23–0.3.23.5) closed the phone-call flow — realtime multi-turn, barge-in, session isolation all work on-device (verified: 9-turn conversation, incl. a 974-char reply). This sprint makes it **safe + correctly releasable**: real release signing (it is currently debug-signed), the security cluster the opus-5/DeepSeek reviews flagged (intent-injection, plaintext key, blanket cleartext), and the small streaming turn-gate tidy-up (#60). No new voice features.
 
 ## Context / anchor points (verified, not assumed)
-- **Build host:** Thelio (`the build host`). Env: `JAVA_HOME=~/jdk-17.0.12+7`, `ANDROID_HOME=~/Android/Sdk`, `ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653`, Gradle 8.12.1.
+- **Build host:** the build host. Env: `JAVA_HOME=~/jdk-17.0.12+7`, `ANDROID_HOME=~/Android/Sdk`, `ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653`, Gradle 8.12.1.
 - **Release keystore already generated** (2026-08-27) at `<repo>/keystore/release.keystore` (PKCS12, alias `hermes-vox`, RSA 4096, 10000-day validity) + `keystore/keystore.properties` (gitignored). Password in your environment `HERMES_VOX_KEYSTORE_PASSWORD`; `keystore/` is gitignored (never committed). This is a **must-not-lose** key — same key for ALL future builds.
 - Current `android/app/build.gradle`: `signingConfigs.release` hardcodes `~/.android/debug.keystore` + `storePassword "android"` + `minifyEnabled false`. This is the defect to fix.
 
