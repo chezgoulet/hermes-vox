@@ -2278,13 +2278,21 @@ open class MainActivity : AppCompatActivity() {
                     lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
             },
             run = { c, done -> runCommand(c, done) },
-            profilesAllowed = { AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES) },
+            gate = commandGate(),
         )
     }
     // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
     private var lastTurnFailed = false
     private var stuckShownThisCall = false
     private var callTurns = 0L
+    /** Which optional commands exist right now: `/diagnostics` while its own switch is on
+     *  (#418), and `/profiles` only while the Alpha gate allows "Switching profiles" (#402). */
+    private fun commandGate(): CommandCatalog.Gate {
+        val diagnostics = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
+        val profiles = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)
+        return CommandCatalog.Gate { c -> if (c.name == "/profiles") profiles else diagnostics.on(c) }
+    }
+
     protected fun showCommands() = commandsSheet.show()
 
     // ---- #370: share with agent — the clipboard, a file, or another app's share ----
@@ -2704,8 +2712,7 @@ open class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage(CommandCatalog.helpText(
-                AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)))   // #226: written from the catalogue, never out of step
+            .setMessage(CommandCatalog.helpText(commandGate()))   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 

@@ -27,7 +27,11 @@ class DiscoveryTest {
     }
 
     @Test fun aBlankQueryIsEverythingAndNonsenseIsNothing() {
-        assertEquals(CommandCatalog.ALL, CommandCatalog.search("  "))
+        // #418: "everything" is everything that exists now — a command whose switch is off is
+        // not in the catalogue, so it is not in the blank search either.
+        assertEquals(CommandCatalog.commands(), CommandCatalog.search("  "))
+        assertEquals(CommandCatalog.ALL,
+            CommandCatalog.search("  ", CommandCatalog.Gate.EVERYTHING))
         assertTrue(CommandCatalog.search("zzqx").isEmpty())
     }
 

@@ -194,8 +194,9 @@ class AlphaGateTest {
         assertTrue(switch, switch.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
         assertTrue(switch, switch.contains("return"))
         // The row, the search and the manage rows all ask the same question.
-        assertTrue(commands.contains("profilesAllowed()"))
-        assertTrue(main.contains("profilesAllowed = { AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES) }"))
+        assertTrue(commands.contains("gate = gate"))
+        assertTrue(main.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
+        assertTrue(main.contains("CommandCatalog.Gate { c -> if (c.name == \"/profiles\") profiles else diagnostics.on(c) }"))
         assertTrue(sheet.contains("if (!allowed())"))
         assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
         // The active profile is a connection fact, not a control: the header is not gated.

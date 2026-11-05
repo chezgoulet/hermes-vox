@@ -44,9 +44,10 @@ class CommandsSheet(
     private val act: AppCompatActivity,
     /** #284: what the app knows about the moment — the screen leads with what fits it. */
     private val situation: () -> CommandCatalog.Situation,
+    /** #418: which optional commands exist right now (the sheet, its search and its states
+     *  ask the same gate, so a command with its switch off is simply not there). */
+    private val gate: CommandCatalog.Gate,
     private val run: (CommandCatalog.Command, (Boolean) -> Unit) -> Unit,
-    /** Alpha features' Switching profiles set: false takes /profiles off the sheet. */
-    private val profilesAllowed: () -> Boolean = { true },
 ) {
     private var dialog: Dialog? = null
     private val state = HashMap<String, CommandCatalog.RunState>()
@@ -132,24 +133,22 @@ class CommandsSheet(
     /** The list: what fits now, then every group — or, while searching, the matches best first. */
     private fun render(list: LinearLayout, d: Dialog, query: String) {
         list.removeAllViews(); chips.clear()
-        val allowProfiles = profilesAllowed()
         if (query.isBlank()) {
             // #370: the share row leads the screen. It is an artifact action, not a command,
             // so it sits outside the catalogue's groups but uses the same row grammar.
             list.addView(row(CommandCatalog.SHARE, d))
-            val now = CommandCatalog.suggest(situation())
-                .filter { CommandCatalog.offered(it, allowProfiles) }
+            val now = CommandCatalog.suggest(situation(), gate)
             if (now.isNotEmpty()) {
                 list.addView(header("Fits now"))
                 for (c in now) list.addView(row(c, d, chipKey = "now:" + c.name))
             }
-            for ((group, cmds) in CommandCatalog.grouped(profilesAllowed = allowProfiles)) {
+            for ((group, cmds) in CommandCatalog.grouped(gate = gate)) {
                 list.addView(header(group.label))
                 for (c in cmds) list.addView(row(c, d))
             }
             return
         }
-        val hits = CommandCatalog.search(query, allowProfiles)
+        val hits = CommandCatalog.search(query, gate)
         list.addView(header(if (hits.isEmpty()) "No command for that — try asking the agent" else "Matches"))
         for (c in hits) list.addView(row(c, d))
     }
@@ -248,7 +247,7 @@ class CommandsSheet(
     private fun paint(key: String) {
         val chip = chips[key] ?: return
         val name = key.removePrefix("now:")
-        val c = CommandCatalog.find(name) ?: return
+        val c = CommandCatalog.find(name, gate) ?: return
         val s = state[name] ?: CommandCatalog.RunState.IDLE
         val elapsed = if (s == CommandCatalog.RunState.RUNNING)
             SystemClock.elapsedRealtime() - (startedAt[name] ?: SystemClock.elapsedRealtime()) else 0L
