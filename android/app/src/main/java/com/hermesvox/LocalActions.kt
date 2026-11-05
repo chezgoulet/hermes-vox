@@ -83,6 +83,7 @@ class LocalActions(context: Context) {
         { result, args, at -> PhoneAuditStore.record(app, PhoneAudit.entry(at, args, result)) },
         approvalSurface = PhoneApprovals,
         auditRow = { entry -> PhoneAuditStore.record(app, entry) },
+        unlocked = PhoneApproval.Unlocked { PhoneApprovals.deviceUnlocked() },
     )
 
     /** How a scheduled action may be cancelled, per id. */

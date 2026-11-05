@@ -1229,6 +1229,9 @@ object PhoneReason {
     /** Three cards are already waiting; nothing was raised and nothing was performed. */
     const val APPROVAL_BUSY = "approval_busy"
 
+    /** The card was answered from a locked phone. Nothing was approved, and the id is burnt. */
+    const val APPROVAL_LOCKED = "approval_locked"
+
     /** The owner has not granted this capability group. Nothing was done, and it is not offered. */
     const val NOT_GRANTED = "not_granted"
 

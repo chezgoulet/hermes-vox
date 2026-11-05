@@ -1,5 +1,6 @@
 package com.hermesvox
 
+import androidx.core.app.NotificationCompat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -87,11 +88,13 @@ class PhoneFileApprovalTest {
     private val fake = Fake()
     private val surface = Surface()
 
-    private fun engine() = PhoneEngine(
-        fake,
-        grants = filesAtAsk,
-        approvalSurface = surface,
-    )
+    private fun engine(unlocked: PhoneApproval.Unlocked = PhoneApproval.Unlocked.ALWAYS) =
+        PhoneEngine(
+            fake,
+            grants = filesAtAsk,
+            approvalSurface = surface,
+            unlocked = unlocked,
+        )
 
     private fun ask(e: PhoneEngine = engine(), name: String = "report.pdf"): PhoneResult =
         e.dispatch(mapOf("action" to "file_offer", "name" to name), t0, e0)
@@ -164,6 +167,18 @@ class PhoneFileApprovalTest {
         assertTrue(fake.offers.isEmpty())
     }
 
+    @Test fun a_locked_phone_cannot_approve_and_says_why() {
+        val e = engine(unlocked = PhoneApproval.Unlocked { false })
+        val id = ask(e).facts["approval_id"] as String
+
+        assertFalse("the locked yes is not recorded", e.answerApproval(id, "once", "tap", e0 + 1_000))
+        val r = run(e, id)
+        assertEquals(PhoneApproval.Reason.LOCKED, r.reason)
+        assertTrue("the agent is told why", r.detail!!.contains("locked"))
+        assertTrue("nothing was exported", fake.offers.isEmpty())
+        assertTrue("the card left the lock screen", id in surface.withdrawn)
+    }
+
     @Test fun a_missing_or_oversized_file_is_refused_before_a_card_is_raised() {
         fake.info = PhoneEngine.PhonePlatform.FileInfo.Missing
         val missing = ask()
@@ -179,4 +194,31 @@ class PhoneFileApprovalTest {
         assertTrue(fake.offers.isEmpty())
     }
 
+    @Test fun the_notification_builder_is_private_not_just_the_rendered_notification() {
+        val card = PhoneApproval.Card(
+            id = "ap-1",
+            action = PhoneApproval.FILE_ACTION,
+            subject = "report.pdf",
+            label = "report.pdf",
+            detail = "PDF, 240 KB",
+            canonical = "file_offer\nname=report.pdf",
+            digest = "x",
+            raisedAtMs = e0,
+            expiresAtMs = e0 + PhoneApproval.TIMEOUT_MS,
+        )
+        assertEquals(
+            NotificationCompat.VISIBILITY_PRIVATE,
+            PhoneApprovalNotice.Builder(card.line).visibility,
+        )
+        assertEquals(
+            "the card's own notice is private too",
+            NotificationCompat.VISIBILITY_PRIVATE,
+            PhoneApprovalNotice.of(card).visibility,
+        )
+        assertEquals(
+            "the locked notice names nothing that was being approved",
+            NotificationCompat.VISIBILITY_PRIVATE,
+            PhoneApprovalNotice.locked().visibility,
+        )
+    }
 }

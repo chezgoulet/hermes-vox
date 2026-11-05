@@ -118,6 +118,19 @@ object PhoneApproval {
         )
     }
 
+    /**
+     * Whether the phone is unlocked enough to give a yes. An approval answered on the lock screen
+     * is not the owner's decision — whoever is holding the phone can tap it — so a locked device
+     * refuses. [ALWAYS] is the pure-JVM default; the Android surface supplies the keyguard read.
+     */
+    fun interface Unlocked {
+        fun isUnlocked(): Boolean
+
+        companion object {
+            val ALWAYS: Unlocked = Unlocked { true }
+        }
+    }
+
     /** The surface the card is raised on. Android: the in-app card, else a heads-up notification. */
     interface Surface {
         /** Raise [card]. False means neither surface could be shown, so the owner cannot be asked. */
@@ -266,6 +279,9 @@ object PhoneApproval {
         const val MISMATCH = "approval_mismatch"
         const val UNKNOWN = "approval_unknown"
         const val BUSY = "approval_busy"
+
+        /** The card was answered while the device was locked. Nothing was approved. */
+        const val LOCKED = "approval_locked"
     }
 }
 
@@ -282,6 +298,8 @@ class PhoneApprovalDesk(
     private val audit: (PhoneApproval.Card, String, String, Long) -> Unit = { _, _, _, _ -> },
     private val timeoutMs: Long = PhoneApproval.TIMEOUT_MS,
     private val capacity: Int = PhoneApproval.MAX_PENDING,
+    /** The keyguard read. A yes answered while locked is refused, never recorded. */
+    private val unlocked: PhoneApproval.Unlocked = PhoneApproval.Unlocked.ALWAYS,
 ) {
 
     private data class Approved(val card: PhoneApproval.Card, val via: String)
@@ -351,6 +369,15 @@ class PhoneApprovalDesk(
             if (index < 0) return null
             val card = waiting.removeAt(index)
             val decided = if (choice.equals("deny", true)) "deny" else "once"
+            if (decided == "once" && !unlocked.isUnlocked()) {
+                // A lock-screen tap must not approve anything. The id is burnt with a reason the
+                // agent can report; unlocking and asking again is the path, not a stored yes.
+                terminal[id] = Terminal(PhoneApproval.Reason.LOCKED, card)
+                audit(card, "locked", via, now)
+                surface.withdraw(card)
+                raiseNext(now)
+                return null
+            }
             if (decided == "once") {
                 approved[id] = Approved(card, via)
             } else {
@@ -446,6 +473,9 @@ class PhoneApprovalDesk(
             PhoneApproval.Reason.EXPIRED -> "that approval expired; nothing was $done"
             PhoneApproval.Reason.MISMATCH ->
                 "that approval was for a different $what; nothing was $done"
+            PhoneApproval.Reason.LOCKED ->
+                "the phone was locked when that approval was answered; nothing was $done. " +
+                    "Unlock it and ask again"
             else -> "that approval is no longer usable; nothing was $done"
         }
     }

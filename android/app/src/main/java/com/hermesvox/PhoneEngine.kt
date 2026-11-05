@@ -50,6 +50,8 @@ class PhoneEngine(
     private val approvalSurface: PhoneApproval.Surface = PhoneApproval.Surface.NONE,
     /** The approval lifecycle rows: request, decision (approved/denied/expired, and by tap/voice). */
     private val auditRow: (PhoneAudit.Entry) -> Unit = {},
+    /** The keyguard read: a yes answered on a locked phone is refused, never recorded. */
+    private val unlocked: PhoneApproval.Unlocked = PhoneApproval.Unlocked.ALWAYS,
 ) {
 
     /** The one approval desk. Its state outlives a call; the platform only shows the card. */
@@ -61,6 +63,7 @@ class PhoneEngine(
             } catch (_: Throwable) {
             }
         },
+        unlocked = unlocked,
     )
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
