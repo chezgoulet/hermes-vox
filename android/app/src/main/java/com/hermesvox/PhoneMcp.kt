@@ -24,6 +24,13 @@ import android.content.Context
  * and the owner has to set up again next launch. A stored secret in plaintext SharedPreferences is
  * the one outcome worth losing a session over.
  *
+ * **It is not the only credential** (#452). The agent this phone already talks to presents the API
+ * key of the active connection — the one the phone sends on every turn — and the server accepts it
+ * too ([connectionKey]). So the normal setup needs no pairing step and no secret in the setup turn:
+ * the agent writes the entry with a reference to the key it already holds. The phone's own token
+ * stays for a host that is *not* the one this phone talks to, which is what the manual block and
+ * ROTATE TOKEN are for.
+ *
  * **Rotation.** [rotate] replaces the token and the live server reads the new one on the next
  * request, so the old credential stops working immediately. It also clears the recorded handshake:
  * a connection proved with the old token is not evidence for the new one. The setup sheet then asks
@@ -145,6 +152,22 @@ object PhoneMcp {
         fresh
     }
 
+    /**
+     * The API key of the connection in force — the credential the phone sends on its own turns
+     * (#452). Resolved exactly as every live path resolves it ([GatewayKey.resolve] over the stored
+     * pref through [SecureStore]), so the server and the turn path can never disagree about what
+     * this key is. Read per request, so a key re-saved in Settings is in force on the next one.
+     *
+     * Empty when no connection is configured: then only the phone's own token authenticates. It is
+     * never logged, never echoed and never stored anywhere new — it already lives in the profile's
+     * key slot.
+     */
+    private fun connectionKey(context: Context): String =
+        GatewayKey.resolve(
+            prefs(context).getString(Profiles.K_KEY, "").orEmpty(),
+            SecureStore::decrypt,
+        )
+
     /** The persisted handshake, if any. Read by the setup sheet through [PhoneSetupStore]. */
     fun handshakeAt(context: Context): Long =
         prefs(context).getLong(KEY_HANDSHAKE_AT, 0L)
@@ -254,6 +277,9 @@ object PhoneMcp {
                     // A provider, not a snapshot: rotation invalidates the old token on the very
                     // next request without restarting the listener.
                     tokenProvider = { token(app) },
+                    // #452: the second credential is the one the agent already has. Read live from
+                    // the same store the turn path uses, so this server never holds a copy.
+                    keyProvider = { connectionKey(app) },
                     handler = handler,
                     log = { line -> VoxLog.d(line) },
                     onRequest = { method, at ->
@@ -314,6 +340,10 @@ object PhoneMcpConfig {
      *  * `connect_timeout` is short, because the phone is only up while a call is;
      *  * `trust: full` is what makes Tier 0 instant; `trust: untrusted` is the option for an owner
      *    who would rather approve every call on the phone.
+     *
+     * The keys are the documented ones (`url`, `headers`, `connect_timeout`, `timeout`, `trust`,
+     * `tools.include` — the MCP config reference). The per-server tool-call timeout is `timeout`,
+     * not `tool_timeout`: an unknown key is ignored, which reads as "the timeout did nothing".
      */
     fun snippet(host: String, token: String = DOC_TOKEN, port: Int = PhoneMcpServer.PORT): String =
         buildString {
@@ -323,7 +353,7 @@ object PhoneMcpConfig {
             append("    headers:\n")
             append("      Authorization: \"Bearer ${token}\"\n")
             append("    connect_timeout: 5\n")
-            append("    tool_timeout: 30\n")
+            append("    timeout: 30\n")
             append("    trust: full   # set `untrusted` to require an approval card for every call\n")
             append("    tools:\n")
             append("      include: [").append(PhoneTool.NAME).append("]\n")

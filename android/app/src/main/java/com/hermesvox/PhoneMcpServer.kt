@@ -51,8 +51,15 @@ import java.util.concurrent.atomic.AtomicInteger
  *  * **One bind address**: the tailnet address [Tailnet] picked, never `0.0.0.0` and never a LAN
  *    interface. The caller passes it; [start] refuses an any-local address.
  *  * **One route**: `/mcp`. Everything else is 404, and nothing on disk is reachable.
- *  * **A bearer token on every request**, compared in constant time, generated once and stored
- *    encrypted ([PhoneMcpToken]). A request without it is 401 and is logged *without* the token.
+ *  * **A bearer credential on every request**, compared in constant time ([PhoneMcpToken]). A
+ *    request without one is 401 and is logged *without* the credential.
+ *  * **Two credentials are valid** (#452). The phone's own token ([tokenProvider]) authenticates a
+ *    host that is not the one this phone talks to. The API key of the connection in force
+ *    ([keyProvider]) authenticates the agent this phone already has: the key it uses for its own
+ *    turns is the key it presents here. That is what removes the pairing step — nothing has to be
+ *    copied out of the sheet and into the gateway's config, and no credential has to travel in the
+ *    setup turn. Both are read per request, so rotating the token or re-saving the key in Settings
+ *    takes effect on the next request.
  *  * **A bound on the body**, so a hostile peer cannot make the phone allocate.
  *
  * The server contains no Android API, so [PhoneMcpServerTest] runs it on loopback in CI.
@@ -64,6 +71,15 @@ class PhoneMcpServer private constructor(
      * old credential immediately without closing the listener.
      */
     private val tokenProvider: () -> String,
+    /**
+     * The API key of the connection this phone talks to — the credential the phone itself presents
+     * to the gateway on every turn (#452). Read on every request, from the same store the turn path
+     * resolves it from, so a key re-saved in Settings is in force on the next request. Empty when no
+     * connection is configured; then only [tokenProvider] authenticates.
+     *
+     * It is never logged, never echoed and never stored by this class: the phone already holds it.
+     */
+    private val keyProvider: () -> String,
     private val handler: PhoneToolHandler,
     private val log: (String) -> Unit,
     /** (method + path, wall-clock millis) — the setup sheet's "last request" line. */
@@ -355,11 +371,21 @@ class PhoneMcpServer private constructor(
         }
     }
 
+    /**
+     * Either credential opens the door: the phone's own token, or the API key of the connection this
+     * phone talks to (#452). Both comparisons are always performed — neither result decides whether
+     * the other is computed — so the work done here (and the single 401 that follows a refusal) says
+     * nothing about which credential was tried. A rejected request gets the same status, the same
+     * body and the same log line whatever the reason.
+     */
     private fun authorized(header: String?): Boolean {
         val presented = header?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }
             ?.substring("Bearer ".length)?.trim()
             .orEmpty()
-        return PhoneMcpToken.matches(presented, tokenProvider())
+        if (presented.isEmpty()) return false
+        val asPhoneToken = PhoneMcpToken.matches(presented, tokenProvider())
+        val asConnectionKey = PhoneMcpToken.matches(presented, keyProvider())
+        return asPhoneToken or asConnectionKey
     }
 
     private fun respond(
@@ -439,7 +465,8 @@ class PhoneMcpServer private constructor(
         )
 
         /**
-         * Bind one address and start serving, reading the bearer from [tokenProvider] per request.
+         * Bind one address and start serving, reading both credentials per request: the phone's own
+         * token from [tokenProvider] and the connection's API key from [keyProvider] (#452).
          * [bind] must be a single address — the tailnet one — and an any-local address is refused
          * here, not left to the caller's discipline.
          */
@@ -452,13 +479,14 @@ class PhoneMcpServer private constructor(
             onRequest: (String, Long) -> Unit = { _, _ -> },
             onInitialize: (Long) -> Unit = {},
             grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
+            keyProvider: () -> String = { "" },
         ): PhoneMcpServer {
             require(!bind.isAnyLocalAddress) { "refusing to bind 0.0.0.0 / :: — pick the tailnet address" }
             require(tokenProvider().isNotEmpty()) { "a bearer token is required" }
             val socket = ServerSocket()
             socket.reuseAddress = true
             socket.bind(InetSocketAddress(bind, port), 8)
-            return PhoneMcpServer(socket, tokenProvider, handler, log, onRequest, onInitialize, grants)
+            return PhoneMcpServer(socket, tokenProvider, keyProvider, handler, log, onRequest, onInitialize, grants)
         }
 
         /** Converts a JSON object into the plain map the tool layer reads. */

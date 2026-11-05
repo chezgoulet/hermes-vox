@@ -8,6 +8,7 @@ import com.hermesvox.core.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -130,6 +131,137 @@ class PhoneMcpServerTest {
         request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
         assertTrue(log.isNotEmpty())
         for (line in log) assertFalse("a log line carried the token: $line", line.contains(token))
+    }
+
+    // ---- #452: the connection's own API key is a second valid bearer ----
+
+    /**
+     * The key this phone sends on its own turns. A different value from [token], same shape, so a
+     * test that passes by comparison with the wrong field is visible.
+     */
+    private val connectionKey = "fedcba9876543210fedcba9876543210"
+
+    private fun restartWithBoth(
+        onTokenRead: () -> Unit = {},
+        onKeyRead: () -> Unit = {},
+        key: String = connectionKey,
+    ) {
+        server.close()
+        server = PhoneMcpServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            tokenProvider = { onTokenRead(); token },
+            handler = { "{}" },
+            port = 0,
+            log = { log.add(it) },
+            keyProvider = { onKeyRead(); key },
+        )
+    }
+
+    private fun list(): Response =
+        request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+
+    private fun listWith(bearer: String?): Response =
+        request(bearer = bearer, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+
+    @Test fun the_connections_own_key_is_accepted_as_a_bearer() {
+        restartWithBoth()
+        val r = listWith(connectionKey)
+        assertEquals("the agent presents the key it already holds", 200, r.status)
+        assertTrue(r.body, r.body.contains("\"phone\""))
+    }
+
+    @Test fun the_phones_own_token_still_works() {
+        restartWithBoth()
+        assertEquals(200, listWith(token).status)
+    }
+
+    @Test fun an_initialize_with_the_connections_key_is_the_handshake_the_phone_records() {
+        val seen = ArrayList<Long>()
+        server.close()
+        server = PhoneMcpServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            tokenProvider = { token },
+            handler = { "{}" },
+            port = 0,
+            log = { log.add(it) },
+            onInitialize = { seen.add(it) },
+            keyProvider = { connectionKey },
+        )
+        assertEquals(
+            200,
+            request(bearer = connectionKey, body = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""").status,
+        )
+        assertEquals("the key is the proof, exactly as the token was", 1, seen.size)
+    }
+
+    @Test fun a_request_with_neither_credential_is_refused() {
+        restartWithBoth()
+        assertEquals(401, list().status)
+        assertEquals(401, listWith("").status)
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun a_wrong_key_of_the_same_length_is_refused() {
+        restartWithBoth()
+        val nearMiss = "0" + connectionKey.drop(1)
+        assertEquals("the test value must differ only in content", connectionKey.length, nearMiss.length)
+        assertNotEquals(connectionKey, nearMiss)
+        assertEquals(401, listWith(nearMiss).status)
+        assertEquals(401, listWith(connectionKey.uppercase()).status)
+        assertTrue(calls.isEmpty())
+    }
+
+    /**
+     * No short-circuit: a request that matches the phone's token must still read the key, and the
+     * reverse. If either branch decided whether the other ran, the timing would say which
+     * credential was presented.
+     */
+    @Test fun both_credentials_are_read_on_every_request() {
+        var tokenReads = 0
+        var keyReads = 0
+        restartWithBoth(onTokenRead = { tokenReads++ }, onKeyRead = { keyReads++ })
+        val tokenAtStart = tokenReads
+        val keyAtStart = keyReads
+        assertEquals(200, listWith(token).status)
+        assertEquals("the token branch still reads the key", keyAtStart + 1, keyReads)
+        assertEquals(tokenAtStart + 1, tokenReads)
+        assertEquals(200, listWith(connectionKey).status)
+        assertEquals("the key branch still reads the token", tokenAtStart + 2, tokenReads)
+        assertEquals(keyAtStart + 2, keyReads)
+    }
+
+    @Test fun a_refusal_is_one_401_with_no_hint_of_which_credential_was_tried() {
+        restartWithBoth()
+        val wrong = "0".repeat(32)
+        val noHeader = list()
+        val wrongKey = listWith(wrong)
+        assertEquals(401, noHeader.status)
+        assertEquals(401, wrongKey.status)
+        assertEquals("the body names no credential", noHeader.body, wrongKey.body)
+        assertEquals(noHeader.headers["www-authenticate"], wrongKey.headers["www-authenticate"])
+    }
+
+    @Test fun the_connection_key_is_never_logged() {
+        restartWithBoth()
+        list()
+        listWith(connectionKey.reversed())
+        listWith(connectionKey)
+        assertTrue(log.isNotEmpty())
+        for (line in log) {
+            assertFalse("a log line carried the connection key: $line", line.contains(connectionKey))
+        }
+        assertTrue(
+            "the refusal line keeps its shape and names no credential",
+            log.any { it.startsWith("event=phone-mcp refused reason=") },
+        )
+    }
+
+    @Test fun an_unconfigured_connection_leaves_only_the_phones_token_valid() {
+        // No key provider (the default): a phone with no connection configured must not accept
+        // an empty bearer as a second credential.
+        assertEquals(200, listWith(token).status)
+        assertEquals(401, listWith(connectionKey).status)
+        assertEquals(401, list().status)
     }
 
     @Test fun one_address_is_required_and_any_local_is_refused() {

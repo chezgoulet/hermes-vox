@@ -95,7 +95,7 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1}
             val active = connectionFor(srv.url + profile)
             assertTrue("the profile is a configured connection", active.configured)
             val s = PhoneSetupStore.build(active)
-            val reply = s.turnStored(PhoneSetup.prompt("100.82.156.1", "phone-token"))
+            val reply = s.turnStored(PhoneSetup.prompt("100.82.156.1"))
             assertEquals("added vox", reply)
 
             val request = srv.requests.first { it.method == "POST" }

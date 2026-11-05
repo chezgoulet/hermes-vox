@@ -31,9 +31,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * now carries the line [PhoneSetupSend] chose: no connection configured, key rejected, agent did
  * not answer, or turn failed with the gateway's own reason.
  *
- * The prompt carries the bearer token. It is never logged: the failure line names only the class of
- * failure (the token is scrubbed out of any transport text), and the sheet is the one place the
- * turn is rendered, for the owner who is setting it up.
+ * The prompt carries **no credential** (#452): the agent writes the entry with the API key it already
+ * holds for this host, so the turn can be shown, re-sent and replayed without exposing a secret. The
+ * phone's own token is still scrubbed out of any transport text before it reaches the record, because
+ * the manual fallback and the failure line travel the same paths.
  */
 object PhoneSetupStore {
 
@@ -146,7 +147,7 @@ object PhoneSetupStore {
     ) {
         if (!sending.compareAndSet(false, true)) return
         val app = context.applicationContext ?: context
-        val prompt = PhoneSetup.prompt(host, token)
+        val prompt = PhoneSetup.prompt(host)
         lastSent = prompt
         begin(app)
         Thread({
@@ -169,7 +170,7 @@ object PhoneSetupStore {
     }
 
     /** The prompt for the current facts, for a sheet that wants to show what will be sent. */
-    fun prompt(host: String, token: String): String = PhoneSetup.prompt(host, token)
+    fun prompt(host: String): String = PhoneSetup.prompt(host)
 
     /**
      * The connection in force now: the live prefs' url, key, model, provider and scope — the same
