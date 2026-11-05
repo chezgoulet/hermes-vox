@@ -406,7 +406,6 @@ class ProfilesAskTest {
             val plan = ConversationReset.plan(ConversationReset.Trigger.PROFILE_SWITCH, callLive = live)
             assertEquals(live, plan.endCall)
             assertFalse("a switch does not re-arm the call", plan.rearm)
-            assertTrue(plan.deleteServerCopy.not())
         }
         // The refresh itself never switches: nothing in the merge names an active profile.
         val refresh = ProfilesAsk.settle(

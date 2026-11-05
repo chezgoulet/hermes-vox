@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.hermesvox.core.ApprovalArm
 import com.hermesvox.core.ApprovalChoices
 import com.hermesvox.core.HermesSession
+import com.hermesvox.core.ProfileReach
 
 /**
  * MainActivity — the front-of-house surface. Hosts the avatar, the live reply,
@@ -463,7 +464,7 @@ open class MainActivity : AppCompatActivity() {
         avatar.setOnClickListener {
             liveController?.hush()
             feed(MotionState.Signal.BARGE)   // previewB: it heard you — recoil, then settle
-            setStatus(getString(R.string.hv_connected), false)
+            setStatus(idleStatus(), false)
         }
 
         // First run → onboarding (no stored endpoint yet), unless the user chose
@@ -750,7 +751,7 @@ open class MainActivity : AppCompatActivity() {
         unregisterRouteCallback()  // C3: route callback lives exactly as long as the call
         VoiceService.stop(this)
         exitCallUi()
-        setStatus(getString(R.string.hv_connected), false)
+        setStatus(idleStatus(), false)
         feed(MotionState.Signal.REST)
         // Phase 4: the call is over; the presence engine's ~2.2 GB has nothing left to
         // serve. Phase 5 adds the delayed arm: the release can happen N minutes later
@@ -885,7 +886,7 @@ open class MainActivity : AppCompatActivity() {
 
     private fun modelsWarnReset() {
         // setStatus handles clearing the tap handler + restoring the tag color.
-        if (modelsWarnShown && ::status.isInitialized) setStatus(getString(R.string.hv_connected), false)
+        if (modelsWarnShown && ::status.isInitialized) setStatus(idleStatus(), false)
     }
 
     private fun openModelsStore() {
@@ -1027,7 +1028,7 @@ open class MainActivity : AppCompatActivity() {
         coachStatusWasVisible = statusTarget.visibility == View.VISIBLE
         if (!coachStatusWasVisible) {
             if (statusTarget is TextView && statusTarget.text.isBlank()) {
-                statusTarget.text = getString(R.string.hv_connected)
+                statusTarget.text = idleStatus()
             }
             statusTarget.visibility = View.VISIBLE
         }
@@ -1145,8 +1146,9 @@ open class MainActivity : AppCompatActivity() {
 
     /** Render the pill for the current phase. */
     private fun showPhase() {
+        val missing = ProfileReach.missing()
         val phase = ConnectionPhase.resolve(endpointSet(), !GatewayKey.isMissing(storedKey()),
-            !warmingNow, probe)
+            !warmingNow, probe, profileMissing = missing != null)
         // A live call owns the pill ("On call"); only a real problem interrupts it.
         if (callLive) when (phase) {
             ConnectionPhase.Phase.CONNECTED, ConnectionPhase.Phase.DIALING,
@@ -1155,8 +1157,12 @@ open class MainActivity : AppCompatActivity() {
         }
         // C0 keeps its own, longer prompt — it tells the user where to go.
         if (phase == ConnectionPhase.Phase.NEEDS_KEY) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
-        setStatus(ConnectionPhase.pill(phase), ConnectionPhase.shows(phase))
+        setStatus(ConnectionPhase.pill(phase, missing?.name.orEmpty()), ConnectionPhase.shows(phase))
     }
+
+    /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
+    private fun idleStatus(): String =
+        if (ProfileReach.isMissing()) ProfileReach.line() else getString(R.string.hv_connected)
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
      *  Ping-only by default — opening the app should not fire a real model turn just
@@ -1682,7 +1688,7 @@ open class MainActivity : AppCompatActivity() {
         transcript.clear()
         convoText.setText("")
         feed(MotionState.Signal.REST)
-        setStatus(getString(R.string.hv_connected), false)
+        setStatus(idleStatus(), false)
     }
 
     // #174: saved connections. The switcher lives on the header; a switch ends the call.
@@ -1979,7 +1985,7 @@ open class MainActivity : AppCompatActivity() {
                     "thinking" -> "The entity is working…"
                     "speaking" -> "Speaking…"
                     "warming" -> ConnectionPhase.pill(ConnectionPhase.Phase.WARMING)
-                    else -> getString(R.string.hv_connected)
+                    else -> idleStatus()
                 }
                 // The state line (docs/STATE-AUDIT.md): the being alone cannot carry a state
                 // with the being off, the sound off, or in light mode. #280 F8: the line is a
@@ -2104,7 +2110,10 @@ open class MainActivity : AppCompatActivity() {
             // a cut or failed turn ends its step; a failed turn outranks a held step failure
             mainHandler.removeCallbacks(opTicker); opStep = null; opHeld = null
             // #284: a failed turn's line offers the command that usually fixes it, in place.
-            val (line, offer) = Discovery.errorLine(msg)
+            // A host that says "Unknown or unconfigured profile" gets the exact fact, not a
+            // generic error: the profile named in the address is not on that host.
+            val (line, offer) = if (ProfileReach.isMissing()) ProfileReach.line() to true
+                else Discovery.errorLine(msg)
             setStatus(line, offer)
             // #280 F7: a pocketed call must still learn that the turn failed — onError used
             // to write the pill only, and the notification kept the last happy state.
@@ -2837,9 +2846,8 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state.
-     *  The server-side response id is captured BEFORE the reset drops it, and the
-     *  delete runs AFTER the re-arm (#351): housekeeping never holds the microphone. */
+    /** /new — reset the app session chain and start fresh. Local only: the host is
+     *  read-only, so a reset drops this app's chain head, never a stored response. */
     private fun newSession(trigger: ConversationReset.Trigger = ConversationReset.Trigger.NEW, onDone: (Boolean) -> Unit = {}) {
         val s = session
         val plan = ConversationReset.plan(trigger, callLive)
@@ -2850,27 +2858,15 @@ open class MainActivity : AppCompatActivity() {
         // through openVoiceLine(), the same path a route change uses.
         val wasLive = callLive
         if (plan.endCall) endCall()
-        // #351: the delete's argument is the chain head, and RESET_CHAIN drops it — so it is
-        // taken here, before the plan runs, and handed to the delete step. (Reading the head
-        // inside the delete step would target whatever turn the re-armed call had made.)
-        val doomedId = if (s != null && plan.deleteServerCopy) s.lastResponseId() else ""
         if (s != null) {
-            // The plan IS the order (#351): reset, re-arm, then housekeeping. The delete gets
-            // its own thread, so even this loop never waits for the gateway; the re-arm is
-            // posted to the UI thread and runs before that thread is started.
+            // The plan IS the order (#351): reset first, then re-arm. Neither step waits on
+            // the gateway, and neither sends it a request.
             for (step in plan.steps) when (step) {
                 ConversationReset.Step.RESET_CHAIN -> {
                     s.resetConversation()   // drop the client chain + lastID
                     LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
                 }
                 ConversationReset.Step.REARM_CALL -> runOnUiThread { startCall() }
-                ConversationReset.Step.DELETE_SERVER_COPY -> kotlin.concurrent.thread {
-                    // Housekeeping: if the gateway is slow or unreachable, say so and carry on.
-                    // The user is already talking again on the line above.
-                    try { s.deleteResponse(doomedId) } catch (e: Throwable) {
-                        VoxLog.w("event=session-delete-failed id=$doomedId err=${e.message?.take(120)}")
-                    }
-                }
             }
             runOnUiThread { onDone(true) }
         } else onDone(true)

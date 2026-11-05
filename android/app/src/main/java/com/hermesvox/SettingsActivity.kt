@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
+import com.hermesvox.core.ProfileReach
 
 /**
  * SettingsActivity — a real settings screen. Home sections: Voice models,
@@ -1356,8 +1357,13 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun connectionLine(url: String): String =
-        if (url.isBlank()) "not configured" else "connected"
+    private fun connectionLine(url: String): String = when {
+        url.isBlank() -> "not configured"
+        // The host answered a request for this profile with "Unknown or unconfigured
+        // profile": say exactly that, in one line, instead of a green "connected".
+        ProfileReach.isMissing() -> ProfileReach.line()
+        else -> "connected"
+    }
 
     private fun onOff(on: Boolean): String = if (on) "on" else "off"
 

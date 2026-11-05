@@ -5,6 +5,7 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.hermesvox.core.ProfileReach
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -426,6 +427,7 @@ class ProfileDialogs(
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
             val body = stream?.use { readAtMost(it, HostProfiles.BODY_MAX) }.orEmpty()
+            ProfileReach.observe(code, body, base)
             code to body
         } finally { c.disconnect() }
     } catch (_: Throwable) { -1 to "" }
@@ -459,6 +461,7 @@ class ProfileDialogs(
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
             val text = stream?.use { readAtMost(it, ProfilesAsk.BODY_MAX) }.orEmpty()
+            ProfileReach.observe(code, text, base)
             Chat(code, text, false)
         } finally { c.disconnect() }
     } catch (_: SocketTimeoutException) {
@@ -511,7 +514,10 @@ class ProfileDialogs(
             c.readTimeout = ProfilesAsk.PROBE_TIMEOUT_MS
             c.useCaches = false
             c.setRequestProperty("Authorization", "Bearer $key")
-            c.responseCode
+            val code = c.responseCode
+            // A 200 here is the same proof the connect probe uses: this profile exists.
+            if (code == 200) ProfileReach.clearedByModels(url)
+            code
         } finally { c.disconnect() }
     } catch (_: Throwable) { -1 }
 
