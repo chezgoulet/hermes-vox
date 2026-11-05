@@ -310,7 +310,7 @@ class PhoneToolsSheet(
             disclosure(
                 col,
                 if (expanded) "HIDE THE SETUP TURN" else "SHOW THE SETUP TURN",
-                "Show or hide the setup turn, including the address and token",
+                "Show or hide the setup turn that was sent",
             ) {
                 expanded = !expanded
                 paint()
@@ -319,16 +319,18 @@ class PhoneToolsSheet(
                 body(
                     col,
                     if (sent != null)
-                        "This is the turn the app sent. It carries the real address and token, which " +
-                            "is why it is behind a disclosure."
+                        "This is the turn the app sent. It names the address and the exact config " +
+                            "shape to write, and it carries no credential: your agent authenticates " +
+                            "with the key it already holds for this host."
                     else
-                        "The turn is regenerated from the current address and token for this screen. " +
-                            "It carries the real address and token, which is why it is behind a disclosure.",
+                        "The turn is regenerated from the current address for this screen. It " +
+                            "carries no credential: your agent authenticates with the key it already " +
+                            "holds for this host.",
                     dim = true,
                 )
                 configView(
                     col,
-                    sent ?: PhoneSetupStore.prompt(hostOrPlaceholder(status), PhoneMcp.token(act)),
+                    sent ?: PhoneSetupStore.prompt(hostOrPlaceholder(status)),
                 )
             }
         }

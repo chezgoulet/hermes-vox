@@ -9,10 +9,12 @@ import org.junit.Test
 /**
  * #421 step 5: the setup turn and the state machine behind it.
  *
- * The two load-bearing properties:
- *  * the prompt carries the real address and token, names the server and tool, says what the phone
- *    can and cannot do, and is idempotent **by content** — running setup twice describes the same
- *    single entry;
+ * The three load-bearing properties:
+ *  * the prompt carries the real address, names the server and tool, says what the phone can and
+ *    cannot do, and is idempotent **by content** — running setup twice describes the same single
+ *    entry;
+ *  * the prompt carries **no credential** (#452): the agent authenticates with the API key it
+ *    already holds for this host, and the shape it is told to write is the documented one;
  *  * **Connected** is reachable only from an observed MCP handshake, never from the agent's reply.
  *    The failure states each remain distinct so the sheet can name a next step.
  */
@@ -20,6 +22,8 @@ class PhoneSetupTest {
 
     private val host = "100.101.102.103"
     private val token = "0123456789abcdef0123456789abcdef"
+    /** The key this phone sends on its own turns — the credential the agent already holds. */
+    private val connectionKey = "fedcba9876543210fedcba9876543210"
     private val now = 1_700_000_000_000L
 
     private fun record() = PhoneSetup.Record()
@@ -27,17 +31,69 @@ class PhoneSetupTest {
     private fun requested(): PhoneSetup.Record =
         PhoneSetup.begin(record(), now, PhoneMcpToken.fingerprint(token))
 
-    @Test fun the_prompt_carries_the_real_address_the_token_and_the_tool_name() {
-        val p = PhoneSetup.prompt(host, token)
+    @Test fun the_prompt_carries_the_real_address_and_the_tool_name() {
+        val p = PhoneSetup.prompt(host)
         assertTrue(p, p.contains("http://100.101.102.103:8765/mcp"))
-        assertTrue(p, p.contains("Authorization: Bearer $token"))
         assertTrue(p, p.contains("Server name: vox"))
         assertTrue(p, p.contains("mcp__vox__phone"))
-        assertTrue("the agent must know to include only phone", p.contains("tools.include"))
+        assertTrue(
+            "the prompt says, in prose, that the phone offers one tool and needs no filter",
+            p.contains("exactly one tool"),
+        )
+    }
+
+    /**
+     * #452: the turn is visible in the sheet and in the conversation, so it must be safe to read
+     * twice. Neither credential may appear in it, and no redacted stand-in may appear either — a
+     * `***` is what the agent was handed last time, and it cannot authenticate with it.
+     */
+    @Test fun the_prompt_carries_no_credential_at_all() {
+        val p = PhoneSetup.prompt(host)
+        assertFalse("no redaction placeholder: the agent would try to use it", p.contains("***"))
+        assertFalse("not the phone's own token", p.contains(token))
+        assertFalse("not the connection's key", p.contains(connectionKey))
+        assertFalse("and no bearer value of any kind", p.contains("Bearer $token"))
+        assertFalse("no masked tail of either credential", p.contains(token.take(8)))
+        assertFalse(p, p.contains(connectionKey.take(8)))
+    }
+
+    /** The instruction that replaces the pairing step: the key is already on both sides. */
+    @Test fun the_prompt_asks_for_the_key_the_agent_already_uses_for_this_host() {
+        val p = PhoneSetup.prompt(host)
+        assertTrue(p, p.contains("use the API key you already use for this host"))
+        assertTrue("the same key this phone uses for its turns", p.contains("the same key this phone uses for its turns"))
+        assertTrue("the phone accepts it for MCP too", p.contains("the phone accepts it for MCP as well"))
+        assertTrue("nothing to pair", p.contains("no pairing step"))
+    }
+
+    /**
+     * The shape is the upstream one — `mcp_servers.<name>` with `url` and `headers`, plus the
+     * documented per-server `timeout` and `connect_timeout`. The reference
+     * (`docs/reference/mcp-config-reference`, and `cli-config.yaml.example`) lists **no per-server
+     * tool filter**, so the prompt must not name one: an invented key is silently ignored, and the
+     * agent would believe it had scoped the server when it had not. That is the same class of
+     * mistake as #452.
+     */
+    @Test fun the_prompt_writes_the_documented_mcp_config_shape() {
+        val p = PhoneSetup.prompt(host)
+        assertTrue("the block the agent edits is named", p.contains("mcp_servers:"))
+        assertTrue("the entry is the server name", p.contains("  vox:"))
+        assertTrue("the address is the url, not an argument", p.contains("    url: \"http://100.101.102.103:8765/mcp\""))
+        assertTrue("the bearer rides headers", p.contains("    headers:"))
+        assertTrue(
+            "the documented env reference stands in for the key: resolved at connect, no secret here",
+            p.contains("      Authorization: \"Bearer \${API_SERVER_KEY}\""),
+        )
+        assertTrue("the documented per-server timeout key", p.contains("    timeout: 30"))
+        assertFalse("no per-server tool filter exists in the reference", p.contains("tools.include"))
+        assertFalse("`tools:` is not a per-server key", p.contains("    tools:"))
+        assertFalse("`trust:` is implemented but not documented; do not teach it here", p.contains("trust:"))
+        assertFalse("this is a remote HTTP server: no stdio command", p.contains("command:"))
+        assertFalse("an undeclared key is ignored, so never tell the agent to write it", p.contains("tool_timeout"))
     }
 
     @Test fun the_prompt_says_what_the_phone_can_and_cannot_do() {
-        val p = PhoneSetup.prompt(host, token)
+        val p = PhoneSetup.prompt(host)
         for (can in listOf("timers", "alarms", "Do Not Disturb", "media volume", "note", "undo")) {
             assertTrue("the prompt must name $can", p.contains(can))
         }
@@ -47,23 +103,36 @@ class PhoneSetupTest {
     }
 
     @Test fun the_prompt_is_idempotent_by_content() {
-        val p = PhoneSetup.prompt(host, token)
+        val p = PhoneSetup.prompt(host)
         assertTrue("an existing entry is updated in place", p.contains("update that entry in place"))
         assertTrue("and never duplicated", p.contains("Do not add a second `vox` entry"))
         assertTrue("the duplicate rule is explicit", p.contains("do not duplicate the block"))
-        assertEquals("the same facts must produce the same turn", p, PhoneSetup.prompt(host, token))
-        assertNotEquals("a different token is a different turn", p, PhoneSetup.prompt(host, "f".repeat(32)))
+        assertEquals("the same facts must produce the same turn", p, PhoneSetup.prompt(host))
+        assertNotEquals("a different address is a different turn", p, PhoneSetup.prompt("100.82.156.1"))
+    }
+
+    /**
+     * #452: the phone's own token is still the escape hatch for a host that is not the one this
+     * phone talks to, and the manual block is where it lives. Removing it from the turn must not
+     * remove it from the fallback.
+     */
+    @Test fun the_manual_fallback_still_carries_the_real_token() {
+        val block = PhoneMcpConfig.snippet(host, token)
+        assertTrue(block, block.contains("Authorization: \"Bearer $token\""))
+        assertTrue("and the documented timeout key", block.contains("timeout: 30"))
+        assertFalse("not the invented one", block.contains("tool_timeout"))
     }
 
     @Test fun the_prompt_tells_the_agent_to_verify_and_reload() {
-        val p = PhoneSetup.prompt(host, token)
+        val p = PhoneSetup.prompt(host)
         assertTrue(p, p.contains("verify that a server named `vox` appears"))
         assertTrue("a new server may need a restart", p.contains("reload or restart your gateway"))
         assertTrue("the agent reports what it changed", p.contains("Then reply with"))
+        assertTrue("and it must not echo the key", p.contains("Never paste that API key into your reply"))
     }
 
     @Test fun an_ipv6_tailnet_address_is_bracketed_in_the_url() {
-        val p = PhoneSetup.prompt("fd7a:115c:a1e0::42", token)
+        val p = PhoneSetup.prompt("fd7a:115c:a1e0::42")
         assertTrue(p, p.contains("http://[fd7a:115c:a1e0::42]:8765/mcp"))
     }
 

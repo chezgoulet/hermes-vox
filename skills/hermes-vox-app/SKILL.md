@@ -193,7 +193,7 @@ semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActiv
 
 Turning the master **on** also turns **Diagnostic summary** (`diag_summary`) on, because someone
 who opts into alpha is a tester and should be able to hand us a bug without hunting for a switch
-(android/app/src/main/java/com/hermesvox/SettingsActivity.kt:189 `DiagnosticSummary.alphaTurnedOn`).
+(android/app/src/main/java/com/hermesvox/SettingsActivity.kt:187 `if (on) DiagnosticSummary.alphaTurnedOn`).
 It is one-way — turning Alpha off does not turn it off — and it never overrules the user: a flip
 of that switch records `diag_summary_chosen`, so an explicit off survives every later Alpha-on.
 
@@ -531,12 +531,6 @@ during a call runs when the call ends
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt:346 `fun decide`). A host that does
 not answer with the block falls back to by-hand profiles and says so in one line.
 
-**When the host has no such profile.** A `404 Unknown or unconfigured profile` for the
-active address is its own state, not a key or network failure: the connection is **not**
-connected, and the Entity row says *"the host has no profile called &lt;name&gt;"* until a
-later `GET /v1/models` answers 200 for that profile. The app reads the host — it never
-creates, renames or deletes a profile, and there is no request it could send to do so.
-
 ### Answering the app's profile ask (`[[vox:profiles]]`)
 
 This is the one thing this skill asks the agent to do. The switcher asks the agent for the
@@ -761,7 +755,7 @@ that is not here, this list is stale: add it with a reference.
 | `event=er-barge-fire` | A staged barge was fired; `hold=staged frames=` | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3414 `er-barge-fire`) |
 | `event=er-barge-verdict` | What the verdict classifier decided about the interrupting words | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt:3425 `er-barge-verdict`) |
 | `event=local-action` | The phone took the utterance itself (timer / alarm / do-not-disturb / volume) with no network round trip: `kind=`, `ok=`, `registry=`, and `event=local-action ring kind=` when a timer fires | `ok=false` = the phone could not do it and said so (a missing DND permission is named); the utterance then never reached the mind, which is `er-handoff reason=local-action` | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2042 `event=local-action kind=`) |
-| `event=phone-mcp` | The mind acting on the phone: `start url=… port=` when a call opens the listener, `stop served=N` on hangup, `action=<timer/alarm/dnd/volume/note/undo> ok=true id=…` per call, `refused reason=no-token / unknown-tool`, `unavailable reason=no-tailnet / bind`, `token-store=failed session-only=true` | `ok=false` with a `reason=` is the phone refusing truthfully (no DND access, tier 2, bad arguments). `refused reason=no-token` = a client without the bearer token probed the port | (android/app/src/main/java/com/hermesvox/PhoneMcp.kt:269 `event=phone-mcp start`) |
+| `event=phone-mcp` | The mind acting on the phone: `start url=… port=` when a call opens the listener, `stop served=N` on hangup, `action=<timer/alarm/dnd/volume/note/undo> ok=true id=…` per call, `refused reason=no-token / unknown-tool`, `unavailable reason=no-tailnet / bind`, `token-store=failed session-only=true` | `ok=false` with a `reason=` is the phone refusing truthfully (no DND access, tier 2, bad arguments). `refused reason=no-token` = a client with neither the phone's token nor the connection's API key probed the port | (android/app/src/main/java/com/hermesvox/PhoneMcp.kt:295 `event=phone-mcp start`) |
 | `event=er-handoff` | **The receipt**: one line per turn proving the mind received it. `ok=true\|false`, `reason=voice-turn / text-turn / suppressed-inflight / cancelled-before-submit / stopped / no-stream`, `soul=`, `askChars=` | `ok=false` = the mind never saw the turn. `reason=suppressed-inflight` is not a lost utterance: the words are queued (`event=er-pending`) and submitted when the current turn settles. Since D30 the mind is never told the voice answered, so no `soul=answer` response is invited | (android/app/src/main/java/com/hermesvox/ErHandoff.kt:55 `event=$EVENT gen=$gen ok=$ok`) |
 | `event=er-audio-handoff` | The mind's reply cut in over the soul; `waitedMs=`, `cut=` | Large `waitedMs` = the turn waited on a slow render | (android/app/src/main/java/com/hermesvox/VoiceController.kt:2843 `er-audio-handoff`) |
 | `event=er-presence line=` | A mid-run aside was voiced; `line=`, `interval=`, `density=`, `kind=lag / soul` | — | (android/app/src/main/java/com/hermesvox/ErPresence.kt:318 `er-presence line=`) |
