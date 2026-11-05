@@ -508,6 +508,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     // B2 (#421): the phone's own actions — timer, alarm, do-not-disturb, volume. Created on first
     // use so a probe-only controller never touches the alarm/audio services.
     private val localActions: LocalActions by lazy { LocalActions(context) }
+    // B3 (#421 steps 3–4): the phone as an MCP server, up exactly while the call is. The handler is
+    // the SAME LocalActions instance the presence context reports from, so the tool and the context
+    // block can never disagree about what the phone is doing.
+    @Volatile private var phoneMcpUp = false
     // B1 (#421): the last line the PHONE said, and which lane said it. The mind never hears the
     // soul, so this is what its instructions report as `soul=` / `last_line=`.
     @Volatile private var lastHeardLine = ""
@@ -745,6 +749,13 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
         listenRetry = 0   // a new call gets its own cold-start retry
+        // B3 (#421 step 3): the mind can only reach the phone while the call is live. Started on
+        // the first start of a call (this method re-enters while warming) and stopped by stop().
+        if (!phoneMcpUp) {
+            phoneMcpUp = true
+            try { PhoneMcp.start(context) { args -> localActions.phone(args) } }
+            catch (t: Throwable) { VoxLog.w("event=phone-mcp unavailable reason=${t.javaClass.simpleName}") }
+        }
         // Re-initialize any pipeline leg that stopped warming (e.g. after stop() reset the
         // ready flags) so a fresh start doesn't listen against a dead TTS/STT/VAD.
         ensureWarm()
@@ -1446,6 +1457,10 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     fun stop() {
         listening = false
+        // B3 (#421 step 3): a hangup closes the phone's MCP listener. The registry in LocalActions
+        // is untouched — what is running stays running; only the socket goes.
+        phoneMcpUp = false
+        try { PhoneMcp.stop() } catch (t: Throwable) { VoxLog.w("event=phone-mcp stop-failed reason=${t.javaClass.simpleName}") }
         recognizer?.destroy(); recognizer = null
         // #282: a hanging-up call withdraws any open approval — never answer a request
         // the user can no longer see. The gate's latch still refuses a late tap.

@@ -821,3 +821,122 @@ context block, local intent grammar, MCP server, tiers and veto. It sits in `MIL
 **Why it matters beyond this release.** A milestone whose features are only "built" is a version
 number, not a commitment. The rule exists so that the depth of thinking we do is the depth we
 promised at the moment we promised it.
+
+## D34 — The mind acts on the phone through one MCP tool, and every action returns a result
+
+Set 2026-11-04, on #421's third comment and steps 3–4.
+
+**The decision.** The phone runs a small **MCP server on the tailnet** exposing **one** tool,
+`phone`, with an action enum (`timer`, `alarm`, `dnd`, `volume`, `note`, `undo`, `status`). Every call
+returns what actually happened; Tier 2 actions are refused and routed to the gateway's existing
+approval surface. The user-initiated lane (D32) is untouched: it still executes on the phone with no
+round trip.
+
+**Why MCP and not a directive in the reply.** A directive is fire-and-forget: the mind says "timer,
+five minutes" and never learns whether it started. #421 rejected that shape. MCP gives the mind a
+schema, a result and an error surface, and Hermes already speaks it — nothing is patched, no protocol
+is invented.
+
+**Why one tool and not eight.** The schema rides on every turn the gateway offers it on. One tool
+with a required `action` costs a fraction of eight and is easier for a model to call correctly.
+
+**Why the two initiators stay separate.** A timer the caller asked for must be running before a
+streamed turn could have opened its connection; routing it through MCP would add a network hop to the
+fastest thing in the app. A timer the mind asked for must return a result, because the mind is the one
+acting. Same engine, same registry, different wire — and the registry is the single source of truth,
+so the context block and the `status` action cannot disagree.
+
+**The tiers, as implemented.**
+- **Tier 0** (timer, alarm, dnd, volume, status, undo): executes immediately, reversible, private.
+- **Tier 1** (note): executes immediately, is reported to the mind on the next turn through the
+  presence context, and is undoable.
+- **Tier 2** (share, message, call, email, delete, purchase, launch, send): **never executed from the
+  phone's MCP surface.** An MCP call carries no run id, so the phone cannot mint an approval card, and
+  a second approval surface inside the MCP server is what #421 rules out. The result says
+  `approval-required`; the consequential path is the gateway's own approval surface, and
+  `trust: untrusted` puts *every* phone call behind it for an owner who wants that.
+
+**Undo is part of the result, not a second protocol.** Every reversible action names its own undo in
+its result (`{"action":"undo","id":"timer-3"}`) and the undo lives for the action's lifetime: a timer
+until it rings, dnd/volume until superseded or ten minutes, a note for a day.
+
+**The invariant.** `ok:true` is only ever rendered after the platform performed the action, and a
+refusal carries a reason and no success fact. A claim in the mind's reply is therefore traceable to a
+result it was given, which is the false-action-claim guard applied to the phone's own claims first.
+
+**How it is set up (#421 step 5).** The owner is not handed a YAML block. The app composes one
+ordinary turn — server name, tailnet URL, bearer token, tool name, what the phone can and cannot do —
+and sends it through the existing session, so the agent edits its own configuration and the change is
+visible in the conversation and the sheet. The turn is idempotent by content: an existing `vox` entry
+is updated in place, never duplicated. **Connected is not the agent's word**: the phone says it only
+after its own server has seen an authenticated MCP `initialize`, and the proof is tied to the token
+in force, so rotation clears it. The config block survives as a disclosed manual fallback for an
+agent that cannot edit its own config.
+
+**What it costs, stated.** The token and the tailnet are the boundary, and both are the owner's to
+keep (`docs/MCP-PHONE.md`). The server is up only while a call is, so the gateway's first call after
+a call begins may pay a connect, and with the call down the tool is simply absent. Tool schemas ride
+on every turn the server is offered on; `status` exists so the mind asks instead of remembering.
+
+**What it does not decide.** Whether the soul ever gets tools (it does not — its job is the beat,
+D30), and whether a user wants a setting to change the tier table. Both stay open.
+
+## D35 — The phone's capabilities are granted group by group, and the schema follows the grant
+
+Set 2026-11-04, on #429 step 1.
+
+**The decision.** The agent's reach into the phone is governed by **twelve capability groups**, each
+with exactly one of three states: **Off**, **Ask**, **Allow**. The groups are defined once
+(`PhoneGrants`), and the tool schema, the Phone tools screen and the audit all read that one object.
+A capability the owner has not granted is not a temptation the model has to resist — it is **absent**
+from the advertised `enum`.
+
+**Every group defaults to Off.** A fresh install grants nothing. There is no allow-all switch; the
+one bulk shortcut the design permits is *Allow all instant actions*, and it touches Tier 0 groups
+alone.
+
+**Allow is a Tier 0 word.** Tier 0 is reversible and private, so a grant may make it instant. Tier 1
+changes something the owner can see, and Tier 2 leaves the phone or reads what is private; both stop
+at Ask. The rule is enforced on write *and* read: a stored Allow against a Tier 1 or 2 group comes
+back as Ask, because a grant that cannot be given is not a grant.
+
+**Off means invisible; a direct call still gets an answer.** A call that names an Off group's action
+returns `ok:false, reason:"not_granted"` — a described refusal, not a transport error — so the model
+can say what happened instead of inventing a failure. Ask advertises the action and refuses each use
+(`approval-required`) until the approval card lands with the capability itself; the MCP call carries
+no run id, so the phone cannot mint the gateway's card from inside the server, and #421 rules out a
+second approval surface. Ask is therefore a visible refusal today: visible to the model (offered) and
+to the owner (recorded in Recent actions). This is deliberately honest rather than silent.
+
+**The schema follows the grants, at call time.** `PhoneGrantStore` is read on every `tools/call` and
+every `tools/list`; nothing is cached for the life of the session. Revocation therefore takes effect
+on the very next call — including mid-call — which is the only revocation that means anything. The
+test `PhoneGovernanceTest.revocation_takes_effect_on_the_very_next_call` is the proof, and the device
+pass turns a group off while a call is live.
+
+**Every call is visible, refusals included.** *Recent actions* records time, action, summarised
+arguments, outcome and an undo where the action carries one. Arguments are summarised, not copied: a
+note's text is stored as its length, so the list never carries a message body or a secret. The list is
+the record the owner checks the agent's claims against, so a success and a refusal are the same kind
+of entry.
+
+**Undo is per action.** The result of a reversible action names its undo id; the agent can call
+`undo`, and so can the owner by tapping the row. An undo that did not survive its call says `expired`
+rather than pretending.
+
+**The two things we will not build.**
+- **Bulk deletion, or "clean out my phone".** Irreversible, ambiguous, and a misheard phrase away
+  from damage. Triage is read-only; deletion, when it lands, is one named file on a card.
+- **Silent reading of messages or notifications.** Those are approval-tier capabilities with their
+  own warnings, and they are absent from the schema until granted. There is no background read and no
+  "just this once" that skips the card.
+
+**What it costs, stated.** Eight of the twelve groups have no action in this lane; their grants are
+stored and shown, and their schema entries appear only when their capability lands (a planned action
+name is never advertised; a direct call is refused as not granted). The screen says which groups have
+nothing yet. The grant is not a permission: Android's own runtime and special-access grants still
+apply underneath, and the phone still refuses with `reason:"permission"` when one is missing.
+
+**What it does not decide.** Whether an approved Ask can be remembered for a session, whether a group
+may be limited to a chosen set of apps (Notifications hints at it), and screen automation — which is
+its own decision, with its own indicator and hard off switch.

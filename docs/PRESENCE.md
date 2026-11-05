@@ -287,6 +287,46 @@ exactly as before. The grammar claims the whole utterance or none of it.
 
 ---
 
+## The mind's own actions: one MCP tool, and a result (#421 steps 3–5)
+
+The lane above is the caller's. The mind needs its own, and it cannot be the same wire: a timer the
+caller asked for must be running before a streamed turn would have connected, while a timer the
+*mind* asked for must come back with an answer. So the phone runs a small **MCP server on the
+tailnet** with **one** tool, `phone`:
+
+| action | tier | what the phone does |
+|---|---|---|
+| `timer`, `alarm`, `dnd`, `volume` | 0 | acts now, reversible, private |
+| `note` | 1 | keeps it, reports it in the next turn's `local_actions:`, undoable |
+| `undo` | 0 | reverses the action whose id it is given |
+| `status` | 0 | what the phone can do and what is running — the same registry the context block reports |
+| `share`, `message`, `call`, `delete`, … | 2 | **nothing.** The result says `approval-required`; the gateway's approval surface owns it |
+
+Every call returns one JSON result: `ok`, an `id`, and the facts of what happened (a timer's
+`remaining_ms`, the new DND state and its `previous`, the volume `level`, a note's `text`). A refusal
+is a result with a `reason` — `permission`, `unavailable`, `expired`, `invalid-arguments`,
+`unknown-action`, `approval-required` — and **no** `id` and no success fact, so the mind can say "I
+couldn't change do-not-disturb, the phone hasn't given me permission" and be right. `ok:true` is only
+ever produced after the phone performed the action; that is the false-action-claim rule applied to
+the phone's own claims before the mind's.
+
+**Undo is in the result, not a second protocol.** A reversible action names its own undo
+(`{"action":"undo","id":"timer-3"}`), and it lives for the action's lifetime: a timer until it rings,
+dnd and volume until superseded or ten minutes, a note for a day.
+
+**One registry.** `PhoneEngine` holds the ids, the running actions and the undos, and both lanes go
+through it — so the `local_actions:` line the presence context sends and the `status` the mind asks
+for are the same memory. The world the mind reads about and the world it acts on cannot drift apart.
+
+The gateway needs one `mcp_servers` entry to see the tool, and the owner is not asked to write it.
+**Set up with my agent** sends one ordinary turn asking the agent to add the entry to its own
+configuration, and the sheet waits for the phone's own server to see the MCP handshake before it says
+**Connected**. The agent's reply is shown either way; a config block remains as a disclosed manual
+fallback. `docs/MCP-PHONE.md` has the exact turn, the state machine, the token handling, the
+permissions and the security reasoning.
+
+---
+
 ## The handoff: how ER decides, and how to read a session for swallowed turns
 
 0.9.1 shipped Presence/ER with a release-gating report: *"it swallowed my question — the soul
@@ -419,4 +459,6 @@ one, which is cheap and asymmetric.
 - `docs/RESEARCH-2026-10-voice-agents.md` — the field evidence behind interruption classes, recovery,
   endpointing and power.
 - `docs/VOICE-BAKEOFF.md`, `docs/PRESENCE-BENCH.md` — the measured voice and model choices.
+- `docs/PRESENCE-REPORTS.md` — the `vox-diag` block, what it deliberately excludes, and the
+  daily sweep that turns `presence-report` issues into an aggregate (#417).
 - `docs/PLAN-0.9.2.md` — what the Presence release still owes.

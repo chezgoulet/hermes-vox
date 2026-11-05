@@ -72,6 +72,7 @@ object SettingsHints {
         "row_er_voice" to "Silent, sounds (mm, a breath) or short spoken lines",
         "row_er_density" to "How often Presence speaks during a long task",
         "row_er_echo" to "Ignores the mic briefly after Presence speaks, so it can't hear itself",
+        "row_presence_diag" to "Copies the configuration and numbers, never a transcript or key",
         "row_er_reasoning" to "How hard the mind thinks on a voice turn; lower answers sooner",
         "row_vox" to "Fetches the agent's own description of its voice from the gateway",
         "row_vox_view" to "Shows what Presence reads about the agent's voice",
@@ -104,6 +105,7 @@ object SettingsHints {
         "row_logtranscripts" to "Writes what you said into the log; off by default",
         "row_debuglog" to "A more detailed log file, for reporting a bug",
         "row_debug" to "View, copy or share the log",
+        "row_phone_mcp" to "Ask your agent to add this phone, and see whether it connected",
     )
 
     /**

@@ -45,6 +45,11 @@ object ErTelemetry {
     // The soul's OWN render latency (the GemmaExpress.express round-trip).
     private val gemmaRender = ArrayList<Long>()
     private val gemmaRenderCap = 64
+    // Session baselines for the diagnostic block (#417). The counters above are cumulative
+    // for the log's continuity; the block reports a call, so it reads these differences.
+    // LatencyStats.resetSessionTurns() is the one session boundary and calls beginSession().
+    private var baseAnswered = 0L
+    private var baseEscalated = 0L
 
     fun classify(route: ErIntent.Route) = synchronized(lock) {
         when (route) {
@@ -90,6 +95,19 @@ object ErTelemetry {
             else -> soulNothing++
         }
     }
+
+    /** Start the diagnostic window where the turn count starts. Never clears the log
+     *  counters; the block subtracts these baselines from them. */
+    fun beginSession() = synchronized(lock) {
+        baseAnswered = soulAnswer
+        baseEscalated = soulEscalate
+    }
+
+    /** Soul decisions since the session boundary ("answer" / "escalate"). Negative is
+     *  impossible, but a reset from a test that bypasses beginSession must not leak a
+     *  nonsense count into a public report. */
+    fun sessionAnswered(): Long = synchronized(lock) { (soulAnswer - baseAnswered).coerceAtLeast(0) }
+    fun sessionEscalated(): Long = synchronized(lock) { (soulEscalate - baseEscalated).coerceAtLeast(0) }
 
     /** The mind replied with the skip token (the voice's answer stood). */
     /** Median soul render latency so far, or null before the first render (the presence bar's latency half). */

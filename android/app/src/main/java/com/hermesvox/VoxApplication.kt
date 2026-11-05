@@ -39,10 +39,25 @@ class VoxApplication : Application() {
         if (PresenceGate.enabled(prefs)) VoxMirror.migrate(this)
     }
 
-    /** Rewrite one stored secret in the marked ciphertext form when it is not already. */
-    private fun upgradeStoredKey(prefs: android.content.SharedPreferences, key: String) {
+    /**
+     * Rewrite one stored secret in the marked ciphertext form when it is not already.
+     *
+     * [alias] is the Keystore alias the value was written under and has to be read back
+     * under: a per-profile secret migrated with the default alias would be re-encrypted
+     * from the wrong plaintext, or from nothing. Both callers below are device-wide (the
+     * default alias), so the parameter exists to keep the two from drifting apart.
+     */
+    private fun upgradeStoredKey(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        alias: String = SecureStore.ALIAS,
+    ) {
         val stored = prefs.getString(key, null) ?: return
-        val next = SecureStore.storageUpgrade(stored, SecureStore::decrypt, SecureStore::encrypt) ?: return
+        val next = SecureStore.storageUpgrade(
+            stored,
+            decrypt = { SecureStore.decrypt(it, alias) },
+            encrypt = { SecureStore.encrypt(it, alias) },
+        ) ?: return
         prefs.edit().putString(key, next).apply()
         VoxLog.d("event=secure-store upgraded pref=$key")
     }
