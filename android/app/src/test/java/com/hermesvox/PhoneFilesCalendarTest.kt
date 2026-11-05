@@ -219,7 +219,7 @@ class PhoneFilesCalendarTest {
         assertEquals("a defaulted call means Downloads", folder.label to "notes.txt", fake.seenFile)
     }
 
-    @Test fun an_over_cap_file_is_refused_not_truncated() {
+    @Test fun an_over_cap_whole_file_says_to_read_it_in_windows() {
         fake.folders = listOf(folder)
         fake.text = PhoneEngine.PhonePlatform.FileText.TooBig(70_000)
         val r = call(mapOf("action" to "file_read", "name" to "big.txt"))
@@ -228,7 +228,7 @@ class PhoneFilesCalendarTest {
         assertFalse("no text was returned", r.facts.containsKey("text"))
         assertFalse("and no length", r.facts.containsKey("chars"))
         assertTrue("the refusal states the cap", r.detail!!.contains("65536"))
-        assertTrue("and says it is refused rather than cut", r.detail!!.contains("refused rather than"))
+        assertTrue("and says how to read it anyway", r.detail!!.contains("offset and length"))
     }
 
     @Test fun a_binary_file_is_refused_not_text() {
