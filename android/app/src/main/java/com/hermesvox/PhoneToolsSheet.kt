@@ -207,17 +207,10 @@ class PhoneToolsSheet(
         col.addView(VoxSheet.subhead(act, "Capabilities"))
         body(
             col,
-            "Off hides a group from your agent. Ask refuses the call unless an approval card can " +
-                "answer it — only removing an app has one. Allow runs it instantly and reports it " +
-                "in Recent actions — and Allow is offered for instant, reversible groups only. " +
+            "Off — the agent cannot use it. Ask — the agent asks you first, by tap or by voice. " +
+                "Allow — the agent acts without asking. The three words mean the same thing for " +
+                "every group, and every group starts Off. " +
                 "${PhoneToolsView.grantSummary(states)}.",
-            dim = true,
-        )
-        body(
-            col,
-            "Approval cards arrive with the capabilities that need them. Until then an Ask action " +
-                "is refused with a reason, never run, and the refusal is recorded below.",
-            dim = true,
         )
         for ((tier, groups) in PhoneGrants.byTier()) {
             col.addView(VoxSheet.subhead(act, PhoneGrants.tierLabel(tier)))
@@ -470,8 +463,9 @@ class PhoneToolsSheet(
 
     /**
      * One capability group: its name, what it lets the agent do, the warning where the consequence
-     * is not obvious, and the states its tier permits. Allow is rendered only where the registry
-     * permits it, so the control and the policy cannot disagree.
+     * is not obvious, and the three states. Every tier offers all three; the tier only tells the
+     * reader what a card will say and whether an undo exists. The loud warning appears only at
+     * Allow, because that is the state in which the consequence happens without a card.
      */
     private fun grantRow(col: LinearLayout, group: PhoneGrants.Group, state: PhoneGrants.State) {
         val box = LinearLayout(act).apply {
@@ -482,7 +476,7 @@ class PhoneToolsSheet(
         box.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { text = group.label })
         box.addView(TextView(act, null, 0, R.style.HvRowValue).apply { text = group.lets })
         box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-            text = PhoneToolsView.grantMeaning(state, group.tier)
+            text = PhoneToolsView.grantMeaning(state)
             setTextColor(color(R.color.hv_text_dim))
         })
         if (!group.built) {
@@ -497,6 +491,14 @@ class PhoneToolsSheet(
                 setTextColor(color(R.color.hv_warn))
             })
         }
+        if (state == PhoneGrants.State.ALLOW) {
+            group.allowWarning?.let { warning ->
+                box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+                    text = warning
+                    setTextColor(color(R.color.hv_warn))
+                })
+            }
+        }
         val controls = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(8), 0, 0)
@@ -505,12 +507,6 @@ class PhoneToolsSheet(
             controls.addView(stateButton(group, choice, choice == state))
         }
         box.addView(controls)
-        PhoneToolsView.allowAbsent(group.tier)?.let { why ->
-            box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-                text = why
-                setTextColor(color(R.color.hv_text_dim))
-            })
-        }
         col.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 

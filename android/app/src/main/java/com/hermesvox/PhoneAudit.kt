@@ -66,7 +66,8 @@ object PhoneAudit {
     fun summarise(args: Map<String, Any?>): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         for ((key, value) in args) {
-            if (key == "action" || value == null) continue
+            // `action` is its own column, and `approval` is the handshake's guard, not an argument.
+            if (key == "action" || key == "approval" || value == null) continue
             val rendered = when {
                 key == "text" -> "${(value as? String)?.length ?: 0} chars"
                 // An event's title is the owner's words, so the audit keeps its length, not it.
@@ -147,12 +148,13 @@ object PhoneAudit {
     }
 
     /**
-     * The request and decision rows for an `uninstall` card. [outcome] is `approval-requested`,
+     * The request and decision rows for one approval card. [outcome] is `approval-requested`,
      * `approved`, `denied` or `expired`; [via] is `tap`, `voice`, `silence` or `agent`.
      *
-     * The row names the package and the app's label, and — on a decision — how it was answered.
-     * It never stores the canonical arguments or the hash: those are the protocol's guard, not
-     * something the owner needs to read.
+     * The row names the safe subject the card was raised for and — on a decision — how it was
+     * answered. A card's phrase may carry an event's title or a recipient; this list keeps the
+     * short subject and the safe detail only, never the canonical arguments or the hash: those are
+     * the protocol's guard, not something the owner needs to read.
      */
     fun approvalEntry(
         atEpochMs: Long,
@@ -161,12 +163,19 @@ object PhoneAudit {
         via: String,
     ): Entry {
         val arguments = LinkedHashMap<String, String>()
-        if (card.action == PhoneApproval.FILE_ACTION) {
-            arguments["name"] = clip(card.label)
-            if (card.detail.isNotEmpty()) arguments["detail"] = clip(card.detail)
-        } else {
-            arguments["package"] = clip(card.subject)
-            arguments["label"] = clip(card.label)
+        when (card.action) {
+            PhoneApproval.FILE_ACTION -> {
+                arguments["name"] = clip(card.label)
+                if (card.detail.isNotEmpty()) arguments["detail"] = clip(card.detail)
+            }
+            PhoneApproval.ACTION -> {
+                arguments["package"] = clip(card.subject)
+                arguments["label"] = clip(card.label)
+            }
+            else -> {
+                arguments["what"] = clip(card.label)
+                if (card.detail.isNotEmpty()) arguments["detail"] = clip(card.detail)
+            }
         }
         if (outcome != "approval-requested" && via.isNotEmpty()) arguments["via"] = clip(via)
         return Entry(

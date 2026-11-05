@@ -169,21 +169,28 @@ a group whose capability lands in a later lane.
 
 ### The three states
 
+The same three words for every group, and the same behaviour behind each one. The tier does not
+change what a state means; it changes what the card says and whether an undo exists.
+
 **Off — the default for every group.** The group's actions are absent from the tool's `enum`, and a
 call that still names one returns `ok:false, reason:"not_granted"`. The model cannot call what it
 cannot see; if it tries anyway, the refusal is a result it can read and repeat, not a transport
 error.
 
-**Ask.** The actions are advertised, and every use is a decision rather than a run. A Tier 1 group at Ask
-runs and is reported; a Tier 0 group waits for a card. On this wire an Ask call that needs a card
-returns `ok:false, reason:"approval-required"` and performs nothing. `uninstall` and `file_offer`
-are the Tier 2 actions with a two-step card on this phone; the rest stay visible refusals — visible
-to the model (the action is offered) and to the owner (the refusal is in Recent actions).
+**Ask — the agent asks you first, by tap or by voice.** The actions are advertised. The first call
+performs nothing: it returns `ok:false, reason:"approval-required"` with `approval_id`, `expires_at`
+and `summary`, and a card naming the action and its arguments is raised. The owner answers on the
+phone (tap, or the same allowlist's voice yes/no); the agent then calls **the same action with the
+same arguments plus `approval:"<id>"`**, and only then does it run. Every action uses this one
+handshake — `timer`, `note`, `message`, `file_read`, `uninstall`, `file_offer` — with no exception
+for tier. An id is bound to its arguments: different arguments are `approval_mismatch`, and every
+refusal (denied, expired, mismatch, locked, already used) burns it.
 
-**Allow.** The action runs immediately and is reported. **Only Tier 0 may be Allow** — reversible and
-private. Tier 1 stops at Ask because the owner sees its result and should stay in the loop; Tier 2
-stops at Ask because every use is a card of its own. A stored Allow against a Tier 1/2 group is read
-back as Ask; a grant that cannot be given is not a grant.
+**Allow — the agent acts without asking.** The action runs immediately, with no card raised. This
+holds for a consequential action too: Allow on Apps is permission to remove an app. That is not a
+bug or an oversight — the row says so in its own loud line, every group defaults to Off, and a
+permission the owner granted is a permission. There is no hidden veto and no short list of actions
+that always ask behind an Allow row.
 
 **There is no allow-all.** The one bulk shortcut the design permits is *Allow all instant actions*,
 and it touches Tier 0 groups alone. (The sheet does not need to show it for the promise to hold.)
@@ -195,11 +202,20 @@ mid-call, which is the only kind of revocation worth the name.
 
 ### What the owner sees
 
-The Phone tools sheet lists the thirteen groups by tier, each with its one-line description and its
-Off / Ask / Allow control (Allow only where the tier permits it). Files and Notifications carry one
-sentence of plain consequence where the ability is not obvious — "your agent could list that folder
-and read a file in it when you approve it". Messages and Calls do not need one: nothing leaves the
-phone except through an app the owner already uses, and the owner still presses send or call.
+The Phone tools sheet lists the thirteen groups by tier, each with its one-line description and the
+same three choices everywhere:
+
+- **Off — the agent cannot use this.**
+- **Ask — the agent asks you first, by tap or by voice.**
+- **Allow — the agent acts without asking.**
+
+The tier is the description above the rows, not a limit on the choice: Instant actions are
+reversible and carry an undo, Reported actions are shown in Recent actions, Consequential ones have
+no undo. Files, Notifications, Clipboard, Messages, Calls, Apps and Contacts carry a second warning
+that appears **only while the row is Allow**, because that is the state in which the consequence
+happens without a card: a Messages row at Allow says Vox may write a text and open the messaging app
+without asking (the owner still presses send), and an Apps row at Allow says an app can be removed
+without asking, with no undo.
 
 **Recent actions** is the counter-claim: time, action, summarised arguments, outcome, and an Undo
 where the action carries one. It records **refusals as well as successes**, because "my agent says
@@ -235,7 +251,7 @@ The reason vocabulary is stable and small:
 | `expired` | no undo is registered for that id any more (it fired, was superseded, or was never this phone's) |
 | `invalid-arguments` | the arguments do not describe a runnable action |
 | `unknown-action` | not a phone action; `detail` lists what is on offer |
-| `approval-required` | the group is Ask or the action is Tier 2: nothing was done, and the owner's approval owns it |
+| `approval-required` | the group is Ask: nothing was done, and a card with `approval_id` and `expires_at` is waiting for the owner |
 
 **The invariant**: `ok: true` is only ever rendered after the platform said it performed the action,
 and a refusal carries no `id`, no `state`, no success fact. So the mind's claim "I set a timer" is
@@ -260,20 +276,21 @@ Every action that can be undone registers an undo **for its lifetime**, keyed by
 
 ### Tiers
 
-The tier is a property of the capability, not of the session. It decides whether Allow is even
-offered, and it does not change with the grant.
+The tier is a property of the capability, not of the session. It is the **description** of what a
+card says and whether an undo exists — it does not decide which of the three states the owner may
+choose. Every tier offers Off, Ask and Allow.
 
-| tier | actions | what the phone does | states |
+| tier | actions | what the phone does | undo |
 |---|---|---|---|
-| **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
-| **1 — reported** | note, file_list, file_read, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
-| **2 — approval** | uninstall, file_offer, install, delete, purchase … | **never executes on the first call.** `uninstall` and `file_offer` use the phone's two-step card handshake; the rest answer `approval-required` and nothing happens | Off / Ask |
+| **0 — instant** | timer, alarm, dnd, volume, status, undo, media, state, clipboard, notifications, contacts, message, dial, launch, open | executes now at Allow, or after its card at Ask; reversible and private | yes, where the action has a reversal |
+| **1 — reported** | note, file_list, file_read, agenda, event_create | executes now at Allow, or after its card at Ask; the result is reported in the next turn's presence context | yes, where the row says |
+| **2 — consequential** | uninstall, file_offer; install, delete, purchase, pay, transfer (unbuilt) | executes now at Allow, or after its card at Ask, through the same two-step handshake as every other action | no |
 
-Tier 2 waits for a card on purpose. An MCP call carries no run id, so the phone cannot mint the
-gateway's `core/Approval.kt` card; instead `uninstall` and `file_offer` use the phone's own two-step
-handshake (`docs/MCP-SURFACE.md`, "Tier 2 — approval"), and every other Tier 2 name is refused.
-The card's notification is private and a yes needs an unlocked device. An owner who wants *every*
-phone call behind the gateway's card can have that without any code change:
+The unbuilt Tier 2 names are never advertised: an entry in the `enum` is a capability the phone must
+be able to keep, and a card cannot be raised for something the phone cannot do. `uninstall` and
+`file_offer` can raise one, so they are offered and run at Allow or after the card. The card's
+notification is private and a yes needs an unlocked device. An owner who wants *every* phone call
+behind the gateway's card can have that without any code change:
 
 ```yaml
     trust: untrusted    # every write-capable tool call asks through the standard approval surface
@@ -475,8 +492,10 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 3. **With every group Off (a fresh install), `tools/list` offers `undo` and `status` only.** A
    `timer` call returns `ok:false, reason:"not_granted"`; nothing is armed.
 4. **Grant Timers and alarms = Ask.** `tools/list` now includes `timer`; a timer call returns
-   `ok:false, reason:"approval-required"` and nothing is armed. Set the group to **Allow**: the next
-   call returns `ok:true` with an id and the timer rings.
+   `ok:false, reason:"approval-required"` with an `approval_id`, a card names the timer and its
+   duration, and nothing is armed. **Answer the card by voice** ("yes"): call `timer` again with the
+   same duration and `approval:"<id>"` and it arms. A second call with a different duration is
+   `approval_mismatch`, and nothing runs. Set the group to **Allow**: the next call runs with no card.
 5. **Revoke mid-call.** While the call is live, set Timers and alarms back to Off. The **next**
    `tools/list` no longer lists `timer`; the next `timer` call is `not_granted`. No restart, no
    reconnect.
@@ -486,12 +505,12 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 8. **`dnd` on a phone that has never granted policy access** → `ok:false, reason:"permission"`, and
    the Do Not Disturb state is unchanged.
 9. **`volume`** → the reported `level` matches the phone's own slider afterwards.
-10. **`note`** → the next voice turn's `local_actions:` line carries `note(id=…)`, and `undo` deletes
-    it.
-11. **`message`** → `not_granted` while Messages is Off, `approval-required` at Ask; at Allow the
-    owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted` while
-    Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after the
-    being says *dialling — ending our call*.
+10. **`note`** → at Allow the next voice turn's `local_actions:` line carries `note(id=…)`, and
+    `undo` deletes it. At Ask the note is not written until the card is answered.
+11. **`message`** → `not_granted` while Messages is Off, `approval-required` with a card at Ask; at
+    Allow the owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted`
+    while Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after
+    the being says *dialling — ending our call*.
 12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
     summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
     undoable row: the action is reversed, or the toast says the undo expired.

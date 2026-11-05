@@ -22,10 +22,8 @@ import org.junit.Test
  */
 class PhoneToolTest {
 
-    /** Every Tier 0 group allowed; Tier 1/2 left at Ask, which is the most they permit. */
-    private val open = PhoneGrants.Source { g ->
-        if (g.tier == PhoneTiers.INSTANT) PhoneGrants.State.ALLOW else PhoneGrants.State.ASK
-    }
+    /** Every group at Allow. Ask and Allow both reach the engine; the card tests live below. */
+    private val open = PhoneGrants.Source { PhoneGrants.State.ALLOW }
 
     private fun schemaObj(grants: PhoneGrants.Source = open): JObj =
         Json.parse(Json.encode(PhoneTool.schema(grants))) as JObj
@@ -82,68 +80,65 @@ class PhoneToolTest {
         assertTrue("the reason vocabulary is named", desc.contains("not_granted"))
     }
 
-    @Test fun a_reported_group_at_ask_is_offered_and_runs_because_the_owner_turned_it_on() {
+    @Test fun a_reported_group_at_ask_is_offered_and_parses_into_the_handshake() {
         val notes = PhoneGrants.Source { g ->
             if (g.id == "notes") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
         assertTrue("note is advertised", "note" in enumOf(notes))
         val parsed = PhoneTool.parse(mapOf("action" to "note", "text" to "milk"), notes)
-        assertTrue("a reported group acts when it is on", parsed is PhoneTool.Parsed.Run)
+        assertTrue(
+            "a group at Ask parses into a call; the engine raises the card",
+            parsed is PhoneTool.Parsed.Run,
+        )
         assertEquals("note", (parsed as PhoneTool.Parsed.Run).call.action)
     }
 
     /**
-     * M8 of the 0.9.1 review: a Tier 0 group at Ask has no card, so its actions are not in the
-     * enum and a direct call is told the truth — there is no approval card, so nothing is waiting.
-     * The enum never promises a capability the phone cannot keep.
+     * The corrected M8 rule: Ask used to withhold a Tier 0 group because there was no card. With
+     * one card for every action, Ask offers the actions and the card answers them.
      */
-    @Test fun a_tier_zero_group_at_ask_is_not_advertised_and_the_refusal_says_why() {
+    @Test fun a_tier_zero_group_at_ask_is_advertised_and_parses_into_the_handshake() {
         val timers = PhoneGrants.Source { g ->
             if (g.id == "timers-alarms") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
         assertEquals(
-            "Ask on a Tier 0 group offers nothing: there is no card to wait for",
-            listOf("undo", "status"),
+            "Ask on a Tier 0 group offers its actions, because every action has a card",
+            listOf("timer", "alarm", "undo", "status"),
             enumOf(timers),
         )
 
         val parsed = PhoneTool.parse(mapOf("action" to "timer", "duration_ms" to 1_000), timers)
-        val refusal = (parsed as PhoneTool.Parsed.Refuse).result
-        assertEquals(PhoneReason.APPROVAL, refusal.reason)
-        assertTrue(
-            "the refusal says the card does not exist: ${refusal.detail}",
-            refusal.detail!!.contains("no approval card"),
-        )
-        assertFalse(
-            "it must not claim an approval is coming: ${refusal.detail}",
-            refusal.detail!!.contains("waits for the owner's approval"),
-        )
+        assertEquals("timer", (parsed as PhoneTool.Parsed.Run).call.action)
 
         val contacts = PhoneGrants.Source { g ->
             if (g.id == "contacts") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
-        assertFalse("contact is not advertised at Ask", "contact" in enumOf(contacts))
+        assertTrue("contact is advertised at Ask", "contact" in enumOf(contacts))
         val desc = (schemaObj(contacts)["description"] as JStr).value
         assertTrue(
-            "the description names the group and says no action is offered: $desc",
-            desc.contains("Contacts (ask): no action is offered"),
+            "the description names the card that will be raised: $desc",
+            desc.contains("Contacts (ask): contact — each call raises a card"),
         )
     }
 
-    /** The one Tier 0 action with its own card keeps working at Ask, and only that one. */
-    @Test fun a_tier_zero_group_at_ask_keeps_the_action_with_its_own_card() {
+    /** With one handshake for every action, Ask keeps the whole apps group, not one name. */
+    @Test fun a_group_at_ask_keeps_every_action_not_only_the_one_with_a_card() {
         val apps = PhoneGrants.Source { g ->
             if (g.id == "apps") PhoneGrants.State.ASK else PhoneGrants.State.OFF
         }
-        val offered = enumOf(apps)
-        assertTrue("uninstall raises its own card", "uninstall" in offered)
-        assertFalse("launch has no card at Ask", "launch" in offered)
-        assertFalse("open has no card at Ask", "open" in offered)
-        val parsed = PhoneTool.parse(
-            mapOf("action" to "uninstall", "package" to "org.mozilla.firefox"),
-            apps,
-        )
-        assertTrue("uninstall still starts its two-step handshake", parsed is PhoneTool.Parsed.Run)
+        assertEquals(listOf("launch", "open", "uninstall", "undo", "status"), enumOf(apps))
+        for (action in listOf("launch", "open", "uninstall")) {
+            val parsed = PhoneTool.parse(
+                when (action) {
+                    "launch" -> mapOf("action" to action, "app" to "Firefox")
+                    "open" -> mapOf("action" to action, "uri" to "https://example.org")
+                    else -> mapOf("action" to action, "package" to "org.mozilla.firefox")
+                },
+                apps,
+            )
+            assertTrue("$action at Ask must reach the engine's handshake", parsed is PhoneTool.Parsed.Run)
+            assertEquals(action, (parsed as PhoneTool.Parsed.Run).call.action)
+        }
     }
 
     @Test fun an_action_in_an_off_group_is_refused_as_not_granted() {
@@ -167,8 +162,7 @@ class PhoneToolTest {
         for (name in enumOf()) {
             assertTrue(
                 "$name is offered but not executable",
-                name == "undo" || name == "status" || PhoneApproval.handshaked(name) ||
-                    PhoneTiers.executable(name),
+                name == "undo" || name == "status" || PhoneTiers.executable(name),
             )
         }
     }
@@ -294,13 +288,13 @@ class PhoneToolTest {
     }
 
     @Test
-    fun apps_offers_its_actions_and_uninstall_still_asks() {
+    fun apps_offers_its_actions_and_uninstall_parses_into_the_handshake() {
         val apps = PhoneGrants.Source { g ->
             if (g.id == "apps") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
         }
         assertEquals(listOf("launch", "open", "uninstall", "undo", "status"), enumOf(apps))
         assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("uninstall"))
-        // A granted Apps group does not grant removal: the action parses into the card handshake.
+        // An Allow on Apps is a real permission: it reaches the engine, where Ask would card it.
         val parsed = PhoneTool.parse(mapOf("action" to "uninstall", "package" to "com.example.app"), apps)
         assertTrue(parsed is PhoneTool.Parsed.Run)
         assertEquals("uninstall", (parsed as PhoneTool.Parsed.Run).call.action)

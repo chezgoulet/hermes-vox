@@ -901,18 +901,26 @@ from the advertised `enum`.
 one bulk shortcut the design permits is *Allow all instant actions*, and it touches Tier 0 groups
 alone.
 
-**Allow is a Tier 0 word.** Tier 0 is reversible and private, so a grant may make it instant. Tier 1
-changes something the owner can see, and Tier 2 leaves the phone or reads what is private; both stop
-at Ask. The rule is enforced on write *and* read: a stored Allow against a Tier 1 or 2 group comes
-back as Ask, because a grant that cannot be given is not a grant.
+**The three states mean one thing each, for every group.** *Off* refuses. *Ask* raises a card naming
+the action and its arguments, answered by tap or by voice, and nothing happens until the owner does.
+*Allow* runs the action without asking. Every group offers all three, and a stored state is honoured
+as stored — there is no second opinion on read or write. **Allow on a consequential group is a real
+permission**: the row says what it means (a Messages row at Allow says Vox may compose a text and
+open the messaging app without asking), and the default is Off everywhere. A warning is the
+protection; a hidden veto is not.
+
+**The tier describes, it does not prohibit.** Tier 0 is reversible and private and its actions carry
+an undo; Tier 1 changes something the owner can see and is reported in Recent actions; Tier 2 is
+consequential or private to read and has no undo. The tier decides what a card says and whether an
+undo is offered — it does not decide which states are legal.
 
 **Off means invisible; a direct call still gets an answer.** A call that names an Off group's action
 returns `ok:false, reason:"not_granted"` — a described refusal, not a transport error — so the model
-can say what happened instead of inventing a failure. Ask advertises the action and refuses each use
-(`approval-required`) until the approval card lands with the capability itself; the MCP call carries
-no run id, so the phone cannot mint the gateway's card from inside the server, and #421 rules out a
-second approval surface. Ask is therefore a visible refusal today: visible to the model (offered) and
-to the owner (recorded in Recent actions). This is deliberately honest rather than silent.
+can say what happened instead of inventing a failure. Ask advertises the action and answers the first
+call with `approval-required`, the card, its id and expiry; a second call with that id and identical
+arguments executes. The same two-step handshake (`PhoneApproval`) answers every action, so an
+advertisement at Ask is a capability the phone can keep. An action that cannot raise a card would be
+a defect in the action; the built ones all can, and unbuilt Tier 2 names are never advertised.
 
 **The schema follows the grants, at call time.** `PhoneGrantStore` is read on every `tools/call` and
 every `tools/list`; nothing is cached for the life of the session. Revocation therefore takes effect
@@ -950,6 +958,11 @@ its own decision, with its own indicator and hard off switch.
 **Amended 2026-11-05.** D36 split `messages-calls` into `messages` and `calls`, and gave `apps` its
 instant `launch`/`open` half. The registry therefore holds **thirteen** groups, not twelve; the
 group-by-group rule above is unchanged.
+
+**Amended 2026-11-05 (uniform grants).** The original decision made Allow a Tier 0 word, let Tier 1
+at Ask run without asking, and withheld Tier 0 at Ask because it had no card — one word with three
+behaviours. The three states now mean the same thing for every group, every action at Ask goes
+through the one card handshake, and the tier is kept only as the description of consequence and undo.
 
 ## D36 — Messages and calls are handoffs, never sends or placed calls
 

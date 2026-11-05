@@ -93,11 +93,11 @@
   file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
   match: 'isAnyLocalAddress'
 
-- id: phone-tier-two-never-executes
-  says: "never executes"
+- id: phone-ask-one-handshake
+  says: "the same two-step handshake"
   doc: docs/MCP-PHONE.md
-  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
-  match: 'PhoneTiers\.APPROVAL ->'
+  file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
+  match: 'private fun handshake\('
 
 - id: phone-undo-lifetime
   says: "the undo lives for the action's lifetime"
@@ -191,11 +191,11 @@
   file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
   match: 'audit\(result, arguments, nowEpoch\)'
 
-- id: phone-allow-tier-zero-only
-  says: "Allow is a Tier 0 word."
+- id: phone-uniform-states
+  says: "Every group offers all three"
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
-  match: 'if \(state == State\.ALLOW && !permits\(group\.tier, state\)\) State\.ASK'
+  match: 'fun statesFor\(tier: Int\): List<State> = listOf\(State\.OFF, State\.ASK, State\.ALLOW\)'
 
 # ---- #325 and the gate's edge: what is not an alpha set ----
 

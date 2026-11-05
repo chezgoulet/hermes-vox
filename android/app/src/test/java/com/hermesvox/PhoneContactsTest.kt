@@ -72,6 +72,17 @@ class PhoneContactsTest {
     private val e0 = 1_700_000_000_000L
     private val entries = ArrayList<PhoneAudit.Entry>()
 
+    /** Every card the engine raises; a group at Ask must raise one rather than refuse. */
+    private class Surface : PhoneApproval.Surface {
+        val raised = ArrayList<PhoneApproval.Card>()
+        override fun raise(card: PhoneApproval.Card): Boolean {
+            raised.add(card)
+            return true
+        }
+    }
+
+    private val surface = Surface()
+
     private fun onlyContacts(state: PhoneGrants.State = PhoneGrants.State.ALLOW) =
         PhoneGrants.Source { g ->
             if (g.id == "contacts") state else PhoneGrants.State.OFF
@@ -81,6 +92,7 @@ class PhoneContactsTest {
         fake,
         grants = grants,
         audit = { result, args, at -> entries.add(PhoneAudit.entry(at, args, result)) },
+        approvalSurface = surface,
     )
 
     private fun call(arguments: Map<String, Any?>) = engine().dispatch(arguments, t0, e0)
@@ -199,8 +211,8 @@ class PhoneContactsTest {
 
     // ---- H3: a name is a Contacts read whatever action asked for it ----
 
-    /** Contacts=Ask, Calls=Allow: the dial is refused and the address book is never opened. */
-    @Test fun dialling_a_name_at_ask_reads_no_address_book() {
+    /** Contacts=Ask, Calls=Allow: the dial raises a card and the address book is never opened. */
+    @Test fun dialling_a_name_at_ask_raises_a_card_and_reads_no_address_book() {
         val grants = PhoneGrants.Source { g ->
             when (g.id) {
                 "contacts" -> PhoneGrants.State.ASK
@@ -210,8 +222,12 @@ class PhoneContactsTest {
         }
         val r = engine(grants).dispatch(mapOf("action" to "dial", "to" to "Mom"), t0, e0)
         assertFalse(r.ok)
-        assertEquals("Ask is not Allow for a lookup", PhoneReason.APPROVAL, r.reason)
-        assertTrue("the refusal names Contacts: ${r.detail}", r.detail!!.contains("Contacts"))
+        assertEquals("Ask for the address book means a card", PhoneReason.APPROVAL, r.reason)
+        assertEquals(1, surface.raised.size)
+        assertTrue(
+            "the card names the lookup: ${surface.raised.single().line}",
+            surface.raised.single().line.contains("look up \"Mom\""),
+        )
         assertEquals("the permission was never even asked for", 0, fake.permissionAsks)
         assertTrue("the address book was never queried", fake.asked.isEmpty())
     }
