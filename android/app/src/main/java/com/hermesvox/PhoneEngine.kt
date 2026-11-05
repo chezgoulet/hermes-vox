@@ -24,6 +24,15 @@ package com.hermesvox
  *  * `note-N`: the undo deletes the note, for [NOTE_UNDO_MS]. A note is Tier 1 and is reported to the
  *    mind on the next turn, so its undo has to outlive the turn that made it.
  *
+ * ## Who initiated it (H4)
+ *
+ * Every entry in the registry carries its [Origin] — the owner's own voice on the phone, or the
+ * mind over MCP. The two paths share one registry, so without the tag an owner's 6 am alarm and a
+ * note the mind wrote would be the same kind of record, and `status`/`undo` on the MCP wire would
+ * serve both. The mind's door only opens for a **mind** entry whose group is not Off; the owner's
+ * door (the sheet's Undo tap, [LocalActions.run]) is not restricted, because those are the owner's
+ * own actions.
+ *
  * Pure JVM; [LocalActions] is the Android platform. Every clock is passed in, so the expiry rules
  * are proven in [PhoneEngineTest] without waiting.
  */
@@ -458,12 +467,16 @@ class PhoneEngine(
         val durationMs: Long,
         val hour: Int,
         val minute: Int,
+        /** Who asked for it: the owner's voice, or the mind over MCP. */
+        val origin: Origin,
     )
 
     private data class Undo(
         val id: String,
         val kind: String,
         val expiresAtElapsed: Long,
+        /** Who may reverse it. The owner's door is unrestricted; the mind's is not. */
+        val origin: Origin,
         /** True when the platform really reversed it. */
         val perform: () -> Boolean,
     )
@@ -477,7 +490,31 @@ class PhoneEngine(
     private var dndApplied: Boolean? = null
     private var volumeApplied: Int? = null
 
-    data class Note(val id: String, val text: String, val atEpochMs: Long)
+    /**
+     * Who initiated an entry in the registry.
+     *
+     * The owner path ([LocalActions.run], and the sheet's Undo tap) and the mind path (MCP
+     * `tools/call`) share one registry, so the tag is what keeps the mind out of the owner's own
+     * actions — and what makes "the owner's note" and "the mind's note" different records.
+     */
+    enum class Origin(val id: String) {
+        OWNER("owner"),
+        MIND("mind"),
+        ;
+
+        companion object {
+            /** The stored form; null when it is not an origin. */
+            fun of(raw: String?): Origin? = values().firstOrNull { it.id == raw?.trim()?.lowercase() }
+        }
+    }
+
+    data class Note(
+        val id: String,
+        val text: String,
+        val atEpochMs: Long,
+        /** The door the note came through; see [Origin]. */
+        val origin: Origin,
+    )
 
     // ---- the one entry point the MCP server uses ----
 
@@ -490,7 +527,8 @@ class PhoneEngine(
         approvals.tick(nowEpoch)
         val result = when (val parsed = PhoneTool.parse(arguments, grants)) {
             is PhoneTool.Parsed.Refuse -> parsed.result
-            is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch)
+            // Everything on this wire is the mind's, and every entry it registers says so.
+            is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch, Origin.MIND)
         }
         // The audit records refusals as well as successes, because "my agent says it tried" is a
         // claim the owner has to be able to check. A failure to record must not fail the call.
@@ -509,15 +547,26 @@ class PhoneEngine(
         return result
     }
 
-    /** Execute one validated call. */
-    fun execute(call: PhoneTool.Call, nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
+    /**
+     * Execute one validated call, tagging every registry entry with [origin].
+     *
+     * [origin] is required: the caller has to say whose action this is, because the tag is what
+     * `status` and `undo` filter on. [dispatch] passes [Origin.MIND]; the owner's voice passes
+     * [Origin.OWNER].
+     */
+    fun execute(
+        call: PhoneTool.Call,
+        nowElapsed: Long,
+        nowEpoch: Long,
+        origin: Origin,
+    ): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
         when (call) {
-            is PhoneTool.Call.Timer -> setTimer(call.durationMs, nowElapsed, nowEpoch)
-            is PhoneTool.Call.Alarm -> setAlarm(call.hour, call.minute, nowEpoch)
-            is PhoneTool.Call.Dnd -> setDnd(call.on, nowElapsed)
-            is PhoneTool.Call.Volume -> setVolume(call.level, call.direction, nowElapsed)
-            is PhoneTool.Call.Note -> saveNote(call.text, nowElapsed, nowEpoch)
+            is PhoneTool.Call.Timer -> setTimer(call.durationMs, nowElapsed, nowEpoch, origin)
+            is PhoneTool.Call.Alarm -> setAlarm(call.hour, call.minute, nowEpoch, origin)
+            is PhoneTool.Call.Dnd -> setDnd(call.on, nowElapsed, origin)
+            is PhoneTool.Call.Volume -> setVolume(call.level, call.direction, nowElapsed, origin)
+            is PhoneTool.Call.Note -> saveNote(call.text, nowElapsed, nowEpoch, origin)
             is PhoneTool.Call.PlayPause -> pressMedia(call.pause)
             is PhoneTool.Call.Skip -> skip(call.previous)
             PhoneTool.Call.NowPlaying -> nowPlaying()
@@ -528,7 +577,7 @@ class PhoneEngine(
             is PhoneTool.Call.FileRead -> readFile(call)
             is PhoneTool.Call.FileOffer -> offerFile(call)
             PhoneTool.Call.Agenda -> agenda()
-            is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch)
+            is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Notifications -> notifications()
             is PhoneTool.Call.NotificationRead -> notificationRead(call.id)
             is PhoneTool.Call.Contact -> contacts(call)
@@ -537,7 +586,7 @@ class PhoneEngine(
             is PhoneTool.Call.Launch -> launch(call)
             is PhoneTool.Call.Open -> open(call)
             is PhoneTool.Call.Uninstall -> uninstall(call, nowEpoch)
-            is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
+            is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
     }
@@ -554,11 +603,17 @@ class PhoneEngine(
      * Notes outlive the call that made them, so they are re-read from disk when the app starts.
      * Ids are restored as they were (an undo in a previous process may still name one), and the id
      * counter is moved past them so a new note cannot collide with an old one.
+     *
+     * Each restored undo keeps the door the note came through. A note the mind wrote whose Notes
+     * grant is **Off** now is re-registered for the owner only: the mind's door is shut, so the
+     * undo table never offers the mind a note its grant does not cover (H4). The note itself is
+     * untouched — the owner can still reverse it.
      */
     fun restoreNotes(saved: List<Note>, nowElapsed: Long) = synchronized(lock) {
         for (n in saved) {
             notes[n.id] = n
-            register(n.id, "note", nowElapsed + NOTE_UNDO_MS) { platform.deleteNote(n.id) }
+            val door = if (n.origin == Origin.MIND && !mindDoorOpen("note")) Origin.OWNER else n.origin
+            register(n.id, "note", nowElapsed + NOTE_UNDO_MS, door) { platform.deleteNote(n.id) }
             val suffix = n.id.removePrefix("note-").toIntOrNull() ?: 0
             if (suffix > nextId) nextId = suffix
         }
@@ -566,7 +621,7 @@ class PhoneEngine(
 
     // ---- tier 0 ----
 
-    private fun setTimer(durationMs: Long, nowElapsed: Long, nowEpoch: Long): PhoneResult {
+    private fun setTimer(durationMs: Long, nowElapsed: Long, nowEpoch: Long, origin: Origin): PhoneResult {
         val id = "timer-${++nextId}"
         val atElapsed = nowElapsed + durationMs
         val atEpoch = nowEpoch + durationMs
@@ -574,8 +629,8 @@ class PhoneEngine(
             log("event=phone-mcp action=timer ok=false reason=unavailable")
             return PhoneResult.refused("timer", PhoneReason.UNAVAILABLE, "the phone refused to arm the countdown")
         }
-        timers[id] = Armed(id, "timer", atElapsed, 0, durationMs, 0, 0)
-        register(id, "timer", atElapsed) { platform.cancelTimer(id) }
+        timers[id] = Armed(id, "timer", atElapsed, 0, durationMs, 0, 0, origin)
+        register(id, "timer", atElapsed, origin) { platform.cancelTimer(id) }
         log("event=phone-mcp action=timer ok=true id=$id ms=$durationMs")
         return PhoneResult.done(
             "timer", id,
@@ -587,16 +642,16 @@ class PhoneEngine(
         )
     }
 
-    private fun setAlarm(hour: Int, minute: Int, nowEpoch: Long): PhoneResult {
+    private fun setAlarm(hour: Int, minute: Int, nowEpoch: Long, origin: Origin): PhoneResult {
         val at = nextOccurrence(hour, minute, nowEpoch)
         val id = "alarm-${++nextId}"
         if (!platform.startAlarm(id, hour, minute, at)) {
             log("event=phone-mcp action=alarm ok=false reason=unavailable")
             return PhoneResult.refused("alarm", PhoneReason.UNAVAILABLE, "the phone refused to arm the alarm")
         }
-        alarms[id] = Armed(id, "alarm", 0, at, 0, hour, minute)
+        alarms[id] = Armed(id, "alarm", 0, at, 0, hour, minute, origin)
         // The undo has no elapsed clock to expire on: the registry drops it when the alarm is pruned.
-        register(id, "alarm", Long.MAX_VALUE) { platform.cancelTimer(id) }
+        register(id, "alarm", Long.MAX_VALUE, origin) { platform.cancelTimer(id) }
         log("event=phone-mcp action=alarm ok=true id=$id at=${LocalActionSpeech.clock24(hour, minute)}")
         return PhoneResult.done(
             "alarm", id,
@@ -608,7 +663,7 @@ class PhoneEngine(
         )
     }
 
-    private fun setDnd(on: Boolean, nowElapsed: Long): PhoneResult {
+    private fun setDnd(on: Boolean, nowElapsed: Long, origin: Origin): PhoneResult {
         if (!platform.dndGranted()) {
             log("event=phone-mcp action=dnd ok=false reason=permission")
             return PhoneResult.refused(
@@ -627,7 +682,7 @@ class PhoneEngine(
         dndApplied = now
         supersede("dnd")
         // Restore only what we actually read; with no previous state there is nothing honest to say.
-        if (previous != null) register(id, "dnd", nowElapsed + CHANGE_UNDO_MS) { platform.setDnd(previous) }
+        if (previous != null) register(id, "dnd", nowElapsed + CHANGE_UNDO_MS, origin) { platform.setDnd(previous) }
         log("event=phone-mcp action=dnd ok=true id=$id on=$now")
         return PhoneResult.done(
             "dnd", id,
@@ -639,7 +694,7 @@ class PhoneEngine(
         )
     }
 
-    private fun setVolume(level: Int?, direction: Int, nowElapsed: Long): PhoneResult {
+    private fun setVolume(level: Int?, direction: Int, nowElapsed: Long, origin: Origin): PhoneResult {
         val current = platform.currentVolume()
         val appliedLevel = if (level != null) {
             platform.setVolume(level)
@@ -657,7 +712,7 @@ class PhoneEngine(
         volumeApplied = applied
         supersede("volume")
         if (current != null && current != applied) {
-            register(id, "volume", nowElapsed + CHANGE_UNDO_MS) { platform.setVolume(current) != null }
+            register(id, "volume", nowElapsed + CHANGE_UNDO_MS, origin) { platform.setVolume(current) != null }
         }
         log("event=phone-mcp action=volume ok=true id=$id level=$applied")
         return PhoneResult.done(
@@ -862,14 +917,14 @@ class PhoneEngine(
 
     // ---- tier 1 ----
 
-    private fun saveNote(text: String, nowElapsed: Long, nowEpoch: Long): PhoneResult {
+    private fun saveNote(text: String, nowElapsed: Long, nowEpoch: Long, origin: Origin): PhoneResult {
         val id = "note-${++nextId}"
         if (!platform.saveNote(id, text, nowEpoch)) {
             log("event=phone-mcp action=note ok=false reason=unavailable")
             return PhoneResult.refused("note", PhoneReason.UNAVAILABLE, "the note could not be saved")
         }
-        notes[id] = Note(id, text, nowEpoch)
-        register(id, "note", nowElapsed + NOTE_UNDO_MS) { platform.deleteNote(id) }
+        notes[id] = Note(id, text, nowEpoch, origin)
+        register(id, "note", nowElapsed + NOTE_UNDO_MS, origin) { platform.deleteNote(id) }
         log("event=phone-mcp action=note ok=true id=$id chars=${text.length}")
         return PhoneResult.done(
             "note", id,
@@ -1188,6 +1243,7 @@ class PhoneEngine(
         call: PhoneTool.Call.EventCreate,
         nowElapsed: Long,
         nowEpoch: Long,
+        origin: Origin,
     ): PhoneResult {
         calendarRefusal("event_create", write = true)?.let { return it }
         val created = platform.createEvent(
@@ -1202,7 +1258,7 @@ class PhoneEngine(
         }
         val id = created.id
         val lifetime = (created.startMs - nowEpoch).coerceAtLeast(CHANGE_UNDO_MS)
-        register(id, "event", nowElapsed + lifetime) { platform.deleteEvent(id) }
+        register(id, "event", nowElapsed + lifetime, origin) { platform.deleteEvent(id) }
         log("event=phone-mcp action=event_create ok=true id=$id minutes=${call.durationMin}")
         return PhoneResult.done(
             "event_create", id,
@@ -1700,13 +1756,54 @@ class PhoneEngine(
 
     // ---- undo ----
 
-    fun undo(id: String, nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
+    /**
+     * Reverse one registered action.
+     *
+     * The owner's door ([Origin.OWNER], the sheet's Undo tap) may reverse anything still
+     * registered: those are the owner's own actions, and the phone's own behaviour is unchanged.
+     * The mind's door ([Origin.MIND]) may reverse only a **mind** entry whose group is not Off —
+     * an owner's 6 am alarm is not the agent's to cancel, and a grant that has since been turned
+     * Off is not a grant. A refusal leaves the entry in place, so the owner can still reverse it.
+     */
+    fun undo(
+        id: String,
+        nowElapsed: Long,
+        nowEpoch: Long,
+        origin: Origin = Origin.OWNER,
+    ): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
-        val entry = undos.remove(id)
+        val entry = undos[id]
             ?: return PhoneResult.refused(
                 "undo", PhoneReason.EXPIRED,
                 "no undo is registered for that id any more; it fired, was superseded, or was never this phone's",
             )
+        if (origin == Origin.MIND) {
+            if (entry.origin != Origin.MIND) {
+                log("event=phone-mcp action=undo ok=false id=$id kind=${entry.kind} reason=owner-entry")
+                return PhoneResult.refused(
+                    "undo", PhoneReason.NOT_GRANTED,
+                    "that ${entry.kind} was set on the phone by the owner, not by the agent; only " +
+                        "the owner can reverse it. Nothing was undone.",
+                )
+            }
+            val action = actionForKind(entry.kind)
+            if (action == null || !mindDoorOpen(action)) {
+                val group = action?.let { PhoneGrants.groupOf(it)?.label }
+                log("event=phone-mcp action=undo ok=false id=$id kind=${entry.kind} reason=not_granted")
+                return PhoneResult.refused(
+                    "undo", PhoneReason.NOT_GRANTED,
+                    if (group == null) {
+                        "that ${entry.kind} is outside every capability group, so the agent may " +
+                            "not reverse it; nothing was undone"
+                    } else {
+                        "the \"$group\" group is off on this phone, so the agent may not reverse " +
+                            "that ${entry.kind}; nothing was undone. Only the owner can turn it " +
+                            "on in Phone tools."
+                    },
+                )
+            }
+        }
+        undos.remove(id)
         if (!entry.perform()) {
             log("event=phone-mcp action=undo ok=false id=${entry.id} kind=${entry.kind} reason=unavailable")
             return PhoneResult.refused("undo", PhoneReason.UNAVAILABLE, "the phone could not reverse that ${entry.kind}")
@@ -1730,11 +1827,21 @@ class PhoneEngine(
 
     // ---- discovery ----
 
+    /**
+     * What the phone is doing, filtered to what the mind may see.
+     *
+     * `running`, `notes` and the registry carry only **mind** entries whose group is not Off: an
+     * owner's voice-set timer, alarm or note is the owner's, and a group that is Off is not a
+     * grant to read it either (H4). The live DND and volume readings belong to the `dnd-volume`
+     * group, so they are omitted when it is Off as well. The owner's own screens do not read this
+     * view; nothing here changes what the phone does for the owner.
+     */
     fun status(nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
         val offered = PhoneTool.offeredActions(grants)
         val running = ArrayList<Map<String, Any?>>(timers.size + alarms.size)
         for (a in timers.values) {
+            if (!mindSees("timer", a.origin)) continue
             running.add(
                 linkedMapOf(
                     "id" to a.id,
@@ -1744,6 +1851,7 @@ class PhoneEngine(
             )
         }
         for (a in alarms.values) {
+            if (!mindSees("alarm", a.origin)) continue
             running.add(
                 linkedMapOf(
                     "id" to a.id,
@@ -1754,40 +1862,55 @@ class PhoneEngine(
             )
         }
         val saved = ArrayList<Map<String, Any?>>(notes.size)
-        for (n in notes.values) saved.add(linkedMapOf("id" to n.id, "text" to n.text))
-        PhoneResult.info(
-            "status",
-            linkedMapOf<String, Any?>(
-                "offered" to offered,
-                "tiers" to linkedMapOf(
-                    "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
-                    "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
-                    // Named from the one tier table, so a name cannot linger here after it moved.
-                    "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
-                ),
-                "grants" to PhoneGrants.summary(grants),
-                "running" to running,
-                "notes" to saved,
-                "registry" to registry(nowElapsed, nowEpoch),
-                "dnd" to linkedMapOf("on" to dndApplied, "granted" to platform.dndGranted()),
-                "volume" to (volumeApplied ?: platform.currentVolume()),
+        for (n in notes.values) {
+            if (!mindSees("note", n.origin)) continue
+            saved.add(linkedMapOf("id" to n.id, "text" to n.text))
+        }
+        val facts = linkedMapOf<String, Any?>(
+            "offered" to offered,
+            "tiers" to linkedMapOf(
+                "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
+                "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
+                // Named from the one tier table, so a name cannot linger here after it moved.
+                "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
             ),
+            "grants" to PhoneGrants.summary(grants),
+            "running" to running,
+            "notes" to saved,
+            "registry" to registry(nowElapsed, nowEpoch),
         )
+        if (mindDoorOpen("dnd")) {
+            facts["dnd"] = linkedMapOf("on" to dndApplied, "granted" to platform.dndGranted())
+            facts["volume"] = volumeApplied ?: platform.currentVolume()
+        }
+        PhoneResult.info("status", facts)
     }
 
     /**
      * The compact registry the presence context reports — the same strings, from the same state, that
      * `status` explains in full. Expired entries are dropped here, so the registry cannot report a
-     * timer that already rang.
+     * timer that already rang. It is the **mind's** view: owner-initiated entries are not in it
+     * (H4), because this line is read into the agent's context.
      */
     fun registry(nowElapsed: Long, nowEpoch: Long): List<String> = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
         val out = ArrayList<String>()
-        dndApplied?.let { out.add("dnd=${if (it) "on" else "off"}") }
-        volumeApplied?.let { out.add("volume=$it%") }
-        for (a in timers.values) out.add("timer(remaining=${LocalActionSpeech.remaining(a.firesAtElapsed - nowElapsed)})")
-        for (a in alarms.values) out.add("alarm(at=${LocalActionSpeech.clock24(a.hour, a.minute)})")
-        for (n in notes.values) out.add("note(id=${n.id})")
+        if (mindDoorOpen("dnd")) {
+            dndApplied?.let { out.add("dnd=${if (it) "on" else "off"}") }
+            volumeApplied?.let { out.add("volume=$it%") }
+        }
+        for (a in timers.values) {
+            if (!mindSees("timer", a.origin)) continue
+            out.add("timer(remaining=${LocalActionSpeech.remaining(a.firesAtElapsed - nowElapsed)})")
+        }
+        for (a in alarms.values) {
+            if (!mindSees("alarm", a.origin)) continue
+            out.add("alarm(at=${LocalActionSpeech.clock24(a.hour, a.minute)})")
+        }
+        for (n in notes.values) {
+            if (!mindSees("note", n.origin)) continue
+            out.add("note(id=${n.id})")
+        }
         out.takeLast(PresenceContext.MAX_ACTIONS)
     }
 
@@ -1796,8 +1919,37 @@ class PhoneEngine(
 
     // ---- internals ----
 
-    private fun register(id: String, kind: String, expiresAtElapsed: Long, perform: () -> Boolean) {
-        undos[id] = Undo(id, kind, expiresAtElapsed, perform)
+    /** The action whose group governs an entry of [kind], or null when no group does. */
+    private fun actionForKind(kind: String): String? = when (kind) {
+        "timer", "alarm", "dnd", "volume", "note" -> kind
+        // The registry's kind is the noun; the action that made it is `event_create`.
+        "event" -> "event_create"
+        else -> null
+    }
+
+    /** True when the mind's door is open for [action]'s group: the group exists and is not Off. */
+    private fun mindDoorOpen(action: String): Boolean =
+        PhoneGrants.stateOf(grants, action)?.let { it != PhoneGrants.State.OFF } == true
+
+    /**
+     * True when an entry of [kind] that was made by [origin] may be shown to — and reversed by —
+     * the mind. Ask is enough (it is not Off, and a Tier 1 group at Ask is on), but the entry must
+     * be the mind's own: an owner's action is never cleared by a group being on.
+     */
+    private fun mindSees(kind: String, origin: Origin): Boolean {
+        if (origin != Origin.MIND) return false
+        val action = actionForKind(kind) ?: return false
+        return mindDoorOpen(action)
+    }
+
+    private fun register(
+        id: String,
+        kind: String,
+        expiresAtElapsed: Long,
+        origin: Origin,
+        perform: () -> Boolean,
+    ) {
+        undos[id] = Undo(id, kind, expiresAtElapsed, origin, perform)
     }
 
     /** A second change of the same setting makes the older change's "previous" meaningless. */

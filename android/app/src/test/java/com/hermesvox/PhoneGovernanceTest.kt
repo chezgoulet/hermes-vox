@@ -21,12 +21,16 @@ class PhoneGovernanceTest {
 
     private class Fake : PhoneEngine.PhonePlatform {
         var timerArms = 0
+        val cancelled = ArrayList<String>()
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean {
             timerArms++
             return true
         }
         override fun startAlarm(id: String, hour: Int, minute: Int, atEpochMs: Long): Boolean = true
-        override fun cancelTimer(id: String): Boolean = true
+        override fun cancelTimer(id: String): Boolean {
+            cancelled.add(id)
+            return true
+        }
         override fun dndGranted(): Boolean = true
         override fun currentDnd(): Boolean? = false
         override fun setDnd(on: Boolean): Boolean = true
@@ -110,10 +114,15 @@ class PhoneGovernanceTest {
         assertFalse(second.ok)
         assertEquals(PhoneReason.NOT_GRANTED, second.reason)
         assertEquals("the second call must not arm anything", 1, fake.timerArms)
-        assertTrue(
-            "the first timer is still running and cancellable",
+        assertFalse(
+            "the first timer is not advertised to the mind once the group is Off (H4)",
             e.registry(t0 + 1_000, e0 + 1_000).any { it.startsWith("timer(") },
         )
+        assertTrue(
+            "the first timer is still running and cancellable",
+            e.undo(first.id!!, t0 + 1_000, e0 + 1_000, PhoneEngine.Origin.OWNER).ok,
+        )
+        assertEquals(listOf(first.id!!), fake.cancelled)
     }
 
     @Test fun a_refusal_is_written_to_the_audit_like_any_other_call() {
@@ -158,5 +167,124 @@ class PhoneGovernanceTest {
         val s = e.status(t0, e0)
         assertEquals(listOf("undo", "status"), s.facts["offered"])
         assertTrue((s.facts["grants"] as String).contains("timers-alarms=off"))
+    }
+
+    // ---- H4: the grants govern the registry, not only the actions ----
+
+    /**
+     * The owner's own voice, then every group Off: the mind's `status` must show none of it —
+     * not the timer, not the alarm, not the note, and not the note's text.
+     */
+    @Test fun with_every_group_off_status_shows_no_owner_timer_alarm_or_note() {
+        val policy = MutableGrants(PhoneGrants.State.ALLOW)
+        val e = engine(policy)
+        assertTrue(e.execute(PhoneTool.Call.Timer(300_000), t0, e0, PhoneEngine.Origin.OWNER).ok)
+        assertTrue(e.execute(PhoneTool.Call.Alarm(6, 0), t0, e0, PhoneEngine.Origin.OWNER).ok)
+        assertTrue(
+            e.execute(
+                PhoneTool.Call.Note("the safe code is 4417"),
+                t0,
+                e0,
+                PhoneEngine.Origin.OWNER,
+            ).ok
+        )
+        assertEquals("the owner's entries were never the mind's to see", emptyList<String>(), e.registry(t0, e0))
+
+        policy.state = PhoneGrants.State.OFF
+        val s = e.status(t0, e0)
+        assertEquals(emptyList<Any?>(), s.facts["running"])
+        assertEquals(emptyList<Any?>(), s.facts["notes"])
+        assertEquals(emptyList<Any?>(), s.facts["registry"])
+        assertFalse("an owner's note text is not in the result", s.json().contains("4417"))
+        assertFalse("the DND and volume readings belong to a group that is off", s.facts.containsKey("volume"))
+        assertFalse(s.facts.containsKey("dnd"))
+    }
+
+    /** `undo` on an owner entry is refused, says whose it is, and reverses nothing. */
+    @Test fun undo_of_an_owner_entry_is_refused_and_leaves_it_armed() {
+        val e = engine(MutableGrants(PhoneGrants.State.ALLOW))
+        val timer = e.execute(PhoneTool.Call.Timer(300_000), t0, e0, PhoneEngine.Origin.OWNER)
+        assertTrue(timer.ok)
+
+        val refused = e.dispatch(mapOf("action" to "undo", "id" to timer.id!!), t0, e0)
+        assertFalse(refused.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, refused.reason)
+        assertTrue("the reason names the owner: ${refused.detail}", refused.detail!!.contains("owner"))
+        assertTrue("nothing was cancelled", fake.cancelled.isEmpty())
+
+        // The owner's own door is unrestricted, as before: their undo tap still works.
+        val byOwner = e.undo(timer.id!!, t0, e0, PhoneEngine.Origin.OWNER)
+        assertTrue(byOwner.json(), byOwner.ok)
+        assertEquals(listOf(timer.id!!), fake.cancelled)
+    }
+
+    /**
+     * Notes on: the mind's own note is listed and reversible, and the owner's note is not listed
+     * even though the group is on — Ask is not Allow, and an owner action is the owner's.
+     */
+    @Test fun with_notes_on_the_minds_note_appears_and_the_owners_does_not() {
+        val e = engine(MutableGrants(PhoneGrants.State.ASK))
+        val owner = e.execute(
+            PhoneTool.Call.Note("my own private note"),
+            t0,
+            e0,
+            PhoneEngine.Origin.OWNER,
+        )
+        assertTrue(owner.ok)
+        val mind = e.dispatch(mapOf("action" to "note", "text" to "milk"), t0, e0)
+        assertTrue(mind.json(), mind.ok)
+
+        val s = e.status(t0, e0)
+        val notes = s.facts["notes"] as List<*>
+        assertEquals(1, notes.size)
+        assertEquals(mind.id, (notes.single() as Map<*, *>)["id"])
+        assertFalse("the owner's note is not in the mind's answer", s.json().contains("private note"))
+
+        val undo = e.dispatch(mapOf("action" to "undo", "id" to mind.id!!), t0, e0)
+        assertTrue(undo.json(), undo.ok)
+    }
+
+    /** A grant turned Off after the fact shuts the mind's door on its own entry, without consuming it. */
+    @Test fun a_minds_entry_cannot_be_undone_while_its_group_is_off() {
+        val policy = MutableGrants(PhoneGrants.State.ALLOW)
+        val e = engine(policy)
+        val note = e.dispatch(mapOf("action" to "note", "text" to "milk"), t0, e0)
+        assertTrue(note.ok)
+
+        policy.state = PhoneGrants.State.OFF
+        val refused = e.dispatch(mapOf("action" to "undo", "id" to note.id!!), t0, e0)
+        assertFalse(refused.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, refused.reason)
+        assertTrue(
+            "the refusal names the group: ${refused.detail}",
+            refused.detail!!.contains("Reminders and notes"),
+        )
+        assertEquals("the note is still there", 1, e.noteList().size)
+
+        policy.state = PhoneGrants.State.ASK
+        assertTrue("the refusal did not burn the undo", e.dispatch(
+            mapOf("action" to "undo", "id" to note.id!!), t0, e0,
+        ).ok)
+    }
+
+    /**
+     * A restart restores each note behind the door it came through. A mind note whose group is Off
+     * at that moment is not re-registered for the mind (H4) — but it is still the owner's to
+     * reverse, so the owner's own view does not change.
+     */
+    @Test fun a_restored_mind_note_is_not_the_minds_to_undo_while_its_group_is_off() {
+        val e = engine(MutableGrants(PhoneGrants.State.OFF))
+        e.restoreNotes(
+            listOf(PhoneEngine.Note("note-7", "milk", e0, PhoneEngine.Origin.MIND)),
+            t0,
+        )
+        val refused = e.dispatch(mapOf("action" to "undo", "id" to "note-7"), t0, e0)
+        assertFalse(refused.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, refused.reason)
+        assertEquals("the note is still held", 1, e.noteList().size)
+
+        val byOwner = e.undo("note-7", t0, e0, PhoneEngine.Origin.OWNER)
+        assertTrue("the owner's undo still works after a restart", byOwner.ok)
+        assertTrue(e.noteList().isEmpty())
     }
 }
