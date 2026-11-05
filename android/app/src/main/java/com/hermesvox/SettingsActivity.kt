@@ -973,6 +973,15 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
+        // #418: the switch behind `/diagnostics`, off by default, beside the logging switches
+        // because it is the same kind of tool. It gates the command's existence and nothing
+        // else — the Presence section's own copy row is untouched by it. A flip here is the
+        // user's decision, recorded as one so a later Alpha-on cannot overrule it.
+        val diagSum = findViewById<SwitchCompat>(R.id.set_diag_summary)
+        diagSum.isChecked = DiagnosticSummary.on(DiagnosticSummary.store(prefs))
+        diagSum.setOnCheckedChangeListener { _, on ->
+            DiagnosticSummary.setByUser(DiagnosticSummary.store(prefs), on)
+        }
         // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
         // long-press on the debug-log row in the developer section. Both settings default to
         // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens

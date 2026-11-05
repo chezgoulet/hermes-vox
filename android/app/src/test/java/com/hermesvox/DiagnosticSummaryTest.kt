@@ -141,6 +141,31 @@ class DiagnosticSummaryTest {
         assertTrue(DiagnosticSummary.chosen(s))
     }
 
+    // ---- the switch in Settings ------------------------------------------------------------
+
+    /**
+     * It sits where the owner asked: the developer section of Settings, beside the three
+     * logging switches, with the subtitle that says what it adds and what it never contains.
+     */
+    @Test fun the_switch_sits_beside_the_logging_switches_in_about() {
+        val layout = File("src/main/res/layout/activity_settings.xml").readText()
+        val row = layout.indexOf("@+id/row_diag_summary")
+        val about = layout.indexOf("@+id/sec_about")
+        assertTrue("the row is missing", row > 0 && about >= 0)
+        assertTrue("the row must be inside About & Diagnostics", row > about)
+        // Beside the logging toggles: after the last of them.
+        assertTrue("the row should follow the logging switches",
+            row > layout.indexOf("@+id/set_debuglog"))
+        assertTrue(layout.contains("@+id/set_diag_summary"))
+        assertTrue(layout.contains(
+            "Adds a command that copies a report block for a bug report; contains no conversations."))
+        // The switch is bound, and the key itself is never read here: the screen asks the
+        // policy object, so "nothing else reads that pref" is checkable, not a promise.
+        val activity = File("src/main/java/com/hermesvox/SettingsActivity.kt").readText()
+        assertTrue(activity.contains("DiagnosticSummary.setByUser(DiagnosticSummary.store(prefs), on)"))
+        assertFalse(activity.contains("\"diag_summary\""))
+    }
+
     // ---- the two doors, byte for byte -----------------------------------------------------
 
     /**
