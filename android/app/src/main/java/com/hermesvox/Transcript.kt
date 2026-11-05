@@ -37,11 +37,31 @@ class Transcript(private val maxChars: Int = MAX_CHARS) {
     private var replyStart = -1
     /** Buffer length at the last delta: only a block still at the tail is replaced. */
     private var replyEnd = -1
+    /**
+     * #437: history the host wrote — a resumed session's transcript — drawn before this
+     * device's own turns. It is replaced whole on every fetch ([setHistory]) and never
+     * appended to, which is what makes a re-fetch unable to duplicate what is on screen.
+     */
+    private var history = ""
 
-    val text: String get() = buf.toString()
+    val text: String get() = when {
+        history.isEmpty() -> buf.toString()
+        buf.isEmpty() -> history
+        else -> history + "\n" + buf
+    }
+
+    /**
+     * Replace the resumed-session block under this device's own turns. "" removes it (a new
+     * conversation, a profile switch). The 4,000-character cap is this device's own record;
+     * the caller bounds [block] itself, because it is the host's transcript.
+     */
+    fun setHistory(block: String) {
+        history = block.trim()
+    }
 
     fun clear() {
         buf.setLength(0)
+        history = ""
         closeReply()
     }
 
