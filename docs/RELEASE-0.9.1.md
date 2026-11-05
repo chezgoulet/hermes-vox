@@ -142,6 +142,16 @@ Each set is selected on its own; with the master off, everything below is dimmed
   `reason:"unavailable"` and **`outcome_uncertain:true`** — the action may still complete, and
   `status` will say whether it did. The old wording claimed nothing had been performed, which was
   false whenever the work it gave up on finished anyway.
+- **A launch the phone blocked is reported as blocked.** Android refuses to open another app from
+  the background without raising anything, and the app used to report success regardless. It now
+  checks that Vox is on screen before anything is resolved, ended or announced, and says plainly
+  that Vox has to be on screen to open another app when it is not.
+- **An uninstall approved from the notification opens Vox first**, so the platform's own
+  confirmation has a window to appear in. The card is the owner's decision; it was never the
+  platform's.
+- **`dial` finishes its line before it hangs up.** The announcement used to be cut off by the
+  teardown that followed it, and a dialer that then failed left no record. Both are fixed, and a
+  dialer that resolves but will not start is `unavailable` rather than `no_app`.
 
 ### Switching profiles
 - The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
