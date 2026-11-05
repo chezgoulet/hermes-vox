@@ -106,6 +106,10 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `now_playing` | 0 | – | `known`, `playing`, `package`, `title`, `note` when `known` is false |
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
+| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`) | `name`, `folder`, `bytes`, `chars`, `text` (capped, text only) |
+| `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
+| `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`) |
+| `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (1–1440), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
 | `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
 
@@ -139,8 +143,8 @@ all read it. There is no second list to drift.
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
 | Clipboard | 0 | `clip` | write to the clipboard (never reads it) |
-| Files | 1 | — | read a named file in Downloads/Documents, offer a file |
-| Calendar | 1 | — | read today's events, create an event (undoable) |
+| Files | 1 | `file_read`, `file_offer` | read a named file in the folder you granted, offer a file to the agent |
+| Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
 | Notifications | 2 | — | read the notifications currently on the phone |
 | Messages and calls | 2 | `message`\*, `call`\*, `send`\*, `email`\* | send a text, place a call |
 | Apps | 2 | `launch`\*, `open`\*, `install`\*, `uninstall`\* | open an app, uninstall one |
@@ -237,6 +241,8 @@ Every action that can be undone registers an undo **for its lifetime**, keyed by
 | `dnd` | restores the previous interruption filter | until the next `dnd` (a second change makes the older "previous" untrue) or 10 minutes |
 | `volume` | restores the previous level | the same |
 | `note` | deletes it | 24 hours — a note outlives the turn that made it |
+| `event_create` | deletes the event it created | until the event starts, or ten minutes |
+| `file_read` / `file_offer` | — | a read or an offer changes nothing on the phone, so there is nothing to reverse |
 
 `undo` of an id with no live undo is `ok:false, reason:"expired"`. It never guesses.
 
@@ -248,8 +254,8 @@ offered, and it does not change with the grant.
 | tier | actions | what the phone does | states |
 |---|---|---|---|
 | **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
-| **1 — reported** | note | executes now (when a card approves it), reported in the next turn's presence context, undoable | Off / Ask |
-| **2 — approval** | share, message, call, email, delete, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
+| **1 — reported** | note, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
+| **2 — approval** | delete, message, call, email, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
 
 Tier 2 is refused rather than queued on purpose. An MCP call carries no run id, so the phone cannot
 mint the approval card `core/Approval.kt` answers — and building a second approval surface inside the
@@ -362,6 +368,8 @@ off-device.
 | `POST_NOTIFICATIONS` | the timer/alarm notification on Android 13+. The ringtone is the signal that matters, so a denial is logged and the timer still rings | `LocalActions.fire` |
 | — (none new) | `media`, `device-state` and `clipboard` add **no** permission: media keys, battery, screen, transport, storage, volume, the clock and a clipboard write are all available with what is already declared. Do Not Disturb is the one field `state` reports as `null` without its special access | `LocalActions.mediaKey`, `LocalActions.deviceState`, `LocalActions.clip` |
 | `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
+| `READ_CALENDAR`, `WRITE_CALENDAR` | the calendar group: read today's events and insert one. Both are runtime permissions, asked when Calendar is turned on; a missing one is a `permission` refusal naming Android's exact string | `PhoneCalendarAccess`, `PhoneToolsSheet` |
+| — (none for files) | `files` declares **no** storage permission and never requests `MANAGE_EXTERNAL_STORAGE`: the owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, and only a named file inside it is read | `PhoneFileAccess` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
 | `RECORD_AUDIO` | the voice line (not a phone action) | `MainActivity`, `VoiceController` |

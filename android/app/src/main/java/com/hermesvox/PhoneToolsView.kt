@@ -44,6 +44,19 @@ object PhoneToolsView {
         if (granted) "Granted — the phone may change Do Not Disturb"
         else "Not granted — only you can give this in system settings"
 
+    /** The folder the system picker gave, or the plain fact that none has been given. */
+    fun files(folders: List<String>): String = when {
+        folders.isEmpty() ->
+            "No folder granted — your agent cannot read or offer a file until you pick one"
+        folders.size == 1 -> "Granted · ${folders.single()}"
+        else -> "Granted · ${folders.joinToString(", ")}"
+    }
+
+    /** The calendar's runtime permission, in the owner's words, naming Android's own string. */
+    fun calendar(granted: Boolean, missing: String?): String =
+        if (granted) "Granted — your agent may read today's events and create one"
+        else "Not granted — ${missing ?: "calendar access"} must be allowed before an action can run"
+
     fun volume(granted: Boolean): String =
         if (granted) "Granted — the phone may change the media volume"
         else "Not granted — volume changes will refuse with a reason"
@@ -117,9 +130,11 @@ object PhoneToolsView {
         "${states.values.count { it != PhoneGrants.State.OFF }} of ${states.size} groups on"
 
     /** What a state means, in the row the owner is about to change. */
-    fun grantMeaning(state: PhoneGrants.State): String = when (state) {
+    fun grantMeaning(state: PhoneGrants.State, tier: Int = PhoneTiers.INSTANT): String = when (state) {
         PhoneGrants.State.OFF -> "Off hides it from your agent’s tool list."
-        PhoneGrants.State.ASK -> "Ask lets your agent try; every use waits for you."
+        PhoneGrants.State.ASK ->
+            if (tier == PhoneTiers.REPORTED) "Ask turns it on: your agent can use it, and every use is reported below."
+            else "Ask lets your agent try; every use waits for you."
         PhoneGrants.State.ALLOW -> "Allow runs it instantly, and it is reported below."
     }
 

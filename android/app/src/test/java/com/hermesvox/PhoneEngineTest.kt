@@ -308,10 +308,14 @@ class PhoneEngineTest {
             assertEquals("$a must be tier 0", PhoneTiers.INSTANT, PhoneTiers.of(a))
         }
         assertEquals(PhoneTiers.REPORTED, PhoneTiers.of("note"))
-        for (a in listOf("share", "message", "call", "email", "delete", "purchase", "launch", "send")) {
+        for (a in listOf("file_read", "file_offer", "agenda", "event_create")) {
+            assertEquals("$a must be reported", PhoneTiers.REPORTED, PhoneTiers.of(a))
+        }
+        for (a in listOf("message", "call", "email", "delete", "purchase", "launch", "send", "contact")) {
             assertEquals("$a must need approval", PhoneTiers.APPROVAL, PhoneTiers.of(a))
             assertFalse("$a must never be executed by the phone", PhoneTiers.executable(a))
         }
+        assertNull("share was replaced by file_offer, which is reported", PhoneTiers.of("share"))
         assertNull(PhoneTiers.of("fly"))
     }
 

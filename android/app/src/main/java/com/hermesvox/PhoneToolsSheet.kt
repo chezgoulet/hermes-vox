@@ -1,5 +1,6 @@
 package com.hermesvox
 
+import android.app.Activity
 import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -17,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
@@ -261,6 +263,37 @@ class PhoneToolsSheet(
             }
         }
         row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
+        row(col, "Files folder", PhoneToolsView.files(status.folders))
+        if (status.folders.isEmpty()) {
+            action(
+                col,
+                "PICK A FOLDER",
+                primary = false,
+                description = "Open the system folder picker and grant your agent one folder",
+            ) {
+                pickFolder()
+            }
+        } else {
+            action(
+                col,
+                "PICK ANOTHER FOLDER",
+                primary = false,
+                description = "Open the system folder picker and grant your agent another folder",
+            ) {
+                pickFolder()
+            }
+        }
+        row(col, "Calendar permission", PhoneToolsView.calendar(status.calendarGranted, status.calendarMissing))
+        if (!status.calendarGranted) {
+            action(
+                col,
+                "GRANT CALENDAR ACCESS",
+                primary = false,
+                description = "Ask Android for read and write access to the calendar",
+            ) {
+                requestCalendar()
+            }
+        }
         row(col, "Last request", drawn.lastRequest)
         row(col, "Token", PhoneToolsView.token(status.token, status.allowed))
 
@@ -410,7 +443,7 @@ class PhoneToolsSheet(
         box.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { text = group.label })
         box.addView(TextView(act, null, 0, R.style.HvRowValue).apply { text = group.lets })
         box.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-            text = PhoneToolsView.grantMeaning(state)
+            text = PhoneToolsView.grantMeaning(state, group.tier)
             setTextColor(color(R.color.hv_text_dim))
         })
         if (!group.built) {
@@ -456,6 +489,15 @@ class PhoneToolsSheet(
             setOnClickListener {
                 if (!selected) {
                     PhoneGrantStore.set(act, group, state)
+                    // Turning a group on is the moment its platform access is asked for: the
+                    // calendar's runtime permissions, and the folder picker for files. Off does
+                    // nothing, and a grant already held is not asked for again.
+                    when (group.id) {
+                        "calendar" -> if (state != PhoneGrants.State.OFF) requestCalendar()
+                        "files" -> if (
+                            state != PhoneGrants.State.OFF && PhoneFileAccess.trees(act).isEmpty()
+                        ) pickFolder()
+                    }
                     paint()
                 }
             }
@@ -573,6 +615,27 @@ class PhoneToolsSheet(
         }
     }
 
+    /** The system folder picker. The grant is persistable, so it outlives this sheet. */
+    private fun pickFolder() {
+        try {
+            act.startActivityForResult(PhoneFileAccess.intent(), REQ_FOLDER)
+        } catch (_: Throwable) {
+            notice = "Android does not expose a folder picker on this device, so no folder can be granted."
+            paint()
+        }
+    }
+
+    /** Ask Android for the calendar's two runtime permissions; the system dialog decides. */
+    private fun requestCalendar() {
+        if (PhoneCalendarAccess.permission(act) == null) return
+        try {
+            ActivityCompat.requestPermissions(act, PhoneCalendarAccess.PERMISSIONS, REQ_CALENDAR)
+        } catch (_: Throwable) {
+            notice = "Android would not open the permission dialog; grant Calendar in system settings."
+            paint()
+        }
+    }
+
     private fun hostOrPlaceholder(status: PhoneMcp.Status): String =
         status.tailnet?.takeIf { it.isNotBlank() }
             ?: status.url?.substringAfter("http://")?.substringBefore(':').orEmpty()
@@ -681,6 +744,59 @@ class PhoneToolsSheet(
         internal fun repaints(shown: Drawn?, next: Drawn): Boolean = next != shown
 
         @Volatile private var current: PhoneToolsSheet? = null
+
+        /** The system folder picker's request code. */
+        private const val REQ_FOLDER = 4301
+
+        /** The calendar's runtime-permission request code. */
+        private const val REQ_CALENDAR = 4302
+
+        /**
+         * Hand the folder picker's answer to the open sheet. Called from the activity that holds
+         * the sheet; false means the result belonged to something else. The grant itself is taken
+         * and persisted here, so a result that arrives after the sheet closed is not lost.
+         */
+        fun handleActivityResult(
+            activity: AppCompatActivity,
+            requestCode: Int,
+            resultCode: Int,
+            data: Intent?,
+        ): Boolean {
+            if (requestCode != REQ_FOLDER) return false
+            val sheet = current
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                sheet?.let {
+                    it.notice = "No folder was granted, so Files still refuses with no_folder."
+                    it.paint()
+                }
+                return true
+            }
+            val tree = PhoneFileAccess.accept(activity, data)
+            sheet?.let {
+                it.notice = if (tree != null) {
+                    "Folder granted · ${tree.label} — Files can now read one named file inside it."
+                } else {
+                    "Android did not make that folder grant persistable, so no folder is granted."
+                }
+                it.paint()
+            }
+            return true
+        }
+
+        /** Hand the calendar permission answer to the open sheet. False when it was not ours. */
+        fun handlePermissionResult(activity: AppCompatActivity, requestCode: Int): Boolean {
+            if (requestCode != REQ_CALENDAR) return false
+            val missing = PhoneCalendarAccess.permission(activity)
+            current?.let {
+                it.notice = if (missing == null) {
+                    "Calendar granted — Agenda and Create event can now run."
+                } else {
+                    "Calendar not granted — $missing is still not allowed, so Calendar actions refuse."
+                }
+                it.paint()
+            }
+            return true
+        }
 
         /** Called from an activity's onResume, so a grant made in system settings is visible at once. */
         fun refreshOpen() {

@@ -350,6 +350,9 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // #429 lane 2: the Phone tools sheet's folder picker. Routed before this screen's own
+        // assistant-role result, which is the only other request this activity starts.
+        if (PhoneToolsSheet.handleActivityResult(this, requestCode, resultCode, data)) return
         if (requestCode != REQ_ASSISTANT) return
         refreshAssistant()
         if (AssistantRole.state(this) == AssistantRole.State.HELD) {
@@ -369,6 +372,15 @@ class SettingsActivity : AppCompatActivity() {
             }
             .setNegativeButton("Not now", null)
             .show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        PhoneToolsSheet.handlePermissionResult(this, requestCode)
     }
 
     private fun bindSectionRestoreRows() {

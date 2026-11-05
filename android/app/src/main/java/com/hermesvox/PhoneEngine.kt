@@ -133,6 +133,102 @@ class PhoneEngine(
         fun saveNote(id: String, text: String, atEpochMs: Long): Boolean
 
         fun deleteNote(id: String): Boolean
+
+        // ---- files (#429 lane 2) ----
+
+        /** One folder the owner granted with the system picker. [label] is the folder's own name. */
+        data class GrantedFolder(val label: String)
+
+        /** The outcome of looking one name up inside one granted folder. */
+        sealed class FileText {
+            /** The file's text, and the size the provider or the read reported. */
+            data class Found(val name: String, val bytes: Long, val text: String) : FileText()
+
+            /** No document with that name inside the granted folder. */
+            data object Missing : FileText()
+
+            /** The bytes are not text (a binary file, or bytes that are not UTF-8). */
+            data object NotText : FileText()
+
+            /** Larger than [PhoneFiles.MAX_READ_BYTES]; [bytes] is null when the provider hid it. */
+            data class TooBig(val bytes: Long?) : FileText()
+
+            /** The name resolved outside the granted tree. Never read. */
+            data object Outside : FileText()
+
+            /** The provider failed or would not answer. */
+            data class Failed(val detail: String) : FileText()
+        }
+
+        /** The outcome of handing one file to the existing file bridge. */
+        sealed class FileHandoff {
+            data class Ready(
+                val name: String,
+                val mime: String,
+                val bytes: Long,
+                val sha256: String,
+                val url: String,
+                val expiresAtSec: Long,
+            ) : FileHandoff()
+
+            data object Missing : FileHandoff()
+            data object Outside : FileHandoff()
+
+            /** Above the bridge's [FileOffer.MAX_BYTES]. */
+            data class TooBig(val bytes: Long) : FileHandoff()
+
+            /** No tailnet address, no server, or the copy failed: nothing was offered. */
+            data class Unavailable(val detail: String) : FileHandoff()
+        }
+
+        /** The folders the owner has granted, in grant order. Empty means neither action can run. */
+        fun folders(): List<GrantedFolder> = emptyList()
+
+        /** Read one named file inside [folder], capped and text-only. */
+        fun fileText(folder: GrantedFolder, name: String): FileText = FileText.Missing
+
+        /** Stage one named file inside [folder] and serve it through the file bridge. */
+        fun fileOffer(folder: GrantedFolder, name: String): FileHandoff = FileHandoff.Missing
+
+        // ---- calendar (#429 lane 2) ----
+
+        /** One event, already rendered in the phone's own zone. Null fields are "not said". */
+        data class AgendaEvent(
+            val start: String,
+            val end: String,
+            val title: String?,
+            val calendar: String?,
+        )
+
+        /** The event the platform inserted, with the times it actually stored. */
+        data class CreatedEvent(
+            val id: String,
+            val start: String,
+            val end: String,
+            val startMs: Long,
+            val endMs: Long,
+            val calendar: String?,
+        )
+
+        /**
+         * The exact runtime permission this phone lacks for its calendar, or null when it holds
+         * both. The string is the platform's own, e.g. `android.permission.READ_CALENDAR`.
+         */
+        fun calendarPermission(): String? = null
+
+        /** Today's events, in the phone's zone. Null when the platform would not answer. */
+        fun agenda(): List<AgendaEvent>? = null
+
+        /** Insert one event. Null when the phone refused or there is no writable calendar. */
+        fun createEvent(
+            title: String,
+            startLocal: String,
+            durationMin: Int,
+            calendar: String?,
+        ): CreatedEvent? = null
+
+        /** Delete the event this phone created, for its undo. False when Android would not. */
+        fun deleteEvent(id: String): Boolean = false
     }
 
     private data class Armed(
@@ -200,6 +296,10 @@ class PhoneEngine(
             PhoneTool.Call.NowPlaying -> nowPlaying()
             PhoneTool.Call.State -> deviceState(nowEpoch)
             is PhoneTool.Call.Clip -> clip(call.text)
+            is PhoneTool.Call.FileRead -> readFile(call)
+            is PhoneTool.Call.FileOffer -> offerFile(call)
+            PhoneTool.Call.Agenda -> agenda()
+            is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch)
             is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
@@ -504,6 +604,236 @@ class PhoneEngine(
         )
     }
 
+    // ---- tier 1: files ----
+
+    /**
+     * The folder a call means: the one it named, or [PhoneFiles.DEFAULT_FOLDER] when it named
+     * none. [PhoneFiles.normalizeFolder] makes `Downloads`/`Download` and case irrelevant, so the
+     * folder the system picker named is found without asking the owner to spell it our way.
+     *
+     * There is no "pick the only folder that happens to be granted" fallback: the default is
+     * Downloads, and a call that omits the folder means Downloads. Reading Documents because it
+     * was the only grant would be a different file than the caller named.
+     */
+    private fun folderFor(requested: String?): PhonePlatform.GrantedFolder? {
+        val granted = platform.folders()
+        val wanted = PhoneFiles.normalizeFolder(requested)
+        return granted.firstOrNull { PhoneFiles.normalizeFolder(it.label) == wanted }
+    }
+
+    /** Both file actions answer this when the folder they mean has not been granted. */
+    private fun noFolder(action: String, requested: String?): PhoneResult {
+        val granted = platform.folders()
+        val detail = if (granted.isEmpty()) {
+            PhoneFiles.NO_FOLDER
+        } else {
+            val names = granted.joinToString(", ") { it.label }
+            "the ${requested ?: PhoneFiles.DEFAULT_FOLDER} folder is not granted; the folder granted " +
+                "to your agent is $names. Name that folder, or the owner can grant another one in " +
+                "Phone tools → Files"
+        }
+        log("event=phone-mcp action=$action ok=false reason=no_folder")
+        return PhoneResult.refused(action, PhoneReason.NO_FOLDER, detail)
+    }
+
+    /**
+     * One named file's text, capped. A name that resolves outside the granted tree is `bad_path`;
+     * a file over [PhoneFiles.MAX_READ_BYTES] is refused, never cut; bytes that are not text are
+     * `not_text`. The result carries the text and its length the result asks for, and no undo —
+     * a read changes nothing.
+     */
+    private fun readFile(call: PhoneTool.Call.FileRead): PhoneResult {
+        val folder = folderFor(call.folder) ?: return noFolder("file_read", call.folder)
+        return when (val found = platform.fileText(folder, call.name)) {
+            PhonePlatform.FileText.Missing -> {
+                log("event=phone-mcp action=file_read ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "file_read", PhoneReason.UNAVAILABLE,
+                    "no file named \"${call.name}\" is in ${folder.label}; nothing was read",
+                )
+            }
+            PhonePlatform.FileText.NotText -> {
+                log("event=phone-mcp action=file_read ok=false reason=not_text")
+                PhoneResult.refused(
+                    "file_read", PhoneReason.NOT_TEXT,
+                    "that file is not text (it is not UTF-8, or it contains binary bytes); " +
+                        "file_read returns text only, and nothing was returned",
+                )
+            }
+            is PhonePlatform.FileText.TooBig -> {
+                log("event=phone-mcp action=file_read ok=false reason=too_big")
+                PhoneResult.refused("file_read", PhoneReason.TOO_BIG, PhoneFiles.tooBig(found.bytes))
+            }
+            PhonePlatform.FileText.Outside -> {
+                log("event=phone-mcp action=file_read ok=false reason=bad_path")
+                PhoneResult.refused(
+                    "file_read", PhoneReason.BAD_PATH,
+                    "that name resolves outside the folder you granted; nothing was read",
+                )
+            }
+            is PhonePlatform.FileText.Failed -> {
+                log("event=phone-mcp action=file_read ok=false reason=unavailable")
+                PhoneResult.refused("file_read", PhoneReason.UNAVAILABLE, found.detail)
+            }
+            is PhonePlatform.FileText.Found -> {
+                log("event=phone-mcp action=file_read ok=true chars=${found.text.length}")
+                PhoneResult.info(
+                    "file_read",
+                    linkedMapOf<String, Any?>(
+                        "name" to found.name,
+                        "folder" to folder.label,
+                        "bytes" to found.bytes,
+                        "chars" to found.text.length,
+                        "text" to found.text,
+                        "undoable" to false,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Hand one file to the existing file bridge. The result is the capability the bridge minted —
+     * URL, size, hash, expiry — so the agent fetches an artifact instead of receiving bytes in a
+     * tool result. Nothing about the file's contents is returned here, and there is no undo.
+     */
+    private fun offerFile(call: PhoneTool.Call.FileOffer): PhoneResult {
+        val folder = folderFor(call.folder) ?: return noFolder("file_offer", call.folder)
+        return when (val handoff = platform.fileOffer(folder, call.name)) {
+            PhonePlatform.FileHandoff.Missing -> {
+                log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                PhoneResult.refused(
+                    "file_offer", PhoneReason.UNAVAILABLE,
+                    "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
+                )
+            }
+            PhonePlatform.FileHandoff.Outside -> {
+                log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+                PhoneResult.refused(
+                    "file_offer", PhoneReason.BAD_PATH,
+                    "that name resolves outside the folder you granted; nothing was offered",
+                )
+            }
+            is PhonePlatform.FileHandoff.TooBig -> {
+                log("event=phone-mcp action=file_offer ok=false reason=too_big")
+                PhoneResult.refused(
+                    "file_offer", PhoneReason.TOO_BIG,
+                    "that file is above the 100 MB the file bridge will serve; nothing was offered",
+                )
+            }
+            is PhonePlatform.FileHandoff.Unavailable -> {
+                log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, handoff.detail)
+            }
+            is PhonePlatform.FileHandoff.Ready -> {
+                log("event=phone-mcp action=file_offer ok=true bytes=${handoff.bytes}")
+                PhoneResult.info(
+                    "file_offer",
+                    linkedMapOf<String, Any?>(
+                        "name" to handoff.name,
+                        "folder" to folder.label,
+                        "mime" to handoff.mime,
+                        "bytes" to handoff.bytes,
+                        "sha256" to handoff.sha256,
+                        "url" to handoff.url,
+                        "expires_at" to handoff.expiresAtSec,
+                        "undoable" to false,
+                    ),
+                )
+            }
+        }
+    }
+
+    // ---- tier 1: calendar ----
+
+    /**
+     * The runtime permission this phone lacks, as a refusal that names it exactly. Null when both
+     * halves are held. No provider-specific path exists: this is `CalendarContract`, the platform's
+     * own provider, and the permission strings are Android's.
+     */
+    private fun calendarRefusal(action: String): PhoneResult? {
+        val missing = platform.calendarPermission() ?: return null
+        log("event=phone-mcp action=$action ok=false reason=permission")
+        return PhoneResult.refused(
+            action, PhoneReason.PERMISSION,
+            "the phone does not hold $missing, so it cannot read the calendar; only the owner can " +
+                "grant it in system settings (Phone tools → Calendar shows whether it is granted)",
+        )
+    }
+
+    /**
+     * Today's events, and only the four fields the group promises: start, end, title and the
+     * calendar's name. No attendees, no description, nothing about contacts. A field the provider
+     * will not answer is null.
+     */
+    private fun agenda(): PhoneResult {
+        calendarRefusal("agenda")?.let { return it }
+        val events = platform.agenda() ?: run {
+            log("event=phone-mcp action=agenda ok=false reason=unavailable")
+            return PhoneResult.refused(
+                "agenda", PhoneReason.UNAVAILABLE,
+                "the phone would not answer for today's calendar; nothing was read",
+            )
+        }
+        val rows = events.map { e ->
+            linkedMapOf<String, Any?>(
+                "start" to e.start,
+                "end" to e.end,
+                "title" to e.title,
+                "calendar" to e.calendar,
+            )
+        }
+        log("event=phone-mcp action=agenda ok=true events=${rows.size}")
+        return PhoneResult.info(
+            "agenda",
+            linkedMapOf<String, Any?>(
+                "count" to rows.size,
+                "events" to rows,
+                "undoable" to false,
+            ),
+        )
+    }
+
+    /**
+     * One event, created and reported with the id its undo needs. The undo deletes it and lives
+     * until the event starts — or ten minutes, whichever is longer, so an event created for the
+     * next minute is still reversible on the next turn.
+     */
+    private fun createEvent(
+        call: PhoneTool.Call.EventCreate,
+        nowElapsed: Long,
+        nowEpoch: Long,
+    ): PhoneResult {
+        calendarRefusal("event_create")?.let { return it }
+        val created = platform.createEvent(
+            call.title, call.start, call.durationMin, call.calendar,
+        ) ?: run {
+            log("event=phone-mcp action=event_create ok=false reason=unavailable")
+            return PhoneResult.refused(
+                "event_create", PhoneReason.UNAVAILABLE,
+                "the phone did not create the event: there is no writable calendar for it, or " +
+                    "Android refused the insert; nothing was created",
+            )
+        }
+        val id = created.id
+        val lifetime = (created.startMs - nowEpoch).coerceAtLeast(CHANGE_UNDO_MS)
+        register(id, "event", nowElapsed + lifetime) { platform.deleteEvent(id) }
+        log("event=phone-mcp action=event_create ok=true id=$id minutes=${call.durationMin}")
+        return PhoneResult.done(
+            "event_create", id,
+            linkedMapOf<String, Any?>(
+                "title" to call.title,
+                "start" to created.start,
+                "end" to created.end,
+                "duration_min" to call.durationMin,
+                "start_ms" to created.startMs,
+                "end_ms" to created.endMs,
+                "calendar" to created.calendar,
+                "undoable" to true,
+            ),
+        )
+    }
+
     // ---- undo ----
 
     fun undo(id: String, nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
@@ -527,7 +857,9 @@ class PhoneEngine(
             "undo", id,
             linkedMapOf<String, Any?>(
                 "undone" to entry.kind,
-                "state" to if (entry.kind == "timer" || entry.kind == "alarm") "cancelled" else "restored",
+                "state" to if (
+                    entry.kind == "timer" || entry.kind == "alarm" || entry.kind == "event"
+                ) "cancelled" else "restored",
             ),
         )
     }
@@ -566,9 +898,8 @@ class PhoneEngine(
                 "tiers" to linkedMapOf(
                     "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
                     "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
-                    "2" to listOf(
-                        "share", "message", "call", "email", "delete",
-                    ),
+                    // Named from the one tier table, so a name cannot linger here after it moved.
+                    "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
                 ),
                 "grants" to PhoneGrants.summary(grants),
                 "running" to running,

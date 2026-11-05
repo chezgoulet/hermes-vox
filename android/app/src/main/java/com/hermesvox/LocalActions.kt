@@ -344,6 +344,56 @@ class LocalActions(context: Context) {
         override fun deleteNote(id: String): Boolean = true
 
         /**
+         * The folders the owner granted with the system picker, by their own display names. The
+         * tree URI stays in [PhoneFileAccess]; the engine only needs the label to choose one, so
+         * the path never travels through a tool result or a log line.
+         */
+        override fun folders(): List<PhoneEngine.PhonePlatform.GrantedFolder> =
+            PhoneFileAccess.trees(app).map { PhoneEngine.PhonePlatform.GrantedFolder(it.label) }
+
+        override fun fileText(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            name: String,
+        ): PhoneEngine.PhonePlatform.FileText {
+            val tree = treeFor(folder) ?: return PhoneEngine.PhonePlatform.FileText.Failed(
+                "the folder granted to your agent is no longer readable · grant it again in Phone tools",
+            )
+            return PhoneFileAccess.read(app, tree, name)
+        }
+
+        override fun fileOffer(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            name: String,
+        ): PhoneEngine.PhonePlatform.FileHandoff {
+            val tree = treeFor(folder) ?: return PhoneEngine.PhonePlatform.FileHandoff.Unavailable(
+                "the folder granted to your agent is no longer readable · grant it again in Phone tools",
+            )
+            return PhoneFileAccess.offer(app, tree, name)
+        }
+
+        /** The one folder whose label matches, by the same normalisation the engine used. */
+        private fun treeFor(folder: PhoneEngine.PhonePlatform.GrantedFolder): PhoneFileAccess.Tree? =
+            PhoneFileAccess.trees(app).firstOrNull {
+                PhoneFiles.normalizeFolder(it.label) == PhoneFiles.normalizeFolder(folder.label)
+            }
+
+        /** Android's own missing-permission string, or null when both calendar halves are held. */
+        override fun calendarPermission(): String? = PhoneCalendarAccess.permission(app)
+
+        override fun agenda(): List<PhoneEngine.PhonePlatform.AgendaEvent>? =
+            PhoneCalendarAccess.agenda(app)
+
+        override fun createEvent(
+            title: String,
+            startLocal: String,
+            durationMin: Int,
+            calendar: String?,
+        ): PhoneEngine.PhonePlatform.CreatedEvent? =
+            PhoneCalendarAccess.createEvent(app, title, startLocal, durationMin, calendar)
+
+        override fun deleteEvent(id: String): Boolean = PhoneCalendarAccess.deleteEvent(app, id)
+
+        /**
          * Dispatch one media key at whatever session is active — exactly what the phone's own
          * media buttons do. No permission and no notification-listener access: the key goes to the
          * platform, which routes it to the session that owns the media button receiver. False means

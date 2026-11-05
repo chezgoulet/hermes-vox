@@ -18,11 +18,11 @@ import com.hermesvox.core.Json
  * ## What is stored, and what is not
  *
  * Time, action, the arguments that describe the call, the outcome, and the undo id when the action
- * carries one. **Arguments are summarised, not copied.** A note's text is the caller's words and
- * does not belong in a list that gets shown on a screen or attached to a report, so it is stored as
- * a length ("42 chars"); every other argument today is a duration, a clock time, a boolean, a
- * level, a direction or an id. Values are clipped so a hostile argument cannot make the list
- * unreadable.
+ * carries one. **Arguments are summarised, not copied.** A note's text and an event's title are the
+ * caller's words and do not belong in a list that gets shown on a screen or attached to a report,
+ * so each is stored as a length ("42 chars"); every other argument today is a duration, a clock
+ * time, a boolean, a level, a direction, a file name or an id. Values are clipped so a hostile
+ * argument cannot make the list unreadable.
  *
  * The audit never stores a token, a message body or a file's contents, because none of those ever
  * become an argument of an action that exists today — and [summarise] is the one function a future
@@ -62,6 +62,8 @@ object PhoneAudit {
             if (key == "action" || value == null) continue
             val rendered = when {
                 key == "text" -> "${(value as? String)?.length ?: 0} chars"
+                // An event's title is the owner's words, so the audit keeps its length, not it.
+                key == "title" -> "${(value as? String)?.length ?: 0} chars"
                 value is String -> value
                 else -> value.toString()
             }

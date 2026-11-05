@@ -62,6 +62,12 @@ object PhoneMcp {
         val token: TokenState,
         val dndGranted: Boolean,
         val volumeGranted: Boolean,
+        /** The folders the owner granted with the system picker, by their own names. */
+        val folders: List<String> = emptyList(),
+        /** True when both calendar runtime permissions are held. */
+        val calendarGranted: Boolean = false,
+        /** The exact permission still missing, or null when both are held. */
+        val calendarMissing: String? = null,
         /** Whether Alpha features' Phone tools set is selected. False means nothing here runs. */
         val allowed: Boolean = true,
     )
@@ -234,6 +240,16 @@ object PhoneMcp {
         } catch (_: Throwable) {
             true   // a normal permission; before the check API it is granted at install
         }
+        val folders = try {
+            PhoneFileAccess.trees(app).map { it.label }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        val calendarMissing = try {
+            PhoneCalendarAccess.permission(app)
+        } catch (_: Throwable) {
+            android.Manifest.permission.READ_CALENDAR
+        }
         return Status(
             tailnet = tailnet,
             listening = s != null,
@@ -244,6 +260,9 @@ object PhoneMcp {
             token = tokenState(app),
             dndGranted = dnd,
             volumeGranted = volume,
+            folders = folders,
+            calendarGranted = calendarMissing == null,
+            calendarMissing = calendarMissing,
             allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS),
         )
     }

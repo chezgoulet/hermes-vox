@@ -12,7 +12,8 @@ token, the wire, the device pass for the tool as a whole. This one is the surfac
 
 **Built today (lane 1):** `media`, `device-state`, `clipboard` — plus the three groups that were
 already real (`timers-alarms`, `dnd-volume`, `notes`).
-**Declared, not built:** `files`, `calendar`, `notifications`, `messages-calls`, `apps`, `contacts`.
+**Built today (lane 2):** `files` and `calendar`.
+**Declared, not built:** `notifications`, `messages-calls`, `apps`, `contacts`.
 
 ---
 
@@ -25,12 +26,16 @@ built from [PhoneGrants](../android/app/src/main/java/com/hermesvox/PhoneGrants.
 | grant | the schema | a call that names it |
 |---|---|---|
 | **Off** (the default for every group) | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"`, and the detail names the group the owner must grant |
-| **Ask** | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
+| **Ask**, Tier 0 or Tier 2 | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
+| **Ask**, Tier 1 (reported) | offered | executed, audited, and reported — turning a reported group on *is* the grant |
 | **Allow** | offered | executed, audited, and reported |
 
 **Allow exists for Tier 0 only.** A stored Allow on a Tier 1 or Tier 2 group is read back as Ask: a
-grant that cannot be given is not a grant. `undo` and `status` belong to no group and are always
-offered, because a phone whose grants are all Off must still be able to say so.
+grant that cannot be given is not a grant. **Ask is not one behaviour:** a Tier 0 group at Ask waits
+for the owner's card, and a Tier 2 group at Ask waits for a card on every use; a Tier 1 group at Ask
+runs, because the owner has already turned it on and sees what it did. `undo` and `status` belong to
+no group and are always offered, because a phone whose grants are all Off must still be able to say
+so.
 
 **A refusal is a result, not a transport error.** `isError` stays `false`; the JSON carries `ok`,
 `action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform said it
@@ -51,6 +56,10 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
 | `approval-required` | the group is Ask, or the action is Tier 2; the owner's approval owns it and nothing was done |
 | `permission` | the phone does not hold a permission or special access the action needs |
+| `no_folder` | no folder has been granted with the system picker, so there is nothing to read inside |
+| `bad_path` | the name is a path, contains `..`, or resolves outside the folder the owner granted |
+| `not_text` | the file's bytes are not text; `file_read` returns text only |
+| `too_big` | the file is above the action's cap; it is refused, never truncated |
 | `unavailable` | the action was recognised and the platform refused, failed, or would not say |
 | `invalid-arguments` | the arguments do not describe a runnable action (bounds and shapes are below) |
 | `expired` | no undo is registered for that id any more |
@@ -150,22 +159,45 @@ The audit row for a clip stores `text=NN chars`, never the text — the same rul
 
 ## Tier 1 — reported
 
-Executes only when the owner has put the group at Ask and approved that use; reported to the mind on
-the next turn through the presence context; undoable.
+Executes when the owner has put the group at **Ask** — turning a reported group on is the grant —
+and is reported to the mind on the next turn through the presence context and in the audit;
+undoable where the row says so.
 
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `note` | notes | `text` string, 1 – 500 characters | `id`, `text`, `reported_next_turn`, `undoable` | **yes** — deletes it; lives 24 hours, because the note outlives the turn | none: private app storage | `unavailable` |
-| `read` | files | `path` string, relative to Downloads or Documents | `path`, `chars`, `text` | **no** — reading changes nothing | **Storage Access Framework / a user-picked document.** No broad storage permission is declared; the owner picks the file, the app reads that one file | `permission`, `unavailable`, `invalid-arguments` |
-| `share` | files | `path` string | `path`, `name` | **no** — offering a file to the agent's own server changes nothing on the phone | the same file access, plus the file-offer server's tailnet bind | `permission`, `unavailable` |
-| `delete` | files | `path` string | `path` | **no** — a delete is irreversible and this action does not exist to pretend otherwise; if it lands, it is Tier 2 and permanently non-undoable | the same file access, and a delete is **not** done from Tier 1 | `permission`, `unavailable` |
-| `events` | calendar | `day` `today` (default) | `events` (list of `start`, `end`, `title`, `id`) | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission | `permission`, `unavailable` |
-| `event` | calendar | `title` string, `at` `"HH:MM"`, `duration_min` integer | `id`, `at`, `title` | **yes** — deletes the event it created; lives until it starts | `WRITE_CALENDAR`, a runtime permission | `permission`, `unavailable`, `invalid-arguments` |
+| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents` | `name`, `folder`, `bytes`, `chars`, `text` | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework only.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared, and `MANAGE_EXTERNAL_STORAGE` is never used. Text only, capped (below) | `no_folder`, `bad_path`, `not_text`, `too_big`, `unavailable` |
+| `file_offer` | files | the same `name` and `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob | `no_folder`, `bad_path`, `too_big`, `unavailable` |
+| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
+| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer 1 – 1 440, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
 
-**Declared, not built:** `files` and `calendar`. The group, its tier, its `lets`, its warning (files)
-and its refusal exist in `PhoneGrants`; no action above is advertised or executable, and a direct
-call is refused as `not_granted` (Off) or `approval-required` (Ask). The action names are the ones
-the next lane implements; they are written here so that lane has a contract rather than a guess.
+**Files, precisely.** The name is a **name, not a path**: `..`, an absolute path, a separator and a
+URI are refused `bad_path` before the platform is asked, and a document that resolves outside the
+granted tree is refused the same way afterwards. On the primary shared volume the document id also
+names a real path, so a symlink that leaves the tree is canonicalised and refused; for a provider
+with no filesystem path (a cloud tree) the document-id check is the whole check, which is stated
+here rather than pretended otherwise. There is no directory walk and no broad scan: one name, one
+folder, one document. A name that is not found is `unavailable`, not an empty file.
+
+**The cap is 65 536 bytes (64 KiB) of text, and a larger file is refused, not truncated.** A
+`file_read` result is pasted into the mind's context, so 64 KiB is already roughly sixteen thousand
+tokens — a long script, a full note, a day of a log. A larger file would either crowd out the
+conversation or have to be silently cut, and a cut answer would be a lie about the file; so the
+result says `too_big`, gives the size when the provider gave it, and returns nothing. `file_offer`
+has no such cap because it does not put the bytes in the result: it keeps the bridge's own 100 MB.
+
+**Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns only
+start, end, title and calendar name — no attendees, no description, no contact lookup. `start` is
+local ISO-8601: a trailing `Z` or an offset is refused rather than converted, because "local" is
+the contract and a conversion would move the event. `duration_min` is minutes; zero, negatives and
+anything over a day are refused `invalid-arguments`. A phone with no writable calendar is
+`unavailable`, which is the truth rather than a silent export. The undo deletes the event it
+created and nothing else.
+
+**Built in lane 2:** `files` and `calendar`. Their actions are advertised only while the group is
+on, and both groups are reported: turning one on is the grant. `delete`, a file delete that cannot
+be undone, remains a Tier 2 name and is deliberately not built or advertised.
+
 
 ---
 
@@ -207,8 +239,8 @@ be able to keep.
 | `media` | 0 | `play`, `pause`, `skip`, `now_playing` | **built in lane 1** |
 | `device-state` | 0 | `state` | **built in lane 1** |
 | `clipboard` | 0 | `clip` | **built in lane 1** |
-| `files` | 1 | `read`, `share`, `delete` | **declared, not built** |
-| `calendar` | 1 | `events`, `event` | **declared, not built** |
+| `files` | 1 | `file_read`, `file_offer` | **built in lane 2** |
+| `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
 | `notifications` | 2 | `notifications` | **declared, not built** |
 | `messages-calls` | 2 | `message`, `call`, `send`, `email` | **declared, not built** |
 | `apps` | 2 | `launch`, `open`, `install`, `uninstall` | **declared, not built** |
@@ -223,6 +255,9 @@ be able to keep.
 | `timer` / `alarm` | cancels it | until it rings | the action is the arming; cancelling is its exact reverse |
 | `dnd` / `volume` | restores the previous filter / level | until the next change of the same setting, or 10 minutes | a second change makes the older "previous" untrue |
 | `note` | deletes it | 24 hours | the note outlives the turn that made it |
+| `file_read` / `file_offer` | — | — | reading a file or handing it to the agent changes nothing on the phone, so there is nothing to reverse. A read cannot be undone, and the doc says so rather than inventing one |
+| `agenda` | — | — | reporting changed nothing |
+| `event_create` | deletes the event it created | until the event starts, or ten minutes, whichever is longer | deleting the one event the phone inserted is its exact reverse; it never touches another event |
 | `play` / `pause` / `skip` | — | — | **`play` after `pause` is not an undo.** It is another key press into whatever the session is doing now; the phone has no "previous playback state" it could honestly restore, and it cannot see playback at all without a listener |
 | `now_playing` / `state` | — | — | reporting changed nothing |
 | `clip` | — | — | a clipboard write cannot be reversed: the phone would have to have kept what it replaced, and it deliberately does not read the clipboard |
@@ -239,11 +274,13 @@ Every call the mind makes — success **and** refusal — writes one row through
 [`PhoneAudit`](../android/app/src/main/java/com/hermesvox/PhoneAudit.kt): time, action, the
 arguments summarised, the outcome, and the undo id when there is a real one.
 
-Arguments are **summarised, never copied**: a `note` or `clip` `text` is stored as `NN chars`; a
-duration, a clock time, a boolean, a level, a direction, an id or a path is stored as itself, clipped
-to one line. Nothing in this surface logs a secret, a clipboard payload or a file's contents — there
-is no argument here that is one, and the audit's one summarising function is the place a future
-action has to pass through.
+Arguments are **summarised, never copied**: a `note` or `clip` `text` and an `event_create` `title`
+are stored as `NN chars`; a duration, a clock time, a boolean, a level, a direction, an id, a file
+name or a folder is stored as itself, clipped to one line. Nothing in this surface logs a secret, a
+clipboard payload, a file's contents or a calendar's contents — a `file_read` row carries the name
+and folder it asked for, never the text it got back, and an event row carries the title's length,
+never the title. The audit's one summarising function is the place a future action has to pass
+through.
 
 ---
 
@@ -274,11 +311,27 @@ action has to pass through.
    anywhere in the app.
 8. **`clip` from a backgrounded phone** (a call that lost focus). `ok:false,
    reason:"unavailable"`, and nothing was written.
-9. **Recent actions.** One row per call, successes and refusals, with the summarised arguments and
-   the outcome; the three new groups' rows never carry a title, a clipboard payload or a storage
-   path's contents.
-10. **Revoke mid-call.** Turn Media Off while the call is live: the next `tools/list` no longer
+9. **Files with no folder granted.** The sheet says *No folder granted*; `file_read` and
+   `file_offer` are `ok:false, reason:"no_folder"` and say to pick a folder in Phone tools → Files.
+   Turning Files on opens the system folder picker, and after picking, the sheet names the folder it
+   got (`Granted · Download`). No storage permission prompt ever appears.
+10. **Files with a folder granted.** A `file_read` of a text file returns `text`, `chars` and
+    `bytes` with no `undo`; a 70 KB file is `too_big` with nothing cut short; a PNG is `not_text`;
+    `name:"../secret.txt"` and an absolute path are `bad_path` and never read. `file_offer` returns
+    a `url`/`sha256` that the agent can fetch, with no bytes in the result.
+11. **Calendar without permission.** The sheet says *Not granted* and names
+    `android.permission.READ_CALENDAR`; `agenda` and `event_create` both refuse `permission`, and
+    nothing is created. Turning Calendar on asks for both permissions and the sheet shows the
+    answer.
+12. **Calendar with permission.** `agenda` lists today's events with start, end, title and calendar
+    only — no attendees, no description; `event_create` with `start:"2026-11-05T09:30"` and
+    `duration_min:30` returns an `id`, and the event appears in the phone's own calendar app. Its
+    `undo` deletes that event and nothing else; Recent actions shows the title as `NN chars`.
+13. **Recent actions.** One row per call, successes and refusals, with the summarised arguments and
+    the outcome; no row carries a note's text, a clipboard payload, a file's contents, an event's
+    title or a file path's contents.
+14. **Revoke mid-call.** Turn Media Off while the call is live: the next `tools/list` no longer
     lists `play`, and the next call is `not_granted` with no key dispatched.
-11. **The declared groups stay refused.** With Messages and calls at Ask, `message` returns
-    `approval-required` and nothing is sent; `read` does the same while Files is Off. No lane may
-    make these advertise before the phone can keep the promise.
+15. **The declared groups stay refused.** With Messages and calls at Ask, `message` returns
+    `approval-required` and nothing is sent; `file_read` does the same while Files is Off. No lane
+    may make these advertise before the phone can keep the promise.
