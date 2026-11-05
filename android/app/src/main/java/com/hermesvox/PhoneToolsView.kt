@@ -152,7 +152,8 @@ object PhoneToolsView {
         PhoneGrants.State.OFF -> "Off hides it from your agent’s tool list."
         PhoneGrants.State.ASK ->
             if (tier == PhoneTiers.REPORTED) "Ask turns it on: your agent can use it, and every use is reported below."
-            else "Ask lets your agent try; every use waits for you."
+            else "Ask does not run anything yet: this group has no approval card that could say yes, " +
+                "so your agent's call is refused until you choose Allow."
         PhoneGrants.State.ALLOW -> "Allow runs it instantly, and it is reported below."
     }
 

@@ -133,7 +133,8 @@ object PhoneTool {
             "them. Every result says what actually happened — check ok before telling the caller an " +
             "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
             "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
-            "needs the owner's approval on the phone); a refusal means nothing was performed. " +
+            "needs the owner's approval on the phone); the detail says whether a card is waiting, " +
+            "and a refusal means nothing was performed. " +
             NOTIFICATION_PRIVACY + " " +
             "`uninstall` is two steps: call it without `approval`, then call it again with the " +
             "returned approval id and identical arguments once the owner says yes."
@@ -143,6 +144,7 @@ object PhoneTool {
      * grant can change between two turns and the model should not be reading yesterday's list.
      */
     fun description(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): String {
+        val offered = offeredActions(grants).toSet()
         val on = PhoneGrants.GROUPS.filter {
             PhoneGrants.stateOf(grants, it) != PhoneGrants.State.OFF && it.actions.isNotEmpty()
         }
@@ -150,8 +152,16 @@ object PhoneTool {
             "No capability group is on: only `status` and `undo` are available."
         } else {
             "On now: " + on.joinToString("; ") { g ->
-                "${g.label} (${PhoneGrants.stateOf(grants, g).label.lowercase()}): " +
-                    g.actions.joinToString(", ")
+                val state = PhoneGrants.stateOf(grants, g)
+                // Only what the enum actually offers: a Tier 0 group at Ask has no card, so
+                // naming its actions here would be a second promise the phone cannot keep (M8).
+                val live = g.actions.filter { it in offered }
+                if (live.isEmpty()) {
+                    "${g.label} (${state.label.lowercase()}): no action is offered, because " +
+                        "there is no approval card for this group yet"
+                } else {
+                    "${g.label} (${state.label.lowercase()}): ${live.joinToString(", ")}"
+                }
             } + "."
         }
         return "$DESCRIPTION $grantLine"
@@ -593,12 +603,13 @@ object PhoneTool {
                 )
                 PhoneGrants.State.ASK -> {
                     // Ask means two different things by tier, and the difference is the whole
-                    // point of the tier: a Tier 0 group waits for the owner's card, while a
-                    // **Tier 1 (reported)** group acts when the owner turns it on and is reported
-                    // back to them — there is no per-use card to wait for, because the owner has
-                    // already said yes to the group and can see what it did. `uninstall` is the
-                    // one Tier 2 action with a card on this wire, so it goes to the engine's
-                    // two-step handshake rather than being refused outright.
+                    // point of the tier: a **Tier 1 (reported)** group acts when the owner turns
+                    // it on and is reported back to them — there is no per-use card to wait for,
+                    // because the owner has already said yes to the group and can see what it did.
+                    // `uninstall` is the one consequential action with a card on this wire, so it
+                    // goes to the engine's two-step handshake. A Tier 0 group at Ask has **no**
+                    // card: the actions are withheld from the enum, and a direct call is told so
+                    // plainly rather than being promised an approval that will never come (M8).
                     val tier = PhoneGrants.tierOf(action) ?: group.tier
                     if (tier == PhoneTiers.REPORTED || action == PhoneApproval.ACTION) {
                         parseArguments(action, args, grants)
@@ -607,8 +618,10 @@ object PhoneTool {
                             PhoneResult.refused(
                                 action,
                                 PhoneReason.APPROVAL,
-                                "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
-                                    "for the owner's approval on the phone and was not performed",
+                                "the \"${group.label}\" group is set to Ask on this phone, and " +
+                                    "there is no approval card for it yet, so this was not " +
+                                    "performed and nothing is waiting for the owner. The owner can " +
+                                    "set it to Allow in Phone tools.",
                                 tier = tier,
                             )
                         )
@@ -924,9 +937,12 @@ object PhoneTool {
 
     /**
      * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
-     * group is not Off. Resolving a name is reading the address book, so a phone whose owner
-     * has not granted Contacts refuses with `not_granted` naming it — never with a generic
-     * complaint about the arguments. [build] receives the recipient and whether it is a name.
+     * group is **Allow**. Resolving a name is reading the address book whatever action asked for
+     * it, so `dial`/`message` obey the same grant as `contact` itself: Off refuses with
+     * `not_granted`, and Ask refuses with `approval-required` naming Contacts — there is no card
+     * for a lookup, so nothing is read while the group is only at Ask. Neither refusal is a
+     * generic complaint about the arguments. [build] receives the recipient and whether it is a
+     * name.
      */
     private fun recipient(
         action: String,
@@ -943,8 +959,8 @@ object PhoneTool {
         }
         number(raw)?.let { return Parsed.Run(build(it, false)) }
         val contacts = PhoneGrants.GROUPS.first { it.id == "contacts" }
-        if (PhoneGrants.stateOf(grants, contacts) == PhoneGrants.State.OFF) {
-            return Parsed.Refuse(
+        when (PhoneGrants.stateOf(grants, contacts)) {
+            PhoneGrants.State.OFF -> return Parsed.Refuse(
                 PhoneResult.refused(
                     action,
                     PhoneReason.NOT_GRANTED,
@@ -954,6 +970,18 @@ object PhoneTool {
                     tier = PhoneTiers.of(action),
                 )
             )
+            PhoneGrants.State.ASK -> return Parsed.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.APPROVAL,
+                    "\"$raw\" is a contact name, and looking one up reads your address book; " +
+                        "the \"${contacts.label}\" group is set to Ask on this phone, and there is " +
+                        "no approval card for a contact lookup yet, so nothing was looked up. " +
+                        "Only the owner can set it to Allow in Phone tools, or give a number instead.",
+                    tier = PhoneTiers.of(action),
+                )
+            )
+            PhoneGrants.State.ALLOW -> Unit
         }
         return Parsed.Run(build(raw, true))
     }

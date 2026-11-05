@@ -105,8 +105,15 @@ class LocalActions(context: Context) {
         // Notes outlive the call that made them; the undo for each is re-registered on load.
         engine.restoreNotes(Notes.decode(prefs.getString(KEY_NOTES, null)), SystemClock.elapsedRealtime())
         // The owner's Undo tap in the Phone tools sheet reaches this engine while the call lives.
+        // OWNER is explicit: the owner may reverse anything the phone still holds, including an
+        // entry the mind made. That door is deliberately unrestricted (H4).
         PhoneUndo.attach { id ->
-            engine.undo(id, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+            engine.undo(
+                id,
+                SystemClock.elapsedRealtime(),
+                System.currentTimeMillis(),
+                PhoneEngine.Origin.OWNER,
+            )
         }
         // The uninstall card: the surface presents, this engine decides. One answerer, one desk.
         PhoneApprovals.install(app)
@@ -128,7 +135,9 @@ class LocalActions(context: Context) {
         nowEpoch: Long = System.currentTimeMillis(),
     ): Outcome = try {
         val call = call(intent)
-        val result = engine.execute(call, nowElapsed, nowEpoch)
+        // The owner's own words: every entry this registers is tagged OWNER, and the mind's
+        // `status`/`undo` will not serve it (H4).
+        val result = engine.execute(call, nowElapsed, nowEpoch, PhoneEngine.Origin.OWNER)
         Outcome(result.ok, speech(intent, result))
     } catch (t: Throwable) {
         VoxLog.w("event=local-action failed kind=${intent.kind} reason=${t.javaClass.simpleName}")
