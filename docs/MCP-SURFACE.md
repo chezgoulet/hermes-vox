@@ -320,7 +320,10 @@ subdirectory inside the same tree, segment-checked before the provider is asked 
 the document id it answers with. On the primary shared volume the document id also names a real path,
 so a symlink that leaves the tree is canonicalised and refused; for a provider with no filesystem path
 (a cloud tree) the document-id check is the whole check, which is stated here rather than pretended
-otherwise.
+otherwise. A **child name** the provider reports is held to the weaker rule, because the id is what
+carries the reach: only a name with `/` or a NUL, or the names `.`/`..` themselves, stops a listing —
+so a real file called `notes..txt` or `Report...pdf` is listed, not turned into `bad_path` for the
+whole folder.
 
 **Listing is inside the granted tree, depth-limited and paged — not a broad scan.** `file_list` walks
 the folder the owner granted, and only that folder: no second tree, no `MANAGE_EXTERNAL_STORAGE`, and

@@ -280,6 +280,99 @@ class PhoneFileListTest {
         }
     }
 
+    // ---- an odd name must not poison a listing, and a glob must not backtrack (M7) ----
+
+    /**
+     * M7 of the 0.9.1 review. A real file called `notes..txt` or `Report...pdf` is not an escape:
+     * the child's **id** is what [PhoneFiles.contained] checks, and a name only needs refusing when
+     * it could be read as a path. Before this fix one such file aborted the whole listing with
+     * "resolves outside the folder you granted", making the folder unlistable.
+     */
+    @Test
+    fun a_file_named_with_dot_dot_inside_it_is_listed_not_refused() {
+        val t = tree {
+            file("notes..txt", "a")
+            file("Report...pdf", "bb")
+            file("v1..2.zip", "ccc")
+            dir("backup..2026")
+            file("backup..2026/inside.txt", "d")
+        }
+        try {
+            val top = ok(t.list())
+            assertEquals(
+                listOf("backup..2026", "notes..txt", "Report...pdf", "v1..2.zip"),
+                top.entries.map { it.name },
+            )
+            // The odd-named directory can be walked too, and its path is its own name.
+            val deep = ok(t.list(depth = 2))
+            assertTrue(
+                "a directory named with \"..\" is entered, not skipped",
+                deep.entries.any { it.path == "backup..2026/inside.txt" },
+            )
+            assertEquals(
+                "and it can be listed by name",
+                listOf("inside.txt"),
+                ok(t.list(path = "backup..2026")).entries.map { it.name },
+            )
+            // A pattern still filters those names normally, and directories stay visible.
+            assertEquals(
+                listOf("backup..2026", "Report...pdf"),
+                ok(t.list(pattern = "*...pdf")).entries.map { it.name },
+            )
+        } finally {
+            t.root.deleteRecursively()
+        }
+
+        // Only a name that is a path is refused: a separator, a NUL, and dot/dot-dot themselves.
+        for (name in listOf("../secret.txt", "a/b.txt", "a\u0000b", ".", "..")) {
+            assertNotNull("$name must not be an entry name", PhoneFiles.badEntryName(name))
+        }
+        for (name in listOf("notes..txt", "Report...pdf", "v1..2.zip", ".hidden", "a b.txt")) {
+            assertNull("$name is a real name", PhoneFiles.badEntryName(name))
+        }
+        // A provider that literally answers "../secret" is still refused.
+        assertEquals(
+            PhoneFiles.ListResult.Outside,
+            PhoneFiles.list("Download", "", 1, null, 0, 200) { path ->
+                if (path.isEmpty()) {
+                    PhoneFiles.Dir.Found(listOf(PhoneFiles.Entry("../secret.txt", false, 3)))
+                } else {
+                    PhoneFiles.Dir.Missing
+                }
+            },
+        )
+    }
+
+    /**
+     * The glob is a two-pointer scan, not a regex. `*a` repeated is the classic exponential case
+     * for `.*`-translation; here the whole match is bounded by the name's length, so a pathological
+     * 200-character pattern against a 250-character name finishes at once, on the main thread.
+     */
+    @Test
+    fun a_pathological_glob_finishes_quickly_and_is_still_correct() {
+        val pattern = "*a".repeat(100) + "b" // 201 chars, under MAX_PATTERN_CHARS, no match
+        val name = "a".repeat(250)
+        assertNull(PhoneFiles.badPattern(pattern))
+
+        val startedAt = System.nanoTime()
+        assertFalse("no b in the name, so no match", PhoneFiles.matches(pattern, name))
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        assertTrue(
+            "a 201-char pattern against a 250-char name must be linear, took ${elapsedMs}ms",
+            elapsedMs < 2_000,
+        )
+
+        // The same pattern with something to match is still a match, and `?` is exactly one char.
+        assertTrue(PhoneFiles.matches("*a*a*a*b", "aaaaab"))
+        assertTrue(PhoneFiles.matches("a?c", "abc"))
+        assertFalse("? is one character, not a run", PhoneFiles.matches("a?c", "abbc"))
+        assertTrue("a trailing * may match nothing", PhoneFiles.matches("a*", "a"))
+        assertTrue("consecutive * collapse", PhoneFiles.matches("a**b", "ab"))
+        assertTrue("a case-folded literal matches", PhoneFiles.matches("Résumé?.PDF", "résumé1.pdf"))
+        assertTrue("everything else is literal", PhoneFiles.matches("a.b", "a.b"))
+        assertFalse("a dot is not a wildcard", PhoneFiles.matches("a.b", "axb"))
+    }
+
     @Test
     fun a_folder_with_more_entries_than_a_page_is_paged_and_every_entry_is_seen_once() {
         val t = tree {

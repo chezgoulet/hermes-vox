@@ -98,6 +98,26 @@ object PhoneFiles {
         }
     }
 
+    /**
+     * Why a **provider-reported child name** is not a name this listing may show, or null when it
+     * may. This is deliberately looser than [badPath]: the walk did not choose the name, the folder
+     * did, and a real file called `notes..txt` or `Report...pdf` is not an escape.
+     *
+     * A child is already identified by its **id**, and [contained] re-checks that id against the
+     * tree, so a name adds no reach. Only a name that could be read as a path is refused: one
+     * carrying `/` or a NUL, and the two dot names themselves.
+     */
+    fun badEntryName(name: String): String? = when {
+        name.isEmpty() -> "an empty name is not an entry"
+        name.contains('/') ->
+            "a name with a path separator is refused: an entry is one name, not a path"
+        name.any { it == '\u0000' } ->
+            "a name with a NUL byte is refused"
+        name == "." || name == ".." ->
+            "\"$name\" is not an entry name"
+        else -> null
+    }
+
     /** `C:\…` / `C:/…` — an absolute path in the shape a Windows-shaped name arrives in. */
     private val WINDOWS_ABSOLUTE = Regex("^[A-Za-z]:[\\\\/]")
 
@@ -120,9 +140,11 @@ object PhoneFiles {
      * Why [path] is not a relative subdirectory inside the granted tree, or null when it is safe.
      *
      * `""` is the granted folder itself. A **relative** path may descend (`reports/2026`), because
-     * listing is how the owner finds out what is there; it may not be absolute, climb (`..`), carry
-     * a backslash or a URI, or contain an empty segment. The same shape is re-checked against the
-     * provider's answer in [containedAt], so a path that lies about where it points is refused too.
+     * listing is how the owner finds out what is there; it may not be absolute, climb (a segment
+     * that is exactly `..`), carry a backslash or a URI, or contain an empty segment. `..` inside a
+     * segment is part of a real name (`Report...pdf`) and is not climbing. The same shape is
+     * re-checked against the provider's answer in [containedAt], so a path that lies about where it
+     * points is refused too.
      */
     fun badListPath(path: String): String? {
         val p = path
@@ -142,8 +164,8 @@ object PhoneFiles {
                 "a URI is refused: give a path relative to the folder you granted"
             p.any { it < ' ' } ->
                 "a path with a control character is refused"
-            p.split('/').any { it.isBlank() || it == "." } ->
-                "a path with an empty or \".\" segment is refused"
+            p.split('/').any { it.isBlank() || it == "." || it == ".." } ->
+                "a path with an empty, \".\" or \"..\" segment is refused"
             else -> null
         }
     }
@@ -157,11 +179,12 @@ object PhoneFiles {
 
     /**
      * True when [documentId] is exactly one child of [treeDocumentId] — nothing above it, nothing
-     * nested below it, and no `..` in it.
+     * nested below it, and not the `.`/`..` names themselves.
      *
      * The Storage Access Framework identifies a document by id, not by path, so this is the
      * containment check that works for every provider: a provider that answers with an id outside
-     * the granted tree (an escape, or its own idea of the tree) is refused.
+     * the granted tree (an escape, or its own idea of the tree) is refused. `..` *inside* a segment
+     * is part of a real name (`notes..txt`) and not a climb; only `..` as the whole segment is.
      */
     fun contained(treeDocumentId: String, documentId: String): Boolean {
         val tree = treeDocumentId.trim().trimEnd('/')
@@ -170,7 +193,7 @@ object PhoneFiles {
         val prefix = "$tree/"
         if (!doc.startsWith(prefix)) return false
         val rest = doc.removePrefix(prefix)
-        return rest.isNotBlank() && !rest.contains('/') && !rest.contains("..")
+        return rest.isNotBlank() && !rest.contains('/') && rest != "." && rest != ".."
     }
 
     /**
@@ -193,7 +216,7 @@ object PhoneFiles {
         if (tree.isEmpty() || doc.isEmpty()) return false
         if (rel.isEmpty()) return doc == tree
         val segments = rel.split('/')
-        if (segments.any { it.isBlank() || it == "." || it.contains("..") }) return false
+        if (segments.any { it.isBlank() || it == "." || it == ".." }) return false
         return doc == "$tree/$rel"
     }
 
@@ -329,20 +352,43 @@ object PhoneFiles {
      * True when [pattern] matches [name], case-insensitively. A glob, not a regex: `*` is any run
      * of characters and `?` is exactly one; everything else is literal. Applied to **files only**,
      * so a directory stays visible while its matching files are shown.
+     *
+     * The match is the classic two-pointer wildcard scan: it walks the name once, remembering the
+     * last `*` and where it started, so it is **linear in the name** whatever the pattern is.
+     * Translating the glob into `.*`/`.` hands the engine a backtracking regex and lets a
+     * 255-character pattern like `*a*a*a…*b` spend exponential time per entry, on the main thread;
+     * this cannot. (Consecutive `*` collapse naturally: the second one is consumed as a no-op.)
      */
     fun matches(pattern: String?, name: String): Boolean {
         if (pattern.isNullOrEmpty()) return true
-        val rx = StringBuilder("^")
-        for (c in pattern) {
-            when (c) {
-                '*' -> rx.append(".*")
-                '?' -> rx.append('.')
-                else -> rx.append(Regex.escape(c.toString()))
+        var p = 0
+        var n = 0
+        var star = -1
+        var mark = 0
+        while (n < name.length) {
+            if (p < pattern.length && (pattern[p] == '?' || same(pattern[p], name[n]))) {
+                p++
+                n++
+            } else if (p < pattern.length && pattern[p] == '*') {
+                star = p
+                p++
+                mark = n
+            } else if (star >= 0) {
+                // The last `*` takes one more character and the scan resumes right after it.
+                p = star + 1
+                mark++
+                n = mark
+            } else {
+                return false
             }
         }
-        rx.append('$')
-        return Regex(rx.toString(), RegexOption.IGNORE_CASE).matches(name)
+        while (p < pattern.length && pattern[p] == '*') p++
+        return p == pattern.length
     }
+
+    /** One character compared case-insensitively, without allocating a lowercased copy. */
+    private fun same(a: Char, b: Char): Boolean =
+        a == b || a.lowercaseChar() == b.lowercaseChar()
 
     /**
      * One page of a listing, walked through [reader].
@@ -390,8 +436,10 @@ object PhoneFiles {
             }
             for (e in children.sortedWith(ORDER)) {
                 // A provider that calls a child "../secret" is describing something outside the
-                // tree under a name that is a path. Refuse it rather than list a lie.
-                if (badPath(e.name) != null) { outside = true; return false }
+                // tree under a name that is a path. The child's id is checked by the edge
+                // ([contained]); here only a name that could be read as a path is refused, so a
+                // real file called `notes..txt` does not make the whole folder unlistable.
+                if (badEntryName(e.name) != null) { outside = true; return false }
                 val childPath = if (rel.isEmpty()) e.name else "$rel/${e.name}"
                 if (e.dir || matches(pattern, e.name)) {
                     rows.add(
