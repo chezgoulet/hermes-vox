@@ -57,10 +57,12 @@ object PipGlyph {
             }
             val shapes = mutableListOf(mic)
             if (action == Pip.Action.MUTE) {
-                // The slash: a clean diagonal across the body, with a small gap either side
-                // so it reads as a slash and not as part of the microphone.
+                // The slash: a clean diagonal from outside the body to outside the foot,
+                // with the segment across the microphone erased — the cut-out every muted
+                // microphone uses, so the slash reads as a state and not as part of the mic.
                 shapes += Path().apply {
-                    moveTo(4.4f, 4.4f); lineTo(19.6f, 19.6f)
+                    moveTo(4.4f, 4.4f); lineTo(9.4f, 9.4f)
+                    moveTo(14.6f, 14.6f); lineTo(19.6f, 19.6f)
                 }
             }
             shapes
