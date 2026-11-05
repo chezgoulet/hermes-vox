@@ -273,8 +273,9 @@ object PhoneGrants {
     /** True when a call to [action] in [group] can succeed while the group is only at Ask. */
     private fun honoursAsk(group: Group, action: String): Boolean {
         val tier = tierOf(action) ?: group.tier
-        // Reported groups run at Ask; `uninstall` is the one consequential action with a card.
-        return tier == PhoneTiers.REPORTED || action == PhoneApproval.ACTION
+        // Reported groups run at Ask; an action with its own approval card is honoured too,
+        // because the card is the thing the owner answers. That is `uninstall` and `file_offer`.
+        return tier == PhoneTiers.REPORTED || PhoneApproval.handshaked(action)
     }
 
     /** The two actions that are not a capability: reversing one, and asking what is on. */
