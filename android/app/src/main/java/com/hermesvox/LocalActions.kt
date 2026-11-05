@@ -81,6 +81,8 @@ class LocalActions(context: Context) {
         { line -> VoxLog.d(line) },
         PhoneGrantStore.source(app),
         { result, args, at -> PhoneAuditStore.record(app, PhoneAudit.entry(at, args, result)) },
+        approvalSurface = PhoneApprovals,
+        auditRow = { entry -> PhoneAuditStore.record(app, entry) },
     )
 
     /** How a scheduled action may be cancelled, per id. */
@@ -106,6 +108,14 @@ class LocalActions(context: Context) {
         PhoneUndo.attach { id ->
             engine.undo(id, SystemClock.elapsedRealtime(), System.currentTimeMillis())
         }
+        // The uninstall card: the surface presents, this engine decides. One answerer, one desk.
+        PhoneApprovals.install(app)
+        PhoneApprovals.bind(object : PhoneApprovals.Answerer {
+            override fun answer(id: String, choice: String, via: String): Boolean =
+                engine.answerApproval(id, choice, via, System.currentTimeMillis())
+
+            override fun tick(now: Long) = engine.tickApprovals(now)
+        })
     }
 
     /**
@@ -183,6 +193,20 @@ class LocalActions(context: Context) {
         nowElapsed: Long = SystemClock.elapsedRealtime(),
         nowEpoch: Long = System.currentTimeMillis(),
     ): List<String> = engine.registry(nowElapsed, nowEpoch)
+
+    // ---- the uninstall card ----
+
+    /** The card waiting for an answer right now, or null. */
+    fun currentApproval(): PhoneApproval.Card? = engine.currentApproval()
+
+    /** One spoken utterance against that card; the allowlist is [PhoneApproval]'s, not a new one. */
+    fun approvalVoice(
+        text: String,
+        nowEpoch: Long = System.currentTimeMillis(),
+    ): PhoneApproval.Voice = engine.approvalVoice(text, nowEpoch)
+
+    /** Expire cards whose two minutes are up. The surface calls this on its own timer. */
+    fun tickApprovals(nowEpoch: Long = System.currentTimeMillis()) = engine.tickApprovals(nowEpoch)
 
     // ---- the user path's words ----
 
@@ -703,6 +727,43 @@ class LocalActions(context: Context) {
         } catch (t: Throwable) {
             VoxLog.w("event=local-action open-failed reason=${t.javaClass.simpleName}")
             false
+        }
+
+        /**
+         * The app's own label, which is the only name the uninstall card may show. Null when no
+         * such package is installed, so the request refuses `unavailable` instead of raising a card
+         * for a name nobody can recognise.
+         */
+        override fun appLabel(packageName: String): String? = try {
+            val pm = app.packageManager
+            val info = pm.getApplicationInfo(packageName, 0)
+            pm.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
+        } catch (t: Throwable) {
+            VoxLog.d("event=local-action uninstall-label-missing reason=${t.javaClass.simpleName}")
+            null
+        }
+
+        /**
+         * Open Android's own confirmation (`ACTION_DELETE`). The owner answers *that* screen; this
+         * phone cannot see the answer, so the result says "confirming", not "removed". A background
+         * activity launch the platform refuses becomes `unavailable`, never a silent success.
+         */
+        override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall = try {
+            val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.packageManager.getApplicationInfo(packageName, 0)
+            app.startActivity(intent)
+            PhoneEngine.PhonePlatform.Uninstall.Confirming(packageName)
+        } catch (t: Throwable) {
+            val missing = t is PackageManager.NameNotFoundException
+            VoxLog.w(
+                "event=local-action uninstall-failed reason=${t.javaClass.simpleName} " +
+                    "missing=$missing"
+            )
+            if (missing) PhoneEngine.PhonePlatform.Uninstall.Missing
+            else PhoneEngine.PhonePlatform.Uninstall.Unavailable(
+                "Android would not open its uninstall confirmation; nothing was removed",
+            )
         }
 
         override fun window(): CallWindow.Host? = PhoneHandoff.window()

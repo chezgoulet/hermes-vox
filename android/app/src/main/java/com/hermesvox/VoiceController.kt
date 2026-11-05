@@ -1179,7 +1179,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     }
                     // #282: a phrase heard while a request is up answers the request; it
                     // is never a new turn (and never a barge against the waiting run).
-                    if (approvalGate.current() != null) {
+                    if (approvalPending()) {
                         val matched = approvalVoice(cleaned)
                         VoxLog.d("event=approval-voice capture=segment matched=$matched " +
                             "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
@@ -1363,7 +1363,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // not barge-cancel the run that is waiting for the answer. The
                         // same frames, VAD and recogniser as the ordinary loop; only the
                         // decision is different.
-                        if (approvalGate.current() != null) {
+                        if (approvalPending()) {
                             captureApproval(frames, sr, vadSpeech, readAt)
                             bargeStat.reset()
                             continue
@@ -1581,6 +1581,23 @@ class VoiceController(private val context: Context, private val session: HermesS
      * "approve" takes the least-privilege yes the gateway offered; "no" is always deny.
      */
     fun approvalVoice(text: String): Boolean {
+        // The phone's uninstall card comes first: it is a card on this screen (or a notification)
+        // and its answer uses the SAME allowlist. A phone card and a gateway card cannot both be
+        // up in practice; if they were, the phone's two-word card is the one in front.
+        if (localActions.currentApproval() != null) {
+            return when (val answer = localActions.approvalVoice(text)) {
+                is PhoneApproval.Voice.Answered -> {
+                    VoxLog.d("event=phone-approval voice decision=answered choice=${answer.choice}")
+                    true
+                }
+                PhoneApproval.Voice.Reask -> {
+                    VoxLog.d("event=phone-approval voice decision=reask")
+                    main.post { speakGlue(ApprovalNudge.LINE, source = SOURCE_APPROVAL_PROMPT) }
+                    true
+                }
+                PhoneApproval.Voice.Unheard -> true
+            }
+        }
         val request = approvalGate.current() ?: return false
         val choice = ApprovalVoice.resolve(text, request.choices) ?: run {
             if (text.isNotBlank()) approvalNoAnswer(request)
@@ -1590,6 +1607,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         submitApproval(answer)
         return true
     }
+
+    /** True while either kind of approval card is up, so the mic answers instead of starting a turn. */
+    private fun approvalPending(): Boolean =
+        approvalGate.current() != null || localActions.currentApproval() != null
 
     /**
      * 0.9.1 soak: an utterance arrived while [request]'s card is up and it was not an answer.
@@ -1936,6 +1957,18 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val said = raw?.let {
                     (TranscriptValidator.validate(it, -1L, -1L) as? TranscriptValidator.Verdict.Accept)?.text
                 } ?: raw
+                if (!said.isNullOrBlank() && localActions.currentApproval() != null) {
+                    val answer = localActions.approvalVoice(said)
+                    VoxLog.d(
+                        "event=phone-approval voice ms=${android.os.SystemClock.uptimeMillis() - readAt} " +
+                            "decision=${answer.javaClass.simpleName} " +
+                            "text=${if (logTranscripts()) said.take(80) else "<hidden>"}"
+                    )
+                    if (answer is PhoneApproval.Voice.Reask) {
+                        main.post { speakGlue(ApprovalNudge.LINE, source = SOURCE_APPROVAL_PROMPT) }
+                    }
+                    return@execSubmit
+                }
                 val request = approvalGate.current()
                 if (request != null && !said.isNullOrBlank()) {
                     val choice = ApprovalVoice.resolve(said, request.choices)
@@ -1989,11 +2022,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val cleaned = text.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
                     // #282: on this leg the same recogniser is armed for the approval
                     // while one is pending; its answer never becomes a turn.
-                    if (approvalGate.current() != null) {
+                    if (approvalPending()) {
                         val matched = approvalVoice(cleaned)
                         VoxLog.d("event=approval-voice capture=platform matched=$matched " +
                             "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
-                        if (listening && approvalGate.current() != null) listen()
+                        if (listening && approvalPending()) listen()
                         return
                     }
                     if (cleaned.isNotBlank() && cleaned.length >= 3) runStreamedTurn(cleaned, turnGen, fromVoice = true) else if (listening) listen()

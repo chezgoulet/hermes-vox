@@ -80,6 +80,30 @@ class PhoneGrantsTest {
         }
     }
 
+    /**
+     * The two read groups put other people's words into the agent's conversation, so the row has
+     * to say the content goes to the agent rather than implying it stays on the phone.
+     */
+    @Test fun the_two_reads_say_the_content_reaches_the_agent() {
+        val clipboard = PhoneGrants.GROUPS.first { it.id == "clipboard" }
+        assertNotNull("clipboard must say what a read costs", clipboard.warning)
+        for (word in listOf("password", "code", "your agent", "Vox is in front")) {
+            assertTrue(
+                "the clipboard warning must name '$word': ${clipboard.warning}",
+                clipboard.warning!!.contains(word),
+            )
+        }
+
+        val notifications = PhoneGrants.GROUPS.first { it.id == "notifications" }
+        assertNotNull("notifications must say where the content goes", notifications.warning)
+        for (word in listOf("lock screen", "go to your agent", "Codes, messages")) {
+            assertTrue(
+                "the notifications warning must name '$word': ${notifications.warning}",
+                notifications.warning!!.contains(word),
+            )
+        }
+    }
+
     @Test fun allow_is_offered_for_tier_zero_only() {
         assertEquals(
             listOf(PhoneGrants.State.OFF, PhoneGrants.State.ASK, PhoneGrants.State.ALLOW),
@@ -141,7 +165,14 @@ class PhoneGrantsTest {
         val apps = PhoneGrants.groupOf("uninstall")
         assertEquals("apps", apps?.id)
         assertEquals(PhoneTiers.APPROVAL, PhoneGrants.tierOf("uninstall"))
-        assertFalse("a planned name is never in a group's offerable set", "uninstall" in apps!!.actions)
+        assertTrue("uninstall is built, and its card owns it", "uninstall" in apps!!.actions)
+        assertTrue(
+            "the card's action is offered when its group is on",
+            "uninstall" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
+        )
+        val install = PhoneGrants.groupOf("install")
+        assertEquals("apps", install?.id)
+        assertFalse("install is still planned", "install" in install!!.actions)
         for (g in PhoneGrants.GROUPS) {
             for (planned in g.planned) {
                 assertFalse("$planned is planned, not built", planned in g.actions)

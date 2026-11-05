@@ -316,13 +316,63 @@ class PhoneHandoffTest {
             run(mapOf("action" to "open", "uri" to "not a uri")).reason,
         )
         assertEquals(
-            PhoneReason.INVALID,
+            PhoneReason.BAD_URI,
             run(mapOf("action" to "open", "uri" to "example.com")).reason,
         )
         fake.uriTarget = null
         val r = run(mapOf("action" to "open", "uri" to "https://example.com"))
         assertFalse(r.ok)
         assertEquals(PhoneReason.NO_APP, r.reason)
+    }
+
+    /**
+     * `open` hands a URI to a viewer. Both of these would make Android do something the owner did
+     * not choose: `intent:` starts an explicit component with arbitrary extras and flags, and
+     * `file:` names a path on disk. Neither reaches the platform — the refusal happens at parse
+     * time, so no intent is built and [FakePhone] records nothing.
+     */
+    @Test
+    fun open_refuses_intent_and_file_uris_before_any_intent_is_built() {
+        for (uri in listOf(
+            "intent:#Intent;component=com.example/.Secret;end",
+            "intent:https://example.com#Intent;end",
+            "file:///sdcard/Download/private.txt",
+            "file:/data/local/tmp/x",
+        )) {
+            val r = run(mapOf("action" to "open", "uri" to uri))
+            assertFalse("$uri must be refused", r.ok)
+            assertEquals("$uri must be bad_uri", PhoneReason.BAD_URI, r.reason)
+            val scheme = uri.substringBefore(':')
+            assertTrue(
+                "$uri must name the scheme it refused in the detail: ${r.detail}",
+                r.detail!!.contains(scheme),
+            )
+        }
+        assertEquals("nothing may be resolved or started", emptyList<String>(), fake.events)
+    }
+
+    @Test
+    fun open_refuses_a_uri_with_no_scheme_instead_of_guessing_https() {
+        val r = run(mapOf("action" to "open", "uri" to "example.com/a"))
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.BAD_URI, r.reason)
+        assertTrue("the detail must not imply a scheme was guessed", r.detail!!.contains("scheme"))
+        assertEquals("nothing may be resolved or started", emptyList<String>(), fake.events)
+    }
+
+    @Test
+    fun open_allows_content_and_web_uris() {
+        for (uri in listOf(
+            "https://example.com/a",
+            "http://example.com/b",
+            "content://com.example.provider/document/1",
+        )) {
+            val r = run(mapOf("action" to "open", "uri" to uri))
+            assertTrue("$uri must be handed to the platform", r.ok)
+            assertEquals("com.example.browser", r.facts["package"])
+            assertEquals(listOf("open:$uri"), fake.events)
+            fake.events.clear()
+        }
     }
 
     // ---- contacts ----

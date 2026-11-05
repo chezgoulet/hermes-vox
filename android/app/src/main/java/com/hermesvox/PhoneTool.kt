@@ -33,14 +33,15 @@ import com.hermesvox.core.Json
  * |---|---|---|
  * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. The two read groups are instant because they change nothing; their privacy comes from scope (a call-scoped listener, one notification at a time, numbers and labels only) |
  * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `transfer` | **never executed from here.** The result says an approval is required and names the surface that owns it. `install`/`uninstall` are named but not built: they need the card |
+ * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` is the one that has a card on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
- * cannot mint an approval card for it, and inventing a second approval surface inside the MCP server
- * is exactly what #421 rules out. The consequential path is the *gateway's* approval surface
- * (the same cards `core/Approval.kt` answers), and the owner can put this whole tool behind it with
- * `trust: untrusted` in the gateway config (`docs/MCP-PHONE.md`).
+ * cannot mint the gateway's approval card for it. `uninstall` is the exception that proves the
+ * shape: it is irreversible and cannot be handed to another app, so [PhoneApproval] is a **phone**
+ * card on this wire — a two-step handshake on the same tool, not a second gateway surface. The
+ * owner may still put this whole tool behind the gateway's approval surface with `trust: untrusted`
+ * in the gateway config (`docs/MCP-PHONE.md`).
  *
  * ## The invariant
  *
@@ -87,6 +88,9 @@ object PhoneTool {
     const val MAX_APP_CHARS = 200
     const val MAX_URI_CHARS = 2_000
 
+    /** An approval id is `ap-N`; the bound is generous, the shape is not. */
+    const val MAX_APPROVAL_ID_CHARS = 64
+
     /**
      * A contact lookup answers at most this many people. More would be an address-book dump, not
      * "look up a contact's number by name"; a name that is too broad is narrowed by asking again.
@@ -130,7 +134,9 @@ object PhoneTool {
             "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
             "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
             "needs the owner's approval on the phone); a refusal means nothing was performed. " +
-            NOTIFICATION_PRIVACY
+            NOTIFICATION_PRIVACY + " " +
+            "`uninstall` is two steps: call it without `approval`, then call it again with the " +
+            "returned approval id and identical arguments once the owner says yes."
 
     /**
      * The description the model reads, with the current grants named. Built per request, because a
@@ -177,6 +183,7 @@ object PhoneTool {
         "dial" to "open the dialer with a number ready; you make the call",
         "launch" to "open a launchable app by package or name",
         "open" to "open a URI in the app that claims it",
+        "uninstall" to "remove an app by package; the phone asks you first",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
@@ -263,13 +270,25 @@ object PhoneTool {
                     "description" to
                         "open only: the URI to open, such as https://…, mailto:… or a deep link. " +
                         "It must carry a scheme and contain no whitespace, at most " +
-                        "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments.",
+                        "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments. " +
+                        "intent:, file: and a string with no scheme are bad_uri and are never " +
+                        "opened.",
                 ),
                 "package" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "open only: the package that must receive the URI. Omit it to let the " +
-                        "phone choose among the apps that claim the link.",
+                        "open only: the package that must receive the URI. uninstall only: the " +
+                        "package to remove. Omit it for open to let the phone choose among the " +
+                        "apps that claim the link; uninstall requires it.",
+                ),
+                "approval" to linkedMapOf(
+                    "type" to "string",
+                    "description" to
+                        "uninstall only: the `approval_id` a previous call returned. Omit it to " +
+                        "ask the owner; the phone raises a card and answers " +
+                        "approval-required with that id and its expiry. Call again with **the " +
+                        "same action and arguments** plus this id to remove the app after the " +
+                        "owner approves. An id is used once.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
@@ -521,6 +540,15 @@ object PhoneTool {
             override val action = "open"
         }
 
+        /**
+         * Remove one app. [approvalId] is null on the request call (the phone raises the card) and
+         * the id the card returned on the execute call. The package is the canonical argument the
+         * id is bound to.
+         */
+        data class Uninstall(val packageName: String, val approvalId: String? = null) : Call() {
+            override val action = "uninstall"
+        }
+
         data class Undo(val id: String) : Call() {
             override val action = "undo"
         }
@@ -563,22 +591,29 @@ object PhoneTool {
                         tier = group.tier,
                     )
                 )
-                PhoneGrants.State.ASK ->
+                PhoneGrants.State.ASK -> {
                     // Ask means two different things by tier, and the difference is the whole
                     // point of the tier: a Tier 0 group waits for the owner's card, while a
                     // **Tier 1 (reported)** group acts when the owner turns it on and is reported
                     // back to them — there is no per-use card to wait for, because the owner has
-                    // already said yes to the group and can see what it did.
-                    if (group.tier == PhoneTiers.REPORTED) parseArguments(action, args, grants)
-                    else Parsed.Refuse(
-                        PhoneResult.refused(
-                            action,
-                            PhoneReason.APPROVAL,
-                            "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
-                                "for the owner's approval on the phone and was not performed",
-                            tier = group.tier,
+                    // already said yes to the group and can see what it did. `uninstall` is the
+                    // one Tier 2 action with a card on this wire, so it goes to the engine's
+                    // two-step handshake rather than being refused outright.
+                    val tier = PhoneGrants.tierOf(action) ?: group.tier
+                    if (tier == PhoneTiers.REPORTED || action == PhoneApproval.ACTION) {
+                        parseArguments(action, args, grants)
+                    } else {
+                        Parsed.Refuse(
+                            PhoneResult.refused(
+                                action,
+                                PhoneReason.APPROVAL,
+                                "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
+                                    "for the owner's approval on the phone and was not performed",
+                                tier = tier,
+                            )
                         )
-                    )
+                    }
+                }
                 PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
             }
         }
@@ -822,26 +857,50 @@ object PhoneTool {
             }
         }
         "open" -> {
-            val raw = args["uri"] as? String
-            val url = uri(raw) ?: return bad(
-                action,
-                "uri is required, must carry a scheme (https:, mailto:, …) and contain no " +
-                    "whitespace",
-            )
+            val url = when (val verdict = uri(action, args["uri"] as? String)) {
+                is UriArg.Use -> verdict.uri
+                is UriArg.Refuse -> return Parsed.Refuse(verdict.result)
+            }
             val pkg = (args["package"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             if (pkg != null && pkg.length > MAX_APP_CHARS) {
                 return bad(action, "package is longer than $MAX_APP_CHARS characters")
             }
             Parsed.Run(Call.Open(url, pkg))
         }
-        // The apps group's safe half is launch/open. The destructive half is named so a
-        // direct call is answered honestly, and stays unbuilt until the approval card lands.
-        "install", "uninstall" -> Parsed.Refuse(
+        // The apps group's safe half is launch/open. `uninstall` is the one destructive action
+        // with a card: it parses into a call and the engine runs its two-step handshake. `install`
+        // is still named and refused, because its own installer confirmation is a different lane.
+        "uninstall" -> {
+            val unexpected = args.keys - setOf("action", "package", "approval")
+            if (unexpected.isNotEmpty()) {
+                return bad(
+                    action,
+                    "uninstall takes only package and approval; unexpected: " +
+                        unexpected.sorted().joinToString(", "),
+                )
+            }
+            val pkg = PhoneApproval.packageName(args["package"] as? String)
+                ?: return bad(
+                    action,
+                    "package is required and must be a dotted package name, such as " +
+                        "org.mozilla.firefox",
+                )
+            val approval = when (val raw = args["approval"]) {
+                null -> null
+                is String -> raw.trim().takeIf { it.isNotEmpty() }
+                else -> return bad(action, "approval must be the id a previous result returned")
+            }
+            if (approval != null && approval.length > MAX_APPROVAL_ID_CHARS) {
+                return bad(action, "approval is longer than $MAX_APPROVAL_ID_CHARS characters")
+            }
+            Parsed.Run(Call.Uninstall(pkg, approval))
+        }
+        "install" -> Parsed.Refuse(
             PhoneResult.refused(
                 action,
                 PhoneReason.APPROVAL,
-                "installing or uninstalling an app needs the owner's approval, and that card is " +
-                    "not built; nothing was performed",
+                "installing an app needs its own approval card, which is not built; nothing was " +
+                    "performed",
                 tier = PhoneTiers.APPROVAL,
             )
         )
@@ -913,17 +972,68 @@ object PhoneTool {
         return (if (raw.startsWith("+")) "+" else "") + digits
     }
 
+    /** The verdict on `open`'s `uri`: the URI to use, or the refusal it has already earned. */
+    sealed class UriArg {
+        data class Use(val uri: String) : UriArg()
+        data class Refuse(val result: PhoneResult) : UriArg()
+    }
+
     /**
-     * A URI for `open`: it must carry a scheme (`https:`, `mailto:`, `geo:`, a deep link) and
-     * no whitespace. A bare address or an empty scheme is `invalid-arguments` rather than
-     * being guessed into something the owner did not ask to open.
+     * `open`'s `uri`: it must carry a scheme (`https:`, `mailto:`, `geo:`, a deep link) and no
+     * whitespace. Three shapes are refused with `bad_uri` **before any intent exists**:
+     *
+     *  * `intent:` — Android starts an explicit component from it, with arbitrary extras and
+     *    flags. That reaches an activity the owner never chose, and is the only reason a URI would
+     *    need to be a URI, so it is refused and the detail names the scheme.
+     *  * `file:` — a path on disk is not something the owner asked Vox to hand to a viewer.
+     *    `file_offer`/`file_read` exist for files, inside the folder grant.
+     *  * **no scheme at all** — refused, never guessed into `https://`.
+     *
+     * `content:` and `https:`/`http:` pass through and are resolved by the platform as before.
+     * A missing, over-long or whitespace-bearing string is `invalid-arguments` instead.
      */
-    fun uri(text: String?): String? {
+    fun uri(action: String, text: String?): UriArg {
         val raw = text?.trim().orEmpty()
-        if (raw.isEmpty() || raw.length > MAX_URI_CHARS) return null
-        if (raw.any { it.isWhitespace() || it.code < 0x20 }) return null
-        val m = Regex("^([A-Za-z][A-Za-z0-9+.-]*):(.+)$").find(raw) ?: return null
-        return raw
+        if (raw.isEmpty() || raw.length > MAX_URI_CHARS) {
+            return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.INVALID,
+                    "uri is required and at most $MAX_URI_CHARS characters",
+                ),
+            )
+        }
+        if (raw.any { it.isWhitespace() || it.code < 0x20 }) {
+            return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.INVALID,
+                    "uri must contain no whitespace",
+                ),
+            )
+        }
+        val scheme = Regex("^([A-Za-z][A-Za-z0-9+.-]*):(.+)$").find(raw)
+            ?.groupValues?.get(1)?.lowercase()
+            ?: return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.BAD_URI,
+                    "uri has no scheme; write it in full (https://…), because nothing is " +
+                        "guessed into one",
+                ),
+            )
+        if (scheme == "intent" || scheme == "file") {
+            return UriArg.Refuse(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.BAD_URI,
+                    "the $scheme: scheme is refused; nothing was opened. A file belongs to " +
+                        "file_offer or file_read inside a granted folder, and a component is " +
+                        "never started from a URI",
+                ),
+            )
+        }
+        return UriArg.Use(raw)
     }
 
     /**
@@ -1050,6 +1160,12 @@ object PhoneReason {
     /** The args name a path, a URI or a name that resolves outside the folder the owner granted. */
     const val BAD_PATH = "bad_path"
 
+    /**
+     * The URI is not one `open` will hand to the platform: `intent:`, `file:`, or no scheme at
+     * all. Nothing was resolved and no intent was built.
+     */
+    const val BAD_URI = "bad_uri"
+
     /** No folder has been granted to the app yet (or not the one the call named). */
     const val NO_FOLDER = "no_folder"
 
@@ -1077,6 +1193,21 @@ object PhoneReason {
     /** Tier 2: needs the owner's approval, and nothing was done. */
     const val APPROVAL = "approval-required"
 
+    /** The owner denied the card. Nothing was performed, and the id is burnt. */
+    const val APPROVAL_DENIED = "approval_denied"
+
+    /** The card expired unanswered (silence is no) before this id was used. */
+    const val APPROVAL_EXPIRED = "approval_expired"
+
+    /** The id was approved for one app and the call names another. Nothing was removed. */
+    const val APPROVAL_MISMATCH = "approval_mismatch"
+
+    /** No such approval id, or it has already been used. Nothing was performed. */
+    const val APPROVAL_UNKNOWN = "approval_unknown"
+
+    /** Three cards are already waiting; nothing was raised and nothing was performed. */
+    const val APPROVAL_BUSY = "approval_busy"
+
     /** The owner has not granted this capability group. Nothing was done, and it is not offered. */
     const val NOT_GRANTED = "not_granted"
 
@@ -1098,7 +1229,9 @@ object PhoneReason {
  * One result, and its wire form.
  *
  * `ok` is set only by the code path that actually performed the action, so the shape itself is the
- * honesty rule: a refusal has a `reason` and never an `id`, `state` or other success fact.
+ * honesty rule: a refusal has a `reason` and never an `id`, `state` or other success fact. The one
+ * exception is the approval handshake: a request refusal carries `approval_id`, `expires_at` and
+ * `summary` as its **call to action**, not as a claim that anything ran.
  */
 data class PhoneResult(
     val ok: Boolean,
@@ -1107,7 +1240,7 @@ data class PhoneResult(
     val id: String? = null,
     val reason: String? = null,
     val detail: String? = null,
-    /** Success facts, in the order the result should read them. Never present on a refusal. */
+    /** Success facts, or the approval id a request refusal hands back. */
     val facts: Map<String, Any?> = emptyMap(),
 ) {
     /** The JSON object the tool returns. Key order is deliberate: `ok` first, then identity. */
@@ -1127,6 +1260,9 @@ data class PhoneResult(
         } else {
             reason?.let { out["reason"] = it }
             detail?.let { out["detail"] = it }
+            // An approval-required result is the request half of the handshake. These fields are
+            // what the agent needs to make the second call; they are not a success fact.
+            out.putAll(facts)
         }
         return out
     }
@@ -1142,8 +1278,13 @@ data class PhoneResult(
         fun info(action: String, facts: Map<String, Any?>): PhoneResult =
             PhoneResult(true, action, PhoneTiers.of(action), null, facts = facts)
 
-        /** Nothing happened, and why. */
-        fun refused(action: String, reason: String, detail: String, tier: Int? = PhoneTiers.of(action)): PhoneResult =
-            PhoneResult(false, action, tier, null, reason, detail)
+        /** Nothing happened, and why. [facts] carries an approval request's id and expiry. */
+        fun refused(
+            action: String,
+            reason: String,
+            detail: String,
+            tier: Int? = PhoneTiers.of(action),
+            facts: Map<String, Any?> = emptyMap(),
+        ): PhoneResult = PhoneResult(false, action, tier, null, reason, detail, facts)
     }
 }

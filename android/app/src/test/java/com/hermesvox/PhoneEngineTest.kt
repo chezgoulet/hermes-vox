@@ -331,7 +331,7 @@ class PhoneEngineTest {
     }
 
     @Test fun a_tier_two_action_is_refused_and_names_the_approval_path() {
-        val r = call(mapOf("action" to "uninstall", "app" to "com.example"))
+        val r = call(mapOf("action" to "delete"))
         assertFalse(r.ok)
         assertEquals(PhoneTiers.APPROVAL, r.tier)
         assertEquals(PhoneReason.APPROVAL, r.reason)

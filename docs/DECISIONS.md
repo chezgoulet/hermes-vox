@@ -1017,3 +1017,58 @@ or for an SMS send, and whether a future lane reads contacts. Both are separate 
 own consent.
 
 [CallWindow]: ../android/app/src/main/java/com/hermesvox/CallWindow.kt
+
+## D37 — Uninstalling an app is the one phone action with its own approval card
+
+Set 2026-11-05, on the phone-approval lane. D36 settled messages and calls as handoffs and left
+`uninstall` `approval-required` until a card existed on this wire. This is that card.
+
+**The decision.** `apps.uninstall` is built, and it is the **only** phone action that asks the owner
+directly. Messages and calls stay handoffs; contacts and notifications are reads, so a group grant
+is enough. Removal is irreversible and has no app to hand it to, so it gets a card on the phone.
+
+**The protocol is two steps on the same tool.** An MCP call carries no run id, so it cannot park a
+host run the way the gateway's `approval.request` does. `uninstall` without `approval` reads the
+app's label, raises the card, and returns `ok:false, reason:"approval-required"` with `approval_id`,
+`expires_at` and `summary`. The agent then calls **the same action with the same canonical
+arguments** plus `approval:"<id>"`. It executes only if the id is unexpired, unburnt, and the action
+and its canonical arguments match the card. The whole conversation stays one tool, one result
+shape, and one audit.
+
+**Canonicalisation, and why it cannot be confused.** The binding text is the action plus every
+argument except `approval`, sorted by key, with string values trimmed and internal whitespace
+collapsed; its SHA-256 is stored beside it and both must match. Key order and whitespace therefore
+cannot change the identity, and a different package cannot slip through. The package is validated as
+a dotted package name before a card is raised: a path or a URI is not a package.
+
+**The card is the existing approval card, not a second one.** One line, in the owner's language:
+*“Your agent wants to remove Firefox. Approve?”* — the platform's label, never the tool name. It is
+answered by tapping **APPROVE** / **DENY** or by voice through `core/Approval.kt`'s allowlists: the
+same yes/no vocabulary, a hedged answer is no answer and re-asks once, and silence at two minutes
+is a no. Dismissing it is a deny. It is spoken when a call is live. Because a full-screen dialog
+cannot start from the background, an unfocused Vox raises a heads-up notification with the same two
+actions, and tapping the body opens Vox. If neither surface can be shown the request fails
+`unavailable` — the owner could not be asked, which is not the same as a denial.
+
+**One card at a time, three waiting, two minutes.** A second request queues; the fourth is
+`approval_busy`. Expiry burns the id. Refusals are `approval_denied`, `approval_expired`,
+`approval_mismatch`, `approval_unknown` and `approval_busy`, and each burns the id: an id is used
+once.
+
+**Android's own confirmation still runs, and that is not double gating.** Our card asks *“did you
+mean this app?”* — it carries the label, the voice answer and the two-minute window Android's screen
+does not know about. The platform then asks *“may this app be removed?”*, the system-level consent
+that no app can give on the owner's behalf. The tool reports `platform_confirmation:true`, never
+“removed”, because it cannot see the owner's answer on Android's own screen.
+
+**Audit.** Three rows: the request, the decision (`approved` / `denied` / `expired`, and whether by
+tap or voice), and the execution. Each names the package and the app's label; the canonical text and
+hash are never stored.
+
+**What it costs, stated.** An app can now be removed through the agent, but only after the owner
+answers **two** consent screens: Vox's and Android's. If Vox cannot show a card or a notification,
+the action is simply unavailable rather than silently denied later.
+
+**What it does not decide.** Whether the gateway's approval surface also gets an `uninstall` card
+(the phone's card is enough and does not need a run id), whether `install` gets one, and whether a
+later lane lets the owner remember a yes for a session. All are separate decisions.
