@@ -628,20 +628,10 @@ class SettingsActivity : AppCompatActivity() {
         // #417: the report block. Everything on the clipboard is a setting, a device fact or
         // a measured number — no transcript text, key, URL, hostname or path. Omitted metrics
         // stay omitted rather than being printed as an invented zero.
+        // #418: the `/diagnostics` command copies the same block through the same helper; this
+        // row is the Presence section's door and stays exactly where it is.
         findViewById<LinearLayout>(R.id.row_presence_diag).setOnClickListener {
-            val block = PresenceDiagnosticCollect.collect(
-                this, prefs, versionName(), currentDensity())
-            try {
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                    as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("vox-diag", block))
-                Toast.makeText(this,
-                    "Diagnostic summary copied — safe to paste in a public report",
-                    Toast.LENGTH_SHORT).show()
-            } catch (_: Throwable) {
-                Toast.makeText(this, "Could not copy the diagnostic summary",
-                    Toast.LENGTH_SHORT).show()
-            }
+            DiagnosticClipboard.copy(this, prefs)
         }
         // Echo guard slider: 0-6 steps -> 0,300,500,700,1000,1500,2500ms (0 = off).
         val echoSteps = intArrayOf(0, 300, 500, 700, 1000, 1500, 2500)
@@ -720,9 +710,7 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun currentDensity(): PresenceCadence.Density = PresenceCadence.resolve(
-        prefs.getString(PresenceCadence.PREF, null),
-        if (prefs.contains(PresenceCadence.LEGACY_PREF)) prefs.getInt(PresenceCadence.LEGACY_PREF, 2) else null)
+    private fun currentDensity(): PresenceCadence.Density = PresenceDiagnosticCollect.density(prefs)
 
     private fun densityLabel(d: PresenceCadence.Density): String = when (d) {
         PresenceCadence.Density.QUIET -> "Quiet"
@@ -1335,12 +1323,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun onOff(on: Boolean): String = if (on) "on" else "off"
 
-    // The About row's version subtitle. Uses PackageManager (no BuildConfig dependency —
-    // the C0 release guard rejects buildConfigField key injection, and BuildConfig is
-    // not reliably generated). Falls back to the label on any failure.
-    private fun versionName(): String = try {
-        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-    } catch (_: Throwable) { "" }
+    // The About row's version subtitle. PackageManager (no BuildConfig dependency — the C0
+    // release guard rejects buildConfigField key injection, and BuildConfig is not reliably
+    // generated). The reader lives with the report's collector, so the version this screen
+    // prints and the version the block reports are the same read.
+    private fun versionName(): String = PresenceDiagnosticCollect.versionName(this)
 
     // #118/#224: the advanced panels (Hearing's timing tuning, Being's fine look,
     // Presence's behaviour controls) are collapsed by default, one disclosure each.

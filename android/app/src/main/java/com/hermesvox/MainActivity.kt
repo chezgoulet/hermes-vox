@@ -1886,6 +1886,13 @@ open class MainActivity : AppCompatActivity() {
         // from the commands sheet — status feedback + the gateway's answer in a card,
         // instead of the word disappearing into the turn as ordinary conversation.
         if (CompressCommand.matches(text)) { compressContext(); return }
+        // #418: a typed (or dictated) "/diagnostics" copies the report block — but only while
+        // its switch is on. With the switch off [commandFor] is null, so the word goes on to
+        // the agent like any name nothing answers to: it never copies silently.
+        DiagnosticSummary.commandFor(text, DiagnosticSummary.store(prefs))?.let { c ->
+            runCommand(c) {}
+            return
+        }
         turnSeq++   // #368: a typed turn is a new trail chapter
         appendConvo(transcript ?: "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
@@ -2263,8 +2270,12 @@ open class MainActivity : AppCompatActivity() {
         CommandsSheet(this, situation = {
             CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
                 lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
-        }) { c, done -> runCommand(c, done) }
+        }, gate = diagnosticGate()) { c, done -> runCommand(c, done) }
     }
+
+    /** #418: which optional commands exist right now. `/diagnostics` is in the catalogue only
+     *  while its own switch (Settings › About › Diagnostic summary) is on. */
+    private fun diagnosticGate(): CommandCatalog.Gate = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
     // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
     private var lastTurnFailed = false
     private var stuckShownThisCall = false
@@ -2513,6 +2524,9 @@ open class MainActivity : AppCompatActivity() {
             // person goes to change the agent, and this row opens it on the sheets' own scaffold.
             "/profiles" -> { profiles.showSwitcher(); done(true) }
             "/health" -> showHealthCard()
+            // #418: the second door to the report block the Presence row copies. Same
+            // collector, same bytes — the door only decides when, never what.
+            DiagnosticSummary.COMMAND -> done(DiagnosticClipboard.copy(this, prefs))
             CompressCommand.NAME -> compressContext(done)
             "/new" -> newSession(onDone = done)
             "/reconnect" -> reconnect(done)
@@ -2678,7 +2692,7 @@ open class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage(CommandCatalog.helpText())   // #226: written from the catalogue, never out of step
+            .setMessage(CommandCatalog.helpText(diagnosticGate()))   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 
