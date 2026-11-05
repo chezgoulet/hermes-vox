@@ -123,6 +123,8 @@ object PhoneGrants {
             label = "Clipboard",
             tier = PhoneTiers.INSTANT,
             lets = "Put text on the clipboard, and read what is there when the phone allows it.",
+            warning = "Whatever you copy can be read by your agent while Vox is in front — " +
+                "including a password or a code.",
             actions = listOf("clip", "clip_read"),
         ),
         Group(
@@ -146,7 +148,8 @@ object PhoneGrants {
             label = "Notifications",
             tier = PhoneTiers.APPROVAL,
             lets = "Read the notifications currently on your phone.",
-            warning = "Your agent could read every notification on this phone, including codes and messages.",
+            warning = "Your agent could read every notification on this phone. Codes, messages " +
+                "and anything else on your lock screen go to your agent.",
         ),
         Group(
             id = "messages",

@@ -61,6 +61,30 @@ class PhoneGrantsTest {
         }
     }
 
+    /**
+     * The two read groups put other people's words into the agent's conversation, so the row has
+     * to say the content goes to the agent rather than implying it stays on the phone.
+     */
+    @Test fun the_two_reads_say_the_content_reaches_the_agent() {
+        val clipboard = PhoneGrants.GROUPS.first { it.id == "clipboard" }
+        assertNotNull("clipboard must say what a read costs", clipboard.warning)
+        for (word in listOf("password", "code", "your agent", "Vox is in front")) {
+            assertTrue(
+                "the clipboard warning must name '$word': ${clipboard.warning}",
+                clipboard.warning!!.contains(word),
+            )
+        }
+
+        val notifications = PhoneGrants.GROUPS.first { it.id == "notifications" }
+        assertNotNull("notifications must say where the content goes", notifications.warning)
+        for (word in listOf("lock screen", "go to your agent", "Codes, messages")) {
+            assertTrue(
+                "the notifications warning must name '$word': ${notifications.warning}",
+                notifications.warning!!.contains(word),
+            )
+        }
+    }
+
     @Test fun allow_is_offered_for_tier_zero_only() {
         assertEquals(
             listOf(PhoneGrants.State.OFF, PhoneGrants.State.ASK, PhoneGrants.State.ALLOW),
