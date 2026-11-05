@@ -193,7 +193,7 @@ semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActiv
 
 Turning the master **on** also turns **Diagnostic summary** (`diag_summary`) on, because someone
 who opts into alpha is a tester and should be able to hand us a bug without hunting for a switch
-(android/app/src/main/java/com/hermesvox/SettingsActivity.kt:187 `if (on) DiagnosticSummary.alphaTurnedOn`).
+(android/app/src/main/java/com/hermesvox/SettingsActivity.kt:189 `DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs))`).
 It is one-way — turning Alpha off does not turn it off — and it never overrules the user: a flip
 of that switch records `diag_summary_chosen`, so an explicit off survives every later Alpha-on.
 
