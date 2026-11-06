@@ -117,6 +117,60 @@ object PhoneToolsView {
         if (granted) "Granted — the phone may change the media volume"
         else "Not granted — volume changes will refuse with a reason"
 
+    // ---- the Phone Tools section (#453) ----
+    //
+    // The section is one row on the Settings home, and its second line is the whole answer to
+    // *"is it set up yet?"* It is read from [PhoneBootstrap.Step] — the value the sheet draws and
+    // the button advances — and never from a second reading of the record. A parallel list is how
+    // the row and the sheet come to disagree about the one thing the owner is asking.
+    //
+    // Only [STEP_CONNECTED] asserts a connection, and it is the sheet's own heading, so the two
+    // cannot drift. [STEP_FAILED] may only deny it: the word appears in exactly two of these
+    // lines, and the negative is the sheet's to explain (it names the step reached and why).
+
+    /** Not set up: nothing has been handed to the agent in this run of the app. */
+    const val STEP_IDLE = "Not set up"
+
+    /** The instruction has gone out and the agent is being asked, right now. */
+    const val STEP_ADDING = "Asking your agent"
+
+    /** Asked; the phone's own handshake has not arrived yet. */
+    const val STEP_WAITING = "Waiting for your agent"
+
+    /** The one line that asserts a connection: the phone's own `initialize`. */
+    const val STEP_CONNECTED = CONNECTED_HEADING
+
+    /** The attempt stopped. Only the sheet's words may say which step it reached and why. */
+    const val STEP_FAILED = "Not connected"
+
+    /**
+     * The section row's one line for [step]. [allowed] is the Alpha gate: off wins, as it does on
+     * every other Phone-tools line, because a state read while the set is off is not a promise.
+     */
+    fun stepLine(step: PhoneBootstrap.Step, allowed: Boolean = true): String = when {
+        !allowed -> ALPHA_OFF
+        step == PhoneBootstrap.Step.IDLE -> STEP_IDLE
+        step == PhoneBootstrap.Step.ADDING -> STEP_ADDING
+        step == PhoneBootstrap.Step.WAITING -> STEP_WAITING
+        step == PhoneBootstrap.Step.CONNECTED -> STEP_CONNECTED
+        else -> STEP_FAILED
+    }
+
+    /**
+     * Is the section's setup row drawn? It is the one action the section offers, so it is present
+     * for every step that has something left to do and gone the moment the handshake lands — a
+     * second press would add nothing, and the sheet says so in its own words (*Ask again*).
+     */
+    fun setupRowVisible(step: PhoneBootstrap.Step): Boolean = step != PhoneBootstrap.Step.CONNECTED
+
+    /**
+     * The setup row's own label. It is [PhoneBootstrap.BUTTON] in the sentence case a row's title
+     * uses, not a second wording of the same action: the row surfaces the sheet's button, so the
+     * two may not say different things.
+     */
+    fun setupRowTitle(): String =
+        PhoneBootstrap.BUTTON.lowercase().replaceFirstChar { it.uppercase() }
+
     /**
      * The compact value on the Settings row. Three states, three words, no overlap: *not set up*,
      * *waiting for your agent*, *connected*. Never says connected before the handshake.

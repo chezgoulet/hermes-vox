@@ -128,6 +128,40 @@ class PhoneBootstrapTest {
         assertEquals(failed, PhoneBootstrap.settled(failed, now + 301_000L, now + 302_000L))
     }
 
+    /**
+     * The progress is per-process; the handshake is in the phone's record. So a fresh process —
+     * no attempt, [PhoneBootstrap.Step.IDLE] — folds the kept handshake in and is Connected, and
+     * that is the restart case the Settings row and the sheet must both read.
+     */
+    @Test fun a_kept_handshake_connects_a_fresh_process_that_never_asked() {
+        val fresh = PhoneBootstrap.Progress()
+        assertEquals(PhoneBootstrap.Step.IDLE, fresh.step)
+        val settled = PhoneBootstrap.settled(fresh, now - 60_000L, now)
+        assertEquals(PhoneBootstrap.Step.CONNECTED, settled.step)
+        assertNull(settled.failure)
+        assertFalse(PhoneBootstrap.busy(settled))
+        // Nothing recorded is still nothing recorded.
+        assertEquals(PhoneBootstrap.Step.IDLE, PhoneBootstrap.settled(fresh, 0L, now).step)
+    }
+
+    /** A failure the owner just watched is not hidden behind evidence from before it. */
+    @Test fun a_failed_attempt_outranks_a_handshake_from_before_it_failed() {
+        val failed = PhoneBootstrap.Progress(
+            step = PhoneBootstrap.Step.FAILED,
+            failure = PhoneBootstrap.Failure.NO_HANDSHAKE,
+            reached = PhoneBootstrap.Step.WAITING,
+            startedAt = now,
+            windowEndsAt = windowEnd,
+            answeredAt = now + 15_000L,
+        )
+        // Recorded during the attempt, and long after it: both lose to the failure.
+        for (handshakeAt in listOf(now + 5_000L, windowEnd + 900_000L)) {
+            val settled = PhoneBootstrap.settled(failed, handshakeAt, windowEnd + 1_000_000L)
+            assertEquals(PhoneBootstrap.Step.FAILED, settled.step)
+            assertEquals(PhoneBootstrap.Failure.NO_HANDSHAKE, settled.failure)
+        }
+    }
+
     // ---- the window is stated, measured, and closed by its own clock ----
 
     @Test fun the_setup_window_is_three_minutes_and_the_handshake_window_is_generous() {
