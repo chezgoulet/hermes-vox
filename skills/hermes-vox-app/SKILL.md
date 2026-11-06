@@ -191,7 +191,6 @@ title is read from the home row that opened it
 | Turn-taking (set) | `alpha_set_turn_taking` | false | The being keeps up mid-conversation: a soft acknowledgement while you talk at length, a quick word to stop it told apart from a new question, and the thread picked up after you cut in. Its acknowledgements need continuous listening; the set itself adds no second gate dependency | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_turn_taking"`) |
 | Phone tools (set) | `alpha_set_phone_tools` | false | The mind acting on the phone: the MCP `phone` tool, its tailnet server and its grants. Independent of Presence — either can be taken without the other (D38) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_phone_tools"`) |
 | Switching profiles (set) | `alpha_set_profiles` | false | Talk to another agent on the host: each profile carries its own address, key, model and voice, and switching starts a fresh conversation. Stays behind the gate until a device pass shows profile switching works as intended (D39) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_profiles"`) |
-| Sessions (set) | `alpha_set_sessions` | false | Lets `/sessions` exist at all: the card that lists the conversations the host already has and picks one up. With it off the command is not on the sheet, a typed "/sessions" is ordinary conversation, and no path adopts a session. Leaves Alpha once a device pass shows conversation switching works as intended (D39) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_sessions"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
 dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
@@ -369,7 +368,7 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/compress` | This conversation | (also `/compact`) Asks the agent to fold a long thread into a summary | Older detail survives only in the summary | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Fold a long thread`) |
 | `/clear` | This conversation | (also `/reset`) Clears the screen; the agent keeps the thread, and a live call is re-dialled | The screen's copy, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Clear the screen`) |
 | `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | This thread, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Start a fresh thread`) |
-| `/sessions` | This conversation (only while the Alpha **Sessions** set is on) | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
+| `/sessions` | This conversation | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
 | `/models` | The agent | Opens the model switcher: provider → model, one list, each model carrying small marks for what it can do — only the `reasoning`/`can_disable_reasoning` and `fast` flags `/api/model/options` states, never a guess from the model's name | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Choose the model`) |
 | `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
 | `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Reach the gateway again`) |
@@ -378,8 +377,8 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/help` | The agent (not listed on the sheet) | The list, with these same lines | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `What each command does`) |
 
 Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue — `/diagnostics`
-only while its switch is on, `/profiles` only while the Alpha *Switching profiles* set is on, and
-`/sessions` only while *Sessions* is. A command added without a group, an effect or an alias target fails
+only while its switch is on, and `/profiles` only while the Alpha *Switching profiles* set is on.
+`/sessions` has no switch: it left Alpha on 2026-11-06 (D39) and is on for every install. A command added without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the ten names above
@@ -393,11 +392,9 @@ either.
 The host has always held these: `GET /api/sessions` lists what it has for this key — telegram
 sessions, `api_server` sessions and the `vox_…` ones this app wrote — and
 `GET /api/sessions/{id}/messages` is their transcript. `/sessions` is the way in, and it is in
-the catalogue only while the Alpha **Sessions** set is on
-(android/app/src/main/java/com/hermesvox/Sessions.kt `fun refusal`): with it off the row is
-absent from the sheet, the search and `/help`, a typed or dictated "/sessions" is ordinary
-conversation, and the dispatch and the pick both refuse
-(android/app/src/main/java/com/hermesvox/MainActivity.kt `private fun adoptSession`).
+the catalogue for every install — the **Sessions** set left Alpha on 2026-11-06, its device pass
+made (D39), so no switch stands in front of the row, the typed word or the pick
+(android/app/src/main/java/com/hermesvox/Sessions.kt `fun commandFor`).
 
 **The list is asked at the host, not at the profile.** A profile is addressed at
 `https://host/p/<name>`, and on a real gateway the root answers 200 for the same key a profile
@@ -817,7 +814,6 @@ before answering", look at `er-soul-drop`.
 | `event=session-transcript` | One transcript read landed: `id=`, `messages=` served, `shown=` after the merge | `messages=0` on a session the card showed rows for = the id or the key is wrong | (android/app/src/main/java/com/hermesvox/MainActivity.kt `VoxLog.d("event=session-transcript id=$id messages=${answer.messages.size} shown=${adoption.resumed.size}")`) |
 | `event=session-transcript … state=key-rejected / no-answer` | The read failed, and which of the two it was | `key-rejected` on the root = the same wall as #436, not a missing session | (android/app/src/main/java/com/hermesvox/MainActivity.kt `state=key-rejected`) |
 | `event=session-clear` | The adopted session was let go (`id=`): `/new`, `/clear`, a profile switch, a saved connection | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=session-clear id=`) |
-| `event=sessions refused reason=alpha-off` / `event=session-adopt refused reason=alpha-off` | The card or the pick was refused because the Alpha Sessions set is off | Expected with the set off; anything else means two gates disagree | (android/app/src/main/java/com/hermesvox/MainActivity.kt `VoxLog.d("event=sessions refused reason=alpha-off")`) |
 
 ---
 
@@ -1062,18 +1058,18 @@ Debug / crash log → Share full log).
 
 ### 6.15 `/sessions` is missing, or the card has no rows
 
-- **Signature:** the commands sheet has no `/sessions` row and a typed "/sessions" reaches the
-  agent as a sentence; or the card opens with `no sessions on this host`, `the key was not
-  accepted` or `the host did not answer`.
-- **Cause:** the first is the Alpha **Sessions** set being off — the row does not exist, by design
-  (android/app/src/main/java/com/hermesvox/Sessions.kt `fun refusal`). Of the three card
+- **Signature:** the card opens with `no sessions on this host`, `the key was not accepted` or
+  `the host did not answer`; or the sheet has no `/sessions` row at all.
+- **Cause:** `/sessions` has no switch since it left Alpha (2026-11-06, D39); a missing row means the
+  catalogue itself was changed, not a setting
+  (android/app/src/main/java/com/hermesvox/Sessions.kt `fun commandFor`). Of the three card
   lines, only one is about the phone: `no sessions on this host` means the host answered and holds
   nothing for this key; `the key was not accepted` is a 401 at the root (the #436 wall, not a
   missing session); `the host did not answer` is transport, a timeout, or a body that is not a
   list (android/app/src/main/java/com/hermesvox/Sessions.kt `fun listing`).
-- **Do:** turn Alpha on and select **Sessions**; then check the gateway's `/api/sessions` with the
-  same key from the host. Sessions belong to a profile: after a profile switch the list is the new
-  host's, and an empty card may simply be a host that has none.
+- **Do:** check the gateway's `/api/sessions` with the same key from the host. Sessions belong to a
+  profile: after a profile switch the list is the new host's, and an empty card may simply be a
+  host that has none.
 
 ### 6.14 A download never finishes
 

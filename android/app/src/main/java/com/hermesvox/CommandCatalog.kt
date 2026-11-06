@@ -106,16 +106,14 @@ object CommandCatalog {
             category = Category.CLEAR, kind = Kind.INLINE,
             listOf("start over", "fresh", "new topic", "forget", "begin again"),
             glyph = Marks.Mark.NEW_THREAD),
-        // #437: the other half of /new — pick up a thread that already exists. Gated: listed
-        // only while the Alpha gate allows "Sessions", and with the set off it is a name no
-        // build answers to (the same rule as /profiles and /diagnostics).
+        // #437: the other half of /new — pick up a thread that already exists. It left Alpha
+        // with the Sessions set, so it is in the catalogue for every install (#437, D39).
         Command(Sessions.COMMAND, emptyList(), Group.CONVERSATION,
             effect = "Pick up a thread the agent already has",
             cost = null,   // nothing is lost: the session keeps its history, and so does this app
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("session", "conversation", "thread", "history", "resume", "pick up",
                 "earlier", "desktop", "before", "past"),
-            gated = true,
             // #3: a list of the threads the host already has. /models chose the PULSE nucleus
             // too, and the two rows sat one above the other in the sheet looking identical.
             glyph = Marks.Mark.SESSIONS),

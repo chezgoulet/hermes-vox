@@ -6,10 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #4/#501: `/sessions` is registered under This conversation but gated behind the Alpha
- * **Sessions** set, so with the gate off it is not on the sheet. This pins the state the
- * owner asked about — with the gate ON and Sessions selected it must be there, in its group,
- * with its one-line description — and that turning the set on takes effect without a restart.
+ * #4/#501, as amended by #437/D39: `/sessions` left the Alpha gate on 2026-11-06, so it is on
+ * the sheet for every install — with the master off and nothing selected. `/profiles` is still
+ * behind Alpha here; the diagnostic summary keeps its own switch. The gate is read when asked,
+ * not when the sheet is built.
  */
 class CommandGateTest {
 
@@ -32,21 +32,21 @@ class CommandGateTest {
     private fun rows(gate: CommandCatalog.Gate) =
         CommandCatalog.grouped(gate = gate).flatMap { it.second }.map { it.name }
 
-    @Test fun withAlphaOffSessionsIsSimplyNotThere() {
+    /** D39: no master, no set — and `/sessions` is there anyway. */
+    @Test fun withAlphaOffSessionsIsStillOnTheSheet() {
         val a = Alpha(); val d = Diagnostics()
-        val gate = CommandGate.of(a, d)
-        val rows = rows(gate)
-        assertFalse("/sessions", rows.contains("/sessions"))
+        val rows = rows(CommandGate.of(a, d))
+        assertTrue("/sessions left the gate", rows.contains("/sessions"))
         assertTrue("the rest of the catalogue is untouched", rows.contains("/new"))
         assertTrue(rows.contains("/models"))
+        // And the word reaches it too: no gate stands between the two.
+        assertEquals("/sessions", Sessions.commandFor("/sessions")?.name)
     }
 
-    @Test fun withTheSessionsSetOnTheRowIsInItsGroupWithItsDescription() {
+    @Test fun theSessionsRowIsInItsGroupWithItsDescription() {
         val a = Alpha(); val d = Diagnostics()
-        a.master(true); a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        val gate = CommandGate.of(a, d)
-        val rows = CommandCatalog.grouped(gate = gate)
-        val conversation = rows.first { it.first == CommandCatalog.Group.CONVERSATION }
+        val groups = CommandCatalog.grouped(gate = CommandGate.of(a, d))
+        val conversation = groups.first { it.first == CommandCatalog.Group.CONVERSATION }
         val row = conversation.second.firstOrNull { it.name == "/sessions" }
         assertTrue("/sessions is not under This conversation", row != null)
         assertEquals("Pick up a thread the agent already has", row!!.effect)
@@ -54,43 +54,41 @@ class CommandGateTest {
         assertEquals("nothing is lost, so there is no cost line", null, row.cost)
     }
 
-    @Test fun theMasterSwitchAloneIsNotEnough() {
+    /** Profiles' turn had not come yet: it still needs the master and its own set. */
+    @Test fun profilesStillNeedsTheMasterAndItsSet() {
         val a = Alpha(); val d = Diagnostics()
-        a.master(true)   // master on, Sessions not selected
-        assertFalse("/sessions", rows(CommandGate.of(a, d)).contains("/sessions"))
-        a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        assertTrue("/sessions", rows(CommandGate.of(a, d)).contains("/sessions"))
+        assertFalse("/profiles", rows(CommandGate.of(a, d)).contains("/profiles"))
+        a.master(true)   // master on, Switching profiles not selected
+        assertFalse("/profiles", rows(CommandGate.of(a, d)).contains("/profiles"))
+        a.set(AlphaGate.FeatureSet.PROFILES, true)
+        assertTrue("/profiles", rows(CommandGate.of(a, d)).contains("/profiles"))
         a.master(false)  // master off overrides the set
-        assertFalse("/sessions", rows(CommandGate.of(a, d)).contains("/sessions"))
+        assertFalse("/profiles", rows(CommandGate.of(a, d)).contains("/profiles"))
     }
 
     /**
      * The sheet is built once and kept; the gate must not answer from that moment. A person
-     * turns Sessions on in Settings, comes back, and the row is there.
+     * turns Switching profiles on in Settings, comes back, and the row is there.
      */
     @Test fun aSetTurnedOnAfterTheSheetWasBuiltShowsWithoutARestart() {
         val a = Alpha(); val d = Diagnostics()
         val gate = CommandGate.of(a, d)          // the sheet captures this object
-        assertFalse(rows(gate).contains("/sessions"))
-        a.master(true); a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        assertTrue("the gate cached its answer", rows(gate).contains("/sessions"))
-        a.set(AlphaGate.FeatureSet.SESSIONS, false)
-        assertFalse(rows(gate).contains("/sessions"))
+        assertFalse(rows(gate).contains("/profiles"))
+        a.master(true); a.set(AlphaGate.FeatureSet.PROFILES, true)
+        assertTrue("the gate cached its answer", rows(gate).contains("/profiles"))
+        a.set(AlphaGate.FeatureSet.PROFILES, false)
+        assertFalse(rows(gate).contains("/profiles"))
     }
 
-    @Test fun theOtherTwoDoorsKeepTheirOwnSwitches() {
+    /** The diagnostic switch is the one optional command left, and it keeps its own gate. */
+    @Test fun theDiagnosticSwitchKeepsItsOwnGate() {
         val a = Alpha(); val d = Diagnostics()
-        a.master(true); a.set(AlphaGate.FeatureSet.SESSIONS, true)
         val gate = CommandGate.of(a, d)
-        assertFalse("/profiles", rows(gate).contains("/profiles"))
         assertFalse("/diagnostics", rows(gate).contains("/diagnostics"))
-        a.set(AlphaGate.FeatureSet.PROFILES, true)
         d.putBoolean(DiagnosticSummary.PREF, true)
-        assertTrue(rows(gate).contains("/profiles"))
         assertTrue(rows(gate).contains("/diagnostics"))
-        // And the sessions set does not depend on the other two.
-        a.set(AlphaGate.FeatureSet.PROFILES, false)
-        d.putBoolean(DiagnosticSummary.PREF, false)
-        assertTrue(rows(gate).contains("/sessions"))
+        // And it does not depend on Alpha at all.
+        a.master(false)
+        assertTrue(rows(gate).contains("/diagnostics"))
     }
 }

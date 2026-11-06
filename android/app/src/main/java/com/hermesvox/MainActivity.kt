@@ -2310,10 +2310,9 @@ open class MainActivity : AppCompatActivity() {
             return
         }
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
-        // #437: a typed (or dictated) "/sessions" opens the session card. With the Alpha set
-        // off [commandFor] is null, so the word goes on to the agent like any name nothing
-        // answers to — it never opens a card and never adopts a session.
-        Sessions.commandFor(text, commandGate())?.let { c ->
+        // #437: a typed (or dictated) "/sessions" opens the session card. It left Alpha
+        // (#437, D39), so the word reaches the card for every install.
+        Sessions.commandFor(text)?.let { c ->
             runCommand(c) {}
             return
         }
@@ -2820,9 +2819,9 @@ open class MainActivity : AppCompatActivity() {
     private var stuckShownThisCall = false
     private var callTurns = 0L
     /** Which optional commands exist right now: `/diagnostics` while its own switch is on
-     *  (#418), `/profiles` only while the Alpha gate allows "Switching profiles" (#402), and
-     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, /help and
-     *  the typed word — there is no second way a row is absent (#501). */
+     *  (#418), and `/profiles` only while the Alpha gate allows "Switching profiles" (#402).
+     *  One gate for the sheet, /help and the typed word — there is no second way a row is
+     *  absent (#501). `/sessions` left Alpha (#437, D39) and is no longer asked. */
     private fun commandGate(): CommandCatalog.Gate =
         CommandGate.of(AlphaGate.reader(prefs), DiagnosticSummary.store(prefs))
 
@@ -2850,13 +2849,9 @@ open class MainActivity : AppCompatActivity() {
         )
     }
 
-    /** `/sessions`, and the typed word. Behind the Alpha set at both ends: the command does
-     *  not exist with it off, and this door refuses before it asks the host anything. */
+    /** `/sessions`, and the typed word. Sessions left Alpha (#437, D39): the command is in
+     *  the catalogue for every install, and this door opens the card. */
     protected fun showSessions() {
-        Sessions.refusal(AlphaGate.reader(prefs))?.let {
-            VoxLog.d("event=sessions refused reason=alpha-off")
-            return
-        }
         if (missingKeyPrompt()) return
         sessionsSheet.show()
     }
@@ -2871,12 +2866,6 @@ open class MainActivity : AppCompatActivity() {
      * profile switch, and the live call is the same agent.
      */
     private fun adoptSession(row: Sessions.Row): Boolean {
-        Sessions.refusal(AlphaGate.reader(prefs))?.let {
-            // The last door (§1): no path adopts a session with the set off.
-            VoxLog.d("event=session-adopt refused reason=alpha-off id=${row.id}")
-            setStatus(it, true)
-            return false
-        }
         val s = session ?: run { setStatus("Connect first", true); return false }
         s.adoptConversation(row.id)
         adoption.adopt(row)
@@ -3212,18 +3201,11 @@ open class MainActivity : AppCompatActivity() {
                 }
             }
             "/health" -> showHealthCard()
-            // #437: the session browser. With the Alpha set off this command does not exist
-            // (the catalogue has no such row and no such word), and this is the last door —
-            // it refuses before anything is listed or adopted.
+            // #437: the session browser. Sessions left Alpha (#437, D39), so the card is the
+            // command's whole behaviour for every install.
             Sessions.COMMAND -> {
-                if (Sessions.refusal(AlphaGate.reader(prefs)) != null) {
-                    VoxLog.d("event=command name=/sessions state=refused reason=alpha-off")
-                    showHelpCard()
-                    done(false)
-                } else {
-                    showSessions()
-                    done(true)
-                }
+                showSessions()
+                done(true)
             }
             // #418: the second door to the report block the Presence row copies. Same
             // collector, same bytes — the door only decides when, never what.

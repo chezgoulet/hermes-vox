@@ -190,28 +190,26 @@ class CommandCatalogTest {
     }
 
     /**
-     * #437: the session browser uses the same Gate as /profiles and /diagnostics — one way a
-     * row is absent — so with its Alpha set off it is gone from the sheet, the search, /help
-     * and the typed word, and nothing else moves.
+     * #437, amended by D39: `/sessions` left the Alpha gate on 2026-11-06, so it is not a
+     * switchable command any more — no Gate can take it off the sheet, the search, /help or
+     * the typed word, and nothing else moves.
      */
-    @Test fun sessions_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
-        val noSessions = CommandCatalog.Gate { it.name != "/sessions" }
-        val rows = CommandCatalog.grouped(gate = noSessions).flatMap { it.second }.map { it.name }
-        assertFalse("/sessions", rows.contains("/sessions"))
-        assertTrue("the rest of the catalogue is untouched", rows.contains("/new"))
-        assertFalse(CommandCatalog.search("session", gate = noSessions).any { it.name == "/sessions" })
-        assertTrue(CommandCatalog.search("session", gate = CommandCatalog.Gate.EVERYTHING)
-            .any { it.name == "/sessions" })
-        assertFalse(CommandCatalog.helpText(noSessions).contains("/sessions"))
-        assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/sessions"))
+    @Test fun sessions_is_no_longer_gated() {
+        val nothing = CommandCatalog.Gate.NOTHING
+        val rows = CommandCatalog.grouped(gate = nothing).flatMap { it.second }.map { it.name }
+        assertTrue("/sessions", rows.contains("/sessions"))
+        assertTrue(CommandCatalog.search("session", gate = nothing).any { it.name == "/sessions" })
+        assertTrue(CommandCatalog.helpText(nothing).contains("/sessions"))
+        assertFalse("it is not a gated command", CommandCatalog.ALL.first { it.name == "/sessions" }.gated)
         // It is a card command: its row reports no state, because the card is the report.
-        val c = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        val c = CommandCatalog.find("/sessions", nothing)!!
         assertEquals(CommandCatalog.Kind.CARD, c.kind)
         assertFalse(CommandCatalog.reportsOnRow(c))
         // And it is in the conversation group, next to /new, where a person looks for threads.
         assertEquals("This conversation", c.group.label)
     }
 
+    /** The same, for profiles' neighbour: `/profiles` still answers to Alpha here. */
     @Test fun profiles_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
         // The same Gate mechanism the diagnostic command uses: one way to hide a row.
         val noProfiles = CommandCatalog.Gate { it.name != "/profiles" }

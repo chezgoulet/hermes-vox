@@ -204,14 +204,15 @@ verifies the hash, and nothing leaves the phone until the card is confirmed.
 
 ### 8. The Alpha gate (#402, D29)
 **One gate for everything unfinished.** `AlphaGate` has a master switch, **off on a
-fresh install**, and six sets a tester selects individually: **Presence**, **Continuous
-listening**, **Turn-taking**, **Phone tools**, **Switching profiles** and **Sessions**. A set runs only
+fresh install**, and five sets a tester selects individually: **Presence**, **Continuous
+listening**, **Turn-taking**, **Phone tools** and **Switching profiles**. A set runs only
 when the master is on *and* that set is selected (`AlphaGate.allows`); with the master
 off every alpha surface is dimmed and unreachable, and the runtime readers ask
 `AlphaGate`, not the feature's own preference. A set's own prefs keep their meaning
 inside the gate. Quiet calls (#325) is deliberately **not** a set: it is its own switch,
 off by default, with no master in front of it. An upgrade keeps what was already running
-(`AlphaGate.migrate`); a fresh install gets nothing.
+(`AlphaGate.migrate`); a fresh install gets nothing. **Sessions** left the gate on
+2026-11-06 (D39): `/sessions` and the session picker are on for every install.
 
 ### 9. The being and the words — UI
 The being is drawn on the GPU (OpenGL ES 3, on its own thread: `BeingThread`,

@@ -157,9 +157,9 @@ There is one way to talk: on-device STT, VAD and TTS with Hermes behind them, on
 hands-free line with barge-in. It feels like a live call.
 
 **Presence** is a layer on that, not a second mode. It is unfinished, so in 0.9.1 it sits
-behind **Settings → Alpha features** (off on a fresh install). The panel lists six sets:
-**Presence** first, then **Continuous listening**, **Turn-taking**, **Phone tools**,
-**Switching profiles** and **Sessions**; each is selected on its own, and continuous listening
+behind **Settings → Alpha features** (off on a fresh install). The panel lists five sets:
+**Presence** first, then **Continuous listening**, **Turn-taking**, **Phone tools** and
+**Switching profiles**; each is selected on its own, and continuous listening
 is the one that requires Presence. With Presence on, the on-device Gemma 4
 E2B model greets you and speaks the opening beat of a turn in the agent's voice while Hermes
 thinks. It is a companion, not a gatekeeper: every turn still goes to Hermes, which answers

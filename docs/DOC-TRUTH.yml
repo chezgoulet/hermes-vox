@@ -265,14 +265,15 @@
   file: android/app/src/main/java/com/hermesvox/LocalActions.kt
   match: 'interface PhoneReadout \{[\s\S]*?fun registry\('
 
-- id: alpha-six-sets
-  says: "lists six sets"
+- id: alpha-five-sets
+  says: "lists five sets"
   doc: docs/MILESTONES.md
   file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
-  match: 'PRESENCE\([\s\S]*CONTINUOUS_LISTENING\([\s\S]*TURN_TAKING\([\s\S]*PHONE_TOOLS\([\s\S]*PROFILES\([\s\S]*SESSIONS\('
+  match: 'PRESENCE\([\s\S]*CONTINUOUS_LISTENING\([\s\S]*TURN_TAKING\([\s\S]*PHONE_TOOLS\([\s\S]*PROFILES\('
+  absent: 'SESSIONS\('
 
 - id: alpha-one-dependency
-  says: "six sets and one dependency"
+  says: "five sets and one dependency"
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
   match: 'if \(set == FeatureSet\.CONTINUOUS_LISTENING && !selected\(r, FeatureSet\.PRESENCE\)\)'
