@@ -1,0 +1,47 @@
+name: CLA
+
+# The CLA is checked on every pull request and cleared by a comment, so a contributor is
+# never waiting on a person to notice them. The logic lives in .github/scripts/cla.py.
+#
+# SECURITY: this job runs on `pull_request_target`, which has a write token. It must check
+# out the BASE branch — never the pull request's head — or a contributor's code would run
+# with our token. The explicit `ref` below is load-bearing, not decoration.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  cla:
+    # A comment matters only when it is on a pull request.
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Evaluate the agreement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLA_EVENT: ${{ github.event_name }}
+          CLA_REPO: ${{ github.repository }}
+          CLA_PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+          CLA_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          CLA_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CLA_COMMENT_BODY: ${{ github.event.comment.body }}
+          CLA_COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+        run: python3 .github/scripts/cla.py
