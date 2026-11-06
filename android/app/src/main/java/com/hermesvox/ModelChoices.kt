@@ -55,6 +55,8 @@ object ModelChoices {
         /** The provider's own per-model flags; null when it does not say. */
         val fast: Boolean? = null,
         val reasons: Boolean? = null,
+        /** The gateway's `can_disable_reasoning`: this model's reasoning can be turned off. */
+        val reasoningAdjustable: Boolean? = null,
     )
 
     data class Provider(
@@ -68,10 +70,6 @@ object ModelChoices {
         val current: Boolean,
         val warning: String,
     )
-
-    /** A context window at least this long earns the long-context mark. Below it the window
-     *  is still stated in the row's line; 100k is where it stops being ordinary. */
-    const val LONG_CONTEXT_TOKENS = 100_000
 
     // ---- reading -------------------------------------------------------------------------
 
@@ -133,12 +131,16 @@ object ModelChoices {
     /**
      * Where a provider sits in the picker (#6). The gateway lists its providers in an order
      * of its own — 52 of them on the owner's host, most with no models and no sign-in — so
-     * the one in use leads, then the ones this host can actually offer, then the rest, which
+     * the one in use leads, then the ones the host is authenticated for, then the rest, which
      * are still shown (with the reason they cannot be chosen) at the end of the list.
+     *
+     * Authentication, not "has models", is the second rank: a provider this host is signed
+     * in to is one a person may have configured even when the gateway has not listed its
+     * models yet, and it belongs above the wall of unconfigured ones.
      */
     fun rank(p: Provider): Int = when {
         p.current -> 0
-        p.models.isNotEmpty() && p.signedIn != false -> 1
+        p.signedIn == true -> 1
         else -> 2
     }
 
@@ -150,6 +152,9 @@ object ModelChoices {
         var context: String? = null
         var contextTokens: Int? = null
         var installed: Boolean? = null
+        var fast: Boolean? = null
+        var reasons: Boolean? = null
+        var adjustable: Boolean? = null
         when (node) {
             is JStr -> id = node.value
             is JObj -> {
@@ -164,11 +169,16 @@ object ModelChoices {
                     ?: int(node, "max_context")
                 context = contextTokens?.let { contextLabel(it) }
                 installed = bool(node, "installed") ?: bool(node, "downloaded") ?: bool(node, "local")
+                // Some catalogues put the capability flags on the model entry itself.
+                fast = bool(node, "fast")
+                reasons = bool(node, "reasoning")
+                adjustable = bool(node, "can_disable_reasoning")
             }
             else -> return null
         }
         if (id.isBlank()) return null
-        val stated = caps?.get(id) as? JObj
+        // This host puts them in the provider's `capabilities` map, keyed by model id.
+        val flags = caps?.get(id) as? JObj
         return Model(
             id = id,
             name = label.ifEmpty { displayName(id) },
@@ -179,8 +189,9 @@ object ModelChoices {
             installed = installed,
             current = providerCurrent && id.equals(currentModel, ignoreCase = true),
             stated = explicit,
-            fast = bool(stated, "fast"),
-            reasons = bool(stated, "reasoning"),
+            fast = fast ?: bool(flags, "fast"),
+            reasons = reasons ?: bool(flags, "reasoning"),
+            reasoningAdjustable = adjustable ?: bool(flags, "can_disable_reasoning"),
         )
     }
 
@@ -230,36 +241,34 @@ object ModelChoices {
     /**
      * What a model can do, as the small marks on its row — screen order (#5).
      *
-     * The vocabulary is what `/api/model/options` actually carries and what a model says about
-     * itself, and nothing else:
-     *   * reasoning and fast — the provider's own `capabilities` flags when it states them
-     *     (which is why a name that says "flash" does not get the fast mark from a gateway
-     *     that says `fast: false`), else the model's name;
-     *   * vision and code — the same name/tag words [categoryOf] reads;
-     *   * long context — a stated context window of [LONG_CONTEXT_TOKENS] or more.
+     * Only what `/api/model/options` states under the provider's per-model `capabilities` map
+     * (or, on a catalogue that puts them there, on the model entry):
+     *   * `reasoning`, and `can_disable_reasoning` when the model says its reasoning can be
+     *     turned off — the reasoning mark;
+     *   * `fast` — the fast mark.
      *
-     * There is deliberately no tools/function-calling mark: this payload does not state it,
-     * and a row never claims what the gateway did not say.
+     * The model's name is not a capability source here. A `flash` the gateway calls
+     * `fast: false` gets no fast mark, and a name that merely sounds like code or vision gets
+     * nothing: this payload does not state those abilities, and a row never claims what the
+     * gateway did not say. There is likewise no tools/function-calling mark.
      */
     enum class Cap(val label: String, val says: String) {
-        CODE("code", "writes code"),
-        VISION("vision", "can see images"),
         REASONING("reasoning", "can reason"),
-        LONG_CONTEXT("long context", "long context"),
         FAST("fast", "fast"),
     }
 
-    fun caps(m: Model): List<Cap> {
-        val f = families(m.id, m.stated)
-        return Cap.entries.filter { cap ->
-            when (cap) {
-                Cap.CODE -> Family.CODE in f
-                Cap.VISION -> Family.VISION in f
-                Cap.REASONING -> m.reasons ?: (Family.REASONING in f)
-                Cap.FAST -> m.fast ?: (Family.FAST in f)
-                Cap.LONG_CONTEXT -> (m.contextTokens ?: 0) >= LONG_CONTEXT_TOKENS
-            }
+    fun caps(m: Model): List<Cap> = Cap.entries.filter { cap ->
+        when (cap) {
+            Cap.REASONING -> m.reasons == true || m.reasoningAdjustable == true
+            Cap.FAST -> m.fast == true
         }
+    }
+
+    /** The mark's words for this model: a reasoning model that can switch reasoning off says
+     *  so, because the gateway stated `can_disable_reasoning`. */
+    fun says(m: Model, cap: Cap): String = when {
+        cap == Cap.REASONING && m.reasoningAdjustable == true -> "${cap.says}, can be turned off"
+        else -> cap.says
     }
 
     private val SIZE = Regex("^(\\d+(?:\\.\\d+)?)([bm])$")
@@ -335,19 +344,16 @@ object ModelChoices {
         when (m.installed) { true -> "installed"; false -> "not installed"; null -> null },
     ).joinToString(" · ")
 
-    /** The line under a provider: what it holds and whether it can be used. */
+    /** The line under a provider: how many models it holds and whether it can be used. No
+     *  category names here — the categories are not a level of the picker any more, and the
+     *  model rows themselves carry what each model can do (#5). */
     fun providerLine(p: Provider): String {
         if (p.signedIn == false) return "Not signed in on the gateway"
         if (p.models.isEmpty()) return if (p.total > 0) "${p.total} models — the gateway does not list them"
             else "No models listed"
-        val kinds = byCategory(p).size
         val n = p.models.size
-        return "$n model${if (n == 1) "" else "s"}" + if (kinds > 1) " · ${byCategory(p).joinToString(", ") { it.first.label.lowercase() }}" else ""
+        return "$n model${if (n == 1) "" else "s"}"
     }
-
-    /** A provider's models under their categories, in screen order, empty categories dropped. */
-    fun byCategory(p: Provider): List<Pair<Category, List<Model>>> =
-        Category.values().map { c -> c to p.models.filter { it.category == c } }.filter { it.second.isNotEmpty() }
 
     /** Models matching [query] across every provider, by name or id. */
     fun search(all: List<Provider>, query: String): List<Pair<Provider, Model>> {

@@ -45,29 +45,15 @@ object Marks {
     /**
      * The small marks a model row carries (#5) — one drawing per [ModelChoices.Cap], on the
      * same grid and with the same stroke as everything else here. They sit at 16 dp beside the
-     * model's name, so each one is a single legible idea: chevrons for code, an eye for vision,
-     * a spark for reasoning, a long arrow for a long window, a bolt for speed.
+     * model's name, so each one is a single legible idea: a spark for reasoning, a bolt for
+     * speed. These are the only two the payload states, so these are the only two drawn.
      */
     fun cap(cap: ModelChoices.Cap): List<CommandGlyph.Shape> = when (cap) {
-        ModelChoices.Cap.CODE -> listOf(
-            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(9.6f, 8.2f), CommandGlyph.Pt(5.2f, 12f), CommandGlyph.Pt(9.6f, 15.8f))),
-            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(14.4f, 8.2f), CommandGlyph.Pt(18.8f, 12f), CommandGlyph.Pt(14.4f, 15.8f))),
-        )
-        ModelChoices.Cap.VISION -> listOf(
-            // An almond outline and a pupil: an eye, not a camera.
-            CommandGlyph.Arc(1.8f, CommandGlyph.Pt(12f, 12f), 8.4f, 5.0f, 0f, 360f),
-            CommandGlyph.Disc(CommandGlyph.Pt(12f, 12f), 2.4f),
-        )
         ModelChoices.Cap.REASONING -> listOf(
             // A spark: the model that thinks a moment longer.
             CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(12f, 4.4f), CommandGlyph.Pt(12f, 19.6f))),
             CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(5.4f, 8.2f), CommandGlyph.Pt(18.6f, 15.8f))),
             CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(18.6f, 8.2f), CommandGlyph.Pt(5.4f, 15.8f))),
-        )
-        ModelChoices.Cap.LONG_CONTEXT -> listOf(
-            // A long line with an arrowhead: a window that keeps going.
-            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(4.4f, 12f), CommandGlyph.Pt(19.0f, 12f))),
-            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(14.8f, 8.4f), CommandGlyph.Pt(19.6f, 12f), CommandGlyph.Pt(14.8f, 15.6f))),
         )
         ModelChoices.Cap.FAST -> listOf(
             CommandGlyph.Poly(1.9f, listOf(

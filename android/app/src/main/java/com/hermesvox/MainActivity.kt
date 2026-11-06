@@ -3140,7 +3140,9 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** /models — the model switcher (UI/UX pass): the REAL gateway catalog (GET
-     *  /api/model/options) fanned out provider → category → model in [ModelSheet], on the
+     *  /api/model/options) as provider → model in [ModelSheet] (#5 dropped the category
+     *  level: a provider opens onto all its models, each carrying the capability flags the
+     *  gateway states), on the
      *  app's ground, instead of a stock list of raw strings. Selecting a model sets the app
      *  model+provider prefs that the /v1/responses client sends per request (the blessed
      *  LIGHT PATH) — the gateway overrides the entity's inference backend, while the entity's

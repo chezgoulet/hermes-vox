@@ -136,7 +136,7 @@ class MarksTest {
         // announcement — a screen reader never has to see a drawing.
         val sheet = File("src/main/java/com/hermesvox/ModelSheet.kt").readText()
         assertTrue(sheet.contains("dp(16), dp(16)"))
-        assertTrue(sheet.contains("caps.map { it.says }"))
+        assertTrue(sheet.contains("caps.map(capWords)"))
         for (cap in caps) assertTrue("the sheet drops ${cap.says}", sheet.contains("caps"))
     }
 

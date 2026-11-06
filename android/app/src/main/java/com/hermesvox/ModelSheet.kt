@@ -22,10 +22,12 @@ import androidx.core.content.ContextCompat
  * app's own ground, instead of a stock list of raw strings.
  *
  * There is no category level (#5): a provider opens onto every one of its models in one list,
- * and what a model is for is carried on its own row as [ModelChoices.Cap] marks — small
+ * and what a model can do is carried on its own row as [ModelChoices.Cap] marks — small
  * drawings, each with words for a screen reader — instead of a header the person has to
- * choose before they know what is behind it. A search across every provider sits on the
- * first level.
+ * choose before they know what is behind it. The marks say only what the gateway's
+ * `capabilities` flags state (`reasoning`, `fast`, and whether reasoning can be turned off);
+ * the model's name is not treated as a capability. A search across every provider sits on
+ * the first level.
  *
  * Loading, failure and an empty catalogue are said inside the sheet, where the person is
  * looking — not as a toast behind it. [load] is called off the UI thread.
@@ -179,15 +181,17 @@ class ModelSheet(
                 "cannot be read: ${dropped.joinToString("; ")}", warn = true))
         for (p in providers) {
             val drill = p.models.isNotEmpty()
-            // A provider with nothing to choose and no sign-in on the gateway is said, not
+            // Every provider the payload carries is shown (#6), but one the gateway says this
+            // host is not signed in to — or one with no model to choose — is said, not
             // offered: choosing it would route every turn to a provider that cannot answer.
-            if (!drill && p.signedIn == false) {
+            val usable = drill && p.signedIn != false
+            if (!usable) {
                 list.addView(row(p.name, ModelChoices.providerLine(p), null, drill = false, enabled = false) {})
                 continue
             }
             list.addView(row(p.name, ModelChoices.providerLine(p), if (p.current) "in use" else null, drill) {
                 // A provider with models always opens onto all of them, in one list.
-                if (drill) open(Level.Models(p)) else pick(p, null)   // no models: choose the provider
+                open(Level.Models(p))
             })
             if (p.warning.isNotBlank()) list.addView(note(p.warning, warn = true))
         }
@@ -202,7 +206,7 @@ class ModelSheet(
         val detail = ModelChoices.detail(m)
         val line = if (withProvider) listOf(p.name, detail).filter { it.isNotBlank() }.joinToString(" · ") else detail
         return row(m.name, line.ifBlank { null }, if (m.current) "in use" else null, drill = false,
-            caps = ModelChoices.caps(m)) { pick(p, m) }
+            caps = ModelChoices.caps(m), capWords = { cap -> ModelChoices.says(m, cap) }) { pick(p, m) }
     }
 
     private fun pick(p: ModelChoices.Provider, m: ModelChoices.Model?) {
@@ -220,6 +224,7 @@ class ModelSheet(
      *  an optional state chip, and "›" when the tap goes one level deeper rather than choosing. */
     private fun row(title: String, line: String?, chip: String?, drill: Boolean,
                     enabled: Boolean = true, caps: List<ModelChoices.Cap> = emptyList(),
+                    capWords: (ModelChoices.Cap) -> String = { it.says },
                     onTap: () -> Unit): View {
         val r = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -232,7 +237,7 @@ class ModelSheet(
             // One announcement per row, in reading order — including what the model can do,
             // because the marks are drawings and a screen reader cannot see them; "›" is said
             // as "opens".
-            contentDescription = (listOfNotNull(title, line) + caps.map { it.says } +
+            contentDescription = (listOfNotNull(title, line) + caps.map(capWords) +
                 listOfNotNull(chip, if (drill) "opens" else null)).joinToString(", ")
         }
         val text = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
@@ -246,7 +251,7 @@ class ModelSheet(
             val marks = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             for (cap in caps) {
                 marks.addView(GlyphMark(act, Marks.cap(cap), color(R.color.hv_text_dim)).apply {
-                    contentDescription = cap.says
+                    contentDescription = capWords(cap)
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 }, LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(8) })
             }

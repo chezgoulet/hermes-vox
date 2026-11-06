@@ -347,12 +347,16 @@ declaration is what makes the app eligible
 ### Commands (the `/` button on the main screen)
 
 Grouped by what a person is acting on — **This conversation** and **The agent** — never by the
-subsystem that does the work (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `enum class Group`). Each row leads with a mark drawn from
+subsystem that does the work (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `enum class Group`). Two groups, one row per command: there is no second "Fits now" section and no
+search field above the list (#499, #500). Each row leads with a mark drawn from
 the being's six-verb motion grammar for that kind of command, amber only when something is lost
-for good (android/app/src/main/java/com/hermesvox/VerbMark.kt `class VerbMark`). Each row
+for good (android/app/src/main/java/com/hermesvox/VerbMark.kt `class VerbMark`); a command whose
+category's still would say the wrong thing names its own drawing in the same vector vocabulary —
+`/new` an open ring around a plus, `/sessions` a short list, the share row the platform's
+three-node share graph (android/app/src/main/java/com/hermesvox/Marks.kt `object Marks`). Each row
 states its effect in one line and, only when the command loses something, what it loses in a
 second line (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `val cost`). `/help` is not listed on the sheet (it would open a copy of the
-sheet); a typed "/help" and the search still reach it (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `val listed`).
+sheet); a typed "/help" still reaches it (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `val listed`).
 
 A command that runs in place shows *queued / running… / done / failed* on the row where it was
 tapped, instead of a toast (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `enum class RunState`).
@@ -366,7 +370,7 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/clear` | This conversation | (also `/reset`) Clears the screen; the agent keeps the thread, and a live call is re-dialled | The screen's copy, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Clear the screen`) |
 | `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | This thread, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Start a fresh thread`) |
 | `/sessions` | This conversation (only while the Alpha **Sessions** set is on) | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
-| `/models` | The agent | Opens the model switcher: provider → category → model | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Choose the model`) |
+| `/models` | The agent | Opens the model switcher: provider → model, one list, each model carrying small marks for what it can do — only the `reasoning`/`can_disable_reasoning` and `fast` flags `/api/model/options` states, never a guess from the model's name | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Choose the model`) |
 | `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
 | `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Reach the gateway again`) |
 | `/health` | The agent | (also `/status`) Whether the agent is up, and its version | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Whether the agent is up`) |
@@ -379,7 +383,7 @@ only while its switch is on, `/profiles` only while the Alpha *Switching profile
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the ten names above
-(android/app/src/main/java/com/hermesvox/MainActivity.kt `when (c.name) { "/profiles" -> profiles`)`), and no build of
+(android/app/src/main/java/com/hermesvox/MainActivity.kt `"/models" -> showModelChooser()`), and no build of
 this tree has ever had a handler for one. Files arrive a different way: the **Share with agent**
 row inside the commands sheet, or sharing one to Vox from another app, offers it to the agent —
 see *Share with agent* below. Do not invent a `/file` command; do not say files are impossible
@@ -457,11 +461,12 @@ targets (android/app/src/main/java/com/hermesvox/AvatarView.kt `fun setPaused`).
 waiting colour, when it failed (android/app/src/main/java/com/hermesvox/CommandMotion.kt `fun verbFor`).
 The log says which: `event=command-motion` (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=command-motion`).
 
-**Finding a command.** The commands screen has a search box that matches what a person wants
-("it's slow", "can't reach it", "start over"), not only command names
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt `fun search`), and leads with what fits the moment —
-*reconnect* and *health* after a failed turn, *compress* in a long conversation
-(android/app/src/main/java/com/hermesvox/CommandCatalog.kt `fun suggest`). A failed turn's line on the main screen
+**Finding a command.** The commands screen shows its two groups and nothing else — no search box
+(#500) — and marks the row that fits the moment: the row's state slot reads "fits now" —
+*reconnect* and *health* after a failed turn, *compress* in a long conversation — instead of
+listing the command a second time (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `fun suggest`).
+The catalogue still keeps the words a person would use ("it's slow", "can't reach it", "start
+over") (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `fun search`), and a failed turn's line on the main screen
 ends "tap to reconnect" and does it; on a caller's first three calls, twenty silent seconds bring
 the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java/com/hermesvox/Discovery.kt `const val STUCK_AFTER_MS = 20_000L`).
 
