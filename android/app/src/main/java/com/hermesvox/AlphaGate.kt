@@ -64,21 +64,6 @@ object AlphaGate {
                 "with its own token, and your agent reaches it over MCP. Off until you set it up. " +
                 "Independent of Presence.",
         ),
-        PROFILES(
-            "alpha_set_profiles", "Switching profiles",
-            "Talk to another agent on your host. Each profile carries its own address, key, " +
-                "model and voice, and switching starts a fresh conversation. Unfinished until a " +
-                "host's own profile list arrives reliably (#436).",
-        ),
-        // #437: the session browser. The sibling of Switching profiles — both are the same
-        // class of unfinished surface (a host question answered with the host's key), and both
-        // leave Alpha together once they have been lived with.
-        SESSIONS(
-            "alpha_set_sessions", "Sessions",
-            "See the conversations your agent already has — including ones you started at your " +
-                "desk — and pick one up on the phone. Resuming shows what was said and continues " +
-                "the same conversation.",
-        ),
     }
 
     /** What the gate reads, narrow enough for an in-memory fake. */

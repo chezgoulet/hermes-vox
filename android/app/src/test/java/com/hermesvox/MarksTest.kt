@@ -108,6 +108,19 @@ class MarksTest {
         assertEquals("two rows draw the same mark: $shown", shown.size, shown.toSet().size)
     }
 
+    @Test fun profilesIsNotTheSameDrawingAsTheModelPickerEither() {
+        // D39: /profiles left Alpha on 2026-11-06, so it and /models are on the sheet together
+        // for the first time. /models keeps the CHOOSE nucleus; /profiles names a switch.
+        val profiles = CommandCatalog.find("/profiles", CommandCatalog.Gate.EVERYTHING)!!
+        assertEquals(Marks.Mark.SWITCH, profiles.glyph)
+        assertEquals(null, CommandCatalog.find("/models", CommandCatalog.Gate.EVERYTHING)!!.glyph)
+        assertEquals("a change of agent, said as a change", "switch", Marks.Mark.SWITCH.label)
+        // Both rows are visible to a fresh install, which is what makes that matter.
+        val shown = CommandCatalog.grouped().flatMap { it.second }.map { it.name }
+        assertTrue(shown.contains("/models"))
+        assertTrue(shown.contains("/profiles"))
+    }
+
     @Test fun everyDrawingIsDistinctAndNamedForWhatItSays() {
         val signatures = marks.associateWith { Marks.shapes(it).toString() }
         assertEquals("two marks share one drawing", marks.size, signatures.values.toSet().size)

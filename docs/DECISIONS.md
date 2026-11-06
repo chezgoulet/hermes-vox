@@ -703,6 +703,14 @@ unchanged and now stated for the whole gate: continuous listening requires Prese
 is independent of Presence, and Sessions and Switching profiles stay gated under D39's device-pass
 promotion condition.
 
+**Amended 2026-11-06.** The panel has **four sets**: Presence, Continuous listening, Turn-taking
+and Phone tools. **Sessions and Switching profiles left the gate** on this date — the owner's
+device pass showed the session switcher and the profile switcher work (D39's condition, met for
+both), so both sets were deleted, their panel rows with them, and `/sessions`, the session picker
+and the profile switcher are on for every install. Nothing about either feature changed beyond the
+gate. Profiles also stopped being an editor before it left: the picker lists the host's profiles
+and switches, and never creates or changes one — profiles are configured on the host.
+
 **The release notes.** Presence is **announced** — named, described as a layer you turn on through
 Alpha, and honest about being unfinished. It is not buried, and it is not oversold.
 ## D30 — The soul is a companion, not a gatekeeper
@@ -1156,14 +1164,13 @@ what is running, the time left, the device facts — because that is what lets i
 about four minutes left". It may not set, cancel or change anything. `PhoneReadout` exposes the
 registry and nothing else, so a mutating capability is absent from its type, not merely discouraged.
 
-**The gate has six sets and one dependency.** Presence is the being; **Phone tools** is the mind
+**The gate has four sets and one dependency.** Presence is the being; **Phone tools** is the mind
 acting on the phone. Either can be taken without the other, and no dependency is added between
 them. **Continuous listening** belongs with Presence because it is how the being hears: it cannot be
 selected without Presence, `AlphaGate.allows()` refuses a stored preference from an earlier build,
 and turning Presence off leaves it inert with the picker saying why. **Turn-taking** needs
 continuous listening for its acknowledgements but adds no second gate dependency. **Sessions** and
-**Switching profiles** stay behind the gate under D39's promotion condition: a device pass, not a
-build.
+**Switching profiles** left the gate on 2026-11-06, their passes having been made.
 
 **What it does not decide.** Whether a future foreground model ever gets a safe, separate voice
 action lane (it would be a new decision and would need its own always-on guarantee), and whether the
@@ -1181,3 +1188,17 @@ from the code that the paths exist.
 **Why.** Both are host questions answered with the host's own key, and both were lived with only
 lightly. D33 puts the depth of a committed feature in the milestone that commits it; this decision
 records the door out, so the sets are not promoted by drift or by a release note.
+
+**Met — 2026-11-06.** The owner's device pass showed both switchers work.
+
+- **Sessions.** `/sessions` lists what the host has, the picker marks the one in use, a switch asks
+  before it interrupts a live call, and the conversation it starts is fresh. The **Sessions** set
+  was deleted and its panel row with it; `/sessions` is on for every install and nothing else about
+  sessions changed.
+- **Switching profiles.** The picker lists the host's profiles, marks the one in use, and a switch
+  ends a live call and starts a fresh conversation. The **Switching profiles** set was deleted and
+  its panel row with it; the switcher is on for every install. The picker also stopped being an
+  editor first: add and edit were removed, so nothing in Vox writes a profile.
+
+Both were promoted by this decision's own condition, not by a release note. The door this decision
+recorded is closed for both, and the Alpha gate is four sets.

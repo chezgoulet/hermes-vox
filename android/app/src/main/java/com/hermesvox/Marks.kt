@@ -32,6 +32,8 @@ object Marks {
         NEW_THREAD("new thread"),
         /** The threads the agent already has: a short list, its newest line still short. */
         SESSIONS("sessions"),
+        /** Switching agent: two arrows that trade places — one agent for another. */
+        SWITCH("switch"),
         ;
 
         companion object {
@@ -80,11 +82,22 @@ object Marks {
             )
         }
         // Three rules, the last one shorter: a list of threads, read top to bottom. It is
-        // PULSE's meaning (/sessions and /models both choose) drawn as what is being chosen.
+        // PULSE's meaning (a CHOOSE row) drawn as what is being chosen.
         Mark.SESSIONS -> listOf(
             CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(4.8f, 7.6f), CommandGlyph.Pt(19.2f, 7.6f))),
             CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(4.8f, 12f), CommandGlyph.Pt(19.2f, 12f))),
             CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(4.8f, 16.4f), CommandGlyph.Pt(14.4f, 16.4f))),
+        )
+        // Two arrows that trade places: /profiles is CHOOSE like /models, and until it left
+        // Alpha the two rows were never on the sheet together. Now they are, and +PULSE would
+        // have made "which brain" and "which agent" the same drawing.
+        Mark.SWITCH -> listOf(
+            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(5.2f, 8.6f), CommandGlyph.Pt(18.8f, 8.6f))),
+            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(15.2f, 5.2f), CommandGlyph.Pt(18.8f, 8.6f),
+                CommandGlyph.Pt(15.2f, 12.0f))),
+            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(18.8f, 15.4f), CommandGlyph.Pt(5.2f, 15.4f))),
+            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(8.8f, 12.0f), CommandGlyph.Pt(5.2f, 15.4f),
+                CommandGlyph.Pt(8.8f, 18.8f))),
         )
         Mark.NEW_THREAD -> {
             // A ring open at the top right — the thread's loose end — around a plus: the one

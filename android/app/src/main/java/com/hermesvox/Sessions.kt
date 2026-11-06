@@ -75,9 +75,6 @@ object Sessions {
     /** The list answered but one session's transcript did not. */
     const val TRANSCRIPT_FAILED = "the host did not answer with this session's transcript"
 
-    /** The last door's refusal: with the Alpha set off, no path adopts a session (#437 §1). */
-    const val REFUSED_ALPHA = "Sessions are off in Alpha features"
-
     /** A session the host did not title. Said, not left blank. */
     const val UNTITLED = "an untitled session"
 
@@ -461,33 +458,16 @@ object Sessions {
     /** The trail block's budget — the same one [CrawlHistory] keeps for its own ring. */
     const val TRAIL_MAX = CrawlHistory.MAX_CHARS
 
-    // ---- the gate, and the word that reaches the card ---------------------------------
+    // ---- the word that reaches the card -----------------------------------------------
 
     /**
-     * The Alpha set off is the last door's refusal: every path that adopts a session asks
-     * this first, so a banner, a restored state or a stale card cannot adopt one behind it.
-     * Null means the feature may run.
+     * The command a typed (or dictated) word means, or null when this is not that word.
+     * Sessions left Alpha (#437, D39), so the word is the catalogue's for every install.
      */
-    fun refusal(reader: AlphaGate.Reader): String? =
-        if (AlphaGate.allows(reader, AlphaGate.FeatureSet.SESSIONS)) null else REFUSED_ALPHA
-
-    /**
-     * The command a typed (or dictated) word means, or null when the catalogue does not
-     * answer to it. With the Alpha set off the catalogue has no such command, so `/sessions`
-     * — like a name no build has ever had — is ordinary conversation and opens nothing.
-     */
-    fun commandFor(input: String, gate: CommandCatalog.Gate): CommandCatalog.Command? {
+    fun commandFor(input: String): CommandCatalog.Command? {
         val word = input.trim().lowercase().removePrefix("/")
         if (word != COMMAND.removePrefix("/")) return null
-        return CommandCatalog.find(COMMAND, gate)
-    }
-
-    /**
-     * The catalogue's gate for this feature — the same mechanism `/diagnostics` and
-     * `/profiles` use, so there is one way a row is absent rather than three.
-     */
-    fun gate(reader: AlphaGate.Reader): CommandCatalog.Gate = CommandCatalog.Gate { c ->
-        c.name != COMMAND || AlphaGate.allows(reader, AlphaGate.FeatureSet.SESSIONS)
+        return CommandCatalog.find(COMMAND, CommandCatalog.Gate.EVERYTHING)
     }
 
     // ---- timestamps -------------------------------------------------------------------
