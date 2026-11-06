@@ -51,6 +51,10 @@ A maintainer records that comment in `CLA-SIGNATURES.md` against the pull reques
 merges after it. Small fixes — a typo, a broken link, a one-line correction — do not need the
 agreement; send them and we will ask if it turns out to be more than that.
 
+**This is automatic.** When you open your first pull request, a bot comments with that text and
+sets the CLA check to red. Post the three lines as a reply and it records your entry, turns the
+check green and gets out of the way. Only the author of the pull request can sign it.
+
 Do not send code you do not have the right to license.
 
 ## Repository layout
