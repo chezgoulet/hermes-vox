@@ -37,9 +37,23 @@ object TurnRepair {
     const val REASON_TIMEOUT = "turn-timeout"
     /** The stream sent nothing for [TurnWait.SILENT_STREAM_MS]: the app stopped waiting. */
     const val REASON_SILENT = "stream-silent"
+    /** The caller answered the wait card with "stop". */
+    const val REASON_WAIT_STOP = "wait-stop"
+    /** The wait card's window closed without an answer. */
+    const val REASON_WAIT_NO_ANSWER = "wait-no-answer"
+    /** The caller's extension ran out with the stream still silent. */
+    const val REASON_WAIT_EXTENDED = "wait-extended"
 
     /** The app gave up waiting, and nothing had been started that it knows of. */
     const val LINE_GAVE_UP = "That took too long, so I stopped waiting. Want to ask again?"
+
+    /** The three wait-card endings are already one plain sentence each; no retry pitch. */
+    fun waitLine(reason: String): String? = when (reason) {
+        REASON_WAIT_STOP -> WaitPrompt.LINE_STOPPED
+        REASON_WAIT_NO_ANSWER -> WaitPrompt.LINE_NO_ANSWER
+        REASON_WAIT_EXTENDED -> WaitPrompt.LINE_EXTENDED
+        else -> null
+    }
 
     /**
      * The turn ended without an answer AFTER the mind had started work (a tool call was seen).
@@ -55,7 +69,9 @@ object TurnRepair {
      * something may have happened. A timeout or a silent stream says the app stopped waiting —
      * not that the mind failed — because that is what the app knows.
      */
-    fun line(reason: String, workStarted: Boolean): String = when {
+    fun line(reason: String, workStarted: Boolean): String = waitLine(reason) ?: when {
+        // A wait-card ending says only what the app did ("stopped waiting"). That is true
+        // whatever the mind had started, so the unknown-outcome guard does not override it.
         workStarted -> LINE_UNCERTAIN
         reason == REASON_TIMEOUT || reason == REASON_SILENT -> LINE_GAVE_UP
         else -> LINE

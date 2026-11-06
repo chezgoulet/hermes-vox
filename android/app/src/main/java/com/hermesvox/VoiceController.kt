@@ -80,6 +80,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** #282: the run ended while the request was still up, so it can no longer be
          *  answered. Never a decision — the gateway withdrew it. */
         fun onApprovalClosed(prompt: ApprovalPrompt, reason: String) {}
+        /** The silent ceiling was reached: ask the caller, on the approval card surface,
+         *  whether to keep waiting or stop. Not an approval — [WaitPromptCard] carries no
+         *  id and authorises nothing. */
+        fun onWaitPrompt(card: WaitPromptCard) {}
+        /** The wait card is gone: answered ([WaitPrompt.Outcome.KEEP]/`STOP`), its window
+         *  closed (`NO_ANSWER`), the extension ended (`EXTENDED`), or the stream resumed
+         *  and made it irrelevant (`DISMISSED`). */
+        fun onWaitPromptResolved(card: WaitPromptCard, outcome: WaitPrompt.Outcome) {}
         /** #373: the spoken-replies leg changed. [line] is the reason to show ("" when the
          *  leg is healthy again, so the screen can put the call's own state back);
          *  [degraded] means spoken replies are OFF. Both directions arrive here — a
@@ -598,6 +606,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     private var approvalSilentMs = 0L
     @Volatile private var approvalDecoding = false
     private val APPROVAL_PAUSE_MS = 600L
+
+    // ---- The wait prompt (the silent ceiling asks instead of abandoning) -----
+    // This is NOT an approval: it never enters approvalGate, carries no id, and cannot be
+    // answered through submitApproval. It rides the same card surface only.
+    private val waitRun = WaitPromptRun()
+    @Volatile private var waitCardUp = false
+    /** Optional host-stated remaining allowance for the run; null = the app's 120 s default. */
+    @Volatile private var waitHostRemainingMs: Long? = null
+    /** The budget got its one "keep waiting" extension for this turn. */
+    @Volatile private var waitBudgetExtended = false
 
     init {
         // 0.8/M2.1: a PROBE-ONLY controller exists to ping the gateway and nothing
@@ -1192,6 +1210,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         if (!continuous) try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
+                    // The wait card is answered on the same mic as an approval, but it is
+                    // not a consent request: a non-answer is the caller's next turn.
+                    if (waitPromptPending()) {
+                        val consumed = waitUtterance(cleaned)
+                        VoxLog.d("event=wait-prompt-voice capture=segment consumed=$consumed " +
+                            "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
+                        if (!continuous) try { r.stop() } catch (_: Throwable) {}
+                        continue
+                    }
                     // #282: a phrase heard while a request is up answers the request; it
                     // is never a new turn (and never a barge against the waiting run).
                     if (approvalPending()) {
@@ -1379,6 +1406,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                         }
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
                         if (vadSpeech) callerVoiceAt = readAt
+                        // The wait card uses the SAME segmented capture and recogniser as an
+                        // approval, but its answers are KEEP/STOP and nothing it hears can
+                        // authorise an action.
+                        if (waitPromptPending()) {
+                            captureApproval(frames, sr, vadSpeech, readAt)
+                            bargeStat.reset()
+                            continue
+                        }
                         // #282: while an approval is up, the mic answers THAT — it must
                         // not barge-cancel the run that is waiting for the answer. The
                         // same frames, VAD and recogniser as the ordinary loop; only the
@@ -1601,6 +1636,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      * "approve" takes the least-privilege yes the gateway offered; "no" is always deny.
      */
     fun approvalVoice(text: String): Boolean {
+        // The wait card is answered by the SAME recogniser and allowlist shape, but its
+        // two answers are keep/stop and nothing it hears authorises an action.
+        if (waitPromptPending()) return waitUtterance(text)
         // The phone's uninstall card comes first: it is a card on this screen (or a notification)
         // and its answer uses the SAME allowlist. A phone card and a gateway card cannot both be
         // up in practice; if they were, the phone's two-word card is the one in front.
@@ -1631,6 +1669,118 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** True while either kind of approval card is up, so the mic answers instead of starting a turn. */
     private fun approvalPending(): Boolean =
         approvalGate.current() != null || localActions.currentApproval() != null
+
+    // ---- The wait prompt (not an approval) ---------------------------------
+
+    /** True while the silent ceiling's question is on screen. */
+    private fun waitPromptPending(): Boolean = waitCardUp
+
+    /** Touch: answer the wait card. A duplicate tap is a local no-op. */
+    fun answerWaitPrompt(answer: WaitPrompt.Answer) {
+        answerWait(answer, "touch")
+    }
+
+    /**
+     * Records the first answer and dismisses the card. KEEP speaks its own short
+     * acknowledgement and grants the one extension; STOP is spoken by the abandonment
+     * path, exactly like the other ceilings. Nothing here touches [approvalGate].
+     */
+    private fun answerWait(answer: WaitPrompt.Answer, source: String) {
+        if (!waitCardUp) {
+            VoxLog.d("event=wait-prompt ignored reason=no-card answer=${answer.name.lowercase()}")
+            return
+        }
+        // Requirement and safety rule: a wait question never answers over an approval.
+        if (approvalPending()) {
+            VoxLog.d("event=wait-prompt dismissed reason=approval-owns-screen")
+            dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+            return
+        }
+        val now = android.os.SystemClock.uptimeMillis()
+        val extensionMs = WaitPrompt.extensionMs(waitHostRemainingMs)
+        if (!waitRun.answer(answer, now, extensionMs)) {
+            VoxLog.d("event=wait-prompt ignored reason=duplicate answer=${answer.name.lowercase()}")
+            return
+        }
+        waitCardUp = false
+        VoxLog.d("event=wait-prompt answer=${answer.name.lowercase()} source=$source " +
+            "extensionMs=${if (answer == WaitPrompt.Answer.KEEP) extensionMs else 0L}")
+        val card = WaitPromptCard()
+        main.post {
+            listener?.onWaitPromptResolved(
+                card,
+                if (answer == WaitPrompt.Answer.KEEP) WaitPrompt.Outcome.KEEP else WaitPrompt.Outcome.STOP,
+            )
+            if (answer == WaitPrompt.Answer.KEEP) speakGlue(WaitPrompt.LINE_KEPT, source = SOURCE_WAIT)
+        }
+    }
+
+    /** Shows and speaks the question. Main thread only; never over an approval card. */
+    private fun showWaitPrompt(gen: Long) {
+        if (gen != turnGen || !turnInFlight || genCancelled) {
+            waitRun.reset()
+            return
+        }
+        if (approvalPending()) {
+            VoxLog.d("event=wait-prompt suppressed reason=approval")
+            waitRun.reset()
+            return
+        }
+        if (waitCardUp) return
+        waitCardUp = true
+        VoxLog.d("event=wait-prompt show gen=$gen windowMs=${WaitPrompt.WINDOW_MS}")
+        listener?.onWaitPrompt(WaitPromptCard())
+        // One short line, in the being's own voice. It is glue: the mind's reply has not
+        // started, and a caller who talks over it barges the turn by the existing rules.
+        speakGlue(WaitPrompt.QUESTION, source = SOURCE_WAIT)
+    }
+
+    /** Dismisses the card without answering it. Thread-safe (the worker may call it). */
+    private fun dismissWaitPrompt(outcome: WaitPrompt.Outcome) {
+        if (!waitCardUp) return
+        waitCardUp = false
+        VoxLog.d("event=wait-prompt dismissed outcome=${outcome.name.lowercase()}")
+        val card = WaitPromptCard()
+        main.post { listener?.onWaitPromptResolved(card, outcome) }
+    }
+
+    /** A new turn, a resumed stream or an approval: the old prompt no longer applies. */
+    private fun resetWaitPrompt() {
+        if (waitCardUp) dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+        waitRun.reset()
+        waitBudgetExtended = false
+        waitHostRemainingMs = null
+    }
+
+    /**
+     * Voice answer while the wait card is up. The whole utterance must be an answer, by
+     * the same allowlist shape as an approval. Anything else is NOT an answer: the card is
+     * dismissed and those words become the caller's next turn (the stalled run is cut the
+     * same way a barge cuts it). A hedge is therefore neither "keep waiting" nor an action.
+     *
+     * Returns true when the wait card consumed the utterance (so it must not start a
+     * normal turn directly).
+     */
+    private fun waitUtterance(text: String): Boolean {
+        if (!waitCardUp) return false
+        val answer = WaitPrompt.resolve(text)
+        VoxLog.d("event=wait-prompt-voice answer=${answer?.name?.lowercase() ?: "none"} " +
+            "text=${if (logTranscripts()) text.take(80) else "<hidden>"}")
+        if (answer != null) {
+            answerWait(answer, "voice")
+            return true
+        }
+        dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+        if (text.isNotBlank()) {
+            // Their words are the newer intent. Queue them and cut the stalled turn; the
+            // gate release submits the queued turn (the F3 path every spoken turn uses).
+            pendingTurn.offer(text, android.os.SystemClock.uptimeMillis())
+            genCancelled = true
+            VoxLog.d("event=wait-prompt question-as-turn chars=${text.length}")
+            main.post { silenceAll("wait-question") }
+        }
+        return true
+    }
 
     /**
      * 0.9.1 soak: an utterance arrived while [request]'s card is up and it was not an answer.
@@ -1727,6 +1877,14 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /** Called from the stream worker when an `approval.request` arrives. */
     private fun approvalArrived(request: ApprovalRequest, runAlive: Boolean, fromTurn: Boolean = false) {
+        // The approval owns the screen. A wait question never coexists with it; the
+        // unanswered card is dismissed and its state dropped (the approval event also
+        // resets the silence clock, so a later silence may ask again).
+        if (waitCardUp) {
+            dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+            waitRun.reset()
+            waitBudgetExtended = false
+        }
         val accepted = approvalGate.offer(request, runAlive)
         if (accepted == null) {
             VoxLog.d("event=approval ignored reason=${if (!runAlive) "run-ended" else "duplicate"} " +
@@ -1977,6 +2135,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val said = raw?.let {
                     (TranscriptValidator.validate(it, -1L, -1L) as? TranscriptValidator.Verdict.Accept)?.text
                 } ?: raw
+                if (waitPromptPending()) {
+                    // Not an answer = the caller's next turn; blank = no answer yet.
+                    if (!said.isNullOrBlank()) waitUtterance(said)
+                    return@execSubmit
+                }
                 if (!said.isNullOrBlank() && localActions.currentApproval() != null) {
                     val answer = localActions.approvalVoice(said)
                     VoxLog.d(
@@ -2042,6 +2205,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val cleaned = text.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
                     // #282: on this leg the same recogniser is armed for the approval
                     // while one is pending; its answer never becomes a turn.
+                    if (waitPromptPending()) {
+                        waitUtterance(cleaned)
+                        if (listening && waitPromptPending()) listen()
+                        return
+                    }
                     if (approvalPending()) {
                         val matched = approvalVoice(cleaned)
                         VoxLog.d("event=approval-voice capture=platform matched=$matched " +
@@ -2231,6 +2399,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         firstSoundPushed = false
         turnToolCalls = 0; turnToolOutputs = 0
         genCancelled = false
+        // A new turn starts with no wait question: the previous one's card (if any) is
+        // retired and its one extension does not carry over.
+        resetWaitPrompt()
         replyGen = gen
         if (!replies.begin(gen)) VoxLog.w("event=reply-begin refused gen=$gen (already open or ended)")   // #240
         armTranscript()         // 0.5.0-A: a fresh reveal cursor for this turn
@@ -2431,6 +2602,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                             lastEventAt = tick
                             stall5 = false; stall15 = false
                             lastActivityAt = tick   // T2: a real SSE delta/event batch is turn activity
+                            // The stream is alive again, so the wait question no longer applies.
+                            if (waitCardUp) {
+                                dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+                                waitRun.reset()
+                                waitBudgetExtended = false
+                            }
                             VoxLog.dd("event=stream-poll gen=$gen ev=${evts?.length() ?: 0} done=$doneNow textLen=$textLen err=${pollErr.take(70)}")
                         } else {
                             val idle = tick - lastEventAt
@@ -2441,14 +2618,55 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val waiting = turnApprovalWaiting()
                             if (!waiting && idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                             else if (!waiting && idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
-                            // TurnWait: a stream that stays open and sends NOTHING had no failure
-                            // path short of the 120 s budget (no poll errors to count). Past the
-                            // silent ceiling — no tool running, no card up — stop waiting and say so.
-                            if (TurnWait.silentStreamExpired(idle, toolRunning = turnToolCalls > turnToolOutputs, approvalWaiting = waiting)) {
-                                VoxLog.w("event=stream-silent gen=$gen idleMs=$idle tools=$turnToolCalls/$turnToolOutputs — stopping the wait")
-                                abandoned = true
-                                abandonTurn(gen, sid, route, budget, TurnRepair.REASON_SILENT)
-                                throw Exception(TurnRepair.REASON_SILENT)
+                            // The optional host statement of how much of the run's allowance
+                            // remains; absent on today's gateway, where the 120 s default applies.
+                            val hostRemaining = obj.optLong("run_remaining_ms", -1L)
+                            if (hostRemaining >= 0L) waitHostRemainingMs = hostRemaining
+                            // TurnWait: a stream that stays open and sends NOTHING had no
+                            // failure path short of the budget. At the silent ceiling the app
+                            // now ASKS instead of abandoning; the caller's answer, not the
+                            // clock, decides whether to wait or stop.
+                            if (idle >= TurnWait.SILENT_STREAM_MS || waitRun.answer() != null || waitCardUp) {
+                                if (waitRun.extensionGiven() && !waitBudgetExtended) {
+                                    waitBudgetExtended = true
+                                    val extra = waitRun.grantedExtensionMs()
+                                    budget.extend(extra)
+                                    VoxLog.d("event=wait-prompt extend gen=$gen extraMs=$extra " +
+                                        "deadlineMs=${budget.deadlineMs(tick)}")
+                                }
+                                val step = waitRun.step(
+                                    silentForMs = idle,
+                                    nowMs = tick,
+                                    toolRunning = turnToolCalls > turnToolOutputs,
+                                    // ANY card owns the screen, not only this turn's (a held or
+                                    // debug-arm approval must not have a wait question on top).
+                                    approvalWaiting = waiting || approvalPending(),
+                                )
+                                if (step == WaitPrompt.Step.ASK && waitRun.markAsked(tick)) {
+                                    // The card's window must be answerable. The agent budget can
+                                    // be seconds from expiring when the question goes up (a run
+                                    // that goes quiet 55 s into the turn asks at 115 s, five
+                                    // seconds before the 120 s budget): without this the card
+                                    // would vanish almost at once and the caller would hear the
+                                    // timeout line instead of the question's own outcome.
+                                    // Granting exactly the window buys only the ten seconds it
+                                    // takes to answer; "keep waiting" is the separate, once-only
+                                    // extension below.
+                                    budget.extend(WaitPrompt.WINDOW_MS)
+                                    VoxLog.w("event=wait-silent gen=$gen idleMs=$idle " +
+                                        "tools=$turnToolCalls/$turnToolOutputs — asking " +
+                                        "windowMs=${WaitPrompt.WINDOW_MS}")
+                                    main.post { showWaitPrompt(gen) }
+                                }
+                                val why = WaitPrompt.reason(step)
+                                if (why != null) {
+                                    WaitPrompt.stopOutcome(step)?.let { dismissWaitPrompt(it) }
+                                    VoxLog.w("event=stream-silent gen=$gen idleMs=$idle " +
+                                        "tools=$turnToolCalls/$turnToolOutputs — stopping the wait reason=$why")
+                                    abandoned = true
+                                    abandonTurn(gen, sid, route, budget, why)
+                                    throw Exception(why)
+                                }
                             }
                         }
                         emitEvents(evts, t0, gen)
@@ -2534,6 +2752,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val reason = when (e.message) {
                     "timeout" -> TurnRepair.REASON_TIMEOUT
                     TurnRepair.REASON_SILENT -> TurnRepair.REASON_SILENT
+                    TurnRepair.REASON_WAIT_STOP -> TurnRepair.REASON_WAIT_STOP
+                    TurnRepair.REASON_WAIT_NO_ANSWER -> TurnRepair.REASON_WAIT_NO_ANSWER
+                    TurnRepair.REASON_WAIT_EXTENDED -> TurnRepair.REASON_WAIT_EXTENDED
                     else -> "stream-error"
                 }
                 when (val action = terminal.fail(reason)) {
@@ -2555,6 +2776,10 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                // A wait card belongs to its turn; the turn is over, so the question is too.
+                if (waitCardUp) dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+                waitRun.reset()
+                waitBudgetExtended = false
                 // F3: the mind's turn is over. If words were queued during it, they are next —
                 // runPendingTurn waits for this reply's voice to finish if it is still playing.
                 main.post { runPendingTurn() }

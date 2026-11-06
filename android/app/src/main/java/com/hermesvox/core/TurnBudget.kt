@@ -34,6 +34,9 @@ internal class TurnBudget(
     /** Every completed pause in this turn. */
     private var pausedTotal = 0L
 
+    /** Agent time granted by the caller's "keep waiting" answers (at most one per turn). */
+    private var extraMs = 0L
+
     val isPaused: Boolean get() = pausedAt != NOT_PAUSED
 
     /**
@@ -43,6 +46,16 @@ internal class TurnBudget(
      */
     fun approvalPending(pending: Boolean, atMs: Long = now()) {
         if (pending) pause(atMs) else resume(atMs)
+    }
+
+    /**
+     * Extends the agent's budget. The wait card uses this once when the caller answers
+     * "keep waiting" — the run was silent at the old ceiling, not finished, so the caller
+     * is buying it more agent time rather than pausing the clock. The extension is additive
+     * and never restarts the elapsed time.
+     */
+    fun extend(ms: Long) {
+        if (ms > 0L) extraMs += ms
     }
 
     fun pause(atMs: Long = now()) {
@@ -69,7 +82,7 @@ internal class TurnBudget(
      * approval is pending the instant keeps moving with the human, rather than being
      * fixed when the turn started.
      */
-    fun deadlineMs(atMs: Long = now()): Long = startedAt + limitMs + pausedTotal + currentPauseMs(atMs)
+    fun deadlineMs(atMs: Long = now()): Long = startedAt + limitMs + extraMs + pausedTotal + currentPauseMs(atMs)
 
     /** True once the agent's budget is spent. A pending approval never expires. */
     fun expired(atMs: Long = now()): Boolean =
