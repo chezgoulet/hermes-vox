@@ -1071,9 +1071,12 @@ lane, not the release. Contacts is now built (the read lane) and returns names a
 removed as well as opened. **Both edges named below were closed later the same day** (the handoff lane, #480). The gate is
 `PhoneEngine.backgroundRefusal` → `PhoneHandoff.canStartActivity`: every handoff asks whether an
 activity of ours is resumed, or in picture-in-picture and visible, *before* it resolves a
-target, ends a call or announces anything, and a no is a refusal rather than a silent success.
+target, ends a call or announces anything, and a no is a refusal rather than a silent success —
+`reason:"background"`, before anything is resolved or performed.
 `dial` now runs its handoff on the utterance's **done** callback, so the announcement is heard
-before the call ends, and the late dial result is audited instead of discarded. The rest of D36
+before the call ends. The dialer opens after that reply, so the result says `dialer:"unknown"` with
+`outcome_uncertain:true` rather than claiming it opened, `status` carries the late
+`opened` / `not_opened` answer, and a dialer that did not open is a refusal. The rest of D36
 stands.
 
 ## D37 — Uninstalling an app is the one phone action with its own approval card
