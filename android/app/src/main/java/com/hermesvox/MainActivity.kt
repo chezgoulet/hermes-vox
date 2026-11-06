@@ -2724,20 +2724,10 @@ open class MainActivity : AppCompatActivity() {
     private var callTurns = 0L
     /** Which optional commands exist right now: `/diagnostics` while its own switch is on
      *  (#418), `/profiles` only while the Alpha gate allows "Switching profiles" (#402), and
-     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, the search,
-     *  /help and the typed word — there is no second way a row is absent. */
-    private fun commandGate(): CommandCatalog.Gate {
-        val r = AlphaGate.reader(prefs)
-        val diagnostics = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
-        val sessions = Sessions.gate(r)
-        val profiles = AlphaGate.allows(r, AlphaGate.FeatureSet.PROFILES)
-        return CommandCatalog.Gate { c ->
-            when (c.name) {
-                "/profiles" -> profiles
-                else -> diagnostics.on(c) && sessions.on(c)
-            }
-        }
-    }
+     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, /help and
+     *  the typed word — there is no second way a row is absent (#501). */
+    private fun commandGate(): CommandCatalog.Gate =
+        CommandGate.of(AlphaGate.reader(prefs), DiagnosticSummary.store(prefs))
 
     protected fun showCommands() = commandsSheet.show()
 
@@ -3150,7 +3140,9 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** /models — the model switcher (UI/UX pass): the REAL gateway catalog (GET
-     *  /api/model/options) fanned out provider → category → model in [ModelSheet], on the
+     *  /api/model/options) as provider → model in [ModelSheet] (#5 dropped the category
+     *  level: a provider opens onto all its models, each carrying the capability flags the
+     *  gateway states), on the
      *  app's ground, instead of a stock list of raw strings. Selecting a model sets the app
      *  model+provider prefs that the /v1/responses client sends per request (the blessed
      *  LIGHT PATH) — the gateway overrides the entity's inference backend, while the entity's

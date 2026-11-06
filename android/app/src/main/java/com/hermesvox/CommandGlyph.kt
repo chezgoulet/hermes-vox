@@ -208,7 +208,15 @@ object CommandGlyph {
 
     /** Paints [icon] into the square of side [size] at ([left], [top]). */
     fun paint(canvas: Canvas, icon: Icon, ink: Int, left: Float, top: Float, size: Float) =
-        GlyphPainter.paint(canvas, icon, ink, left, top, size)
+        GlyphPainter.paint(canvas, shapes(icon), ink, left, top, size)
+
+    /**
+     * The same painter, for any drawing authored in this vocabulary — the commands sheet's
+     * row marks ([Marks]) and the model row's capability marks are geometry data exactly like
+     * the entry glyphs, so they are laid out and measured by the same code (#3/#5).
+     */
+    fun paint(canvas: Canvas, shapes: List<Shape>, ink: Int, left: Float, top: Float, size: Float) =
+        GlyphPainter.paint(canvas, shapes, ink, left, top, size)
 
     private class GlyphDrawable(private val icon: Icon, private val ink: Int) : Drawable() {
         override fun draw(canvas: Canvas) {
@@ -233,7 +241,7 @@ object CommandGlyph {
         private val path = Path()
         private val oval = RectF()
 
-        fun paint(canvas: Canvas, icon: Icon, ink: Int, left: Float, top: Float, size: Float) {
+        fun paint(canvas: Canvas, shapes: List<Shape>, ink: Int, left: Float, top: Float, size: Float) {
             stroke.color = ink
             fill.color = ink
             val k = size / GRID
@@ -241,7 +249,7 @@ object CommandGlyph {
             canvas.save()
             canvas.translate(left, top)
             canvas.scale(k, k)
-            for (shape in shapes(icon)) {
+            for (shape in shapes) {
                 path.reset()
                 when (shape) {
                     is Poly -> {

@@ -3,11 +3,11 @@ package com.hermesvox
 /**
  * Discovery — when the app should teach, and how little it should say (#284).
  *
- * Three mechanisms, one system: the being suggests in context (here: the state line's words
- * when a caller is stuck), the interface reveals (a failed turn's line offers the command that
- * fixes it; the commands screen leads with what fits now — [CommandCatalog.suggest]), and the
- * search teaches ([CommandCatalog.search]). The metric is help, not usage: each prompt is
- * rare, specific to a moment, and stops once the user has shown they do not need it.
+ * Two mechanisms, one system: the being suggests in context (here: the state line's words
+ * when a caller is stuck), and the interface reveals (a failed turn's line offers the command
+ * that fixes it; the commands screen marks the row that fits now — [CommandCatalog.suggest]).
+ * The metric is help, not usage: each prompt is rare, specific to a moment, and stops once
+ * the user has shown they do not need it.
  *
  * Pure JVM, so the timing rules are proven off-device.
  */

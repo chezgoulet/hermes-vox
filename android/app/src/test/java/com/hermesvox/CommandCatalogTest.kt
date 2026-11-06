@@ -225,4 +225,33 @@ class CommandCatalogTest {
         assertFalse(CommandCatalog.helpText(noProfiles).contains("/profiles"))
         assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/profiles"))
     }
+
+    /**
+     * #499: the screen listed `/reconnect` and `/health` twice — under a "Fits now" heading
+     * and again under The agent. What fits the moment is a fact about one row, so it is said
+     * on that row's state slot and the command keeps its one home in its group.
+     */
+    @Test fun whatFitsTheMomentIsAMarkOnTheRowNotASecondRow() {
+        val down = CommandCatalog.Situation(connected = false, lastTurnFailed = false, sessionTurns = 0)
+        val failed = CommandCatalog.Situation(connected = true, lastTurnFailed = true, sessionTurns = 0)
+        for (s in listOf(down, failed)) {
+            assertEquals(listOf("/reconnect", "/health"),
+                CommandCatalog.suggest(s).map { it.name })
+            assertTrue(CommandCatalog.fitsNow(CommandCatalog.find("/reconnect")!!, s))
+            assertTrue(CommandCatalog.fitsNow(CommandCatalog.find("/health")!!, s))
+            assertFalse(CommandCatalog.fitsNow(CommandCatalog.find("/models")!!, s))
+        }
+        // A long conversation offers the compaction, and nothing else.
+        val long = CommandCatalog.Situation(connected = true, lastTurnFailed = false,
+            sessionTurns = CommandCatalog.COMPRESS_AFTER_TURNS)
+        assertEquals(listOf("/compress"), CommandCatalog.suggest(long).map { it.name })
+
+        // The sheet renders `grouped`: one row per listed command, in two groups, so no
+        // command can appear twice whatever fits. (The extra mark cannot add a row.)
+        val rendered = CommandCatalog.grouped(gate = CommandCatalog.Gate.EVERYTHING)
+            .flatMap { it.second }.map { it.name }
+        assertEquals(rendered.size, rendered.toSet().size)
+        assertEquals(CommandCatalog.Group.values().size, 2)
+        assertEquals("fits now", CommandCatalog.FITS_NOW)
+    }
 }
