@@ -59,6 +59,14 @@ object PhoneSetupStore {
     fun lastPrompt(): String? = lastSent
 
     /**
+     * Keep the turn this process sent, so the sheet's fallback is exactly those bytes. Memory only,
+     * never a preference: the text carries the phone's token.
+     */
+    fun rememberSent(prompt: String) {
+        lastSent = prompt
+    }
+
+    /**
      * Called by MainActivity's connection path with the session *and* the connection it was built
      * from, so a later turn can tell whether it still names the address in force. Null detaches.
      */
@@ -112,8 +120,8 @@ object PhoneSetupStore {
     }
 
     /**
-     * The turn succeeded, but a later step failed (the gateway refused the restart job, or the flow
-     * stopped). The agent's words stay visible; only the failure line is added.
+     * The turn succeeded, but a later step failed (the listener window closed without a handshake,
+     * or the flow stopped). The agent's words stay visible; only the failure line is added.
      */
     fun failedAfterReply(context: Context, reason: String) {
         write(context, read(context).copy(failure = reason))
@@ -133,6 +141,8 @@ object PhoneSetupStore {
      * token.
      */
     fun rotate(context: Context) {
+        // The remembered turn carries the old token; it must not be offered for copying again.
+        lastSent = null
         PhoneMcp.rotate(context)
         write(context, PhoneSetup.rotated(read(context)))
     }

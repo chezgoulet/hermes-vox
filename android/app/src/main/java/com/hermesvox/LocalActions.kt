@@ -1029,6 +1029,22 @@ class LocalActions(context: Context) : PhoneReadout {
         private const val KEY_NOTES = "phone_notes"
         private const val CANCELLED_MEMORY = 64
 
+        @Volatile private var sharedInstance: LocalActions? = null
+        private val SHARED_LOCK = Any()
+
+        /**
+         * The process's one registry. The call path ([VoiceController]) and the one-button setup's
+         * listener window both hand MCP calls here: two engines would let the phone contradict
+         * itself about what is running, which is the single-source-of-truth rule from #421.
+         */
+        fun shared(context: Context): LocalActions {
+            sharedInstance?.let { return it }
+            return synchronized(SHARED_LOCK) {
+                sharedInstance ?: LocalActions(context.applicationContext ?: context)
+                    .also { sharedInstance = it }
+            }
+        }
+
         /** The clipboard entry's label. The app's name, never the caller's text. */
         private const val CLIP_LABEL = "Hermes Vox"
 

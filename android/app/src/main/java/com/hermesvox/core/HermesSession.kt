@@ -74,19 +74,6 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
     /** The raw /v1/health JSON (status/version) — the /health card. */
     fun gatewayHealth(): String = gateway.health()
 
-    /**
-     * True when the gateway answered `/v1/health` within [timeoutMs]. Used by the phone setup's
-     * restart wait: a false answer is the expected drop, not an error.
-     */
-    fun gatewayAnswers(timeoutMs: Int = GatewayClient.PROBE_TIMEOUT_MS): Boolean =
-        gateway.answers(timeoutMs)
-
-    /**
-     * Triggers one cron job by id (`POST /api/jobs/{id}/run`). The job belongs to the agent; this
-     * call is the owner's press, not a host edit. Blocks — call it off the main thread.
-     */
-    fun runJob(jobId: String): String = gateway.runJob(jobId)
-
     /** The server-side chain head ("" when there is none). Read-only: the app
      *  never deletes a stored response, and a reset only drops this local pointer. */
     fun lastResponseId(): String = lastID

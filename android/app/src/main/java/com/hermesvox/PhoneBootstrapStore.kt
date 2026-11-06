@@ -7,26 +7,26 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * PhoneBootstrapStore — the Android edge of [PhoneBootstrap]: one attempt, one thread, and no
+ * PhoneBootstrapStore — the Android edge of [PhoneBootstrap]: one attempt, one window, and no
  * persistence of the instruction.
  *
- * **The press owns the credential and the turn.** [start] is called at the moment of the press. It
- * resolves the connection in force ([PhoneSetupStore.session]), creates the phone's token if there
- * is not one yet, composes [PhoneSetup.prompt] with that token, sends it as an ordinary stored turn,
- * and keeps the text only in [PhoneSetupStore.lastPrompt] — memory for this process, never a
- * preference, log or audit entry.
+ * **The press owns the credential, the listener and the turn.** [start] is called at the moment of
+ * the press. It opens the phone's setup window ([PhoneMcp.openWindow]) so the address proves
+ * reachable to `hermes mcp add` *now*, resolves the connection in force ([PhoneSetupStore.session]),
+ * creates the phone's token if there is not one yet, composes [PhoneSetup.prompt] with that token,
+ * sends it as an ordinary stored turn, and keeps the text only in [PhoneSetupStore.lastPrompt] —
+ * memory for this process, never a preference, log or audit entry.
  *
- * **The app starts the job; the agent owns it.** After the agent names a job id in the required
- * form, [HermesSession.runJob] sends `POST /api/jobs/{id}/run`. There is no restart endpoint in the
- * app, and none is looked for.
+ * **No restart is triggered.** The gateway reconciles its MCP configuration while it runs; there is
+ * no restart route and none is called. The only host effect is the agent's own configuration edit.
  *
- * **The drop is expected.** After the trigger, [HermesSession.gatewayAnswers] is polled every
- * second. A failed probe is recorded as the restart, not surfaced as an error; a later successful
- * probe moves the flow to the handshake wait. The stored state moves only through
- * [PhoneBootstrap]'s pure transitions.
+ * **The wait is the phone's own evidence.** A one-second pass re-reads the handshake recorded by
+ * [PhoneMcpServer]. The stored state moves only through [PhoneBootstrap]'s pure transitions, so a
+ * reply cannot connect the phone, and neither can a timeout. When the window closes without a
+ * handshake the flow fails with the copyable prompt and the agent's last words.
  *
  * **One attempt.** [running] is an [AtomicBoolean]; a second press while the flow is in flight is
- * ignored. A failure ends the thread and [PhoneBootstrap.offerFallback] is true, so the sheet shows
+ * ignored. A failure ends the thread and [PhoneBootstrap.offersFallback] is true, so the sheet shows
  * the copyable prompt instead of trying again by itself.
  */
 object PhoneBootstrapStore {
@@ -70,7 +70,7 @@ object PhoneBootstrapStore {
             return false
         }
         // #430: resolved at the press, from the connection in force. The same session then carries
-        // the turn, the job trigger and the health probes; a restart leaves its url and key intact.
+        // the turn while the window waits for the handshake.
         val session = PhoneSetupStore.session(activity)
         if (session == null) {
             progress.set(PhoneBootstrap.startFailure(PhoneBootstrap.Failure.NOT_CONFIGURED))
@@ -86,9 +86,21 @@ object PhoneBootstrapStore {
             return false
         }
 
+        // The listener must be up *before* the instruction goes out: `hermes mcp add` proves
+        // reachability when it runs, and this phone is idle. With no window there is nothing to
+        // reach, so nothing is sent — the sheet says so and offers the prompt instead.
+        val windowEndsAt = PhoneMcp.openWindow(app) { args -> LocalActions.shared(app).phone(args) }
+        if (windowEndsAt == null) {
+            progress.set(PhoneBootstrap.startFailure(PhoneBootstrap.Failure.WINDOW_CLOSED))
+            running.set(false)
+            tick(onTick)
+            return false
+        }
+
         val now = System.currentTimeMillis()
         val prompt = PhoneSetup.prompt(host, token)
-        progress.set(PhoneBootstrap.start(now))
+        PhoneSetupStore.rememberSent(prompt)
+        progress.set(PhoneBootstrap.start(now, windowEndsAt))
         PhoneSetupStore.begin(app, now)
         tick(onTick)
         Thread({ run(app, session, prompt, token, onTick) }, "phone-bootstrap")
@@ -122,7 +134,18 @@ object PhoneBootstrapStore {
                         PhoneBootstrap.Failure.SEND_FAILED
                     else -> PhoneBootstrap.Failure.NO_ANSWER
                 }
-                update(PhoneBootstrap.failed(progress.get(), kind), onTick)
+                // A handshake recorded while the turn was in flight is stronger evidence than the
+                // failed reply: the agent may have added the phone and then lost the turn.
+                val observed = PhoneBootstrap.settled(
+                    progress.get(),
+                    PhoneMcp.handshakeAt(app),
+                    System.currentTimeMillis(),
+                )
+                if (observed.step == PhoneBootstrap.Step.CONNECTED) {
+                    update(observed, onTick)
+                } else {
+                    update(PhoneBootstrap.failed(progress.get(), kind), onTick)
+                }
                 return
             }
 
@@ -131,35 +154,10 @@ object PhoneBootstrapStore {
             val clean = PhoneSetupSend.redact(reply, token).orEmpty()
             PhoneSetupStore.replied(app, clean, token)
             val answered = PhoneBootstrap.answered(progress.get(), clean, System.currentTimeMillis())
-            update(answered, onTick)
-            if (answered.step == PhoneBootstrap.Step.FAILED) return
-            val id = answered.jobId ?: return
-
-            val triggerError = try {
-                session.runJob(id)
-                null
-            } catch (t: Throwable) {
-                t
-            }
-            if (triggerError != null && PhoneBootstrap.triggerRefused(triggerError)) {
-                PhoneSetupStore.failedAfterReply(
-                    app,
-                    PhoneSetupSend.message(
-                        PhoneSetupSend.Failure.TURN_FAILED,
-                        PhoneSetupSend.scrub(triggerError.message.orEmpty(), token),
-                    ),
-                )
-                update(PhoneBootstrap.triggerFailed(answered), onTick)
-                return
-            }
-            // A transport failure here may be the gateway going down with the job. It is not
-            // evidence either way; the health probes decide, and the window fails honestly.
-            VoxLog.d(
-                "event=phone-bootstrap trigger=" +
-                    if (triggerError == null) "accepted" else "transport",
-            )
-            update(PhoneBootstrap.triggered(answered, System.currentTimeMillis()), onTick)
-            poll(app, session, onTick)
+            val next = PhoneBootstrap.settled(answered, PhoneMcp.handshakeAt(app), System.currentTimeMillis())
+            update(next, onTick)
+            if (next.step == PhoneBootstrap.Step.CONNECTED) return
+            awaitHandshake(app, onTick)
         } catch (_: Throwable) {
             // Never let a bootstrap crash the app, and never put the instruction in a log line.
             PhoneSetupStore.failedAfterReply(
@@ -181,25 +179,19 @@ object PhoneBootstrapStore {
     }
 
     /**
-     * Wait for the restart and then for the handshake. Each pass is one second; the pure transitions
-     * decide when the expected drop, the return, and either window have been reached.
+     * Wait for the handshake the phone itself must record. Each pass is one second; the pure
+     * transitions decide when the answer arrived, when the window closed, and when it is time to
+     * show the fallback. There is no host probe and no automatic second attempt.
      */
-    private fun poll(app: Context, session: HermesSession, onTick: () -> Unit) {
-        while (progress.get().step == PhoneBootstrap.Step.RESTARTING) {
-            val up = session.gatewayAnswers()
-            val next = PhoneBootstrap.probe(progress.get(), up, System.currentTimeMillis())
-            update(next, onTick)
-            if (next.step != PhoneBootstrap.Step.RESTARTING) break
-            sleep()
-        }
-        while (progress.get().step == PhoneBootstrap.Step.AWAITING_HANDSHAKE) {
+    private fun awaitHandshake(app: Context, onTick: () -> Unit) {
+        while (PhoneBootstrap.busy(progress.get())) {
             val next = PhoneBootstrap.settled(
                 progress.get(),
                 PhoneMcp.handshakeAt(app),
                 System.currentTimeMillis(),
             )
             update(next, onTick)
-            if (next.step != PhoneBootstrap.Step.AWAITING_HANDSHAKE) break
+            if (!PhoneBootstrap.busy(next)) break
             sleep()
         }
     }

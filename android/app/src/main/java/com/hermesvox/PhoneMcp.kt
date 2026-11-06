@@ -6,13 +6,16 @@ import android.content.Context
  * PhoneMcp — the app's side of the phone-as-MCP-server (#421 steps 3–5): the token, the bind, the
  * life, and the one piece of evidence that makes **Connected** an honest word.
  *
- * **When it runs.** The server is up exactly while a voice call is up (started by
- * `VoiceController.start`, stopped by `VoiceController.stop`). That is deliberate: the mind only
+ * **When it runs.** The server is up while a voice call is up (started by `VoiceController.start`,
+ * closed by `VoiceController.stop`), and — added for the one-button setup — for one stated **setup
+ * window** ([openWindow], three minutes), because `hermes mcp add` verifies reachability at the
+ * moment it runs and the button is pressed from an idle phone. That is deliberate: the mind only
  * reaches for the phone while the caller is talking to it, and a listening socket that outlives the
- * call is a surface with no one watching it. There is no foreground service for the listener and no
- * new service type: the call's own microphone service is the lifetime. The cost, stated plainly in
- * `docs/MCP-PHONE.md`: the gateway's first tool call after a call begins may pay one connect, and a
- * call that is down means the tool is down.
+ * call is a surface with no one watching it. The setup window is the one bounded exception; it is
+ * announced in the sheet, opened by the owner's press, and closed by its own clock. There is no
+ * foreground service for the listener and no new service type: the call's own microphone service is
+ * the lifetime otherwise. The cost, stated plainly in `docs/MCP-PHONE.md`: the gateway's first tool
+ * call after a call begins may pay one connect, and a call that is down means the tool is down.
  *
  * **Where it binds.** The tailnet address [Tailnet] picked — the same rule as the file-offer server,
  * for the same reason. Never `0.0.0.0`, never the LAN, never cellular. If the phone is not on the
@@ -83,6 +86,15 @@ object PhoneMcp {
     @Volatile private var memoryToken: String? = null
     @Volatile private var lastRequest: String? = null
     @Volatile private var lastRequestAt: Long? = null
+
+    /** True while a live call holds the listener. Cleared by [stop]; a window may outlive it. */
+    private var callHold = false
+
+    /** When the owner's setup window closes, or 0 when none is open. Read by the sheet. */
+    private var windowUntil = 0L
+
+    /** Guards the window's own close, so an older window cannot close a newer one. */
+    private var windowGeneration = 0L
 
     /** The URL the gateway should be pointed at, or null while the server is not running. */
     fun currentUrl(): String? = server?.url
@@ -289,69 +301,155 @@ object PhoneMcp {
     }
 
     /**
-     * Start serving on the tailnet. Idempotent: a second call while a server is up returns it.
-     * Returns null (with a log line naming why) when there is no tailnet address or the port is
-     * taken — a phone that cannot be reached says so instead of pretending to listen.
+     * Start serving on the tailnet for a live call. Idempotent: a second call while a server is up
+     * returns it. Returns null (with a log line naming why) when there is no tailnet address or the
+     * port is taken — a phone that cannot be reached says so instead of pretending to listen.
      */
     fun start(context: Context, handler: PhoneToolHandler): PhoneMcpServer? {
         synchronized(this) {
-            if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)) {
-                // The set is off: no listener, and no credential is created by asking.
-                VoxLog.d("event=phone-mcp unavailable reason=alpha-off")
-                return null
-            }
-            server?.let { return it }
-            val app = context.applicationContext ?: context
-            val address = try {
-                Tailnet.pick(Tailnet.snapshot())
-            } catch (_: Throwable) {
-                null
-            }
-            if (address == null) {
-                VoxLog.w("event=phone-mcp unavailable reason=no-tailnet")
-                return null
-            }
-            return try {
-                val s = PhoneMcpServer.start(
-                    bind = address,
-                    // A provider, not a snapshot: rotation invalidates the old token on the very
-                    // next request without restarting the listener.
-                    tokenProvider = { token(app) },
-                    // #452: the second credential is the one the agent already has. Read live from
-                    // the same store the turn path uses, so this server never holds a copy.
-                    keyProvider = { connectionKey(app) },
-                    handler = handler,
-                    log = { line -> VoxLog.d(line) },
-                    onRequest = { method, at ->
-                        lastRequest = method
-                        lastRequestAt = at
-                    },
-                    onInitialize = { at -> recordHandshake(app, at) },
-                    // The grants, read per request: the enum the gateway lists must lose a group
-                    // the owner turns off, without restarting the listener or the call.
-                    grants = PhoneGrantStore.source(app),
-                    // The folder enum too: a grant made (or removed) in the picker is in force on
-                    // the very next tools/list, and only the owner's labels are ever offered.
-                    folderLabels = { PhoneFileAccess.trees(app).map { it.label } },
-                )
-                server = s
-                VoxLog.d("event=phone-mcp start url=${s.url} port=${s.port}")
-                s
-            } catch (e: Throwable) {
-                VoxLog.w("event=phone-mcp unavailable reason=bind error=${e.javaClass.simpleName}")
-                null
-            }
+            callHold = true
+            return listen(context, handler)
         }
     }
 
-    /** Stop serving. The registry in [LocalActions] is untouched: the phone's state outlives the socket. */
+    /**
+     * Open the one-button setup's window: bring the listener up **without a call** for [durationMs]
+     * (three minutes by default), so `hermes mcp add` can prove reachability at the moment it runs.
+     *
+     * Returns the epoch-ms instant the window closes, or null when the listener could not be opened
+     * at all (the set is off, there is no tailnet address, or the port is taken). Null is a fact the
+     * caller must act on: with no listener there is nothing for the agent to reach, so the sheet
+     * says so and offers the copyable prompt instead of sending an instruction certain to fail.
+     *
+     * The window closes on its own clock; a live call holds the listener past it, and a hangup
+     * before it ends does not close it. Re-pressing while a window is open extends it from the
+     * press — the sheet still makes one attempt per press.
+     */
+    fun openWindow(
+        context: Context,
+        durationMs: Long = PhoneBootstrap.SETUP_WINDOW_MS,
+        handler: PhoneToolHandler,
+    ): Long? {
+        val app = context.applicationContext ?: context
+        val until: Long
+        synchronized(this) {
+            if (listen(app, handler) == null) return null
+            until = System.currentTimeMillis() + durationMs.coerceAtLeast(1_000L)
+            windowUntil = until
+            val generation = ++windowGeneration
+            scheduleWindowClose(until, generation)
+            VoxLog.d("event=phone-mcp window=open closes_in_ms=$durationMs")
+        }
+        return until
+    }
+
+    /** The listener's start, under [synchronized]. Refuses honestly; never pretends to listen. */
+    private fun listen(context: Context, handler: PhoneToolHandler): PhoneMcpServer? {
+        if (!AlphaGate.allows(context, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+            // The set is off: no listener, and no credential is created by asking.
+            VoxLog.d("event=phone-mcp unavailable reason=alpha-off")
+            return null
+        }
+        server?.let { return it }
+        val app = context.applicationContext ?: context
+        val address = try {
+            Tailnet.pick(Tailnet.snapshot())
+        } catch (_: Throwable) {
+            null
+        }
+        if (address == null) {
+            VoxLog.w("event=phone-mcp unavailable reason=no-tailnet")
+            return null
+        }
+        return try {
+            val s = PhoneMcpServer.start(
+                bind = address,
+                // A provider, not a snapshot: rotation invalidates the old token on the very
+                // next request without restarting the listener.
+                tokenProvider = { token(app) },
+                // #452: the second credential is the one the agent already has. Read live from
+                // the same store the turn path uses, so this server never holds a copy.
+                keyProvider = { connectionKey(app) },
+                handler = handler,
+                log = { line -> VoxLog.d(line) },
+                onRequest = { method, at ->
+                    lastRequest = method
+                    lastRequestAt = at
+                },
+                onInitialize = { at -> recordHandshake(app, at) },
+                // The grants, read per request: the enum the gateway lists must lose a group
+                // the owner turns off, without restarting the listener or the call.
+                grants = PhoneGrantStore.source(app),
+                // The folder enum too: a grant made (or removed) in the picker is in force on
+                // the very next tools/list, and only the owner's labels are ever offered.
+                folderLabels = { PhoneFileAccess.trees(app).map { it.label } },
+            )
+            server = s
+            VoxLog.d("event=phone-mcp start url=${s.url} port=${s.port}")
+            s
+        } catch (e: Throwable) {
+            VoxLog.w("event=phone-mcp unavailable reason=bind error=${e.javaClass.simpleName}")
+            null
+        }
+    }
+
+    /**
+     * Close the setup window when its clock runs out — unless a live call is holding the listener.
+     * The generation check makes a later window safe from an earlier window's timer.
+     */
+    private fun scheduleWindowClose(until: Long, generation: Long) {
+        Thread({
+            val wait = until - System.currentTimeMillis()
+            if (wait > 0L) {
+                try {
+                    Thread.sleep(wait)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return@Thread
+                }
+            }
+            synchronized(this) {
+                if (generation != windowGeneration) return@synchronized
+                windowUntil = 0L
+                if (!callHold) close("window-closed")
+                else VoxLog.d("event=phone-mcp window=expired hold=call")
+            }
+        }, "phone-mcp-window").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * A hangup releases the call's hold. The listener stays up if the owner's setup window is still
+     * open — that is the point of the window — and closes otherwise.
+     */
     fun stop() {
         synchronized(this) {
-            val s = server ?: return
-            server = null
-            s.close()
-            VoxLog.d("event=phone-mcp stop served=${s.served}")
+            callHold = false
+            if (windowUntil > System.currentTimeMillis()) {
+                VoxLog.d("event=phone-mcp stop hold=window")
+                return
+            }
+            windowUntil = 0L
+            close("stop")
         }
+    }
+
+    /**
+     * Close the listener now, window or not. Used when the owner turns Phone tools off: the Alpha
+     * gate is not a window the clock may outlive.
+     */
+    fun closeNow() {
+        synchronized(this) {
+            callHold = false
+            windowUntil = 0L
+            close("closed")
+        }
+    }
+
+    private fun close(reason: String) {
+        val s = server ?: return
+        server = null
+        s.close()
+        VoxLog.d("event=phone-mcp stop reason=$reason served=${s.served}")
     }
 }
 

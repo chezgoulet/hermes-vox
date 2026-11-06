@@ -24,11 +24,12 @@ import androidx.core.content.ContextCompat
 /**
  * PhoneToolsSheet — the owner's side of the phone-as-MCP-server (#421 steps 3–5).
  *
- * **The setup path is one button, not a pasted block.** **Set this up with my agent** composes the
+ * **The setup path is one button, not a pasted block.** **Set this up with my agent** opens this
+ * phone's listener for a stated three minutes ([PhoneBootstrap.SETUP_WINDOW_MS]), composes the
  * prompt in [PhoneSetup], creates the credential if there is not one, sends that prompt as an
- * ordinary stored turn through the app's session, triggers the restart job the agent names, and
- * waits for the MCP handshake. The turn, each step and the agent's reply are shown here, so a
- * change to the agent's own configuration is legible and a failure says how far it got.
+ * ordinary stored turn through the app's session, and waits for the MCP handshake. The turn, each
+ * step, the window's remaining time and the agent's reply are shown here, so a change to the
+ * agent's own configuration is legible and a failure says how far it got.
  *
  * **The turn is sent from the connection in force.** The session is resolved at the press
  * ([PhoneSetupStore.session]), from the active profile's url, key and scope, and rebuilt when the
@@ -36,17 +37,17 @@ import androidx.core.content.ContextCompat
  * sheet would re-create that bug: a session keeps the address it was built with.
  *
  * **A failure says what happened.** [PhoneToolsView.setupHeadline] and [PhoneBootstrap] show the
- * record's own line — no connection configured, key rejected, the agent did not answer, a missing
- * job id, a refused trigger, no observed restart, or no handshake — so a local misconfiguration
- * never reads as a network outage.
+ * record's own line — no connection configured, key rejected, the agent did not answer, an add it
+ * says did not succeed, a listener that could not be opened, or a window that closed without the
+ * handshake — so a local misconfiguration never reads as a network outage.
  *
  * **The one-button flow owns the section while it runs.** [PhoneBootstrap.Progress] is the step; a
  * failed attempt is terminal for that attempt and shows the copyable prompt as the fallback rather
  * than retrying by itself. A second press while the flow is in flight is ignored.
  *
  * **The three setup states lead the sheet, in their own words.** *Not set up* — [PhoneToolsView
- * .NOT_SET_UP_HEADING], with the button, the promise of a token and a restart, and the prompt
- * behind it — is drawn first, because enabling the set starts this phone's listener and mints its
+ * .NOT_SET_UP_HEADING], with the button, the promise of a token and a three-minute window, and the
+ * prompt behind it — is drawn first, because enabling the set starts this phone's listener and mints its
  * credential but cannot add the entry to the agent's configuration on the host. *Asked, waiting for
  * your agent* follows a handover with no handshake yet. *Connected* is earned by the handshake and
  * is the only state that may say the word. None of the three shares another's wording.
@@ -54,9 +55,8 @@ import androidx.core.content.ContextCompat
  * **Connected is earned by the handshake.** The headline stays *asked — waiting for your agent*
  * until the phone's own [PhoneMcpServer] has seen an authenticated MCP `initialize`; only then is
  * the state [PhoneSetup.State.CONNECTED]. The poll reads that handshake on its next tick, so a
- * gateway that restarts and connects clears the waiting state with no re-entry from the owner. The
- * agent's reply is displayed beneath every state, because when it fails, its own words are the next
- * clue.
+ * gateway that connects clears the waiting state with no re-entry from the owner. The agent's reply
+ * is displayed beneath every state, because when it fails, its own words are the next clue.
  *
  * **Failure states each name a next step**, including a retry and a token rotation. The manual
  * config block still exists — behind a disclosure, labelled fallback, never the default path — for
@@ -162,6 +162,8 @@ class PhoneToolsSheet(
         val lastRequest: String,
         val handshake: String,
         val bootstrap: PhoneBootstrap.Progress = PhoneBootstrap.Progress(),
+        /** The listener window's remaining time while the flow runs; empty otherwise. */
+        val listening: String = "",
     )
 
     private fun snapshot(now: Long): Drawn =
@@ -418,7 +420,7 @@ class PhoneToolsSheet(
 
     /**
      * The setup state, drawn first: what stage the handover is at, and — while no handshake has been
-     * observed — the prompt itself, its copy action, and the sentence that names the restart.
+     * observed — the prompt itself, its copy action, and the sentence that names the window.
      *
      * **Why it leads the sheet.** Enabling Phone tools starts this phone's listener and mints its
      * credential. It does not tell the agent that the phone exists: that is one entry in the agent's
@@ -429,11 +431,11 @@ class PhoneToolsSheet(
      *
      * **Why the prompt is not a footnote.** It is the thing to hand over. It is shown in full, with
      * **Copy setup prompt**, because the agent cannot know about the phone until someone gives it
-     * this entry; the sentence after it says the entry takes effect when the gateway restarts.
+     * this entry; the sentence after it says who writes it and that nothing restarts.
      *
-     * **Why the restart is in the sentence.** Hermes reads MCP configuration at startup. The old
-     * sheet let an owner press *Set up*, read the agent's "done", and then ask it about the phone
-     * before the gateway had come back — a sequence with a step that only the config loader knew.
+     * **Why the window is in the sentence.** `hermes mcp add` proves reachability when it runs, and
+     * this phone only listens while it is up. The press opens the window before the turn leaves, so
+     * the add can succeed from an idle phone; the gateway then picks the entry up by itself.
      */
     private fun setupSection(col: LinearLayout, drawn: Drawn, host: String) {
         val status = drawn.status
@@ -488,7 +490,7 @@ class PhoneToolsSheet(
             replyView(col, reply)
         }
 
-        promptBlock(col, block.prompt, status, sent != null, host, block.restart)
+        promptBlock(col, block.prompt, status, sent != null, host, block.note)
 
         if (state == PhoneSetup.State.CONNECTED && status.allowed) {
             // Still useful once connected: the turn updates the entry in place.
@@ -517,9 +519,10 @@ class PhoneToolsSheet(
         if (boot.step == PhoneBootstrap.Step.CONNECTED) body(col, drawn.handshake, dim = true)
         if (boot.step == PhoneBootstrap.Step.FAILED) body(col, PhoneBootstrap.reachedLine(boot), dim = true)
 
-        // The id came from the agent's marked line. Showing it lets the owner check the trigger
-        // against the job list on the host; it is not a secret.
-        boot.jobId?.let { body(col, "Restart job · $it", dim = true) }
+        // The window is stated while it is open, and its remaining time comes from the same
+        // deadline the flow's own clock uses, so the two can never disagree. It is part of
+        // [Drawn], so a minute passing repaints (the clock moved) and nothing else does.
+        drawn.listening.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
         drawn.record.failure?.let { if (boot.step == PhoneBootstrap.Step.FAILED) body(col, it, dim = true) }
         notice?.let { body(col, it) }
 
@@ -530,7 +533,7 @@ class PhoneToolsSheet(
         }
 
         if (boot.step == PhoneBootstrap.Step.FAILED) {
-            promptBlock(col, prompt, status, sent, hostOrTailnet(status), restart = null)
+            promptBlock(col, prompt, status, sent, hostOrTailnet(status), note = null)
             // A new attempt is the owner's explicit press, never an automatic loop.
             action(
                 col,
@@ -552,14 +555,14 @@ class PhoneToolsSheet(
         if (!allowed) return
         when (state) {
             PhoneSetup.State.IDLE -> {
-                // Said before the press, not discovered as a dropped call: the token goes to the
-                // agent and Hermes restarts to read the new server entry.
+                // Said before the press: the token goes to the agent, and the phone's listener
+                // opens for three minutes so the agent can reach it. Nothing restarts.
                 body(col, PhoneBootstrap.BUTTON_WARNING)
                 action(
                     col,
                     PhoneBootstrap.BUTTON,
                     primary = true,
-                    description = "Ask your agent to add this phone and restart Hermes",
+                    description = "Open this phone's listener for three minutes and ask your agent to add it",
                 ) { setUpAgent() }
             }
             PhoneSetup.State.WAITING ->
@@ -587,7 +590,7 @@ class PhoneToolsSheet(
         status: PhoneMcp.Status,
         sent: Boolean,
         host: String,
-        restart: String?,
+        note: String?,
     ) {
         text ?: return
         if (status.tailnet.isNullOrBlank()) {
@@ -623,7 +626,7 @@ class PhoneToolsSheet(
             copy(toCopy, "setup prompt copied")
             if (needsToken) paint()
         }
-        restart?.let { body(col, it) }
+        note?.let { body(col, it) }
     }
 
     /** The prompt for the facts in force; a real token when one exists, the doc placeholder if not. */
@@ -809,9 +812,9 @@ class PhoneToolsSheet(
     }
 
     /**
-     * The one press. [PhoneBootstrapStore] resolves the connection at this moment, sends the fixed
-     * turn with this phone's token, triggers the restart job the agent names, and waits for the
-     * handshake. A second press while the flow is in flight is ignored by the store.
+     * The one press. [PhoneBootstrapStore] opens the phone's setup window at this moment, resolves
+     * the connection, sends the fixed turn with this phone's token, and waits for the handshake.
+     * A second press while the flow is in flight is ignored by the store.
      */
     private fun setUpAgent() {
         if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
@@ -1004,14 +1007,18 @@ class PhoneToolsSheet(
             tokenTag: String,
             now: Long,
             bootstrap: PhoneBootstrap.Progress = PhoneBootstrap.Progress(),
-        ): Drawn = Drawn(
-            status = status,
-            state = PhoneSetup.state(record, now, tokenTag),
-            record = record,
-            lastRequest = PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now),
-            handshake = PhoneToolsView.handshakeLine(record.handshakeAt, now),
-            bootstrap = PhoneBootstrap.settled(bootstrap, record.handshakeAt, now),
-        )
+        ): Drawn {
+            val settled = PhoneBootstrap.settled(bootstrap, record.handshakeAt, now)
+            return Drawn(
+                status = status,
+                state = PhoneSetup.state(record, now, tokenTag),
+                record = record,
+                lastRequest = PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now),
+                handshake = PhoneToolsView.handshakeLine(record.handshakeAt, now),
+                bootstrap = settled,
+                listening = PhoneBootstrap.listeningLine(settled, now),
+            )
+        }
 
         /**
          * The poll's rule, pure: a tick repaints only when what the sheet would draw differs from

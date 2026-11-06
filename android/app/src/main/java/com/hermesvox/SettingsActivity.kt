@@ -257,9 +257,9 @@ class SettingsActivity : AppCompatActivity() {
         val presence = AlphaGate.allows(r, AlphaGate.FeatureSet.PRESENCE)
         val listening = AlphaGate.allows(r, AlphaGate.FeatureSet.CONTINUOUS_LISTENING)
         val phoneTools = AlphaGate.allows(r, AlphaGate.FeatureSet.PHONE_TOOLS)
-        // Turning the set off while a server is up stops it now: a listener that outlives the
-        // owner's choice is the one thing the gate must not allow.
-        if (!phoneTools) PhoneMcp.stop()
+        // Turning the set off while a server is up closes it now, setup window included: a
+        // listener that outlives the owner's choice is the one thing the gate must not allow.
+        if (!phoneTools) PhoneMcp.closeNow()
         gate(R.id.row_grp_presence, presence)
         gate(R.id.row_er_hears, presence)
         gate(R.id.row_mic_continuous, listening)

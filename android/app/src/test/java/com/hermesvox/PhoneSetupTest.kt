@@ -16,7 +16,7 @@ import org.junit.Test
  *    cannot do, and is idempotent **by content** — running setup twice describes the same single
  *    entry;
  *  * the prompt carries **this phone's token**, because `hermes mcp add` writes it into the agent's
- *    own configuration, and asks for the restart job's id in one parseable line;
+ *    own configuration, says the listener is open for the setup, and asks for no restart;
  *  * **Connected** is reachable only from an observed MCP handshake, never from the agent's reply.
  *    The failure states each remain distinct so the sheet can name a next step.
  */
@@ -69,7 +69,8 @@ class PhoneSetupTest {
         assertTrue("header auth is named", p.contains("--auth header"))
         assertTrue("the short connect timeout is named", p.contains("--connect-timeout 5"))
         assertTrue("the token is pasted at the prompt", p.contains("paste exactly the token above"))
-        assertTrue("a failed probe is expected, not a reason to skip the entry", p.contains("keep it enabled"))
+        assertTrue("the listener is open when the command runs", p.contains("listener is open for the next three minutes"))
+        assertTrue("a refused probe is reported, not skipped past", p.contains("it will refuse a server it cannot reach"))
     }
 
     /**
@@ -103,7 +104,6 @@ class PhoneSetupTest {
         assertTrue("an existing entry is updated in place", p.contains("update that entry in place"))
         assertTrue("and never duplicated", p.contains("Do not add a second `vox` entry"))
         assertTrue("the duplicate rule is explicit", p.contains("do not duplicate the block"))
-        assertTrue("the job is reused rather than duplicated", p.contains("reuse it instead of creating a second one"))
         assertEquals("the same facts must produce the same turn", p, PhoneSetup.prompt(host, token))
         assertNotEquals("a different address is a different turn", p, PhoneSetup.prompt("100.82.156.1", token))
     }
@@ -121,24 +121,35 @@ class PhoneSetupTest {
     }
 
     /**
-     * The restart is arranged by the agent and triggered by the app. The prompt names the exact
-     * command, a schedule that never fires, the paused state, and the one marked line the app can
-     * parse; it explicitly forbids the agent from restarting the gateway itself.
+     * There is no restart. A running gateway reconciles its MCP configuration on its own, so the
+     * instruction asks only for the add and explicitly forbids the restart the old flow invented.
+     * The one thing it states is the listener window the press opened — that is what makes the
+     * add's own reachability probe succeed from an idle phone.
      */
-    @Test fun the_prompt_asks_for_a_one_shot_restart_job_and_a_parseable_job_id() {
+    @Test fun the_prompt_asks_for_no_restart_and_states_the_listener_window() {
         val p = PhoneSetup.prompt(host, token)
-        assertTrue("the exact host command", p.contains("systemctl --user restart hermes-gateway"))
-        assertTrue("a schedule that never fires", p.contains("hermes cron create \"2099-01-01T00:00:00\""))
-        assertTrue("no agent runs for the restart", p.contains("--no-agent"))
-        assertTrue("disabled from firing", p.contains("--paused"))
-        assertTrue("one shot", p.contains("--repeat 1"))
-        assertTrue("runnable on demand", p.contains("runnable on demand"))
-        assertTrue("the app triggers it, the agent does not", p.contains("Do not run it now"))
-        assertTrue("the refused route is named and forbidden", p.contains("do not call `hermes gateway restart`"))
-        assertTrue("the app's trigger is described", p.contains("POST /api/jobs/{job_id}/run"))
-        assertTrue("the marked id line", p.contains("${PhoneBootstrap.JOB_ID_PREFIX} <job id>"))
+        assertTrue("the window is stated with its length", p.contains("open for the next three minutes"))
+        assertTrue("the gateway picks the entry up by itself", p.contains("picks the new server up"))
+        assertTrue("no restart is wanted", p.contains("No restart is needed and none is wanted"))
+        assertTrue("the agent is told not to create a job", p.contains("do not create or run a job"))
         assertTrue("the agent reports what it changed", p.contains("verify that a server named `vox` appears"))
-        assertTrue("and replies with the change", p.contains("Then reply with"))
+        assertTrue("and says whether the add succeeded", p.contains("say explicitly whether the add succeeded"))
+        assertFalse("no job id is asked for", p.contains("JOB_ID"))
+        assertFalse("no host command is asked for", p.contains("systemctl"))
+        assertFalse("no cron job is asked for", p.contains("hermes cron create"))
+        assertFalse("the refused route is not even mentioned as a route to try", p.contains("POST /api/jobs"))
+    }
+
+    /**
+     * `hermes mcp add` verifies before it saves, so a refused probe is a refusal — the agent must
+     * report it rather than writing a dead entry. That is the fact that makes a saved entry proven.
+     */
+    @Test fun the_prompt_says_the_add_verifies_before_it_saves() {
+        val p = PhoneSetup.prompt(host, token)
+        assertTrue(p.contains("verifies the connection before it saves"))
+        assertTrue(p.contains("will refuse a server it cannot reach"))
+        assertTrue("a refusal is reported, not papered over", p.contains("say plainly that the add did not succeed"))
+        assertFalse(p.contains("save the entry anyway"))
     }
 
     @Test fun an_ipv6_tailnet_address_is_bracketed_in_the_url() {
@@ -269,31 +280,29 @@ class PhoneSetupTest {
     }
 
     /**
-     * The prompt is in that state, with its copy action, and the restart follows it — not a
-     * footnote below the fold. The prompt is passed through untouched: it is a contract with the
-     * agent, not copy to improve.
+     * The prompt is in that state, with its copy action, and the note follows it — not a footnote
+     * below the fold. The prompt is passed through untouched: it is a contract with the agent, not
+     * copy to improve.
      */
-    @Test fun the_prompt_is_offered_with_the_restart_sentence_after_it() {
+    @Test fun the_prompt_is_offered_with_the_note_after_it() {
         val prompt = PhoneSetup.prompt(host)
         val block = PhoneToolsView.setupBlock(PhoneSetup.State.IDLE, prompt)
         assertEquals("the setup turn itself, byte for byte", prompt, block.prompt)
-        assertEquals(PhoneToolsView.SETUP_RESTART, block.restart)
-        assertTrue("who writes the entry", block.restart.orEmpty().contains("writes the entry itself"))
-        assertTrue(
-            "and when it takes effect",
-            block.restart.orEmpty().contains("takes effect when your gateway restarts"),
-        )
+        assertEquals(PhoneToolsView.SETUP_NOTE, block.note)
+        assertTrue("who writes the entry", block.note.orEmpty().contains("writes the entry itself"))
+        assertTrue("that the listener is open for it", block.note.orEmpty().contains("listener is open"))
+        assertTrue("and that nothing restarts", block.note.orEmpty().contains("Nothing on your host restarts"))
     }
 
-    /** Asked, waiting for the agent: the prompt is with the agent, no handshake yet, restart named. */
-    @Test fun the_waiting_state_names_the_restart_and_never_says_connected() {
+    /** Asked, waiting for the agent: the prompt is with the agent, no handshake yet, no restart. */
+    @Test fun the_waiting_state_names_no_restart_and_never_says_connected() {
         val block = PhoneToolsView.setupBlock(PhoneSetup.State.WAITING, PhoneSetup.prompt(host))
         assertEquals(PhoneToolsView.WAITING_HEADING, block.heading)
         assertEquals(PhoneToolsView.WAITING_MEANING, block.meaning)
         assertTrue("it says a handshake has not arrived", block.meaning.contains("no handshake has arrived"))
         assertTrue(
-            "and that the gateway may need restarting",
-            block.meaning.contains("your gateway may need restarting"),
+            "and that there is nothing to restart",
+            block.meaning.contains("nothing to restart"),
         )
         assertFalse(
             "waiting is not connected",
@@ -312,7 +321,7 @@ class PhoneSetupTest {
             if (state == PhoneSetup.State.CONNECTED) {
                 assertEquals(PhoneToolsView.CONNECTED_HEADING, block.heading)
                 assertNull("nothing to hand over once the handshake is real", block.prompt)
-                assertNull("and no restart to name", block.restart)
+                assertNull("and nothing to hand over", block.note)
             } else {
                 assertFalse("$state must not use the word: $copy", copy.contains("connected", ignoreCase = true))
             }
@@ -361,7 +370,7 @@ class PhoneSetupTest {
         )
     }
 
-    /** A recorded handshake renders connected, and the restart sentence is gone with the wait. */
+    /** A recorded handshake renders connected, and the note is gone with the wait. */
     @Test fun a_recorded_handshake_renders_connected() {
         val tag = PhoneMcpToken.fingerprint(token)
         val record = PhoneSetup.observedHandshake(PhoneSetup.Record(), now, tag)
@@ -383,7 +392,7 @@ class PhoneSetupTest {
         )
         assertEquals(PhoneSetup.State.CONNECTED, drawn.state)
         assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(drawn.state, drawn.record.failure))
-        assertNull(PhoneToolsView.setupBlock(drawn.state, PhoneSetup.prompt(host)).restart)
+        assertNull(PhoneToolsView.setupBlock(drawn.state, PhoneSetup.prompt(host)).note)
     }
 
     /**

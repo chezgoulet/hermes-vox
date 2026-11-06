@@ -20,10 +20,10 @@ block remains for an agent that cannot.
 The setup path is a turn, not a block to paste. **Settings → About & Diagnostics → Phone as an MCP
 server → Set this up with my agent** is the one action in the not-set-up state. The button's own line
 says what will happen before it happens: your agent will be given this phone's address and its token,
-Hermes will restart to pick up the new server, and the call drops for a few seconds. Nothing is
-written to the host by Vox itself — the agent edits its own configuration, which is the same act as
-pasting the prompt by hand. The copyable prompt stays behind the action as the fallback, for an agent
-that cannot configure itself.
+and pressing the button opens this phone's listener for **three minutes** so the agent can reach it.
+Nothing restarts and this call is not dropped. Nothing is written to the host by Vox itself — the
+agent edits its own configuration, which is the same act as pasting the prompt by hand. The copyable
+prompt stays behind the action as the fallback, for an agent that cannot configure itself.
 
 The turn is sent on the active profile's client — its url, key and declared scope, from the same
 live prefs Settings' connection test builds from. The sheet resolves that connection at the moment
@@ -37,10 +37,10 @@ refuses.
 The turn carries the server name (`vox`), the real tailnet URL (`http://<tailnet-ip>:8765/mcp`), the
 tool name the model will see (`mcp__vox__phone`), the phone's `Token:`, the documented
 `hermes mcp add vox --url ... --auth header --connect-timeout 5` command, the equivalent
-`mcp_servers` entry, what the phone can and cannot do, the idempotence rule, the one-shot restart job
-(`systemctl --user restart hermes-gateway`, a schedule that never fires, `--no-agent --paused
---repeat 1`), and the exact `JOB_ID: <12 lowercase hex characters>` line the app parses. The exact
-turn is rendered by `PhoneSetup.prompt` and is pinned by `PhoneSetupTest`.
+`mcp_servers` entry, what the phone can and cannot do, the idempotence rule, the fact that this
+phone's listener is open for the next three minutes, and the rule that **no restart is needed and none is wanted**. It asks for no job id: the gateway reconciles its own MCP configuration while it
+runs. The exact turn is rendered by `PhoneSetup.prompt` and is pinned byte for byte by
+`PhoneSetupTest`.
 
 **The token rides this one turn.** `hermes mcp add` needs it to write the server's bearer, so it is
 the one secret in the instruction. It leaves the phone only on this turn, over the same authenticated
@@ -51,25 +51,30 @@ server also accepts the active connection's API key (`PhoneMcpServer.authorized`
 manual block below remains a second way in for a host that is not the one this phone talks to.
 
 **It is idempotent by content.** The turn says that if a `vox` entry already exists, the agent must
-update it in place, not add a second one, and that an existing `vox-gateway-restart` job is reused
-rather than duplicated. Sending the same turn twice therefore describes the same end state; the
-sheet's **Ask again** is safe.
+update it in place, not add a second one. Sending the same turn twice therefore describes the same
+end state; the sheet's **Ask again** is safe.
+
+**The add proves itself.** `hermes mcp add` verifies the connection before it saves: it refuses a
+server it cannot reach and does not write the entry. The instruction says so, and tells the agent to
+report a refusal plainly rather than saving a dead entry. A saved entry is therefore a proven one —
+which is why the flow needs no restart and no second reachability test of its own.
 
 ### The one-button flow
 
 | step | what the app does | what would be a lie |
 |---|---|---|
-| **ask** | Sends one fixed turn on the authenticated connection. The button's line already named the token and the restart. | Saying the setup is done because the press happened |
-| **the agent answers** | Shows the agent's words. It advances only on exactly one marked `JOB_ID:` line in the gateway's `[a-f0-9]{12}` form. | Guessing an id from prose, or triggering an unmarked string |
-| **trigger** | `POST /api/jobs/{id}/run` starts the job the agent created. This is the only host effect Vox initiates. | Restarting the gateway itself; there is no such route |
-| **expect the drop** | A failed `/v1/health` probe is the expected restart, not an error. The sheet says *Hermes is restarting — this takes a few seconds* and keeps polling. | Reporting the disconnect as a setup failure |
-| **wait for the handshake** | The gateway answering is not the proof. Only the phone's own MCP `initialize` is; the sheet then says **Connected**. | Calling a returned gateway "connected" |
+| **open the window** | `PhoneMcp.openWindow` starts this phone's listener without a call, for **three minutes**, before anything is sent. If it cannot open, nothing is sent and the sheet says so. | Sending an instruction the add is certain to fail against an idle phone |
+| **ask** | Sends one fixed turn on the authenticated connection. The button's line already named the token and the window. | Saying the setup is done because the press happened |
+| **the agent answers** | Shows the agent's words. A reply that does not report a failed add moves to *Waiting for it to appear*; one that reports a refusal fails with its own words. | Treating a refusal, or a polite "done", as proof |
+| **wait for the handshake** | The listener stays up until its window ends. Only the phone's own MCP `initialize` is proof; the sheet then says **Connected**. | Calling a reply — or a timeout — "connected" |
+| **close the window** | The listener closes when the three minutes end, unless a live call is holding it. A hangup during the window does not close it. | Leaving a listening socket open after the owner's stated window |
 
-**The windows are stated.** A trigger has one minute to produce an observed drop and return; a
-gateway that never drops, or never comes back, is a failure with the step it reached. Once the
-gateway answers again, the handshake gets **three minutes**. Without it the flow says *the setup may
-not have taken*, names the step it reached, and offers the copyable prompt as the fallback. It never
-becomes Connected by timeout.
+**The windows are stated.** The press states three minutes and the sheet shows the remaining time
+while the flow runs; the window closes on its own clock. The handshake gets a generous **90 seconds**
+after the reply, capped by the listener's window, because the listener cannot be reached after it
+closes. Without the handshake the flow says *the setup may not have taken*, names the step it
+reached, keeps the agent's last words on screen, and offers the copyable prompt. It never becomes
+Connected by timeout.
 
 **One press is one attempt.** A second press while the flow is in flight is ignored; a failed
 attempt is terminal for that attempt and offers the fallback rather than looping.
@@ -83,67 +88,74 @@ force: rotating the token clears it.
 
 The sheet draws this state first, above the capability list: enabling Phone tools starts this
 phone's listener and mints its credential, but the entry in the *agent's* configuration is a
-separate, one-time step, and Hermes reads MCP configuration at startup.
+separate, one-time step — and a running gateway only reads it when someone adds it.
 
 | state | what the sheet says | what the user can do |
 |---|---|---|
-| **not set up** | *Your agent does not know about this phone yet* — until it is set up, the agent cannot see the phone at all, and any answer it gives about the phone is honest but unhelpful. The button's line names the token and the restart; the setup turn is shown in full below it with **Copy setup prompt** and the sentence *Your agent writes the entry itself and creates a one-shot restart job; it takes effect when your gateway restarts, and the button starts that job for you.* | **Set this up with my agent**, or **Copy setup prompt** as the fallback |
-| **asking / restarting** | *Asking your agent*, then *Hermes is restarting — this takes a few seconds*, then *Waiting for the MCP handshake* — never Connected | Wait; a second press is ignored. The agent's reply and the step are shown |
-| **waiting** | *Asked — waiting for your agent*, with the agent's reply beneath: the prompt has been handed over, no handshake has arrived | **Ask again**; start a call, because the listener is only up while a call is |
+| **not set up** | *Your agent does not know about this phone yet* — until it is set up, the agent cannot see the phone at all, and any answer it gives about the phone is honest but unhelpful. The button's line names the token and the three-minute listener window; the setup turn is shown in full below it with **Copy setup prompt** and the sentence *Your agent writes the entry itself while this phone's listener is open. Nothing on your host restarts, and Vox writes nothing there.* | **Set this up with my agent**, or **Copy setup prompt** as the fallback |
+| **adding / waiting** | *Adding this phone to your agent*, with the window's remaining time, then *Waiting for it to appear* — never Connected | Wait; a second press is ignored. The agent's reply and the step are shown |
+| **waiting** | *Asked — waiting for your agent*, with the agent's reply beneath: the prompt has been handed over, no handshake has arrived | **Ask again**; the press opens the listener window for it |
 | **connected** | *Connected* — the only state that may say it — plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
-| **failed** | *Your agent did not name a restart job*, *The gateway did not restart*, *The setup may not have taken*, or another named cause, plus the step it reached | Read the step, then use the copyable prompt (the fallback). A failed attempt does not retry by itself |
+| **failed** | *Your agent could not add this phone*, *This phone could not be made reachable*, *The setup may not have taken*, or another named cause, plus the step it reached and the agent's last words | Read the step, then use the copyable prompt (the fallback). A failed attempt does not retry by itself |
 | **unreachable** | the cause, in its own words: *No connection configured*, *Key rejected*, *Your agent did not answer: …*, or *Turn failed: …* | Fix what is named — the connection in Entity & Connection, the profile's key, the gateway — then **Try again** |
 | **refused** | *Your agent could not edit its configuration*, with its own explanation | Fix its file access and **Try again**, or use the manual fallback |
 | **timed out** | *Your agent was asked, but no handshake arrived in time* | **Try again**, or **Rotate token** and ask once more |
 
 The three states the owner passes through are worded apart on purpose, and `PhoneToolsView` holds
-them as constants (`NOT_SET_UP_HEADING`, `WAITING_HEADING`, `CONNECTED_HEADING`, `SETUP_RESTART`);
+them as constants (`NOT_SET_UP_HEADING`, `WAITING_HEADING`, `CONNECTED_HEADING`, `SETUP_NOTE`);
 `PhoneSetupTest` fails if they share a line, and fails if any state other than connected uses the
 word. `PhoneBootstrapTest` holds the same rule for every bootstrap step and failure. A handshake
-observed by the phone after a gateway restart clears the waiting state on the next status poll — the
-owner does not re-enter anything.
+observed by the phone clears the waiting state on the next status poll — the owner does not re-enter
+anything.
 
 A failure names what happened, never one line for every case: a local misconfiguration must not read
 as a network outage. The four send failures are `no connection configured`, `key rejected`, `agent
 did not answer` (transport, timeout, or an empty answer) and `turn failed: <the gateway's own
-reason>` (`PhoneSetupSend`). The bootstrap adds its own: a missing or ambiguous job id, a refused
-trigger, a gateway that never dropped or never returned, and a missing handshake. The line is
+reason>` (`PhoneSetupSend`). The bootstrap adds its own: a listener window that could not be opened,
+an add the agent reports as failed, and a window that closed without the handshake. The line is
 persisted with the record, so it survives reopening the sheet.
 
-A timeout is three minutes. A late handshake still wins for a handover that was already waiting: if
-the agent connects after the sheet has shown the timeout, the phone says Connected because the
-handshake is real. A bootstrap attempt that has already failed stays failed for that attempt; the
-next press is a new attempt. The reply stays readable in every state, including the failures.
+The listener window is three minutes and the handshake window is 90 seconds after the reply, capped
+by the listener's close. A bootstrap attempt that has already failed stays failed for that attempt;
+the next press is a new attempt. The reply stays readable in every state, including the failures.
 
 ### What a device run of the one button must show
 
 1. **The promise is on screen before the press.** In the not-set-up state the button's line names the
-   phone's address, the token, and the restart, and says Vox writes nothing to the host itself.
-2. **One press, one turn.** Press it once: exactly one ordinary turn leaves on the active profile's
-   connection. A second press while the flow is running is ignored, and no second turn appears in
-   the conversation.
-3. **The agent's words are shown, but are not proof.** After the reply, the sheet moves to *starting
-   the restart* only if the reply carried one marked `JOB_ID:` line; prose, a guessed string or two
-   different ids leave it failed with the fallback, and nothing is triggered.
-4. **The drop is expected.** The trigger is one `POST /api/jobs/{id}/run`; the call drops; the sheet
-   says *Hermes is restarting — this takes a few seconds* and does not show an error. The health
-   probe then sees the gateway return.
+   phone's address, the token, the three-minute listener window, and says nothing restarts and Vox
+   writes nothing to the host itself.
+2. **The window opens before the turn.** Press once from an **idle phone**: the log shows
+   `event=phone-mcp start …` before the turn leaves, and the sheet says how long the listener stays
+   up. Exactly one ordinary turn leaves on the active profile's connection; a second press is
+   ignored. `event=phone-mcp window=open` names the duration.
+3. **The agent's words are shown, but are not proof.** After the reply, the sheet moves to *Waiting
+   for it to appear* unless the reply reports a failed add. A reply that reports a refusal fails
+   with *Your agent could not add this phone* and keeps its own words on screen; no reply at all
+   fails as *Your agent did not answer*.
+4. **The tool appears while the app stays connected.** The agent runs `hermes mcp add` against the
+   open window; the gateway reconciles its MCP configuration and logs
+   `MCP servers reconciled with config … added=['vox']`. There is **no restart, no dropped call and
+   no gap in the conversation** — a typed turn sent right after the setup continues the same chain.
+   That continuity is the check: nothing restarted.
 5. **Connected is the handshake's.** The sheet reaches **Connected** only after the phone's own
-   server records an authenticated MCP `initialize`. If the handshake does not arrive within three
-   minutes of the gateway returning, it says *the setup may not have taken*, names the step it
-   reached, and shows the copyable prompt.
-6. **The token stays off the host's logs and off the phone's records.** `grep` the app log and the
+   server records an authenticated MCP `initialize`; its reply is shown but never counted. If no
+   handshake arrives within the stated window (90 seconds after the reply, never past the
+   three-minute listener window), it says *the setup may not have taken*, shows the agent's last
+   words and the copyable prompt. It never becomes Connected by timeout.
+6. **The window closes.** Three minutes after the press, the log shows `event=phone-mcp stop
+   reason=window-closed` (unless a call is live, which holds the listener). A tool call afterwards
+   fails from the gateway's side, and the sheet no longer shows a remaining time.
+7. **An unopenable window sends nothing.** Turn Tailscale off: the sheet says *Cannot run —
+   Tailscale is not running*. Hold the port so the bind fails: it says *This phone could not be
+   made reachable*. In both cases it shows the copyable prompt and sends no turn, because an add
+   against a listener that is not up could only be refused.
+8. **The token stays off the host's logs and off the phone's records.** `grep` the app log and the
    gateway log for the token: nothing. Recent actions has no setup entry. `adb shell run-as
    com.hermesvox cat shared_prefs/hv.xml` has no instruction or token (the token itself is the
    encrypted `phone_mcp_token` value; the sent prompt is memory only).
-7. **The app survives the restart without losing the conversation.** Start a voice call, ask the
-   agent something, run the setup, and let Hermes restart. When the gateway is back, the next turn
-   continues the same conversation — the app does not rotate `lastID` or its conversation id for a
-   gateway restart, and the setup session is not the voice session. The call may need one redial if
-   it was live through the restart; the transcript is not lost.
-8. **A failure offers the fallback, not a loop.** Force a missing job id (ask the agent not to name
-   one): the sheet says it will not guess, shows the step reached and the copyable prompt, and does
-   not trigger anything or press again by itself.
+9. **A failure offers the fallback, not a loop.** Ask the agent to refuse the add, or let the window
+   close without a handshake: the sheet shows the step reached and the copyable prompt, and does not
+   send again by itself.
 
 ### The manual fallback
 
@@ -513,9 +525,12 @@ result plus an undo, and a timer that rings in this process is the honest way to
 plain: an in-app timer or alarm rings while the app is alive, which during a call it is; one that
 must outlive the process is not this lane.
 
-**Server lifetime.** The listener is up exactly while a call is: `VoiceController.start` opens it and
-the hangup closes it. It has no foreground service and needs no new service type. The sheet says this
-plainly, and the cost is in "When the phone is offline" below.
+**Server lifetime.** The listener is up while a call is: `VoiceController.start` opens it and the
+hangup releases it. The one exception is the one-button setup's **three-minute window**
+(`PhoneMcp.openWindow`), opened by the owner's press because `hermes mcp add` proves reachability at
+the moment it runs; the window closes on its own clock, and turning Phone tools off closes it
+immediately. There is no foreground service and no new service type. The sheet says this plainly,
+and the cost is in "When the phone is offline" below.
 
 ---
 
@@ -582,8 +597,9 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 2. **Point a scratch client at the URL with either credential** (`curl` the `initialize` POST, or
    `mcp-server-fetch`-style tooling): the phone's own token from the manual block, or the gateway's
    `API_SERVER_KEY`. With neither: `401`. With either: `tools/list` returns `phone`. **Run the one
-   button and copy nothing:** the agent's own connection should complete with the token in the turn,
-   the gateway should restart, and the sheet should reach *Connected* only on its handshake.
+   button and copy nothing:** the press opens the listener window, the agent's `hermes mcp add`
+   completes with the token in the turn, the gateway picks the entry up without restarting, and the
+   sheet reaches *Connected* only on its handshake.
 3. **With every group Off (a fresh install), `tools/list` offers `undo` and `status` only.** A
    `timer` call returns `ok:false, reason:"not_granted"`; nothing is armed.
 4. **Grant Timers and alarms = Ask.** `tools/list` now includes `timer`; a timer call returns
@@ -617,10 +633,9 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
     says it could not reach the phone rather than claiming the action.
 15. **Turn Tailscale off** → no listener at all (`reason=no-tailnet`), and the app is otherwise
     unaffected.
-16. **Run the one button twice.** The second turn must update the existing `vox` entry in place and
-    reuse the existing `vox-gateway-restart` job; the gateway's MCP configuration still has exactly
-    one `vox`, and the job list still has exactly one restart job. The sheet's Ask again is the path
-    to use.
+16. **Run the one button twice.** The second turn must update the existing `vox` entry in place;
+    the gateway's MCP configuration still has exactly one `vox`, and there is no restart job to
+    reuse because the flow creates none. The sheet's Ask again is the path to use.
 17. **Revoke Do Not Disturb access while the sheet is open.** Leave the sheet, revoke it in Android's
     special-access screen, return: the row says *Not granted* (no restart), and a `dnd` call returns
     `ok:false, reason:"permission"` with the DND state unchanged.

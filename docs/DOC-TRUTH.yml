@@ -135,23 +135,23 @@
   file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
   match: 'const val BUTTON = "SET THIS UP WITH MY AGENT"'
 
-- id: phone-bootstrap-job-id
-  says: "JOB_ID: <12 lowercase hex characters>"
+- id: phone-bootstrap-window
+  says: "three minutes"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
-  match: 'const val JOB_ID_PREFIX = "JOB_ID:"'
+  match: 'const val SETUP_WINDOW_MS = 3 \* 60_000L'
 
 - id: phone-bootstrap-handshake-window
-  says: "the handshake gets **three minutes**"
+  says: "a generous **90 seconds**"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
-  match: 'HANDSHAKE_WINDOW_MS = PhoneSetup.TIMEOUT_MS'
+  match: 'const val HANDSHAKE_WINDOW_MS = 90_000L'
 
-- id: phone-bootstrap-expects-the-drop
-  says: "A failed `/v1/health` probe is the expected restart, not an error."
+- id: phone-bootstrap-no-restart
+  says: "no restart is needed and none is wanted"
   doc: docs/MCP-PHONE.md
-  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
-  match: 'if \(!up\) \{'
+  file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
+  match: 'No restart is needed and none is wanted'
 
 - id: phone-dnd-is-special-access
   says: "This is a *special* access"
@@ -166,7 +166,7 @@
   absent: 'uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"'
 
 - id: phone-listener-lifetime
-  says: "The listener is up exactly while a call is"
+  says: "The listener is up while a call is"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/VoiceController.kt
   match: 'PhoneMcp\.start\(context\)'
