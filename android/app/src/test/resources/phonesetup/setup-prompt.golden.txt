@@ -1,0 +1,33 @@
+Please add this phone to your own MCP configuration. This is a configuration change you are making for the owner, so make it carefully and report exactly what you changed.
+
+Server name: vox
+URL: http://100.101.102.103:8765/mcp
+Tool: phone — you will see it as mcp__vox__phone
+
+Authentication: use the API key you already use for this host — the same key this phone uses for its turns. Send it as this entry's `Authorization` header; the phone accepts it for MCP as well. There is no pairing step, no code and nothing to exchange.
+
+The shape to write, in the `mcp_servers` block of your Hermes config (`~/.hermes/config.yaml`), or the equivalent for the profile you are running:
+
+```yaml
+mcp_servers:
+  vox:
+    url: "http://100.101.102.103:8765/mcp"
+    headers:
+      Authorization: "Bearer ${API_SERVER_KEY}"
+    connect_timeout: 5
+    timeout: 30
+```
+
+`${API_SERVER_KEY}` is an environment reference your client resolves at connect time from the profile's `~/.hermes/.env` (or the process environment); it is the same key your API server accepts. If your key is not exported under that name, write the literal key you already hold there instead — in your configuration file, never in this conversation. An unresolved variable reference in `url` or `headers` fails the connect closed, so do not leave one in place if the variable is not set.
+
+This phone exposes exactly one tool, `phone`, so the entry needs no tool filter; the phone itself offers only what the owner has granted and refuses the rest with a reason.
+
+This must be idempotent. If a server named `vox` already exists, update that entry in place with the URL and the header above. Do not add a second `vox` entry, do not duplicate the block, and do not leave two entries pointing at this phone.
+
+What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.
+
+The listener is only up while a voice call is live on the phone, so an early connection attempt may fail; that is expected. A connection is real only when your client has completed the MCP handshake with it — the phone verifies that itself.
+
+After editing, verify that a server named `vox` appears in the MCP configuration you loaded (list or show it), and reload or restart your gateway if it needs that to pick up a new server. Then reply with: what you changed, whether `vox` is present, and whether you needed to restart.
+
+Do not claim the phone is connected — the phone checks that when your handshake arrives. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste that API key into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential at all.

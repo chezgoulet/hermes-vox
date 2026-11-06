@@ -27,8 +27,9 @@ import org.junit.runner.RunWith
  * not scroll".
  *
  * These are the two things that have to hold on a real screen:
- *  * the column is taller than the viewport it sits in, the sheet has a scroll range, and its last
- *    section — Set up with your agent — is reachable and its button is on screen, not clipped;
+ *  * the column is taller than the viewport it sits in, the sheet has a scroll range, the setup
+ *    state leads it (because enabling the set is not the same as the agent knowing about the
+ *    phone), and the last section is reachable rather than clipped;
  *  * a poll tick while the sheet would draw the same thing does not rebuild it, and the one repaint
  *    a real state change causes leaves the owner where they were.
  *
@@ -73,8 +74,9 @@ class PhoneToolsSheetLayoutTest {
         scenario.close()
     }
 
-    @Test fun the_column_is_taller_than_the_viewport_and_the_last_section_is_reachable() {
-        // A phone that has never asked its agent: the sheet offers Set up with my agent.
+    @Test fun the_setup_state_leads_the_sheet_and_its_last_section_is_reachable() {
+        // A phone that has never asked its agent: the sheet must lead with the step that is missing,
+        // not bury it under a list of grants the agent cannot use yet.
         val (scenario, sheet) = openSheet { PhoneSetupStore.rotate(it) }
         try {
             scenario.onActivity {
@@ -89,9 +91,25 @@ class PhoneToolsSheetLayoutTest {
                 assertTrue("the sheet must have a scroll range", scroll.canScrollVertically(1))
 
                 val texts = textsIn(col)
-                for (subhead in listOf("Capabilities", "Recent actions", "This phone", "Set up with your agent")) {
+                for (subhead in listOf("Set up with your agent", "Capabilities", "Recent actions", "This phone")) {
                     assertTrue("the sheet must draw \"$subhead\"; it drew $texts", texts.any { it.equals(subhead, true) })
                 }
+                assertTrue(
+                    "the set is on and nothing has connected: the loud state must say so; it drew $texts",
+                    texts.any { it == PhoneToolsView.NOT_SET_UP_HEADING },
+                )
+                assertFalse(
+                    "nothing has connected, so the sheet must not say Connected",
+                    texts.any { it == PhoneToolsView.CONNECTED_HEADING },
+                )
+                assertTrue(
+                    "the setup turn must be on the sheet itself, not behind a disclosure",
+                    texts.any { it.contains("mcp_servers:") },
+                )
+                assertTrue(
+                    "and the restart sentence must follow it",
+                    texts.any { it == PhoneToolsView.SETUP_RESTART },
+                )
                 for (row in listOf(
                     "Reachability", "Server", "Do Not Disturb access",
                     "Volume permission", "Last request", "Token",
@@ -104,6 +122,35 @@ class PhoneToolsSheetLayoutTest {
                 )
             }
 
+            // The short path is on screen with the state, before the turn's full text.
+            scenario.onActivity {
+                val scroll = sheet.scroller!!
+                val setup = buttonsIn(scroll).firstOrNull { it.text.toString() == "SET UP WITH MY AGENT" }
+                assertNotNull("Set up with my agent must be a button on the sheet", setup)
+                assertTrue(
+                    "the Set up button must be on screen and whole, not clipped by the viewport",
+                    onScreen(setup!!, scroll),
+                )
+            }
+
+            // The turn and its copy action are reachable by scrolling, not clipped away.
+            scenario.onActivity {
+                val scroll = sheet.scroller!!
+                val copy = buttonsIn(scroll).firstOrNull { it.text.toString() == "COPY SETUP PROMPT" }
+                assertNotNull("the setup turn needs its copy action", copy)
+                val at = IntArray(2)
+                copy!!.getLocationOnScreen(at)
+                val box = IntArray(2)
+                scroll.getLocationOnScreen(box)
+                scroll.scrollTo(0, scroll.scrollY + (at[1] - box[1]))
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity {
+                val scroll = sheet.scroller!!
+                val copy = buttonsIn(scroll).firstOrNull { it.text.toString() == "COPY SETUP PROMPT" }
+                assertTrue("the copy action must be reachable", onScreen(copy!!, scroll))
+            }
+
             scenario.onActivity {
                 val scroll = sheet.scroller!!
                 // The last page: the scroll clamps to the bottom, which is the point.
@@ -114,11 +161,9 @@ class PhoneToolsSheetLayoutTest {
             scenario.onActivity {
                 val scroll = sheet.scroller!!
                 assertFalse("the sheet must reach its bottom", scroll.canScrollVertically(1))
-                val setup = buttonsIn(scroll).firstOrNull { it.text.toString() == "SET UP WITH MY AGENT" }
-                assertNotNull("Set up with my agent must be a button at the bottom of the sheet", setup)
                 assertTrue(
-                    "the Set up button must be on screen and whole, not clipped by the viewport",
-                    onScreen(setup!!, scroll),
+                    "the last section — the manual fallback — must be drawn",
+                    textsIn(scroll).any { it.equals("Manual fallback", true) },
                 )
             }
         } finally {

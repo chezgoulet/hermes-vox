@@ -3,6 +3,8 @@ package com.hermesvox
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -229,9 +231,184 @@ class PhoneSetupTest {
             assertTrue("headline for $state", PhoneToolsView.setupHeadline(state).isNotBlank())
             assertTrue("next step for $state", PhoneToolsView.setupNext(state).isNotBlank())
         }
-        assertTrue(PhoneToolsView.setupHeadline(PhoneSetup.State.CONNECTED).contains("Connected"))
-        assertTrue(PhoneToolsView.setupHeadline(PhoneSetup.State.WAITING).contains("Waiting"))
+        assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(PhoneSetup.State.CONNECTED))
+        assertEquals(PhoneToolsView.WAITING_HEADING, PhoneToolsView.setupHeadline(PhoneSetup.State.WAITING))
         assertTrue(PhoneToolsView.setupNext(PhoneSetup.State.TIMED_OUT).contains("rotate"))
+    }
+
+    // ---- the three states at the top of the sheet: not set up, asked, connected ----
+
+    /**
+     * The bug this lane exists for: the set was on, the agent was asked about the phone, and it
+     * truthfully said it had no such ability. Nothing was broken — the phone's listener was up and
+     * its credential minted — but the entry in the *agent's* configuration is a separate, one-time
+     * step, and the sheet was too quiet about it. So the not-set-up state is the loud one, and it
+     * says what it means.
+     */
+    @Test fun the_not_set_up_state_is_loud_and_says_what_it_means() {
+        val block = PhoneToolsView.setupBlock(PhoneSetup.State.IDLE, PhoneSetup.prompt(host))
+        assertEquals(PhoneToolsView.NOT_SET_UP_HEADING, block.heading)
+        assertEquals(
+            "Your agent does not know about this phone yet",
+            block.heading,
+        )
+        assertEquals(PhoneToolsView.NOT_SET_UP_MEANING, block.meaning)
+        assertTrue("the agent cannot see the phone at all", block.meaning.contains("cannot see this phone at all"))
+        assertTrue(
+            "and an answer about the phone is honest but unhelpful",
+            block.meaning.contains("honest but unhelpful"),
+        )
+    }
+
+    /**
+     * The prompt is in that state, with its copy action, and the restart follows it — not a
+     * footnote below the fold. The prompt is passed through untouched: it is a contract with the
+     * agent, not copy to improve.
+     */
+    @Test fun the_prompt_is_offered_with_the_restart_sentence_after_it() {
+        val prompt = PhoneSetup.prompt(host)
+        val block = PhoneToolsView.setupBlock(PhoneSetup.State.IDLE, prompt)
+        assertEquals("the setup turn itself, byte for byte", prompt, block.prompt)
+        assertEquals(PhoneToolsView.SETUP_RESTART, block.restart)
+        assertTrue("who writes the entry", block.restart.orEmpty().contains("writes the entry itself"))
+        assertTrue(
+            "and when it takes effect",
+            block.restart.orEmpty().contains("takes effect when your gateway restarts"),
+        )
+    }
+
+    /** Asked, waiting for the agent: the prompt is with the agent, no handshake yet, restart named. */
+    @Test fun the_waiting_state_names_the_restart_and_never_says_connected() {
+        val block = PhoneToolsView.setupBlock(PhoneSetup.State.WAITING, PhoneSetup.prompt(host))
+        assertEquals(PhoneToolsView.WAITING_HEADING, block.heading)
+        assertEquals(PhoneToolsView.WAITING_MEANING, block.meaning)
+        assertTrue("it says a handshake has not arrived", block.meaning.contains("no handshake has arrived"))
+        assertTrue(
+            "and that the gateway may need restarting",
+            block.meaning.contains("your gateway may need restarting"),
+        )
+        assertFalse(
+            "waiting is not connected",
+            (block.heading + " " + block.meaning).contains("connected", ignoreCase = true),
+        )
+    }
+
+    /**
+     * Only the handshake's state may use the word. The other five states say their own thing —
+     * and "not connected" is not a way of saying connected.
+     */
+    @Test fun connected_is_the_only_state_that_says_connected() {
+        for (state in PhoneSetup.State.values()) {
+            val block = PhoneToolsView.setupBlock(state, PhoneSetup.prompt(host), "a named cause")
+            val copy = "${PhoneToolsView.setupHeadline(state, "a named cause")} ${block.meaning}"
+            if (state == PhoneSetup.State.CONNECTED) {
+                assertEquals(PhoneToolsView.CONNECTED_HEADING, block.heading)
+                assertNull("nothing to hand over once the handshake is real", block.prompt)
+                assertNull("and no restart to name", block.restart)
+            } else {
+                assertFalse("$state must not use the word: $copy", copy.contains("connected", ignoreCase = true))
+            }
+        }
+    }
+
+    /** Three states, six lines, no two the same: the owner can tell where he is at a glance. */
+    @Test fun the_three_setup_states_never_share_wording() {
+        val lines = listOf(
+            PhoneSetup.State.IDLE,
+            PhoneSetup.State.WAITING,
+            PhoneSetup.State.CONNECTED,
+        ).flatMap { state ->
+            val block = PhoneToolsView.setupBlock(state, PhoneSetup.prompt(host))
+            listOf("${state.name} heading" to block.heading, "${state.name} meaning" to block.meaning)
+        }
+        val texts = lines.map { it.second }
+        assertEquals("each of the six lines is its own line: $lines", texts.toSet().size, texts.size)
+        for ((label, line) in lines) assertFalse("$label must not be blank", line.isBlank())
+    }
+
+    /**
+     * The sheet's state is the record's state: a set that is on with no handshake draws the loud
+     * not-set-up block, and nothing it draws says connected.
+     */
+    @Test fun a_sheet_with_the_set_on_and_no_handshake_shows_the_not_set_up_state() {
+        val status = PhoneMcp.Status(
+            tailnet = host,
+            listening = true,
+            url = "http://$host:8765/mcp",
+            served = 0,
+            lastRequest = null,
+            lastRequestAt = null,
+            token = PhoneMcp.TokenState.STORED,
+            dndGranted = true,
+            volumeGranted = true,
+        )
+        val drawn = PhoneToolsSheet.drawn(status, PhoneSetup.Record(), PhoneMcpToken.fingerprint(token), now)
+        assertEquals("the set is on and nothing has connected", PhoneSetup.State.IDLE, drawn.state)
+        val block = PhoneToolsView.setupBlock(drawn.state, PhoneSetup.prompt(host), drawn.record.failure)
+        assertEquals(PhoneToolsView.NOT_SET_UP_HEADING, block.heading)
+        assertNotNull("the prompt is right there", block.prompt)
+        assertFalse(
+            "a sheet that has not connected never says connected",
+            (block.heading + " " + block.meaning).contains("connected", ignoreCase = true),
+        )
+    }
+
+    /** A recorded handshake renders connected, and the restart sentence is gone with the wait. */
+    @Test fun a_recorded_handshake_renders_connected() {
+        val tag = PhoneMcpToken.fingerprint(token)
+        val record = PhoneSetup.observedHandshake(PhoneSetup.Record(), now, tag)
+        val drawn = PhoneToolsSheet.drawn(
+            PhoneMcp.Status(
+                tailnet = host,
+                listening = true,
+                url = "http://$host:8765/mcp",
+                served = 1,
+                lastRequest = "resources/list",
+                lastRequestAt = now,
+                token = PhoneMcp.TokenState.STORED,
+                dndGranted = true,
+                volumeGranted = true,
+            ),
+            record,
+            tag,
+            now + 1_000L,
+        )
+        assertEquals(PhoneSetup.State.CONNECTED, drawn.state)
+        assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(drawn.state, drawn.record.failure))
+        assertNull(PhoneToolsView.setupBlock(drawn.state, PhoneSetup.prompt(host)).restart)
+    }
+
+    /**
+     * The setup turn is a contract with the agent (#452), so it is pinned byte for byte in
+     * `src/test/resources/phonesetup/setup-prompt.golden.txt`. The sheet shows, and the copy
+     * action copies, exactly [PhoneSetup.prompt] — improving its wording is a change to what the
+     * agent is told, and has to be made on purpose.
+     */
+    @Test fun the_setup_prompt_is_byte_for_byte_the_agent_contract() {
+        val golden = java.io.File("src/test/resources/phonesetup/setup-prompt.golden.txt")
+        assertTrue("the golden prompt must be checked in at ${golden.path}", golden.isFile)
+        val expected = golden.readText()
+        assertEquals(
+            "the setup turn changed: the agent is told something different",
+            expected,
+            PhoneSetup.prompt(host) + "\n",
+        )
+        assertEquals(
+            "what the sheet offers is the prompt the app produces, unchanged",
+            expected.removeSuffix("\n"),
+            PhoneToolsView.setupBlock(PhoneSetup.State.IDLE, PhoneSetup.prompt(host)).prompt,
+        )
+    }
+
+    @Test fun the_three_settings_row_words_are_distinct_too() {
+        assertEquals("not set up", PhoneToolsView.rowValue(PhoneSetup.State.IDLE))
+        assertEquals("waiting for your agent", PhoneToolsView.rowValue(PhoneSetup.State.WAITING))
+        assertEquals("connected", PhoneToolsView.rowValue(PhoneSetup.State.CONNECTED))
+        assertEquals(
+            "a failure offers the retry it has",
+            "retry",
+            PhoneToolsView.rowValue(PhoneSetup.State.UNREACHABLE),
+        )
     }
 
     @Test fun every_status_row_says_why_it_is_off_when_phone_tools_is_off() {
