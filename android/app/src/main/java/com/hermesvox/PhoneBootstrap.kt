@@ -213,10 +213,16 @@ object PhoneBootstrap {
      * A handshake recorded after this attempt began. A handshake from before the press is not
      * evidence for this attempt; one recorded while the agent is still working is the strongest
      * evidence there is, so it connects from either step.
+     *
+     * [Step.IDLE] is included because the progress is per-process and the handshake is not: after
+     * this app restarts there is no attempt to speak of, while the phone's record still holds the
+     * `initialize` it saw. A handshake with no attempt in this process is therefore the restart
+     * case, and it connects. A [Step.FAILED] attempt is deliberately absent: an attempt that just
+     * failed is not resurrected by a handshake, whenever it was recorded.
      */
     fun handshake(progress: Progress, handshakeAt: Long): Progress =
         if (handshakeAt > progress.startedAt &&
-            (progress.step == Step.ADDING || progress.step == Step.WAITING)
+            (progress.step == Step.IDLE || progress.step == Step.ADDING || progress.step == Step.WAITING)
         ) {
             progress.copy(step = Step.CONNECTED)
         } else {
@@ -256,7 +262,15 @@ object PhoneBootstrap {
         else -> 0L
     }
 
-    /** Apply the phone's own evidence and the stored window, without mutating the stored attempt. */
+    /**
+     * Apply the phone's own evidence and the stored window, without mutating the stored attempt.
+     *
+     * This is the one reading of the flow's state: the sheet draws from it and the Settings section
+     * row calls it too, with the same arguments — the in-process [Progress], the handshake the
+     * record kept ([PhoneSetup.Record.handshakeAt]) and the clock. [PhoneBootstrapStore.progress]
+     * alone is per-process, so a row that read only its step would say *not set up* after a restart
+     * while the sheet, which folds the kept handshake in, said *Connected*.
+     */
     fun settled(progress: Progress, handshakeAt: Long, now: Long): Progress =
         expire(handshake(progress, handshakeAt), now)
 

@@ -1337,17 +1337,29 @@ class SettingsActivity : AppCompatActivity() {
      * door's value.
      *
      * The state line is [PhoneBootstrap.Step] — the same value the sheet draws and the button
-     * advances — so the row cannot claim a state the flow is not in. The setup row is the sheet's
+     * advances — read the way the sheet reads it: [PhoneBootstrap.settled] folds the handshake the
+     * record kept into the in-flight progress and then applies the clock. The progress alone is
+     * per-process, so reading only its step would say *Not set up* after a restart while the sheet,
+     * which folds the record's handshake in, said *Connected*. The setup row is the sheet's
      * own button, surfaced; it is gone once the handshake lands. The capabilities value is the
      * setup record's, as it has always been ("connected" only from the handshake).
      */
     private fun refreshPhoneTools() {
         runCatching {
             val allowed = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
-            val step = PhoneBootstrapStore.progress().step
+            // One record, one function, both doors: the same call the sheet makes, so the row and
+            // the sheet cannot disagree about whether this phone is set up — including after a
+            // restart, when this process has no attempt but the record still holds the handshake.
+            val now = System.currentTimeMillis()
+            val record = PhoneSetupStore.read(this)
+            val step = PhoneBootstrap.settled(
+                PhoneBootstrapStore.progress(),
+                record.handshakeAt,
+                now,
+            ).step
             findViewById<TextView>(R.id.set_phone_grpval)?.text = PhoneToolsView.stepLine(step, allowed)
             findViewById<TextView>(R.id.set_phone_mcp_val)?.text =
-                PhoneToolsView.rowValue(PhoneSetupStore.state(this), allowed)
+                PhoneToolsView.rowValue(PhoneSetup.state(record, now, PhoneMcp.tokenTag(this)), allowed)
             findViewById<android.view.View>(R.id.row_phone_boot)?.visibility =
                 if (PhoneToolsView.setupRowVisible(step)) View.VISIBLE else View.GONE
         }

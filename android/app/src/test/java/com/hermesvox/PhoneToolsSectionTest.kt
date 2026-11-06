@@ -208,18 +208,64 @@ class PhoneToolsSectionTest {
 
     @Test
     fun theRowReadsTheStepTheSheetAndTheButtonUse() {
-        assertTrue(
-            "the section row must read the bootstrap's step, not a second reading of the record",
+        assertFalse(
+            "the row must not read the per-process step on its own: after a restart it would say " +
+                "Not set up while the sheet, folding the record's handshake in, says Connected",
             settings.contains("PhoneBootstrapStore.progress().step"),
         )
         assertTrue(
-            "and render it through the one line function",
+            "the row folds the kept handshake through the same call the sheet makes",
+            settings.contains("PhoneBootstrap.settled(") && settings.contains("record.handshakeAt"),
+        )
+        assertTrue(
+            "and renders it through the one line function",
             settings.contains("PhoneToolsView.stepLine(step, allowed)"),
         )
         assertFalse(
             "no parallel list of states in the screen",
             settings.contains("PhoneBootstrap.Step.CONNECTED ->"),
         )
+    }
+
+    /**
+     * The restart case, expressed without a restart: this process has no attempt ([Step.IDLE]),
+     * while the record kept the handshake that landed before the app closed. The row must draw
+     * *Connected*, because the sheet does — both fold the record's handshake through the one
+     * function, [PhoneBootstrap.settled].
+     */
+    @Test
+    fun theRowSaysConnectedAfterARestartFromTheKeptHandshakeAlone() {
+        val now = 1_700_000_000_000L
+        val record = PhoneSetup.Record(handshakeAt = now - 60_000L, handshakeTag = "t", tokenTag = "t")
+        val step = PhoneBootstrap.settled(PhoneBootstrap.Progress(), record.handshakeAt, now).step
+        assertEquals(
+            "a kept handshake with no attempt in this process is Connected, not Not set up",
+            "Connected",
+            PhoneToolsView.stepLine(step),
+        )
+        assertEquals("and the record agrees", PhoneSetup.State.CONNECTED, PhoneSetup.state(record, now, "t"))
+        assertFalse("nothing is left to set up, so the setup row is gone", PhoneToolsView.setupRowVisible(step))
+    }
+
+    /**
+     * An attempt that just failed outranks a stale handshake: a handshake recorded during the
+     * attempt, or one from last week, must not hide the failure the owner just watched happen.
+     */
+    @Test
+    fun aFailedAttemptOutranksAStaleHandshake() {
+        val now = 1_700_000_000_000L
+        val failed = PhoneBootstrap.Progress(
+            step = PhoneBootstrap.Step.FAILED,
+            failure = PhoneBootstrap.Failure.NO_HANDSHAKE,
+            reached = PhoneBootstrap.Step.WAITING,
+            startedAt = now - 200_000L,
+            windowEndsAt = now - 10_000L,
+            answeredAt = now - 100_000L,
+        )
+        val settled = PhoneBootstrap.settled(failed, handshakeAt = now - 60_000L, now = now)
+        assertEquals("a failed attempt stays failed", PhoneBootstrap.Step.FAILED, settled.step)
+        assertEquals("Not connected", PhoneToolsView.stepLine(settled.step))
+        assertTrue("and the row keeps the way forward visible", PhoneToolsView.setupRowVisible(settled.step))
     }
 
     // ---- 4. the one-button setup, surfaced and not re-implemented ----
