@@ -35,6 +35,10 @@ import androidx.core.content.ContextCompat
  * that kind of command (#227) — so the screen is themed by what each command does, in the
  * being's own vocabulary, not by decoration. The sheet stands on [VoxSheet].
  *
+ * Two groups, one row per command (#499): a command that fits the moment says
+ * [CommandCatalog.FITS_NOW] in its own row's state slot, and its row is the only place it
+ * appears.
+ *
  * The state is words, never motion or a percentage — the same rule as the operations line
  * (#281), which owns what "still working" means. [CommandCatalog.stateText] is the grammar.
  *
@@ -42,7 +46,7 @@ import androidx.core.content.ContextCompat
  */
 class CommandsSheet(
     private val act: AppCompatActivity,
-    /** #284: what the app knows about the moment — the screen leads with what fits it. */
+    /** #284: what the app knows about the moment — the row that fits it says so in place. */
     private val situation: () -> CommandCatalog.Situation,
     /** #418: which optional commands exist right now (the sheet, its search and its states
      *  ask the same gate, so a command with its switch off is simply not there). */
@@ -53,6 +57,8 @@ class CommandsSheet(
     private val state = HashMap<String, CommandCatalog.RunState>()
     private val startedAt = HashMap<String, Long>()
     private val chips = HashMap<String, TextView>()
+    /** The commands that fit the moment, by name — marked on their own rows, never repeated. */
+    private val fits = HashSet<String>()
     private val queue = ArrayDeque<CommandCatalog.Command>()
     private var running: CommandCatalog.Command? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -136,16 +142,15 @@ class CommandsSheet(
 
     /** The list: what fits now, then every group — or, while searching, the matches best first. */
     private fun render(list: LinearLayout, d: Dialog, query: String) {
-        list.removeAllViews(); chips.clear()
+        list.removeAllViews(); chips.clear(); fits.clear()
         if (query.isBlank()) {
             // #370: the share row leads the screen. It is an artifact action, not a command,
             // so it sits outside the catalogue's groups but uses the same row grammar.
             list.addView(row(CommandCatalog.SHARE, d))
-            val now = CommandCatalog.suggest(situation(), gate)
-            if (now.isNotEmpty()) {
-                list.addView(header("Fits now"))
-                for (c in now) list.addView(row(c, d, chipKey = "now:" + c.name))
-            }
+            // #499: what fits the moment is a mark on the row it belongs to. The screen had
+            // a "Fits now" section above the groups, so `/reconnect` and `/health` appeared
+            // twice — once there and once under The agent. Two groups, one row per command.
+            fits += CommandCatalog.suggest(situation(), gate).map { it.name }
             for ((group, cmds) in CommandCatalog.grouped(gate = gate)) {
                 list.addView(header(group.label))
                 for (c in cmds) list.addView(row(c, d))
@@ -157,7 +162,7 @@ class CommandsSheet(
         for (c in hits) list.addView(row(c, d))
     }
 
-    private fun row(c: CommandCatalog.Command, d: Dialog, chipKey: String = c.name): View {
+    private fun row(c: CommandCatalog.Command, d: Dialog): View {
         val r = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -190,18 +195,19 @@ class CommandsSheet(
             })
         }
         r.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        // The state slot — only a command that runs here has one.
-        if (CommandCatalog.reportsOnRow(c)) {
+        // The state slot — a command that runs here reports on it, and a command that fits
+        // the moment says so in the same slot: one row, one thing to say about itself.
+        if (CommandCatalog.reportsOnRow(c) || c.name in fits) {
             val chip = TextView(act, null, 0, R.style.HvRowAction).apply {
                 setPadding(dp(10), dp(4), dp(10), dp(4))
                 background = drawable(R.drawable.bg_chip)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
             }
-            chips[chipKey] = chip
+            chips[c.name] = chip
             r.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { marginStart = dp(8) })
-            paint(chipKey)
+            paint(c.name)
         }
         r.setOnClickListener { tap(c, d) }
         return LinearLayout(act).apply {
@@ -231,7 +237,7 @@ class CommandsSheet(
         // #281's first move, at the same moment: the word changes to "still working", and it
         // never claims how far along the command is.
         handler.postDelayed({
-            if (running?.name == c.name) { paint(c.name); paint("now:" + c.name) }
+            if (running?.name == c.name) paint(c.name)
         }, Operations.LONG_MS + 100)
         run(c) { ok ->
             act.runOnUiThread {
@@ -245,19 +251,21 @@ class CommandsSheet(
     }
 
     private fun set(name: String, s: CommandCatalog.RunState) {
-        state[name] = s; paint(name); paint("now:$name")
+        state[name] = s; paint(name)
     }
 
-    private fun paint(key: String) {
-        val chip = chips[key] ?: return
-        val name = key.removePrefix("now:")
+    private fun paint(name: String) {
+        val chip = chips[name] ?: return
         val c = CommandCatalog.find(name, gate) ?: return
         val s = state[name] ?: CommandCatalog.RunState.IDLE
         val elapsed = if (s == CommandCatalog.RunState.RUNNING)
             SystemClock.elapsedRealtime() - (startedAt[name] ?: SystemClock.elapsedRealtime()) else 0L
-        chip.text = CommandCatalog.stateText(c, s, elapsed)
-        // Idle has nothing to say, so it takes no room from the words beside it.
-        chip.visibility = if (s == CommandCatalog.RunState.IDLE) View.GONE else View.VISIBLE
+        // The state slot says one thing: what the command is doing, or — while it is idle —
+        // that it fits the moment. Never both, and never a state a card command cannot see.
+        val said = CommandCatalog.stateText(c, s, elapsed)
+        chip.text = if (s == CommandCatalog.RunState.IDLE && name in fits) CommandCatalog.FITS_NOW else said
+        // Nothing to say takes no room from the words beside it.
+        chip.visibility = if (chip.text.isEmpty()) View.GONE else View.VISIBLE
         chip.setTextColor(when (s) {
             CommandCatalog.RunState.DONE -> color(R.color.hv_cmd_done)
             CommandCatalog.RunState.FAILED -> color(R.color.hv_cmd_failed)

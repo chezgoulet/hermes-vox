@@ -240,19 +240,30 @@ object CommandCatalog {
      *  retire or tune it if the field says the offer comes too early or too late). */
     const val COMPRESS_AFTER_TURNS = 16L
 
-    /** The commands that fit now, shown first on the screen — the interface revealing what
-     *  became relevant (#284). Never more than two, and nothing when nothing fits. */
     /** How a row tints its verb mark: the warning colour for a command that loses something
      *  for good (the same fact as its amber cost line), the accent otherwise. */
     enum class Tint { ACCENT, RISK }
     fun tint(c: Command): Tint = if (c.cost?.risk == true) Tint.RISK else Tint.ACCENT
 
+    /** What a row says when its command fits the moment (#284/#499) — the row's own state
+     *  slot, so the screen marks the row it already has rather than repeating it. */
+    const val FITS_NOW = "fits now"
+
+    /** The commands that fit now — the interface revealing what became relevant (#284).
+     *  Never more than two, and nothing when nothing fits. The sheet asks [fitsNow] of each
+     *  row, so this list marks rows in place: a command has one home ([Group]) and one row. */
     fun suggest(s: Situation, gate: Gate = Gate.NOTHING): List<Command> = when {
         !s.connected || s.lastTurnFailed ->
             listOfNotNull(find("/reconnect", gate), find("/health", gate))
         s.sessionTurns >= COMPRESS_AFTER_TURNS -> listOfNotNull(find(CompressCommand.NAME, gate))
         else -> emptyList()
     }
+
+    /** Whether one row fits the moment. The sheet marks the row it already has — its state
+     *  slot reads [FITS_NOW] — instead of printing the command a second time under a heading
+     *  of its own (#499: the screen showed `/reconnect` and `/health` twice). */
+    fun fitsNow(c: Command, s: Situation, gate: Gate = Gate.NOTHING): Boolean =
+        suggest(s, gate).any { it.name == c.name }
 
     /** The /help card, written from the catalogue so the two cannot disagree. */
     fun helpText(gate: Gate = Gate.NOTHING): String =
