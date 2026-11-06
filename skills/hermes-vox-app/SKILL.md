@@ -534,8 +534,9 @@ The list is asked in conversation (#384), not from a route: the app sends one
 `[[vox:profiles]]` chat turn and the agent answers with a `vox-profiles` block, while a switch
 still ends a live call and starts a new conversation
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `session?.resetConversation() LatencyStats.resetSessionTurns() // C3: a reset conversation is a fresh session`). The answer
-is cached; opening the switcher never asks, a refresh inside 60 s is refused, and a refresh
-during a call runs when the call ends
+is cached; opening the switcher never asks, a cached answer younger than 15 minutes is rendered
+with its age instead of asking again, a connect inside that window sends nothing, a refresh
+inside 60 s is refused, and a refresh during a call runs when the call ends
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `fun decide`). A host that does
 not answer with the block falls back to by-hand profiles and says so in one line.
 
@@ -546,7 +547,11 @@ profiles it serves; there is no `GET /v1/profiles` route to implement and nothin
 
 When a message begins with `[[vox:profiles]]`, run `hermes profile list` (or read the
 gateway's profiles directory) and reply with **only** one fenced block labelled
-`vox-profiles`:
+`vox-profiles`. The ask is a question, not a task: answer it, do not change the host to
+answer it. If the list cannot be produced without a change — a profile created, a
+configuration edited, a file written — say plainly that the list cannot be produced and
+what would be needed; make no change. Do not delete, create, edit or re-key anything, and
+do not touch profiles, memories, sessions or files:
 
 ```vox-profiles
 default=home
@@ -569,7 +574,7 @@ The exact user turn the app sends is
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `const val ASK`):
 
 ```
-[[vox:profiles]] Which Hermes profiles does this gateway serve to this key? Reply with one fenced vox-profiles block and nothing else.
+[[vox:profiles]] This is a question, not a task. Which Hermes profiles does this gateway serve to this key? Reply with one fenced vox-profiles block and nothing else — or, if you cannot answer, say plainly that the list cannot be produced. Do not modify this host, its configuration, its profiles, its memories, its sessions or its files. Do not run any command that changes them. If producing the list appears to need a change to the host, do not make it: say what would be needed instead.
 ```
 
 The parser accepts one label and one shape
