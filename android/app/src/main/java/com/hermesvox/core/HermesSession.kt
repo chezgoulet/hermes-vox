@@ -119,6 +119,15 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
         Streams.start(responses, input, lastID, RequestOptions(instructions, reasoning))
 
     /**
+     * Begins the one-button setup turn: the same route, the same vocabulary and the same events
+     * endpoint as any other turn, but with no clock. On `/v1/runs` a dropped events socket
+     * reattaches to the **same** run (from its last seq) for as long as the gateway says the run
+     * is alive, and the reader never posts `/stop`. Call [cancelStream] to end it — that is the
+     * owner cancelling or the screen going away.
+     */
+    fun startSetupStream(text: String): String = Streams.startPersistent(responses, text, lastID)
+
+    /**
      * Begins a streamed turn (the route in [StreamRoute], chained off the head) and
      * returns a stream id. On the responses route that is `/v1/responses stream:true`;
      * on the runs route it is `POST /v1/runs` + `GET /v1/runs/{id}/events`, chained by
