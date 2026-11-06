@@ -47,6 +47,8 @@ class ModelSheet(
     private var dialog: Dialog? = null
     private var level: Level = Level.Loading
     private var providers: List<ModelChoices.Provider> = emptyList()
+    /** What the payload carried that this app could not read (#6) — said, not dropped. */
+    private var dropped: List<String> = emptyList()
     private var query = ""
     private lateinit var title: TextView
     private var backMark: View? = null
@@ -103,13 +105,20 @@ class ModelSheet(
         level = Level.Loading; render(false)
         val (m, p) = current()
         Thread {
-            val parsed = try { ModelChoices.parse(load(), m, p) } catch (e: Throwable) {
+            val catalog = try { ModelChoices.read(load(), m, p) } catch (e: Throwable) {
                 VoxLog.w("event=models-catalog-failed err=${e.message?.take(120)}"); null
+            }
+            // #6: a provider or model the payload carries but this app cannot read is named
+            // in the log rather than vanishing from the list without a trace.
+            catalog?.dropped?.takeIf { it.isNotEmpty() }?.let {
+                VoxLog.w("event=models-catalog-dropped count=${it.size} " +
+                    "what=${it.joinToString("; ").take(400)}")
             }
             main.post {
                 if (dialog == null) return@post
-                if (parsed == null) { level = Level.Failed; render(false); return@post }
-                providers = parsed
+                if (catalog == null) { level = Level.Failed; render(false); return@post }
+                providers = catalog.providers
+                dropped = catalog.dropped
                 level = Level.Providers
                 render(false)
             }
@@ -163,6 +172,11 @@ class ModelSheet(
             return
         }
         if (providers.isEmpty()) { list.addView(note("The gateway lists no models.")); return }
+        // A payload entry that could not be read is stated here, in the same words the log
+        // got, so a missing provider is never a silent omission (#6).
+        if (dropped.isNotEmpty()) list.addView(note(
+            "${dropped.size} entr${if (dropped.size == 1) "y" else "ies"} the gateway sent " +
+                "cannot be read: ${dropped.joinToString("; ")}", warn = true))
         for (p in providers) {
             val drill = p.models.isNotEmpty()
             // A provider with nothing to choose and no sign-in on the gateway is said, not

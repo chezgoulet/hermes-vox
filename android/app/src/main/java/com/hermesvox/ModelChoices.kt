@@ -75,26 +75,46 @@ object ModelChoices {
 
     // ---- reading -------------------------------------------------------------------------
 
+    /** What a [read] made of the payload, and anything it had to leave out (#6). */
+    data class Catalog(val providers: List<Provider>, val dropped: List<String>)
+
     /**
-     * The catalogue, the provider in use first. [currentModel] / [currentProvider] are the
-     * app's own prefs — the gateway's `is_current` marks a provider, not a model.
-     * Throws on a body that is not JSON at all; a field of the wrong shape is skipped.
+     * The catalogue, in the order the picker shows it ([rank]). [currentModel] /
+     * [currentProvider] are the app's own prefs — the gateway's `is_current` marks a
+     * provider, not a model. Throws on a body that is not JSON at all; a field of the wrong
+     * shape is skipped and named in [Catalog.dropped], never silently omitted.
      */
-    fun parse(raw: String, currentModel: String, currentProvider: String): List<Provider> {
-        val root = Json.parse(raw) as? JObj ?: return emptyList()
-        val list = (root["providers"] as? JArr)?.items.orEmpty().mapNotNull { node ->
-            val p = node as? JObj ?: return@mapNotNull null
+    fun parse(raw: String, currentModel: String, currentProvider: String): List<Provider> =
+        read(raw, currentModel, currentProvider).providers
+
+    fun read(raw: String, currentModel: String, currentProvider: String): Catalog {
+        val root = Json.parse(raw) as? JObj
+            ?: return Catalog(emptyList(), listOf("the body is not a JSON object"))
+        val nodes = (root["providers"] as? JArr)?.items
+            ?: return Catalog(emptyList(), listOf("the body has no providers list"))
+        val dropped = ArrayList<String>()
+        val list = nodes.mapIndexedNotNull { i, node ->
+            val p = node as? JObj ?: run {
+                dropped += "providers[$i] is not an object"
+                return@mapIndexedNotNull null
+            }
             val slug = text(p, "slug")
             val name = text(p, "name").ifEmpty { slug }
-            if (slug.isEmpty() && name.isEmpty()) return@mapNotNull null
+            if (slug.isEmpty() && name.isEmpty()) {
+                dropped += "providers[$i] has neither a slug nor a name"
+                return@mapIndexedNotNull null
+            }
             val isCurrent = bool(p, "is_current") == true ||
                 (currentProvider.isNotEmpty() && currentProvider.equals(slug, ignoreCase = true))
             // The gateway states what each model can do under the provider, keyed by the
             // model's id — not on the model entry. Reading it here is what lets a row carry
             // capability marks the payload actually supports (#5).
             val caps = p["capabilities"] as? JObj
-            val models = (p["models"] as? JArr)?.items.orEmpty().mapNotNull { m ->
-                model(m, isCurrent, currentModel, caps)
+            val models = (p["models"] as? JArr)?.items.orEmpty().mapIndexedNotNull { j, m ->
+                model(m, isCurrent, currentModel, caps) ?: run {
+                    dropped += "${slug.ifEmpty { name }}: model #$j is not a model this app can read"
+                    null
+                }
             }
             Provider(
                 slug = slug.ifEmpty { name },
@@ -106,7 +126,20 @@ object ModelChoices {
                 warning = text(p, "warning"),
             )
         }
-        return list.sortedByDescending { it.current }   // stable: gateway order otherwise
+        // Stable: within a rank the gateway's own order is kept.
+        return Catalog(list.sortedWith(compareBy { rank(it) }), dropped)
+    }
+
+    /**
+     * Where a provider sits in the picker (#6). The gateway lists its providers in an order
+     * of its own — 52 of them on the owner's host, most with no models and no sign-in — so
+     * the one in use leads, then the ones this host can actually offer, then the rest, which
+     * are still shown (with the reason they cannot be chosen) at the end of the list.
+     */
+    fun rank(p: Provider): Int = when {
+        p.current -> 0
+        p.models.isNotEmpty() && p.signedIn != false -> 1
+        else -> 2
     }
 
     private fun model(node: JNode, providerCurrent: Boolean, currentModel: String, caps: JObj?): Model? {

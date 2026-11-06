@@ -28,11 +28,67 @@ class ModelChoicesTest {
 
     private val all = ModelChoices.parse(raw, currentModel = "deepseek-v4-flash", currentProvider = "deepseek")
 
-    @Test fun theProviderInUseComesFirstAndTheRestKeepTheGatewaysOrder() {
-        assertEquals(listOf("deepseek", "openrouter", "ollama", "anthropic", "weird"), all.map { it.slug })
+    /**
+     * The picker's order (#6): the one in use, then the providers this host can offer, then
+     * the rest — and within a rank the gateway's own order is kept.
+     */
+    @Test fun theProviderInUseLeadsThenTheConfiguredOnesThenTheRest() {
+        assertEquals(listOf("deepseek", "openrouter", "ollama", "weird", "anthropic"), all.map { it.slug })
         assertTrue(all.first().current)
         assertEquals("DeepSeek", all.first().name)   // a lower-case slug-as-name is made readable
         assertEquals("OpenRouter", all[1].name)       // a name the gateway cased is kept
+        // The empty, unauthenticated provider is still shown — at the end, where it is
+        // reachable and still says why it cannot be chosen.
+        assertTrue(all.last().models.isEmpty())
+        assertEquals("Not signed in on the gateway", ModelChoices.providerLine(all.last()))
+        assertEquals(listOf(0, 1, 1, 1, 2), all.map { ModelChoices.rank(it) })
+    }
+
+    /**
+     * #6 in the shape the owner's host serves: 54 providers, most of them empty and unsigned,
+     * with the one in use fifteenth in the payload. Every provider is still rendered; the
+     * interesting ones are at the top; and nothing is dropped without being named.
+     */
+    @Test fun everyProviderInAFiftyFourProviderPayloadIsShownWithTheUsefulOnesFirst() {
+        val sb = StringBuilder("{\"providers\":[")
+        for (i in 0 until 14) {
+            if (i > 0) sb.append(',')
+            sb.append("{\"slug\":\"empty-$i\",\"name\":\"Empty $i\",\"authenticated\":false," +
+                "\"total_models\":0,\"models\":[]}")
+        }
+        sb.append(",{\"slug\":\"deepseek\",\"name\":\"DeepSeek\",\"is_current\":true," +
+            "\"authenticated\":true,\"total_models\":2," +
+            "\"models\":[\"deepseek-flash\",\"deepseek-v4-pro\"]," +
+            "\"capabilities\":{\"deepseek-flash\":{\"fast\":false,\"reasoning\":true}," +
+            "\"deepseek-v4-pro\":{\"fast\":false,\"reasoning\":true}}}")
+        sb.append(",{\"slug\":\"opencode-go\",\"name\":\"OpenCode Go\",\"authenticated\":true," +
+            "\"total_models\":3,\"models\":[\"kimi-k3\",\"glm-5.2\",\"grok-4.7\"]," +
+            "\"capabilities\":{\"kimi-k3\":{\"fast\":false,\"reasoning\":true}," +
+            "\"glm-5.2\":{\"fast\":true,\"reasoning\":true}," +
+            "\"grok-4.7\":{\"fast\":false,\"reasoning\":true}}}")
+        for (i in 14 until 52) sb.append(",{\"slug\":\"empty-$i\",\"name\":\"Empty $i\"," +
+            "\"authenticated\":false,\"total_models\":0,\"models\":[]}")
+        sb.append("]}")
+        val read = ModelChoices.read(sb.toString(), "deepseek-flash", "deepseek")
+        assertEquals("every provider the payload carries is shown", 54, read.providers.size)
+        assertEquals("nothing was dropped", emptyList<String>(), read.dropped)
+        assertEquals("deepseek", read.providers.first().slug)
+        assertEquals("opencode-go", read.providers[1].slug)
+        assertEquals(2, read.providers.first().models.size)
+        assertTrue(read.providers.first().models.first().current)
+        // The remaining fifty-two keep the payload's order — nothing is silently re-filed.
+        assertEquals((0 until 14).map { "empty-$it" } + (14 until 52).map { "empty-$it" },
+            read.providers.drop(2).map { it.slug })
+    }
+
+    /** An entry the app cannot read is named, with why — it never just disappears. */
+    @Test fun whatCannotBeReadIsNamedNotSilentlyOmitted() {
+        val read = ModelChoices.read(raw, "", "")
+        assertTrue(read.dropped.toString(), read.dropped.any { it.contains("weird") && it.contains("model") })
+        assertEquals(listOf("ok-model"), read.providers.first { it.slug == "weird" }.models.map { it.id })
+        // A body of the wrong shape says so instead of returning a silent empty list.
+        assertEquals(listOf("the body is not a JSON object"), ModelChoices.read("[]", "", "").dropped)
+        assertEquals(listOf("the body has no providers list"), ModelChoices.read("{}", "", "").dropped)
     }
 
     @Test fun theCurrentModelIsMarkedOnlyUnderItsOwnProvider() {
