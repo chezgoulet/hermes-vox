@@ -2435,7 +2435,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
                 .putBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
-                // The commands entry goes back to the glyph it shipped with (Steve's ⌘).
+                // The commands entry goes back to the glyph it ships with (Clanker).
                 .remove(CommandGlyph.PREF)
                 .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
                 .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling

@@ -1756,7 +1756,7 @@
                         android:id="@+id/set_command_icon_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Steve"
+                        android:text="Clanker"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
