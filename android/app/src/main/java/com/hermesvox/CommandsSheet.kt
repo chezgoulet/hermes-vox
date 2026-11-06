@@ -136,9 +136,12 @@ class CommandsSheet(
             minimumHeight = dp(56)
         }
         // The command's kind, drawn as the being draws it; amber only when something is lost.
+        // A command whose own drawing says it better (#3: /new and the share row) keeps the
+        // same size, the same tint and the same stroke — only the geometry is its own.
         val tint = color(if (CommandCatalog.tint(c) == CommandCatalog.Tint.RISK) R.color.hv_warn else R.color.hv_cyan)
-        r.addView(VerbMark(act, CommandMotion.verbFor(c.category), tint),
-            LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(14) })
+        val mark: View = c.glyph?.let { GlyphMark(act, Marks.shapes(it), tint) }
+            ?: VerbMark(act, CommandMotion.verbFor(c.category), tint)
+        r.addView(mark, LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(14) })
         val words = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         words.addView(TextView(act, null, 0, R.style.HvRowTitle).apply {
             text = c.name

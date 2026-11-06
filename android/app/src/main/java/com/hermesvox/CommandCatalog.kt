@@ -63,6 +63,11 @@ object CommandCatalog {
          *  with the switch off is not a hidden row — it is a name no build answers to, so the
          *  sheet, the /help card and a typed word all treat it as unknown. */
         val gated: Boolean = false,
+        /** The row's own drawing, when its category's still would say the wrong thing (#3).
+         *  Null means "the category's still" ([CommandMotion.verbFor]). `/clear` and `/new`
+         *  are both CLEAR to the being — one empties the screen, one starts a thread — so
+         *  `/new` names [Marks.Mark.NEW_THREAD] and the two rows stop looking identical. */
+        val glyph: Marks.Mark? = null,
     )
 
     /**
@@ -99,7 +104,8 @@ object CommandCatalog {
             effect = "Start a fresh thread; the agent forgets this one",
             cost = Cost("This thread cannot be brought back", risk = true),
             category = Category.CLEAR, kind = Kind.INLINE,
-            listOf("start over", "fresh", "new topic", "forget", "begin again")),
+            listOf("start over", "fresh", "new topic", "forget", "begin again"),
+            glyph = Marks.Mark.NEW_THREAD),
         // #437: the other half of /new — pick up a thread that already exists. Gated: listed
         // only while the Alpha gate allows "Sessions", and with the set off it is a name no
         // build answers to (the same rule as /profiles and /diagnostics).
@@ -109,7 +115,10 @@ object CommandCatalog {
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("session", "conversation", "thread", "history", "resume", "pick up",
                 "earlier", "desktop", "before", "past"),
-            gated = true),
+            gated = true,
+            // #3: a list of the threads the host already has. /models chose the PULSE nucleus
+            // too, and the two rows sat one above the other in the sheet looking identical.
+            glyph = Marks.Mark.SESSIONS),
         Command("/models", emptyList(), Group.AGENT,
             effect = "Choose the model the agent thinks with",
             cost = Cost("Switching starts a fresh thread", risk = false),
@@ -164,6 +173,9 @@ object CommandCatalog {
         category = Category.CHOOSE,
         kind = Kind.CARD,
         keywords = listOf("share", "file", "clipboard", "attach", "document", "send file"),
+        // #3: the platform's share mark, not the nucleus the CHOOSE motion would give it —
+        // this row opens Android's share, and the owners' eyes already know that drawing.
+        glyph = Marks.Mark.SHARE,
     )
 
     /** The command a typed or spoken name means, by its name or an alias — and whether it
