@@ -30,9 +30,11 @@ import kotlin.concurrent.thread
  *
  * The ask runs on connect and on an explicit refresh, is cached in between, and is refused
  * inside 60 s of the last one. Opening the switcher never asks — it renders the cache
- * instantly. A live call defers the ask until it ends, so a profile refresh can never
- * disturb a conversation. A profile the host stopped serving (or one whose probe fails) is
- * shown as unavailable, never deleted, because the key belongs to the user.
+ * instantly — and so does a connect while the cached answer is younger than 15 minutes:
+ * the line shows its age and no turn is sent. Only a refresh (or a connect after the
+ * window) asks again. A live call defers the ask until it ends, so a profile refresh can
+ * never disturb a conversation. A profile the host stopped serving (or one whose probe
+ * fails) is shown as unavailable, never deleted, because the key belongs to the user.
  */
 class ProfileDialogs(
     private val activity: AppCompatActivity,
@@ -119,8 +121,9 @@ class ProfileDialogs(
      * #384: ask the host which profiles it serves, then fold the answer into the registry.
      *
      * [kind] is what the user did. [ProfilesAsk.decide] owns the policy — the switcher never
-     * asks, a live call defers, a manual refresh inside 60 s is refused — and this method is
-     * only the Android edge: the two HTTP calls and the probes. Runs off the UI thread.
+     * asks, a fresh cache (15 min) is rendered instead of asked, a live call defers, a manual
+     * refresh inside 60 s is refused — and this method is only the Android edge: the HTTP
+     * calls and the probes. Runs off the UI thread.
      */
     fun refreshFromHost(kind: ProfilesAsk.AskKind = ProfilesAsk.AskKind.REFRESH) {
         val now = System.currentTimeMillis()
@@ -158,11 +161,14 @@ class ProfileDialogs(
                 // 1. The #382 route, opportunistically: one request, and the day Hermes ships it
                 //    nothing here changes.
                 val (fastCode, fastBody) = try { fetch(base, key, scope) } catch (_: Throwable) { -1 to "" }
-                val fast = ProfilesAsk.fastPath(fastCode, fastBody)
-                // 2. Otherwise the conversational ask: a plain chat turn, never the voice path.
-                val result: ProfilesAsk.Result = fast ?: run {
-                    val r = ask(base, key, model)
-                    ProfilesAsk.fromChat(r.code, r.body, r.timedOut)
+                // 2. The route comes first, always. Only the Step.Ask branch may send the
+                //    conversational turn: a fast-path answer suppresses it entirely.
+                val result: ProfilesAsk.Result = when (val step = ProfilesAsk.step(fastCode, fastBody)) {
+                    is ProfilesAsk.Step.Answered -> step.result
+                    ProfilesAsk.Step.Ask -> {
+                        val r = ask(base, key, model)
+                        ProfilesAsk.fromChat(r.code, r.body, r.timedOut)
+                    }
                 }
                 // 3. The list is a hint; the probe is the proof.
                 val reachable = if (result is ProfilesAsk.Result.Named)

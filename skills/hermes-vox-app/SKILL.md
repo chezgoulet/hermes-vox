@@ -534,8 +534,9 @@ The list is asked in conversation (#384), not from a route: the app sends one
 `[[vox:profiles]]` chat turn and the agent answers with a `vox-profiles` block, while a switch
 still ends a live call and starts a new conversation
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `session?.resetConversation() LatencyStats.resetSessionTurns() // C3: a reset conversation is a fresh session`). The answer
-is cached; opening the switcher never asks, a refresh inside 60 s is refused, and a refresh
-during a call runs when the call ends
+is cached; opening the switcher never asks, a cached answer younger than 15 minutes is rendered
+with its age instead of asking again, a connect inside that window sends nothing, a refresh
+inside 60 s is refused, and a refresh during a call runs when the call ends
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `fun decide`). A host that does
 not answer with the block falls back to by-hand profiles and says so in one line.
 
@@ -546,7 +547,11 @@ profiles it serves; there is no `GET /v1/profiles` route to implement and nothin
 
 When a message begins with `[[vox:profiles]]`, run `hermes profile list` (or read the
 gateway's profiles directory) and reply with **only** one fenced block labelled
-`vox-profiles`:
+`vox-profiles`. The ask is a question, not a task: answer it, do not change the host to
+answer it. If the list cannot be produced without a change — a profile created, a
+configuration edited, a file written — say plainly that the list cannot be produced and
+what would be needed; make no change. Do not delete, create, edit or re-key anything, and
+do not touch profiles, memories, sessions or files:
 
 ```vox-profiles
 default=home
@@ -569,7 +574,7 @@ The exact user turn the app sends is
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `const val ASK`):
 
 ```
-[[vox:profiles]] Which Hermes profiles does this gateway serve to this key? Reply with one fenced vox-profiles block and nothing else.
+[[vox:profiles]] This is a question, not a task. Which Hermes profiles does this gateway serve to this key? Reply with one fenced vox-profiles block and nothing else — or, if you cannot answer, say plainly that the list cannot be produced. Do not modify this host, its configuration, its profiles, its memories, its sessions or its files. Do not run any command that changes them. If producing the list appears to need a change to the host, do not make it: say what would be needed instead.
 ```
 
 The parser accepts one label and one shape
@@ -735,10 +740,10 @@ that is not here, this list is stale: add it with a reference.
 | `event=tts-speak-cut` | Playback was cut at sample `at=` of `of=` | — | (android/app/src/main/java/com/hermesvox/SherpaTts.kt `tts-speak-cut`) |
 | `event=tts-teardown` | The engine was torn down; `result=timeout` means a writer was still active | `result=timeout` = a stuck writer | (android/app/src/main/java/com/hermesvox/SherpaTts.kt `tts-teardown result=timeout`) |
 | `event=tts-speak` | #373: one line per spoken utterance, naming the engine that spoke it — `engine=system / piper / supertonic`, `chars=`, `reason=` (`ok`, `one-shot`, `stream`, or the fallback reason) | `engine=none reason=…` = nothing could speak, and why; its absence (pre-#373) is why "it went silent" could not be settled | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `"event=tts-speak engine=$engineToken chars=${text.length} " +`) (android/app/src/main/java/com/hermesvox/SherpaTts.kt `VoxLog.d("event=tts-speak engine=${voice.modelId} reason=stream chars=${text.length}")`) |
-| `event=tts-fail` | #373: an utterance failed; `engine=` names it and `code=` is the engine's own error (a TextToSpeech error code, a sherpa exception message, `timeout`) | Any — the engine is retired and re-acquired for the next utterance | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `event=tts-fail engine=`) (android/app/src/main/java/com/hermesvox/SherpaTts.kt `event=tts-fail engine=`) |
-| `event=tts-fallback` | #373: the requested voice cannot speak, so the system voice does — `from=` → `to=system`, `reason=` (`piper model not installed`, `piper could not start (…)`) | Expected when the model was never installed; the status line says the same thing | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `warn("event=tts-fallback from=$local to=system reason=$why")`) |
+| `event=tts-fail` | #373: an utterance failed; `engine=` names it and `code=` is the engine's own error (a TextToSpeech error code, a sherpa exception message, `timeout`, or `silent` when the engine reported SPOKEN without ever becoming audible) | Any — one re-warm is attempted, then the leg degrades to the other engine | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `warn("event=tts-fail engine=$engineToken code=${out.code}")`) (android/app/src/main/java/com/hermesvox/SherpaTts.kt `VoxLog.w("event=tts-fail engine=${voice.modelId} reason=stream code=${e.message ?: e::class.java.simpleName}")`) |
+| `event=tts-fallback` | #373: the requested voice cannot speak, so the system voice does — `from=` → `to=system`, `reason=` (`Piper model not installed`, `Piper could not start (…)`) | Expected when the model was never installed; the status line says the same thing | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `warn("event=tts-fallback from=$local to=system reason=$why")`) |
 | `event=tts-ready` | #373: an engine loaded and will speak; `engine=`, `reason=` (`ok` or the fallback note) | — | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `event=tts-ready engine=`) |
-| `event=tts-recover` | #373: a failed engine is being replaced before the next utterance; `reason=`, `attempt=` (at most 3 per call) | `attempt=3` = the voice leg keeps dying | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `event=tts-recover reason=`) |
+| `event=tts-recover` | #373: a failed engine gets exactly ONE re-warm before the next utterance; `engine=`, `reason=`, `attempt=1` | Success clears the status line; a second failure degrades to the other engine instead of trying again | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `warn("event=tts-recover engine=$failed reason=$reason attempt=$MAX_REWARMS")`) |
 | `event=tts-cut` | #373: an utterance was cut on purpose (barge, hush, hang-up, a newer utterance) — not an engine failure, so nothing is rebuilt | — | (android/app/src/main/java/com/hermesvox/TtsEngineHost.kt `event=tts-cut engine=`) |
 | `event=tts-timeout` | #373: the system engine never called back; the utterance ends as failed instead of latching the call | Present = the engine stopped responding | (android/app/src/main/java/com/hermesvox/WarmTts.kt `event=tts-timeout engine=system`) |
 | `event=voice-preview` | A Settings voice preview finished; `engine=` and `ms=` | — | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `voice-preview`) |
