@@ -39,7 +39,7 @@ them gets edited, and the credential gets rotated.
 
 The community edition is GPL-3.0. The House also keeps the option of a separate commercial
 edition, so the project uses a contributor licence agreement: you keep your copyright, and you
-grant `Chez Goulet LLC` the right to sublicense your contribution. The agreement is in `CLA.md`,
+grant the project's rights holder — today Christopher Goulet, and any company formed to hold them by assignment under the agreement — the right to sublicense your contribution. The agreement is in `CLA.md`,
 and it is in force.
 
 **To contribute**, post this on your first pull request:
