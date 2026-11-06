@@ -174,11 +174,11 @@ Each set is selected on its own; with the master off, everything below is dimmed
   work and the release waits for it; see `docs/FDROID.md`.
 - **The wake word** — foundation only. **Tier 3 / screen control** — design only. **Full-duplex**
   — long horizon.
-- **Two handoff edges are open, and the release notes do not promise them.** Android may silently
-  refuse a background activity start, so `launch`/`open`/`message`/`dial` report the handover, not
-  proof another app came forward. And `dial` ends Vox's own call — which is also the MCP listener's
-  lifetime — so its result can be lost before the mind receives it. Both are tracked, not fixed
-  here.
+- **The two handoff edges are closed in this release.** Android still refuses a background activity
+  start without raising, so every handoff asks first whether an activity of ours is resumed or in
+  picture-in-picture: when Vox is not on screen the call is refused `unavailable` and says so,
+  and `uninstall` approved from the notification opens Vox before firing. `dial` finishes its
+  announcement before ending the call, and its late result is audited rather than dropped.
 - **A device pass for Sessions and Switching profiles.** D39 keeps both behind the gate until that
   pass; neither is promoted by this cut.
 
