@@ -6,20 +6,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #4/#501: `/sessions` is registered under This conversation but gated behind the Alpha
- * **Sessions** set, so with the gate off it is not on the sheet. This pins the state the
- * owner asked about — with the gate ON and Sessions selected it must be there, in its group,
- * with its one-line description — and that turning the set on takes effect without a restart.
+ * #4/#501, as amended by #436/#437 (D39, 2026-11-06): `/sessions` and `/profiles` have both left
+ * the Alpha gate, so they are on the sheet, in the search and in /help for every install — with
+ * the master off and nothing selected. The diagnostic summary is the one command left with a
+ * gate of its own, and it still answers from the switch's state when asked, not when the sheet
+ * was built.
  */
 class CommandGateTest {
-
-    /** Alpha's reader, in memory: the same keys the panel writes. */
-    private class Alpha : AlphaGate.Reader {
-        val on = HashSet<String>()
-        override fun getBoolean(key: String, default: Boolean) = if (key in on) true else default
-        fun master(m: Boolean) { if (m) on += AlphaGate.KEY_MASTER else on -= AlphaGate.KEY_MASTER }
-        fun set(s: AlphaGate.FeatureSet, v: Boolean) { if (v) on += s.key else on -= s.key }
-    }
 
     /** The diagnostic switch, in memory. */
     private class Diagnostics : DiagnosticSummary.Store {
@@ -32,65 +25,58 @@ class CommandGateTest {
     private fun rows(gate: CommandCatalog.Gate) =
         CommandCatalog.grouped(gate = gate).flatMap { it.second }.map { it.name }
 
-    @Test fun withAlphaOffSessionsIsSimplyNotThere() {
-        val a = Alpha(); val d = Diagnostics()
-        val gate = CommandGate.of(a, d)
-        val rows = rows(gate)
-        assertFalse("/sessions", rows.contains("/sessions"))
+    /** D39: no master, no set — and both promoted commands are there anyway. */
+    @Test fun withAlphaOffThePromotedCommandsAreStillOnTheSheet() {
+        val d = Diagnostics()
+        val rows = rows(CommandGate.of(d))
+        assertTrue("/sessions left the gate", rows.contains("/sessions"))
+        assertTrue("/profiles left the gate", rows.contains("/profiles"))
         assertTrue("the rest of the catalogue is untouched", rows.contains("/new"))
         assertTrue(rows.contains("/models"))
+        // Both words reach their cards too: no gate stands between the two.
+        assertEquals("/sessions", Sessions.commandFor("/sessions")?.name)
+        assertTrue(CommandCatalog.search("profiles", gate = CommandGate.of(d))
+            .any { it.name == "/profiles" })
+        // And the gate itself never mentions Alpha again.
+        val gate = java.io.File("src/main/java/com/hermesvox/CommandGate.kt").readText()
+        assertFalse(gate.contains("AlphaGate"))
     }
 
-    @Test fun withTheSessionsSetOnTheRowIsInItsGroupWithItsDescription() {
-        val a = Alpha(); val d = Diagnostics()
-        a.master(true); a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        val gate = CommandGate.of(a, d)
-        val rows = CommandCatalog.grouped(gate = gate)
-        val conversation = rows.first { it.first == CommandCatalog.Group.CONVERSATION }
+    @Test fun theSessionsRowIsInItsGroupWithItsDescription() {
+        val d = Diagnostics()
+        val groups = CommandCatalog.grouped(gate = CommandGate.of(d))
+        val conversation = groups.first { it.first == CommandCatalog.Group.CONVERSATION }
         val row = conversation.second.firstOrNull { it.name == "/sessions" }
         assertTrue("/sessions is not under This conversation", row != null)
         assertEquals("Pick up a thread the agent already has", row!!.effect)
         assertEquals(Marks.Mark.SESSIONS, row.glyph)
         assertEquals("nothing is lost, so there is no cost line", null, row.cost)
+        // /profiles is under The agent, beside /models.
+        val agent = groups.first { it.first == CommandCatalog.Group.AGENT }
+        assertTrue(agent.second.any { it.name == "/profiles" })
+        assertEquals("Talk to another of this host's agents",
+            agent.second.first { it.name == "/profiles" }.effect)
     }
 
-    @Test fun theMasterSwitchAloneIsNotEnough() {
-        val a = Alpha(); val d = Diagnostics()
-        a.master(true)   // master on, Sessions not selected
-        assertFalse("/sessions", rows(CommandGate.of(a, d)).contains("/sessions"))
-        a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        assertTrue("/sessions", rows(CommandGate.of(a, d)).contains("/sessions"))
-        a.master(false)  // master off overrides the set
-        assertFalse("/sessions", rows(CommandGate.of(a, d)).contains("/sessions"))
+    /** The diagnostic switch is the one optional command left, and it keeps its own gate. */
+    @Test fun theDiagnosticSwitchKeepsItsOwnGate() {
+        val d = Diagnostics()
+        val gate = CommandGate.of(d)
+        assertFalse("/diagnostics", rows(gate).contains("/diagnostics"))
+        d.putBoolean(DiagnosticSummary.PREF, true)
+        assertTrue(rows(gate).contains("/diagnostics"))
+        // Its switch is read when asked: that is what makes it appear without a restart.
+        d.putBoolean(DiagnosticSummary.PREF, false)
+        assertFalse("the gate cached its answer", rows(gate).contains("/diagnostics"))
     }
 
     /**
-     * The sheet is built once and kept; the gate must not answer from that moment. A person
-     * turns Sessions on in Settings, comes back, and the row is there.
+     * The panel and the catalogue agree on the same fact: the gate has four sets, and the two
+     * that left it are ordinary commands.
      */
-    @Test fun aSetTurnedOnAfterTheSheetWasBuiltShowsWithoutARestart() {
-        val a = Alpha(); val d = Diagnostics()
-        val gate = CommandGate.of(a, d)          // the sheet captures this object
-        assertFalse(rows(gate).contains("/sessions"))
-        a.master(true); a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        assertTrue("the gate cached its answer", rows(gate).contains("/sessions"))
-        a.set(AlphaGate.FeatureSet.SESSIONS, false)
-        assertFalse(rows(gate).contains("/sessions"))
-    }
-
-    @Test fun theOtherTwoDoorsKeepTheirOwnSwitches() {
-        val a = Alpha(); val d = Diagnostics()
-        a.master(true); a.set(AlphaGate.FeatureSet.SESSIONS, true)
-        val gate = CommandGate.of(a, d)
-        assertFalse("/profiles", rows(gate).contains("/profiles"))
-        assertFalse("/diagnostics", rows(gate).contains("/diagnostics"))
-        a.set(AlphaGate.FeatureSet.PROFILES, true)
-        d.putBoolean(DiagnosticSummary.PREF, true)
-        assertTrue(rows(gate).contains("/profiles"))
-        assertTrue(rows(gate).contains("/diagnostics"))
-        // And the sessions set does not depend on the other two.
-        a.set(AlphaGate.FeatureSet.PROFILES, false)
-        d.putBoolean(DiagnosticSummary.PREF, false)
-        assertTrue(rows(gate).contains("/sessions"))
+    @Test fun theGateHasFourSetsAndNeitherPromotedFeatureIsOne() {
+        assertEquals(4, AlphaGate.FeatureSet.entries.size)
+        assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_profiles" })
+        assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_sessions" })
     }
 }

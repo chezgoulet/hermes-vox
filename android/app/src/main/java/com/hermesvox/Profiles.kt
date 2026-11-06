@@ -74,37 +74,6 @@ object Profiles {
         val own: Map<String, String> = emptyMap(),
     )
 
-    /** What `GET <base>/v1/models` said about a profile, in the words the user needs. */
-    enum class Check(val message: String) {
-        OK("Connected"),
-        NOT_SERVED("Not served — this gateway has no such profile"),
-        KEY_REJECTED("Key rejected — each profile needs its own key"),
-        UNREACHABLE("Can't reach the gateway"),
-        OTHER("The gateway answered with an error"),
-    }
-
-    /** Map the `/v1/models` status (or -1 for no answer) to a [Check]. The gateway answers
-     *  404 `Unknown or unconfigured profile` for a `/p/<name>` it does not serve, and 401
-     *  when the key is missing or wrong for that profile. */
-    fun check(code: Int): Check = when (code) {
-        200 -> Check.OK
-        401, 403 -> Check.KEY_REJECTED
-        404 -> Check.NOT_SERVED
-        -1 -> Check.UNREACHABLE
-        else -> Check.OTHER
-    }
-
-    /** Why [name] cannot be saved into [existing] (null when it can). [editing] is the
-     *  profile being renamed, which may keep its own name. */
-    fun nameError(name: String, existing: List<Profile>, editing: String? = null): String? {
-        val n = name.trim()
-        if (n.isEmpty()) return "Give the profile a name"
-        if (n.length > NAME_MAX) return "Keep the name under $NAME_MAX characters"
-        if (existing.any { it.name.equals(n, ignoreCase = true) && !it.name.equals(editing, ignoreCase = true) })
-            return "A profile called \"$n\" already exists"
-        return null
-    }
-
     /** The current single connection, as a profile named [name]. */
     fun fromPrefs(name: String, get: (String) -> String): Profile = Profile(
         name = name.trim(),
@@ -127,9 +96,6 @@ object Profiles {
         val i = list.indexOfFirst { it.name.equals(replacing, ignoreCase = true) }
         return if (i < 0) list + p else list.toMutableList().also { it[i] = p }
     }
-
-    fun remove(list: List<Profile>, name: String): List<Profile> =
-        list.filterNot { it.name.equals(name, ignoreCase = true) }
 
     fun find(list: List<Profile>, name: String): Profile? =
         list.firstOrNull { it.name.equals(name, ignoreCase = true) }

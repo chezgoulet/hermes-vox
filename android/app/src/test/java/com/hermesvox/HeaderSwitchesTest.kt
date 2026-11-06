@@ -1,6 +1,7 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -8,7 +9,8 @@ import java.io.File
 /**
  * The header keeps the other two switches reachable (#second phone pass): a profile switch
  * keeps the profile's name in the title (and the call screen uses the same words), and a
- * session switch still says the session's title — through the one Alpha-gated door.
+ * session switch still says the session's title. Sessions and Profiles are ordinary parts of
+ * the app since D39, so nothing gated stands in front of either.
  */
 class HeaderSwitchesTest {
 
@@ -26,7 +28,9 @@ class HeaderSwitchesTest {
         assertEquals("Trail conditions", notice.text(0L))
         // An untitled session says so rather than showing nothing.
         assertEquals("an untitled session", Sessions.Row(id = "s1").label)
-        // Session switching still goes through the one Alpha-gated door.
-        assertTrue(main.contains("Sessions.refusal(AlphaGate.reader(prefs))"))
+        // Sessions and Profiles left the Alpha gate (D39): no gate stands in front of either,
+        // and the gate has no set left that could name them.
+        assertFalse(main.contains("Sessions.refusal(AlphaGate"))
+        assertFalse(AlphaGate.FeatureSet.entries.any { it.name == "SESSIONS" || it.name == "PROFILES" })
     }
 }

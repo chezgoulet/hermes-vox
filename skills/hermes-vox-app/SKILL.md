@@ -190,8 +190,6 @@ title is read from the home row that opened it
 | Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29). Requires Presence, because it is how the being hears: selected without Presence it is inert, and the picker refuses the tap with that line. Its description states about 300 MB more memory during a call | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_continuous_listening"`) |
 | Turn-taking (set) | `alpha_set_turn_taking` | false | The being keeps up mid-conversation: a soft acknowledgement while you talk at length, a quick word to stop it told apart from a new question, and the thread picked up after you cut in. Its acknowledgements need continuous listening; the set itself adds no second gate dependency | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_turn_taking"`) |
 | Phone tools (set) | `alpha_set_phone_tools` | false | The mind acting on the phone: the MCP `phone` tool, its tailnet server and its grants. Independent of Presence — either can be taken without the other (D38) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_phone_tools"`) |
-| Switching profiles (set) | `alpha_set_profiles` | false | Talk to another agent on the host: each profile carries its own address, key, model and voice, and switching starts a fresh conversation. Stays behind the gate until a device pass shows profile switching works as intended (D39) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_profiles"`) |
-| Sessions (set) | `alpha_set_sessions` | false | Lets `/sessions` exist at all: the card that lists the conversations the host already has and picks one up. With it off the command is not on the sheet, a typed "/sessions" is ordinary conversation, and no path adopts a session. Leaves Alpha once a device pass shows conversation switching works as intended (D39) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_sessions"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
 dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
@@ -207,7 +205,7 @@ of that switch records `diag_summary_chosen`, so an explicit off survives every 
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, `Add a profile` / `Edit a profile` / `Refresh from host` are rows of their own, and a switch closes the sheet and ends a live call first. The list is **asked in conversation** (#384) on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt `agentName.setOnClickListener { profiles.showSwitcher() }`)`) |
+| Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, and a switch closes the sheet and ends a live call first. It is a **picker, not an editor**: profiles are configured on the host, so there is no add row and no edit row and nothing in the sheet writes a profile — a host that serves none says "No profiles yet. Profiles are set up on the host, not on this phone.", and `Refresh from host` is the one action The list is **asked in conversation** (#384) on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt `agentName.setOnClickListener { profiles.showSwitcher() }`)`) |
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `testConnectionAsync`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `AppSkillInstall.ask(this, s, versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))`)`) |
 | Entity name | `agent_name` | the host's `data[0].id`, else `model` | The name above the being and in Settings → Entity. It is **read-only and host-derived**: the same `GET /v1/models` probe as connect adopts `data[0].id`; a 200 with no id says "connected, but the host did not name itself" and keeps the fallback. It is not the request route | (android/app/src/main/java/com/hermesvox/OnboardingActivity.kt `HostEntity.answer`) |
@@ -369,17 +367,17 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/compress` | This conversation | (also `/compact`) Asks the agent to fold a long thread into a summary | Older detail survives only in the summary | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Fold a long thread`) |
 | `/clear` | This conversation | (also `/reset`) Clears the screen; the agent keeps the thread, and a live call is re-dialled | The screen's copy, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Clear the screen`) |
 | `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | This thread, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Start a fresh thread`) |
-| `/sessions` | This conversation (only while the Alpha **Sessions** set is on) | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
+| `/sessions` | This conversation | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
 | `/models` | The agent | Opens the model switcher: provider → model, one list, each model carrying small marks for what it can do — only the `reasoning`/`can_disable_reasoning` and `fast` flags `/api/model/options` states, never a guess from the model's name | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Choose the model`) |
-| `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
+| `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look. A picker only — add and edit were removed, because profiles are made on the host | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
 | `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Reach the gateway again`) |
 | `/health` | The agent | (also `/status`) Whether the agent is up, and its version | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Whether the agent is up`) |
 | `/diagnostics` | The agent (only while `diag_summary` is on) | Copies the `vox-diag` report block — the same one the Presence row copies, from the same collector | nothing — it reads and copies | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Copy a report block`) |
 | `/help` | The agent (not listed on the sheet) | The list, with these same lines | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `What each command does`) |
 
-Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue — `/diagnostics`
-only while its switch is on, `/profiles` only while the Alpha *Switching profiles* set is on, and
-`/sessions` only while *Sessions* is. A command added without a group, an effect or an alias target fails
+Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue —
+`/diagnostics` only while its switch is on. `/profiles` and `/sessions` have no switch: both left
+Alpha on 2026-11-06 (D39) and are on for every install. A command added without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the ten names above
@@ -393,11 +391,9 @@ either.
 The host has always held these: `GET /api/sessions` lists what it has for this key — telegram
 sessions, `api_server` sessions and the `vox_…` ones this app wrote — and
 `GET /api/sessions/{id}/messages` is their transcript. `/sessions` is the way in, and it is in
-the catalogue only while the Alpha **Sessions** set is on
-(android/app/src/main/java/com/hermesvox/Sessions.kt `fun refusal`): with it off the row is
-absent from the sheet, the search and `/help`, a typed or dictated "/sessions" is ordinary
-conversation, and the dispatch and the pick both refuse
-(android/app/src/main/java/com/hermesvox/MainActivity.kt `private fun adoptSession`).
+the catalogue for every install — the **Sessions** set left Alpha on 2026-11-06, its device pass
+made (D39), so no switch stands in front of the row, the typed word or the pick
+(android/app/src/main/java/com/hermesvox/Sessions.kt `fun commandFor`).
 
 **The list is asked at the host, not at the profile.** A profile is addressed at
 `https://host/p/<name>`, and on a real gateway the root answers 200 for the same key a profile
@@ -530,9 +526,10 @@ model, nothing is uploaded to the gateway, and the transcript shows only the met
 | Model source | `model_source` | the k2-fsa upstream release URL | Where model archives are fetched from; scheme-less input falls back to the default | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `const val DEFAULT_SOURCE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"`) |
 | Licence acceptance | `model_licence_accepted_<id>` | none | Stores the licence name the user accepted; the name changing asks again | (android/app/src/main/java/com/hermesvox/ModelLicences.kt `model_licence_accepted_`) |
 
-**Profiles, said plainly.** A profile is saved only after the gateway answers `/v1/models`
-with its key: "Not served" means that gateway has no such profile, "Key rejected" means each
-profile needs its own key (android/app/src/main/java/com/hermesvox/Profiles.kt `NOT_SERVED("Not served — this gateway has no such profile"),`).
+**Profiles, said plainly.** Profiles are made on the host; Vox only picks among them, so the
+sheet has no add and no edit and never writes one. A name the host lists is used only after
+`/v1/models` answers 200 with the key the app already holds — the list is a hint, the probe is
+the proof (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `probeSucceeded(status: Int): Boolean = status == 200`).
 The list is asked in conversation (#384), not from a route: the app sends one
 `[[vox:profiles]]` chat turn and the agent answers with a `vox-profiles` block, while a switch
 still ends a live call and starts a new conversation
@@ -817,7 +814,6 @@ before answering", look at `er-soul-drop`.
 | `event=session-transcript` | One transcript read landed: `id=`, `messages=` served, `shown=` after the merge | `messages=0` on a session the card showed rows for = the id or the key is wrong | (android/app/src/main/java/com/hermesvox/MainActivity.kt `VoxLog.d("event=session-transcript id=$id messages=${answer.messages.size} shown=${adoption.resumed.size}")`) |
 | `event=session-transcript … state=key-rejected / no-answer` | The read failed, and which of the two it was | `key-rejected` on the root = the same wall as #436, not a missing session | (android/app/src/main/java/com/hermesvox/MainActivity.kt `state=key-rejected`) |
 | `event=session-clear` | The adopted session was let go (`id=`): `/new`, `/clear`, a profile switch, a saved connection | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=session-clear id=`) |
-| `event=sessions refused reason=alpha-off` / `event=session-adopt refused reason=alpha-off` | The card or the pick was refused because the Alpha Sessions set is off | Expected with the set off; anything else means two gates disagree | (android/app/src/main/java/com/hermesvox/MainActivity.kt `VoxLog.d("event=sessions refused reason=alpha-off")`) |
 
 ---
 
@@ -1062,18 +1058,18 @@ Debug / crash log → Share full log).
 
 ### 6.15 `/sessions` is missing, or the card has no rows
 
-- **Signature:** the commands sheet has no `/sessions` row and a typed "/sessions" reaches the
-  agent as a sentence; or the card opens with `no sessions on this host`, `the key was not
-  accepted` or `the host did not answer`.
-- **Cause:** the first is the Alpha **Sessions** set being off — the row does not exist, by design
-  (android/app/src/main/java/com/hermesvox/Sessions.kt `fun refusal`). Of the three card
+- **Signature:** the card opens with `no sessions on this host`, `the key was not accepted` or
+  `the host did not answer`; or the sheet has no `/sessions` row at all.
+- **Cause:** `/sessions` has no switch since it left Alpha (2026-11-06, D39); a missing row means the
+  catalogue itself was changed, not a setting
+  (android/app/src/main/java/com/hermesvox/Sessions.kt `fun commandFor`). Of the three card
   lines, only one is about the phone: `no sessions on this host` means the host answered and holds
   nothing for this key; `the key was not accepted` is a 401 at the root (the #436 wall, not a
   missing session); `the host did not answer` is transport, a timeout, or a body that is not a
   list (android/app/src/main/java/com/hermesvox/Sessions.kt `fun listing`).
-- **Do:** turn Alpha on and select **Sessions**; then check the gateway's `/api/sessions` with the
-  same key from the host. Sessions belong to a profile: after a profile switch the list is the new
-  host's, and an empty card may simply be a host that has none.
+- **Do:** check the gateway's `/api/sessions` with the same key from the host. Sessions belong to a
+  profile: after a profile switch the list is the new host's, and an empty card may simply be a
+  host that has none.
 
 ### 6.14 A download never finishes
 

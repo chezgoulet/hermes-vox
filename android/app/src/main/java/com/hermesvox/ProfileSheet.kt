@@ -24,9 +24,10 @@ import androidx.core.content.ContextCompat
  * choice is informed without opening Settings. The active one carries the same **IN USE** chip
  * the model switcher uses, and the rows are the same row grammar (title, one line, a chip).
  *
- * Adding is a row of its own, not a fake list item: a profile is a real object here, and the
- * management rows (add, edit, refresh) sit under their own header so they cannot be mistaken
- * for a profile.
+ * **It is a picker, not an editor.** Profiles are configured on the host; Vox picks among them.
+ * There is no add row and no edit row, and nothing here writes a profile. A host that served
+ * none says so ([NO_PROFILES]) instead of offering to create one, and **Refresh from host** is
+ * the one action: it asks the agent again and repaints this sheet where the person is looking.
  *
  * Switching is the caller's job ([ProfileDialogs] → `MainActivity.switchProfile`): a switch
  * ends a live call before the new session is built, and this sheet closes on the tap.
@@ -38,11 +39,7 @@ class ProfileSheet(
     /** The one line under the title: freshness, a partial refresh or a stated failure. */
     private val note: () -> String?,
     private val onSwitch: (Profiles.Profile) -> Unit,
-    private val onAdd: () -> Unit,
-    private val onEdit: () -> Unit,
     private val onRefresh: () -> Unit,
-    /** Alpha features' Switching profiles set: false hides the Manage rows. */
-    private val allowed: () -> Boolean = { true },
 ) {
     /** One profile as the sheet shows it. */
     data class Row(
@@ -98,28 +95,22 @@ class ProfileSheet(
         body.removeAllViews()
         subtitle?.text = note() ?: DEFAULT_NOTE
 
-        for (r in rows()) body.addView(profileRow(r))
-        if (!allowed()) {
-            body.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-                text = "Switching profiles is off in Alpha features. The profile you are on " +
-                    "stays visible; adding and editing are unavailable until it is selected."
-                setTextColor(color(R.color.hv_text_dim))
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-            })
-            return
-        }
-        body.addView(VoxSheet.subhead(act, "Manage"))
-        body.addView(actionRow("Add a profile", "One this host serves, or an address you type") {
-            dismiss(); onAdd()
-        })
-        body.addView(actionRow("Edit a profile", "Change its name, address, key or scope") {
-            dismiss(); onEdit()
-        })
+        val shown = rows()
+        // The host's answer was "none": say it, and offer no way to invent one here.
+        if (shown.isEmpty()) body.addView(empty())
+        for (r in shown) body.addView(profileRow(r))
         // The refresh keeps the sheet open: its answer is folded in and repainted here, where the
         // person is looking, instead of behind a closed dialog.
-        body.addView(actionRow("Refresh from host", "Ask the agent which profiles it serves", close = false) {
+        body.addView(actionRow("Refresh from host", "Ask the agent which profiles it serves") {
             onRefresh()
         })
+    }
+
+    /** What a host with no profiles to offer says. */
+    private fun empty(): View = TextView(act, null, 0, R.style.HvRowValue).apply {
+        text = NO_PROFILES
+        setTextColor(color(R.color.hv_text_dim))
+        setPadding(dp(14), dp(12), dp(14), dp(12))
     }
 
     private fun profileRow(r: ProfileSheet.Row): View {
@@ -143,9 +134,9 @@ class ProfileSheet(
         }
     }
 
-    private fun actionRow(title: String, line: String, close: Boolean = true, onTap: () -> Unit): View =
+    private fun actionRow(title: String, line: String, onTap: () -> Unit): View =
         row(title = title, detail = line, chip = null, description = "$title, $line", dim = false,
-            onTap = { if (close) dismiss(); onTap() })
+            onTap = onTap)
 
     /** One row in the commands/model sheets' grammar: title, one line, an optional chip. */
     private fun row(
@@ -193,8 +184,15 @@ class ProfileSheet(
         }
     }
 
-    private companion object {
+    companion object {
         /** What the sheet says when the host has nothing to report. */
         const val DEFAULT_NOTE = "One at a time — switching starts a fresh conversation"
+
+        /**
+         * What a host with no profiles to offer says instead of a list. It states the fact and
+         * where the fix lives — the host, never this phone — so the picker cannot be mistaken
+         * for something that creates a profile.
+         */
+        const val NO_PROFILES = "No profiles yet. Profiles are set up on the host, not on this phone."
     }
 }

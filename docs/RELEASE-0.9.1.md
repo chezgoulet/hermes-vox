@@ -6,7 +6,7 @@ compares the payloads before the tag is made. The list below is read from the tr
 `0f3ec3a`; nothing here is announced as shipped until the tag exists.
 
 The shape of this release is the Alpha gate. Most of what 0.9.1 adds needs no switch at all;
-the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in six
+the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in four
 sets a tester takes one at a time. This document is ordered that way.
 
 ## Ships with no gate
@@ -67,6 +67,16 @@ sets a tester takes one at a time. This document is ordered that way.
   disclosure per section and a hint on each row. Particle controls with a live preview.
 - **The hardware check** runs at first run for everyone and advises in the Alpha panel; it never
   enables anything.
+- **Sessions (#437).** The conversations your agent already has — including ones you started at
+  your desk — can be picked up on the phone: `/sessions` lists what the host holds, the one in use
+  is marked, and resuming shows what was said and continues the same conversation. Long lists page
+  in full rather than being cut short. Picking a session during a live call asks first. It left
+  Alpha on 2026-11-06, its device pass made (D39) — the switch is on for every install.
+- **Switching profiles (#436).** The **Profiles** command appears in the commands sheet under *The
+  agent*; each row is the agent you would be talking to, with **IN USE** on the active one, and a
+  switch ends the live call and starts a fresh conversation. It is a picker, not an editor:
+  profiles are configured on the host, so there is nothing here that creates or changes one, and a
+  host that serves none says so. It left Alpha on 2026-11-06, its device pass made (D39).
 
 ### The phone is not a second decision-maker
 - The phone no longer matches your words against a local phrase list. *"Set a timer"* goes to
@@ -153,17 +163,6 @@ Each set is selected on its own; with the master off, everything below is dimmed
   teardown that followed it, and a dialer that then failed left no record. Both are fixed, and a
   dialer that resolves but will not start is `unavailable` rather than `no_app`.
 
-### Switching profiles
-- The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
-  you would be talking to, with **IN USE** on the active one, and a switch ends the live call and
-  starts a fresh conversation. Unfinished until a host's own profile list arrives reliably (#436).
-- It leaves Alpha once a device pass shows profile switching works as intended.
-
-### Sessions
-- The conversations your agent already has, including ones started at your desk, can be picked up
-  on the phone; resuming shows what was said and continues the same conversation.
-- It leaves Alpha once a device pass shows conversation switching works as intended.
-
 ## Not in this release
 
 - **#202** (clipping) and **#240** (interruption) are fixed in code and await a human ear on this
@@ -179,8 +178,8 @@ Each set is selected on its own; with the master off, everything below is dimmed
   picture-in-picture: when Vox is not on screen the call is refused `unavailable` and says so,
   and `uninstall` approved from the notification opens Vox before firing. `dial` finishes its
   announcement before ending the call, and its late result is audited rather than dropped.
-- **A device pass for Sessions and Switching profiles.** D39 keeps both behind the gate until that
-  pass; neither is promoted by this cut.
+- **Nothing left waiting on D39.** Sessions' and Switching profiles' device passes were both made
+  on 2026-11-06 and both sets are gone; the Alpha gate is four sets.
 
 ## Verification
 

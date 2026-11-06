@@ -183,7 +183,9 @@ One actor. The phone does not parse the caller's words; every voice turn goes to
 A profile is the whole connection: base URL (`https://host/p/<name>`), its own key, model,
 agent name, session scope and provider (`Profiles.kt`). The list comes from the host
 (`/v1/models` plus the agent's own answer, `ProfilesAsk` / `HostProfiles`); unknown names
-are marked unavailable, never deleted. Switching writes the profile into the ordinary
+are marked unavailable, never deleted. **It is a picker, not an editor:** profiles are
+configured on the host, so nothing in Vox creates or changes one, and a host that serves none
+says so. Switching writes the profile into the ordinary
 prefs and rebuilds the session, so a switch starts a fresh conversation and ends a live
 call.
 
@@ -204,14 +206,16 @@ verifies the hash, and nothing leaves the phone until the card is confirmed.
 
 ### 8. The Alpha gate (#402, D29)
 **One gate for everything unfinished.** `AlphaGate` has a master switch, **off on a
-fresh install**, and six sets a tester selects individually: **Presence**, **Continuous
-listening**, **Turn-taking**, **Phone tools**, **Switching profiles** and **Sessions**. A set runs only
+fresh install**, and four sets a tester selects individually: **Presence**, **Continuous
+listening**, **Turn-taking** and **Phone tools**. A set runs only
 when the master is on *and* that set is selected (`AlphaGate.allows`); with the master
 off every alpha surface is dimmed and unreachable, and the runtime readers ask
 `AlphaGate`, not the feature's own preference. A set's own prefs keep their meaning
 inside the gate. Quiet calls (#325) is deliberately **not** a set: it is its own switch,
 off by default, with no master in front of it. An upgrade keeps what was already running
-(`AlphaGate.migrate`); a fresh install gets nothing.
+(`AlphaGate.migrate`); a fresh install gets nothing. **Sessions** and **Switching profiles**
+left the gate on 2026-11-06 (D39): `/sessions`, the session picker and the profile switcher
+are on for every install.
 
 ### 9. The being and the words — UI
 The being is drawn on the GPU (OpenGL ES 3, on its own thread: `BeingThread`,

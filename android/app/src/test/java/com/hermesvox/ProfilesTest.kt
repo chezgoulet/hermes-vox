@@ -1,7 +1,6 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -10,17 +9,6 @@ class ProfilesTest {
 
     private val home = Profiles.Profile("home", "https://gw.example", "enc:aaa", agentName = "Hermes")
     private val work = Profiles.Profile("work", "https://gw.example/p/work", "enc:bbb", scope = "phone")
-
-    @Test fun theGatewaysAnswersBecomeThreePreciseErrors() {
-        assertEquals(Profiles.Check.OK, Profiles.check(200))
-        assertEquals(Profiles.Check.NOT_SERVED, Profiles.check(404))
-        assertEquals(Profiles.Check.KEY_REJECTED, Profiles.check(401))
-        assertEquals(Profiles.Check.KEY_REJECTED, Profiles.check(403))
-        assertEquals(Profiles.Check.UNREACHABLE, Profiles.check(-1))
-        assertEquals(Profiles.Check.OTHER, Profiles.check(500))
-        assertTrue(Profiles.Check.NOT_SERVED.message.startsWith("Not served"))
-        assertTrue(Profiles.Check.KEY_REJECTED.message.startsWith("Key rejected"))
-    }
 
     @Test fun aSwitchWritesTheWholeConnection() {
         val w = Profiles.toPrefs(work)
@@ -50,15 +38,7 @@ class ProfilesTest {
         assertEquals(listOf(home), Profiles.decode(Profiles.encode(listOf(home)).replace("]", ",{\"name\":\"\"}]")))
     }
 
-    @Test fun namesAreUniqueIgnoringCase() {
-        val list = listOf(home, work)
-        assertEquals("A profile called \"Work\" already exists", Profiles.nameError("Work", list))
-        assertNull(Profiles.nameError("work", list, editing = "work"))
-        assertNull(Profiles.nameError("lab", list))
-        assertEquals("Give the profile a name", Profiles.nameError("  ", list))
-    }
-
-    @Test fun upsertReplacesByNameAndRemoveDrops() {
+    @Test fun upsertReplacesByName() {
         var list = Profiles.upsert(emptyList(), home)
         list = Profiles.upsert(list, work)
         list = Profiles.upsert(list, work.copy(url = "https://other/p/work"))
@@ -66,7 +46,6 @@ class ProfilesTest {
         assertEquals("https://other/p/work", Profiles.find(list, "WORK")!!.url)
         list = Profiles.upsert(list, work.copy(name = "office"), replacing = "work")
         assertEquals(listOf("home", "office"), list.map { it.name })
-        assertEquals(listOf("home"), Profiles.remove(list, "Office").map { it.name })
     }
 
     @Test fun theHeaderNamesTheProfileOnlyWhenThereIsAChoice() {
