@@ -61,8 +61,10 @@ object CommandGlyph {
         }
     }
 
-    /** Steve ships: a setting must not change the app's look until someone chooses to. */
-    val DEFAULT = Icon.STEVE
+    /** Clanker ships (#second phone pass): the robot is the app's default mark. The pref is
+     *  only ever written by the chooser, so an install that has never chosen one gets this,
+     *  and an explicit choice (Steve included) is left exactly as it was saved. */
+    val DEFAULT = Icon.CLANKER
 
     /** The one pref read. Every screen calls this; none of them decodes the token itself. */
     fun current(context: Context): Icon = Icon.of(
@@ -118,7 +120,7 @@ object CommandGlyph {
     /**
      * The five drawings.
      *
-     * Steve — the command symbol: a square knot between four loops (the shipped look).
+     * Steve — the command symbol: a square knot between four loops (the original look).
      * Bill — the letters CMD, three stroked letterforms.
      * Linus — a shell prompt: `>` and an underscore.
      * Hermes — a caduceus: winged staff with two interwoven snakes.

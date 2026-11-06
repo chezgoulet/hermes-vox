@@ -38,10 +38,19 @@ import androidx.core.content.ContextCompat
  * connection configured, key rejected, the agent did not answer, or the turn failed with the
  * gateway's reason — so a local misconfiguration never reads as a network outage.
  *
- * **Connected is earned by the handshake.** The headline stays *waiting for your agent to connect*
+ * **The three setup states lead the sheet, in their own words.** *Not set up* — [PhoneToolsView
+ * .NOT_SET_UP_HEADING], with the prompt and its copy action beside it and the restart named after
+ * it — is drawn first, because enabling the set starts this phone's listener and mints its
+ * credential but cannot add the entry to the agent's configuration on the host. *Asked, waiting for
+ * your agent* follows a handover with no handshake yet. *Connected* is earned by the handshake and
+ * is the only state that may say the word. None of the three shares another's wording.
+ *
+ * **Connected is earned by the handshake.** The headline stays *asked — waiting for your agent*
  * until the phone's own [PhoneMcpServer] has seen an authenticated MCP `initialize`; only then is
- * the state [PhoneSetup.State.CONNECTED]. The agent's reply is displayed beneath every state,
- * because when it fails, its own words are the next clue.
+ * the state [PhoneSetup.State.CONNECTED]. The poll reads that handshake on its next tick, so a
+ * gateway that restarts and connects clears the waiting state with no re-entry from the owner. The
+ * agent's reply is displayed beneath every state, because when it fails, its own words are the next
+ * clue.
  *
  * **Failure states each name a next step**, including a retry and a token rotation. The manual
  * config block still exists — behind a disclosure, labelled fallback, never the default path — for
@@ -52,9 +61,10 @@ import androidx.core.content.ContextCompat
  * that needs one still refuses honestly in [PhoneEngine] — Do Not Disturb with `reason:"permission"`,
  * `now_playing` with `known:false` and the platform's own limit.
  *
- * **The sheet is one column, and it scrolls to its end.** The capability groups, Recent actions and
- * Set up are all in it; the column is exactly as tall as what it holds and the viewport is what the
- * header leaves, so nothing below the fold is ever clipped without a scroll range (#451).
+ * **The sheet is one column, and it scrolls to its end.** Set up, the capability groups, Recent
+ * actions and This phone are all in it; the column is exactly as tall as what it holds and the
+ * viewport is what the header leaves, so nothing below the fold is ever clipped without a scroll
+ * range (#451).
  *
  * **A tick redraws only what changed.** The poll is there so the clock can move waiting → timed out
  * and the "last request" line can age — not so the sheet can be rebuilt every second. Rebuilding it
@@ -68,7 +78,6 @@ class PhoneToolsSheet(
 ) {
     private var dialog: Dialog? = null
     private var open = false
-    private var expanded = false
     private var notice: String? = null
     private var poll: Runnable? = null
     private val main = Handler(Looper.getMainLooper())
@@ -185,6 +194,14 @@ class PhoneToolsSheet(
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
+        val status = drawn.status
+
+        // #421: the sequence the owner is actually in, first. Turning the set on starts this
+        // phone's listener and mints its credential; it does not tell the agent the phone exists,
+        // and Hermes reads MCP configuration at startup. So the setup state leads the sheet —
+        // not below a list of grants the agent cannot use yet.
+        if (status.allowed) setupSection(col, drawn, hostOrPlaceholder(status))
+
         body(
             col,
             if (firstRun)
@@ -238,10 +255,6 @@ class PhoneToolsSheet(
             )
             for (entry in audit.asReversed().take(AUDIT_ROWS)) auditRow(col, entry)
         }
-
-        val status = drawn.status
-        val record = drawn.record
-        val state = drawn.state
 
         col.addView(VoxSheet.subhead(act, "This phone"))
         row(col, "Reachability", PhoneToolsView.reachability(status.tailnet, status.allowed))
@@ -329,77 +342,6 @@ class PhoneToolsSheet(
         row(col, "Last request", drawn.lastRequest)
         row(col, "Token", PhoneToolsView.token(status.token, status.allowed))
 
-        col.addView(VoxSheet.subhead(act, "Set up with your agent"))
-        body(
-            col,
-            "Set up sends one ordinary turn to your agent and asks it to add this phone to its own " +
-                "MCP configuration. You do not edit any files. It is idempotent: if a `vox` entry " +
-                "already exists, the turn says to update it in place, not to add a second one.",
-        )
-
-        row(col, "Setup", PhoneToolsView.setupHeadline(state, record.failure, status.allowed))
-        body(col, PhoneToolsView.setupNext(state, status.allowed), dim = true)
-        notice?.let { body(col, it) }
-
-        if (state == PhoneSetup.State.CONNECTED) {
-            body(col, drawn.handshake, dim = true)
-        }
-
-        val reply = record.reply
-        if (!reply.isNullOrBlank()) {
-            col.addView(VoxSheet.subhead(act, "Your agent says"))
-            replyView(col, reply)
-        }
-
-        when (state) {
-            PhoneSetup.State.IDLE ->
-                if (status.allowed) action(col, "SET UP WITH MY AGENT", primary = true, description = "Ask your agent to add this phone") { setUpAgent() }
-            PhoneSetup.State.WAITING ->
-                if (status.allowed) action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
-            PhoneSetup.State.CONNECTED ->
-                if (status.allowed) action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again; it will not add a second entry") { setUpAgent() }
-            PhoneSetup.State.UNREACHABLE ->
-                if (status.allowed) action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
-            PhoneSetup.State.REFUSED ->
-                if (status.allowed) action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
-            PhoneSetup.State.TIMED_OUT -> {
-                if (status.allowed) {
-                    action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
-                    action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
-                }
-            }
-        }
-
-        if (status.allowed && record.requestedAt > 0L) {
-            val sent = PhoneSetupStore.lastPrompt()
-            disclosure(
-                col,
-                if (expanded) "HIDE THE SETUP TURN" else "SHOW THE SETUP TURN",
-                "Show or hide the setup turn that was sent",
-            ) {
-                expanded = !expanded
-                paint()
-            }
-            if (expanded) {
-                body(
-                    col,
-                    if (sent != null)
-                        "This is the turn the app sent. It names the address and the exact config " +
-                            "shape to write, and it carries no credential: your agent authenticates " +
-                            "with the key it already holds for this host."
-                    else
-                        "The turn is regenerated from the current address for this screen. It " +
-                            "carries no credential: your agent authenticates with the key it already " +
-                            "holds for this host.",
-                    dim = true,
-                )
-                configView(
-                    col,
-                    sent ?: PhoneSetupStore.prompt(hostOrPlaceholder(status)),
-                )
-            }
-        }
-
         if (!status.allowed) {
             body(
                 col,
@@ -460,6 +402,145 @@ class PhoneToolsSheet(
     }
 
     private var manualOpen = false
+
+    /**
+     * The setup state, drawn first: what stage the handover is at, and — while no handshake has been
+     * observed — the prompt itself, its copy action, and the sentence that names the restart.
+     *
+     * **Why it leads the sheet.** Enabling Phone tools starts this phone's listener and mints its
+     * credential. It does not tell the agent that the phone exists: that is one entry in the agent's
+     * own configuration on the host, and Hermes reads that configuration at startup. An owner who
+     * enabled the set and asked his agent about the phone got an honest "I have no such ability" —
+     * every part of that was correct, and the sheet never showed him the step between. So the
+     * state comes before the capability list it depends on.
+     *
+     * **Why the prompt is not a footnote.** It is the thing to hand over. It is shown in full, with
+     * **Copy setup prompt**, because the agent cannot know about the phone until someone gives it
+     * this entry; the sentence after it says the entry takes effect when the gateway restarts.
+     *
+     * **Why the restart is in the sentence.** Hermes reads MCP configuration at startup. The old
+     * sheet let an owner press *Set up*, read the agent's "done", and then ask it about the phone
+     * before the gateway had come back — a sequence with a step that only the config loader knew.
+     */
+    private fun setupSection(col: LinearLayout, drawn: Drawn, host: String) {
+        val status = drawn.status
+        val record = drawn.record
+        val state = drawn.state
+
+        // The turn the app sent, when this process sent one; otherwise the turn it would send from
+        // the address in force. [PhoneSetup.prompt] is a contract with the agent, so it is passed
+        // through untouched — the sheet may not improve its copy.
+        val sent = PhoneSetupStore.lastPrompt()
+        val block = PhoneToolsView.setupBlock(
+            state = state,
+            prompt = sent ?: PhoneSetupStore.prompt(host),
+            failure = record.failure,
+        )
+
+        col.addView(VoxSheet.subhead(act, "Set up with your agent"))
+        heading(
+            col,
+            block.heading,
+            when (state) {
+                PhoneSetup.State.CONNECTED -> R.color.hv_ok
+                PhoneSetup.State.UNREACHABLE, PhoneSetup.State.REFUSED, PhoneSetup.State.TIMED_OUT ->
+                    R.color.hv_danger
+                else -> R.color.hv_warn
+            },
+        )
+        body(col, block.meaning, dim = state == PhoneSetup.State.CONNECTED)
+        if (state == PhoneSetup.State.CONNECTED) body(col, drawn.handshake, dim = true)
+
+        // The short path first, so the action is on screen where the state is; the prompt below it
+        // is the same turn, for an owner who would rather hand it over himself.
+        stateActions(col, state, status.allowed)
+        notice?.let { body(col, it) }
+
+        // The agent's own words sit right under the state: when the turn failed or it refused,
+        // they are the next clue, not something to scroll past a three-kilobyte prompt to find.
+        val reply = record.reply
+        if (!reply.isNullOrBlank()) {
+            col.addView(VoxSheet.subhead(act, "Your agent says"))
+            replyView(col, reply)
+        }
+
+        block.prompt?.let { text ->
+            if (status.tailnet.isNullOrBlank()) {
+                body(
+                    col,
+                    "Tailscale is not connected, so this turn carries a placeholder address. Connect " +
+                        "it and open this sheet again for the real one.",
+                    dim = true,
+                )
+            }
+            body(
+                col,
+                if (sent != null)
+                    "This is the turn the app sent. It names the address and the exact config shape " +
+                        "to write, and it carries no credential: your agent authenticates with the " +
+                        "key it already holds for this host."
+                else
+                    "This is the turn to hand over. It is generated from the current address, it " +
+                        "names the exact config shape to write, and it carries no credential: your " +
+                        "agent authenticates with the key it already holds for this host.",
+                dim = true,
+            )
+            configView(col, text)
+            action(
+                col,
+                "COPY SETUP PROMPT",
+                primary = false,
+                description = "Copy the setup turn to hand to your agent",
+            ) {
+                copy(text, "setup prompt copied")
+            }
+            // The restart is the step after the handover, said where the prompt is, not in a
+            // footnote below the fold.
+            block.restart?.let { body(col, it) }
+        }
+
+        if (state == PhoneSetup.State.CONNECTED && status.allowed) {
+            // Still useful once connected: the turn updates the entry in place.
+            action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again; it will not add a second entry") { setUpAgent() }
+        }
+    }
+
+    /** The one action each state offers. Connected's *Ask again* stays last, after the proof. */
+    private fun stateActions(col: LinearLayout, state: PhoneSetup.State, allowed: Boolean) {
+        if (!allowed) return
+        when (state) {
+            PhoneSetup.State.IDLE ->
+                action(col, "SET UP WITH MY AGENT", primary = true, description = "Ask your agent to add this phone") { setUpAgent() }
+            PhoneSetup.State.WAITING ->
+                action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
+            PhoneSetup.State.UNREACHABLE ->
+                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
+            PhoneSetup.State.REFUSED ->
+                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
+            PhoneSetup.State.TIMED_OUT -> {
+                action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
+                action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
+            }
+            PhoneSetup.State.CONNECTED -> Unit
+        }
+    }
+
+    /**
+     * The state's own heading — the one line the sheet is loudest about, because it is the step the
+     * owner is on. A heading a screen reader can jump to, in the colour of the state's weight.
+     */
+    private fun heading(col: LinearLayout, text: String, colorId: Int) {
+        col.addView(
+            TextView(act, null, 0, R.style.HvRowTitle).apply {
+                this.text = text
+                textSize = 20f
+                setTextColor(color(colorId))
+                setPadding(0, dp(10), 0, dp(2))
+                androidx.core.view.ViewCompat.setAccessibilityHeading(this, true)
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
+    }
 
     /**
      * One capability group: its name, what it lets the agent do, the warning where the consequence
@@ -653,7 +734,6 @@ class PhoneToolsSheet(
             return
         }
         PhoneSetupStore.rotate(act)
-        expanded = false
         notice = "New token generated. The old token no longer works and the old connection proof " +
             "is gone. Ask your agent again so it gets the new token."
         paint()
@@ -785,10 +865,11 @@ class PhoneToolsSheet(
             setOnClickListener { onTap() }
         }
 
-    private fun copy(text: String) {
+    /** Copy [text] and say what was copied, so the toast is true for both blocks. */
+    private fun copy(text: String, toast: String = "config copied") {
         val cm = act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("vox phone config", text))
-        Toast.makeText(act, "config copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(act, toast, Toast.LENGTH_SHORT).show()
     }
 
     companion object {

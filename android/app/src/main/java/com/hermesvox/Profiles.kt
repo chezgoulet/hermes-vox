@@ -103,11 +103,11 @@ object Profiles {
     /** The active profile's name, read from the store. Blank when nothing is active yet. */
     fun activeName(get: (String) -> String): String = get(PREF_ACTIVE).trim()
 
-    /** The header label: the agent's name, and the profile's once there is more than one. */
-    fun headerLabel(agent: String, active: String, count: Int): String {
-        val a = agent.uppercase()
-        return if (count < 2 || active.isBlank()) a else "$a · ${active.uppercase()}"
-    }
+    /** The header label: the agent's name, and the profile's once there is more than one.
+     *  The words live in [Header] so the title, the call screen and this one spelling cannot
+     *  drift apart. */
+    fun headerLabel(agent: String, active: String, count: Int): String =
+        Header.title(agent, active, count)
 
     fun encode(list: List<Profile>): String = Json.encode(list.map {
         linkedMapOf("name" to it.name, "url" to it.url, "key" to it.keyEnc, "model" to it.model,

@@ -13,6 +13,43 @@ object PhoneToolsView {
     /** The one line every status row uses while Alpha features' Phone tools set is off. */
     const val ALPHA_OFF = "Off — select Phone tools in Alpha features"
 
+    // ---- the three setup states, in their own words ----
+    //
+    // Enabling Phone tools starts this phone's listener and mints its credential. It does not teach
+    // the agent that the phone exists: that is one entry in the agent's own configuration on the
+    // host, and Hermes reads that configuration at startup. So "the set is on" and "the agent can
+    // see this phone" are different facts, and a sheet that draws them the same leaves the owner at
+    // a step nobody showed him. These lines are that step. They are constants because the three
+    // states are a contract with the owner: they may not share wording, and only the handshake's
+    // state may use the word *connected*.
+
+    /** Not set up: the set is on, and no entry has been handed to the agent yet. */
+    const val NOT_SET_UP_HEADING = "Your agent does not know about this phone yet"
+
+    /** What not being set up actually means for the answers the owner gets. */
+    const val NOT_SET_UP_MEANING =
+        "Until it is set up, your agent cannot see this phone at all. Any answer it gives about " +
+            "the phone is honest but unhelpful."
+
+    /** Asked, waiting for the agent: the prompt was handed over and no handshake has arrived. */
+    const val WAITING_HEADING = "Asked — waiting for your agent"
+
+    /** What waiting means, including the restart Hermes needs to read a new server entry. */
+    const val WAITING_MEANING =
+        "The setup prompt has been handed over, and no handshake has arrived yet. If your agent " +
+            "has written the entry, your gateway may need restarting before the tool appears."
+
+    /** Connected: the phone's own server saw the handshake. The only state that may say this. */
+    const val CONNECTED_HEADING = "Connected"
+
+    /**
+     * The sentence after the prompt: who writes the entry, and when it starts working. The restart
+     * is part of the sequence, not a footnote — Hermes reads MCP configuration at startup, so the
+     * entry exists for the agent only after the gateway comes back up.
+     */
+    const val SETUP_RESTART =
+        "Your agent writes the entry itself; it takes effect when your gateway restarts."
+
     fun reachability(tailnet: String?, allowed: Boolean = true): String = when {
         !allowed -> ALPHA_OFF
         tailnet.isNullOrBlank() -> "Cannot run — Tailscale is not connected"
@@ -79,20 +116,27 @@ object PhoneToolsView {
         if (granted) "Granted — the phone may change the media volume"
         else "Not granted — volume changes will refuse with a reason"
 
-    /** The compact value on the Settings row. Never says connected before the handshake. */
+    /**
+     * The compact value on the Settings row. Three states, three words, no overlap: *not set up*,
+     * *waiting for your agent*, *connected*. Never says connected before the handshake.
+     */
     fun rowValue(state: PhoneSetup.State, allowed: Boolean = true): String = when {
         !allowed -> "off · alpha"
         state == PhoneSetup.State.CONNECTED -> "connected"
-        state == PhoneSetup.State.WAITING -> "waiting"
+        state == PhoneSetup.State.WAITING -> "waiting for your agent"
         state == PhoneSetup.State.UNREACHABLE || state == PhoneSetup.State.REFUSED ||
             state == PhoneSetup.State.TIMED_OUT -> "retry"
-        else -> "set up"
+        else -> "not set up"
     }
 
     /**
      * The one line under "Set up with your agent". [failure] is the record's own named cause
      * ([PhoneSetupSend]); it is what an unreachable send says, because "could not reach" for every
      * cause is the wrong-cause message #430 removed. [allowed] is the Alpha gate: off wins.
+     *
+     * The three states this lane is about each have their own heading: [NOT_SET_UP_HEADING] while
+     * nothing has been handed over, [WAITING_HEADING] once the prompt is with the agent and no
+     * handshake has been seen, and [CONNECTED_HEADING] only when this phone saw an `initialize`.
      */
     fun setupHeadline(
         state: PhoneSetup.State,
@@ -100,23 +144,21 @@ object PhoneToolsView {
         allowed: Boolean = true,
     ): String = when {
         !allowed -> ALPHA_OFF
-        state == PhoneSetup.State.IDLE -> "Not set up yet"
-        state == PhoneSetup.State.WAITING -> "Waiting for your agent to connect"
-        state == PhoneSetup.State.CONNECTED -> "Connected"
+        state == PhoneSetup.State.IDLE -> NOT_SET_UP_HEADING
+        state == PhoneSetup.State.WAITING -> WAITING_HEADING
+        state == PhoneSetup.State.CONNECTED -> CONNECTED_HEADING
         state == PhoneSetup.State.UNREACHABLE ->
             failure?.takeIf { it.isNotBlank() }
                 ?: PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER)
         state == PhoneSetup.State.REFUSED -> "Your agent could not edit its configuration"
-        else -> "Your agent was asked, but nothing connected in time"
+        else -> "Your agent was asked, but no handshake arrived in time"
     }
 
     /** The next step for the state, in the owner's words. Never a dead end. */
     fun setupNext(state: PhoneSetup.State, allowed: Boolean = true): String = when {
         !allowed -> "Select Phone tools in Alpha features at the top of Settings to use this."
-        state == PhoneSetup.State.IDLE ->
-            "Set up asks your agent to add this phone to its own MCP configuration. You do not edit any files."
-        state == PhoneSetup.State.WAITING ->
-            "The listener opens when a call starts. Skim your agent's reply below — it is the best clue if this does not complete."
+        state == PhoneSetup.State.IDLE -> NOT_SET_UP_MEANING
+        state == PhoneSetup.State.WAITING -> WAITING_MEANING
         state == PhoneSetup.State.CONNECTED ->
             "Your agent reached this phone and completed the MCP handshake. That is the proof; its reply is below for the record."
         state == PhoneSetup.State.UNREACHABLE ->
@@ -124,7 +166,50 @@ object PhoneToolsView {
         state == PhoneSetup.State.REFUSED ->
             "Your agent could not write its own configuration. Try again after fixing its file access, or use the manual fallback below."
         else ->
-            "Nothing connected within three minutes. Try again, or rotate the token and ask once more."
+            "No handshake arrived within three minutes. Try again, or rotate the token and ask once more."
+    }
+
+    /**
+     * What the setup section draws, read once, in one place: the state's [heading], the [meaning]
+     * under it, the [prompt] the owner hands to the agent with the copy action beside it, and the
+     * [restart] sentence that follows it.
+     *
+     * [prompt] and [restart] are null when there is nothing to hand over — the connected state, or
+     * the set being off — so the sheet cannot draw a restart for a connection that already
+     * happened. The sheet renders them as heading, meaning, the state's action, the prompt, its
+     * copy action, then the restart: the sequence the owner was never shown.
+     */
+    data class SetupBlock(
+        val heading: String,
+        val meaning: String,
+        val prompt: String?,
+        val restart: String?,
+    )
+
+    /**
+     * The setup section for [state]. [prompt] is the turn this app produced ([PhoneSetup.prompt]);
+     * it is passed through unchanged — it is a contract with the agent, not copy to improve.
+     */
+    fun setupBlock(
+        state: PhoneSetup.State,
+        prompt: String,
+        failure: String? = null,
+        allowed: Boolean = true,
+    ): SetupBlock {
+        if (!allowed) {
+            return SetupBlock(
+                heading = ALPHA_OFF,
+                meaning = setupNext(state, allowed = false),
+                prompt = null,
+                restart = null,
+            )
+        }
+        return when (state) {
+            PhoneSetup.State.CONNECTED ->
+                SetupBlock(CONNECTED_HEADING, setupNext(state), null, null)
+            else ->
+                SetupBlock(setupHeadline(state, failure), setupNext(state), prompt, SETUP_RESTART)
+        }
     }
 
     /** "2m ago", "just now" — the connection proof's age, not a promise about right now. */

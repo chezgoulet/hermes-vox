@@ -94,4 +94,36 @@ class PhoneToolsSheetPollTest {
     @Test fun the_first_paint_always_happens() {
         assertTrue(PhoneToolsSheet.repaints(null, PhoneToolsSheet.drawn(status(), waiting(), tag, now)))
     }
+
+    /**
+     * The step after the handover: the agent has written the entry, the gateway restarts, the tool
+     * connects, and the phone's own server records the `initialize`. Nothing else happens — the
+     * sheet is not reopened, the prompt is not re-sent — and the next tick draws Connected.
+     */
+    @Test fun a_handshake_after_a_restart_clears_the_waiting_state_by_itself() {
+        val asked = PhoneSetup.replied(waiting(), "Added vox to my configuration; the gateway needs a restart.")
+        val shown = PhoneToolsSheet.drawn(status(), asked, tag, now)
+        assertEquals("asked, and nothing has connected yet", PhoneSetup.State.WAITING, shown.state)
+        assertEquals(PhoneToolsView.WAITING_HEADING, PhoneToolsView.setupHeadline(shown.state, shown.record.failure))
+
+        val handshake = PhoneSetup.observedHandshake(asked, now + 30_000L, tag)
+        val next = PhoneToolsSheet.drawn(status(), handshake, tag, now + 31_000L)
+        assertEquals("the handshake alone is the transition", PhoneSetup.State.CONNECTED, next.state)
+        assertTrue("the owner sees the change on the next tick", PhoneToolsSheet.repaints(shown, next))
+        assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(next.state, next.record.failure))
+    }
+
+    /**
+     * The same clearing, from a sheet that was never asked anything: a gateway already holding the
+     * entry connects on its own, and the loud not-set-up block goes away without a setup turn.
+     */
+    @Test fun a_handshake_alone_connects_a_sheet_that_was_never_asked() {
+        val shown = PhoneToolsSheet.drawn(status(), PhoneSetup.Record(), tag, now)
+        assertEquals(PhoneSetup.State.IDLE, shown.state)
+        assertEquals(PhoneToolsView.NOT_SET_UP_HEADING, PhoneToolsView.setupHeadline(shown.state))
+
+        val next = PhoneToolsSheet.drawn(status(), PhoneSetup.observedHandshake(PhoneSetup.Record(), now, tag), tag, now + 1_000L)
+        assertEquals(PhoneSetup.State.CONNECTED, next.state)
+        assertTrue(PhoneToolsSheet.repaints(shown, next))
+    }
 }
