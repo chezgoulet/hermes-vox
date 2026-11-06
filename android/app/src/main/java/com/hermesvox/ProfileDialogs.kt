@@ -326,7 +326,10 @@ class ProfileDialogs(
         val pool = Executors.newFixedThreadPool(minOf(ProfilesAsk.PROBE_CONCURRENCY, probes.size))
         try {
             for (batch in ProfilesAsk.batches(probes)) {
-                val futures = batch.map { p -> pool.submit { out[p.name] = ProfilesAsk.probeSucceeded(modelsStatus(p.url, key)) } }
+                // A probe is already the whole URL, `/v1/models` included. Appending there
+                // is how the picker came to ask `/v1/models/v1/models` and call a working
+                // profile unreachable.
+                val futures = batch.map { p -> pool.submit { out[p.name] = ProfilesAsk.probeSucceeded(statusOfUrl(p.url, key)) } }
                 for (f in futures) {
                     try { f.get(ProfilesAsk.PROBE_TIMEOUT_MS + 2_000L, TimeUnit.MILLISECONDS) }
                     catch (_: Throwable) { /* the name stays absent = unavailable */ }
@@ -346,10 +349,6 @@ class ProfileDialogs(
         }
         return buf.toByteArray().toString(Charsets.UTF_8)
     }
-
-    /** `GET <base>/v1/models` with the profile's own key: the status, or -1 for no answer. */
-    private fun modelsStatus(base: String, key: String): Int =
-        statusOfUrl(base.trimEnd('/') + "/v1/models", key)
 
     /** One probe at a full URL, with the probe budget. */
     private fun statusOfUrl(url: String, key: String): Int = try {

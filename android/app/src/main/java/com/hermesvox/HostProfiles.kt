@@ -133,14 +133,66 @@ object HostProfiles {
         is Answer.Silent -> FALLBACK_LINE
     }
 
+    /** The route a profile proves itself at — the one path every probe appends. */
+    const val MODELS_PATH = "/v1/models"
+
+    /**
+     * [url] reduced to the address a profile answers at: the host itself for the default
+     * profile, `https://host/p/<name>` for a named one.
+     *
+     * **The address is what remains when the addressing suffix is removed.** A connection is
+     * a host, optionally with exactly one `/p/<name>`; everything after that is a route the
+     * app appended — `/v1/models`, `/v1/chat/completions`, `/v1/runs`, `/v1/responses`,
+     * anything else under `/v1` — and a query or fragment addresses a request, not a
+     * connection. So one rule covers every suffix, and it is idempotent:
+     * `address(address(url)) == address(url)`. Applying it twice must never eat a profile
+     * (`https://host/p/work` keeps its `/p/work`), and a profile *named* `v1` is a name, not
+     * a route: only a `/v1` that follows the host or a `/p/<name>` is stripped.
+     */
+    fun address(url: String): String {
+        var u = url.trim().substringBefore('#').substringBefore('?').trimEnd('/')
+        while (true) {
+            val cut = routeStart(u)
+            if (cut <= 0) return u
+            val next = u.substring(0, cut).trimEnd('/')
+            if (next == u) return u
+            u = next
+        }
+    }
+
+    /** The address plus the route every probe asks: idempotent, so `…/v1/models` in never
+     *  becomes `…/v1/models/v1/models` out. */
+    fun modelsUrl(url: String): String {
+        val a = address(url)
+        return if (a.isBlank()) "" else "$a$MODELS_PATH"
+    }
+
     /**
      * The host base of [url]: the connection with any `/p/<profile>` suffix removed. A Hermes
      * profile is addressed at `https://host/p/<name>`; the default one at the host itself.
+     * **The base is what remains when the addressing suffix is removed** ([address] strips
+     * the route first, so a URL that already carries an endpoint still yields the host).
      */
     fun rootBase(url: String): String {
-        val u = url.trim().trimEnd('/')
-        val m = Regex("""/p/[^/]+$""").find(u) ?: return u
-        return u.substring(0, m.range.first).trimEnd('/')
+        val a = address(url)
+        val m = PROFILE_TAIL.find(a) ?: return a
+        return a.substring(0, m.range.first).trimEnd('/')
+    }
+
+    /**
+     * Where [url]'s route begins, or -1 when it carries none. The path must read as a
+     * connection — empty or one `/p/<name>` — followed by a `/v1…` tail; anything else (a
+     * gateway mounted under its own path, a profile named `v1`) is left alone rather than
+     * guessed at.
+     */
+    private fun routeStart(url: String): Int {
+        val scheme = url.indexOf("://")
+        if (scheme < 0) return -1
+        val pathStart = url.indexOf('/', scheme + 3)
+        if (pathStart < 0) return -1
+        val m = CONNECTION_PATH.matchEntire(url.substring(pathStart)) ?: return -1
+        if (m.groupValues[2].isEmpty()) return -1
+        return pathStart + m.groupValues[1].length
     }
 
     /** The address a served profile answers at: the host itself for the default, else
@@ -244,7 +296,13 @@ object HostProfiles {
         return "$scheme://$host:$port"
     }
 
-    private fun normUrl(url: String): String = url.trim().trimEnd('/')
+    private fun normUrl(url: String): String = address(url)
+
+    /** A connection's own path: the host, or exactly one named profile beneath it. */
+    private val CONNECTION_PATH = Regex("""^((?:/p/[^/]+)?)(/v1(?:/.*)?)?$""")
+
+    /** The profile a connection names, when it names one. */
+    private val PROFILE_TAIL = Regex("""/p/[^/]+$""")
 
     private fun str(o: JObj, key: String): String? = (o[key] as? JStr)?.value
 

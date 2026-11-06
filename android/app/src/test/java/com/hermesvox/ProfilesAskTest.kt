@@ -275,6 +275,42 @@ class ProfilesAskTest {
         assertFalse(ps[1].isDefault)
     }
 
+    /**
+     * The bug this pins: the picker appended `/v1/models` to a probe URL that already ended
+     * in it, asked `/v1/models/v1/models`, took the 404 as proof, and told the owner his
+     * working profile was unreachable. A probe plan must be idempotent — however much of the
+     * address is already carried, the URL is the same — and it must carry exactly one route.
+     */
+    @Test fun aProbeIsIdempotentAndEndsInExactlyOneModelsPath() {
+        val served = listOf(HostProfiles.Served("home", true), HostProfiles.Served("work"))
+        val once = ProfilesAsk.probes(base, served)
+        assertEquals(listOf("$base/v1/models", "$base/p/work/v1/models"), once.map { it.url })
+        for (suffix in listOf(
+            "/", "/v1/models", "/v1/models/", "/v1/chat/completions", "/v1/runs",
+            "/v1/responses", "/p/work", "/p/work/v1/models", "/p/work/v1/chat/completions",
+            "/v1/models?limit=1",
+        )) {
+            assertEquals(suffix, once, ProfilesAsk.probes(base + suffix, served))
+        }
+        for (p in once) assertEquals(p.url, 1, Regex("/v1/models").findAll(p.url).count())
+    }
+
+    /** A persisted profile URL is data, not a promise: a saved `…/v1/models` must still
+     *  probe the profile it names, not a route beneath the route. */
+    @Test fun aSavedProfileUrlCarryingAnEndpointStillProbesCorrectly() {
+        val savedDefault = Profiles.Profile("home", "$base/v1/models", "enc:aaa")
+        val default = ProfilesAsk.probes(savedDefault.url, listOf(HostProfiles.Served("home", true)))
+        assertEquals("$base/v1/models", default.single().url)
+
+        val savedNamed = Profiles.Profile("work", "$base/v1/models", "enc:bbb")
+        val named = ProfilesAsk.probes(savedNamed.url, listOf(HostProfiles.Served("work")))
+        assertEquals("$base/p/work/v1/models", named.single().url)
+
+        // The addressing base is what a switch writes, and it is the host again.
+        assertEquals(base, HostProfiles.rootBase(savedDefault.url))
+        assertEquals(base, HostProfiles.rootBase(savedNamed.url))
+    }
+
     @Test fun onlyA200IsUsable() {
         assertTrue(ProfilesAsk.probeSucceeded(200))
         for (code in listOf(401, 403, 404, 500, 502, -1)) assertFalse("$code", ProfilesAsk.probeSucceeded(code))
