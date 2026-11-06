@@ -13,7 +13,7 @@ Company the rights it needs, and the community edition stays GPL-3.0.
 That comment is the signed record; a maintainer adds it to `CLA-SIGNATURES.md` with a link to the
 pull request. Code is merged after that comment, not before.
 
-This agreement is between the contributor (“you”) and **Chez Goulet LLC** (“the Company”).
+This agreement is between the contributor (“you”) and **Christopher Goulet**, an individual, on behalf of the Hermes Vox project (“the Company”), and any entity to which this agreement is assigned under section 7. The Company is referred to in the singular whether it is the individual or that entity.
 It covers any contribution you submit to the Hermes Vox repository.
 
 ## 1. Copyright licence
@@ -68,12 +68,20 @@ Signature:
 
 Date:
 
-## 7. Governing law
+## 7. Assignment
 
-This agreement is governed by the laws of the Province of Québec, Canada, and the courts of that
-province have exclusive jurisdiction over any dispute arising from it.
+The Company may assign this agreement, and the rights you grant in it, to an entity formed to
+hold them — a company, a foundation or a successor — without your further consent, provided that
+entity is bound by these terms. The Company will say in this repository when such an assignment
+takes effect. You may not assign your rights under this agreement without the Company’s written
+agreement.
 
-## 8. Entire agreement
+## 8. Governing law
+
+This agreement is governed by the laws of the State of Vermont, United States, and the courts of
+that state have exclusive jurisdiction over a dispute arising from it.
+
+## 9. Entire agreement
 
 This is the whole agreement between you and the Company about your contributions. If any part of
 it is unenforceable, the rest stands, and that part is read as narrowly as it must be to be
