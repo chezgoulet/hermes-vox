@@ -1,33 +1,38 @@
-Please add this phone to your own MCP configuration. This is a configuration change you are making for the owner, so make it carefully and report exactly what you changed.
+Please add this phone to your own MCP configuration and arrange one restart of your gateway. This is a configuration change you are making for the owner, so make it carefully and report exactly what you changed.
 
 Server name: vox
 URL: http://100.101.102.103:8765/mcp
 Tool: phone — you will see it as mcp__vox__phone
+Token: 0123456789abcdef0123456789abcdef
 
-Authentication: use the API key you already use for this host — the same key this phone uses for its turns. Send it as this entry's `Authorization` header; the phone accepts it for MCP as well. There is no pairing step, no code and nothing to exchange.
+Add it with the documented CLI:
 
-The shape to write, in the `mcp_servers` block of your Hermes config (`~/.hermes/config.yaml`), or the equivalent for the profile you are running:
+hermes mcp add vox --url "http://100.101.102.103:8765/mcp" --auth header --connect-timeout 5
 
-```yaml
-mcp_servers:
-  vox:
-    url: "http://100.101.102.103:8765/mcp"
-    headers:
-      Authorization: "Bearer ${API_SERVER_KEY}"
-    connect_timeout: 5
-    timeout: 30
-```
+When it asks for the API key / bearer token, paste exactly the token above. If the connection probe fails because this phone's listener is only up while a voice call is live, save the entry anyway, keep it enabled, and continue; an early failed probe is expected.
 
-`${API_SERVER_KEY}` is an environment reference your client resolves at connect time from the profile's `~/.hermes/.env` (or the process environment); it is the same key your API server accepts. If your key is not exported under that name, write the literal key you already hold there instead — in your configuration file, never in this conversation. An unresolved variable reference in `url` or `headers` fails the connect closed, so do not leave one in place if the variable is not set.
+This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `http://100.101.102.103:8765/mcp` and an `Authorization: "Bearer 0123456789abcdef0123456789abcdef"` header. Whichever route you use, the server name stays `vox`.
 
 This phone exposes exactly one tool, `phone`, so the entry needs no tool filter; the phone itself offers only what the owner has granted and refuses the rest with a reason.
 
-This must be idempotent. If a server named `vox` already exists, update that entry in place with the URL and the header above. Do not add a second `vox` entry, do not duplicate the block, and do not leave two entries pointing at this phone.
+This must be idempotent. If a server named `vox` already exists, update that entry in place with the URL and the token above. Do not add a second `vox` entry, do not duplicate the block, and do not leave two entries pointing at this phone.
 
 What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.
 
 The listener is only up while a voice call is live on the phone, so an early connection attempt may fail; that is expected. A connection is real only when your client has completed the MCP handshake with it — the phone verifies that itself.
 
-After editing, verify that a server named `vox` appears in the MCP configuration you loaded (list or show it), and reload or restart your gateway if it needs that to pick up a new server. Then reply with: what you changed, whether `vox` is present, and whether you needed to restart.
+Now arrange the one restart. Write a script at `~/.hermes/scripts/vox-gateway-restart.sh` whose body is exactly:
 
-Do not claim the phone is connected — the phone checks that when your handshake arrives. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste that API key into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential at all.
+systemctl --user restart hermes-gateway
+
+Then create a one-shot, on-demand job with a schedule that never fires, and leave it disabled from firing but runnable on demand:
+
+hermes cron create "2099-01-01T00:00:00" --name vox-gateway-restart --script vox-gateway-restart.sh --no-agent --paused --repeat 1
+
+Do not run it now. Do not restart the gateway yourself, and do not call `hermes gateway restart`: that is refused on this surface. The app will trigger the job through `POST /api/jobs/{job_id}/run`. If a job named `vox-gateway-restart` already exists, reuse it instead of creating a second one.
+
+After editing, verify that a server named `vox` appears in the MCP configuration you loaded. Then reply with what you changed, and put the job id on its own line in exactly this form (12 lowercase hex characters):
+
+JOB_ID: <job id>
+
+Do not claim the phone is connected — the phone checks that when your handshake arrives. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration and in the job, and this conversation needs no credential beyond this instruction.

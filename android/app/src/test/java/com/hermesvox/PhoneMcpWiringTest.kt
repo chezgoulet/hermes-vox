@@ -100,13 +100,13 @@ class PhoneMcpWiringTest {
         val setup = File("src/main/java/com/hermesvox/PhoneSetup.kt").readText()
         val store = File("src/main/java/com/hermesvox/PhoneSetupStore.kt").readText()
         val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
-        assertTrue("the app composes the turn", setup.contains("fun prompt(host: String"))
-        // #452: the turn used to carry the token (and, on the day it shipped, a `***` where the
-        // token should have been). The agent now writes the entry with the key it already holds.
-        assertFalse("the turn carries no bearer", setup.contains("Authorization: Bearer \$token"))
-        assertTrue("it names the key the agent already has", setup.contains("the API key you already use for this host"))
-        assertTrue("it writes the documented shape", setup.contains("mcp_servers:"))
-        assertTrue("with the documented env reference", setup.contains("API_SERVER_KEY"))
+        assertTrue("the app composes the turn", setup.contains("fun prompt(") && setup.contains("host: String"))
+        // The one-button flow carries the phone's token, because `hermes mcp add` needs it to
+        // write the server entry; the agent is told not to echo it.
+        assertTrue("the turn carries the phone's token", setup.contains("Token: \$token"))
+        assertTrue("it uses the documented CLI", setup.contains("hermes mcp add"))
+        assertTrue("it names the exact restart command", setup.contains("systemctl --user restart hermes-gateway"))
+        assertTrue("it asks for a parseable job id", setup.contains("JOB_ID_PREFIX"))
         assertTrue("it names the tool the model sees", setup.contains("MODEL_TOOL_NAME"))
         assertTrue("it is idempotent by content", setup.contains("Do not add a second"))
         assertTrue("it is sent as an ordinary stored turn", store.contains("session.turnStored(prompt)"))
@@ -121,7 +121,7 @@ class PhoneMcpWiringTest {
         )
         val promptAt = sheet.indexOf("configView(col, text)")
         val copyAt = sheet.indexOf("COPY SETUP PROMPT")
-        val restartAt = sheet.indexOf("block.restart?.let")
+        val restartAt = sheet.indexOf("restart?.let { body(col, it) }")
         assertTrue("the prompt is on the sheet itself, not behind a disclosure", promptAt > 0)
         assertTrue("its copy action sits with the turn", copyAt > promptAt)
         assertTrue("and the restart sentence follows them", restartAt > copyAt)

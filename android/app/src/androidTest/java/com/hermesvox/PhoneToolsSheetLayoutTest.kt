@@ -104,7 +104,7 @@ class PhoneToolsSheetLayoutTest {
                 )
                 assertTrue(
                     "the setup turn must be on the sheet itself, not behind a disclosure",
-                    texts.any { it.contains("mcp_servers:") },
+                    texts.any { it.contains("hermes mcp add") },
                 )
                 assertTrue(
                     "and the restart sentence must follow it",
@@ -125,8 +125,8 @@ class PhoneToolsSheetLayoutTest {
             // The short path is on screen with the state, before the turn's full text.
             scenario.onActivity {
                 val scroll = sheet.scroller!!
-                val setup = buttonsIn(scroll).firstOrNull { it.text.toString() == "SET UP WITH MY AGENT" }
-                assertNotNull("Set up with my agent must be a button on the sheet", setup)
+                val setup = buttonsIn(scroll).firstOrNull { it.text.toString() == PhoneBootstrap.BUTTON }
+                assertNotNull("Set this up with my agent must be a button on the sheet", setup)
                 assertTrue(
                     "the Set up button must be on screen and whole, not clipped by the viewport",
                     onScreen(setup!!, scroll),
