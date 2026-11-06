@@ -311,14 +311,16 @@ class AlphaGateTest {
             .substringBefore("// Settings → Entity edits")
         assertTrue(switch, switch.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
         assertTrue(switch, switch.contains("return"))
-        // The row, the search and the manage rows all ask the same question.
+        // The row, the search and the switcher's own door all ask the same question.
         assertTrue(commands.contains("gate = gate"))
         assertTrue(main.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
         // #501: the composition lives in CommandGate, which MainActivity hands the sheet.
         assertTrue(main.contains("CommandGate.of(AlphaGate.reader(prefs), DiagnosticSummary.store(prefs))"))
         val gate = File(src, "CommandGate.kt").readText()
         assertTrue(gate.contains("\"/profiles\" -> AlphaGate.allows(reader, AlphaGate.FeatureSet.PROFILES)"))
-        assertTrue(sheet.contains("if (!allowed())"))
+        // The picker writes nothing, so the gate has no manage rows left to hide: the door is
+        // the sheet's own opening.
+        assertFalse(sheet, sheet.contains("if (!allowed())"))
         assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
         // The active profile is a connection fact, not a control: the header is not gated.
         val header = main.substringAfter("private fun headerLabel(model: String): String {")

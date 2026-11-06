@@ -161,7 +161,9 @@ Each set is selected on its own; with the master off, everything below is dimmed
 ### Switching profiles
 - The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
   you would be talking to, with **IN USE** on the active one, and a switch ends the live call and
-  starts a fresh conversation. Unfinished until a host's own profile list arrives reliably (#436).
+  starts a fresh conversation. It is a picker, not an editor: profiles are configured on the host,
+  so there is nothing here that creates or changes one, and a host that serves none says so.
+  Unfinished until a host's own profile list arrives reliably (#436).
 - It leaves Alpha once a device pass shows profile switching works as intended.
 
 ## Not in this release
