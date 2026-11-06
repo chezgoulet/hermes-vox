@@ -31,6 +31,7 @@ class SettingsHintsTest {
         "sec_entity" to "Entity & Connection",
         "sec_about" to "About & Diagnostics",
         "sec_assistant" to "Be the phone's assistant",   // #329
+        "sec_phone" to "Phone Tools",                    // #453
     )
 
     private fun Element.id(): String? {
@@ -243,23 +244,28 @@ class SettingsHintsTest {
     @Test fun theHomeListRunsInSetUpOrderAndEachRowIsOneStep() {
         val home = allElements.filter { sectionOf(it) == "grp_list" }
             .mapNotNull { it.id() }.filter { it.startsWith("row_grp_") }
+        // #453: Phone Tools sits with the behaviour sections and before the insides: what the
+        // agent may do with the phone is not a diagnostic.
         assertEquals(listOf("row_grp_alpha", "row_grp_entity", "row_grp_speech", "row_grp_wake",
             "row_grp_tts", "row_grp_models", "row_grp_presence", "row_grp_visuals",
-            "row_grp_assistant", "row_grp_about"), home)
+            "row_grp_assistant", "row_grp_phone", "row_grp_about"), home)
         val source = activityFile.readText()
         // Voice models is the store: its row opens it, there is no section in between.
         assertTrue(source.contains("R.id.row_grp_models)?.setOnClickListener { openModelsStore() }"))
         assertFalse("a one-row section is back", "sec_models" in ids)
         // Every other home row opens a section whose title is that row's own label.
         for (s in listOf("row_grp_entity", "row_grp_speech", "row_grp_tts", "row_grp_presence",
-            "row_grp_visuals", "row_grp_assistant", "row_grp_about"))
+            "row_grp_visuals", "row_grp_assistant", "row_grp_phone", "row_grp_about"))
             assertTrue("$s has no section", source.contains("R.id.$s)"))
     }
 
     /** One restore per section — two "Restore defaults" rows in one section is clutter, and a
      *  person cannot tell which one resets what. */
     @Test fun eachSectionHasExactlyOneRestoreRow() {
-        for (sec in sections.keys - "grp_list" - "sec_assistant") {
+        // Phone Tools has none on purpose (#453): a capability grant is consent, not a setting.
+        // Un-granting is the group's own row; a "restore defaults" that silently withdrew what the
+        // owner had allowed would be a way to lose a permission he granted without meaning to.
+        for (sec in sections.keys - "grp_list" - "sec_assistant" - "sec_phone") {
             // `row_reset` is "New conversation", not a restore.
             val restores = rowsIn(sec).filter { it.startsWith("row_restore_") || (it.endsWith("_reset") && it != "row_reset") }
             assertEquals("$sec restores: $restores", 1, restores.size)

@@ -812,36 +812,11 @@ class PhoneToolsSheet(
     }
 
     /**
-     * The one press. [PhoneBootstrapStore] opens the phone's setup window at this moment, resolves
-     * the connection, sends the fixed turn with this phone's token, and waits for the handshake.
-     * A second press while the flow is in flight is ignored by the store.
+     * The one press, in the sheet's own words. [setUpWithAgent] is the implementation; this method
+     * only puts its answer where the sheet draws notices.
      */
     private fun setUpAgent() {
-        if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
-            notice = "Phone tools is off. Select it in Alpha features before asking your agent."
-            paint()
-            return
-        }
-        val status = PhoneMcp.status(act)
-        if (status.tailnet.isNullOrBlank()) {
-            notice = "Connect Tailscale first: the setup turn needs this phone's real tailnet " +
-                "address, and without one there is nothing for the agent to reach."
-            paint()
-            return
-        }
-        // #430: resolved at the moment of the press from the connection in force — never a client
-        // object captured when this sheet was built. A stale object sends the turn to the address
-        // the owner just replaced, while the connection test (built from the same prefs) passes.
-        if (PhoneSetupStore.session(act) == null) {
-            notice = null
-            PhoneSetupStore.failedBeforeSend(act, PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION))
-            paint()
-            return
-        }
-        notice = null
-        PhoneBootstrapStore.start(act) {
-            act.runOnUiThread { if (open) paint() }
-        }
+        notice = setUpWithAgent(act) { act.runOnUiThread { if (open) paint() } }
         paint()
     }
 
@@ -994,6 +969,40 @@ class PhoneToolsSheet(
     companion object {
         /** How many Recent actions rows the sheet renders. The store keeps [PhoneAudit.MAX]. */
         private const val AUDIT_ROWS = 20
+
+        /**
+         * The one press, from either door (#453): this sheet's button and the Phone Tools
+         * section's own row. [PhoneBootstrapStore] opens the phone's setup window at this moment,
+         * resolves the connection, sends the fixed turn with this phone's token, and waits for the
+         * handshake. A second press while the flow is in flight is ignored by the store.
+         *
+         * The section surfaces this rather than re-implementing it, so the checks and the wording
+         * exist once. Returns the line to show when a precondition refused the press, and null
+         * when the attempt started — or when the failure is already recorded for the sheet to draw.
+         */
+        fun setUpWithAgent(act: AppCompatActivity, onTick: () -> Unit = {}): String? {
+            if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
+                return "Phone tools is off. Select it in Alpha features before asking your agent."
+            }
+            val status = PhoneMcp.status(act)
+            if (status.tailnet.isNullOrBlank()) {
+                return "Connect Tailscale first: the setup turn needs this phone's real tailnet " +
+                    "address, and without one there is nothing for the agent to reach."
+            }
+            // #430: resolved at the moment of the press from the connection in force — never a
+            // client object captured when this sheet was built. A stale object sends the turn to
+            // the address the owner just replaced, while the connection test (built from the same
+            // prefs) passes.
+            if (PhoneSetupStore.session(act) == null) {
+                PhoneSetupStore.failedBeforeSend(
+                    act,
+                    PhoneSetupSend.message(PhoneSetupSend.Failure.NO_CONNECTION),
+                )
+                return null
+            }
+            PhoneBootstrapStore.start(act, onTick)
+            return null
+        }
 
         /**
          * What the sheet would draw, from a status and a record read at [now]. Pure, so the poll's
