@@ -110,8 +110,16 @@ internal object ApprovalChoices {
  */
 internal object ApprovalVoice {
 
+    /**
+     * The vocabulary and shape rules below are the ALLOWLIST. [com.hermesvox.WaitPrompt] uses
+     * the same DENY words for "stop", the same question/negation refusals and the same
+     * whole-utterance cap, so an answer to the wait card is judged exactly as strictly as an
+     * answer to an approval. Only the positive set differs: keeping a call open is not consent
+     * to an action, so it needs its own words and can never resolve to a gateway choice.
+     */
+
     /** Plain refusals, matched as the whole utterance. */
-    private val DENY = setOf(
+    internal val DENY = setOf(
         "no", "nope", "nah", "no thanks", "no thank you", "deny", "denied", "deny it",
         "reject", "reject it", "cancel", "cancel that", "cancel it", "stop", "stop it",
         "never", "block", "block it", "don't", "do not", "not now", "no don't",
@@ -120,25 +128,25 @@ internal object ApprovalVoice {
 
     /** Plain approvals, matched as the whole utterance. No bare soft words: `sure`, `ok`,
      *  `okay`, `go` and `allow` are said while thinking far more often than as a yes. */
-    private val APPROVE = setOf(
+    internal val APPROVE = setOf(
         "approve", "approved", "approve it", "approve once", "approve that",
         "yes", "yes approve", "yes approve it", "yes please", "yes do it",
         "do it", "go ahead", "proceed", "confirm", "confirmed",
     )
 
     /** Any of these makes a non-deny utterance no answer (re-prompt), never a yes. */
-    private val NEGATION = setOf(
+    internal val NEGATION = setOf(
         "not", "no", "don't", "dont", "never", "nope", "nah", "can't", "cannot", "won't",
         "wouldn't", "shouldn't", "isn't", "doesn't", "without",
     )
 
     /** An utterance that opens like a question is a question, whatever follows. */
-    private val QUESTION = setOf(
+    internal val QUESTION = setOf(
         "what", "what's", "whats", "where", "why", "how", "who", "which", "when", "is",
         "are", "does", "did", "can", "could", "should", "would", "will", "wait",
     )
 
-    private const val MAX_WORDS = 3
+    internal const val MAX_WORDS = 3
 
     /** The gateway choices that count as a yes, least privilege first. */
     private val POSITIVE = listOf("once", "session", "always")
@@ -160,7 +168,7 @@ internal object ApprovalVoice {
         return null
     }
 
-    private fun normalize(text: String): String =
+    internal fun normalize(text: String): String =
         text.lowercase()
             .replace('\u2019', '\'')
             .replace(Regex("[^a-z0-9' ]"), " ")

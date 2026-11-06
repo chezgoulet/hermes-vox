@@ -33,11 +33,14 @@ open class MainActivity : AppCompatActivity() {
     // #282: the approval surface. The card exists for the decision; the state line
     // carries the waiting phase; the transcript keeps the timed-out request visible.
     private lateinit var approvalCard: android.widget.LinearLayout
+    private lateinit var approvalTitle: TextView
     private lateinit var approvalLine: TextView
     private lateinit var approvalState: TextView
     private lateinit var approvalChoices: android.widget.LinearLayout
     private var approvalBusy = false
     private var approvalWaiting = false
+    /** The silent ceiling's keep/stop question is on the same card surface (never an approval). */
+    private var waitCardUp = false
     /** The phone action card currently on screen ("" when the gateway's card is the one shown). */
     private var phoneApprovalId = ""
 
@@ -59,7 +62,9 @@ open class MainActivity : AppCompatActivity() {
                 phoneApprovalId = card.id
                 approvalBusy = false
                 approvalWaiting = true
+                waitCardUp = false
                 approvalCard.visibility = View.VISIBLE
+                approvalTitle.text = "APPROVAL NEEDED"
                 approvalLine.text = card.line
                 approvalLine.contentDescription = card.line
                 approvalState.text = "Two minutes"
@@ -82,6 +87,7 @@ open class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 approvalBusy = false
                 approvalWaiting = false
+                waitCardUp = false
                 approvalChoices.removeAllViews()
                 approvalChoices.visibility = View.GONE
                 approvalCard.visibility = View.GONE
@@ -526,6 +532,7 @@ open class MainActivity : AppCompatActivity() {
         status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
         status.visibility = android.view.View.GONE
         approvalCard = findViewById(R.id.approval_card)
+        approvalTitle = findViewById(R.id.approval_title)
         approvalLine = findViewById(R.id.approval_line)
         approvalState = findViewById(R.id.approval_state)
         approvalChoices = findViewById(R.id.approval_choices)
@@ -2348,7 +2355,7 @@ open class MainActivity : AppCompatActivity() {
                 if (state == "thinking") { replyBuf = ""; revealHadCursor = false; revealBufLoggedFor = -1 }
                 // #282: a new turn retires the PREVIOUS approval card; a request that is
                 // still waiting is never hidden by its own run's state.
-                if (state == "thinking" && !approvalWaiting) approvalCard.visibility = View.GONE
+                if (state == "thinking" && !approvalWaiting && !waitCardUp) approvalCard.visibility = View.GONE
                 // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
@@ -2549,8 +2556,10 @@ open class MainActivity : AppCompatActivity() {
         override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
             approvalBusy = false
             approvalWaiting = true
+            waitCardUp = false
             phoneApprovalId = ""
             approvalCard.visibility = View.VISIBLE
+            approvalTitle.text = "APPROVAL NEEDED"
             approvalLine.text = prompt.line
             approvalLine.contentDescription = prompt.line
             approvalState.text = ""
@@ -2597,6 +2606,60 @@ open class MainActivity : AppCompatActivity() {
             approvalChoices.removeAllViews()
             approvalChoices.visibility = View.GONE
             appendConvo("! Approval ended with the run: ${prompt.action}")
+        } }
+        /**
+         * The silent ceiling's question. It uses the approval card's layout and tap-or-voice
+         * interaction, but it is not a consent request: [WaitPromptCard] has no id, no
+         * action and authorises nothing, and it is never shown over an approval.
+         */
+        override fun onWaitPrompt(card: WaitPromptCard) { runOnUiThread {
+            if (approvalWaiting) return@runOnUiThread   // the approval owns the screen
+            approvalBusy = false
+            waitCardUp = true
+            phoneApprovalId = ""
+            approvalCard.visibility = View.VISIBLE
+            approvalTitle.text = card.title
+            approvalLine.text = card.question
+            approvalLine.contentDescription = card.question
+            approvalState.text = "10 seconds — then I stop"
+            approvalState.visibility = View.VISIBLE
+            buildWaitButtons(card)
+            setStatus("Still working — keep waiting or stop?", true)
+            if (callLive) VoiceService.update(this@MainActivity, "Still working — keep waiting or stop?")
+        } }
+        override fun onWaitPromptResolved(card: WaitPromptCard, outcome: WaitPrompt.Outcome) { runOnUiThread {
+            waitCardUp = false
+            approvalBusy = false
+            // If an approval took the screen while this dismissal was in flight, the
+            // approval owns it now; do not hide its card.
+            if (approvalWaiting) return@runOnUiThread
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            approvalCard.visibility = View.GONE
+            when (outcome) {
+                WaitPrompt.Outcome.KEEP -> {
+                    setStatus("The entity is working…", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "The entity is working…")
+                }
+                WaitPrompt.Outcome.STOP -> {
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.NO_ANSWER -> {
+                    appendStream("// no answer — stopped waiting")
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.EXTENDED -> {
+                    appendStream("// still silent after the extra time — stopped")
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.DISMISSED -> {
+                    // The stream resumed, a new turn started, or an approval took the screen.
+                    // Hide silently; the ordinary state line owns what comes next.
+                }
+            }
         } }
         /**
          * #373: the spoken-replies leg changed. Both directions land here: a fallback that
@@ -2662,6 +2725,40 @@ open class MainActivity : AppCompatActivity() {
             approvalChoices.addView(b)
         }
         approvalChoices.visibility = if (prompt.choices.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * The wait card's two choices, on the same row the approval card uses. STOP is the
+     * filled, safe-default control and sits last for the same reason deny does: doing
+     * nothing must cost no more than stopping. Nothing here is an approval answer and the
+     * controller never hands it to the approval gate.
+     */
+    private fun buildWaitButtons(card: WaitPromptCard) {
+        approvalChoices.removeAllViews()
+        val density = resources.displayMetrics.density
+        for (answer in card.answers) {
+            val stop = answer == WaitPrompt.Answer.STOP
+            val b = Button(this)
+            b.text = card.label(answer)
+            b.textSize = 12f
+            b.isAllCaps = false
+            b.letterSpacing = 0.06f
+            b.setTextColor(ContextCompat.getColor(this, if (stop) R.color.hv_text else R.color.hv_cyan))
+            b.background = ContextCompat.getDrawable(this, if (stop) R.drawable.bg_chip else R.drawable.bg_button_ghost)
+            b.contentDescription = if (stop) "Stop waiting" else "Keep waiting"
+            b.layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, (44 * density).toInt(), 1f).apply { marginEnd = (6 * density).toInt() }
+            b.setOnClickListener {
+                if (approvalBusy) return@setOnClickListener
+                approvalBusy = true
+                for (i in 0 until approvalChoices.childCount) approvalChoices.getChildAt(i).isEnabled = false
+                approvalState.text = if (stop) "STOPPING…" else "KEEPING WAITING…"
+                approvalState.visibility = View.VISIBLE
+                liveController?.answerWaitPrompt(answer)
+            }
+            approvalChoices.addView(b)
+        }
+        approvalChoices.visibility = View.VISIBLE
     }
 
     /** Show the heard line: fade in, hold for its reading time (longer when a

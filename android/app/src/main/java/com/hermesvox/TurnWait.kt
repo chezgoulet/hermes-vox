@@ -19,7 +19,10 @@ package com.hermesvox
  *     15 s    [LINE_FIRST]  — one short, true sentence
  *     40 s    [LINE_SECOND] — one more, and that is the cap ([MAX_CHECK_INS])
  *     60 s of nothing from the stream (no event of any kind, no tool running, no card up):
- *             stop waiting, and say so ([TurnRepair.line] with [TurnRepair.REASON_SILENT])
+ *             ask the caller instead of abandoning ([WaitPrompt]): the being says
+ *             "This is taking a while — keep waiting, or stop?" and the same question is a
+ *             card titled STILL WORKING. Keep waiting extends the turn once; stop, or the
+ *             card's ~10 s window closing with no answer, abandons it.
  *     120 s   the agent budget (StreamPollGate) — stop waiting, say so
  *
  * Over-filling is worse than silence, so the lines are few, capped, and never spoken over the

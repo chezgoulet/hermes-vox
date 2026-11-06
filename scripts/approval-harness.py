@@ -47,6 +47,17 @@ Then answer on the phone (tap NO or say "no") and watch this process print:
     event=arm-run run_id=... prompt=...
     event=approval-request run_id=... request_id=... choices=once,deny
     event=approval-http run_id=... request_id=... choice=deny
+
+`--stall SECONDS` turns the SSE lane into a deliberately stalled upstream (the wait
+prompt's device demonstration): the turn is accepted, `response.created` is sent, and
+then NOTHING happens for SECONDS while `: keepalive` comments keep the socket alive
+(a real provider's socket stays open and silent; the app's 60 s read watchdog would
+otherwise kill it first). `--keepalive` sets the comment spacing. The answer lands at
+the end of the stall, so `--stall 150` is the "it was on its way after all" case and
+`--stall 600` is the "it never came" case:
+
+    python3 scripts/approval-harness.py --port 8765 --stall 150
+    python3 scripts/approval-harness.py --port 8765 --stall 600
 """
 from __future__ import annotations
 
@@ -80,6 +91,10 @@ class State:
     # approval, and which of the gateway's two wire shapes it reports.
     arm_delay_s = 1.5
     runs_shape = "authority"   # authority | plain
+    # The wait prompt (#ask-before-abandon): hold the SSE lane silent for this long after
+    # response.created, keeping the socket alive with comments. 0 = the approval harness.
+    stall_s = 0.0
+    keepalive_s = 10.0
 
 
 def authorized(handler: BaseHTTPRequestHandler) -> bool:
@@ -233,6 +248,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": {"message": "this harness only streams"}})
 
         run_id = f"resp_harness_{uuid.uuid4().hex[:10]}"
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self._sse("response.created", {"type": "response.created", "response": {
+            "id": run_id, "status": "in_progress"}})
+
+        if State.stall_s > 0:
+            self._stall_then_answer(run_id)
+            return
+
         request_id = f"req_{uuid.uuid4().hex[:10]}"
         answered = threading.Event()
         with RUNS_LOCK:
@@ -241,12 +268,6 @@ class Handler(BaseHTTPRequestHandler):
                 "choices": list(State.choices),
             }
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self._sse("response.created", {"type": "response.created", "response": {
-            "id": run_id, "status": "in_progress"}})
         self._sse("approval.request", {
             "event": "approval.request", "run_id": run_id, "request_id": request_id,
             "command": State.command, "description": State.description,
@@ -281,6 +302,46 @@ class Handler(BaseHTTPRequestHandler):
         with RUNS_LOCK:
             RUNS.pop(run_id, None)
         log(f"event=run-completed run_id={run_id} choice={choice}")
+
+    def _stall_then_answer(self, run_id: str) -> None:
+        """The deliberately stalled upstream (the wait prompt's device case).
+
+        `response.created` is already out and nothing else is sent until the stall ends.
+        A bare sleep would be the wrong shape: the app's socket watchdog kills a stream
+        that sends no BYTES for 60 s, while a real provider that is merely slow holds the
+        socket open and says nothing. `: keepalive` comments are bytes with no event —
+        the exact shape the silent ceiling exists for (idle EVENTS, living socket). After
+        the stall the answer lands normally, so the caller who kept waiting hears it.
+        """
+        log(f"event=stall run_id={run_id} stall_s={State.stall_s} "
+            f"keepalive_s={State.keepalive_s}")
+        keepalive = max(1.0, State.keepalive_s)
+        end = time.monotonic() + State.stall_s
+        try:
+            while True:
+                left = end - time.monotonic()
+                if left <= 0:
+                    break
+                time.sleep(min(keepalive, left))
+                if time.monotonic() < end:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+            text = "The stall is over: here is the answer."
+            self._sse("response.output_text.delta", {
+                "type": "response.output_text.delta", "item_id": f"msg_{run_id}",
+                "delta": text,
+            })
+            self._sse("response.completed", {
+                "type": "response.completed",
+                "response": {"id": run_id, "status": "completed"},
+            })
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            log(f"event=stall-answered run_id={run_id} stall_s={State.stall_s}")
+        except (BrokenPipeError, ConnectionResetError):
+            # The caller stopped, the card's window closed, or a barge cut the turn —
+            # this is the line the device report quotes for "stop" and "no answer".
+            log(f"event=stall-client-gone run_id={run_id} stall_s={State.stall_s}")
 
     def _approval(self, run_id: str) -> None:
         if not authorized(self):
@@ -339,6 +400,11 @@ def main() -> int:
                     help="seconds a scripted /v1/runs run 'works' before parking on the approval")
     ap.add_argument("--runs-shape", choices=("authority", "plain"), default=State.runs_shape,
                     help="pending_controls (session authority) or approval (plain runs lane)")
+    # The wait prompt: hold the SSE lane silent, then answer (0 = the approval harness).
+    ap.add_argument("--stall", type=float, default=State.stall_s,
+                    help="seconds the /v1/responses turn stays event-silent before answering")
+    ap.add_argument("--keepalive", type=float, default=State.keepalive_s,
+                    help="seconds between `: keepalive` comments during a stall")
     ap.add_argument("--tls-cert", default="")
     ap.add_argument("--tls-key", default="")
     args = ap.parse_args()
@@ -352,6 +418,7 @@ def main() -> int:
     State.approval_wait_s = args.approval_wait
     State.arm_delay_s = args.arm_delay
     State.runs_shape = args.runs_shape
+    State.stall_s, State.keepalive_s = args.stall, args.keepalive
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
@@ -364,7 +431,8 @@ def main() -> int:
         scheme = "http"
     log(f"event=harness-ready url={scheme}://{args.host}:{args.port} "
         f"key={'set' if State.key else 'none'} choices={','.join(State.choices)} "
-        f"runs_shape={State.runs_shape} arm_delay_s={State.arm_delay_s}")
+        f"runs_shape={State.runs_shape} arm_delay_s={State.arm_delay_s} "
+        f"stall_s={State.stall_s} keepalive_s={State.keepalive_s}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
