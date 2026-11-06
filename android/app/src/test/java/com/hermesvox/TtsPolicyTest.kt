@@ -37,7 +37,7 @@ class TtsPolicyTest {
         val p = plan(installed = false)
         assertEquals(TtsPlan.Action.FALL_BACK, p.action)
         assertEquals(TtsPolicy.SYSTEM, p.engine)
-        assertTrue("the reason must name the model", p.reason.contains("piper model not installed"))
+        assertTrue("the reason must name the model", p.reason.contains("Piper model not installed"))
         assertTrue(p.speaks)
         assertTrue(p.degraded)
         assertEquals(p.reason, TtsPolicy.statusLine(p))
@@ -47,7 +47,7 @@ class TtsPolicyTest {
         val p = plan(ready = false, issue = "piper engine threw OOM")
         assertEquals(TtsPlan.Action.FALL_BACK, p.action)
         assertEquals(TtsPolicy.SYSTEM, p.engine)
-        assertTrue(p.reason.contains("piper could not start"))
+        assertTrue(p.reason.contains("Piper could not start"))
         assertTrue("the engine's own reason travels", p.reason.contains("OOM"))
     }
 
@@ -59,7 +59,7 @@ class TtsPolicyTest {
 
         val bothDown = plan(installed = false, systemReady = false)
         assertEquals(TtsPlan.Action.REFUSE, bothDown.action)
-        assertTrue(bothDown.reason.contains("piper model not installed"))
+        assertTrue(bothDown.reason.contains("Piper model not installed"))
         assertTrue(bothDown.reason.contains("system voice is unavailable"))
     }
 

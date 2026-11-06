@@ -270,6 +270,12 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             try {
                 val audio = synth(t, text)
                 val samples = audio.samples ?: return@thread onDone(TtsOutcome(TtsEnd.FAILED, "no audio"))
+                if (audioIsSilent(samples)) {
+                    // A reply reached the engine and it produced nothing audible. That is a
+                    // failure the lifecycle must see, not a "spoken" outcome.
+                    VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent samples=${samples.size}")
+                    return@thread onDone(TtsOutcome(TtsEnd.FAILED, "silent audio"))
+                }
                 val sr = audio.sampleRate
                 VoxLog.d("${voice.modelId} generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
                 VoxLog.d("event=tts-speak engine=${voice.modelId} reason=one-shot chars=${text.length}")
@@ -365,6 +371,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         return try {
             val audio = synth(t, text)
             val samples = audio.samples ?: return false
+            if (audioIsSilent(samples)) {
+                VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent-blocking samples=${samples.size}")
+                return false
+            }
             VoxLog.d("${voice.modelId} gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
             play(samples, audio.sampleRate, token, text)
             true
@@ -416,6 +426,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         return try {
             val audio = synth(eng, text)
             val samples = audio.samples ?: return false
+            if (audioIsSilent(samples)) {
+                VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent-stream samples=${samples.size}")
+                return false
+            }
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
             synchronized(trackLock) {

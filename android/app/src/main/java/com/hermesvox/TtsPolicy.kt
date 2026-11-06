@@ -39,6 +39,55 @@ internal object TtsPolicy {
     /** The engine that is always present: Android's own TextToSpeech. */
     const val SYSTEM = "system"
 
+    /** The engine name as the owner reads it in Settings. */
+    fun displayName(engine: String): String = when (engine.trim().lowercase()) {
+        SYSTEM -> "System"
+        "piper" -> "Piper"
+        "supertonic" -> "Supertonic"
+        "kokoro" -> "Kokoro"
+        else -> engine.trim().replaceFirstChar { it.uppercase() }
+    }
+
+    /** Mid-sentence name: "the system voice", "the Piper voice". */
+    fun voiceName(engine: String): String =
+        if (engine.trim().lowercase() == SYSTEM) "the system voice"
+        else "the ${displayName(engine)} voice"
+
+    /** Sentence-opening name: "The system voice", "Piper". */
+    fun sentenceName(engine: String): String =
+        if (engine.trim().lowercase() == SYSTEM) "The system voice"
+        else displayName(engine)
+
+    /** What the user can do about a missing/refused voice, and where. */
+    fun fixHint(local: String?): String = when {
+        local == null -> "Enable a text-to-speech engine in Android Settings → Accessibility → Text-to-speech."
+        else -> "Install the ${displayName(local)} model in Settings → Models, or enable a text-to-speech " +
+            "engine in Android Settings → Accessibility → Text-to-speech."
+    }
+
+    /** The refusal line: no engine can speak at all, so the call does not start. It names
+     *  what is missing and where to get it — never a silent call. */
+    fun refusalLine(tried: String, why: String, initialIssue: String, local: String?): String {
+        val missing = initialIssue.ifBlank {
+            if (tried == SYSTEM) "the system text-to-speech engine is unavailable"
+            else "${displayName(tried)} could not start ($why)"
+        }
+        return "Can't start the call — $missing, and no other voice is available. ${fixHint(local)}"
+    }
+
+    /** The call-start decision, kept pure so "does the call open?" is testable. A leg that
+     *  has not settled yet does not block the call; it is still deciding. Once settled,
+     *  either a voice speaks (with a note when it is not the requested one) or the call is
+     *  refused with the stated reason. */
+    data class CallGate(val starts: Boolean, val line: String)
+
+    fun callGate(settled: Boolean, speaking: Boolean, issue: String, note: String): CallGate = when {
+        !settled -> CallGate(starts = true, line = "")
+        speaking -> CallGate(starts = true, line = note)
+        issue.isNotBlank() -> CallGate(starts = false, line = issue)
+        else -> CallGate(starts = false, line = "Can't start the call — no voice can speak. ${fixHint(null)}")
+    }
+
     /** Which local voice a pref token selects, or null for the system voice. An unknown
      *  or blank token resolves to the system engine — never to a silent or ignore-the-pref
      *  engine (the pre-#31 behaviour). */
@@ -73,8 +122,8 @@ internal object TtsPolicy {
                 engineIssue.ifBlank { "system text-to-speech engine unavailable" })
         }
         val issue = when {
-            !modelInstalled -> "$local model not installed"
-            !engineReady -> "$local could not start" + if (engineIssue.isBlank()) "" else " ($engineIssue)"
+            !modelInstalled -> "${displayName(local)} model not installed"
+            !engineReady -> "${displayName(local)} could not start" + if (engineIssue.isBlank()) "" else " ($engineIssue)"
             else -> ""
         }
         if (issue.isEmpty()) return TtsPlan(TtsPlan.Action.SPEAK, local, "")

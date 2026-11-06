@@ -758,10 +758,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (fallback != null) fallback.init { onSttReady(it) }
     }
 
-    /** True once the offline STT (+ VAD) is loaded/warm. TTS is deliberately NOT part of
-     *  this: a broken output leg must not keep the call from starting (#330). Use
-     *  [ttsStatus] to report spoken-reply availability separately. */
-    fun isWarm() = sttReady && (vad?.isAvailable != false)
+    /** True once the offline STT (+ VAD) is loaded/warm and the voice leg has DECIDED
+     *  (it need not have succeeded: a refused leg still lets the call gate answer). TTS
+     *  readiness is deliberately not part of warmth — a broken output leg must not keep
+     *  the call from starting (#330). Use [ttsStatus]/[callGate] to report it separately. */
+    fun isWarm() = sttReady && (vad?.isAvailable != false) && (ttsHost?.state?.settled != false)
 
     /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
     fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
@@ -770,6 +771,14 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  voice is standing in). The call is fine; the setting is not being honoured, and the
      *  screen says so instead of the app silently substituting an engine. */
     fun ttsFallbackNote(): String = if (ttsReady) ttsNote else ""
+
+    /** The call-start decision for the voice leg. When it refuses, [TtsPolicy.CallGate.line]
+     *  names what is missing and where to get it; when it starts on a stand-in voice, the
+     *  line says which voice speaks. Never both silent and unexplained. */
+    internal fun callGate(): TtsPolicy.CallGate {
+        val st = ttsHost?.state ?: return TtsPolicy.CallGate(starts = true, line = "")
+        return TtsPolicy.callGate(st.settled, st.speaking, st.issue, st.note)
+    }
 
     /** True when the listen loop is actually running (capturing). NOT a sticky flag:
      *  the Activity gates re-open on this, so it can restart after a stop/background/
@@ -3168,6 +3177,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
                             // as firstByte/firstText, keeping the fields comparable within a version.
                             val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
+                            if (!wrote && !genCancelled && !sClosed) {
+                                // A streaming synth that returned no audio is an engine failure,
+                                // not a cut. Feed it to the same bounded lifecycle the one-shot
+                                // path uses: one re-warm, one degradation, then a stated reason.
+                                ttsHost?.noteFailure("stream-synth")
+                            }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true
                                 noteFirstSound("reply")

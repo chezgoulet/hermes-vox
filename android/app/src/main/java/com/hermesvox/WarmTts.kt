@@ -312,6 +312,17 @@ fun voiceRegister(pref: String): Pair<Float, Float> = when (pref) {
 }
 
 /**
+ * Silence where audio was due. A synth that returns no samples, or a buffer whose every
+ * sample is zero, did not speak — it is an engine failure, not a spoken reply. Kept pure
+ * so the lifecycle rule can be tested without a device.
+ */
+internal fun audioIsSilent(samples: FloatArray?): Boolean {
+    if (samples == null || samples.isEmpty()) return true
+    for (s in samples) if (s > 1e-6f || s < -1e-6f) return false
+    return true
+}
+
+/**
  * A short, pure description of the TTS engines this app can actually see — used in the
  * failure log and the status line.
  *
