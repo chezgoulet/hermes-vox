@@ -31,25 +31,27 @@ object PhoneToolsView {
         "Until it is set up, your agent cannot see this phone at all. Any answer it gives about " +
             "the phone is honest but unhelpful."
 
-    /** Asked, waiting for the agent: the prompt was handed over and no handshake has arrived. */
-    const val WAITING_HEADING = "Asked — waiting for your agent"
+    /** Asked; no handshake yet, and the agent may still be working. */
+    const val WAITING_HEADING = "Asked — your agent is working"
 
-    /** What waiting means. The listener window, not a restart, is what the entry waits on. */
+    /** What waiting means. The run and the handshake, not a restart, are what the entry waits on. */
     const val WAITING_MEANING =
-        "The setup prompt has been handed over, and no handshake has arrived yet. A running " +
-            "gateway picks the entry up by itself, so there is nothing to restart."
+        "The setup prompt has been handed over, and no handshake has arrived yet. Your agent may " +
+            "still be working; a running gateway picks the entry up by itself, so there is " +
+            "nothing to restart."
 
     /** Connected: the phone's own server saw the handshake. The only state that may say this. */
     const val CONNECTED_HEADING = "Connected"
 
     /**
      * The sentence after the prompt: who writes the entry, and why nothing has to be restarted.
-     * The app opens the phone's listener for three minutes before sending, which is what lets
-     * `hermes mcp add` prove reachability; the gateway reconciles its own configuration afterwards.
+     * The app opens the phone's listener before sending and keeps it open for the attempt, which
+     * is what lets `hermes mcp add` prove reachability; the gateway reconciles its own
+     * configuration afterwards.
      */
     const val SETUP_NOTE =
-        "Your agent writes the entry itself while this phone's listener is open. Nothing on your " +
-            "host restarts, and Vox writes nothing there."
+        "Your agent writes the entry itself while this phone's listener is open for this attempt. " +
+            "Nothing on your host restarts, and Vox writes nothing there."
 
     fun reachability(tailnet: String?, allowed: Boolean = true): String = when {
         !allowed -> ALPHA_OFF
@@ -134,8 +136,8 @@ object PhoneToolsView {
     /** The instruction has gone out and the agent is being asked, right now. */
     const val STEP_ADDING = "Asking your agent"
 
-    /** Asked; the phone's own handshake has not arrived yet. */
-    const val STEP_WAITING = "Waiting for your agent"
+    /** Asked; the agent may still be working and the phone's own handshake has not arrived yet. */
+    const val STEP_WAITING = "Your agent is working"
 
     /** The one line that asserts a connection: the phone's own `initialize`. */
     const val STEP_CONNECTED = CONNECTED_HEADING
@@ -173,14 +175,13 @@ object PhoneToolsView {
 
     /**
      * The compact value on the Settings row. Three states, three words, no overlap: *not set up*,
-     * *waiting for your agent*, *connected*. Never says connected before the handshake.
+     * *working*, *connected*. Never says connected before the handshake.
      */
     fun rowValue(state: PhoneSetup.State, allowed: Boolean = true): String = when {
         !allowed -> "off · alpha"
         state == PhoneSetup.State.CONNECTED -> "connected"
-        state == PhoneSetup.State.WAITING -> "waiting for your agent"
-        state == PhoneSetup.State.UNREACHABLE || state == PhoneSetup.State.REFUSED ||
-            state == PhoneSetup.State.TIMED_OUT -> "retry"
+        state == PhoneSetup.State.WAITING -> "working"
+        state == PhoneSetup.State.UNREACHABLE || state == PhoneSetup.State.REFUSED -> "retry"
         else -> "not set up"
     }
 
@@ -206,7 +207,7 @@ object PhoneToolsView {
             failure?.takeIf { it.isNotBlank() }
                 ?: PhoneSetupSend.message(PhoneSetupSend.Failure.NO_ANSWER)
         state == PhoneSetup.State.REFUSED -> "Your agent could not edit its configuration"
-        else -> "Your agent was asked, but no handshake arrived in time"
+        else -> "Your agent was asked, but no handshake arrived"
     }
 
     /** The next step for the state, in the owner's words. Never a dead end. */
@@ -220,8 +221,7 @@ object PhoneToolsView {
             "Check the gateway connection in Settings, then try again."
         state == PhoneSetup.State.REFUSED ->
             "Your agent could not write its own configuration. Try again after fixing its file access, or use the manual fallback below."
-        else ->
-            "No handshake arrived within three minutes. Try again, or rotate the token and ask once more."
+        else -> "Open this sheet again and try once more."
     }
 
     /**

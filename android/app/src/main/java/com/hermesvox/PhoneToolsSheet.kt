@@ -25,11 +25,12 @@ import androidx.core.content.ContextCompat
  * PhoneToolsSheet — the owner's side of the phone-as-MCP-server (#421 steps 3–5).
  *
  * **The setup path is one button, not a pasted block.** **Set this up with my agent** opens this
- * phone's listener for a stated three minutes ([PhoneBootstrap.SETUP_WINDOW_MS]), composes the
- * prompt in [PhoneSetup], creates the credential if there is not one, sends that prompt as an
- * ordinary stored turn through the app's session, and waits for the MCP handshake. The turn, each
- * step, the window's remaining time and the agent's reply are shown here, so a change to the
- * agent's own configuration is legible and a failure says how far it got.
+ * phone's listener for the length of the attempt ([PhoneBootstrap.listenerOpen]), composes the
+ * prompt in [PhoneSetup], creates the credential if there is not one, sends that prompt as a
+ * streamed turn through the app's session, and drains the run's own events until it ends. There is
+ * no turn ceiling on it. The work the agent does — each tool call, in the owner's words — the step
+ * and the agent's reply are shown here, so a change to the agent's own configuration is legible and
+ * a failure says how far it got. Arguments are never drawn: the instruction carries the token.
  *
  * **The turn is sent from the connection in force.** The session is resolved at the press
  * ([PhoneSetupStore.session]), from the active profile's url, key and scope, and rebuilt when the
@@ -46,16 +47,17 @@ import androidx.core.content.ContextCompat
  * than retrying by itself. A second press while the flow is in flight is ignored.
  *
  * **The three setup states lead the sheet, in their own words.** *Not set up* — [PhoneToolsView
- * .NOT_SET_UP_HEADING], with the button, the promise of a token and a three-minute window, and the
- * prompt behind it — is drawn first, because enabling the set starts this phone's listener and mints its
- * credential but cannot add the entry to the agent's configuration on the host. *Asked, waiting for
- * your agent* follows a handover with no handshake yet. *Connected* is earned by the handshake and
- * is the only state that may say the word. None of the three shares another's wording.
+ * .NOT_SET_UP_HEADING], with the button, the promise of a token and a listener opened for the
+ * attempt, and the prompt behind it — is drawn first, because enabling the set starts this phone's
+ * listener and mints its credential but cannot add the entry to the agent's configuration on the
+ * host. *Asked — your agent is working* follows a handover with no handshake yet. *Connected* is
+ * earned by the handshake and is the only state that may say the word. None of the three shares
+ * another's wording.
  *
- * **Connected is earned by the handshake.** The headline stays *asked — waiting for your agent*
+ * **Connected is earned by the handshake.** The headline stays *asked — your agent is working*
  * until the phone's own [PhoneMcpServer] has seen an authenticated MCP `initialize`; only then is
  * the state [PhoneSetup.State.CONNECTED]. The poll reads that handshake on its next tick, so a
- * gateway that connects clears the waiting state with no re-entry from the owner. The agent's reply
+ * gateway that connects clears the working state with no re-entry from the owner. The agent's reply
  * is displayed beneath every state, because when it fails, its own words are the next clue.
  *
  * **Failure states each name a next step**, including a retry and a token rotation. The manual
@@ -132,6 +134,11 @@ class PhoneToolsSheet(
                 poll?.let { main.removeCallbacks(it) }
                 poll = null
                 if (current === this) current = null
+                // The screen going away is one of the two reasons a setup run is stopped. Say so
+                // in the card rather than leaving the owner to wonder why the work vanished.
+                if (PhoneBootstrapStore.busy()) {
+                    PhoneBootstrapStore.cancel(act, PhoneBootstrap.Failure.LEFT)
+                }
                 onDismiss()
             }
         }
@@ -162,8 +169,12 @@ class PhoneToolsSheet(
         val lastRequest: String,
         val handshake: String,
         val bootstrap: PhoneBootstrap.Progress = PhoneBootstrap.Progress(),
-        /** The listener window's remaining time while the flow runs; empty otherwise. */
+        /** The listener's life while the flow runs; empty otherwise. Not a countdown. */
         val listening: String = "",
+        /** The agent's work so far, in arrival order: one line per tool call. */
+        val activity: List<String> = emptyList(),
+        /** How long since the stream last said anything, once that is worth saying. */
+        val silence: String = "",
     )
 
     private fun snapshot(now: Long): Drawn =
@@ -182,9 +193,10 @@ class PhoneToolsSheet(
                 if (!open) return
                 // #451: a tick repaints only when what the sheet would draw has changed.
                 // This used to repaint on the clock — every second for as long as a setup was
-                // WAITING or TIMED_OUT — and each repaint replaced the content view: the scroll
-                // jumped to the top and a drag in flight was dropped, so nothing below the fold
-                // could be reached at all.
+                // WAITING — and each repaint replaced the content view: the scroll jumped to the
+                // top and a drag in flight was dropped, so nothing below the fold could be reached
+                // at all. The activity list and the silence line are data now, so a new tool call
+                // repaints and an idle second does not.
                 if (repaints(shown, snapshot(System.currentTimeMillis()))) paint()
                 main.postDelayed(this, 1_000L)
             }
@@ -469,7 +481,7 @@ class PhoneToolsSheet(
             block.heading,
             when (state) {
                 PhoneSetup.State.CONNECTED -> R.color.hv_ok
-                PhoneSetup.State.UNREACHABLE, PhoneSetup.State.REFUSED, PhoneSetup.State.TIMED_OUT ->
+                PhoneSetup.State.UNREACHABLE, PhoneSetup.State.REFUSED ->
                     R.color.hv_danger
                 else -> R.color.hv_warn
             },
@@ -519,9 +531,17 @@ class PhoneToolsSheet(
         if (boot.step == PhoneBootstrap.Step.CONNECTED) body(col, drawn.handshake, dim = true)
         if (boot.step == PhoneBootstrap.Step.FAILED) body(col, PhoneBootstrap.reachedLine(boot), dim = true)
 
-        // The window is stated while it is open, and its remaining time comes from the same
-        // deadline the flow's own clock uses, so the two can never disagree. It is part of
-        // [Drawn], so a minute passing repaints (the clock moved) and nothing else does.
+        // The work, as it arrives: a history of the attempt, in arrival order, kept after the run
+        // ends. Each line is a tool's own name plus the app's phrase for it — never an argument,
+        // because the instruction carries this phone's token. The silence line is an age, not a
+        // countdown: nothing here is waiting for a stop.
+        if (drawn.activity.isNotEmpty()) {
+            col.addView(VoxSheet.subhead(act, "What your agent did"))
+            for (line in drawn.activity) body(col, line)
+        }
+        drawn.silence.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
+
+        // The listener follows the run, so this is a statement of its life, never a countdown.
         drawn.listening.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
         drawn.record.failure?.let { if (boot.step == PhoneBootstrap.Step.FAILED) body(col, it, dim = true) }
         notice?.let { body(col, it) }
@@ -532,6 +552,18 @@ class PhoneToolsSheet(
             replyView(col, reply)
         }
 
+        // One of the two reasons a run may be stopped, and the only one the owner controls.
+        if (PhoneBootstrap.busy(boot)) {
+            action(
+                col,
+                "STOP THIS ATTEMPT",
+                primary = false,
+                description = "Stop the run and close this phone's listener; the card will say so",
+            ) {
+                PhoneBootstrapStore.cancel(act, PhoneBootstrap.Failure.CANCELLED)
+                paint()
+            }
+        }
         if (boot.step == PhoneBootstrap.Step.FAILED) {
             promptBlock(col, prompt, status, sent, hostOrTailnet(status), note = null)
             // A new attempt is the owner's explicit press, never an automatic loop.
@@ -555,14 +587,14 @@ class PhoneToolsSheet(
         if (!allowed) return
         when (state) {
             PhoneSetup.State.IDLE -> {
-                // Said before the press: the token goes to the agent, and the phone's listener
-                // opens for three minutes so the agent can reach it. Nothing restarts.
+                // Said before the press: the token goes to the agent, and the phone's listener is
+                // opened for the length of the attempt. Nothing restarts.
                 body(col, PhoneBootstrap.BUTTON_WARNING)
                 action(
                     col,
                     PhoneBootstrap.BUTTON,
                     primary = true,
-                    description = "Open this phone's listener for three minutes and ask your agent to add it",
+                    description = "Open this phone's listener for the attempt and ask your agent to add it",
                 ) { setUpAgent() }
             }
             PhoneSetup.State.WAITING ->
@@ -571,10 +603,6 @@ class PhoneToolsSheet(
                 action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
             PhoneSetup.State.REFUSED ->
                 action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
-            PhoneSetup.State.TIMED_OUT -> {
-                action(col, "TRY AGAIN", primary = true, description = "Send the setup turn again") { setUpAgent() }
-                action(col, "ROTATE TOKEN", primary = false, description = "Replace the token and ask with the new one") { rotateToken() }
-            }
             PhoneSetup.State.CONNECTED -> Unit
         }
     }
@@ -1026,6 +1054,8 @@ class PhoneToolsSheet(
                 handshake = PhoneToolsView.handshakeLine(record.handshakeAt, now),
                 bootstrap = settled,
                 listening = PhoneBootstrap.listeningLine(settled, now),
+                activity = PhoneBootstrap.activityLines(settled),
+                silence = PhoneBootstrap.silence(settled, now),
             )
         }
 

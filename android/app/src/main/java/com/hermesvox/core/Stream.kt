@@ -90,6 +90,14 @@ internal class StreamState {
     var stopAction: (() -> Unit)? = null
 
     /**
+     * A turn that is never abandoned on a clock — the setup turn. On a drop the reader keeps
+     * reattaching to the same run for as long as the gateway says it is alive, and it never posts
+     * `/stop`: only the owner cancelling or the screen going away may do that. Off for every
+     * ordinary turn, whose ceiling is deliberate.
+     */
+    var keepRun = false
+
+    /**
      * H4 (0.9.1 review): this turn's `Idempotency-Key` for `POST /v1/runs`. One per turn,
      * fixed for its life, so a retried admission is the SAME request: the gateway answers
      * an identical retry with the original `run_id` (`Idempotency-Replayed: true`) rather
@@ -199,9 +207,29 @@ internal object Streams {
         // routes (the reader thread would be half-way through one vocabulary).
         start(client, input, previousResponseId, StreamRoute.routeFor(client.hasSessionKey()), options).first
 
+    /**
+     * A turn with no clock: the setup turn. Same route and same vocabulary as any other turn,
+     * but on `/v1/runs` the reader keeps reattaching to the **same** run after a drop for as long
+     * as the gateway says it is alive, and never posts `/stop`. Only [cancel] ends it early —
+     * which is the owner cancelling or the screen going away, and nothing else.
+     *
+     * The run id is durable and the events endpoint is resumable (`last_seq`), so a dropped
+     * connection is a reconnect to the run, never a second turn.
+     */
+    internal fun startPersistent(
+        client: ResponsesClient,
+        input: String,
+        previousResponseId: String,
+        options: RequestOptions = RequestOptions(),
+    ): String = start(
+        client, input, previousResponseId,
+        StreamRoute.routeFor(client.hasSessionKey()), options, keepRun = true,
+    ).first
+
     private fun start(client: ResponsesClient, input: String, previousResponseId: String,
-                      route: TurnRoute, options: RequestOptions): Pair<String, StreamState> {
+                      route: TurnRoute, options: RequestOptions, keepRun: Boolean = false): Pair<String, StreamState> {
         val st = StreamState()
+        st.keepRun = keepRun
         val chainHead = StreamRoute.chainHead(route, previousResponseId)
         val (id, n) = synchronized(streams) {
             seq++
@@ -523,22 +551,33 @@ internal object Streams {
      * `GET /v1/runs/{id}`: a terminal status means the run is over ([Recovery.ENDED]); any
      * other status means it is still working or parked on an approval, so the events are
      * followed again ([Recovery.REATTACH]). An unreadable status is retried on the next
-     * round. Once the rounds are spent, the run is stopped synchronously — ENDED when the
-     * gateway took the stop (or says the run already finished), LOST when it could not
-     * be reached at all.
+     * round. Once the rounds are spent, an ordinary turn's run is stopped synchronously —
+     * ENDED when the gateway took the stop (or says the run already finished), LOST when it
+     * could not be reached at all.
+     *
+     * A [StreamState.keepRun] turn (the setup) never spends its rounds: it waits the last
+     * backoff and asks again for ever, because its run has no clock and stopping it would be
+     * the very deadline this route removes. It ends only by the run's own terminal status,
+     * its terminal event, or the owner's cancel.
      */
     private fun recover(client: ResponsesClient, st: StreamState, runId: String, round: Int): Recovery {
         val backoff = recoverBackoffMs
-        if (round < backoff.size) {
-            if (!sleepUnlessCancelled(st, backoff[round])) return Recovery.CANCELLED
-            val status = try { runStatus(client, runId) } catch (_: Exception) { "" }
-            if (st.cancelled) return Recovery.CANCELLED
-            recoverOutcome?.invoke(runId, "status=${status.ifEmpty { "unreadable" }}")
-            if (status in ApprovalArm.TERMINAL_STATUSES) return Recovery.ENDED
-            if (status.isNotEmpty()) return Recovery.REATTACH
-            // Unreadable: the network may still be settling. Try the next round, or stop.
-            if (round + 1 < backoff.size) return recover(client, st, runId, round + 1)
+        if (backoff.isEmpty()) return Recovery.LOST
+        if (round >= backoff.size && !st.keepRun) {
+            val verdict = stopRunNow(client, runId)
+            recoverOutcome?.invoke(runId, "stop=$verdict")
+            return if (verdict == "stopped" || verdict == "already finished") Recovery.ENDED else Recovery.LOST
         }
+        if (!sleepUnlessCancelled(st, backoff[minOf(round, backoff.size - 1)])) return Recovery.CANCELLED
+        val status = try { runStatus(client, runId) } catch (_: Exception) { "" }
+        if (st.cancelled) return Recovery.CANCELLED
+        recoverOutcome?.invoke(runId, "status=${status.ifEmpty { "unreadable" }}")
+        if (status in ApprovalArm.TERMINAL_STATUSES) return Recovery.ENDED
+        if (status.isNotEmpty()) return Recovery.REATTACH
+        // Unreadable: the network may still be settling. Try the next round, keep following when
+        // the turn has no clock, or stop an ordinary turn whose rounds are spent.
+        if (round + 1 < backoff.size) return recover(client, st, runId, round + 1)
+        if (st.keepRun) return Recovery.REATTACH
         val verdict = stopRunNow(client, runId)
         recoverOutcome?.invoke(runId, "stop=$verdict")
         return if (verdict == "stopped" || verdict == "already finished") Recovery.ENDED else Recovery.LOST
@@ -867,6 +906,11 @@ internal object Streams {
                             ev.text = ""
                         }
                     } else if (plainText(st.text.toString()).isEmpty() && env.output.isNotEmpty()) {
+                        // A run that used tools and answered only in its terminal event leaves the
+                        // transcript ending on a `[tool:…]` marker. Without a line break the answer
+                        // is glued to that marker and plainText() drops the whole line — the agent's
+                        // words vanish from the reply (the setup turn's common shape).
+                        if (st.text.isNotEmpty()) st.text.append('\n')
                         st.text.append(env.output)
                     }
                     if (st.failure.isEmpty()) markDone(st, ev)
@@ -876,7 +920,10 @@ internal object Streams {
                     val said = plainText(st.text.toString()).isNotEmpty() || env.output.isNotEmpty()
                     if (said && (env.partial || env.completed == false || raw == "run.cancelled" ||
                                 raw == "run.interrupted")) {
-                        if (plainText(st.text.toString()).isEmpty()) st.text.append(env.output)
+                        if (plainText(st.text.toString()).isEmpty()) {
+                            if (st.text.isNotEmpty()) st.text.append('\n')
+                            st.text.append(env.output)
+                        }
                         // Mirror response.incomplete: whatever was said is still answer.
                         ev.type = "response.incomplete"
                         ev.done = true

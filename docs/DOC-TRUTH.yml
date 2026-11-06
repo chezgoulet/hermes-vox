@@ -136,16 +136,16 @@
   match: 'const val BUTTON = "SET THIS UP WITH MY AGENT"'
 
 - id: phone-bootstrap-window
-  says: "three minutes"
+  says: "as long as the attempt runs"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
-  match: 'const val SETUP_WINDOW_MS = 3 \* 60_000L'
+  match: 'fun listenerOpen\(progress: Progress\): Boolean'
 
 - id: phone-bootstrap-handshake-window
-  says: "a generous **90 seconds**"
+  says: "20 seconds"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
-  match: 'const val HANDSHAKE_WINDOW_MS = 90_000L'
+  match: 'const val HANDSHAKE_GRACE_MS = 20_000L'
 
 - id: phone-bootstrap-no-restart
   says: "no restart is needed and none is wanted"

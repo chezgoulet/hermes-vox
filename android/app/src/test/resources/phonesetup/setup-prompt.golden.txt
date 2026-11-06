@@ -9,7 +9,7 @@ Add it with the documented CLI:
 
 hermes mcp add vox --url "http://100.101.102.103:8765/mcp" --auth header --connect-timeout 5
 
-When it asks for the API key / bearer token, paste exactly the token above. This phone's listener is open for the next three minutes for exactly this step, so the connection probe should succeed now.
+When it asks for the API key / bearer token, paste exactly the token above. This phone's listener is open for as long as this attempt runs — however long you take — so the connection probe should succeed now.
 
 `hermes mcp add` verifies the connection before it saves, and it will refuse a server it cannot reach. If it refuses, do not write a dead entry and do not guess: say plainly that the add did not succeed and name what the command said.
 
@@ -23,4 +23,4 @@ This must be idempotent. If a server named `vox` already exists, update that ent
 
 What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.
 
-After the add, verify that a server named `vox` appears in the MCP configuration you loaded. Then reply with what you changed, and say explicitly whether the add succeeded. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when the three-minute window ends. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.
+After the add, verify that a server named `vox` appears in the MCP configuration you loaded. Then reply with what you changed, and say explicitly whether the add succeeded. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when this attempt ends. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.

@@ -20,8 +20,8 @@ block remains for an agent that cannot.
 The setup path is a turn, not a block to paste. **Settings → About & Diagnostics → Phone as an MCP
 server → Set this up with my agent** is the one action in the not-set-up state. The button's own line
 says what will happen before it happens: your agent will be given this phone's address and its token,
-and pressing the button opens this phone's listener for **three minutes** so the agent can reach it.
-Nothing restarts and this call is not dropped. Nothing is written to the host by Vox itself — the
+and pressing the button opens this phone's listener for **as long as the attempt runs**, so the agent
+can reach it whenever it gets there. Nothing restarts and this call is not dropped. Nothing is written to the host by Vox itself — the
 agent edits its own configuration, which is the same act as pasting the prompt by hand. The copyable
 prompt stays behind the action as the fallback, for an agent that cannot configure itself.
 
@@ -38,7 +38,7 @@ The turn carries the server name (`vox`), the real tailnet URL (`http://<tailnet
 tool name the model will see (`mcp__vox__phone`), the phone's `Token:`, the documented
 `hermes mcp add vox --url ... --auth header --connect-timeout 5` command, the equivalent
 `mcp_servers` entry, what the phone can and cannot do, the idempotence rule, the fact that this
-phone's listener is open for the next three minutes, and the rule that **no restart is needed and none is wanted**. It asks for no job id: the gateway reconciles its own MCP configuration while it
+phone's listener is open for as long as this attempt runs, and the rule that **no restart is needed and none is wanted**. It asks for no job id: the gateway reconciles its own MCP configuration while it
 runs. The exact turn is rendered by `PhoneSetup.prompt` and is pinned byte for byte by
 `PhoneSetupTest`.
 
@@ -63,18 +63,20 @@ which is why the flow needs no restart and no second reachability test of its ow
 
 | step | what the app does | what would be a lie |
 |---|---|---|
-| **open the window** | `PhoneMcp.openWindow` starts this phone's listener without a call, for **three minutes**, before anything is sent. If it cannot open, nothing is sent and the sheet says so. | Sending an instruction the add is certain to fail against an idle phone |
-| **ask** | Sends one fixed turn on the authenticated connection. The button's line already named the token and the window. | Saying the setup is done because the press happened |
-| **the agent answers** | Shows the agent's words. A reply that does not report a failed add moves to *Waiting for it to appear*; one that reports a refusal fails with its own words. | Treating a refusal, or a polite "done", as proof |
-| **wait for the handshake** | The listener stays up until its window ends. Only the phone's own MCP `initialize` is proof; the sheet then says **Connected**. | Calling a reply — or a timeout — "connected" |
-| **close the window** | The listener closes when the three minutes end, unless a live call is holding it. A hangup during the window does not close it. | Leaving a listening socket open after the owner's stated window |
+| **open the listener** | `PhoneMcp.openWindow` starts this phone's listener without a call, before anything is sent. If it cannot open, nothing is sent and the sheet says so. | Sending an instruction the add is certain to fail against an idle phone |
+| **ask** | Sends one fixed turn on the authenticated connection and drains the run's own event stream (`GET /v1/runs/{run_id}/events`). There is **no turn ceiling**. The button's line already named the token and the listener. | Stopping a working run because two minutes passed |
+| **show the work** | Each `tool.started` event appends one line — the tool's own name plus this app's short phrase (*terminal · ran a command*). Arguments are never read, so the token cannot reach the screen. The whole list is kept, and silence is stated as an age (*Nothing new for 4 minutes.*), never a countdown. | Inventing an action, or rendering an argument |
+| **the agent answers** | Shows the agent's words. A reply that does not report a failed add moves to *Your agent has answered*; one that reports a refusal fails with its own words. | Treating a refusal, or a polite "done", as proof |
+| **wait for the handshake** | The listener stays up while the run is alive and for a short grace after it ends. Only the phone's own MCP `initialize` is proof; the sheet then says **Connected**. | Calling a reply — or a timeout — "connected" |
+| **close the listener** | Closed at once when the handshake is the outcome, after the short post-run grace otherwise, unless a live call is holding it. A hangup during the attempt does not close it. The run is stopped only when the owner presses **Stop this attempt** or the sheet goes away, and the card says which. | Leaving a listening socket open, or stopping a run on a clock |
 
-**The windows are stated.** The press states three minutes and the sheet shows the remaining time
-while the flow runs; the window closes on its own clock. The handshake gets a generous **90 seconds**
-after the reply, capped by the listener's window, because the listener cannot be reached after it
-closes. Without the handshake the flow says *the setup may not have taken*, names the step it
-reached, keeps the agent's last words on screen, and offers the copyable prompt. It never becomes
-Connected by timeout.
+**There is no deadline.** The run id is durable and the events endpoint is resumable (`last_seq`), so
+a dropped connection reattaches to the **same** run instead of submitting a second turn. The only
+clocks are ages the card shows. After the run ends the listener stays open for a further
+`PhoneBootstrap.HANDSHAKE_GRACE_MS` (20 seconds), because the gateway may reconcile the new entry
+just after the answer; a handshake in that window closes it at once. Without the handshake the flow
+says *the setup may not have taken*, names the step it reached, keeps the agent's last words on
+screen, and offers the copyable prompt. It never becomes Connected by timeout.
 
 **One press is one attempt.** A second press while the flow is in flight is ignored; a failed
 attempt is terminal for that attempt and offers the fallback rather than looping.
@@ -92,14 +94,13 @@ separate, one-time step — and a running gateway only reads it when someone add
 
 | state | what the sheet says | what the user can do |
 |---|---|---|
-| **not set up** | *Your agent does not know about this phone yet* — until it is set up, the agent cannot see the phone at all, and any answer it gives about the phone is honest but unhelpful. The button's line names the token and the three-minute listener window; the setup turn is shown in full below it with **Copy setup prompt** and the sentence *Your agent writes the entry itself while this phone's listener is open. Nothing on your host restarts, and Vox writes nothing there.* | **Set this up with my agent**, or **Copy setup prompt** as the fallback |
-| **adding / waiting** | *Adding this phone to your agent*, with the window's remaining time, then *Waiting for it to appear* — never Connected | Wait; a second press is ignored. The agent's reply and the step are shown |
-| **waiting** | *Asked — waiting for your agent*, with the agent's reply beneath: the prompt has been handed over, no handshake has arrived | **Ask again**; the press opens the listener window for it |
+| **not set up** | *Your agent does not know about this phone yet* — until it is set up, the agent cannot see the phone at all, and any answer it gives about the phone is honest but unhelpful. The button's line names the token and the listener that follows the attempt; the setup turn is shown in full below it with **Copy setup prompt** and the sentence *Your agent writes the entry itself while this phone's listener is open. Nothing on your host restarts, and Vox writes nothing there.* | **Set this up with my agent**, or **Copy setup prompt** as the fallback |
+| **adding / waiting** | *Your agent is working on this*, with **What your agent did** — one line per tool call, appended in arrival order — and *Your agent has answered* once the run ends. Never Connected | Wait, or **Stop this attempt**; a second press is ignored. The agent's reply and the step are shown |
+| **waiting** | *Asked — your agent is working*, with the agent's reply beneath: the prompt has been handed over, no handshake has arrived | **Ask again**; the press opens the listener for it |
 | **connected** | *Connected* — the only state that may say it — plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
 | **failed** | *Your agent could not add this phone*, *This phone could not be made reachable*, *The setup may not have taken*, or another named cause, plus the step it reached and the agent's last words | Read the step, then use the copyable prompt (the fallback). A failed attempt does not retry by itself |
 | **unreachable** | the cause, in its own words: *No connection configured*, *Key rejected*, *Your agent did not answer: …*, or *Turn failed: …* | Fix what is named — the connection in Entity & Connection, the profile's key, the gateway — then **Try again** |
 | **refused** | *Your agent could not edit its configuration*, with its own explanation | Fix its file access and **Try again**, or use the manual fallback |
-| **timed out** | *Your agent was asked, but no handshake arrived in time* | **Try again**, or **Rotate token** and ask once more |
 
 The three states the owner passes through are worded apart on purpose, and `PhoneToolsView` holds
 them as constants (`NOT_SET_UP_HEADING`, `WAITING_HEADING`, `CONNECTED_HEADING`, `SETUP_NOTE`);
@@ -115,23 +116,32 @@ reason>` (`PhoneSetupSend`). The bootstrap adds its own: a listener window that 
 an add the agent reports as failed, and a window that closed without the handshake. The line is
 persisted with the record, so it survives reopening the sheet.
 
-The listener window is three minutes and the handshake window is 90 seconds after the reply, capped
-by the listener's close. A bootstrap attempt that has already failed stays failed for that attempt;
-the next press is a new attempt. The reply stays readable in every state, including the failures.
+The listener is open while the run is alive and for 20 seconds after it ends (or until the handshake
+arrives, which closes it at once). No elapsed time ends a setup. A bootstrap attempt that has
+already failed stays failed for that attempt; the next press is a new attempt. The reply stays
+readable in every state, including the failures. The activity list — the work the agent did, in the
+owner's words — stays visible with the outcome.
 
 ### What a device run of the one button must show
 
 1. **The promise is on screen before the press.** In the not-set-up state the button's line names the
-   phone's address, the token, the three-minute listener window, and says nothing restarts and Vox
-   writes nothing to the host itself.
-2. **The window opens before the turn.** Press once from an **idle phone**: the log shows
-   `event=phone-mcp start …` before the turn leaves, and the sheet says how long the listener stays
-   up. Exactly one ordinary turn leaves on the active profile's connection; a second press is
-   ignored. `event=phone-mcp window=open` names the duration.
-3. **The agent's words are shown, but are not proof.** After the reply, the sheet moves to *Waiting
-   for it to appear* unless the reply reports a failed add. A reply that reports a refusal fails
-   with *Your agent could not add this phone* and keeps its own words on screen; no reply at all
-   fails as *Your agent did not answer*.
+   phone's address, the token, the listener that follows the attempt, and says nothing restarts and
+   Vox writes nothing to the host itself.
+2. **The listener opens before the turn, and has no clock.** Press once from an **idle phone**: the
+   log shows `event=phone-mcp start …` before the turn leaves, and `event=phone-mcp window=open`
+   carries no duration. Exactly one turn leaves on the active profile's connection; a second press
+   is ignored.
+3. **The work is shown, and is not proof.** With a deliberately slow agent (make it wait four
+   minutes before running `hermes mcp add`, e.g. a tool that sleeps), the card keeps showing the
+   run: **What your agent did** gains a line per tool call (*terminal · ran a command*), and after a
+   quiet stretch it says *Nothing new for 4 minutes.* It never posts `/stop`, and the sheet never
+   counts down to one. When the reply arrives, the sheet moves to *Your agent has answered* unless
+   the reply reports a failed add. A reply that reports a refusal fails with *Your agent could not
+   add this phone* and keeps its own words on screen; no reply at all fails as *Your agent did not
+   answer*.
+   **This is the case that failed before:** a setup that takes longer than three minutes must still
+   reach **Connected**. The listener stays up for the whole run, so `hermes mcp add`'s probe at
+   minute four succeeds, the gateway connects, and the card says Connected.
 4. **The tool appears while the app stays connected.** The agent runs `hermes mcp add` against the
    open window; the gateway reconciles its MCP configuration and logs
    `MCP servers reconciled with config … added=['vox']`. There is **no restart, no dropped call and
@@ -139,12 +149,19 @@ the next press is a new attempt. The reply stays readable in every state, includ
    That continuity is the check: nothing restarted.
 5. **Connected is the handshake's.** The sheet reaches **Connected** only after the phone's own
    server records an authenticated MCP `initialize`; its reply is shown but never counted. If no
-   handshake arrives within the stated window (90 seconds after the reply, never past the
-   three-minute listener window), it says *the setup may not have taken*, shows the agent's last
-   words and the copyable prompt. It never becomes Connected by timeout.
-6. **The window closes.** Three minutes after the press, the log shows `event=phone-mcp stop
-   reason=window-closed` (unless a call is live, which holds the listener). A tool call afterwards
-   fails from the gateway's side, and the sheet no longer shows a remaining time.
+   handshake arrives in the 20-second grace after the run ends, it says *the setup may not have
+   taken*, shows the agent's last words and the copyable prompt. It never becomes Connected by
+   timeout.
+6. **The listener closes after the run.** When the handshake lands the log shows
+   `event=phone-mcp stop reason=setup-connected`; a run that ends without one closes after the
+   grace (`reason=setup-ended`). Unless a call is live, which holds the listener. A tool call
+   afterwards fails from the gateway's side.
+6b. **A dropped network reattaches to the same run.** Put the phone in airplane mode for a minute
+   mid-setup and restore it: the app reattaches to the run at its last `seq`, the run completes, and
+   `/v1/runs` was posted exactly once — no second turn.
+6c. **The owner's stop is said out loud.** Press **Stop this attempt** (or close the sheet): the
+   card says *You stopped this attempt* / *The setup stopped when this sheet closed*, keeps the work
+   it already showed, and the run is stopped.
 7. **An unopenable window sends nothing.** Turn Tailscale off: the sheet says *Cannot run —
    Tailscale is not running*. Hold the port so the bind fails: it says *This phone could not be
    made reachable*. In both cases it shows the copyable prompt and sends no turn, because an add
@@ -526,9 +543,10 @@ plain: an in-app timer or alarm rings while the app is alive, which during a cal
 must outlive the process is not this lane.
 
 **Server lifetime.** The listener is up while a call is: `VoiceController.start` opens it and the
-hangup releases it. The one exception is the one-button setup's **three-minute window**
-(`PhoneMcp.openWindow`), opened by the owner's press because `hermes mcp add` proves reachability at
-the moment it runs; the window closes on its own clock, and turning Phone tools off closes it
+hangup releases it. The one exception is the one-button setup's attempt (`PhoneMcp.openWindow`),
+opened by the owner's press because `hermes mcp add` proves reachability whenever the agent gets
+there. It follows the run: open while the run is alive, a 20-second grace after it ends, and closed
+at once when the handshake lands or the owner stops the attempt. Turning Phone tools off closes it
 immediately. There is no foreground service and no new service type. The sheet says this plainly,
 and the cost is in "When the phone is offline" below.
 

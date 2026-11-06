@@ -99,6 +99,13 @@ exactly as an unscoped `/v1/responses` conversation did.
 - `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
   scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
   nothing left to stop; nothing about the stop is ever thrown to the caller.
+- **A turn with no clock** (the one-button phone setup) rides the same route with
+  `Streams.startPersistent` (`StreamState.keepRun`). On a drop it reattaches to the
+  **same** run — `last_seq` first, then `GET /v1/runs/{id}` — for as long as the gateway
+  says the run is alive, and it never posts `/stop`. Only `Streams.cancel` ends it,
+  which is the owner stopping the attempt or the sheet going away. This is the one
+  route where the ordinary 120 s turn ceiling would have cut a working run in half.
+
 - `RunsStreamTest` pins each of these; `LiveGatewayTest` asserts the stop reaches the
   (fake) gateway on a barge-in.
 
