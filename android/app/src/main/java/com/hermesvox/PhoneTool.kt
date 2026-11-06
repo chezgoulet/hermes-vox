@@ -1362,13 +1362,20 @@ data class PhoneResult(
          * This is deliberately **not** an ordinary refusal. `outcome_uncertain:true` says the
          * action may still complete, so the mind must check `status` rather than telling the
          * caller nothing happened. The wording never claims nothing was performed.
+         *
+         * [facts] adds what is known anyway (a dial's recipient and `dialer:"unknown"`); it can
+         * never displace `outcome_uncertain`.
          */
-        fun uncertain(action: String, detail: String): PhoneResult = refused(
-            action,
-            PhoneReason.UNAVAILABLE,
-            detail,
-            facts = linkedMapOf<String, Any?>("outcome_uncertain" to true),
-        )
+        fun uncertain(
+            action: String,
+            detail: String,
+            facts: Map<String, Any?> = emptyMap(),
+        ): PhoneResult {
+            val merged = linkedMapOf<String, Any?>()
+            merged.putAll(facts)
+            merged["outcome_uncertain"] = true
+            return refused(action, PhoneReason.UNAVAILABLE, detail, facts = merged)
+        }
 
         /** Nothing happened, and why. [facts] carries an approval request's id and expiry. */
         fun refused(

@@ -88,15 +88,16 @@ consequential one: it cannot be handed off either, because the agent is the reci
 export is the act. Those two are the tier's consequential examples; their card is the same card
 every action at Ask raises (below).
 
-**The background half of a handoff is gated; the `dial` teardown's result is still open.** A
-handoff starts another app from wherever the MCP call arrives. On Android 10+ the platform can
-refuse a **background activity start** without throwing, so `startActivity` returning is not proof
-another app reached the front. Every handoff therefore asks first whether an activity of ours is
-resumed, or in picture-in-picture and visible; when it is not, the call is refused `background`
-*before* a target is resolved, a call is ended or a line is announced, and the detail says the phone
-is not in the foreground and nothing was attempted. And `dial` ends Vox's own call to free the
-audio route — the call is also the MCP listener's lifetime — so the dial's late result is open
-release work, not a behaviour this document promises.
+**Both handoff edges are closed.** A handoff starts another app from wherever the MCP call
+arrives. On Android 10+ the platform can refuse a **background activity start** without throwing,
+so `startActivity` returning is not proof another app reached the front. Every handoff therefore
+asks first whether an activity of ours is resumed, or in picture-in-picture and visible; when it is
+not, the call is refused `background` *before* a target is resolved, a call is ended or a line is
+announced, and the detail says the phone is not in the foreground and nothing was attempted. And
+`dial` ends Vox's own call to free the audio route, which is also the MCP listener's lifetime: the
+dial happens **after** the reply, so the result says `dialer:"unknown"` with `outcome_uncertain:true`
+rather than claiming a dialer opened, and `status` carries the dialer's own answer once the teardown
+has run. A dialer that did not open is a refusal, never a success.
 
 ### The reason vocabulary
 
@@ -117,7 +118,7 @@ release work, not a behaviour this document promises.
 | `bad_uri` | `open` was given a URI it will not hand to a viewer: `intent:`, `file:`, or no scheme at all. Nothing was resolved and no intent was built |
 | `not_text` | the file's bytes are not text; `file_read` returns text only |
 | `too_big` | a whole-file `file_read` is above the 64 KiB default; ask again with `offset`/`length` to read it in windows |
-| `unavailable` | the action was recognised and the platform refused, failed, or would not say. A caller-timeout carries `outcome_uncertain:true`: the action may still complete, so call `status` |
+| `unavailable` | the action was recognised and the platform refused, failed, or would not say. A caller-timeout, and a `dial` whose teardown has not run yet, carry `outcome_uncertain:true`: the action may still complete, so call `status` |
 | `invalid-arguments` | the arguments do not describe a runnable action (bounds and shapes are below) |
 | `expired` | no undo is registered for that id any more |
 | `no_app` | nothing on the phone answers the intent: no `ACTION_SENDTO` app, no dialer, no launchable activity, or no app for the URI |
@@ -150,13 +151,13 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `notifications` | notifications | — | `sensitive: true`, `count`, `apps` — each `app`, `count`, `latest_at` (epoch millis), and opaque `ids` | **no** — reading changes nothing | **Notification-listener special access**, shared with `now_playing`; the system grant is global, but the app's **use** of it is call-scoped: the board attaches when a call starts, detaches when it ends, and drops every record and id. **Vox's own notifications are excluded** (an app reading itself through the listener is a loop). Many notifications → many app rows, but **no title and no text** | `unavailable` (no live call), `permission` (listener access not granted) |
 | `notification_read` | notifications | `id` — one of the ids a `notifications` summary returned | `sensitive: true`, `app`, `posted_at` (epoch millis), `title`, `text` | **no** — reading changes nothing | The same call-scoped listener. This is the deliberate **second step**: one notification, named by an id a summary already showed, never a browse or a vacuum. An id that arrived after the summary is `unknown-id` until a fresh summary shows it | `unavailable`, `permission`, `unknown-id` |
 | `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent. Checked against the foreground first: off screen the call is `background` and the draft was not opened | `no_app`; `background`; `not_granted` naming **Contacts** when `to` is a name and that group is Off; `permission` when Contacts is on but `READ_CONTACTS` is not held |
-| `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to` | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens. **Open edge:** ending the call also closes the MCP listener, so this result can be lost before the mind receives it. Off screen the call is a `background` refusal before anything is resolved or ended | `no_app`; `background`; `not_granted` naming **Contacts** for a name without that group |
+| `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to`, `dialer` — `opened` when the platform took the intent, `not_opened` on a refusal (which names its reason), `unknown` with `outcome_uncertain: true` when the dialer has not opened yet | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens. The dial therefore happens **after** this reply: the result says `dialer: "unknown"` rather than claiming it opened, and `status` reports the dialer's own answer once it arrives — a call that ended and a dialer that did not open is a refusal, never a success. Off screen the call is a `background` refusal before anything is resolved or ended | `no_app`; `unavailable` (a dialer that resolved but would not start, or a call that ended and the dialer did not open); `background`; `not_granted` naming **Contacts** for a name without that group |
 | `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the intent is started immediately. **Guarded:** every handoff asks first whether an activity of ours is resumed, or in picture-in-picture and visible. Where Android would refuse a background start the call is refused `background` before any target is resolved, and says Vox has to be on screen — never a success for a launch that did not happen | `no_app`, `background` |
 | `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live, with the same launch guard. `intent:` (explicit component, arbitrary extras and flags), `file:` (a path on disk) and a string with **no scheme** are refused `bad_uri` before the intent exists — nothing is guessed into `https://`; `content:` and `http(s):` pass through | `invalid-arguments`, `bad_uri`, `no_app`, `background` |
 | `apps` | apps | — | `apps` — each `package` and `label`; `total`, `truncated`; with usage access `can_see_running: true`, `foreground` and `recent`; without it `can_see_running: false`, `running_detail`, `usage_settings` | **no** — reading the launchable list changes nothing | the launcher query `ACTION_MAIN` / `CATEGORY_LAUNCHER` from the manifest's `<queries>` (no `QUERY_ALL_PACKAGES`). What is **running** needs **usage access** (`PACKAGE_USAGE_STATS`), a special access the owner grants on Android's own screen; without it the result says it cannot see what is running and never returns an empty list as "nothing is running" | none of its own: it always answers the installed half; the running half is absent and explained |
 | `contact` | contacts | `name` — a full or partial name, case-insensitive, 1 – 200 characters | `count`, `matches` — each `display_name` and `numbers`, each number `{label, number}` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission asked when Contacts is turned on; **[ContactsContract](https://developer.android.com/reference/android/provider/ContactsContract) only**. The projection is a display name and the numbers with their labels; **no note, address, photo or email** is read. Up to 20 matches; no match is `ok:true, count:0` | `permission` (naming `android.permission.READ_CONTACTS`), `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
-| `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
+| `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dial` (the last handoff's `to`, `dialer` — `opened` / `not_opened` — and `at`), `dnd`, `volume` | **no** — reporting only | nothing | — |
 
 `undo` and `status` are not a capability: `undo` only reverses something the owner already allowed,
 and `status` only reports. They are therefore always advertised, even with every group Off.
@@ -724,9 +725,10 @@ summarising function is the place a future action has to pass through.
 17. **Calls = Allow, then `dial` while a Vox call is live.** The being says *dialling — ending our
     call*; the Vox call ends through the same teardown the hang-up uses; the dialer opens with the
     number filled in and nothing is placed. The conversation is still on the gateway when the next
-    call resumes it. `dial` with no dialer is `no_app`, and no call is ended for nothing. **Open
-    edge:** the teardown also closes the MCP listener, so the `dial` result may not reach the mind
-    — the call ending is real, the receipt is not guaranteed.
+    call resumes it. The reply says `dialer:"unknown"` and carries `outcome_uncertain:true` because
+    the dialer has not opened yet; `status` then reports `dial:{to, dialer:"opened"|"not_opened",
+    at}`. A call that ended and a dialer that did not open is a refusal. `dial` with no dialer is
+    `no_app`, and no call is ended for nothing.
 18. **Apps = Allow, then `launch` while a call is live.** The window shrinks to PiP first, then the
     app opens; the being is still visible and Stop still works. If PiP cannot be entered, the
     intent is started immediately. With Vox in the background the call is refused `background` and

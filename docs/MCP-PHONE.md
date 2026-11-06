@@ -220,13 +220,13 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
 | `contact` | 0 | `name` (full or partial, case-insensitive, ≤ 200 chars) | `count`, `matches` (`display_name`, `numbers` with `label`/`number`); ≤ 20, numbers only |
 | `message` | 0 | `to` (number, or a contact name with Contacts on), `text` (≤ 1 000 chars) | `to`, `chars`, `handed_off:true` — the owner's app sends |
-| `dial` | 0 | `to` (number, or a contact name with Contacts on) | `to` — the dialer opens; the owner presses call |
+| `dial` | 0 | `to` (number, or a contact name with Contacts on) | `to`, `dialer` — `opened` when the platform took the intent, `not_opened` on a refusal, `unknown` (with `outcome_uncertain:true`) while a live-call teardown still has to open it; the owner presses call |
 | `launch` | 0 | `app` (package or launcher label) | `package`, `component` |
 | `open` | 0 | `uri`, optional `package` | `package`, `component` |
 | `apps` | 0 | – | `apps` (`package`, `label`), `total`, `truncated`; with usage access `can_see_running:true`, `foreground`, `recent`; without it `can_see_running:false`, `running_detail`, `usage_settings` |
 | `uninstall` | 2 | `package`; `approval` on the second call | `package`, `label`, `platform_confirmation`, `note` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
-| `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
+| `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dial` (the last handoff: `to`, `dialer`, `at`), `dnd`, `volume` |
 
 `play`, `pause` and `skip` dispatch a platform media key to whichever session is active: no
 permission. `dispatched` means the audio service took the key, never that playback changed.
@@ -640,10 +640,11 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 11. **`message`** → `not_granted` while Messages is Off, `approval-required` with a card at Ask; at
     Allow the owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted`
     while Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after
-    the being says *dialling — ending our call*. **Open edge:** ending the call also closes the MCP
-    listener, so the dial's late result is still open work. With Vox backgrounded every handoff is
-    refused `background` before a target is resolved, a call is ended or a line is announced; the
-    detail says the phone is not in the foreground and nothing was attempted.
+    the being says *dialling — ending our call*. That dial happens after the reply, so the result
+    says `dialer:"unknown"` with `outcome_uncertain:true`; `status` then reports the dialer's own
+    `opened` / `not_opened`. With Vox backgrounded every handoff is refused `background` before a
+    target is resolved, a call is ended or a line is announced; the detail says the phone is not in
+    the foreground and nothing was attempted.
 12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
     summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
     undoable row: the action is reversed, or the toast says the undo expired.

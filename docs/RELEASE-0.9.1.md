@@ -178,9 +178,11 @@ Each set is selected on its own; with the master off, everything below is dimmed
   — long horizon.
 - **The two handoff edges are closed in this release.** Android still refuses a background activity
   start without raising, so every handoff asks first whether an activity of ours is resumed or in
-  picture-in-picture: when Vox is not on screen the call is refused `unavailable` and says so,
+  picture-in-picture: when Vox is not on screen the call is refused `background` and says so,
   and `uninstall` approved from the notification opens Vox before firing. `dial` finishes its
-  announcement before ending the call, and its late result is audited rather than dropped.
+  announcement before ending the call, and because the dialer opens after that reply the result says
+  `dialer:"unknown"` with `outcome_uncertain:true` rather than claiming it opened; `status` carries
+  the dialer's own `opened` / `not_opened` answer.
 - **Nothing left waiting on D39.** Sessions' and Switching profiles' device passes were both made
   on 2026-11-06 and both sets are gone; the Alpha gate is four sets.
 

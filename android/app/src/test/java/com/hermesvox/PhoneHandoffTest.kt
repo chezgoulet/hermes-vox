@@ -166,6 +166,9 @@ class PhoneHandoffTest {
     private fun run(map: Map<String, Any?>): PhoneResult =
         engine.dispatch(map, t0, e0)
 
+    /** What the mind's `status` says about the last completed dial handoff, or null. */
+    private fun statusDial(): Any? = run(mapOf("action" to "status")).facts["dial"]
+
     // ---- messages ----
 
     @Test
@@ -224,6 +227,7 @@ class PhoneHandoffTest {
         val r = run(mapOf("action" to "dial", "to" to "+1 (555) 123-4567"))
         assertTrue(r.json(), r.ok)
         assertEquals("+15551234567", r.facts["to"])
+        assertEquals(PhoneEngine.DIALER_OPENED, r.facts["dialer"])
         assertEquals(listOf("dial:+15551234567"), fake.events)
 
         val source = File("src/main/java/com/hermesvox/LocalActions.kt").readText()
@@ -237,6 +241,16 @@ class PhoneHandoffTest {
     }
 
     @Test
+    fun dial_reports_what_it_knows_without_claiming_the_call_was_placed() {
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertEquals(PhoneEngine.DIALER_OPENED, r.facts["dialer"])
+        assertTrue(
+            "the note says the owner presses call: ${r.facts["note"]}",
+            (r.facts["note"] as? String)?.contains("not placed a call") == true,
+        )
+    }
+
+    @Test
     fun dial_ends_a_live_call_in_the_order_announce_end_launch() {
         fake.live = true
         val r = run(mapOf("action" to "dial", "to" to "123456"))
@@ -245,19 +259,37 @@ class PhoneHandoffTest {
         assertEquals(listOf("announce", "end", "dial:123456"), fake.events)
     }
 
+    /**
+     * The live-call path answers **before** the dialer opens: the line is still being spoken and
+     * the start happens after the teardown. So the result must not claim the dialer opened — it
+     * says the outcome is unknown, and carries `outcome_uncertain` so the mind does not tell the
+     * caller nothing happened.
+     */
     @Test
-    fun dial_with_a_live_call_reports_pending_before_it_ends_anything() {
+    fun dial_with_a_live_call_reports_the_outcome_unknown_not_done() {
         fake.live = true
         fake.deferAnnounce = true
         val r = run(mapOf("action" to "dial", "to" to "123456"))
-        assertTrue(r.json(), r.ok)
-        assertEquals("pending", r.facts["handoff"])
-        assertTrue(
-            "the reply says the dialer has not opened yet: ${r.facts}",
-            (r.facts["note"] as? String)?.contains("dialer") == true,
+        assertFalse("the dialer has not opened, so this is not a success: ${r.json()}", r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertEquals("123456", r.facts["to"])
+        assertEquals(PhoneEngine.DIALER_UNKNOWN, r.facts["dialer"])
+        assertEquals(
+            "the marker that tells the mind the work may still complete",
+            true,
+            r.facts["outcome_uncertain"],
         )
-        assertEquals("only the line was announced; nothing was ended or dialled", listOf("announce"), fake.events)
-        assertEquals("the pending reply is the only row so far", 1, audited.size)
+        assertTrue(
+            "the detail says what the phone cannot see: ${r.detail}",
+            r.detail!!.contains("cannot see"),
+        )
+        assertEquals(
+            "only the line was announced; nothing was ended or dialled",
+            listOf("announce"),
+            fake.events,
+        )
+        assertEquals("the unknown reply is the only row so far", 1, audited.size)
+        assertNull("and nothing is reported as a finished handoff yet", statusDial())
     }
 
     @Test
@@ -266,7 +298,7 @@ class PhoneHandoffTest {
         fake.deferAnnounce = true
         fake.dialStarts = false
         val r = run(mapOf("action" to "dial", "to" to "123456"))
-        assertTrue(r.json(), r.ok)
+        assertEquals(PhoneEngine.DIALER_UNKNOWN, r.facts["dialer"])
         assertEquals(1, audited.size)
 
         fake.after?.invoke()
@@ -276,6 +308,87 @@ class PhoneHandoffTest {
         assertEquals("dial", late.action)
         assertFalse("a dial that did not open is not a success", late.ok)
         assertEquals(PhoneReason.UNAVAILABLE, late.outcome)
+    }
+
+    /**
+     * The mind that was told "unknown" asks `status` and gets the dialer's own answer. The late
+     * callback is the only writer, so a new dial retires the last one instead of answering for it.
+     */
+    @Test
+    fun the_late_dial_outcome_reaches_the_mind_through_status() {
+        fake.live = true
+        fake.deferAnnounce = true
+        val r = run(mapOf("action" to "dial", "to" to "123456"))
+        assertEquals(PhoneEngine.DIALER_UNKNOWN, r.facts["dialer"])
+        assertNull("nothing is claimed before the dialer answers", statusDial())
+
+        fake.after?.invoke()
+        val dial = statusDial() as Map<*, *>
+        assertEquals("123456", dial["to"])
+        assertEquals(PhoneEngine.DIALER_OPENED, dial["dialer"])
+        assertEquals(e0, dial["at"])
+    }
+
+    @Test
+    fun a_late_dial_that_did_not_open_reaches_status_as_not_opened() {
+        fake.live = true
+        fake.deferAnnounce = true
+        fake.dialStarts = false
+        run(mapOf("action" to "dial", "to" to "123456"))
+        fake.after?.invoke()
+        val dial = statusDial() as Map<*, *>
+        assertEquals(PhoneEngine.DIALER_NOT_OPENED, dial["dialer"])
+    }
+
+    @Test
+    fun a_new_dial_retires_the_previous_dialers_answer() {
+        // One finished dial is on record.
+        run(mapOf("action" to "dial", "to" to "111"))
+        assertEquals(PhoneEngine.DIALER_OPENED, (statusDial() as Map<*, *>)["dialer"])
+        // A second, still-running handoff must not answer with the first dialer's result.
+        fake.live = true
+        fake.deferAnnounce = true
+        run(mapOf("action" to "dial", "to" to "222"))
+        assertNull("the old answer is retired when a new dial starts", statusDial())
+    }
+
+    /** An older handoff that finishes late must not answer for a newer dial. */
+    @Test
+    fun a_late_answer_from_an_older_dial_does_not_overwrite_a_newer_one() {
+        fake.live = true
+        fake.deferAnnounce = true
+        run(mapOf("action" to "dial", "to" to "111"))
+        val older = fake.after
+        // The next dial happens before the first line has finished; its own dialer opens now.
+        fake.live = false
+        run(mapOf("action" to "dial", "to" to "222"))
+        older?.invoke()
+        val dial = statusDial() as Map<*, *>
+        assertEquals("the newer dial owns the answer", "222", dial["to"])
+        assertEquals(PhoneEngine.DIALER_OPENED, dial["dialer"])
+    }
+
+    @Test
+    fun dial_keeps_placed_not_placed_and_unknown_apart() {
+        // Placed: the platform took the intent.
+        assertEquals(
+            PhoneEngine.DIALER_OPENED,
+            run(mapOf("action" to "dial", "to" to "111")).facts["dialer"],
+        )
+        // Not placed: a refusal with its reason, and no uncertainty marker.
+        fake.dialStarts = false
+        val refused = run(mapOf("action" to "dial", "to" to "222"))
+        assertFalse(refused.ok)
+        assertEquals(PhoneEngine.DIALER_NOT_OPENED, refused.facts["dialer"])
+        assertNull("a known failure is not 'may still complete'", refused.facts["outcome_uncertain"])
+        // Unknown: the deferred live-call handoff, marked so the mind does not claim either way.
+        fake.dialStarts = true
+        fake.live = true
+        fake.deferAnnounce = true
+        val unknown = run(mapOf("action" to "dial", "to" to "333"))
+        assertFalse(unknown.ok)
+        assertEquals(PhoneEngine.DIALER_UNKNOWN, unknown.facts["dialer"])
+        assertEquals(true, unknown.facts["outcome_uncertain"])
     }
 
     @Test
@@ -322,6 +435,7 @@ class PhoneHandoffTest {
         val r = run(mapOf("action" to "dial", "to" to "123456"))
         assertFalse(r.ok)
         assertEquals(PhoneReason.NO_APP, r.reason)
+        assertEquals(PhoneEngine.DIALER_NOT_OPENED, r.facts["dialer"])
         assertEquals("no line, no teardown, no launch", emptyList<String>(), fake.events)
     }
 
@@ -336,6 +450,7 @@ class PhoneHandoffTest {
             r.reason,
         )
         assertTrue(r.detail!!.contains("dialer"))
+        assertEquals("and the dialer state is not placed, not unknown", PhoneEngine.DIALER_NOT_OPENED, r.facts["dialer"])
     }
 
     @Test

@@ -551,6 +551,20 @@ class PhoneEngine(
     private var volumeApplied: Int? = null
 
     /**
+     * The last dial handoff's own answer, for the mind's `status`: `to`, `dialer` (opened /
+     * not_opened) and when. A dial that has not completed yet leaves it null — the result of that
+     * call already says `unknown`, and a stale entry must not answer for a new handoff.
+     *
+     * Plain assignment under [dialGeneration], never the engine lock: the late dial runs on the
+     * window's thread while the engine thread may be waiting on that thread, so taking the lock
+     * here would close a cycle.
+     */
+    @Volatile private var lastDial: Map<String, Any?>? = null
+
+    /** Which dial handoff owns [lastDial]. Only the newest may write it. */
+    @Volatile private var dialGeneration = 0L
+
+    /**
      * Who initiated an entry in the registry.
      *
      * The owner path ([LocalActions.run], and the sheet's Undo tap) and the mind path (MCP
@@ -1869,6 +1883,12 @@ class PhoneEngine(
      * With a live Vox call, [DialHandoff] announces one line through the being, ends the call
      * through the same teardown the hang-up runs, and then opens the dialer. Ending the call
      * does not end the conversation: the thread lives on the gateway.
+     *
+     * **The result always says which of the three happened.** [DIALER_OPENED] is the platform
+     * taking the intent; a refusal is "not opened" and names its reason; and when the dial happens
+     * after this reply (the live-call teardown) the honest answer is [DIALER_UNKNOWN] — the mind
+     * is never told a dialer opened when this phone cannot see it. `status` carries the late
+     * dialer's own answer once it is known.
      */
     private fun dial(call: PhoneTool.Call.Dial, nowEpoch: Long): PhoneResult {
         // Pre-flight the gate before resolving, announcing or tearing anything down: a blocked
@@ -1878,57 +1898,119 @@ class PhoneEngine(
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
         }
-        return when (DialHandoff.run(platform, to) { started ->
-            // The live-call path answers before this runs: the dial happens after the line is
-            // done. Its own result is audited as its own row rather than lost (H1).
-            auditLateDial(to, started, nowEpoch)
-        }) {
-            DialHandoff.Outcome.NO_DIALER -> noApp(
+        // A new handoff retires the last one: `status` must never answer for a dialer this call
+        // did not open. The generation also stops an older, slower handoff from writing over it.
+        val generation = ++dialGeneration
+        lastDial = null
+        // The continuation runs before `run` returns when nothing speaks or the line is already
+        // over — then the dialer's own answer is known. On a real call it runs after the reply,
+        // and only "unknown" is honest.
+        val late = java.util.concurrent.atomic.AtomicReference<Boolean?>(null)
+        val outcome = DialHandoff.run(platform, to) { started ->
+            late.set(started)
+            auditLateDial(to, started, nowEpoch, generation)
+        }
+        return when (outcome) {
+            DialHandoff.Outcome.NO_DIALER -> PhoneResult.refused(
                 "dial",
+                PhoneReason.NO_APP,
                 "no app on this phone answers ACTION_DIAL; nothing was opened and no call was ended",
+                // What is known is not a success fact: no dialer took the number. Every dial
+                // result carries `dialer`, so placed / not placed / unknown read the same way.
+                facts = dialFacts(to, DIALER_NOT_OPENED),
             )
             DialHandoff.Outcome.DIAL_FAILED -> {
-                log("event=phone-mcp action=dial ok=false reason=unavailable")
+                log("event=phone-mcp action=dial ok=false reason=unavailable dialer=not_opened")
+                rememberDial(generation, to, DIALER_NOT_OPENED, nowEpoch)
                 PhoneResult.refused(
                     "dial",
                     PhoneReason.UNAVAILABLE,
                     "the dialer is on this phone but Android would not open it; nothing was " +
                         "dialled and no call was placed",
+                    facts = dialFacts(to, DIALER_NOT_OPENED),
                 )
             }
             DialHandoff.Outcome.DIALED -> {
-                log("event=phone-mcp action=dial ok=true")
-                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+                rememberDial(generation, to, DIALER_OPENED, nowEpoch)
+                dialerOpened(to)
             }
-            DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> {
-                log("event=phone-mcp action=dial ok=true pending=true ended_call=true")
-                PhoneResult.info(
-                    "dial",
-                    linkedMapOf<String, Any?>(
-                        "to" to to,
-                        // Not a claim that the dialer opened: the line is still being spoken and
-                        // the start happens after the teardown. Its result follows as its own row.
-                        "handoff" to "pending",
-                        "note" to
-                            "our call is ending and the dialer opens when the line is done; " +
-                            "the dialer's own result is recorded in Recent actions",
-                    ),
-                )
+            DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> when (late.get()) {
+                // The continuation already ran: carry its real outcome rather than a pending one.
+                true -> dialerOpened(to)
+                false -> {
+                    log("event=phone-mcp action=dial ok=false reason=unavailable dialer=not_opened")
+                    PhoneResult.refused(
+                        "dial",
+                        PhoneReason.UNAVAILABLE,
+                        "our call ended but the dialer did not open; nothing was dialled. The " +
+                            "conversation is still on the gateway — call again to resume it.",
+                        facts = dialFacts(to, DIALER_NOT_OPENED),
+                    )
+                }
+                // Still to happen: say exactly that. `outcome_uncertain` is what stops the mind
+                // telling the caller nothing happened, and `status` carries the late answer.
+                null -> {
+                    log("event=phone-mcp action=dial ok=false reason=unavailable dialer=unknown")
+                    PhoneResult.uncertain(
+                        "dial",
+                        "Vox's call is ending, so the dialer has not opened yet: it opens with " +
+                            "the number when the line is done, and this phone cannot see whether " +
+                            "it did — Vox never places the call, the owner presses call. Nothing " +
+                            "is known to have been dialled or to have failed; `status` reports " +
+                            "the dialer's own result once it arrives.",
+                        facts = dialFacts(to, DIALER_UNKNOWN),
+                    )
+                }
             }
         }
+    }
+
+    /** The recipient and the dialer's state: the one shape every dial result carries. */
+    private fun dialFacts(to: String, dialer: String): Map<String, Any?> =
+        linkedMapOf("to" to to, "dialer" to dialer)
+
+    /** The dialer took the intent. It is open with the number; the owner presses call. */
+    private fun dialerOpened(to: String): PhoneResult {
+        log("event=phone-mcp action=dial ok=true dialer=opened")
+        return PhoneResult.info(
+            "dial",
+            linkedMapOf<String, Any?>(
+                "to" to to,
+                "dialer" to DIALER_OPENED,
+                "note" to
+                    "the dialer is open with the number ready; Vox has not placed a call — " +
+                    "the owner presses call",
+            ),
+        )
+    }
+
+    /** What the phone knows about a dial's dialer, kept for the mind's next `status`. */
+    private fun rememberDial(generation: Long, to: String, dialer: String, atEpochMs: Long) {
+        // An older handoff that finishes late must not answer for a newer dial.
+        if (generation != dialGeneration) return
+        lastDial = linkedMapOf<String, Any?>(
+            "to" to to,
+            "dialer" to dialer,
+            "at" to atEpochMs,
+        )
     }
 
     /**
      * The dial that runs after a live call was ended. It is a second outcome, so it gets a
      * second audit row: the owner can see whether the dialer actually opened, and a failure is
-     * never hidden behind the pending reply (H1).
+     * never hidden behind the pending reply (H1). The same answer is kept for `status`, so the
+     * mind that was told "unknown" can ask what really happened.
      */
-    private fun auditLateDial(to: String, started: Boolean, nowEpoch: Long) {
+    private fun auditLateDial(to: String, started: Boolean, nowEpoch: Long, generation: Long) {
+        val dialer = if (started) DIALER_OPENED else DIALER_NOT_OPENED
         val result = if (started) {
-            log("event=phone-mcp action=dial ok=true after_teardown=true")
-            PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to, "handoff" to "opened"))
+            log("event=phone-mcp action=dial ok=true after_teardown=true dialer=opened")
+            PhoneResult.info(
+                "dial",
+                linkedMapOf<String, Any?>("to" to to, "handoff" to "opened", "dialer" to dialer),
+            )
         } else {
-            log("event=phone-mcp action=dial ok=false reason=unavailable after_teardown=true")
+            log("event=phone-mcp action=dial ok=false reason=unavailable after_teardown=true dialer=not_opened")
             PhoneResult.refused(
                 "dial",
                 PhoneReason.UNAVAILABLE,
@@ -1936,6 +2018,7 @@ class PhoneEngine(
                     "conversation is still on the gateway — call again to resume it.",
             )
         }
+        rememberDial(generation, to, dialer, nowEpoch)
         try {
             audit(result, linkedMapOf<String, Any?>("action" to "dial", "to" to to), nowEpoch)
         } catch (_: Throwable) {
@@ -2274,6 +2357,9 @@ class PhoneEngine(
             facts["dnd"] = linkedMapOf("on" to dndApplied, "granted" to platform.dndGranted())
             facts["volume"] = volumeApplied ?: platform.currentVolume()
         }
+        // The dial handoff that has finished since the last dial started. A mind that was told
+        // `dialer:"unknown"` asks here for the answer it could not be given on the turn.
+        if (mindDoorOpen("dial")) lastDial?.let { facts["dial"] = it }
         PhoneResult.info("status", facts)
     }
 
@@ -2372,6 +2458,18 @@ class PhoneEngine(
             "the phone is not in the foreground, so $action was not attempted: Vox has to be " +
                 "on screen to hand off to another app, and Android blocks the start from the " +
                 "background. Nothing was opened, sent or ended."
+
+        /** The dialer took the intent: it is open with the number. Vox has not placed a call. */
+        const val DIALER_OPENED = "opened"
+
+        /** The dialer was resolved but would not start, or the call ended and it did not open. */
+        const val DIALER_NOT_OPENED = "not_opened"
+
+        /**
+         * The dial happens after the reply (the live-call teardown), so this phone cannot see
+         * whether the dialer opened. Said as unknown, never as done.
+         */
+        const val DIALER_UNKNOWN = "unknown"
 
         /** A note's undo outlives the turn that made it, because the note itself does. */
         const val NOTE_UNDO_MS = 24 * 60 * 60_000L
