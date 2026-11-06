@@ -312,9 +312,10 @@ class AlphaGateTest {
         // The row, the search and the manage rows all ask the same question.
         assertTrue(commands.contains("gate = gate"))
         assertTrue(main.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
-        assertTrue(main.contains("CommandCatalog.Gate { c ->"))
-        assertTrue(main.contains("\"/profiles\" -> profiles"))
-        assertTrue(main.contains("diagnostics.on(c) && sessions.on(c)"))
+        // #501: the composition lives in CommandGate, which MainActivity hands the sheet.
+        assertTrue(main.contains("CommandGate.of(AlphaGate.reader(prefs), DiagnosticSummary.store(prefs))"))
+        val gate = File(src, "CommandGate.kt").readText()
+        assertTrue(gate.contains("\"/profiles\" -> AlphaGate.allows(reader, AlphaGate.FeatureSet.PROFILES)"))
         assertTrue(sheet.contains("if (!allowed())"))
         assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
         // The active profile is a connection fact, not a control: the header is not gated.

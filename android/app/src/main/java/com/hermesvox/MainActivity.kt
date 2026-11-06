@@ -2724,20 +2724,10 @@ open class MainActivity : AppCompatActivity() {
     private var callTurns = 0L
     /** Which optional commands exist right now: `/diagnostics` while its own switch is on
      *  (#418), `/profiles` only while the Alpha gate allows "Switching profiles" (#402), and
-     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, the search,
-     *  /help and the typed word — there is no second way a row is absent. */
-    private fun commandGate(): CommandCatalog.Gate {
-        val r = AlphaGate.reader(prefs)
-        val diagnostics = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
-        val sessions = Sessions.gate(r)
-        val profiles = AlphaGate.allows(r, AlphaGate.FeatureSet.PROFILES)
-        return CommandCatalog.Gate { c ->
-            when (c.name) {
-                "/profiles" -> profiles
-                else -> diagnostics.on(c) && sessions.on(c)
-            }
-        }
-    }
+     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, /help and
+     *  the typed word — there is no second way a row is absent (#501). */
+    private fun commandGate(): CommandCatalog.Gate =
+        CommandGate.of(AlphaGate.reader(prefs), DiagnosticSummary.store(prefs))
 
     protected fun showCommands() = commandsSheet.show()
 
