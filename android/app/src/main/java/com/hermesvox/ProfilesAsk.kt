@@ -248,12 +248,15 @@ object ProfilesAsk {
 
     /**
      * The probe for each served name. The default answers at the host itself; a named
-     * profile at `/p/<name>/…` — the addressing rule the registry already documents.
+     * profile at `/p/<name>/…` — the addressing rule the registry already documents — and
+     * each is asked at exactly one `/v1/models`. Built through [HostProfiles.modelsUrl], so
+     * the plan is idempotent: `probes(base, served)` and `probes(base + "/v1/models",
+     * served)` are the same URLs, in both directions.
      */
     fun probes(base: String, served: List<HostProfiles.Served>): List<Probe> = served.map {
         Probe(
             name = it.name,
-            url = HostProfiles.urlFor(base, it.name, it.isDefault).trimEnd('/') + "/v1/models",
+            url = HostProfiles.modelsUrl(HostProfiles.urlFor(base, it.name, it.isDefault)),
             isDefault = it.isDefault,
         )
     }
