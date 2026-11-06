@@ -25,6 +25,20 @@ class UiPassInvariantsTest {
     }
 
     /**
+     * #500: the commands sheet is the groups and nothing else. It had a search field above
+     * them that filtered the list as you typed; the owner does not want it. One row per
+     * command, no second "Fits now" section (#499), and no filter box that can raise the
+     * keyboard over the list.
+     */
+    @Test fun theCommandsSheetIsItsGroupsWithNoSearchField() {
+        val sheet = File("src/main/java/com/hermesvox/CommandsSheet.kt").readText()
+        assertTrue("the sheet grew a text field back", !sheet.contains("EditText"))
+        assertTrue("the sheet filters by a typed query again", !sheet.contains("CommandCatalog.search"))
+        assertTrue("a second section repeats the commands", !sheet.contains("header(\"Fits now\")"))
+        assertTrue("what fits the moment is marked on the row", sheet.contains("CommandCatalog.FITS_NOW"))
+    }
+
+    /**
      * Every AlertDialog stands on the app's ground: both themes name the one dialog theme, its
      * card is the row surface, and every colour it draws text in is a token
      * LightModeContrastTest already holds to 4.5:1 on that surface (its "row" ground).

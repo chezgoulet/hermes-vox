@@ -5,14 +5,9 @@ import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
-import android.view.inputmethod.EditorInfo
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -39,6 +34,10 @@ import androidx.core.content.ContextCompat
  * [CommandCatalog.FITS_NOW] in its own row's state slot, and its row is the only place it
  * appears.
  *
+ * The sheet lists the groups and nothing else (#500): there is no search field above them.
+ * A person who wants a command reads the group they would act on; the catalogue's keywords
+ * stay in [CommandCatalog] for whoever asks it, but the screen is not a filter box.
+ *
  * The state is words, never motion or a percentage — the same rule as the operations line
  * (#281), which owns what "still working" means. [CommandCatalog.stateText] is the grammar.
  *
@@ -48,8 +47,8 @@ class CommandsSheet(
     private val act: AppCompatActivity,
     /** #284: what the app knows about the moment — the row that fits it says so in place. */
     private val situation: () -> CommandCatalog.Situation,
-    /** #418: which optional commands exist right now (the sheet, its search and its states
-     *  ask the same gate, so a command with its switch off is simply not there). */
+    /** #418: which optional commands exist right now (the sheet and its states ask the same
+     *  gate, so a command with its switch off is simply not there). */
     private val gate: CommandCatalog.Gate,
     private val run: (CommandCatalog.Command, (Boolean) -> Unit) -> Unit,
 ) {
@@ -81,34 +80,17 @@ class CommandsSheet(
         // says what it is whatever the glyph is called.
         VoxSheet.header(root, "COMMANDS", "Close commands", { d.dismiss() },
             lead = CommandMark(act).apply { icon = CommandGlyph.current(act) })
-        // #284: a search that teaches — find a command by what you want to do.
-        val search = EditText(act).apply {
-            hint = "What do you want to do?"
-            setSingleLine()
-            background = drawable(R.drawable.bg_input)
-            setTextColor(color(R.color.hv_text)); setHintTextColor(color(R.color.hv_text_dim))
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            contentDescription = "Search commands by what you want to do"
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
-        }
-        root.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            .apply { topMargin = dp(12) })
+        // #500: no search field. The groups are the whole navigation, so the list starts
+        // where the header ends and nothing raises the keyboard over it.
         val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        render(list, d, "")
-        search.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: Editable?) { render(list, d, s?.toString().orEmpty()) }
-        })
+        render(list, d)
         val scroller = ScrollView(act).apply { addView(list); isFocusable = false }
         root.addView(scroller, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         d.setContentView(root)
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         // Keyboard: Escape and Back both close, and the sheet opens with focus on the sheet
-        // itself — not in the search box, which would raise the IME over the list.
+        // itself, so a keyboard user can tab straight into the rows.
         VoxSheet.keys(d)
-        search.setOnEditorActionListener { _, _, _ -> focusFirstRow(list); true }
         d.setOnDismissListener {
             handler.removeCallbacksAndMessages(null)
             // A queued command belongs to the visit that queued it: closing the sheet must not
@@ -125,41 +107,23 @@ class CommandsSheet(
         root.requestFocus()
     }
 
-    /** The first row, so a keyboard user lands on the list, not in the text field. */
-    private fun focusFirstRow(list: LinearLayout) {
-        for (i in 0 until list.childCount) {
-            val v = list.getChildAt(i)
-            if (v.isFocusable && v.isShown) { v.requestFocus(); return }
-            if (v is ViewGroup) for (j in 0 until v.childCount) {
-                val c = v.getChildAt(j)
-                if (c.isFocusable && c.isShown) { c.requestFocus(); return }
-            }
-        }
-    }
-
     // A screen reader can jump between groups instead of walking every row.
     private fun header(text: String) = VoxSheet.subhead(act, text)
 
-    /** The list: what fits now, then every group — or, while searching, the matches best first. */
-    private fun render(list: LinearLayout, d: Dialog, query: String) {
+    /** The list: the share row, then every group in screen order. */
+    private fun render(list: LinearLayout, d: Dialog) {
         list.removeAllViews(); chips.clear(); fits.clear()
-        if (query.isBlank()) {
-            // #370: the share row leads the screen. It is an artifact action, not a command,
-            // so it sits outside the catalogue's groups but uses the same row grammar.
-            list.addView(row(CommandCatalog.SHARE, d))
-            // #499: what fits the moment is a mark on the row it belongs to. The screen had
-            // a "Fits now" section above the groups, so `/reconnect` and `/health` appeared
-            // twice — once there and once under The agent. Two groups, one row per command.
-            fits += CommandCatalog.suggest(situation(), gate).map { it.name }
-            for ((group, cmds) in CommandCatalog.grouped(gate = gate)) {
-                list.addView(header(group.label))
-                for (c in cmds) list.addView(row(c, d))
-            }
-            return
+        // #370: the share row leads the screen. It is an artifact action, not a command,
+        // so it sits outside the catalogue's groups but uses the same row grammar.
+        list.addView(row(CommandCatalog.SHARE, d))
+        // #499: what fits the moment is a mark on the row it belongs to. The screen had
+        // a "Fits now" section above the groups, so `/reconnect` and `/health` appeared
+        // twice — once there and once under The agent. Two groups, one row per command.
+        fits += CommandCatalog.suggest(situation(), gate).map { it.name }
+        for ((group, cmds) in CommandCatalog.grouped(gate = gate)) {
+            list.addView(header(group.label))
+            for (c in cmds) list.addView(row(c, d))
         }
-        val hits = CommandCatalog.search(query, gate)
-        list.addView(header(if (hits.isEmpty()) "No command for that — try asking the agent" else "Matches"))
-        for (c in hits) list.addView(row(c, d))
     }
 
     private fun row(c: CommandCatalog.Command, d: Dialog): View {

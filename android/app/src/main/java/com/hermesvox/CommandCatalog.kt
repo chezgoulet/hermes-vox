@@ -57,18 +57,18 @@ object CommandCatalog {
         /** #284: the words a person uses for what they want, not for the command. */
         val keywords: List<String> = emptyList(),
         /** Whether the sheet lists it. `/help` answers a typed or spoken "/help", but on the
-         *  sheet it would be a row that opens a copy of the sheet. Search still finds it. */
+         *  sheet it would be a row that opens a copy of the sheet. */
         val listed: Boolean = true,
         /** #418: whether the command exists only while its own switch is on. A gated command
          *  with the switch off is not a hidden row — it is a name no build answers to, so the
-         *  sheet, the search, the /help card and a typed word all treat it as unknown. */
+         *  sheet, the /help card and a typed word all treat it as unknown. */
         val gated: Boolean = false,
     )
 
     /**
      * Which optional commands exist right now. There is one today (`/diagnostics`, behind the
      * switch in Settings › About › Diagnostic summary), and the answer is the same one every
-     * surface asks: the sheet, the search, /help, and the typed word's dispatch.
+     * surface asks: the sheet, /help, and the typed word's dispatch.
      */
     fun interface Gate {
         fun on(c: Command): Boolean
@@ -211,6 +211,10 @@ object CommandCatalog {
      * The commands that match [query], best first. Matched against what a person would say —
      * the effect line and each command's keywords — as well as its name, so "it's slow" finds
      * /compress and "can't reach it" finds /reconnect. A blank query is the whole catalogue.
+     *
+     * Nothing on a screen searches since #500: the sheet shows its groups. The vocabulary
+     * stays because it is the catalogue's own — what a person means, not what a command is
+     * called — and this is the single place that reads it.
      */
     fun search(query: String, gate: Gate = Gate.NOTHING): List<Command> {
         val q = query.trim().lowercase().removePrefix("/")
