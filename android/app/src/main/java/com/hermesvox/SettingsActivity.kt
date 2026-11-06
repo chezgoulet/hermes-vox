@@ -34,11 +34,13 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
-        // Back button is section-aware: inside a sub-view it returns to the group
-        // list; at the home list it finishes the Activity.
-        findViewById<android.view.View>(R.id.settings_back).setOnClickListener {
-            if (currentSection != null) { showGroupList() } else { finish(); overridePendingTransition(R.anim.fade_in, R.anim.fade_out) }
-        }
+        // Back is a stack, one level per press: a submenu returns to the group list, and the
+        // group list leaves Settings for the main screen. The toolbar arrow and the system
+        // gesture run the same rule, so they cannot disagree (#second phone pass).
+        findViewById<android.view.View>(R.id.settings_back).setOnClickListener { goBack() }
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { goBack() }
+        })
         bindEntity()
         bindFlows()
         bindAppearance()
@@ -141,6 +143,20 @@ class SettingsActivity : AppCompatActivity() {
         val row = SECTION_HOME_ROWS[section] ?: return "Settings"
         return findViewById<android.view.ViewGroup>(row)?.let { firstTitle(it) }
             ?.text?.toString()?.substringBefore('\n') ?: "Settings"
+    }
+
+    /**
+     * One press of Back, from either door (the toolbar arrow, the system gesture). The rule
+     * is [SettingsBack]'s, so both doors are the same stack: submenu → group list → main.
+     */
+    private fun goBack() {
+        when (SettingsBack.from(currentSection != null)) {
+            SettingsBack.To.GROUP_LIST -> showGroupList()
+            SettingsBack.To.LEAVE -> {
+                finish()
+                overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+            }
+        }
     }
 
     /** WS1: return to the Settings home (group list). */
