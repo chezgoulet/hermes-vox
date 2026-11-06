@@ -1,14 +1,16 @@
 package com.hermesvox.core
 
 /**
- * The gateway's model/health endpoints the on-device catalog CANNOT provide:
- * /api/model/options (the provider/model catalog the /models chooser reads) and
- * /v1/health (the status/version card). Same base URL + bearer as the responses
- * client; these are gateway reads, not entity turns, so they carry no session
- * scope and issue only GET.
+ * The gateway's model/health/job endpoints the on-device catalog CANNOT provide:
+ * /api/model/options (the provider/model catalog the /models chooser reads),
+ * /v1/health (the status/version card, and the probe after a restart), and
+ * POST /api/jobs/{id}/run (triggering the one restart job the agent created).
+ * Same base URL + bearer as the responses client; reads carry no session scope.
  *
  * There is deliberately no DELETE here (or anywhere else): the app reads the
- * host; it never mutates it. [NoDestructiveRequestsTest] makes that structural.
+ * host; it never mutates it. The one POST that changes host state is the job
+ * trigger, and the job itself is the agent's artefact. [NoDestructiveRequestsTest]
+ * makes the no-DELETE rule structural.
  */
 internal class GatewayClient(private val baseURL: String, private val apiKey: String) {
 
@@ -35,6 +37,52 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
         val (code, body) = get("/v1/health")
         if (code != 200) throw HermesException("hermes health $code")
         return body
+    }
+
+    /**
+     * True when `/v1/health` answered 2xx within [timeoutMs]. The bootstrap polls this while the
+     * gateway restarts, so a failed probe is data (the expected drop), not an exception the caller
+     * has to interpret.
+     */
+    fun answers(timeoutMs: Int = PROBE_TIMEOUT_MS): Boolean {
+        return try {
+            val c = Entity.open(
+                "GET", Entity.url(baseURL, "/v1/health"), Entity.headers(apiKey, ""),
+                timeoutMs, timeoutMs,
+            )
+            Entity.exchange(c, timeoutMs.toLong(), "hermes health probe") {
+                val ok = c.responseCode == 200
+                Entity.body(c)?.use { it.readBytes() }
+                ok
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Triggers one cron job: `POST /api/jobs/{id}/run`. The app has no restart route of its own and
+     * never edits the host; this asks the gateway to run the one job the agent created. A non-2xx is
+     * surfaced — a 404/400 means the id was not a job the gateway knows, and that is a refusal, not
+     * evidence of a restart.
+     */
+    fun runJob(jobId: String): String {
+        val body = "{}".toByteArray(Charsets.UTF_8)
+        val c = Entity.open(
+            "POST", Entity.url(baseURL, "/api/jobs/${segment(jobId)}/run"),
+            Entity.headers(apiKey, "") + ("Content-Type" to "application/json"),
+            TIMEOUT_MS, TIMEOUT_MS,
+        )
+        return Entity.exchange(c, TIMEOUT_MS.toLong(), "hermes job run") {
+            Entity.send(c, body)
+            val code = c.responseCode
+            if (code != 200) {
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes job run ${Entity.status(c)}: $err")
+            }
+            Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+        }
     }
 
     /**
@@ -131,6 +179,9 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
 
     companion object {
         const val TIMEOUT_MS = 20_000
+
+        /** A health probe while a gateway is restarting: short, because absence is the answer. */
+        const val PROBE_TIMEOUT_MS = 2_500
 
         /** A stop is a courtesy to the gateway, not a turn: never hold cleanup for long. */
         const val STOP_TIMEOUT_MS = 5_000

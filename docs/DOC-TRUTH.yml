@@ -109,7 +109,7 @@
   says: "The setup path is a turn, not a block to paste."
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
-  match: 'fun prompt\(host: String'
+  match: 'fun prompt\('
 
 - id: phone-setup-idempotent
   says: "It is idempotent by content."
@@ -128,6 +128,30 @@
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
   match: 'method == "initialize"'
+
+- id: phone-bootstrap-one-button
+  says: "Set this up with my agent"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val BUTTON = "SET THIS UP WITH MY AGENT"'
+
+- id: phone-bootstrap-job-id
+  says: "JOB_ID: <12 lowercase hex characters>"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val JOB_ID_PREFIX = "JOB_ID:"'
+
+- id: phone-bootstrap-handshake-window
+  says: "the handshake gets **three minutes**"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'HANDSHAKE_WINDOW_MS = PhoneSetup.TIMEOUT_MS'
+
+- id: phone-bootstrap-expects-the-drop
+  says: "A failed `/v1/health` probe is the expected restart, not an error."
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'if \(!up\) \{'
 
 - id: phone-dnd-is-special-access
   says: "This is a *special* access"

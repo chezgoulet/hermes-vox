@@ -45,10 +45,12 @@ object PhoneToolsView {
     /**
      * The sentence after the prompt: who writes the entry, and when it starts working. The restart
      * is part of the sequence, not a footnote — Hermes reads MCP configuration at startup, so the
-     * entry exists for the agent only after the gateway comes back up.
+     * entry exists for the agent only after the gateway comes back up. The one button starts the
+     * restart job the agent created; the owner does not run a second command.
      */
     const val SETUP_RESTART =
-        "Your agent writes the entry itself; it takes effect when your gateway restarts."
+        "Your agent writes the entry itself and creates a one-shot restart job; it takes effect " +
+            "when your gateway restarts, and the button starts that job for you."
 
     fun reachability(tailnet: String?, allowed: Boolean = true): String = when {
         !allowed -> ALPHA_OFF

@@ -26,10 +26,9 @@ import android.content.Context
  *
  * **It is not the only credential** (#452). The agent this phone already talks to presents the API
  * key of the active connection — the one the phone sends on every turn — and the server accepts it
- * too ([connectionKey]). So the normal setup needs no pairing step and no secret in the setup turn:
- * the agent writes the entry with a reference to the key it already holds. The phone's own token
- * stays for a host that is *not* the one this phone talks to, which is what the manual block and
- * ROTATE TOKEN are for.
+ * too ([connectionKey]). The one-button setup uses the phone's own token with `hermes mcp add`,
+ * because that is what an MCP client writes into its server entry; the API key remains a second way
+ * in for a client that already holds it. The manual block and ROTATE TOKEN manage the token.
  *
  * **Rotation.** [rotate] replaces the token and the live server reads the new one on the next
  * request, so the old credential stops working immediately. It also clears the recorded handshake:

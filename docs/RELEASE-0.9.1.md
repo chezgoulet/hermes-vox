@@ -123,8 +123,10 @@ Each set is selected on its own; with the master off, everything below is dimmed
   thing for every group: Off refuses, Ask raises the phone's card for **every** action, Allow runs
   without one; there is no per-tier restriction. `uninstall` and `file_offer` are built and run at
   Allow or after their card; `install` is not on the surface at all (a direct call is
-  `unknown-action`). The app sets the server up by asking the agent to edit its own configuration,
-  and says **Connected** only after its own server has seen an authenticated MCP handshake.
+  `unknown-action`). The app sets the server up with **one button**: it asks the agent to add the
+  phone with `hermes mcp add` and create a one-shot restart job, triggers that job through the API,
+  treats the gateway's restart as expected, and says **Connected** only after its own server has seen
+  an authenticated MCP handshake.
 - The surface this release adds: `file_list` / `file_read` (with a 65 536-byte cap per answer and a
   windowed read above it), `file_offer`, `apps` (the installed list, plus what usage access can
   honestly say is running), and `notification_dismiss`. `notification_dismiss` is Tier 1 and not
