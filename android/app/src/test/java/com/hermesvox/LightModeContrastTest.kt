@@ -133,7 +133,7 @@ class LightModeContrastTest {
 
     @Test fun every_text_token_clears_4_5_on_its_real_background() {
         val both = listOf("hv_text", "hv_text_dim", "hv_cyan", "hv_status", "hv_status_live",
-            "hv_ok", "hv_warn", "hv_danger", "hv_call_idle", "hv_call_live",
+            "hv_notice", "hv_ok", "hv_warn", "hv_danger", "hv_call_idle", "hv_call_live",
             "hv_cmd_done", "hv_cmd_failed", "hv_crawl_reply", "hv_overlay_text",
             "hv_overlay_dim", "hv_verdict_ok", "hv_verdict_cold", "hv_verdict_fail")
         // The dev SSE console keeps its 0.9.0.3 dark colour (#5C6B7D, 3.85:1 on black):

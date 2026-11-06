@@ -15,6 +15,9 @@
          old cyan was 3.18:1 and the dark theme's near-white after a call was 1.0:1. -->
     <color name="hv_status">#0F5F73</color>
     <color name="hv_status_live">#0B6B4F</color>
+    <!-- The blue notice: a change the person caused (a model or session switch). A deeper
+         blue than hv_status so "you did this" is not read as "the entity is doing this". -->
+    <color name="hv_notice">#1D4ED8</color>
     <!-- #275: the being is no longer a black box, so the words and controls that
          were painted for that box follow the page. Every value here is >= 4.5:1 on
          both hv_bg and the hv_surface_high chip; LightModeContrastTest proves it. -->
