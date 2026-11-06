@@ -279,7 +279,10 @@ class ModelChoicesTest {
 
     @Test fun theOutcomeIsSaidInWords() {
         val p = all.first()
-        assertEquals("Thinking with DeepSeek V4 Flash · fresh thread", ModelChoices.switchedLine(p, p.models.first()))
+        // The model's own name, plainly: no verb and no "fresh thread" filler. The sub-pill
+        // is the model; the header's big title is the agent (HeaderTest).
+        assertEquals("DeepSeek V4 Flash", ModelChoices.switchedLine(p, p.models.first()))
         assertFalse(ModelChoices.switchedLine(p, p.models.first()).contains("->"))
+        assertFalse(ModelChoices.switchedLine(p, p.models.first()).contains("Thinking"))
     }
 }

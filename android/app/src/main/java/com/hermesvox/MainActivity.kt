@@ -109,6 +109,10 @@ open class MainActivity : AppCompatActivity() {
     private var coachStatusWasVisible = false
     protected val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
+
+    /** The model's own name for the resting sub-pill (the catalogue's name after a switch). */
+    private var modelLabel = ""
+
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
     protected lateinit var avatar: AvatarView
@@ -1191,8 +1195,10 @@ open class MainActivity : AppCompatActivity() {
     private var statusOfferShown = false
     protected fun setStatus(text: String, show: Boolean) {
         if (statusOfferShown) { statusOfferShown = false; status.setOnClickListener(null) }   // #284: the offer goes with its line
-        status.text = text
-        status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        // With nothing to act on, the pill rests on the model's name: the header says who
+        // you are talking to, the pill says what answers. It is no longer a blank line.
+        status.text = if (show) text else idleStatus()
+        status.visibility = android.view.View.VISIBLE
         // A real phase/status replaces the models-warning pill: drop its tap
         // handler so phase pills never read as warnings or navigate to the model
         // store by accident (#12/#6).
@@ -1526,8 +1532,14 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
-    private fun idleStatus(): String =
-        if (ProfileReach.isMissing()) ProfileReach.line() else getString(R.string.hv_connected)
+    private fun idleStatus(): String = when {
+        ProfileReach.isMissing() -> ProfileReach.line()
+        // With nothing to act on, the sub-pill names the model that answers — plainly, the
+        // way the catalogue names it. It is not the header's job: that is the agent's name.
+        else -> Header.modelLine(modelLabel.ifBlank {
+            ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
+        })
+    }
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
      *  Ping-only by default — opening the app should not fire a real model turn just
@@ -2098,14 +2110,18 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** The header: the agent's name, and the active profile's once there is a choice. */
+    /** The header: the agent's name, and the active profile's once there is a choice.
+     *
+     *  The title never names the model — that is what the sub-pill is for. A host that has
+     *  named the entity (`agent_name`) wins, and the Hermes agent's own name is the floor,
+     *  so a fresh install shows an entity rather than a route id. The call notification is
+     *  given the same words: one entity, one name. */
     private fun headerLabel(model: String): String {
-        // With no entity name yet, the model names the header — as words, not its route id
-        // (`deepseek-v4-flash` reads "DeepSeek V4 Flash", the same name the switcher shows).
-        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { ModelChoices.displayName(model) }
+        val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())
         val list = profiles.list()
         val active = profiles.activeName()
-        VoiceService.title = if (list.size < 2 || active.isBlank()) "Hermes Vox" else "Hermes Vox · $active"
+        VoiceService.title = Header.callTitle(agent, active, list.size)
+        modelLabel = ModelChoices.displayName(model)
         return Profiles.headerLabel(agent, active, list.size)
     }
 
@@ -2214,6 +2230,9 @@ open class MainActivity : AppCompatActivity() {
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = headerLabel(m)
+        // The pill rests on the model's name from the first connect: the header says who,
+        // the pill says what answers.
+        setStatus(idleStatus(), false)
         appendStream("// connected → $u")
         // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
         // (surviving an app-close) is detected on create and resumed below.
@@ -3266,8 +3285,9 @@ open class MainActivity : AppCompatActivity() {
         LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
         sesModel = modelId; sesProvider = prov
         agentName.text = headerLabel(modelId)
-        // The outcome on the status line, in words: the model's name, not "prov/id".
-        setStatus(ModelChoices.switchedLine(p, m), true)
+        // The outcome: the catalogue's own name for the model, plainly, on the sub-pill.
+        modelLabel = ModelChoices.switchedLine(p, m)
+        setStatus(idleStatus(), false)
         VoxLog.d("event=model-switch provider=$prov model=$modelId")
     }
 
