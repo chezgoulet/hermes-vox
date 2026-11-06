@@ -664,6 +664,11 @@ open class MainActivity : AppCompatActivity() {
     /** #373: the last state line the screen showed, so a recovered voice leg can put it
      *  back instead of inventing one. */
     private var lastStateLine = ""
+    /** The spoken-replies line that must survive ordinary state changes: a stand-in voice
+     *  ("Piper model not installed — using the system voice") or a stopped leg. It used to
+     *  be written once and immediately overwritten by "On call", which is why the owner
+     *  never saw it. Empty = the leg is clean and the state line owns the pill. */
+    private var voiceLegLine = ""
     private var callSeconds = 0
     private val callHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val callTicker = object : Runnable {
@@ -812,18 +817,28 @@ open class MainActivity : AppCompatActivity() {
             }
         }
         // #330: warmth no longer includes TTS, so a broken engine reaches this point.
-        // Say so once, non-blocking, and name the real cause instead of blaming the models.
-        val ttsIssueNow = c.ttsStatus()
-        if (ttsIssueNow.isNotBlank()) {
-            VoxLog.w("event=tts-degraded reason=$ttsIssueNow")
-            setStatus("Spoken replies off — $ttsIssueNow", true)
-        } else {
-            // #373: the requested voice is not the one that will speak (a model that is not
-            // installed, or an engine that would not load). The call is fine; saying which
-            // voice actually speaks is the difference between a bug report and a setting.
-            val fallbackNow = c.ttsFallbackNote()
-            if (fallbackNow.isNotBlank()) setStatus(fallbackNow, true)
+        // The voice leg has now DECIDED. Two honest outcomes:
+        //  - a stand-in voice speaks (missing model / refused engine): the call opens and
+        //    the line names the voice that is actually speaking;
+        //  - no engine can speak at all: REFUSE the call here, before it starts, naming
+        //    what is missing and where to get it. Proceeding into silence is forbidden.
+        val gate = c.callGate()
+        if (!gate.starts) {
+            VoxLog.w("event=call-refused reason=${gate.line}")
+            warmingNow = false
+            warmRetries = 0
+            if (::warming.isInitialized) warming.visibility = android.view.View.GONE
+            setStatus(gate.line, true)
+            // No call started, so the controller's pipeline is not needed. Drop it so a
+            // later attempt after the user installs/enables a voice builds a fresh leg
+            // instead of reusing this terminal refusal.
+            liveController?.stop()
+            liveController = null
+            return
         }
+        // The line is sticky: it must still be there after "On call" and after every
+        // Listening…/Speaking… state update (see onState + onSpokenReplies).
+        voiceLegLine = gate.line
         // Warmth just completed. THIS is the moment the gateway may honestly be
         // tested (B2c): re-dial now, so the pill moves Initializing -> Dialing ->
         // Connected instead of sitting on a single sticky word. The line opens
@@ -858,7 +873,7 @@ open class MainActivity : AppCompatActivity() {
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
-        setStatus("On call", false)
+        setStatus(if (voiceLegLine.isBlank()) "On call" else voiceLegLine, voiceLegLine.isNotBlank())
         // 0.8/M3c: THE SOUL OPENS THE CALL. With Presence on the entity greets you first,
         // in its own voice, before the mind has anything to answer — so there is no race
         // to lose and the layer is perceptible from the first second rather than only on
@@ -883,6 +898,7 @@ open class MainActivity : AppCompatActivity() {
         unregisterRouteCallback()  // C3: route callback lives exactly as long as the call
         VoiceService.stop(this)
         exitCallUi()
+        voiceLegLine = ""   // a new call re-decides the voice; never carry a stale line over
         setStatus(idleStatus(), false)
         feed(MotionState.Signal.REST)
         // Phase 4: the call is over; the presence engine's ~2.2 GB has nothing left to
@@ -2462,10 +2478,21 @@ open class MainActivity : AppCompatActivity() {
                 }
                 // #282: while a request waits, the line says so — a late state callback
                 // must not put the waiting phase back into "working".
-                val line = if (approvalWaiting) "Waiting for your approval"
+                val base = if (approvalWaiting) "Waiting for your approval"
                     else StateLine.words(running, opHeld, words)
-                lastStateLine = line   // #373: what to put back when a voice leg recovers
-                setStatus(line, approvalWaiting || StateLine.visible(running != null, opHeld != null, state, callLive))
+                // #373 follow-up: the spoken-replies line outranks the ambient words but
+                // never a running step or a held failure. Without this it was overwritten
+                // by the very next Listening…/Speaking… state — present for a frame, then
+                // gone, which is indistinguishable from never raised.
+                val voiceOwnsLine = voiceLegLine.isNotBlank() && !approvalWaiting &&
+                    running == null && opHeld == null
+                val line = if (voiceOwnsLine) voiceLegLine else base
+                lastStateLine = base   // #373: what to put back when a voice leg recovers
+                setStatus(
+                    line,
+                    approvalWaiting || voiceOwnsLine ||
+                        StateLine.visible(running != null, opHeld != null, state, callLive),
+                )
                 if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
@@ -2751,7 +2778,9 @@ open class MainActivity : AppCompatActivity() {
          */
         override fun onSpokenReplies(line: String, degraded: Boolean) { runOnUiThread {
             if (line.isBlank()) {
-                // Recovered: put back the state this screen was already showing.
+                // Recovered: clear the sticky line and put back the state this screen was
+                // already showing.
+                voiceLegLine = ""
                 if (callLive) {
                     val back = lastStateLine.ifBlank { "Listening…" }
                     setStatus(back, false)
@@ -2760,6 +2789,7 @@ open class MainActivity : AppCompatActivity() {
                 return@runOnUiThread
             }
             val shown = if (degraded) "Spoken replies off — $line" else line
+            voiceLegLine = shown
             setStatus(shown, true)
             if (callLive) VoiceService.update(this@MainActivity, shown)
         } }

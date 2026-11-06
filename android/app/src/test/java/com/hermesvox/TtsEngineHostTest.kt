@@ -168,6 +168,26 @@ class TtsEngineHostTest {
         assertEquals("", h.state.issue)
     }
 
+    @Test fun a_missing_model_with_a_working_system_voice_starts_the_call_and_names_the_fallback() {
+        val h = host(requested = "piper", installed = emptySet())
+        h.ensure()
+        val gate = TtsPolicy.callGate(h.state.settled, h.state.speaking, h.state.issue, h.state.note)
+        assertTrue("the call starts on the guaranteed voice", gate.starts)
+        assertTrue("the line names what is missing: ${gate.line}", gate.line.contains("Piper model not installed"))
+        assertTrue("the line names the voice speaking: ${gate.line}", gate.line.contains("using the system voice"))
+    }
+
+    @Test fun a_missing_model_with_no_engine_at_all_refuses_the_call_and_says_where_to_get_it() {
+        // No Piper model AND the system engine will not start: nothing can speak.
+        val h = host(requested = "piper", installed = emptySet()) { token -> Fake(token, warm = false) }
+        h.ensure()
+        val gate = TtsPolicy.callGate(h.state.settled, h.state.speaking, h.state.issue, h.state.note)
+        assertFalse("the call does not start", gate.starts)
+        assertTrue("the refusal names the missing model: ${gate.line}", gate.line.contains("Piper model not installed"))
+        assertTrue("the refusal names the way out: ${gate.line}", gate.line.contains("Settings → Models"))
+        assertTrue("the refusal says no voice can speak: ${gate.line}", gate.line.contains("Can't start the call"))
+    }
+
     @Test fun a_local_engine_that_will_not_load_falls_back_to_the_system_voice() {
         val built = ArrayList<Fake>()
         val h = host(requested = "piper", installed = setOf("piper-lessac")) { token ->
