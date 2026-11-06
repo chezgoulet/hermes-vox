@@ -170,6 +170,13 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** One cold-start retry per listen session: the audio route can come up a beat after the
      *  call starts, and the platform recogniser reports ERROR_CLIENT/ERROR_AUDIO for that. */
     private var listenRetry = 0
+    /** The cold-start timestamps the bench (`scripts/cold-start-stt.sh`) reads from logcat:
+     *  recogniser ready, eye shown, mic recording, first audio, first partial, first speech. */
+    private val coldMarks = ColdStartMarks()
+    /** When the eye may say listening: warm recogniser + recording + samples delivered. The
+     *  bench measured the eye arriving ~0.2 s before the microphone did, so the state is held
+     *  until the leg can actually hear (see ListenReadiness). */
+    private val readiness = ListenReadiness()
     private var listener: Listener? = null
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
@@ -632,6 +639,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** The speech pipeline: TTS + STT + VAD, each loading its own on-device model.
      *  Built by [init] unless this controller exists only to probe the gateway. */
     private fun initPipeline() {
+        // A fresh pipeline load is the cold-start boundary the bench measures: every marker
+        // may fire again from here, and nowhere else (a second call on a warm pipeline is
+        // not a cold start, so it does not re-stamp ready/eye/first-audio).
+        coldMarks.reset()
         // #373: the voice-output leg is owned by TtsEngineHost from here on. It applies
         // TtsPolicy (requested engine when its model is installed, else the system voice
         // WITH the reason kept), replaces an engine that dies, and is the only thing that
@@ -738,6 +749,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  leg so the loop keeps hearing the user instead of a dead RemoteStt. */
     private fun onSttReady(ok: Boolean) {
         sttReady = ok
+        readiness.recognizer(ok)
+        // The moment the recogniser answers — the other side of the bench's eye-vs-ready gap.
+        coldMarks.first("ready", "stage=ready ok=$ok name=${stt?.name}")
         if (ok) return
         // The streaming arm would not load (memory, a damaged file): swap in the selected
         // shipped model — the existing path — and say so (event=stt-fallback reason=init-failed).
@@ -832,9 +846,34 @@ class VoiceController(private val context: Context, private val session: HermesS
         return true
     }
 
+    /** The loudest sample in a raw read, in PCM units — the bench's proof that the recorder is
+     *  delivering signal (an all-zero peak is a digitally silent, i.e. deaf, microphone). */
+    private fun micPeak(buf: ShortArray, n: Int): Int {
+        var peak = 0
+        for (i in 0 until n) {
+            val a = kotlin.math.abs(buf[i].toInt())
+            if (a > peak) peak = a
+        }
+        return peak
+    }
+
     private fun listenOffline(): Boolean {
         if (loopActive) return false
-        listener?.onState("listening"); listening = true
+        // The eye is NOT claimed here. It means "the leg is hearing", and at this point
+        // neither the recorder nor the recogniser has said anything: the bench measured this
+        // line landing ~30–90 ms before the recorder was recording and ~170–220 ms before the
+        // first samples existed, so an utterance begun on it lost its opening. It is announced
+        // from the loop, on the first read that returns samples.
+        listening = true
+        // A cold recogniser cannot hear either. start()'s warm gate normally prevents this;
+        // this is the last line of defence for its forced path (warm retry cap reached), which
+        // used to open a mic against a leg whose every decode returns null — silently.
+        if (stt != null && !sttReady) {
+            VoxLog.w("event=listen-hold reason=stt-not-ready")
+            listening = false
+            listener?.onState("warming")
+            return false
+        }
         val sr = 16000
         val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return listen()
@@ -873,6 +912,10 @@ class VoiceController(private val context: Context, private val session: HermesS
             // mic) instead of throwing into the platform-STT fallback below.
             if (!execSubmit {
                 val seg = ArrayList<Float>(sr)
+                // Cold-start mic level (the bench's evidence about a capture window that is
+                // open but near-silent): one line per 500 ms for the first 4 s of the call.
+                var loopStartedAt = 0L
+                var lastLevelAt = 0L
                 // #12: the interrupting utterance carried out of the last barge drain;
                 // non-null means the next segment STARTS with it (already in speech).
                 var seed: FloatArray? = null
@@ -933,11 +976,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // AEC/NS session between turns. Without it, unchanged: start per turn.
                     if (!continuous || r.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
                         try { r.startRecording() } catch (_: Throwable) { break }
+                        coldMarks.first("mic", "stage=mic-recording state=${r.recordingState}")
                     }
-                    // #28: listener callbacks must land on the main thread (the
-                    // documented contract) — the capture loop runs on the executor.
-                    main.post { listener?.onState("listening") }
-                    main.post { listener?.onLog("// hear → listening") }
+                    // The eye goes up on this segment's FIRST SAMPLES, not here: a freshly
+                    // started recorder is not audible yet, and the caller speaks on the eye.
+                    // Every frame read before the announce is fed below like any other, so the
+                    // utterance's opening is decoded and queued into the segment — never dropped.
+                    readiness.rearm()
+                    var eyeShown = false
                     var inSpeech = false; var silentMs = 0
                     var extendedLogged = false   // B2: one endpoint-extended log per utterance
                     // #18: ~250ms pre-roll ring (sr/4 samples @16kHz) so the VAD's
@@ -984,7 +1030,31 @@ class VoiceController(private val context: Context, private val session: HermesS
                     semantic?.reset()
                     while (listening && !commitRequested && !focusPause) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
-                        if (n <= 0) continue
+                        if (n <= 0) {
+                            // Nothing came back: the recorder is open but deaf. This is the
+                            // bench's witness for "the eye is up and the mic is not".
+                            coldMarks.first("read-fail", "stage=read-fail n=$n")
+                            continue
+                        }
+                        // The first samples the microphone actually hands over — the moment the
+                        // capture leg can hear, whatever the recogniser is doing.
+                        coldMarks.first("audio", "stage=first-audio n=$n peak=${micPeak(shortBuf, n)}")
+                        // The eye is earned here: warm recogniser + recording + real samples.
+                        if (!eyeShown && readiness.capture(r.recordingState == AudioRecord.RECORDSTATE_RECORDING, n)) {
+                            eyeShown = true
+                            coldMarks.first("eye", "stage=eye path=on-device")
+                            // #28: listener callbacks must land on the main thread (the
+                            // documented contract) — the capture loop runs on the executor.
+                            main.post { listener?.onState("listening") }
+                            main.post { listener?.onLog("// hear → listening") }
+                        }
+                        if (loopStartedAt == 0L) loopStartedAt = android.os.SystemClock.uptimeMillis()
+                        val levelAt = android.os.SystemClock.uptimeMillis()
+                        if (levelAt - loopStartedAt <= 4_000L && levelAt - lastLevelAt >= 500L) {
+                            lastLevelAt = levelAt
+                            coldMarks.first("level${levelAt - loopStartedAt}",
+                                "stage=level t=${levelAt - loopStartedAt} peak=${micPeak(shortBuf, n)}")
+                        }
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
                         // 0.9.1 FIELD (Pixel 9, speaker at 22/25): the ER soul opens the call
@@ -1004,6 +1074,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             continue
                         }
                         val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
+                        if (spoke) coldMarks.first("speech", "stage=first-speech")
                         // Pre-roll ONLY the frames BEFORE the VAD fires. If we add the
                         // speech-detected batch here AND again in the seg-accumulator below,
                         // the utterance START is double-counted -> a short word like "Hello"
@@ -1101,6 +1172,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                                             liveFeeds.incrementAndGet()
                                         }
                                         if (t.isNullOrBlank()) return@partial
+                                        // The first hypothesis the recogniser produced for this
+                                        // call: the bench's proof that audio was heard end to end.
+                                        coldMarks.first("partial", "stage=first-partial text=${if (logTranscripts()) t.take(120) else "<hidden>"}")
                                         // A live partial covers the utterance from its first sample.
                                         val hypStart = if (live != null) 0 else snapStart
                                         if (segCounter == segId) latestPartial.set(PartialHyp(segId, t, hypStart, snapEnd))
@@ -1590,6 +1664,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // flags so isWarm() reflects reality (a stale true left transcribe returning null).
         ttsReady = false
         sttReady = false
+        readiness.stop()
         voiceState.reset()
         stopped = true   // 0.5.0.1: terminal — fence every submit BEFORE shutdown
         // #19: a stopped controller is terminal — shut the executor down
@@ -2197,6 +2272,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 readyAnnounced = true
                 // #328: the eye means "the mic is capturing", not "the controller intends to".
                 listener?.onState("listening")
+                coldMarks.first("eye", "stage=eye path=platform")
             }
         }
         return try {
