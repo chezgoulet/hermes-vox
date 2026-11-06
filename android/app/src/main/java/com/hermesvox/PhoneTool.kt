@@ -1224,6 +1224,13 @@ object PhoneTiers {
 
 /** The machine-readable reasons a result can carry. Stable strings; the model reads them. */
 object PhoneReason {
+    /**
+     * The phone is not in the foreground, so the activity start a handoff needs would be refused
+     * by Android. The action was not attempted — nothing was resolved, opened, ended or sent — and
+     * it can be asked for again once the owner is looking at Vox.
+     */
+    const val BACKGROUND = "background"
+
     /** The args name a path, a URI or a name that resolves outside the folder the owner granted. */
     const val BAD_PATH = "bad_path"
 

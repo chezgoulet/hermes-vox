@@ -1816,11 +1816,15 @@ class PhoneEngine(
      * resolves a target, ends a call or announces anything, and a "no" is a refusal — never a
      * silent success. On device the answer is "an activity of ours is resumed, or in
      * picture-in-picture and visible"; the microphone service does not exempt us.
+     *
+     * The refusal carries [PhoneReason.BACKGROUND], not the generic `unavailable`: the mind can
+     * act on this one (ask again once the owner is looking at Vox) and cannot act on "the platform
+     * would not say". Nothing is performed on the way to it.
      */
     private fun backgroundRefusal(action: String): PhoneResult? {
         if (platform.canStartActivity()) return null
-        log("event=phone-mcp action=$action ok=false reason=unavailable background=true")
-        return PhoneResult.refused(action, PhoneReason.UNAVAILABLE, BACKGROUND_DETAIL)
+        log("event=phone-mcp action=$action ok=false reason=background")
+        return PhoneResult.refused(action, PhoneReason.BACKGROUND, backgroundDetail(action))
     }
 
     /**
@@ -2361,11 +2365,13 @@ class PhoneEngine(
         /**
          * The one background-launch refusal. Android blocks an activity start from an app that
          * is not visible without throwing, so the handoffs say this rather than claiming a
-         * launch that never happened (B2).
+         * launch that never happened (B2). It names the action so the mind can report which
+         * request was declined, and says plainly that nothing was attempted.
          */
-        const val BACKGROUND_DETAIL =
-            "Vox has to be on screen to open another app; Android blocks it from the background. " +
-                "Nothing was opened."
+        fun backgroundDetail(action: String): String =
+            "the phone is not in the foreground, so $action was not attempted: Vox has to be " +
+                "on screen to hand off to another app, and Android blocks the start from the " +
+                "background. Nothing was opened, sent or ended."
 
         /** A note's undo outlives the turn that made it, because the note itself does. */
         const val NOTE_UNDO_MS = 24 * 60 * 60_000L

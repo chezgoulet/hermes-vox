@@ -362,6 +362,7 @@ The reason vocabulary is stable and small:
 |---|---|
 | `not_granted` | the capability group is Off; the action is not offered and was not performed |
 | `permission` | the phone does not hold a runtime permission or special access the action needs (Do Not Disturb, notification access, calendar or contacts), named in `detail` |
+| `background` | the phone is not in the foreground, so the activity start a handoff needs would be blocked; nothing was resolved, opened, sent or ended — the action was not attempted |
 | `unavailable` | the action was recognised and the platform refused or failed |
 | `expired` | no undo is registered for that id any more (it fired, was superseded, or was never this phone's) |
 | `invalid-arguments` | the arguments do not describe a runnable action |
@@ -640,8 +641,9 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
     Allow the owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted`
     while Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after
     the being says *dialling — ending our call*. **Open edge:** ending the call also closes the MCP
-    listener, so the `dial` result may not reach the mind; and with Vox backgrounded Android may
-    refuse the activity start silently — `ok:true` is the handover, not proof an app came forward.
+    listener, so the dial's late result is still open work. With Vox backgrounded every handoff is
+    refused `background` before a target is resolved, a call is ended or a line is announced; the
+    detail says the phone is not in the foreground and nothing was attempted.
 12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
     summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
     undoable row: the action is reversed, or the toast says the undo expired.

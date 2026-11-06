@@ -557,10 +557,11 @@ class PhoneHandoffTest {
             fake.events.clear()
             val r = run(call)
             assertFalse("${call["action"]} must be refused: ${r.json()}", r.ok)
-            assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+            assertEquals(PhoneReason.BACKGROUND, r.reason)
             assertTrue(
                 "${call["action"]} must say why: ${r.detail}",
-                r.detail!!.contains("on screen") && r.detail.contains("background"),
+                r.detail!!.contains("not in the foreground") &&
+                    r.detail.contains("${call["action"]} was not attempted"),
             )
             assertEquals(
                 "${call["action"]} must resolve, end and start nothing",
@@ -568,6 +569,34 @@ class PhoneHandoffTest {
                 fake.events,
             )
         }
+    }
+
+    /**
+     * The reason is its own word on the wire, not the generic `unavailable`. A mind told only
+     * "unavailable" cannot tell "the owner is not looking at Vox, ask again in a moment" from a
+     * platform failure, so it cannot adjust — which is the whole point of a stated reason.
+     */
+    @Test
+    fun the_background_refusal_is_a_named_reason_on_the_wire() {
+        fake.canStart = false
+        val r = run(mapOf("action" to "launch", "app" to "com.example.app"))
+        assertEquals("background", r.reason)
+        assertFalse("a refusal is not a success fact", r.ok)
+        assertTrue("the wire carries the reason", r.json().contains("\"reason\":\"background\""))
+        assertTrue(
+            "and the detail says nothing ran: ${r.detail}",
+            r.detail!!.contains("Nothing was opened, sent or ended"),
+        )
+        assertTrue("nothing was resolved", fake.events.isEmpty())
+    }
+
+    /** A phone that is on screen takes the same call: the gate only refuses, it never blocks. */
+    @Test
+    fun the_same_launch_runs_when_vox_is_on_screen() {
+        fake.canStart = true
+        val r = run(mapOf("action" to "launch", "app" to "com.example.app"))
+        assertTrue(r.json(), r.ok)
+        assertEquals(listOf("launch:com.example.app"), fake.events)
     }
 
     @Test
