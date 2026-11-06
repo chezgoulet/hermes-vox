@@ -592,8 +592,8 @@ Do not send a user hunting for these.
   This tree never writes it either, so multilingual models always auto-detect.
 - `provider` — the per-request provider override, written when a model is picked from the
   gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt `putString("provider"`).
-- `agent_name` — the label above the being; read with the model id as its fallback
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt `val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { ModelChoices.displayName(model) }`). It is written only
+- `agent_name` — the big title above the being; read with the Hermes agent's own name as
+  its floor, never the model (android/app/src/main/java/com/hermesvox/MainActivity.kt `val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())`). It is written only
   from a verified host answer (`data[0].id`), by onboarding's connect and Settings → Entity's
   on-open refresh (android/app/src/main/java/com/hermesvox/HostEntity.kt `fun parse`), never
   by free text.

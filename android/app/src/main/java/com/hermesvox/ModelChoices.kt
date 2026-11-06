@@ -365,9 +365,9 @@ object ModelChoices {
         }
     }
 
-    /** What the status line says after a switch — the model's name, not two identifiers. */
-    fun switchedLine(p: Provider, m: Model?): String =
-        if (m == null) "Thinking with ${p.name} · fresh thread" else "Thinking with ${m.name} · fresh thread"
+    /** The name a switch puts on the sub-pill: the model's own name, plainly — no verb and
+     *  no "fresh thread" filler. A provider chosen without a model is named as itself. */
+    fun switchedLine(p: Provider, m: Model?): String = Header.switchNotice(m?.name ?: p.name)
 
     // ---- tolerant field reads (a field of the wrong shape is "not stated") ------------------
 

@@ -109,6 +109,17 @@ open class MainActivity : AppCompatActivity() {
     private var coachStatusWasVisible = false
     protected val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
+
+    // The resting sub-pill says which model answers; a change the person caused says so in
+    // blue for a few seconds ([HeaderNotice]) and then settles back to the model.
+    private val headerNotice = HeaderNotice()
+    private var noticeRunnable: Runnable? = null
+    private var noticeToken = 0
+    /** True while the pill carries an action/phase (the green line): that line always wins. */
+    private var actionLine = false
+    /** The model's own name for the resting pill (catalogue name after a switch). */
+    private var modelLabel = ""
+
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
     protected lateinit var avatar: AvatarView
@@ -1190,9 +1201,14 @@ open class MainActivity : AppCompatActivity() {
 
     private var statusOfferShown = false
     protected fun setStatus(text: String, show: Boolean) {
+        // An action or a phase taking the pill retires a blue notice: the green line wins.
+        if (show) retireHeaderNotice()
         if (statusOfferShown) { statusOfferShown = false; status.setOnClickListener(null) }   // #284: the offer goes with its line
-        status.text = text
-        status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        actionLine = show
+        // With nothing to act on, the pill rests on the model's name: the header says who
+        // you are talking to, the pill says what answers. It is no longer a blank line.
+        status.text = if (show) text else idleStatus()
+        status.visibility = android.view.View.VISIBLE
         // A real phase/status replaces the models-warning pill: drop its tap
         // handler so phase pills never read as warnings or navigate to the model
         // store by accident (#12/#6).
@@ -1205,6 +1221,67 @@ open class MainActivity : AppCompatActivity() {
         // chip and follow the call tone without a call-only colour surviving the call.
         status.setTextColor(ContextCompat.getColor(this,
             if (callLive) R.color.hv_status_live else R.color.hv_status))
+    }
+
+    // ---- the blue notice: a change the person caused, said once -------------------------
+
+    /** Retire the notice and any fade in flight, restoring the pill's ink. */
+    private fun cancelNoticeVisual() {
+        noticeToken++
+        noticeRunnable?.let { mainHandler.removeCallbacks(it) }
+        noticeRunnable = null
+        status.animate().cancel()
+        status.alpha = 1f
+    }
+
+    private fun retireHeaderNotice() {
+        cancelNoticeVisual()
+        headerNotice.clear()
+    }
+
+    /** Put the resting line back: the model's own name, in the pill's normal ink. */
+    private fun paintIdleLine() {
+        if (!::status.isInitialized) return
+        status.alpha = 1f
+        status.text = idleStatus()
+        status.visibility = android.view.View.VISIBLE
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
+        status.setOnClickListener(null)
+    }
+
+    /** Repaint the resting model line unless an action or a blue notice owns the pill. */
+    private fun paintRestingLine() {
+        if (actionLine || headerNotice.showing(android.os.SystemClock.uptimeMillis())) return
+        paintIdleLine()
+    }
+
+    /**
+     * Announce a switch the person caused: the model's name (a model switch) or the
+     * session's title (a session switch), in blue, for [Header.NOTICE_MS], then faded out
+     * to the resting model line. One notice at a time; an action on the pill wins outright.
+     */
+    private fun showHeaderNotice(text: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (!headerNotice.arm(text, now, actionRunning = actionLine)) return
+        cancelNoticeVisual()
+        val token = noticeToken
+        status.animate().cancel()
+        status.alpha = 1f
+        status.text = Header.switchNotice(text)
+        status.visibility = android.view.View.VISIBLE
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_notice))
+        status.setOnClickListener(null)
+        val fade = Runnable {
+            if (token != noticeToken) return@Runnable
+            headerNotice.clear()
+            status.animate().alpha(0f).setDuration(Header.FADE_MS).withEndAction {
+                if (token != noticeToken) return@withEndAction
+                paintIdleLine()
+            }.start()
+        }
+        noticeRunnable = fade
+        mainHandler.postDelayed(fade, Header.NOTICE_MS - Header.FADE_MS)
+        VoxLog.d("event=header-notice text=${Header.switchNotice(text)}")
     }
 
     // -----------------------------------------------------------------------
@@ -1526,8 +1603,14 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
-    private fun idleStatus(): String =
-        if (ProfileReach.isMissing()) ProfileReach.line() else getString(R.string.hv_connected)
+    private fun idleStatus(): String = when {
+        ProfileReach.isMissing() -> ProfileReach.line()
+        // With nothing to act on, the sub-pill names the model that answers — plainly, the
+        // way the catalogue names it. It is not the header's job: that is the agent's name.
+        else -> Header.modelLine(modelLabel.ifBlank {
+            ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
+        })
+    }
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
      *  Ping-only by default — opening the app should not fire a real model turn just
@@ -2098,14 +2181,18 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** The header: the agent's name, and the active profile's once there is a choice. */
+    /** The header: the agent's name, and the active profile's once there is a choice.
+     *
+     *  The title never names the model — that is what the sub-pill is for. A host that has
+     *  named the entity (`agent_name`) wins, and the Hermes agent's own name is the floor,
+     *  so a fresh install shows an entity rather than a route id. The call notification is
+     *  given the same words: one entity, one name. */
     private fun headerLabel(model: String): String {
-        // With no entity name yet, the model names the header — as words, not its route id
-        // (`deepseek-v4-flash` reads "DeepSeek V4 Flash", the same name the switcher shows).
-        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { ModelChoices.displayName(model) }
+        val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())
         val list = profiles.list()
         val active = profiles.activeName()
-        VoiceService.title = if (list.size < 2 || active.isBlank()) "Hermes Vox" else "Hermes Vox · $active"
+        VoiceService.title = Header.callTitle(agent, active, list.size)
+        modelLabel = ModelChoices.displayName(model)
         return Profiles.headerLabel(agent, active, list.size)
     }
 
@@ -2214,6 +2301,9 @@ open class MainActivity : AppCompatActivity() {
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = headerLabel(m)
+        // The pill rests on the model's name from the first connect: the header says who,
+        // the pill says what answers. An action already on the pill keeps it.
+        paintRestingLine()
         appendStream("// connected → $u")
         // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
         // (surviving an app-close) is detected on create and resumed below.
@@ -2884,7 +2974,9 @@ open class MainActivity : AppCompatActivity() {
         // stays behind it (and a stored turn's id was rotated with the session object).
         clearConversationUi()
         VoxLog.d("event=session-adopt id=${row.id} source=${row.source}")
-        setStatus("Resumed · ${row.label}", true)
+        // A session switch announces itself in blue: the session's own title, once. The
+        // model pill underneath is unchanged — the mind is the same.
+        showHeaderNotice(row.label)
         fetchResumed(row.id)
         return true
     }
@@ -3266,8 +3358,12 @@ open class MainActivity : AppCompatActivity() {
         LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
         sesModel = modelId; sesProvider = prov
         agentName.text = headerLabel(modelId)
-        // The outcome on the status line, in words: the model's name, not "prov/id".
-        setStatus(ModelChoices.switchedLine(p, m), true)
+        // The outcome: the catalogue's own name for the model, plainly. The pill rests on
+        // it and a blue notice announces the change, then fades back to the same name.
+        val line = ModelChoices.switchedLine(p, m)
+        modelLabel = Header.modelLine(line)
+        paintRestingLine()
+        showHeaderNotice(line)
         VoxLog.d("event=model-switch provider=$prov model=$modelId")
     }
 
