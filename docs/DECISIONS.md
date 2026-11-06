@@ -1060,10 +1060,13 @@ own consent.
 **Amended 2026-11-05 (the lanes after this one).** Parts of the text above are the state of *this*
 lane, not the release. Contacts is now built (the read lane) and returns names and numbers, not
 `unavailable`. `uninstall` is built with D37's card and is no longer in a `planned` list. Apps can be
-removed as well as opened. Two edges of the handoff are still **open** and are not claimed here as
-safe: Android may silently refuse a background activity start, so a launch's `ok:true` is the
-handover, not proof the app came forward; and `dial` ends Vox's own call — which is also the MCP
-listener's lifetime — so its result can be lost before the mind receives it. The rest of D36 stands.
+removed as well as opened. **Both edges named below were closed later the same day** (the handoff lane, #480). The gate is
+`PhoneEngine.backgroundRefusal` → `PhoneHandoff.canStartActivity`: every handoff asks whether an
+activity of ours is resumed, or in picture-in-picture and visible, *before* it resolves a
+target, ends a call or announces anything, and a no is a refusal rather than a silent success.
+`dial` now runs its handoff on the utterance's **done** callback, so the announcement is heard
+before the call ends, and the late dial result is audited instead of discarded. The rest of D36
+stands.
 
 ## D37 — Uninstalling an app is the one phone action with its own approval card
 
