@@ -344,14 +344,15 @@ The details are in [ROADMAP.md](ROADMAP.md).
 ## Troubleshooting
 
 ### "Cleartext HTTP traffic not permitted"
-Vox only speaks HTTPS to your gateway (plain HTTP would expose your API key and
-transcripts). The one exception is a tailnet MagicDNS name. Put the gateway behind
-HTTPS on your tailnet:
+Vox expects HTTPS to your gateway; plain HTTP would expose the API key and the
+transcripts. A tailnet MagicDNS name is the only cleartext exception. The preferred
+setup is:
 
-1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
-2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`
-3. If your tailnet CA isn't publicly trusted, install it on the phone
-   (Settings → Security → Trust device certificates). The app trusts user CAs.
+1. On the gateway host, run `tailscale serve --bg --https=443 http://127.0.0.1:<port>`.
+2. Set Vox's endpoint to `https://<machine>.<tailnet>.ts.net`.
+3. If the phone does not already trust the tailnet CA, add it under
+   **Settings → Security → Trust device certificates**. Vox trusts user-installed
+   CAs only for `*.ts.net`, not for every host.
 
 ### It connects, but every call fails
 Check the endpoint for a **doubled path or a path prefix**. The Hermes API server
