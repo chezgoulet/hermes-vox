@@ -119,7 +119,12 @@ class PhoneMcpWiringTest {
             File("src/main/java/com/hermesvox/MainActivity.kt").readText()
                 .contains("PhoneSetupStore.attach(session, PhoneSetupSend.Connection("),
         )
-        assertTrue("the prompt is visible in the sheet", sheet.contains("SHOW THE SETUP TURN"))
+        val promptAt = sheet.indexOf("configView(col, text)")
+        val copyAt = sheet.indexOf("COPY SETUP PROMPT")
+        val restartAt = sheet.indexOf("block.restart?.let")
+        assertTrue("the prompt is on the sheet itself, not behind a disclosure", promptAt > 0)
+        assertTrue("its copy action sits with the turn", copyAt > promptAt)
+        assertTrue("and the restart sentence follows them", restartAt > copyAt)
         assertTrue("manual config is a disclosed fallback", sheet.contains("Manual fallback"))
     }
 
