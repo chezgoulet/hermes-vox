@@ -209,19 +209,29 @@ class CommandCatalogTest {
         assertEquals("This conversation", c.group.label)
     }
 
-    /** The same, for profiles' neighbour: `/profiles` still answers to Alpha here. */
-    @Test fun profiles_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
-        // The same Gate mechanism the diagnostic command uses: one way to hide a row.
-        val noProfiles = CommandCatalog.Gate { it.name != "/profiles" }
-        val all = CommandCatalog.grouped(gate = noProfiles).flatMap { it.second }.map { it.name }
-        assertFalse("/profiles", all.contains("/profiles"))
-        assertTrue("the rest of the catalogue is untouched", all.contains("/models"))
-        assertFalse(CommandCatalog.search("profiles", gate = noProfiles).any { it.name == "/profiles" })
-        assertTrue(
-            CommandCatalog.search("profiles", gate = CommandCatalog.Gate.EVERYTHING)
-                .any { it.name == "/profiles" })
-        assertFalse(CommandCatalog.helpText(noProfiles).contains("/profiles"))
-        assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/profiles"))
+    /**
+     * #436, amended by D39: `/profiles` left the Alpha gate on 2026-11-06 too, so it is no more
+     * switchable than `/sessions` — the picker is every install's.
+     */
+    @Test fun profiles_is_no_longer_gated() {
+        val nothing = CommandCatalog.Gate.NOTHING
+        val rows = CommandCatalog.grouped(gate = nothing).flatMap { it.second }.map { it.name }
+        assertTrue("/profiles", rows.contains("/profiles"))
+        assertTrue(CommandCatalog.search("profiles", gate = nothing).any { it.name == "/profiles" })
+        assertTrue(CommandCatalog.helpText(nothing).contains("/profiles"))
+        assertFalse("it is not a gated command", CommandCatalog.ALL.first { it.name == "/profiles" }.gated)
+        // It is a card command under The agent, and switching still costs a fresh conversation.
+        val c = CommandCatalog.find("/profiles", nothing)!!
+        assertEquals(CommandCatalog.Kind.CARD, c.kind)
+        assertFalse(CommandCatalog.reportsOnRow(c))
+        assertEquals("The agent", c.group.label)
+        assertTrue("the cost line is stated", c.cost != null)
+    }
+
+    /** Only the diagnostic summary is left behind a switch, and it stays that way. */
+    @Test fun theDiagnosticCommandIsTheOneStillGated() {
+        val gated = CommandCatalog.ALL.filter { it.gated }.map { it.name }
+        assertEquals(listOf(DiagnosticSummary.COMMAND), gated)
     }
 
     /**

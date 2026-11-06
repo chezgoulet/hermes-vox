@@ -190,7 +190,6 @@ title is read from the home row that opened it
 | Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29). Requires Presence, because it is how the being hears: selected without Presence it is inert, and the picker refuses the tap with that line. Its description states about 300 MB more memory during a call | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_continuous_listening"`) |
 | Turn-taking (set) | `alpha_set_turn_taking` | false | The being keeps up mid-conversation: a soft acknowledgement while you talk at length, a quick word to stop it told apart from a new question, and the thread picked up after you cut in. Its acknowledgements need continuous listening; the set itself adds no second gate dependency | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_turn_taking"`) |
 | Phone tools (set) | `alpha_set_phone_tools` | false | The mind acting on the phone: the MCP `phone` tool, its tailnet server and its grants. Independent of Presence — either can be taken without the other (D38) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_phone_tools"`) |
-| Switching profiles (set) | `alpha_set_profiles` | false | Talk to another agent on the host: each profile carries its own address, key, model and voice, and switching starts a fresh conversation. Stays behind the gate until a device pass shows profile switching works as intended (D39) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_profiles"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
 dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
@@ -370,15 +369,15 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | This thread, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Start a fresh thread`) |
 | `/sessions` | This conversation | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
 | `/models` | The agent | Opens the model switcher: provider → model, one list, each model carrying small marks for what it can do — only the `reasoning`/`can_disable_reasoning` and `fast` flags `/api/model/options` states, never a guess from the model's name | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Choose the model`) |
-| `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
+| `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look. A picker only — add and edit were removed, because profiles are made on the host | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
 | `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Reach the gateway again`) |
 | `/health` | The agent | (also `/status`) Whether the agent is up, and its version | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Whether the agent is up`) |
 | `/diagnostics` | The agent (only while `diag_summary` is on) | Copies the `vox-diag` report block — the same one the Presence row copies, from the same collector | nothing — it reads and copies | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Copy a report block`) |
 | `/help` | The agent (not listed on the sheet) | The list, with these same lines | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `What each command does`) |
 
-Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue — `/diagnostics`
-only while its switch is on, and `/profiles` only while the Alpha *Switching profiles* set is on.
-`/sessions` has no switch: it left Alpha on 2026-11-06 (D39) and is on for every install. A command added without a group, an effect or an alias target fails
+Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue —
+`/diagnostics` only while its switch is on. `/profiles` and `/sessions` have no switch: both left
+Alpha on 2026-11-06 (D39) and are on for every install. A command added without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt `everyCommandBelongsToALabelledGroup`).
 **There is no `/file` command.** The dispatch has exactly the ten names above

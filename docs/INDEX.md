@@ -28,8 +28,8 @@ root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 |---|---|
 | [`docs/INDEX.md`](INDEX.md) | this file |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | the system on one page: app, gateway routes (`/v1/runs` and the `/v1/responses` fallback), approvals, profiles, file offer, MCP phone route, Alpha gate. Checked against `core/TurnRoute.kt`, `core/Stream.kt`, `AlphaGate.kt`, `Profiles.kt`, `FileOffer.kt`, `PhoneTool.kt` |
-| [`docs/DECISIONS.md`](DECISIONS.md) | the decision log, D1–D39. D29’s gate entry amended to the sets that shipped (five, after Sessions left on 2026-11-06); D38 supersedes the local-action lane and records Presence’s read-only scope; D39’s Sessions condition is met, Profiles’ is not; D34/D36/D37 carry dated amendments for the handoffs, the uniform grants and the one card |
-| [`docs/MILESTONES.md`](MILESTONES.md) | the current milestone map (D28). Corrected: the gate names its five sets; Presence tool use is D38, which supersedes D32–D34's two-lane shape |
+| [`docs/DECISIONS.md`](DECISIONS.md) | the decision log, D1–D39. D29’s gate entry amended to the sets that shipped (four, after Sessions and Profiles left on 2026-11-06); D38 supersedes the local-action lane and records Presence’s read-only scope; D39’s device pass was made for both Sessions and Profiles; D34/D36/D37 carry dated amendments for the handoffs, the uniform grants and the one card |
+| [`docs/MILESTONES.md`](MILESTONES.md) | the current milestone map (D28). Corrected: the gate names its four sets; Presence tool use is D38, which supersedes D32–D34's two-lane shape |
 | [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | every 0.9.1 item by real status (in the build / device pass outstanding / not built / carried / out) |
 | [`docs/RELEASE-0.9.1.md`](RELEASE-0.9.1.md) | the dry release list, structured by what needs Alpha and what does not. Rewritten from the tree |
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | how a cut is made (version bump on `testing`, gate, reproducibility, signing). Checked against `scripts/gate.sh` and `release.yml` |

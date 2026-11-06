@@ -20,12 +20,13 @@ off**. There is no feature bucket called "1.0" — GA is a state the product rea
 ## The Alpha gate
 
 There is **one gate for everything unfinished**: **Enable Alpha Features**. It is **off on a
-fresh install**. Its panel lists five sets, each selected on its own: **Presence**,
-**Continuous listening**, **Turn-taking**, **Phone tools** and **Switching profiles**.
+fresh install**. Its panel lists four sets, each selected on its own: **Presence**,
+**Continuous listening**, **Turn-taking** and **Phone tools**.
 Continuous listening requires Presence; Phone tools is independent of it. When it is
 off, the settings those sets cover are **dimmed and unreachable**: not hidden, and not silently
 running. Quiet calls (#325) is not a set; it is its own switch, off by default.
-**Sessions** left the gate on 2026-11-06 (D39), so `/sessions` is on for every install.
+**Sessions** and **Switching profiles** left the gate on 2026-11-06 (D39), so `/sessions`
+and the profile switcher are on for every install.
 
 `Presence` remains the feature's public name in copy and release notes. "Alpha Features" is the
 gate, not the name. "Enhanced Realtime" is retired as vocabulary.

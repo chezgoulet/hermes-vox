@@ -64,12 +64,6 @@ object AlphaGate {
                 "with its own token, and your agent reaches it over MCP. Off until you set it up. " +
                 "Independent of Presence.",
         ),
-        PROFILES(
-            "alpha_set_profiles", "Switching profiles",
-            "Talk to another agent on your host. Each profile carries its own address, key, " +
-                "model and voice, and switching starts a fresh conversation. Unfinished until a " +
-                "host's own profile list arrives reliably (#436).",
-        ),
     }
 
     /** What the gate reads, narrow enough for an in-memory fake. */

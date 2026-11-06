@@ -92,15 +92,6 @@ class AlphaGateTest {
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
-    @Test fun switching_profiles_is_a_set_with_its_own_key_and_the_owners_words() {
-        val set = AlphaGate.FeatureSet.PROFILES
-        assertEquals("alpha_set_profiles", set.key)
-        assertEquals("Switching profiles", set.label)
-        assertTrue(set.blurb, set.blurb.contains("switching starts a fresh conversation"))
-        assertTrue(set.blurb, set.blurb.contains("#436"))
-        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
-    }
-
     /**
      * #437: the session browser is a set of its own, the sibling of Switching profiles — the
      * same class of unfinished surface, off until selected, with the owner's words on the panel.
@@ -261,16 +252,48 @@ class AlphaGateTest {
             gate.contains("dependencyRefusal(r, set) == null"))
     }
 
-    /** Profiles was not promoted by this change; it still needs the gate and a pick. */
-    @Test fun profiles_stay_gated() {
-        val masterOnly = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true))
-        val set = AlphaGate.FeatureSet.PROFILES
-        assertFalse("$set needs its own selection", AlphaGate.allows(masterOnly, set))
-        masterOnly.putBoolean(set.key, true)
-        assertTrue("$set works once selected behind the master", AlphaGate.allows(masterOnly, set))
-        masterOnly.putBoolean(set.key, false)
-        val withoutMaster = Fake(mutableMapOf(AlphaGate.FeatureSet.PROFILES.key to true))
-        assertFalse(AlphaGate.allows(withoutMaster, AlphaGate.FeatureSet.PROFILES))
+    /**
+     * #436/D39: Switching profiles left Alpha on 2026-11-06, its device pass made, so the set is
+     * gone and a profile switch is reachable with the master off and nothing selected.
+     */
+    @Test fun profiles_are_reachable_with_the_master_gate_off() {
+        assertFalse("the set left the panel",
+            AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_profiles" })
+        assertFalse("nothing selects it any more",
+            AlphaGate.FeatureSet.entries.any { it.label == "Switching profiles" })
+        val main = File(src, "MainActivity.kt").readText()
+        // The last door asks nothing of the gate any more.
+        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
+            .substringBefore("protected fun connectFromPrefs")
+        assertFalse(switch, switch.contains("AlphaGate"))
+        assertTrue("the switch still switches", switch.contains("putString(Profiles.PREF_ACTIVE"))
+        // Nor does the command, nor the picker's opening.
+        assertTrue(main.contains("\"/profiles\" -> {"))
+        val dialogs = File(src, "ProfileDialogs.kt").readText()
+        assertFalse(dialogs, dialogs.contains("AlphaGate"))
+        // The catalogue no longer hides it either.
+        assertTrue(CommandCatalog.commands(CommandCatalog.Gate.NOTHING)
+            .any { it.name == "/profiles" })
+    }
+
+    /**
+     * The panel is drawn from [AlphaGate.FeatureSet.entries], so the list the owner sees is this
+     * list: four sets, and no row left behind for the two that left Alpha.
+     */
+    @Test fun the_panel_lists_four_sets_and_no_stale_row() {
+        assertEquals(
+            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools"),
+            AlphaGate.FeatureSet.entries.map { it.label },
+        )
+        assertEquals(4, AlphaGate.FeatureSet.entries.size)
+        val gate = File(src, "AlphaGate.kt").readText()
+        assertFalse(gate.contains("alpha_set_profiles"))
+        assertFalse(gate.contains("alpha_set_sessions"))
+        // The panel renders exactly the entries and nothing else.
+        val panel = File(src, "AlphaPanel.kt").readText()
+        assertTrue(panel.contains("for (set in AlphaGate.FeatureSet.entries) list.addView(row(set))"))
+        assertFalse("no hand-written row survives", panel.contains("\"Switching profiles\""))
+        assertFalse(panel.contains("\"Sessions\""))
     }
 
     // ---- the wiring, pinned at source level (the readers are Android-bound) ----
@@ -301,31 +324,19 @@ class AlphaGateTest {
         }
     }
 
-    @Test fun profile_switching_is_gated_at_every_door_but_the_header_stays() {
+    /**
+     * D39, met: the header is still a connection fact and not a control, and it is unchanged by
+     * the promotion. The switcher's doors are pinned by
+     * [profiles_are_reachable_with_the_master_gate_off].
+     */
+    @Test fun the_header_names_the_active_profile_and_is_not_a_control() {
         val main = File(src, "MainActivity.kt").readText()
-        val sheet = File(src, "ProfileSheet.kt").readText()
-        val dialogs = File(src, "ProfileDialogs.kt").readText()
-        val commands = File(src, "CommandsSheet.kt").readText()
-        // The last door refuses before it writes anything.
-        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
-            .substringBefore("// Settings → Entity edits")
-        assertTrue(switch, switch.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
-        assertTrue(switch, switch.contains("return"))
-        // The row, the search and the switcher's own door all ask the same question.
-        assertTrue(commands.contains("gate = gate"))
-        assertTrue(main.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
-        // #501: the composition lives in CommandGate, which MainActivity hands the sheet.
-        assertTrue(main.contains("CommandGate.of(AlphaGate.reader(prefs), DiagnosticSummary.store(prefs))"))
-        val gate = File(src, "CommandGate.kt").readText()
-        assertTrue(gate.contains("\"/profiles\" -> AlphaGate.allows(reader, AlphaGate.FeatureSet.PROFILES)"))
-        // The picker writes nothing, so the gate has no manage rows left to hide: the door is
-        // the sheet's own opening.
-        assertFalse(sheet, sheet.contains("if (!allowed())"))
-        assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
-        // The active profile is a connection fact, not a control: the header is not gated.
         val header = main.substringAfter("private fun headerLabel(model: String): String {")
             .substringBefore("fun switchProfile")
         assertTrue(header, header.contains("profiles.activeName()"))
         assertFalse(header, header.contains("AlphaGate"))
+        // The commands sheet is still the way in, and it still asks the one gate object.
+        assertTrue(File(src, "CommandsSheet.kt").readText().contains("gate = gate"))
+        assertTrue(main.contains("CommandGate.of(DiagnosticSummary.store(prefs))"))
     }
 }

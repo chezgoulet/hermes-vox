@@ -84,18 +84,7 @@ class ProfileDialogs(
 
     /** The switcher reads the cache instantly; it never asks. */
     fun showSwitcher() {
-        if (refuseWhenOff()) return
         renderSwitcher()
-    }
-
-    /** Alpha features' Switching profiles set. One question, asked at the switcher's door. */
-    private fun switchingAllowed(): Boolean =
-        AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)
-
-    private fun refuseWhenOff(): Boolean {
-        if (switchingAllowed()) return false
-        toast("Switching profiles is off in Alpha features")
-        return true
     }
 
     private fun renderSwitcher() {
