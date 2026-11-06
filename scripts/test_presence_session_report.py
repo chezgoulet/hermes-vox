@@ -364,10 +364,13 @@ class BarCli(unittest.TestCase):
             # pass. Five rows, five `no data`.
             empty.write_text(log("event=er-soul-drop reason=late gen=1"), encoding="utf-8")
             out = self.run_script("--bar", str(empty))
-            self.assertEqual(1, out.returncode)
+            # No data is not a failure and not a pass. Exit 2 keeps a caller from reading
+            # an empty run as a run that met the bar — or as one that missed it.
+            self.assertEqual(2, out.returncode)
             self.assertEqual(5, out.stdout.count("    no data"))
             self.assertIn("0 of 5 criteria measured", out.stdout)
-            self.assertIn("verdict: fail", out.stdout)
+            self.assertIn("verdict: no data", out.stdout)
+            self.assertNotIn("verdict: fail", out.stdout)
             self.assertNotIn("pass    ", out.stdout)
 
     def test_bar_on_the_fixture_names_each_criterion_with_its_number(self):

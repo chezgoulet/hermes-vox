@@ -7,7 +7,7 @@ how many became lines, why the rest were refused, how far apart the lines landed
 
   python3 scripts/presence-session-report.py logcat.txt
   python3 scripts/presence-session-report.py --json logcat.txt
-  python3 scripts/presence-session-report.py --bar logcat.txt     # the verdict, exit 1 on a fail
+  python3 scripts/presence-session-report.py --bar logcat.txt     # the verdict: exit 0 pass, 1 fail, 2 no data
   python3 scripts/presence-session-report.py --check logcat.txt   # exit 1 if the bar is missed
 
 The bar (docs/PLAN-0.9.2.md, "The instrument and the bar"; issue #217). Every row names what
@@ -322,7 +322,8 @@ def _bar_lines(d: dict) -> list[str]:
                    f"n={b['n']:<4} {b['measures']}  [{b['source']}]")
     measured = sum(1 for b in d["bar"] if b["verdict"] is not None)
     failed = sum(1 for b in d["bar"] if b["verdict"] is False)
-    out.append(f"  verdict: {'pass' if d['passes_bar'] else 'fail'} — "
+    overall = "no data" if measured == 0 else ("pass" if d["passes_bar"] else "fail")
+    out.append(f"  verdict: {overall} — "
                f"{measured} of {len(d['bar'])} criteria measured, {failed} failed, "
                f"{len(d['bar']) - measured} with no data")
     return out
@@ -390,6 +391,10 @@ def main(argv):
     else:
         print(report(s))
     if check or bar:
+        if not any(b["verdict"] is not None for b in d["bar"]):
+            # Nothing was measured: not a pass, not a fail. Exit 2 so a caller cannot
+            # mistake an empty run for a run that met the bar.
+            return 2
         return 0 if d["passes_bar"] else 1
     return 0
 
