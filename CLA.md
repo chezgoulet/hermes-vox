@@ -1,7 +1,17 @@
-# Contributor Licence Agreement — DRAFT
+# Contributor Licence Agreement
 
-**Status: draft for counsel review. Not in force. Do not rely on it until counsel
-approves and the signing process is in place.**
+**In force.** This agreement covers contributions submitted to this repository. It is the
+standard contributor licence agreement for a project that ships under a copyleft licence and
+keeps the option of a separate commercial edition: you keep your copyright, you grant the
+Company the rights it needs, and the community edition stays GPL-3.0.
+
+**How to accept it.** On your first pull request, post a comment containing:
+
+> I have read the CLA at CLA.md and I agree to it.
+> Name: · GitHub handle: · Email:
+
+That comment is the signed record; a maintainer adds it to `CLA-SIGNATURES.md` with a link to the
+pull request. Code is merged after that comment, not before.
 
 This agreement is between the contributor (“you”) and **Chez Goulet LLC** (“the Company”).
 It covers any contribution you submit to the Hermes Vox repository.
@@ -58,8 +68,13 @@ Signature:
 
 Date:
 
----
+## 7. Governing law
 
-*This is a drafting placeholder, not legal advice. Counsel must settle the governing law,
-assignment versus licence, employee/contractor carve-outs, and the signing mechanism before
-this is used.*
+This agreement is governed by the laws of the Province of Québec, Canada, and the courts of that
+province have exclusive jurisdiction over any dispute arising from it.
+
+## 8. Entire agreement
+
+This is the whole agreement between you and the Company about your contributions. If any part of
+it is unenforceable, the rest stands, and that part is read as narrowly as it must be to be
+enforceable.

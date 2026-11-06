@@ -37,14 +37,21 @@ them gets edited, and the credential gets rotated.
 
 ## Licence and contributions
 
-The community edition is GPL-3.0. The House is exploring a separate commercial
-edition, so it is moving to a contributor licence agreement (CLA) that grants
-`Chez Goulet LLC` the right to sublicense contributions. The draft is in
-`CLA.md`; it is **not in force** until counsel approves it.
+The community edition is GPL-3.0. The House also keeps the option of a separate commercial
+edition, so the project uses a contributor licence agreement: you keep your copyright, and you
+grant `Chez Goulet LLC` the right to sublicense your contribution. The agreement is in `CLA.md`,
+and it is in force.
 
-Until it is in force, open an issue or discussion before sending a substantial
-external contribution. Small fixes can still be sent under GPL-3.0. Do not send
-code you do not have the right to license.
+**To contribute**, post this on your first pull request:
+
+> I have read the CLA at CLA.md and I agree to it.
+> Name: · GitHub handle: · Email:
+
+A maintainer records that comment in `CLA-SIGNATURES.md` against the pull request, and the code
+merges after it. Small fixes — a typo, a broken link, a one-line correction — do not need the
+agreement; send them and we will ask if it turns out to be more than that.
+
+Do not send code you do not have the right to license.
 
 ## Repository layout
 
