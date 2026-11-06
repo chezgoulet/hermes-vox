@@ -42,6 +42,41 @@ object Marks {
     /** The stroke weight every mark is drawn with, in [CommandGlyph.GRID] units. */
     const val WEIGHT = 2.0f
 
+    /**
+     * The small marks a model row carries (#5) — one drawing per [ModelChoices.Cap], on the
+     * same grid and with the same stroke as everything else here. They sit at 16 dp beside the
+     * model's name, so each one is a single legible idea: chevrons for code, an eye for vision,
+     * a spark for reasoning, a long arrow for a long window, a bolt for speed.
+     */
+    fun cap(cap: ModelChoices.Cap): List<CommandGlyph.Shape> = when (cap) {
+        ModelChoices.Cap.CODE -> listOf(
+            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(9.6f, 8.2f), CommandGlyph.Pt(5.2f, 12f), CommandGlyph.Pt(9.6f, 15.8f))),
+            CommandGlyph.Poly(WEIGHT, listOf(CommandGlyph.Pt(14.4f, 8.2f), CommandGlyph.Pt(18.8f, 12f), CommandGlyph.Pt(14.4f, 15.8f))),
+        )
+        ModelChoices.Cap.VISION -> listOf(
+            // An almond outline and a pupil: an eye, not a camera.
+            CommandGlyph.Arc(1.8f, CommandGlyph.Pt(12f, 12f), 8.4f, 5.0f, 0f, 360f),
+            CommandGlyph.Disc(CommandGlyph.Pt(12f, 12f), 2.4f),
+        )
+        ModelChoices.Cap.REASONING -> listOf(
+            // A spark: the model that thinks a moment longer.
+            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(12f, 4.4f), CommandGlyph.Pt(12f, 19.6f))),
+            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(5.4f, 8.2f), CommandGlyph.Pt(18.6f, 15.8f))),
+            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(18.6f, 8.2f), CommandGlyph.Pt(5.4f, 15.8f))),
+        )
+        ModelChoices.Cap.LONG_CONTEXT -> listOf(
+            // A long line with an arrowhead: a window that keeps going.
+            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(4.4f, 12f), CommandGlyph.Pt(19.0f, 12f))),
+            CommandGlyph.Poly(1.9f, listOf(CommandGlyph.Pt(14.8f, 8.4f), CommandGlyph.Pt(19.6f, 12f), CommandGlyph.Pt(14.8f, 15.6f))),
+        )
+        ModelChoices.Cap.FAST -> listOf(
+            CommandGlyph.Poly(1.9f, listOf(
+                CommandGlyph.Pt(13.8f, 4.4f), CommandGlyph.Pt(7.6f, 13.4f), CommandGlyph.Pt(11.6f, 13.4f),
+                CommandGlyph.Pt(10.2f, 19.6f), CommandGlyph.Pt(16.6f, 10.6f), CommandGlyph.Pt(12.6f, 10.6f),
+            ), closed = true),
+        )
+    }
+
     fun shapes(mark: Mark): List<CommandGlyph.Shape> = when (mark) {
         // The left node in the middle, the two right nodes above and below it, each pair
         // joined by a stroke that stops at the node's edge rather than crossing it.

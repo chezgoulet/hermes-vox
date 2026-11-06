@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The model switcher's reading of /api/model/options, and its fan-out rules. */
+/** The model switcher's reading of /api/model/options: provider → model, and the marks. */
 class ModelChoicesTest {
 
     /** The live gateway's shape (models as plain strings) plus a local provider that sends
@@ -95,15 +95,81 @@ class ModelChoicesTest {
         assertNull(ModelChoices.sizeOf("glm-4.6"))
     }
 
-    /** The fan-out: a second level only when it saves taps. */
-    @Test fun aSmallProviderOpensOnItsModelsAndALargeOneOnItsCategories() {
-        val deepseek = all.first()
-        val openrouter = all[1]
-        assertFalse("two models do not need a category step", ModelChoices.showsCategories(deepseek))
-        assertTrue("ten models across kinds get one", ModelChoices.showsCategories(openrouter))
+    /**
+     * #5: there is no category level. Every model of a provider is one list, and the
+     * categories survive only as the provider row's summary line.
+     */
+    @Test fun aProvidersModelsAreOneListAndTheCategoriesOnlyDescribeIt() {
+        val openrouter = all.first { it.slug == "openrouter" }
+        assertEquals(10, openrouter.models.size)
+        // Every model is reachable in that one list: nothing is filed behind a header.
+        assertEquals(openrouter.models.size, ModelChoices.byCategory(openrouter).sumOf { it.second.size })
         val cats = ModelChoices.byCategory(openrouter).map { it.first }
         assertEquals(cats.sortedBy { it.ordinal }, cats)   // screen order
-        assertEquals(openrouter.models.size, ModelChoices.byCategory(openrouter).sumOf { it.second.size })
+    }
+
+    /** The marks come from what the payload says, then from the model's own name. */
+    @Test fun theMarksSayWhatAModelCanDoAndOnlyWhatIsKnown() {
+        assertEquals(listOf(ModelChoices.Cap.CODE),
+            ModelChoices.caps(all[1].models.first { it.id.startsWith("qwen3-coder") }))
+        assertEquals(listOf(ModelChoices.Cap.VISION),
+            ModelChoices.caps(all[1].models.first { it.id.startsWith("qwen3-vl") }))
+        // A name that says "flash" gets the fast mark when nothing contradicts it...
+        assertEquals(listOf(ModelChoices.Cap.FAST),
+            ModelChoices.caps(all[1].models.first { it.id == "gpt-5-mini" }))
+        // ...and a plain name gets no mark at all rather than an invented one.
+        assertEquals(emptyList<ModelChoices.Cap>(),
+            ModelChoices.caps(all[1].models.first { it.id == "gpt-5" }))
+    }
+
+    /** The gateway's own flags beat the name, both ways, and are read from the provider. */
+    @Test fun theGatewaysFlagsBeatTheModelsName() {
+        val raw = """
+            {"providers":[{"slug":"p","name":"P","is_current":true,"authenticated":true,
+              "models":["deepseek-flash","gpt-5","mystery"],
+              "capabilities":{
+                "deepseek-flash":{"fast":false,"reasoning":true},
+                "gpt-5":{"fast":true,"reasoning":false},
+                "mystery":{"reasoning":true,"can_disable_reasoning":true}}}]}
+        """.trimIndent()
+        val p = ModelChoices.parse(raw, "", "").first()
+        fun caps(id: String) = ModelChoices.caps(p.models.first { it.id == id })
+        // "flash" says fast; the gateway says it is not — the gateway wins.
+        assertEquals(listOf(ModelChoices.Cap.REASONING), caps("deepseek-flash"))
+        // "gpt-5" says nothing; the gateway says it is fast and does not reason.
+        assertEquals(listOf(ModelChoices.Cap.FAST), caps("gpt-5"))
+        // A model whose name says nothing and whose provider says it reasons.
+        assertEquals(listOf(ModelChoices.Cap.REASONING), caps("mystery"))
+        // The flags live under the provider, not on the model entry: a model the provider
+        // does not describe keeps only its name's claim, never a borrowed one.
+        assertEquals(true, p.models.first { it.id == "mystery" }.reasons)
+        assertEquals(false, p.models.first { it.id == "deepseek-flash" }.fast)
+    }
+
+    /** A long window is a stated fact, and only a stated one earns the mark. */
+    @Test fun longContextIsOnlyClaimedWhenTheGatewayStatesIt() {
+        val raw = """
+            {"providers":[{"slug":"p","models":[
+              {"id":"ctx32k","context_length":32768},
+              {"id":"ctx128k","context_length":131072},
+              {"id":"ctx-none"}]}]}
+        """.trimIndent()
+        val models = ModelChoices.parse(raw, "", "").first().models
+        assertEquals(emptyList<ModelChoices.Cap>(), ModelChoices.caps(models.first { it.id == "ctx32k" }))
+        assertEquals(listOf(ModelChoices.Cap.LONG_CONTEXT), ModelChoices.caps(models.first { it.id == "ctx128k" }))
+        assertEquals(emptyList<ModelChoices.Cap>(), ModelChoices.caps(models.first { it.id == "ctx-none" }))
+        assertEquals(ModelChoices.LONG_CONTEXT_TOKENS, 100_000)
+    }
+
+    /** Every mark has words for a screen reader, and the vocabulary has no invented ability. */
+    @Test fun everyMarkHasWordsAndTheVocabularyOnlySaysWhatThePayloadCan() {
+        for (cap in ModelChoices.Cap.entries) {
+            assertTrue(cap.says.isNotBlank())
+            assertTrue("${cap.name}: '${cap.says}' is a sentence fragment", cap.says.length in 4..24)
+        }
+        // #5's suggested vocabulary, pruned to what /api/model/options supports: no tools.
+        assertEquals(listOf("CODE", "VISION", "REASONING", "LONG_CONTEXT", "FAST"),
+            ModelChoices.Cap.entries.map { it.name })
     }
 
     @Test fun aProviderWithNothingToChooseSaysWhy() {

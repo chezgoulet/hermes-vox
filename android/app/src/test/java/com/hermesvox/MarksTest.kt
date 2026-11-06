@@ -119,6 +119,27 @@ class MarksTest {
             if (shape !is CommandGlyph.Disc) assertEquals("$mark", Marks.WEIGHT, shape.weight)
     }
 
+    @Test fun everyCapabilityMarkIsItsOwnDrawingAndFitsTheGrid() {
+        val caps = ModelChoices.Cap.entries
+        val signatures = caps.associateWith { Marks.cap(it).toString() }
+        assertEquals("two capabilities share one drawing", caps.size, signatures.values.toSet().size)
+        for (cap in caps) {
+            assertTrue("$cap draws nothing", Marks.cap(cap).isNotEmpty())
+            val pts = points(Marks.cap(cap))
+            val lo = pts.minOf { minOf(it.x, it.y) }
+            val hi = pts.maxOf { maxOf(it.x, it.y) }
+            assertTrue("$cap spills off the grid ($lo..$hi)", lo >= 0.5f && hi <= 23.5f)
+            // One idea per mark, so it still reads at the row's 16 dp.
+            assertTrue("$cap is too fine to read at 16 dp", Marks.cap(cap).size <= 3)
+        }
+        // The model sheet draws them at the row size and says each one in the row's own
+        // announcement — a screen reader never has to see a drawing.
+        val sheet = File("src/main/java/com/hermesvox/ModelSheet.kt").readText()
+        assertTrue(sheet.contains("dp(16), dp(16)"))
+        assertTrue(sheet.contains("caps.map { it.says }"))
+        for (cap in caps) assertTrue("the sheet drops ${cap.says}", sheet.contains("caps"))
+    }
+
     @Test fun theInkIsTheThemesAndNeverALiteral() {
         for (file in listOf("Marks.kt", "CommandsSheet.kt")) {
             val source = File("src/main/java/com/hermesvox/$file").readText()

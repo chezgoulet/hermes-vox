@@ -10,7 +10,9 @@ import com.hermesvox.core.Json
 
 /**
  * ModelChoices — what the model switcher (`/models`) offers, read from the gateway's
- * `/api/model/options` and fanned out **provider → category → model**.
+ * `/api/model/options` and shown as **provider → model** (#5: the category step is gone —
+ * every model of a provider is one list, and what a model is for is carried on its own row
+ * as [Cap] marks).
  *
  * The stock chooser printed every model of every provider as one flat list of raw strings
  * (`* deepseek - deepseek-v4-flash (env)`). A person choosing a model wants to know three
@@ -42,9 +44,17 @@ object ModelChoices {
         val size: String?,
         /** Context window ("128k context"), or null when the gateway does not say. */
         val context: String?,
+        /** The same window in tokens, for the long-context test; null when not stated. */
+        val contextTokens: Int? = null,
         /** True / false only when the gateway says so; null is "not stated". */
         val installed: Boolean?,
         val current: Boolean,
+        /** The words the gateway states about this model (capabilities, tags, category) —
+         *  the same input [categoryOf] classifies from, kept so [caps] asks one question. */
+        val stated: List<String> = emptyList(),
+        /** The provider's own per-model flags; null when it does not say. */
+        val fast: Boolean? = null,
+        val reasons: Boolean? = null,
     )
 
     data class Provider(
@@ -59,9 +69,9 @@ object ModelChoices {
         val warning: String,
     )
 
-    /** At or below this many models a provider opens straight to its models (under category
-     *  headers): a category step in front of six rows costs a tap and saves nothing. */
-    const val FLAT_MAX = 8
+    /** A context window at least this long earns the long-context mark. Below it the window
+     *  is still stated in the row's line; 100k is where it stops being ordinary. */
+    const val LONG_CONTEXT_TOKENS = 100_000
 
     // ---- reading -------------------------------------------------------------------------
 
@@ -79,8 +89,12 @@ object ModelChoices {
             if (slug.isEmpty() && name.isEmpty()) return@mapNotNull null
             val isCurrent = bool(p, "is_current") == true ||
                 (currentProvider.isNotEmpty() && currentProvider.equals(slug, ignoreCase = true))
+            // The gateway states what each model can do under the provider, keyed by the
+            // model's id — not on the model entry. Reading it here is what lets a row carry
+            // capability marks the payload actually supports (#5).
+            val caps = p["capabilities"] as? JObj
             val models = (p["models"] as? JArr)?.items.orEmpty().mapNotNull { m ->
-                model(m, isCurrent, currentModel)
+                model(m, isCurrent, currentModel, caps)
             }
             Provider(
                 slug = slug.ifEmpty { name },
@@ -95,12 +109,13 @@ object ModelChoices {
         return list.sortedByDescending { it.current }   // stable: gateway order otherwise
     }
 
-    private fun model(node: JNode, providerCurrent: Boolean, currentModel: String): Model? {
+    private fun model(node: JNode, providerCurrent: Boolean, currentModel: String, caps: JObj?): Model? {
         val id: String
         var label = ""
         var explicit = emptyList<String>()
         var size: String? = null
         var context: String? = null
+        var contextTokens: Int? = null
         var installed: Boolean? = null
         when (node) {
             is JStr -> id = node.value
@@ -112,21 +127,27 @@ object ModelChoices {
                 size = text(node, "parameter_size").ifEmpty {
                     text(node["details"] as? JObj, "parameter_size")
                 }.ifEmpty { null }?.let { normaliseSize(it) }
-                context = (int(node, "context_length") ?: int(node, "context_window")
-                    ?: int(node, "max_context"))?.let { contextLabel(it) }
+                contextTokens = int(node, "context_length") ?: int(node, "context_window")
+                    ?: int(node, "max_context")
+                context = contextTokens?.let { contextLabel(it) }
                 installed = bool(node, "installed") ?: bool(node, "downloaded") ?: bool(node, "local")
             }
             else -> return null
         }
         if (id.isBlank()) return null
+        val stated = caps?.get(id) as? JObj
         return Model(
             id = id,
             name = label.ifEmpty { displayName(id) },
             category = categoryOf(id, explicit),
             size = size ?: sizeOf(id),
             context = context,
+            contextTokens = contextTokens,
             installed = installed,
             current = providerCurrent && id.equals(currentModel, ignoreCase = true),
+            stated = explicit,
+            fast = bool(stated, "fast"),
+            reasons = bool(stated, "reasoning"),
         )
     }
 
@@ -135,24 +156,77 @@ object ModelChoices {
     private fun tokens(id: String): List<String> =
         id.substringAfterLast('/').lowercase().split(Regex("[-_.:\\s]+")).filter { it.isNotEmpty() }
 
-    /** The category the gateway states, else the one the model's own name claims. */
-    fun categoryOf(id: String, explicit: List<String> = emptyList()): Category {
-        val said = explicit.map { it.lowercase() }
+    /** What a family of models can do, as words a model or the gateway uses for itself. */
+    private enum class Family { CODE, VISION, REASONING, FAST }
+
+    /** The families [id] belongs to — from the words the gateway states, then the model's own
+     *  name. One source of truth for [categoryOf] and [caps]. */
+    private fun families(id: String, stated: List<String>): Set<Family> {
+        val said = stated.map { it.lowercase() }
         fun saysAny(vararg w: String) = said.any { s -> w.any { s.contains(it) } }
-        if (saysAny("code")) return Category.CODE
-        if (saysAny("vision", "image", "multimodal")) return Category.VISION
-        if (saysAny("reason", "think")) return Category.REASONING
-        if (saysAny("fast", "speed", "cheap")) return Category.FAST
         val t = tokens(id)
         val whole = id.lowercase()
-        if (t.any { it.startsWith("coder") || it == "code" || it.startsWith("codestral") ||
-                it.startsWith("devstral") || it.startsWith("codex") }) return Category.CODE
-        if (t.any { it == "vl" || it == "vision" || it.startsWith("omni") } || whole.contains("-vl")) return Category.VISION
-        if (t.any { it == "r1" || it.startsWith("reason") || it.startsWith("think") || it == "qwq" ||
-                it == "o1" || it == "o3" || it == "o4" }) return Category.REASONING
-        if (t.any { it in setOf("flash", "mini", "nano", "lite", "haiku", "small", "turbo", "fast",
-                "instant", "air", "tiny") }) return Category.FAST
-        return Category.GENERAL
+        val out = mutableSetOf<Family>()
+        if (saysAny("code") || t.any { it.startsWith("coder") || it == "code" ||
+                it.startsWith("codestral") || it.startsWith("devstral") || it.startsWith("codex") })
+            out += Family.CODE
+        if (saysAny("vision", "image", "multimodal") ||
+            t.any { it == "vl" || it == "vision" || it.startsWith("omni") } || whole.contains("-vl"))
+            out += Family.VISION
+        if (saysAny("reason", "think") || t.any { it == "r1" || it.startsWith("reason") ||
+                it.startsWith("think") || it == "qwq" || it == "o1" || it == "o3" || it == "o4" })
+            out += Family.REASONING
+        if (saysAny("fast", "speed", "cheap") || t.any { it in setOf("flash", "mini", "nano", "lite",
+                "haiku", "small", "turbo", "fast", "instant", "air", "tiny") })
+            out += Family.FAST
+        return out
+    }
+
+    /** The category the gateway states, else the one the model's own name claims. */
+    fun categoryOf(id: String, explicit: List<String> = emptyList()): Category {
+        val f = families(id, explicit)
+        return when {
+            Family.CODE in f -> Category.CODE
+            Family.VISION in f -> Category.VISION
+            Family.REASONING in f -> Category.REASONING
+            Family.FAST in f -> Category.FAST
+            else -> Category.GENERAL
+        }
+    }
+
+    /**
+     * What a model can do, as the small marks on its row — screen order (#5).
+     *
+     * The vocabulary is what `/api/model/options` actually carries and what a model says about
+     * itself, and nothing else:
+     *   * reasoning and fast — the provider's own `capabilities` flags when it states them
+     *     (which is why a name that says "flash" does not get the fast mark from a gateway
+     *     that says `fast: false`), else the model's name;
+     *   * vision and code — the same name/tag words [categoryOf] reads;
+     *   * long context — a stated context window of [LONG_CONTEXT_TOKENS] or more.
+     *
+     * There is deliberately no tools/function-calling mark: this payload does not state it,
+     * and a row never claims what the gateway did not say.
+     */
+    enum class Cap(val label: String, val says: String) {
+        CODE("code", "writes code"),
+        VISION("vision", "can see images"),
+        REASONING("reasoning", "can reason"),
+        LONG_CONTEXT("long context", "long context"),
+        FAST("fast", "fast"),
+    }
+
+    fun caps(m: Model): List<Cap> {
+        val f = families(m.id, m.stated)
+        return Cap.entries.filter { cap ->
+            when (cap) {
+                Cap.CODE -> Family.CODE in f
+                Cap.VISION -> Family.VISION in f
+                Cap.REASONING -> m.reasons ?: (Family.REASONING in f)
+                Cap.FAST -> m.fast ?: (Family.FAST in f)
+                Cap.LONG_CONTEXT -> (m.contextTokens ?: 0) >= LONG_CONTEXT_TOKENS
+            }
+        }
     }
 
     private val SIZE = Regex("^(\\d+(?:\\.\\d+)?)([bm])$")
@@ -221,9 +295,8 @@ object ModelChoices {
         if (name.any { it.isUpperCase() } || name.contains(' ')) name else displayName(name)
 
     /** The line under a model: size, context, readiness — whatever is known, nothing invented.
-     *  [withCategory] adds what it is for, for rows shown outside their category header. */
-    fun detail(m: Model, withCategory: Boolean = false): String = listOfNotNull(
-        if (withCategory) m.category.label else null,
+     *  What it is for is not in this line: it is the [Cap] marks on the row (#5). */
+    fun detail(m: Model): String = listOfNotNull(
         m.size,
         m.context,
         when (m.installed) { true -> "installed"; false -> "not installed"; null -> null },
@@ -242,9 +315,6 @@ object ModelChoices {
     /** A provider's models under their categories, in screen order, empty categories dropped. */
     fun byCategory(p: Provider): List<Pair<Category, List<Model>>> =
         Category.values().map { c -> c to p.models.filter { it.category == c } }.filter { it.second.isNotEmpty() }
-
-    /** Whether opening [p] shows its categories first (a second fan-out) or its models. */
-    fun showsCategories(p: Provider): Boolean = p.models.size > FLAT_MAX && byCategory(p).size > 1
 
     /** Models matching [query] across every provider, by name or id. */
     fun search(all: List<Provider>, query: String): List<Pair<Provider, Model>> {
