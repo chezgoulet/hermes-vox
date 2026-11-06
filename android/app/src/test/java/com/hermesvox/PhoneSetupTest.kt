@@ -69,7 +69,7 @@ class PhoneSetupTest {
         assertTrue("header auth is named", p.contains("--auth header"))
         assertTrue("the short connect timeout is named", p.contains("--connect-timeout 5"))
         assertTrue("the token is pasted at the prompt", p.contains("paste exactly the token above"))
-        assertTrue("the listener is open when the command runs", p.contains("listener is open for the next three minutes"))
+        assertTrue("the listener is open when the command runs", p.contains("listener is open for as long as this attempt runs"))
         assertTrue("a refused probe is reported, not skipped past", p.contains("it will refuse a server it cannot reach"))
     }
 
@@ -128,7 +128,7 @@ class PhoneSetupTest {
      */
     @Test fun the_prompt_asks_for_no_restart_and_states_the_listener_window() {
         val p = PhoneSetup.prompt(host, token)
-        assertTrue("the window is stated with its length", p.contains("open for the next three minutes"))
+        assertTrue("the listener's life is stated, without a clock", p.contains("open for as long as this attempt runs"))
         assertTrue("the gateway picks the entry up by itself", p.contains("picks the new server up"))
         assertTrue("no restart is wanted", p.contains("No restart is needed and none is wanted"))
         assertTrue("the agent is told not to create a job", p.contains("do not create or run a job"))
@@ -230,19 +230,18 @@ class PhoneSetupTest {
         assertTrue(thrown.failure.orEmpty().isNotBlank())
     }
 
-    @Test fun nothing_connected_within_the_window_is_a_timeout_with_a_retry() {
+    /**
+     * There is no elapsed-time verdict on the record. A setup that has been asked and has no
+     * handshake is *waiting* an hour later as much as a second later; only a named failure or the
+     * phone's own `initialize` changes the state. A clock here is what cut a working attempt short.
+     */
+    @Test fun waiting_has_no_deadline_and_a_late_handshake_still_connects() {
         val tag = PhoneMcpToken.fingerprint(token)
         val asked = PhoneSetup.replied(requested(), "Done — I added vox.")
-        assertEquals(PhoneSetup.State.WAITING, PhoneSetup.state(asked, now + PhoneSetup.TIMEOUT_MS - 1L, tag))
-        assertEquals(PhoneSetup.State.TIMED_OUT, PhoneSetup.state(asked, now + PhoneSetup.TIMEOUT_MS, tag))
-    }
-
-    @Test fun a_later_handshake_wins_over_an_earlier_timeout() {
-        val tag = PhoneMcpToken.fingerprint(token)
-        val timedOut = PhoneSetup.replied(requested(), "Done.")
-        assertEquals(PhoneSetup.State.TIMED_OUT, PhoneSetup.state(timedOut, now + PhoneSetup.TIMEOUT_MS + 1L, tag))
-        val late = PhoneSetup.observedHandshake(timedOut, now + PhoneSetup.TIMEOUT_MS + 2L, tag)
-        assertEquals(PhoneSetup.State.CONNECTED, PhoneSetup.state(late, now + PhoneSetup.TIMEOUT_MS + 3L, tag))
+        val hours = now + 6 * 60 * 60_000L
+        assertEquals(PhoneSetup.State.WAITING, PhoneSetup.state(asked, hours, tag))
+        val late = PhoneSetup.observedHandshake(asked, hours + 1L, tag)
+        assertEquals(PhoneSetup.State.CONNECTED, PhoneSetup.state(late, hours + 2L, tag))
     }
 
     @Test fun the_view_names_every_state_and_every_next_step() {
@@ -252,7 +251,6 @@ class PhoneSetupTest {
         }
         assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(PhoneSetup.State.CONNECTED))
         assertEquals(PhoneToolsView.WAITING_HEADING, PhoneToolsView.setupHeadline(PhoneSetup.State.WAITING))
-        assertTrue(PhoneToolsView.setupNext(PhoneSetup.State.TIMED_OUT).contains("rotate"))
     }
 
     // ---- the three states at the top of the sheet: not set up, asked, connected ----
@@ -419,7 +417,7 @@ class PhoneSetupTest {
 
     @Test fun the_three_settings_row_words_are_distinct_too() {
         assertEquals("not set up", PhoneToolsView.rowValue(PhoneSetup.State.IDLE))
-        assertEquals("waiting for your agent", PhoneToolsView.rowValue(PhoneSetup.State.WAITING))
+        assertEquals("working", PhoneToolsView.rowValue(PhoneSetup.State.WAITING))
         assertEquals("connected", PhoneToolsView.rowValue(PhoneSetup.State.CONNECTED))
         assertEquals(
             "a failure offers the retry it has",

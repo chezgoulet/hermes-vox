@@ -175,7 +175,7 @@ class PhoneToolsSectionTest {
     fun theStateLineIsTheSetupStepForEveryStep() {
         assertEquals("Not set up", PhoneToolsView.stepLine(PhoneBootstrap.Step.IDLE))
         assertEquals("Asking your agent", PhoneToolsView.stepLine(PhoneBootstrap.Step.ADDING))
-        assertEquals("Waiting for your agent", PhoneToolsView.stepLine(PhoneBootstrap.Step.WAITING))
+        assertEquals("Your agent is working", PhoneToolsView.stepLine(PhoneBootstrap.Step.WAITING))
         assertEquals("Connected", PhoneToolsView.stepLine(PhoneBootstrap.Step.CONNECTED))
         assertEquals("Not connected", PhoneToolsView.stepLine(PhoneBootstrap.Step.FAILED))
 
@@ -259,7 +259,6 @@ class PhoneToolsSectionTest {
             failure = PhoneBootstrap.Failure.NO_HANDSHAKE,
             reached = PhoneBootstrap.Step.WAITING,
             startedAt = now - 200_000L,
-            windowEndsAt = now - 10_000L,
             answeredAt = now - 100_000L,
         )
         val settled = PhoneBootstrap.settled(failed, handshakeAt = now - 60_000L, now = now)

@@ -49,25 +49,30 @@ class PhoneMcpWiringTest {
     }
 
     /**
-     * The one-button setup's window: `hermes mcp add` proves reachability when it runs, and the
-     * button is pressed from an idle phone. So the press opens the listener itself for a stated
-     * three minutes, the store opens it *before* the turn goes out, and a hangup during the window
-     * does not close it. Turning the set off still does, immediately.
+     * The one-button setup's listener: `hermes mcp add` proves reachability when the agent gets to
+     * it, and the button is pressed from an idle phone. So the press opens the listener itself, the
+     * store opens it *before* the turn goes out, and the window follows the run — there is no
+     * closing clock for the agent to beat. A hangup during the attempt does not close it; turning
+     * the set off still does, immediately.
      */
     @Test fun the_setup_window_opens_the_listener_without_a_call() {
         val store = File("src/main/java/com/hermesvox/PhoneBootstrapStore.kt").readText()
         val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
         assertTrue("the window exists", mcp.contains("fun openWindow("))
-        assertTrue("and its length is the flow's stated one", mcp.contains("PhoneBootstrap.SETUP_WINDOW_MS"))
+        assertTrue("and closes when the run ends", mcp.contains("fun closeWindow("))
+        assertFalse("there is no closing clock any more", mcp.contains("scheduleWindowClose"))
         assertTrue("a window that cannot open is a named failure, not a send",
             store.contains("PhoneMcp.openWindow(app)") && store.contains("Failure.WINDOW_CLOSED"))
         val windowAt = store.indexOf("PhoneMcp.openWindow(app)")
-        val sendAt = store.indexOf("session.turnStored(prompt)")
+        val sendAt = store.indexOf("session.startSetupStream(prompt)")
         assertTrue("the listener is up before the instruction leaves", windowAt in 1 until sendAt)
         assertTrue("a hangup keeps a window that is still open", mcp.contains("hold=window"))
-        assertTrue("the window closes on its own clock", mcp.contains("scheduleWindowClose"))
+        assertTrue("the flow closes it at the run's end, with a short grace",
+            store.contains("PhoneMcp.closeWindow(") && store.contains("HANDSHAKE_GRACE_MS"))
+        assertTrue("and immediately once the handshake lands",
+            store.contains("PhoneMcp.closeWindow(\"setup-connected\")"))
         assertTrue("the Alpha gate closes it immediately", mcp.contains("fun closeNow()"))
-        assertTrue("the owner is told the window and its remaining time",
+        assertTrue("the owner is told the listener's life, never a countdown",
             sheet.contains("PhoneBootstrap.listeningLine("))
         assertTrue("one registry serves the call path and the window",
             store.contains("LocalActions.shared(app)") &&
@@ -128,6 +133,7 @@ class PhoneMcpWiringTest {
     @Test fun setup_is_an_ordinary_turn_composed_by_the_app() {
         val setup = File("src/main/java/com/hermesvox/PhoneSetup.kt").readText()
         val store = File("src/main/java/com/hermesvox/PhoneSetupStore.kt").readText()
+        val bootstrap = File("src/main/java/com/hermesvox/PhoneBootstrapStore.kt").readText()
         val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
         assertTrue("the app composes the turn", setup.contains("fun prompt(") && setup.contains("host: String"))
         // The one-button flow carries the phone's token, because `hermes mcp add` needs it to
@@ -137,10 +143,10 @@ class PhoneMcpWiringTest {
         assertFalse("it asks for no restart", setup.contains("systemctl"))
         assertFalse("it asks for no job id", setup.contains("JOB_ID"))
         assertFalse("it creates no job", setup.contains("hermes cron create"))
-        assertTrue("it says the listener is open for the setup", setup.contains("open for the next three minutes"))
+        assertTrue("it says the listener is open for the setup", setup.contains("open for as long as this attempt runs"))
         assertTrue("it names the tool the model sees", setup.contains("MODEL_TOOL_NAME"))
         assertTrue("it is idempotent by content", setup.contains("Do not add a second"))
-        assertTrue("it is sent as an ordinary stored turn", store.contains("session.turnStored(prompt)"))
+        assertTrue("it is sent as a no-deadline streamed turn", bootstrap.contains("session.startSetupStream(prompt)"))
         assertTrue(
             "through the live session only when it is the connection in force",
             store.contains("PhoneSetupSend.plan(liveFor, live != null, active)"),

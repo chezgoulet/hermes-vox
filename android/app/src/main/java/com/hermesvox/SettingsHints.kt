@@ -111,7 +111,7 @@ object SettingsHints {
         "row_debuglog" to "A more detailed log file, for reporting a bug",
         "row_debug" to "View, copy or share the log",
         // Phone Tools (#453): the capability grants, and the one press that sets the phone up.
-        "row_phone_boot" to "Opens this phone to your agent for three minutes; nothing restarts",
+        "row_phone_boot" to "Opens this phone to your agent for this attempt; nothing restarts",
         "row_phone_mcp" to "Ask your agent to add this phone, and see whether it connected",
     )
 

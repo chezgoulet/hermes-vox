@@ -7,15 +7,15 @@ import android.content.Context
  * life, and the one piece of evidence that makes **Connected** an honest word.
  *
  * **When it runs.** The server is up while a voice call is up (started by `VoiceController.start`,
- * closed by `VoiceController.stop`), and — added for the one-button setup — for one stated **setup
- * window** ([openWindow], three minutes), because `hermes mcp add` verifies reachability at the
- * moment it runs and the button is pressed from an idle phone. That is deliberate: the mind only
- * reaches for the phone while the caller is talking to it, and a listening socket that outlives the
- * call is a surface with no one watching it. The setup window is the one bounded exception; it is
- * announced in the sheet, opened by the owner's press, and closed by its own clock. There is no
- * foreground service for the listener and no new service type: the call's own microphone service is
- * the lifetime otherwise. The cost, stated plainly in `docs/MCP-PHONE.md`: the gateway's first tool
- * call after a call begins may pay one connect, and a call that is down means the tool is down.
+ * closed by `VoiceController.stop`), and — added for the one-button setup — for the length of a
+ * **setup attempt** ([openWindow]), because `hermes mcp add` verifies reachability at the moment the
+ * agent gets to it. That is deliberate: the mind only reaches for the phone while the caller is
+ * talking to it, and a listening socket that outlives the call is a surface with no one watching
+ * it. The setup attempt is the one exception; it is announced in the sheet, opened by the owner's
+ * press, kept open while the run is alive, and closed by [closeWindow] when the run ends. There is
+ * no foreground service for the listener and no new service type: the call's own microphone service
+ * is the lifetime otherwise. The cost, stated plainly in `docs/MCP-PHONE.md`: the gateway's first
+ * tool call after a call begins may pay one connect, and a call that is down means the tool is down.
  *
  * **Where it binds.** The tailnet address [Tailnet] picked — the same rule as the file-offer server,
  * for the same reason. Never `0.0.0.0`, never the LAN, never cellular. If the phone is not on the
@@ -90,8 +90,8 @@ object PhoneMcp {
     /** True while a live call holds the listener. Cleared by [stop]; a window may outlive it. */
     private var callHold = false
 
-    /** When the owner's setup window closes, or 0 when none is open. Read by the sheet. */
-    private var windowUntil = 0L
+    /** True while a setup attempt holds the listener open. Cleared by [closeWindow]. */
+    private var setupHold = false
 
     /** Guards the window's own close, so an older window cannot close a newer one. */
     private var windowGeneration = 0L
@@ -313,34 +313,71 @@ object PhoneMcp {
     }
 
     /**
-     * Open the one-button setup's window: bring the listener up **without a call** for [durationMs]
-     * (three minutes by default), so `hermes mcp add` can prove reachability at the moment it runs.
+     * Open the one-button setup's window: bring the listener up **without a call**, so
+     * `hermes mcp add` can prove reachability at the moment the agent gets to it.
      *
-     * Returns the epoch-ms instant the window closes, or null when the listener could not be opened
-     * at all (the set is off, there is no tailnet address, or the port is taken). Null is a fact the
-     * caller must act on: with no listener there is nothing for the agent to reach, so the sheet
-     * says so and offers the copyable prompt instead of sending an instruction certain to fail.
+     * Returns true when the listener is up, false when it could not be opened at all (the set is
+     * off, there is no tailnet address, or the port is taken). False is a fact the caller must act
+     * on: with no listener there is nothing for the agent to reach, so the sheet says so and offers
+     * the copyable prompt instead of sending an instruction certain to fail.
      *
-     * The window closes on its own clock; a live call holds the listener past it, and a hangup
-     * before it ends does not close it. Re-pressing while a window is open extends it from the
-     * press — the sheet still makes one attempt per press.
+     * **The window has no clock.** It follows the run: it is opened at the press, stays open while
+     * the agent works — however long that is — and is closed by [closeWindow] when the run ends
+     * (after a short grace) or the moment the handshake arrives. A clock here was the two-minute
+     * ceiling that cut a working setup short.
+     *
+     * A live call holds the listener past the window, and a hangup while the window is open does
+     * not close it; re-pressing while a window is open just keeps it up for the new attempt.
      */
-    fun openWindow(
-        context: Context,
-        durationMs: Long = PhoneBootstrap.SETUP_WINDOW_MS,
-        handler: PhoneToolHandler,
-    ): Long? {
+    fun openWindow(context: Context, handler: PhoneToolHandler): Boolean {
         val app = context.applicationContext ?: context
-        val until: Long
         synchronized(this) {
-            if (listen(app, handler) == null) return null
-            until = System.currentTimeMillis() + durationMs.coerceAtLeast(1_000L)
-            windowUntil = until
-            val generation = ++windowGeneration
-            scheduleWindowClose(until, generation)
-            VoxLog.d("event=phone-mcp window=open closes_in_ms=$durationMs")
+            if (listen(app, handler) == null) return false
+            setupHold = true
+            windowGeneration++
+            VoxLog.d("event=phone-mcp window=open")
         }
-        return until
+        return true
+    }
+
+    /**
+     * Close the setup window, now or after [graceMs]. The grace is for a gateway that reconciles
+     * the new entry just after the run's terminal event; the run itself is never bounded by it.
+     * The generation check makes a later window safe from an earlier window's timer.
+     */
+    fun closeWindow(reason: String = "setup-ended", graceMs: Long = 0L) {
+        if (graceMs <= 0L) {
+            synchronized(this) {
+                windowGeneration++
+                if (!setupHold) return
+                setupHold = false
+                if (callHold) {
+                    VoxLog.d("event=phone-mcp window=expired hold=call")
+                    return
+                }
+                close(reason)
+            }
+            return
+        }
+        val generation: Long
+        synchronized(this) {
+            if (!setupHold) return
+            generation = ++windowGeneration
+        }
+        Thread({
+            try {
+                Thread.sleep(graceMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@Thread
+            }
+            synchronized(this) {
+                if (generation != windowGeneration) return@synchronized
+                setupHold = false
+                if (!callHold) close(reason)
+                else VoxLog.d("event=phone-mcp window=expired hold=call")
+            }
+        }, "phone-mcp-window").apply { isDaemon = true }.start()
     }
 
     /** The listener's start, under [synchronized]. Refuses honestly; never pretends to listen. */
@@ -394,41 +431,16 @@ object PhoneMcp {
     }
 
     /**
-     * Close the setup window when its clock runs out — unless a live call is holding the listener.
-     * The generation check makes a later window safe from an earlier window's timer.
-     */
-    private fun scheduleWindowClose(until: Long, generation: Long) {
-        Thread({
-            val wait = until - System.currentTimeMillis()
-            if (wait > 0L) {
-                try {
-                    Thread.sleep(wait)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return@Thread
-                }
-            }
-            synchronized(this) {
-                if (generation != windowGeneration) return@synchronized
-                windowUntil = 0L
-                if (!callHold) close("window-closed")
-                else VoxLog.d("event=phone-mcp window=expired hold=call")
-            }
-        }, "phone-mcp-window").apply { isDaemon = true }.start()
-    }
-
-    /**
-     * A hangup releases the call's hold. The listener stays up if the owner's setup window is still
-     * open — that is the point of the window — and closes otherwise.
+     * A hangup releases the call's hold. The listener stays up while the owner's setup attempt is
+     * still live — that is the point of the window — and closes otherwise.
      */
     fun stop() {
         synchronized(this) {
             callHold = false
-            if (windowUntil > System.currentTimeMillis()) {
+            if (setupHold) {
                 VoxLog.d("event=phone-mcp stop hold=window")
                 return
             }
-            windowUntil = 0L
             close("stop")
         }
     }
@@ -440,7 +452,8 @@ object PhoneMcp {
     fun closeNow() {
         synchronized(this) {
             callHold = false
-            windowUntil = 0L
+            setupHold = false
+            windowGeneration++
             close("closed")
         }
     }

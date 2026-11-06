@@ -3,7 +3,6 @@ package com.hermesvox
 import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import com.hermesvox.core.HermesSession
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * PhoneSetupStore — the Android edge of [PhoneSetup]: persistence, the ordinary turn, and the
@@ -19,11 +18,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * when it was built for exactly the connection in force, otherwise one is built here from that
  * connection. A missing session is not a failure — only a missing connection is.
  *
- * The setup turn is sent with [HermesSession.turnStored] — the same `/v1/runs` path a
- * typed turn uses, chained off the same session when that session is the current one — and its
- * reply is kept so the sheet can show the agent's own words. Nothing here writes a gateway file,
- * and nothing here treats the reply as proof: the proof is the MCP `initialize` recorded by
- * [PhoneMcp.recordHandshake].
+ * The setup turn itself is sent and drained by [PhoneBootstrapStore] on the run's own event
+ * stream, with no turn ceiling; this file owns the record, the connection and the session that
+ * turn rides. Its reply is kept so the sheet can show the agent's own words. Nothing here writes a
+ * gateway file, and nothing here treats the reply as proof: the proof is the MCP `initialize`
+ * recorded by [PhoneMcp.recordHandshake].
  *
  * **Every failure is named.** A thrown turn and an empty answer both used to become the same
  * `unreachable` flag, which the sheet rendered as "could not reach your agent" whatever had
@@ -44,8 +43,6 @@ object PhoneSetupStore {
     private const val K_FAILURE = "phone_setup_failure"
     private const val K_REFUSED = "phone_setup_refused"
     private const val K_TOKEN_TAG = "phone_setup_token_tag"
-
-    private val sending = AtomicBoolean(false)
 
     /** The last prompt sent in this process; not persisted, because it contains the token. */
     @Volatile private var lastSent: String? = null
@@ -145,46 +142,6 @@ object PhoneSetupStore {
         lastSent = null
         PhoneMcp.rotate(context)
         write(context, PhoneSetup.rotated(read(context)))
-    }
-
-    /**
-     * Ask the agent, on a worker thread. [onDone] runs on that thread; callers that touch views
-     * must post to the UI thread. The turn is an ordinary stored turn, so it is part of the same
-     * conversation chain and the reply is the agent's own.
-     *
-     * The outcome is classified rather than flattened: an empty answer, a refused key and a
-     * transport failure are three different lines in [PhoneSetupSend], and the record keeps the
-     * one that happened. The token is scrubbed out of the reason before it is stored.
-     */
-    fun ask(
-        context: Context,
-        session: HermesSession,
-        host: String,
-        token: String,
-        onDone: () -> Unit = {},
-    ) {
-        if (!sending.compareAndSet(false, true)) return
-        val app = context.applicationContext ?: context
-        val prompt = PhoneSetup.prompt(host, token)
-        lastSent = prompt
-        begin(app)
-        Thread({
-            var reply: String? = null
-            var error: Throwable? = null
-            try {
-                reply = session.turnStored(prompt)
-            } catch (t: Throwable) {
-                error = t
-            }
-            val failure = PhoneSetupSend.reason(error, reply, token)
-            if (failure == null) replied(app, reply, token) else failed(app, failure)
-            VoxLog.w(
-                "event=phone-setup result=" +
-                    if (failure == null) "replied" else "failed cause=${PhoneSetupSend.classify(error, reply)}",
-            )
-            sending.set(false)
-            try { onDone() } catch (_: Throwable) { }
-        }, "phone-setup").apply { isDaemon = true }.start()
     }
 
     /** The prompt for the current facts, for a sheet that wants to show what will be sent. */

@@ -16,12 +16,16 @@ package com.hermesvox
  * text in memory only. It is never logged, never audited and never written to a preference; the
  * agent's reply is scrubbed before it is stored.
  *
+ * **One attempt, and no deadline.** The flow sends one turn and reads the run's own event stream
+ * until it ends ([PhoneBootstrapStore]); there is no ordinary turn ceiling on this turn, because an
+ * agent may take minutes to reach a host and prove an entry. The phone's listener is open for the
+ * length of the attempt ([PhoneBootstrap.listenerOpen]), not for a stated number of minutes.
+ *
  * **No restart is asked for.** A running gateway reconciles its MCP configuration on its own: an
  * entry added while it runs appears, registers its tool, and is callable. There is no restart,
  * reload or lifecycle route on the API surface, so the instruction does not mention one, and the
  * flow never waits for a drop. The one thing the instruction *does* need is the phone's listener,
- * which the press opens for three minutes ([PhoneBootstrap.SETUP_WINDOW_MS]) — `hermes mcp add`
- * proves reachability at the moment it runs.
+ * which the press opens — `hermes mcp add` proves reachability at the moment it runs.
  *
  * **Why the app does not trust the agent's reply.** An agent can say "done" without a working
  * connection. The only evidence this class accepts for **Connected** is an MCP `initialize` that
@@ -42,11 +46,8 @@ package com.hermesvox
  */
 object PhoneSetup {
 
-    /** How long a setup is allowed to wait for the agent's handshake before it is called a failure. */
-    const val TIMEOUT_MS = 3 * 60_000L
-
     /** The state a person sees. [WAITING] is the only state that means "asked, not yet proven". */
-    enum class State { IDLE, WAITING, CONNECTED, UNREACHABLE, REFUSED, TIMED_OUT }
+    enum class State { IDLE, WAITING, CONNECTED, UNREACHABLE, REFUSED }
 
     /**
      * Everything the sheet remembers between launches. [tokenTag] is a non-reversible fingerprint
@@ -78,9 +79,10 @@ object PhoneSetup {
      * memory for this process only, and [PhoneBootstrapStore] never logs, audits or persists it.
      * The agent is told to keep it out of its reply.
      *
-     * **It says the listener is up now.** The button opened the setup window before this turn was
-     * sent, so the agent's `hermes mcp add` can prove reachability at the moment it runs. The
-     * instruction says so plainly, because the agent would otherwise assume an idle phone.
+     * **It says the listener is up now.** The button opened the listener before this turn was sent,
+     * and it stays up while the attempt runs, so the agent's `hermes mcp add` can prove reachability
+     * whenever it gets there. The instruction says so plainly, because the agent would otherwise
+     * assume an idle phone.
      */
     fun prompt(
         host: String,
@@ -100,7 +102,7 @@ object PhoneSetup {
             appendLine()
             appendLine("hermes mcp add ${PhoneMcpConfig.SERVER_NAME} --url \"$url\" --auth header --connect-timeout 5")
             appendLine()
-            appendLine("When it asks for the API key / bearer token, paste exactly the token above. This phone's listener is open for the next three minutes for exactly this step, so the connection probe should succeed now.")
+            appendLine("When it asks for the API key / bearer token, paste exactly the token above. This phone's listener is open for as long as this attempt runs — however long you take — so the connection probe should succeed now.")
             appendLine()
             appendLine("`hermes mcp add` verifies the connection before it saves, and it will refuse a server it cannot reach. If it refuses, do not write a dead entry and do not guess: say plainly that the add did not succeed and name what the command said.")
             appendLine()
@@ -114,7 +116,7 @@ object PhoneSetup {
             appendLine()
             appendLine("What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.")
             appendLine()
-            appendLine("After the add, verify that a server named `${PhoneMcpConfig.SERVER_NAME}` appears in the MCP configuration you loaded. Then reply with what you changed, and say explicitly whether the add succeeded. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when the three-minute window ends. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.")
+            appendLine("After the add, verify that a server named `${PhoneMcpConfig.SERVER_NAME}` appears in the MCP configuration you loaded. Then reply with what you changed, and say explicitly whether the add succeeded. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when this attempt ends. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.")
         }.trimEnd()
     }
 
@@ -168,6 +170,10 @@ object PhoneSetup {
     /**
      * The state at [now]. [currentTokenTag] is the tag of the token in force; a handshake made with
      * any other token is not evidence for this one.
+     *
+     * There is deliberately no elapsed-time transition: a setup has no deadline, so *waiting* is a
+     * fact about the evidence (asked, no handshake yet), not about a clock. The flow's own failures
+     * ([PhoneBootstrap]) are what end an attempt.
      */
     fun state(record: Record, now: Long, currentTokenTag: String): State {
         val tag = currentTokenTag.ifBlank { record.tokenTag }
@@ -175,7 +181,6 @@ object PhoneSetup {
         if (record.requestedAt == 0L) return State.IDLE
         if (record.failure != null) return State.UNREACHABLE
         if (record.refused) return State.REFUSED
-        if (now - record.requestedAt >= TIMEOUT_MS) return State.TIMED_OUT
         return State.WAITING
     }
 
