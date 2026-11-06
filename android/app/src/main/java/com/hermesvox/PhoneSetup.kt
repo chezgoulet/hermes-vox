@@ -6,9 +6,22 @@ package com.hermesvox
  *
  * **Why the app composes a turn.** The owner should not be handed a YAML block to paste. The agent
  * can edit its own configuration with the tools it already has, so the app sends it one ordinary
- * turn: add `vox`, verify it appears, reload if needed, and say what happened. The turn is visible
- * in the conversation and in this sheet — a change to the agent's own configuration must be
+ * turn: add `vox` with `hermes mcp add`, verify the entry, and say what happened. The turn is
+ * visible in the conversation and in this sheet — a change to the agent's own configuration must be
  * legible, never silent.
+ *
+ * **The token goes with the instruction.** `hermes mcp add` writes the phone's bearer into the
+ * agent's own configuration; there is no pairing step that avoids it. The token therefore rides
+ * this one turn, over the same authenticated connection as every other turn, and the app keeps the
+ * text in memory only. It is never logged, never audited and never written to a preference; the
+ * agent's reply is scrubbed before it is stored.
+ *
+ * **No restart is asked for.** A running gateway reconciles its MCP configuration on its own: an
+ * entry added while it runs appears, registers its tool, and is callable. There is no restart,
+ * reload or lifecycle route on the API surface, so the instruction does not mention one, and the
+ * flow never waits for a drop. The one thing the instruction *does* need is the phone's listener,
+ * which the press opens for three minutes ([PhoneBootstrap.SETUP_WINDOW_MS]) — `hermes mcp add`
+ * proves reachability at the moment it runs.
  *
  * **Why the app does not trust the agent's reply.** An agent can say "done" without a working
  * connection. The only evidence this class accepts for **Connected** is an MCP `initialize` that
@@ -54,18 +67,26 @@ object PhoneSetup {
     )
 
     /**
-     * The exact turn the app sends. It carries the address, the server and tool names, the
-     * documented `mcp_servers` shape to write, what the phone can and cannot do, the idempotence
-     * rule, the reload note, and the question the reply should answer.
+     * The exact turn the app sends. It carries the address, the server and tool names, the token,
+     * the documented `hermes mcp add` command, the statement that the listener is open for this
+     * setup, what the phone can and cannot do, and the idempotence rule. It asks for no restart and
+     * no job id: a running gateway reconciles its MCP configuration by itself.
      *
-     * **It carries no credential** (#452). The agent authenticates with the API key it already uses
-     * for this host — the same key this phone sends on its own turns — so nothing is paired,
-     * exchanged, or copied out of this sheet, and nothing this turn says can be replayed by anyone
-     * who reads the transcript. The manual fallback ([PhoneMcpConfig.snippet]) still carries the
-     * phone's own token, because that block exists for a host that is *not* the one this phone talks
-     * to.
+     * **It carries this phone's token** because `hermes mcp add` writes it into the agent's own
+     * configuration as the server's bearer. The token leaves the phone only on this turn, over the
+     * same authenticated connection every other turn uses; [PhoneSetupStore] keeps the text in
+     * memory for this process only, and [PhoneBootstrapStore] never logs, audits or persists it.
+     * The agent is told to keep it out of its reply.
+     *
+     * **It says the listener is up now.** The button opened the setup window before this turn was
+     * sent, so the agent's `hermes mcp add` can prove reachability at the moment it runs. The
+     * instruction says so plainly, because the agent would otherwise assume an idle phone.
      */
-    fun prompt(host: String, port: Int = PhoneMcpServer.PORT): String {
+    fun prompt(
+        host: String,
+        token: String = PhoneMcpConfig.DOC_TOKEN,
+        port: Int = PhoneMcpServer.PORT,
+    ): String {
         val url = "http://${PhoneMcpConfig.hostForUrl(host)}:$port${PhoneMcpServer.PATH}"
         return buildString {
             appendLine("Please add this phone to your own MCP configuration. This is a configuration change you are making for the owner, so make it carefully and report exactly what you changed.")
@@ -73,34 +94,27 @@ object PhoneSetup {
             appendLine("Server name: ${PhoneMcpConfig.SERVER_NAME}")
             appendLine("URL: $url")
             appendLine("Tool: ${PhoneTool.NAME} — you will see it as ${PhoneMcpConfig.MODEL_TOOL_NAME}")
+            appendLine("Token: $token")
             appendLine()
-            appendLine("Authentication: use the API key you already use for this host — the same key this phone uses for its turns. Send it as this entry's `Authorization` header; the phone accepts it for MCP as well. There is no pairing step, no code and nothing to exchange.")
+            appendLine("Add it with the documented CLI:")
             appendLine()
-            appendLine("The shape to write, in the `mcp_servers` block of your Hermes config (`~/.hermes/config.yaml`), or the equivalent for the profile you are running:")
+            appendLine("hermes mcp add ${PhoneMcpConfig.SERVER_NAME} --url \"$url\" --auth header --connect-timeout 5")
             appendLine()
-            appendLine("```yaml")
-            appendLine("mcp_servers:")
-            appendLine("  ${PhoneMcpConfig.SERVER_NAME}:")
-            appendLine("    url: \"$url\"")
-            appendLine("    headers:")
-            appendLine("      Authorization: \"Bearer \${API_SERVER_KEY}\"")
-            appendLine("    connect_timeout: 5")
-            appendLine("    timeout: 30")
-            appendLine("```")
+            appendLine("When it asks for the API key / bearer token, paste exactly the token above. This phone's listener is open for the next three minutes for exactly this step, so the connection probe should succeed now.")
             appendLine()
-            appendLine("`\${API_SERVER_KEY}` is an environment reference your client resolves at connect time from the profile's `~/.hermes/.env` (or the process environment); it is the same key your API server accepts. If your key is not exported under that name, write the literal key you already hold there instead — in your configuration file, never in this conversation. An unresolved variable reference in `url` or `headers` fails the connect closed, so do not leave one in place if the variable is not set.")
+            appendLine("`hermes mcp add` verifies the connection before it saves, and it will refuse a server it cannot reach. If it refuses, do not write a dead entry and do not guess: say plainly that the add did not succeed and name what the command said.")
+            appendLine()
+            appendLine("This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `$url` and an `Authorization: \"Bearer $token\"` header. Whichever route you use, the server name stays `${PhoneMcpConfig.SERVER_NAME}`.")
+            appendLine()
+            appendLine("No restart is needed and none is wanted. A running gateway picks the new server up from its own configuration and registers the tool by itself; there is no restart, reload or lifecycle command on this surface, so do not call one and do not create or run a job for it.")
             appendLine()
             appendLine("This phone exposes exactly one tool, `${PhoneTool.NAME}`, so the entry needs no tool filter; the phone itself offers only what the owner has granted and refuses the rest with a reason.")
             appendLine()
-            appendLine("This must be idempotent. If a server named `${PhoneMcpConfig.SERVER_NAME}` already exists, update that entry in place with the URL and the header above. Do not add a second `${PhoneMcpConfig.SERVER_NAME}` entry, do not duplicate the block, and do not leave two entries pointing at this phone.")
+            appendLine("This must be idempotent. If a server named `${PhoneMcpConfig.SERVER_NAME}` already exists, update that entry in place with the URL and the token above. Do not add a second `${PhoneMcpConfig.SERVER_NAME}` entry, do not duplicate the block, and do not leave two entries pointing at this phone.")
             appendLine()
             appendLine("What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.")
             appendLine()
-            appendLine("The listener is only up while a voice call is live on the phone, so an early connection attempt may fail; that is expected. A connection is real only when your client has completed the MCP handshake with it — the phone verifies that itself.")
-            appendLine()
-            appendLine("After editing, verify that a server named `${PhoneMcpConfig.SERVER_NAME}` appears in the MCP configuration you loaded (list or show it), and reload or restart your gateway if it needs that to pick up a new server. Then reply with: what you changed, whether `${PhoneMcpConfig.SERVER_NAME}` is present, and whether you needed to restart.")
-            appendLine()
-            appendLine("Do not claim the phone is connected — the phone checks that when your handshake arrives. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste that API key into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential at all.")
+            appendLine("After the add, verify that a server named `${PhoneMcpConfig.SERVER_NAME}` appears in the MCP configuration you loaded. Then reply with what you changed, and say explicitly whether the add succeeded. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when the three-minute window ends. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.")
         }.trimEnd()
     }
 

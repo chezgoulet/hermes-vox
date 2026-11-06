@@ -109,7 +109,7 @@
   says: "The setup path is a turn, not a block to paste."
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
-  match: 'fun prompt\(host: String'
+  match: 'fun prompt\('
 
 - id: phone-setup-idempotent
   says: "It is idempotent by content."
@@ -129,6 +129,30 @@
   file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
   match: 'method == "initialize"'
 
+- id: phone-bootstrap-one-button
+  says: "Set this up with my agent"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val BUTTON = "SET THIS UP WITH MY AGENT"'
+
+- id: phone-bootstrap-window
+  says: "three minutes"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val SETUP_WINDOW_MS = 3 \* 60_000L'
+
+- id: phone-bootstrap-handshake-window
+  says: "a generous **90 seconds**"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val HANDSHAKE_WINDOW_MS = 90_000L'
+
+- id: phone-bootstrap-no-restart
+  says: "no restart is needed and none is wanted"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
+  match: 'No restart is needed and none is wanted'
+
 - id: phone-dnd-is-special-access
   says: "This is a *special* access"
   doc: docs/MCP-PHONE.md
@@ -142,7 +166,7 @@
   absent: 'uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"'
 
 - id: phone-listener-lifetime
-  says: "The listener is up exactly while a call is"
+  says: "The listener is up while a call is"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/VoiceController.kt
   match: 'PhoneMcp\.start\(context\)'

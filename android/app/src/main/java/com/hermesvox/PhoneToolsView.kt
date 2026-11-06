@@ -34,21 +34,22 @@ object PhoneToolsView {
     /** Asked, waiting for the agent: the prompt was handed over and no handshake has arrived. */
     const val WAITING_HEADING = "Asked — waiting for your agent"
 
-    /** What waiting means, including the restart Hermes needs to read a new server entry. */
+    /** What waiting means. The listener window, not a restart, is what the entry waits on. */
     const val WAITING_MEANING =
-        "The setup prompt has been handed over, and no handshake has arrived yet. If your agent " +
-            "has written the entry, your gateway may need restarting before the tool appears."
+        "The setup prompt has been handed over, and no handshake has arrived yet. A running " +
+            "gateway picks the entry up by itself, so there is nothing to restart."
 
     /** Connected: the phone's own server saw the handshake. The only state that may say this. */
     const val CONNECTED_HEADING = "Connected"
 
     /**
-     * The sentence after the prompt: who writes the entry, and when it starts working. The restart
-     * is part of the sequence, not a footnote — Hermes reads MCP configuration at startup, so the
-     * entry exists for the agent only after the gateway comes back up.
+     * The sentence after the prompt: who writes the entry, and why nothing has to be restarted.
+     * The app opens the phone's listener for three minutes before sending, which is what lets
+     * `hermes mcp add` prove reachability; the gateway reconciles its own configuration afterwards.
      */
-    const val SETUP_RESTART =
-        "Your agent writes the entry itself; it takes effect when your gateway restarts."
+    const val SETUP_NOTE =
+        "Your agent writes the entry itself while this phone's listener is open. Nothing on your " +
+            "host restarts, and Vox writes nothing there."
 
     fun reachability(tailnet: String?, allowed: Boolean = true): String = when {
         !allowed -> ALPHA_OFF
@@ -172,18 +173,18 @@ object PhoneToolsView {
     /**
      * What the setup section draws, read once, in one place: the state's [heading], the [meaning]
      * under it, the [prompt] the owner hands to the agent with the copy action beside it, and the
-     * [restart] sentence that follows it.
+     * [note] sentence that follows it.
      *
-     * [prompt] and [restart] are null when there is nothing to hand over — the connected state, or
-     * the set being off — so the sheet cannot draw a restart for a connection that already
-     * happened. The sheet renders them as heading, meaning, the state's action, the prompt, its
-     * copy action, then the restart: the sequence the owner was never shown.
+     * [prompt] and [note] are null when there is nothing to hand over — the connected state, or the
+     * set being off — so the sheet cannot promise a setup for a connection that already happened.
+     * The sheet renders them as heading, meaning, the state's action, the prompt, its copy action,
+     * then the note: the sequence the owner was never shown.
      */
     data class SetupBlock(
         val heading: String,
         val meaning: String,
         val prompt: String?,
-        val restart: String?,
+        val note: String?,
     )
 
     /**
@@ -201,14 +202,14 @@ object PhoneToolsView {
                 heading = ALPHA_OFF,
                 meaning = setupNext(state, allowed = false),
                 prompt = null,
-                restart = null,
+                note = null,
             )
         }
         return when (state) {
             PhoneSetup.State.CONNECTED ->
                 SetupBlock(CONNECTED_HEADING, setupNext(state), null, null)
             else ->
-                SetupBlock(setupHeadline(state, failure), setupNext(state), prompt, SETUP_RESTART)
+                SetupBlock(setupHeadline(state, failure), setupNext(state), prompt, SETUP_NOTE)
         }
     }
 

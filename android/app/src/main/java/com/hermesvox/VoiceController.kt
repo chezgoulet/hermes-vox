@@ -529,7 +529,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     private val pendingTurn = PendingTurn()
     // The phone's own actions — timer, alarm, do-not-disturb, volume, and the rest of the tool.
     // Created on first use so a probe-only controller never touches the alarm/audio services.
-    private val localActions: LocalActions by lazy { LocalActions(context) }
+    private val localActions: LocalActions by lazy { LocalActions.shared(context) }
     // D38: Presence's entire view of the phone. Read-only by type, so the being can report a
     // running timer and can never set, cancel or change one.
     private val presenceReadout: PhoneReadout by lazy { localActions }
@@ -787,8 +787,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
         listenRetry = 0   // a new call gets its own cold-start retry
-        // B3 (#421 step 3): the mind can only reach the phone while the call is live. Started on
-        // the first start of a call (this method re-enters while warming) and stopped by stop().
+        // B3 (#421 step 3): the mind can only reach the phone while the call is live — or during
+        // the one-button setup's stated window, which PhoneMcp opens for itself. Started on the
+        // first start of a call (this method re-enters while warming) and released by stop().
         if (!phoneMcpUp) {
             phoneMcpUp = true
             try { PhoneMcp.start(context) { args -> localActions.phone(args) } }
@@ -1524,8 +1525,9 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     fun stop() {
         listening = false
-        // B3 (#421 step 3): a hangup closes the phone's MCP listener. The registry in LocalActions
-        // is untouched — what is running stays running; only the socket goes.
+        // B3 (#421 step 3): a hangup releases the call's hold on the phone's MCP listener; a setup
+        // window that is still open keeps it up until its own clock ends. The registry in
+        // LocalActions is untouched — what is running stays running; only the socket goes.
         phoneMcpUp = false
         try { PhoneMcp.stop() } catch (t: Throwable) { VoxLog.w("event=phone-mcp stop-failed reason=${t.javaClass.simpleName}") }
         // A hangup closes the notification board: every record and every id is dropped here, not

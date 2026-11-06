@@ -134,6 +134,17 @@ object PhoneSetupSend {
         return message(f, detail)
     }
 
+    /**
+     * [text] with the token removed, and nothing else changed. Used for the agent's reply before
+     * it is stored: the reply is shown in full, but a token echoed back must never reach the
+     * record, a log or a preference.
+     */
+    fun redact(text: String?, token: String): String? {
+        if (text == null) return null
+        if (token.isBlank()) return text
+        return text.replace(token, "[token]")
+    }
+
     /** The transport's message, without the token, on one line, bounded. */
     fun scrub(text: String, token: String, max: Int = 160): String {
         var s = text
