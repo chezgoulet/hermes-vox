@@ -7,17 +7,23 @@ how many became lines, why the rest were refused, how far apart the lines landed
 
   python3 scripts/presence-session-report.py logcat.txt
   python3 scripts/presence-session-report.py --json logcat.txt
+  python3 scripts/presence-session-report.py --bar logcat.txt     # the verdict, exit 1 on a fail
   python3 scripts/presence-session-report.py --check logcat.txt   # exit 1 if the bar is missed
 
 The bar (docs/PLAN-0.9.2.md, "The instrument and the bar"; issue #217). Every row names what
-it measures, the events it counts, the threshold, the value and the sample size; a row with
-no samples is "unknown", never a pass. The rows (docs/PRESENCE-TUNING-BAR.md):
+it measures, the events it counts, the threshold, the value and the sample size. A row with
+no samples says "no data" and is never a pass. The rows (docs/PRESENCE-TUNING-BAR.md):
 
   speak-rate   spoken / offered working slots, Conversational runs     >= 2/3
-  late         turn renders dropped as late (er-soul-drop reason=late) == 0
-  repeats      a spoken line hash (h=) heard twice in one run          == 0
+  late         lines that arrived after the reply's first text         == 0
+  repeats      a spoken line hash (h=) heard twice in one session      == 0
   render-p95   er-soul ms=, nearest-rank p95                           <  3000 ms
   boundary     working renders started < 700 ms after speech end (D18) == 0
+
+A session is one conversation. `er-presence stop reason=call-end` closes one (a call can also
+be one log file); every other stop closes a turn within it. That boundary is what repeats are
+counted against: the same line in two turns of one call repeats, the same line in the next
+call does not.
 
 The event vocabulary is the app's, not this script's:
   event=er-presence line=N interval=MS density=D kind=lag|soul [h=HASH]
@@ -36,7 +42,7 @@ from pathlib import Path
 
 LINE = re.compile(r"er-presence line=(\d+)(?: interval=(\d+))?(?: density=(\w+))?(?: kind=(\w+))?(?: h=([0-9a-f]+))?")
 SKIP = re.compile(r"er-presence skip line=(\d+)(?: reason=(\w+))?(?: density=(\w+))?")
-STOP = re.compile(r"er-presence stop reason=(\w+)(?: lines=(\d+))?")
+STOP = re.compile(r"er-presence stop reason=([\w-]+)(?: lines=(\d+))?")
 SOUL = re.compile(
     r"er-soul kind=(\w+) decision=(\w+) chars=(\d+) heard=(true|false) mood=(\S+)(?: ms=(\d+))?(?: boundaryMs=(-?\d+))?"
 )
@@ -57,6 +63,7 @@ BAR_BOUNDARY_MS = 700
 class Run:
     """One presence run: opened by a slot and closed by a stop event."""
     index: int = 0
+    session: int = 0
     density: str | None = None
     slots: int = 0
     spoken: int = 0
@@ -84,14 +91,38 @@ class Session:
     missing_ms: int = 0
     # boundaryMs of each working render (the D18 window); -1 = no turn yet, skipped.
     working_boundary: list[int] = field(default_factory=list)
+    # The conversation now being read. A call-end stop or a second log file starts a new one.
+    session: int = 0
 
     def run(self) -> Run:
         if not self.runs:
-            self.runs.append(Run(index=0))
+            self.runs.append(Run(index=0, session=self.session))
         return self.runs[-1]
 
-    def new_run(self):
-        self.runs.append(Run(index=len(self.runs)))
+    def new_run(self, reason: str | None = None):
+        # `stop reason=call-end` is the app's own end-of-conversation signal; every other stop
+        # (reply, cap, barge, hush) ends a turn inside the same conversation.
+        if reason == "call-end":
+            self.session += 1
+        self.runs.append(Run(index=len(self.runs), session=self.session))
+
+    def merge(self, other: "Session") -> None:
+        """Fold a second log in as its own conversation(s)."""
+        base = self.session + (1 if (self.runs or other.runs) else 0)
+        for r in other.runs:
+            r.session += base
+        self.runs.extend(other.runs)
+        self.session = max(self.session, base + other.session)
+        self.late += other.late
+        self.soul += other.soul
+        self.renders.extend(other.renders)
+        self.missing_ms += other.missing_ms
+        self.working_boundary.extend(other.working_boundary)
+        for mine, theirs in ((self.render_events, other.render_events),
+                             (self.decisions, other.decisions),
+                             (self.guard_refusals, other.guard_refusals)):
+            for key, n in theirs.items():
+                mine[key] = mine.get(key, 0) + n
 
 
 def parse(text: str) -> Session:
@@ -101,7 +132,7 @@ def parse(text: str) -> Session:
             continue
         if m := STOP.search(raw):
             s.run().close(m.group(1), int(m.group(2)) if m.group(2) else None)
-            s.new_run()
+            s.new_run(m.group(1))
             continue
         if m := LINE.search(raw):
             r = s.run()
@@ -191,18 +222,30 @@ def summarise(s: Session) -> dict:
     conv_spoken = sum(r.spoken for r in conv)
     rate = (conv_spoken / conv_slots) if conv_slots else None
     p95 = pct(s.renders, 0.95)
-    hashed_runs = [r for r in runs if r.hashes]
-    repeats = sum(len(r.hashes) - len(set(r.hashes)) for r in hashed_runs)
+    # Repeats belong to a conversation, not a turn: the same line twice in one call is a
+    # repeat, the same line in the next call is not. The app closes a call with
+    # `er-presence stop reason=call-end`; a second log file is a second conversation.
+    hashes: dict[int, list[str]] = {}
+    for r in runs:
+        hashes.setdefault(r.session, []).extend(r.hashes)
+    hashed_lines = sum(len(v) for v in hashes.values())
+    repeats = sum(len(v) - len(set(v)) for v in hashes.values())
+    # The after-the-reply failure has two lanes: a turn render dropped as late, and a working
+    # slot skipped as late. Both are a line that arrived once the mind had spoken first.
+    late_working = skips.get("late", 0)
+    late_total = s.late + late_working
+    late_n = s.soul + slots
     inside = sum(1 for b in s.working_boundary if b < BAR_BOUNDARY_MS)
     bar = [
         _row("speak-rate", "spoken / offered working slots, Conversational runs",
              "er-presence line / skip", ">= 2/3", rate, conv_slots,
              None if rate is None else rate >= BAR_RATE),
-        _row("late", "turn renders that arrived after the reply and were dropped",
-             "er-soul-drop reason=late", "== 0", s.late, s.soul, s.late == 0),
-        _row("repeats", "spoken lines heard twice in one run (by line hash)",
-             "er-presence line … h=", "== 0", repeats if hashed_runs else None,
-             sum(len(r.hashes) for r in hashed_runs), None if not hashed_runs else repeats == 0),
+        _row("late", "lines that arrived after the reply's first text (turn drops + working skips)",
+             "er-soul-drop reason=late / er-presence skip reason=late", "== 0",
+             late_total if late_n else None, late_n, None if not late_n else late_total == 0),
+        _row("repeats", "a spoken line heard twice in one session (by line hash)",
+             "er-presence line … h=", "== 0", repeats if hashed_lines else None,
+             hashed_lines, None if not hashed_lines else repeats == 0),
         _row("render-p95", "render latency, nearest-rank p95",
              "er-soul … ms=", f"< {BAR_P95_MS} ms", p95, len(s.renders),
              None if p95 is None else p95 < BAR_P95_MS),
@@ -215,6 +258,7 @@ def summarise(s: Session) -> dict:
     checks["rate"] = checks["speak-rate"]
     checks["p95"] = checks["render-p95"]
     return {
+        "sessions": len({r.session for r in runs}),
         "runs": len(runs),
         "slots": slots,
         "spoken": spoken,
@@ -225,6 +269,8 @@ def summarise(s: Session) -> dict:
         "kinds": {k: sum(1 for r in runs for x in r.kinds if x == k) for k in {x for r in runs for x in r.kinds}},
         "soul_renders": s.soul,
         "late_drops": s.late,
+        "late_working": late_working,
+        "late_total": late_total,
         "guard_refusals": s.guard_refusals,
         "render_ms_p50": pct(s.renders, 0.5),
         "render_ms_p95": p95,
@@ -233,7 +279,8 @@ def summarise(s: Session) -> dict:
         "render_events": s.render_events,
         "decisions": s.decisions,
         "conversational": {"slots": conv_slots, "spoken": conv_spoken},
-        "repeats": repeats if hashed_runs else None,
+        "repeats": repeats if hashed_lines else None,
+        "hashed_lines": hashed_lines,
         "working_boundary_ms": s.working_boundary,
         "bar": bar,
         "checks": checks,
@@ -254,23 +301,59 @@ def fmt(v, unit="", nd=0):
     return f"{v:.{nd}f}{unit}" if isinstance(v, float) else f"{v}{unit}"
 
 
+def _bar_lines(d: dict) -> list[str]:
+    """The bar, one row per criterion: the verdict, the measured number, the bar, and n.
+
+    A row with no samples is `no data`, never a pass: an absence is not a success.
+    """
+    out = ["  bar — pass, fail or no data per criterion, with the measured number and n"]
+    for b in d["bar"]:
+        verdict = "pass" if b["verdict"] else "fail" if b["verdict"] is False else "no data"
+        v = b["value"]
+        if v is None:
+            shown = "—"
+        elif b["name"] == "speak-rate":
+            shown = f"{v * 100:.0f}%"
+        elif b["name"] == "render-p95":
+            shown = f"{v} ms"
+        else:
+            shown = f"{v}"
+        out.append(f"    {verdict:<8}{b['name']:<11}{shown:>7}  bar {b['threshold']:<9} "
+                   f"n={b['n']:<4} {b['measures']}  [{b['source']}]")
+    measured = sum(1 for b in d["bar"] if b["verdict"] is not None)
+    failed = sum(1 for b in d["bar"] if b["verdict"] is False)
+    out.append(f"  verdict: {'pass' if d['passes_bar'] else 'fail'} — "
+               f"{measured} of {len(d['bar'])} criteria measured, {failed} failed, "
+               f"{len(d['bar']) - measured} with no data")
+    return out
+
+
 def report(s: Session) -> str:
     d = summarise(s)
     out = []
     out.append("presence — session report")
     out.append("")
+    out.append(f"  sessions             {d['sessions']}")
     out.append(f"  runs with slots      {d['runs']}")
     out.append(f"  slots offered        {d['slots']}")
     out.append(f"  lines spoken         {d['spoken']}  ({fmt(d['rate']*100 if d['rate'] is not None else None, '%', 0)} of Conversational slots)")
     if d["skips"]:
-        out.append("  refused              " + ", ".join(f"{k} {v}" for k, v in sorted(d["skips"].items())))
+        out.append("  skips by reason      " + ", ".join(f"{k} {v}" for k, v in sorted(d["skips"].items())))
+    else:
+        out.append("  skips by reason      none")
+    if d["repeats"] is not None:
+        out.append(f"  repeats              {d['repeats']}  (the same line twice in one session, "
+                   f"over {d['hashed_lines']} hashed line(s))")
+    else:
+        out.append("  repeats              no data  (the log carries no h= line hashes)")
     if d["kinds"]:
         out.append("  kinds                " + ", ".join(f"{k} {v}" for k, v in sorted(d["kinds"].items())))
     out.append(f"  median interval      {fmt(d['median_interval_ms'], ' ms')}")
     out.append("")
     out.append(f"  soul renders         {d['soul_renders']}   decisions " +
                ", ".join(f"{k} {v}" for k, v in sorted(d["decisions"].items())))
-    out.append(f"  late drops           {d['late_drops']}   (a line that arrived after the reply)")
+    out.append(f"  late                 {d['late_total']}   (lines that arrived after the reply's first "
+               f"text: {d['late_drops']} turn drop(s), {d['late_working']} working skip(s))")
     if d["guard_refusals"]:
         out.append("  guard refusals       " + ", ".join(f"{k} {v}" for k, v in sorted(d["guard_refusals"].items())))
     else:
@@ -282,13 +365,7 @@ def report(s: Session) -> str:
     if d["render_events"]:
         out.append("  render events        " + ", ".join(f"{k} {v}" for k, v in sorted(d["render_events"].items())))
     out.append("")
-    out.append("  bar — each row: what it measures, the events, threshold, value (n)")
-    for b in d["bar"]:
-        verdict = "PASS" if b["verdict"] else "FAIL" if b["verdict"] is False else "unknown"
-        v = b["value"]
-        shown = "—" if v is None else (f"{v*100:.0f}%" if b["name"] == "speak-rate" else f"{v}")
-        out.append(f"    {verdict:<8}{b['name']:<12}{shown:>8} {b['threshold']:<10} n={b['n']:<4} "
-                   f"{b['measures']}  [{b['source']}]")
+    out.extend(_bar_lines(d))
     return "\n".join(out)
 
 
@@ -296,17 +373,23 @@ def main(argv):
     args = [a for a in argv[1:] if not a.startswith("-")]
     as_json = "--json" in argv
     check = "--check" in argv
+    bar = "--bar" in argv
     if not args:
         print(__doc__)
         return 2
-    text = "\n".join(Path(p).read_text(errors="replace") for p in args)
-    s = parse(text)
+    s = parse(Path(args[0]).read_text(errors="replace"))
+    for path in args[1:]:
+        # Each file is its own conversation; concatenating them would let a line in one call
+        # be counted as a repeat of the same line in the next.
+        s.merge(parse(Path(path).read_text(errors="replace")))
     d = summarise(s)
     if as_json:
-        print(json.dumps(d, indent=2))
+        print(json.dumps({"bar": d["bar"], "passes_bar": d["passes_bar"]} if bar else d, indent=2))
+    elif bar:
+        print("\n".join(_bar_lines(d)))
     else:
         print(report(s))
-    if check:
+    if check or bar:
         return 0 if d["passes_bar"] else 1
     return 0
 
