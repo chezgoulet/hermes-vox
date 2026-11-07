@@ -119,6 +119,19 @@ object PhoneTool {
         PhoneGrants.advertised(grants)
 
     /**
+     * The `direction` values each action takes. They are disjoint: the two actions share one
+     * schema property, and no value is valid for both. The schema therefore advertises the
+     * vocabulary in the property's description and **no `enum`** — an enum on a shared property
+     * would advertise `up` for a skip and `next` for a volume, and a schema-valid call would then
+     * be `invalid-arguments`. The parser reads this table, so a value cannot be accepted without
+     * being named to the model, or named without being accepted.
+     */
+    internal val DIRECTIONS: Map<String, Set<String>> = linkedMapOf(
+        "volume" to setOf("up", "down"),
+        "skip" to setOf("next", "previous"),
+    )
+
+    /**
      * The rule that makes `sensitive:true` on a notification result mean something. It lives in
      * the **tool description**, not only in the docs, because the description is what the agent
      * reads on every turn and the docs are not.
@@ -304,10 +317,13 @@ object PhoneTool {
                 ),
                 "direction" to linkedMapOf(
                     "type" to "string",
-                    "enum" to listOf("up", "down", "next", "previous"),
+                    // No `enum`: `volume` and `skip` share this property and their values are
+                    // disjoint, so any enum here would advertise a value one of them refuses.
                     "description" to
-                        "volume only: up or down for one stream step. skip only: next (the " +
-                        "default) or previous. Each action accepts only its own pair.",
+                        "one step in a direction: up or down for the media volume, next or " +
+                        "previous for a track (next is the default when omitted). Each action " +
+                        "accepts only its own two values; a value it does not take is " +
+                        "invalid-arguments naming the action and the value.",
                 ),
                 "text" to linkedMapOf(
                     "type" to "string",
@@ -780,12 +796,21 @@ object PhoneTool {
             if (raw != null && raw !in 0L..100L) return bad(action, "level must be between 0 and 100")
             val level = raw?.toInt()
             if (level != null) return Parsed.Run(Call.Volume(level, 0))
-            val direction = when ((args["direction"] as? String)?.trim()?.lowercase()) {
-                "up" -> 1
-                "down" -> -1
-                else -> return bad(action, "give level 0-100, or direction up or down")
+            val direction = (args["direction"] as? String)?.trim()?.lowercase()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return bad(
+                    action,
+                    "level or direction is required: give level 0-100, or direction up or down",
+                )
+            when (direction) {
+                "up" -> Parsed.Run(Call.Volume(null, 1))
+                "down" -> Parsed.Run(Call.Volume(null, -1))
+                else -> bad(
+                    action,
+                    "direction \"$direction\" is not valid for volume; volume takes up or down " +
+                        "(or give level 0-100)",
+                )
             }
-            Parsed.Run(Call.Volume(null, direction))
         }
         "note" -> {
             val text = (args["text"] as? String)?.trim().orEmpty()
@@ -798,11 +823,17 @@ object PhoneTool {
         "play" -> Parsed.Run(Call.PlayPause(pause = false))
         "pause" -> Parsed.Run(Call.PlayPause(pause = true))
         "skip" -> {
-            val dir = (args["direction"] as? String)?.trim()?.lowercase()
+            val dir = (args["direction"] as? String)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
             when (dir) {
-                null, "", "next" -> Parsed.Run(Call.Skip(previous = false))
-                "previous", "prev" -> Parsed.Run(Call.Skip(previous = true))
-                else -> bad(action, "direction must be next (the default) or previous")
+                // `prev` is not a word this tool advertises or accepts: either would be a second
+                // name for the same value, and the schema names `previous`.
+                null, "next" -> Parsed.Run(Call.Skip(previous = false))
+                "previous" -> Parsed.Run(Call.Skip(previous = true))
+                else -> bad(
+                    action,
+                    "direction \"$dir\" is not valid for skip; skip takes next (the default) or " +
+                        "previous",
+                )
             }
         }
         "now_playing" -> Parsed.Run(Call.NowPlaying)
