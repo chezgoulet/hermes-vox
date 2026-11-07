@@ -3157,7 +3157,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         streamReplyGen = gen
         replyOwnsTrack = false
         if (sRunning && sClosed) sRunning = false   // re-arm a drained worker (stuck sRunning) so this new turn can start
-        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false; sFinal = false }
+        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false; sFinal = false; sFirstChunkEmitted = false }
         lastStreamFlush = android.os.SystemClock.uptimeMillis()   // arm the #44 timer for THIS turn
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
@@ -3327,22 +3327,26 @@ class VoiceController(private val context: Context, private val session: HermesS
         synchronized(sLock) {
             val now = android.os.SystemClock.uptimeMillis()
             sAccum.append(delta)
-            // Slice from the LIVE accumulator, not a snapshot: after the first sentence
-            // our boundary index is relative to the shortened sAccum, so slicing the
-            // snapshot re-extracted the start (duplicate sentences -> garbage chunks).
-            var b = indexOfSentenceEnd(sAccum.toString())
+            // StreamTextChunker slices on hard sentence terminators ('.', '!', '?', '\n'),
+            // or on soft punctuation (',', ';', ':') only when the segment length satisfies
+            // min-chunk thresholds. This prevents tiny lexical fragments from being synthesized
+            // in isolation, keeping prosody natural and preventing AudioTrack buffer exhaustion.
+            var b = StreamTextChunker.findSplitIndex(sAccum.toString(), isFirstChunk = !sFirstChunkEmitted)
             var emitted = false
             while (b >= 0) {
                 val sent = sAccum.substring(0, b + 1).trim()
                 sAccum.replace(0, b + 1, "")
-                if (sent.isNotBlank()) { sQueue.add(Chunk(gen, sent)); emitted = true }
-                b = indexOfSentenceEnd(sAccum.toString())
+                if (sent.isNotBlank()) {
+                    sQueue.add(Chunk(gen, sent))
+                    emitted = true
+                    sFirstChunkEmitted = true
+                }
+                b = StreamTextChunker.findSplitIndex(sAccum.toString(), isFirstChunk = !sFirstChunkEmitted)
             }
-            // #44: a punctuation-light open phrase that hasn't hit a terminator in the
-            // flush window is emitted as a short partial so the first audio (and every
-            // pause in a ramble) plays sooner, not at the next sentence terminator.
-            // Cut at the LAST word break so we never synthesize a half word.
-            if (!emitted && now - lastStreamFlush >= STREAM_CHUNK_FLUSH_MS) {
+            // Bounded partial flush for punctuation-light phrases without boundaries:
+            // only flushes once sufficient text has accumulated to avoid underruns,
+            // cutting cleanly at the final word break.
+            if (!emitted && StreamTextChunker.shouldFlush(sAccum.length, now - lastStreamFlush, isFirstChunk = !sFirstChunkEmitted)) {
                 val cut = sAccum.toString().trimEnd()
                 val lastSpace = cut.lastIndexOf(' ') + 1   // offset after the final word break
                 if (lastSpace > 0 && lastSpace < cut.length) {
@@ -3351,6 +3355,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         sQueue.add(Chunk(gen, rest))
                         sAccum.setLength(0); sAccum.append(cut.substring(lastSpace))
                         emitted = true
+                        sFirstChunkEmitted = true
                     }
                 }
             }
@@ -3575,6 +3580,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     // hasn't been chunked) within STREAM_CHUNK_FLUSH_MS is cut at the last word
     // break and emitted so audio tracks the text rather than the terminator.
     private var lastStreamFlush = 0L
+    @Volatile private var sFirstChunkEmitted = false
 
     /** The streaming-reply guard condition, in ONE place: a glue one-shot is forbidden
      *  only once the reply has actually BEGUN producing output, because that is when a
@@ -4353,6 +4359,70 @@ internal fun indexOfSentenceEnd(s: String): Int {
         }
     }
     return -1
+}
+
+/**
+ * StreamTextChunker — extracts complete, prosodically coherent text segments for streaming TTS.
+ *
+ * Prevents choppy/saccadic speech by avoiding tiny lexical fragments (e.g. "Je" or "Pouvez-vous")
+ * being sent to Piper VITS in isolation.
+ *
+ * Rules:
+ * 1. Hard sentence boundaries ('.', '!', '?', '\n') are primary split points.
+ * 2. Soft clause punctuation (',', ';', ':') only splits when the accumulated segment has reached
+ *    a comfortable duration (MIN_CLAUSE_CHARS), preserving phrase continuity.
+ * 3. The first chunk of a turn uses a moderate threshold (MIN_FIRST_CHUNK_CHARS) to preserve
+ *    snappy conversational Time-To-First-Audio while ensuring enough PCM duration (~1.5-2.0s)
+ *    to compute subsequent chunks concurrently without audio underruns.
+ */
+internal object StreamTextChunker {
+    const val MIN_FIRST_CHUNK_CHARS = 30
+    const val MIN_BODY_CHUNK_CHARS = 55
+    const val FLUSH_IDLE_CHARS = 40
+    const val FLUSH_LONG_MS = 1200L
+    const val FLUSH_IDLE_MS = 2500L
+
+    fun indexOfHardEnd(s: String): Int {
+        for (i in s.indices) {
+            when (s[i]) {
+                '!', '?', '\n' -> return i
+                '.' -> if (isSentenceDot(s, i)) return i
+            }
+        }
+        return -1
+    }
+
+    fun indexOfSoftEnd(s: String, minLength: Int): Int {
+        for (i in s.indices) {
+            when (s[i]) {
+                ',', ';', ':' -> if (i >= minLength && i + 1 < s.length && s[i + 1].isWhitespace()) return i
+            }
+        }
+        return -1
+    }
+
+    /** Returns the split index in [s] (inclusive), or -1 if [s] should keep accumulating. */
+    fun findSplitIndex(s: String, isFirstChunk: Boolean): Int {
+        // 1. Hard sentence terminators always take priority
+        val hard = indexOfHardEnd(s)
+        if (hard >= 0) return hard
+
+        // 2. Soft clause terminators only if minimum length threshold is met
+        val minLen = if (isFirstChunk) MIN_FIRST_CHUNK_CHARS else MIN_BODY_CHUNK_CHARS
+        val soft = indexOfSoftEnd(s, minLen)
+        if (soft >= 0) return soft
+
+        return -1
+    }
+
+    /** Determines whether an unpunctuated phrase should flush at [elapsedMs] since last flush. */
+    fun shouldFlush(length: Int, elapsedMs: Long, isFirstChunk: Boolean): Boolean {
+        if (length < 15) return false // Never flush trivial 1-2 words fragments on timer
+        val thresholdChars = if (isFirstChunk) MIN_FIRST_CHUNK_CHARS else MIN_BODY_CHUNK_CHARS
+        if (length >= thresholdChars && elapsedMs >= FLUSH_LONG_MS) return true
+        if (length >= FLUSH_IDLE_CHARS && elapsedMs >= FLUSH_IDLE_MS) return true
+        return false
+    }
 }
 
 private fun isSentenceDot(s: String, i: Int): Boolean {

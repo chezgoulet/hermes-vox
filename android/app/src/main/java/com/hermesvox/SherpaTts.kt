@@ -424,11 +424,15 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
     }
 
-    /** Build + play a single persistent AudioTrack at the given rate (the actual one). */
+    /** Build + play a single persistent AudioTrack at the given rate (the actual one).
+     *  The buffer capacity is 4.0 seconds (sr * 4 * 4 bytes for float mono): a large buffer
+     *  lets streamChunk() write completed audio without blocking, freeing the synthesis worker
+     *  to generate the subsequent chunk concurrently in the background and eliminating audio
+     *  underruns between phrases. */
     private fun buildStreamTrack(sr: Int): AudioTrack? {
         return try {
             val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
-            val bufBytes = maxOf(minBuf, (sr / 4) * 4)
+            val bufBytes = maxOf(minBuf, sr * STREAM_BUFFER_SECS * 4)   // 4s PCM float buffer
             val t = AudioTrack.Builder()
                 .setAudioAttributes(speechAttributes())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
@@ -580,3 +584,5 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
     @Synchronized
     override fun shutdown() { tts = null }
 }
+
+private const val STREAM_BUFFER_SECS = 4
