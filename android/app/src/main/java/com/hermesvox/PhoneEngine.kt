@@ -2346,12 +2346,20 @@ class PhoneEngine(
         }
         val facts = linkedMapOf<String, Any?>(
             "offered" to offered,
+            // `status` reports the same names `tools/list` offers, from the same call, tier by
+            // tier. A name the schema would refuse is not a capability and is never listed here:
+            // a mind reading this is being told what this phone can do now, not what a later
+            // version might. The tier is the action's own, never its group's.
             "tiers" to linkedMapOf(
                 "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
                 "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
-                // Named from the one tier table, so a name cannot linger here after it moved.
-                "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
+                "2" to offered.filter { PhoneTiers.of(it) == PhoneTiers.APPROVAL },
             ),
+            // Which groups are on, positively, so a mind does not have to read absence as a
+            // denial: `grants` carries every group below, and this is the list that is live.
+            "groups_on" to PhoneGrants.GROUPS
+                .filter { PhoneGrants.stateOf(grants, it) != PhoneGrants.State.OFF }
+                .map { it.id },
             "grants" to PhoneGrants.summary(grants),
             "running" to running,
             "notes" to saved,

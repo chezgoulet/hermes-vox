@@ -1257,13 +1257,6 @@ object PhoneTiers {
         "delete",
     )
 
-    /** The names in one tier, sorted — the shape `status` reports without a second list. */
-    fun names(tier: Int): List<String> = when (tier) {
-        INSTANT -> TIER_0.sorted()
-        REPORTED -> TIER_1.sorted()
-        else -> TIER_2.sorted()
-    }
-
     /** The tier of [action], or null when it is not a phone action at all. */
     fun of(action: String): Int? {
         val a = action.trim().lowercase()
