@@ -365,7 +365,7 @@
   says: "the check stays red"
   doc: CONTRIBUTING.md
   file: .github/workflows/cla.yml
-  match: "sys.exit(1)"
+  match: "sys\\.exit\\(1\\)"
 
 - id: privacy-backup-off
   says: "Android backup is off"
