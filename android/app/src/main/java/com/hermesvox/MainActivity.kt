@@ -64,18 +64,21 @@ open class MainActivity : AppCompatActivity() {
                 approvalWaiting = true
                 waitCardUp = false
                 approvalCard.visibility = View.VISIBLE
-                approvalTitle.text = "APPROVAL NEEDED"
-                approvalLine.text = card.line
-                approvalLine.contentDescription = card.line
-                approvalState.text = "Two minutes"
+                val promptLang = liveController?.systemPromptLanguage()
+                    ?: if (java.util.Locale.getDefault().language == "fr") "fr" else "en"
+                val resolvedLine = card.line(promptLang)
+                approvalTitle.text = if (promptLang == "fr") "APPROBATION REQUISE" else "APPROVAL NEEDED"
+                approvalLine.text = resolvedLine
+                approvalLine.contentDescription = resolvedLine
+                approvalState.text = if (promptLang == "fr") "Deux minutes" else "Two minutes"
                 approvalState.visibility = View.VISIBLE
                 buildApprovalButtons(card.prompt())
-                setStatus("Waiting for your approval", true)
-                if (callLive) VoiceService.update(this@MainActivity, "Waiting for your approval")
-                appendConvo("! Approval needed: ${card.prompt().action}")
+                setStatus(if (promptLang == "fr") "En attente de votre approbation" else "Waiting for your approval", true)
+                if (callLive) VoiceService.update(this@MainActivity, if (promptLang == "fr") "En attente de votre approbation" else "Waiting for your approval")
+                appendConvo(if (promptLang == "fr") "! Approbation requise : ${card.prompt().action}" else "! Approval needed: ${card.prompt().action}")
                 // Spoken when a call is live: the card must not be a silent toast the owner misses.
                 if (callLive) {
-                    liveController?.speakGlue(card.line, source = "phone-approval")
+                    liveController?.speakGlue(resolvedLine, source = "phone-approval")
                 }
             }
             return true
@@ -1186,6 +1189,8 @@ open class MainActivity : AppCompatActivity() {
         override fun endCall() = this@MainActivity.endCall()
 
         override fun window(): CallWindow.Host? = pipHost
+
+        override fun lang(): String = liveController?.systemPromptLanguage() ?: "en"
     }
 
     /** The system's Stop button. The same `endCall()` the on-screen hang-up runs. */

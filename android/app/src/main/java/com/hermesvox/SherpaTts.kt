@@ -24,15 +24,15 @@ import kotlin.concurrent.thread
  * built-in voices, and every word of the test sentence intact on eight of ten voices. Kokoro
  * int8 was slower than real time; Pocket TTS dropped and misheard words.
  */
-enum class SherpaVoice(val modelId: String, val displayName: String) {
-    PIPER("piper-lessac", "Piper"),
+enum class SherpaVoice(val modelId: String, val displayName: String, val language: String = "en") {
+    PIPER("piper-lessac", "Piper", "en"),
     // The fr-FR voices (#477). Same VITS runtime as PIPER — only the downloaded model
     // differs — so they share one synthesis path and one set of speaker rules
     // ([VoiceSpeakers]); UPMC is the one with two built-in speakers.
-    PIPER_SIWIS("piper-siwis", "Piper · fr-FR (Siwis)"),
-    PIPER_TOM("piper-tom", "Piper · fr-FR (Tom)"),
-    PIPER_UPMC("piper-upmc", "Piper · fr-FR (UPMC)"),
-    SUPERTONIC("supertonic", "Supertonic"),
+    PIPER_SIWIS("piper-siwis", "Piper · fr-FR (Siwis)", "fr"),
+    PIPER_TOM("piper-tom", "Piper · fr-FR (Tom)", "fr"),
+    PIPER_UPMC("piper-upmc", "Piper · fr-FR (UPMC)", "fr"),
+    SUPERTONIC("supertonic", "Supertonic", "en"),
     ;
 
     val isSupertonic: Boolean get() = this == SUPERTONIC
@@ -61,7 +61,7 @@ enum class SherpaVoice(val modelId: String, val displayName: String) {
  * isWarm=false and the pipeline uses system TTS (a seamless fallback — never a broken turn).
  * Fully offline, no cloud.
  */
-class SherpaTts(private val context: Context, private val voice: SherpaVoice = SherpaVoice.PIPER) : VoxTts {
+class SherpaTts(private val context: Context, val voice: SherpaVoice = SherpaVoice.PIPER) : VoxTts {
     companion object {
         /** Playback RMS that drives the presence motion to full amplitude (previewB). */
         const val RMS_FULL = 0.22f

@@ -781,6 +781,8 @@ class LocalActions(context: Context) : PhoneReadout {
         override fun announce(line: String, after: () -> Unit) =
             onMain("announce") { PhoneHandoff.announceDial(line, after) }
 
+        override fun lang(): String = onMain("lang") { PhoneHandoff.lang() }
+
         /** The same teardown the on-screen hang-up runs, never a second one. */
         override fun endCall() = onMain("endCall") { PhoneHandoff.endCall() }
 

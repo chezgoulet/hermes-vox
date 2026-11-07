@@ -26,6 +26,7 @@ object TurnRepair {
 
     /** What a failed or empty turn says. Short, true, and actionable. */
     const val LINE = "Sorry — I didn't get an answer back on that. Want me to try again?"
+    const val LINE_FR = "Pardon — je n'ai pas reçu de réponse. Voulez-vous que je réessaie ?"
 
     /** The turn ended with nothing to say (the gateway returned no final text). */
     const val REASON_EMPTY = "empty-reply"
@@ -46,12 +47,13 @@ object TurnRepair {
 
     /** The app gave up waiting, and nothing had been started that it knows of. */
     const val LINE_GAVE_UP = "That took too long, so I stopped waiting. Want to ask again?"
+    const val LINE_GAVE_UP_FR = "C'était trop long, j'ai donc arrêté d'attendre. Voulez-vous reposer la question ?"
 
     /** The three wait-card endings are already one plain sentence each; no retry pitch. */
-    fun waitLine(reason: String): String? = when (reason) {
-        REASON_WAIT_STOP -> WaitPrompt.LINE_STOPPED
-        REASON_WAIT_NO_ANSWER -> WaitPrompt.LINE_NO_ANSWER
-        REASON_WAIT_EXTENDED -> WaitPrompt.LINE_EXTENDED
+    fun waitLine(reason: String, lang: String = "en"): String? = when (reason) {
+        REASON_WAIT_STOP -> if (lang == "fr") WaitPrompt.LINE_STOPPED_FR else WaitPrompt.LINE_STOPPED
+        REASON_WAIT_NO_ANSWER -> if (lang == "fr") WaitPrompt.LINE_NO_ANSWER_FR else WaitPrompt.LINE_NO_ANSWER
+        REASON_WAIT_EXTENDED -> if (lang == "fr") WaitPrompt.LINE_EXTENDED_FR else WaitPrompt.LINE_EXTENDED
         else -> null
     }
 
@@ -63,18 +65,20 @@ object TurnRepair {
      */
     const val LINE_UNCERTAIN = "I didn't get an answer back, and it had already started on it, " +
         "so I can't say what got done. Ask me to check."
+    const val LINE_UNCERTAIN_FR = "Je n'ai pas reçu de réponse et le travail avait déjà commencé, " +
+        "je ne peux donc pas confirmer ce qui a été fait. Demandez-moi de vérifier."
 
     /**
      * The one line for this ending. [workStarted]: the mind started a tool this turn, so
      * something may have happened. A timeout or a silent stream says the app stopped waiting —
      * not that the mind failed — because that is what the app knows.
      */
-    fun line(reason: String, workStarted: Boolean): String = waitLine(reason) ?: when {
+    fun line(reason: String, workStarted: Boolean, lang: String = "en"): String = waitLine(reason, lang) ?: when {
         // A wait-card ending says only what the app did ("stopped waiting"). That is true
         // whatever the mind had started, so the unknown-outcome guard does not override it.
-        workStarted -> LINE_UNCERTAIN
-        reason == REASON_TIMEOUT || reason == REASON_SILENT -> LINE_GAVE_UP
-        else -> LINE
+        workStarted -> if (lang == "fr") LINE_UNCERTAIN_FR else LINE_UNCERTAIN
+        reason == REASON_TIMEOUT || reason == REASON_SILENT -> if (lang == "fr") LINE_GAVE_UP_FR else LINE_GAVE_UP
+        else -> if (lang == "fr") LINE_FR else LINE
     }
 
     /** Should [LINE] be spoken for this turn's ending? */
