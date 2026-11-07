@@ -69,6 +69,12 @@ import androidx.core.content.ContextCompat
  * that needs one still refuses honestly in [PhoneEngine] — Do Not Disturb with `reason:"permission"`,
  * `now_playing` with `known:false` and the platform's own limit.
  *
+ * **The screen is the screen.** The Settings home row opens this, one tap: there is no section in
+ * between holding one row whose only job is to open another. The state line, the setup, the grant
+ * groups, Recent actions and This phone are all here, and the state line is
+ * [PhoneToolsView.stepLine] — the same five words the home row shows, from the same
+ * [PhoneBootstrap.settled] reading.
+ *
  * **The sheet is one column, and it scrolls to its end.** Set up, the capability groups, Recent
  * actions and This phone are all in it; the column is exactly as tall as what it holds and the
  * viewport is what the header leaves, so nothing below the fold is ever clipped without a scroll
@@ -155,12 +161,27 @@ class PhoneToolsSheet(
         d.show()
     }
 
+    private fun schedulePoll() {
+        if (poll != null) return
+        val tick = object : Runnable {
+            override fun run() {
+                if (!open) return
+                // #451: a tick repaints only when what the sheet would draw has changed.
+                if (repaints(shown, snapshot(System.currentTimeMillis()))) paint()
+                main.postDelayed(this, 1_000L)
+            }
+        }
+        poll = tick
+        main.postDelayed(tick, 1_000L)
+    }
+
     /**
-     * What the sheet draws, as data — the whole of it, read once.
+     * What the screen draws, as data — the whole of it, read once.
      *
-     * [PhoneMcp.Status] and [PhoneSetup.Record] are data classes, and the two lines that age are
+     * [PhoneMcp.Status] and [PhoneSetup.Record] are data classes, and the lines that age are
      * rendered here, so two reads a second apart are equal unless something the owner can see has
-     * actually changed. That is what makes the poll safe: see [repaints].
+     * actually changed. [step] is the one reading of the flow's state ([PhoneBootstrap.settled]),
+     * and [stateLine] is its five-word line — the same one the Settings home row shows.
      */
     internal data class Drawn(
         val status: PhoneMcp.Status,
@@ -168,6 +189,8 @@ class PhoneToolsSheet(
         val record: PhoneSetup.Record,
         val lastRequest: String,
         val handshake: String,
+        val step: PhoneBootstrap.Step = PhoneBootstrap.Step.IDLE,
+        val stateLine: String = "",
         val bootstrap: PhoneBootstrap.Progress = PhoneBootstrap.Progress(),
         /** The listener's life while the flow runs; empty otherwise. Not a countdown. */
         val listening: String = "",
@@ -186,25 +209,12 @@ class PhoneToolsSheet(
             PhoneBootstrapStore.progress(),
         )
 
-    private fun schedulePoll() {
-        if (poll != null) return
-        val tick = object : Runnable {
-            override fun run() {
-                if (!open) return
-                // #451: a tick repaints only when what the sheet would draw has changed.
-                // This used to repaint on the clock — every second for as long as a setup was
-                // WAITING — and each repaint replaced the content view: the scroll jumped to the
-                // top and a drag in flight was dropped, so nothing below the fold could be reached
-                // at all. The activity list and the silence line are data now, so a new tool call
-                // repaints and an idle second does not.
-                if (repaints(shown, snapshot(System.currentTimeMillis()))) paint()
-                main.postDelayed(this, 1_000L)
-            }
-        }
-        poll = tick
-        main.postDelayed(tick, 1_000L)
-    }
-
+    /**
+     * The screen's frame: the header, the scrolling column, and the three regions a redraw can
+     * rewrite separately — the state line, the setup block and the body. The regions are made
+     * here and filled below, so a tick that only moves the setup block or a line never builds a
+     * second tree ([render]).
+     */
     private fun build(drawn: Drawn): View {
         val root = VoxSheet.root(act)
         VoxSheet.header(root, "PHONE TOOLS", "Close phone tools", onClose = { dialog?.dismiss() })
@@ -221,13 +231,29 @@ class PhoneToolsSheet(
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
-        val status = drawn.status
+        // The state line, first, in the five words the rest of the app uses: [PhoneToolsView
+        // .stepLine] over [PhoneBootstrap.settled], which is the same reading the Settings home
+        // row draws.
+        row(col, "Setup", drawn.stateLine)
 
-        // #421: the sequence the owner is actually in, first. Turning the set on starts this
-        // phone's listener and mints its credential; it does not tell the agent the phone exists,
-        // and Hermes reads MCP configuration at startup. So the setup state leads the sheet —
-        // not below a list of grants the agent cannot use yet.
-        if (status.allowed) setupSection(col, drawn, hostOrPlaceholder(status))
+        // The setup block: the sequence the owner is actually in, before the grants it depends on.
+        fillSetup(col, drawn)
+
+        // Everything else: the grants, the audit and the phone's own state.
+        fillBody(col, drawn)
+
+        return root
+    }
+
+    /** The setup block: the sequence the owner is actually in, before the grants it depends on. */
+    private fun fillSetup(col: LinearLayout, drawn: Drawn) {
+        if (!drawn.status.allowed) return
+        setupSection(col, drawn, hostOrPlaceholder(drawn.status))
+    }
+
+    /** Everything the screen holds besides the state line and the setup block. */
+    private fun fillBody(col: LinearLayout, drawn: Drawn) {
+        val status = drawn.status
 
         body(
             col,
@@ -376,7 +402,7 @@ class PhoneToolsSheet(
                     "Select Phone tools in Alpha features at the top of Settings.",
                 dim = true,
             )
-            return root
+            return
         }
 
         col.addView(VoxSheet.subhead(act, "Manual fallback"))
@@ -424,8 +450,6 @@ class PhoneToolsSheet(
                 "needs no foreground service: it lives exactly as long as the call that opened it.",
             dim = true,
         )
-
-        return root
     }
 
     private var manualOpen = false
@@ -534,7 +558,8 @@ class PhoneToolsSheet(
         // The work, as it arrives: a history of the attempt, in arrival order, kept after the run
         // ends. Each line is a tool's own name plus the app's phrase for it — never an argument,
         // because the instruction carries this phone's token. The silence line is an age, not a
-        // countdown: nothing here is waiting for a stop.
+        // countdown: nothing here is waiting for a stop. Both ages are lines a tick rewrites by
+        // `setText` ([Lines]), so an idle second inside an attempt draws nothing new.
         if (drawn.activity.isNotEmpty()) {
             col.addView(VoxSheet.subhead(act, "What your agent did"))
             for (line in drawn.activity) body(col, line)
@@ -567,14 +592,14 @@ class PhoneToolsSheet(
         if (boot.step == PhoneBootstrap.Step.FAILED) {
             promptBlock(col, prompt, status, sent, hostOrTailnet(status), note = null)
             // A new attempt is the owner's explicit press, never an automatic loop.
-            action(
+            setupAction(
                 col,
+                boot.step,
                 "TRY AGAIN",
                 primary = false,
                 description = "Start one new attempt; the previous one stays failed",
             ) {
                 PhoneBootstrapStore.reset()
-                setUpAgent()
             }
         }
         if (boot.step == PhoneBootstrap.Step.CONNECTED && status.allowed) {
@@ -590,20 +615,54 @@ class PhoneToolsSheet(
                 // Said before the press: the token goes to the agent, and the phone's listener is
                 // opened for the length of the attempt. Nothing restarts.
                 body(col, PhoneBootstrap.BUTTON_WARNING)
-                action(
+                setupAction(
                     col,
+                    PhoneBootstrap.Step.IDLE,
                     PhoneBootstrap.BUTTON,
                     primary = true,
                     description = "Open this phone's listener for the attempt and ask your agent to add it",
-                ) { setUpAgent() }
+                )
             }
             PhoneSetup.State.WAITING ->
                 action(col, "ASK AGAIN", primary = false, description = "Send the setup turn again") { setUpAgent() }
             PhoneSetup.State.UNREACHABLE ->
-                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again") { setUpAgent() }
+                setupAction(
+                    col,
+                    PhoneBootstrap.Step.IDLE,
+                    "TRY AGAIN",
+                    primary = true,
+                    description = "Ask your agent again",
+                )
             PhoneSetup.State.REFUSED ->
-                action(col, "TRY AGAIN", primary = true, description = "Ask your agent again after fixing its file access") { setUpAgent() }
+                setupAction(
+                    col,
+                    PhoneBootstrap.Step.IDLE,
+                    "TRY AGAIN",
+                    primary = true,
+                    description = "Ask your agent again after fixing its file access",
+                )
             PhoneSetup.State.CONNECTED -> Unit
+        }
+    }
+
+    /**
+     * The setup action itself: one press, and it is on this screen only while there is something
+     * left to set up — [PhoneToolsView.setupRowVisible], the rule the Settings row used before this
+     * screen absorbed it. *Ask again* is not this action: it re-sends a turn to an entry that
+     * already works, so a connected phone keeps it and loses this.
+     */
+    private fun setupAction(
+        col: LinearLayout,
+        step: PhoneBootstrap.Step,
+        text: String,
+        primary: Boolean,
+        description: String,
+        before: () -> Unit = {},
+    ) {
+        if (!PhoneToolsView.setupRowVisible(step)) return
+        action(col, text, primary, description) {
+            before()
+            setUpAgent()
         }
     }
 
@@ -844,7 +903,11 @@ class PhoneToolsSheet(
      * only puts its answer where the sheet draws notices.
      */
     private fun setUpAgent() {
-        notice = setUpWithAgent(act) { act.runOnUiThread { if (open) paint() } }
+        notice = setUpWithAgent(act) {
+            // The store calls this only when the step moved, so the screen draws that step — by the
+            // same rule as a tick ([render]), not by rebuilding the whole column.
+            act.runOnUiThread { if (open) paint() }
+        }
         paint()
     }
 
@@ -922,25 +985,31 @@ class PhoneToolsSheet(
                 .takeIf { it.isNotBlank() }
             ?: "<tailnet-ip>"
 
-    private fun body(col: LinearLayout, text: String, dim: Boolean = false) {
-        col.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+    private fun body(col: LinearLayout, text: String, dim: Boolean = false): TextView =
+        TextView(act, null, 0, R.style.HvRowValue).apply {
             this.text = text
             if (!dim) setTextColor(color(R.color.hv_text))
             setPadding(0, dp(8), 0, dp(4))
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-    }
+            col.addView(this, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
 
-    private fun row(col: LinearLayout, title: String, value: String) {
+    /**
+     * One title/value row, returned as its value: the lines that age are rewritten by `setText`
+     * ([writeLines]), never by rebuilding the row around them.
+     */
+    private fun row(col: LinearLayout, title: String, value: String): TextView {
         val row = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(8))
         }
         row.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { text = title })
-        row.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
+        val v = TextView(act, null, 0, R.style.HvRowValue).apply {
             text = value
             contentDescription = "$title: $value"
-        })
+        }
+        row.addView(v)
         col.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        return v
     }
 
     private fun replyView(col: LinearLayout, text: String) {
@@ -999,14 +1068,13 @@ class PhoneToolsSheet(
         private const val AUDIT_ROWS = 20
 
         /**
-         * The one press, from either door (#453): this sheet's button and the Phone Tools
-         * section's own row. [PhoneBootstrapStore] opens the phone's setup window at this moment,
-         * resolves the connection, sends the fixed turn with this phone's token, and waits for the
-         * handshake. A second press while the flow is in flight is ignored by the store.
+         * The one press, from this screen's button. [PhoneBootstrapStore] opens the phone's setup
+         * window at this moment, resolves the connection, sends the fixed turn with this phone's
+         * token, and waits for the handshake. A second press while the flow is in flight is ignored
+         * by the store.
          *
-         * The section surfaces this rather than re-implementing it, so the checks and the wording
-         * exist once. Returns the line to show when a precondition refused the press, and null
-         * when the attempt started — or when the failure is already recorded for the sheet to draw.
+         * Returns the line to show when a precondition refused the press, and null when the attempt
+         * started — or when the failure is already recorded for the screen to draw.
          */
         fun setUpWithAgent(act: AppCompatActivity, onTick: () -> Unit = {}): String? {
             if (!AlphaGate.allows(act, AlphaGate.FeatureSet.PHONE_TOOLS)) {
@@ -1052,6 +1120,10 @@ class PhoneToolsSheet(
                 record = record,
                 lastRequest = PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now),
                 handshake = PhoneToolsView.handshakeLine(record.handshakeAt, now),
+                // The step is the one reading the home row makes too, so the screen and the row
+                // cannot come to different words about whether this phone is set up.
+                step = settled.step,
+                stateLine = PhoneToolsView.stepLine(settled.step, status.allowed),
                 bootstrap = settled,
                 listening = PhoneBootstrap.listeningLine(settled, now),
                 activity = PhoneBootstrap.activityLines(settled),

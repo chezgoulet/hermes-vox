@@ -115,7 +115,8 @@ class PhoneMcpWiringTest {
         assertTrue("rotation is refused too", mcp.contains("action=rotate"))
         assertTrue("the status carries the gate", mcp.contains("allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS)"))
         assertTrue("the settings row is dimmed and takes no tap",
-            settings.contains("gate(R.id.row_phone_mcp, phoneTools)"))
+            AlphaBlock.ROWS.any { it.row == "row_grp_phone" } &&
+                settings.contains("for (row in AlphaBlock.ROWS)"))
         assertTrue("turning the set off closes a live listener, window included",
             settings.contains("if (!phoneTools) PhoneMcp.closeNow()"))
         assertTrue("the first-run offer is gated too",
@@ -123,10 +124,10 @@ class PhoneMcpWiringTest {
         assertTrue("status rows say why they are off", view.contains("const val ALPHA_OFF"))
     }
 
-    @Test fun the_settings_row_opens_the_setup_sheet_not_a_paste_block() {
+    @Test fun the_settings_row_opens_the_setup_screen_not_a_paste_block() {
         val settings = File("src/main/java/com/hermesvox/SettingsActivity.kt").readText()
-        assertTrue(settings.contains("R.id.row_phone_mcp"))
-        assertTrue("one sheet owns the flow", settings.contains("PhoneToolsSheet(this"))
+        assertTrue(settings.contains("R.id.row_grp_phone"))
+        assertTrue("one screen owns the flow", settings.contains("PhoneToolsSheet(this"))
         assertFalse("the setup path is not a config dialog", settings.contains("setTitle(\"Phone MCP\")"))
     }
 

@@ -52,7 +52,6 @@ class SettingsActivity : AppCompatActivity() {
         bindSoundCues()
         bindGroups()
         bindAssistant()
-        bindPhoneTools()
         bindSectionRestoreRows()
         bindAppSkill()
         bindAlpha()
@@ -124,6 +123,9 @@ class SettingsActivity : AppCompatActivity() {
         // UI/UX pass: the model store is its own screen, and the home row is its door — one
         // step, not a section holding a single "open the store" row.
         if (section == SECTION_MODELS) { openModelsStore(); return }
+        // #511: Phone tools is the same shape. Its section used to hold two rows, one of which only
+        // opened the screen that had the grants; the screen is the section now, one tap from home.
+        if (section == SECTION_PHONE) { openPhoneTools(); return }
         // Transcription folded into Hearing and the screen settings into Appearance: an old
         // link (a banner, the debug harness) still lands where those rows live now.
         val target = when (section) {
@@ -259,8 +261,6 @@ class SettingsActivity : AppCompatActivity() {
         gate(R.id.row_mic_continuous, listening)
         gate(R.id.row_mic_semantic, listening)
         gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
-        gate(R.id.row_phone_boot, phoneTools)
-        gate(R.id.row_phone_mcp, phoneTools)
         // Quiet calls is its own Hearing setting now: no Alpha set, no master gate.
         refreshGrpVals()
     }
@@ -1554,6 +1554,15 @@ class SettingsActivity : AppCompatActivity() {
         startActivity(android.content.Intent(this, ModelsActivity::class.java))
     }
 
+    /**
+     * The one Phone tools screen (#511). One tap from the Settings home row, no section in between:
+     * the state, the setup, the grant groups and Recent actions are all on it, and it is the sheet
+     * the first-run offer opens, so there is one screen and one set of words.
+     */
+    private fun openPhoneTools() {
+        PhoneToolsSheet(this).show()
+    }
+
     override fun onResume() {
         super.onResume()
         refreshCallQuiet()   // #325: back from the Do Not Disturb access screen
@@ -1575,22 +1584,19 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * Phone Tools (#453): the home row's one line, the setup row's presence, and the capabilities
-     * door's value.
+     * Phone tools (#453/#511): the home row's one line.
      *
-     * The state line is [PhoneBootstrap.Step] — the same value the sheet draws and the button
-     * advances — read the way the sheet reads it: [PhoneBootstrap.settled] folds the handshake the
-     * record kept into the in-flight progress and then applies the clock. The progress alone is
-     * per-process, so reading only its step would say *Not set up* after a restart while the sheet,
-     * which folds the record's handshake in, said *Connected*. The setup row is the sheet's
-     * own button, surfaced; it is gone once the handshake lands. The capabilities value is the
-     * setup record's, as it has always been ("connected" only from the handshake).
+     * The state line is [PhoneBootstrap.Step] — the same value the one screen draws — read the way
+     * that screen reads it: [PhoneBootstrap.settled] folds the handshake the record kept into the
+     * in-flight progress and then applies the clock. The progress alone is per-process, so reading
+     * only its step would say *Not set up* after a restart while the screen, which folds the
+     * record's handshake in, said *Connected*.
      */
     private fun refreshPhoneTools() {
         runCatching {
             val allowed = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
-            // One record, one function, both doors: the same call the sheet makes, so the row and
-            // the sheet cannot disagree about whether this phone is set up — including after a
+            // One record, one function, both places: the same call the screen makes, so the row and
+            // the screen cannot disagree about whether this phone is set up — including after a
             // restart, when this process has no attempt but the record still holds the handshake.
             val now = System.currentTimeMillis()
             val record = PhoneSetupStore.read(this)
@@ -1600,35 +1606,7 @@ class SettingsActivity : AppCompatActivity() {
                 now,
             ).step
             findViewById<TextView>(R.id.set_phone_grpval)?.text = PhoneToolsView.stepLine(step, allowed)
-            findViewById<TextView>(R.id.set_phone_mcp_val)?.text =
-                PhoneToolsView.rowValue(PhoneSetup.state(record, now, PhoneMcp.tokenTag(this)), allowed)
-            findViewById<android.view.View>(R.id.row_phone_boot)?.visibility =
-                if (PhoneToolsView.setupRowVisible(step)) View.VISIBLE else View.GONE
         }
-    }
-
-    /**
-     * Phone Tools' two rows. The section's press is [PhoneToolsSheet.setUpWithAgent] — the very
-     * call the sheet's own button makes — so the flow, its checks and its words exist once; the
-     * section only surfaces them, one tap instead of "open the sheet, then press". A refused press
-     * says the sheet's own line, because there is no sheet open to draw it in.
-     */
-    private fun bindPhoneTools() {
-        findViewById<TextView>(R.id.set_phone_boot_title)?.text = PhoneToolsView.setupRowTitle()
-        findViewById<android.view.View>(R.id.row_phone_boot)?.setOnClickListener {
-            val refused = PhoneToolsSheet.setUpWithAgent(this) {
-                runOnUiThread { refreshPhoneTools() }
-            }
-            if (refused != null) Toast.makeText(this, refused, Toast.LENGTH_LONG).show()
-            refreshPhoneTools()
-        }
-        // #421 steps 3–5: this row opens the one sheet that shows the grants, composes the setup
-        // turn, keeps the agent's reply, waits for the phone's own handshake, and keeps the manual
-        // config as a fallback.
-        findViewById<LinearLayout>(R.id.row_phone_mcp)?.setOnClickListener {
-            PhoneToolsSheet(this).show()
-        }
-        refreshPhoneTools()
     }
 
     /** #225: the preview stops at onPause, not at onDestroy — a backgrounded Settings screen
@@ -2863,20 +2841,20 @@ class SettingsActivity : AppCompatActivity() {
         /** #453: the answer to "what may my agent do with my phone, and is it set up yet". */
         const val SECTION_PHONE = "phone"
 
-        /** The section containers, by section. Transcription, Voice models and the old
+        /** The section containers, by section. Transcription, Voice models, Phone tools and the old
          *  Appearance & Layout section have none of their own any more (see [showSection]). */
         val SECTION_VIEWS = mapOf(
             SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
             SECTION_TTS to R.id.sec_tts, SECTION_PRESENCE to R.id.sec_presence,
             SECTION_VISUALS to R.id.sec_visuals, SECTION_ASSISTANT to R.id.sec_assistant,
-            SECTION_PHONE to R.id.sec_phone, SECTION_ABOUT to R.id.sec_about)
+            SECTION_ABOUT to R.id.sec_about)
 
         /** The home row that opens each section; its label is the section's title. */
         val SECTION_HOME_ROWS = mapOf(
             SECTION_ENTITY to R.id.row_grp_entity, SECTION_SPEECH to R.id.row_grp_speech,
             SECTION_TTS to R.id.row_grp_tts, SECTION_PRESENCE to R.id.row_grp_presence,
             SECTION_VISUALS to R.id.row_grp_visuals, SECTION_ASSISTANT to R.id.row_grp_assistant,
-            SECTION_PHONE to R.id.row_grp_phone, SECTION_ABOUT to R.id.row_grp_about)
+            SECTION_ABOUT to R.id.row_grp_about)
 
         /** #329: the system's assistant-role dialog (distinct from REQ_MIC_CALL in MainActivity). */
         const val REQ_ASSISTANT = 102
