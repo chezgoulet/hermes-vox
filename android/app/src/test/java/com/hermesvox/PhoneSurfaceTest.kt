@@ -329,7 +329,7 @@ class PhoneSurfaceTest {
         assertEquals("state", r.action)
         assertEquals(PhoneTiers.INSTANT, r.tier)
         assertNull("a report carries no id", r.id)
-        assertNull("and no undo", r.facts["undoable"])
+        assertEquals("and no undo, said explicitly", false, r.facts["undoable"])
         val entry = entries.single()
         assertEquals("state", entry.action)
         assertTrue("state takes no arguments to summarise", entry.arguments.isEmpty())
