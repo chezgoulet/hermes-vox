@@ -88,6 +88,11 @@ class MtlsKeyManagerTest {
             km.chooseClientAlias(null, null, socketTo("127.0.0.2", 9443)))
         assertNull("the same host on another port must not get the alias",
             km.chooseClientAlias(null, null, socketTo("127.0.0.1", 9444)))
+
+        // An IPv6 literal: the origin keeps no brackets, the socket reports none either.
+        val v6 = MtlsKeyManager("[::1]", 9443, "first", provider)
+        assertEquals("first", v6.chooseClientAlias(null, null, socketTo("::1", 9443)))
+        assertNull(v6.chooseClientAlias(null, null, socketTo("::2", 9443)))
     }
 
     private fun socketTo(host: String, port: Int): Socket = object : Socket() {
