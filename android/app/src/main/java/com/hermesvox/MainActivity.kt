@@ -839,6 +839,13 @@ open class MainActivity : AppCompatActivity() {
         // The line is sticky: it must still be there after "On call" and after every
         // Listening…/Speaking… state update (see onState + onSpokenReplies).
         voiceLegLine = gate.line
+        // #330: warmth no longer includes TTS, so a broken engine reaches this point.
+        // Say so once, non-blocking, and name the real cause instead of blaming the models.
+        val ttsIssueNow = c.ttsStatus()
+        if (ttsIssueNow.isNotBlank()) {
+            VoxLog.w("event=tts-degraded reason=$ttsIssueNow")
+            setStatus("Spoken replies off — $ttsIssueNow", true)
+        }
         // Warmth just completed. THIS is the moment the gateway may honestly be
         // tested (B2c): re-dial now, so the pill moves Initializing -> Dialing ->
         // Connected instead of sitting on a single sticky word. The line opens
