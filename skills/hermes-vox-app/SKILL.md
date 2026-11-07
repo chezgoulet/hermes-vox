@@ -1158,7 +1158,7 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   owner answers by tap or by voice, and the action executes only on a second call carrying that id
   against the same arguments — so an Allow on a consequential action is a real permission, said
   plainly on its row. A call naming an action whose group is Off is absent from the advertised
-  `enum` (android/app/src/main/java/com/hermesvox/PhoneTool.kt `PhoneTiers.APPROVAL ->`)
+  `enum` (android/app/src/main/java/com/hermesvox/PhoneGrants.kt `fun advertised(source: Source): List<String>`)
   (android/app/src/main/java/com/hermesvox/PhoneGrants.kt `val DEFAULT: State = State.OFF`).
 - **No automatic install on the gateway.** The app offers to ask the agent to install this
   skill once, and the answer is remembered; it never installs anything on the gateway by

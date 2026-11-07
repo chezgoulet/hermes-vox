@@ -345,26 +345,41 @@ class PhoneEngineTest {
             PhoneTiers.of("notification_dismiss"),
         )
         assertTrue("the phone may dismiss a notification", PhoneTiers.executable("notification_dismiss"))
-        for (a in listOf("uninstall", "delete", "purchase")) {
-            assertEquals("$a is consequential", PhoneTiers.APPROVAL, PhoneTiers.of(a))
-            assertEquals(
-                "uninstall is built and can raise a card; the rest are never built",
-                a == "uninstall",
-                PhoneTiers.executable(a),
-            )
+        assertEquals(PhoneTiers.APPROVAL, PhoneTiers.of("delete"))
+        assertFalse(
+            "delete is declared for Files but not built, so it is not executable",
+            PhoneTiers.executable("delete"),
+        )
+        assertTrue("uninstall is built and can raise a card", PhoneTiers.executable("uninstall"))
+        for (a in listOf("purchase", "pay", "transfer")) {
+            assertNull("$a is not a phone action at all — no group declares it", PhoneTiers.of(a))
+            assertFalse("$a cannot be performed", PhoneTiers.executable(a))
         }
         assertNull("share was replaced by file_offer, which now needs approval", PhoneTiers.of("share"))
         assertNull("call was replaced by dial, which opens the dialer", PhoneTiers.of("call"))
         assertNull(PhoneTiers.of("fly"))
     }
 
-    @Test fun an_unbuilt_consequential_action_is_refused_and_names_the_approval_path() {
+    @Test fun a_planned_action_is_refused_and_names_the_group_it_is_planned_for() {
+        // Before the fix this was a bare `approval-required`, naming no group and promising a card
+        // nothing could raise. `planned` was declared but never read.
         val r = call(mapOf("action" to "delete"))
         assertFalse(r.ok)
         assertEquals(PhoneTiers.APPROVAL, r.tier)
-        assertEquals(PhoneReason.APPROVAL, r.reason)
-        assertNull(r.id)
-        assertTrue("it must say approval, not a generic failure", r.detail!!.contains("approval"))
+        assertEquals(PhoneReason.NOT_BUILT, r.reason)
+        assertNull("nothing was performed, so there is no id", r.id)
+        assertTrue("it names the action: ${r.detail}", r.detail!!.contains("delete"))
+        assertTrue("it names the group: ${r.detail}", r.detail!!.contains("Files"))
+        assertFalse("it does not promise an approval card", r.detail!!.contains("approval"))
+        assertEquals("delete belongs to the Files group", "files", PhoneGrants.groupOf("delete")?.id)
+    }
+
+    @Test fun a_name_no_group_declares_is_unknown_not_approval_required() {
+        for (a in listOf("purchase", "pay", "transfer")) {
+            val r = call(mapOf("action" to a))
+            assertFalse(r.ok)
+            assertEquals("$a is not a capability and no card can exist for it", PhoneReason.UNKNOWN, r.reason)
+        }
     }
 
     @Test fun an_unknown_action_lists_what_the_phone_can_do() {
