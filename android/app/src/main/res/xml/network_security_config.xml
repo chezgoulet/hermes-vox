@@ -20,7 +20,14 @@
      more; use a certificate the system store trusts, or tailscale serve. A
      cleartext LAN gateway was never permitted (base cleartext=false), and the app
      additionally refuses http:// off-loopback whenever the tunnel is down
-     (`core/CleartextPolicy.kt`). -->
+     (`core/CleartextPolicy.kt`).
+
+     There is deliberately NO <debug-overrides> block. Trusting every user-installed
+     CA for every host is exactly what the M4 rule above forbids, and a debug/bench
+     build points at a real gateway with a real key: the exception would be the
+     largest hole in the file, on the build people actually test with. A local
+     gateway gets a certificate the system store trusts (tailscale serve) like any
+     other. -->
 <network-security-config>
     <!-- Default: everything not explicitly listed must be HTTPS, system CAs only. -->
     <base-config cleartextTrafficPermitted="false">
@@ -40,11 +47,4 @@
             <certificates src="user"/>
         </trust-anchors>
     </domain-config>
-    <!-- Permit user CAs exclusively in debug builds for local testing/mocking.
-         In release builds, this block is automatically ignored by the Android platform. -->
-    <debug-overrides>
-        <trust-anchors>
-            <certificates src="user" overridePins="true"/>
-        </trust-anchors>
-    </debug-overrides>
 </network-security-config>
