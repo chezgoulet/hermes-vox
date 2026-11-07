@@ -218,8 +218,8 @@ read.
 ## What you are credited for
 
 - **Your copyright.** The CLA grants a licence; it does not assign ownership.
-- **A row in `CLA-SIGNATURES.md`**, written by the workflow with the date, your
-  name, your handle and the pull request number.
+- **Your signature on record.** The comment you post is the record — it stays in the
+  pull request thread, with its date and your handle beside it.
 - **Authorship of your commits**, which the history keeps.
 - **The change itself**, under GPL-3.0, in the repository and in the APKs built
   from it.
@@ -228,8 +228,8 @@ read.
 
 - Files under `android/`, `scripts/`, `docs/`, `testdata/` or `skills/`, depending on
   the change.
-- One row in `CLA-SIGNATURES.md`, on your first pull request, written by the CLA
-  workflow.
+- Nothing else on your first pull request: signing writes no file and changes no
+  configuration. The CLA workflow reads your comment and turns a check green.
 - A nightly prerelease on `testing` after the merge, signed with the release key,
   with the APK attached.
 - Local build output under `android/app/build/` and the fetched runtime under

@@ -188,8 +188,6 @@ misled.
 
 - [`LICENSE`](../LICENSE) — GPL-3.0.
 - [`NOTICE`](../NOTICE) — component licences and the source offer.
-- [`CLA-SIGNATURES.md`](../CLA-SIGNATURES.md) — every signature that covers code in the
-  repository.
 
 ### Assets
 
