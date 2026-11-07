@@ -58,30 +58,33 @@ one coherent change at a time, with an imperative subject and a conventional pre
 
 ## The licence and the CLA
 
-The community edition is GPL-3.0 ([`LICENSE`](LICENSE)). The project also keeps the
-option of a separate commercial edition, so every contribution needs the contributor
-licence agreement in [`CLA.md`](CLA.md). It is in force.
+The project is GPL-3.0 ([`LICENSE`](LICENSE)). The GPL covers what anyone may do with the
+code; it does not cover your permission to put your work into it. That is what the
+contributor licence agreement in [`CLA.md`](CLA.md) is for, and every contribution needs it.
 
-You keep your copyright. You grant Christopher Goulet — and any entity the agreement
-is assigned to — a perpetual licence to use, modify, sublicense and relicense your
-contribution, including under proprietary terms. The community edition stays
-GPL-3.0.
+You keep your copyright. You grant Christopher Goulet a perpetual, worldwide,
+non-exclusive, royalty-free and irrevocable licence to use, reproduce, modify and
+distribute your contribution as part of the project under GPL-3.0. There is no copyright
+assignment, and no relicensing under other terms: the project is copyleft and stays that
+way.
 
-**How to sign.** On your first pull request, post a comment containing exactly:
+**How to sign.** On your first pull request, comment with:
 
-> I have read the CLA at CLA.md and I agree to it.
-> Name: · GitHub handle: · Email:
+```
+I have read the CLA at CLA.md and I agree to it.
+Name: <your legal name>
+GitHub handle: <your handle>
+Email: <optional>
+```
 
-**The check is automatic.** `.github/workflows/cla.yml` runs on every pull request.
-When the author's handle is not yet in `CLA-SIGNATURES.md` it posts the acceptance
-text, labels the pull request `cla-pending`, and sets the CLA status red. When the
-pull request's author posts the acceptance line, the workflow appends that person's
-row to `CLA-SIGNATURES.md` on the default branch, turns the status green and removes
-the label. Only the author of the pull request can sign it; a comment from anyone
-else gets a reply saying so. A bot account is let through without a signature.
+**The check is automatic.** `.github/workflows/cla.yml` runs on every pull request and on
+every new comment. It looks for that sentence in a comment by the pull request's author
+and turns the `CLA signature` check green when it finds it. When it does not, the workflow
+posts the text to copy and the check stays red — including for a one-line typo. A comment
+from anyone other than the author does not count, and a contributor with write access to
+the repository does not need to sign. Signing once covers your later pull requests.
 
-There is no size exemption: the check is red for a one-line typo until the author
-signs. Do not send code you do not have the right to license.
+Do not send code you do not have the right to license.
 
 ## The gate
 

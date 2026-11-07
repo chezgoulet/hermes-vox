@@ -362,10 +362,10 @@
   match: 'branches: \[testing, main\]'
 
 - id: contributing-cla-red-until-signed
-  says: "sets the CLA status red"
+  says: "the check stays red"
   doc: CONTRIBUTING.md
-  file: .github/scripts/cla.py
-  match: 'status\("failure"'
+  file: .github/workflows/cla.yml
+  match: "sys.exit"
 
 - id: privacy-backup-off
   says: "Android backup is off"
