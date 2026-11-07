@@ -460,22 +460,45 @@ class SettingsActivity : AppCompatActivity() {
             escope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
 
             val initialOrigin = com.hermesvox.core.MtlsConfig.originOf(initialUrl)
-            var currentAlias = if (initialOrigin != null) com.hermesvox.core.MtlsConfig.getAlias(prefs, initialOrigin) else null
+            // The origin the certificate on screen was chosen FOR — not the origin the
+            // address field happens to spell. An alias may only ever be set by an explicit
+            // act on that origin, so editing the URL must leave the old certificate where
+            // it belongs instead of silently becoming the new host's credential.
+            var chosenFor = initialOrigin
+            var currentAlias = initialOrigin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+
+            fun typedOrigin() = com.hermesvox.core.MtlsConfig.originOf(eurl.text.toString().trim())
 
             fun updateMtlsViews() {
-                if (currentAlias.isNullOrBlank()) {
-                    dMtlsAlias.text = "None (system default)"
-                    dMtlsClear.visibility = View.GONE
-                } else {
-                    dMtlsAlias.text = currentAlias
-                    dMtlsClear.visibility = View.VISIBLE
+                val typed = typedOrigin()
+                val changed = typed != chosenFor
+                when {
+                    changed && !currentAlias.isNullOrBlank() -> {
+                        // Say it here, before Save: the old certificate is still stored
+                        // under the old address, and it will not follow this change.
+                        dMtlsAlias.text = "Address changed — choose the certificate again"
+                        dMtlsClear.visibility = View.GONE
+                    }
+                    currentAlias.isNullOrBlank() -> {
+                        dMtlsAlias.text = "None (system default)"
+                        dMtlsClear.visibility = View.GONE
+                    }
+                    else -> {
+                        dMtlsAlias.text = currentAlias
+                        dMtlsClear.visibility = View.VISIBLE
+                    }
                 }
             }
             updateMtlsViews()
+            eurl.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = updateMtlsViews()
+            })
 
             dMtlsChoose.setOnClickListener {
-                val origin = com.hermesvox.core.MtlsConfig.originOf(eurl.text.toString().trim())
-                if (origin == null) {
+                val target = typedOrigin()
+                if (target == null) {
                     Toast.makeText(this, "Enter a valid HTTPS endpoint URL first", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
@@ -483,20 +506,28 @@ class SettingsActivity : AppCompatActivity() {
                     this,
                     { alias ->
                         runOnUiThread {
-                            currentAlias = alias
+                            if (alias.isNullOrBlank()) {
+                                // Dismissed or denied: the previous choice (if it belongs
+                                // to this origin) stands, and nothing new is recorded.
+                                Toast.makeText(this, "No certificate chosen", Toast.LENGTH_SHORT).show()
+                            } else {
+                                currentAlias = alias
+                                chosenFor = target
+                            }
                             updateMtlsViews()
                         }
                     },
                     arrayOf("RSA", "EC"),
                     null,
-                    origin.host,
-                    origin.port,
-                    currentAlias
+                    target.host,
+                    target.port,
+                    currentAlias?.takeIf { chosenFor == target }
                 )
             }
 
             dMtlsClear.setOnClickListener {
                 currentAlias = null
+                chosenFor = typedOrigin()
                 updateMtlsViews()
             }
 
@@ -524,9 +555,26 @@ class SettingsActivity : AppCompatActivity() {
                         Toast.makeText(this, it, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
                     }
+                    // The origin-binding rule: a certificate is written only for the origin
+                    // it was explicitly chosen on. If the address changed, the old alias is
+                    // NOT carried over — it is cleared from the new origin and the user has
+                    // to choose again (the row said so while they typed). Writing it here
+                    // would make the old host's client certificate the new host's
+                    // credential, with no prompt and no visible change.
                     val finalOrigin = com.hermesvox.core.MtlsConfig.originOf(u)
                     if (finalOrigin != null) {
-                        com.hermesvox.core.MtlsConfig.setAlias(prefs, finalOrigin, currentAlias)
+                        when (val d = com.hermesvox.core.MtlsConfig.saveAlias(
+                            initialOrigin, chosenFor, currentAlias, finalOrigin)) {
+                            is com.hermesvox.core.MtlsConfig.SaveAlias.Write ->
+                                com.hermesvox.core.MtlsConfig.setAlias(prefs, finalOrigin, d.alias)
+                            com.hermesvox.core.MtlsConfig.SaveAlias.Leave -> Unit
+                        }
+                        if (finalOrigin != chosenFor && finalOrigin != initialOrigin &&
+                            !currentAlias.isNullOrBlank()) {
+                            Toast.makeText(this,
+                                "The address changed, so the certificate must be chosen again for it.",
+                                Toast.LENGTH_LONG).show()
+                        }
                     }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).

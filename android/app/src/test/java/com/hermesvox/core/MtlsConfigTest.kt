@@ -104,6 +104,33 @@ class MtlsConfigTest {
         assertNull(MtlsConfig.normaliseHost("ho st"))
     }
 
+    /**
+     * The origin-binding rule. Editing the address must never make the old host's
+     * certificate the new host's credential; only an explicit choice on an origin may
+     * write an alias to it.
+     */
+    @Test
+    fun testSaveAliasNeverInheritsAnotherOriginsCertificate() {
+        val a = MtlsConfig.Origin("gateway-a.example", 443)
+        val b = MtlsConfig.Origin("gateway-b.example", 443)
+
+        // Unchanged address: the stored certificate stays as it is.
+        assertEquals(MtlsConfig.SaveAlias.Write("first"),
+            MtlsConfig.saveAlias(a, a, "first", a))
+        // Cleared by the user on that origin: removed.
+        assertEquals(MtlsConfig.SaveAlias.Write(null), MtlsConfig.saveAlias(a, a, null, a))
+        // Address changed, certificate not chosen again: nothing is written to B, and
+        // anything B held is cleared rather than silently used.
+        assertEquals(MtlsConfig.SaveAlias.Write(null), MtlsConfig.saveAlias(a, a, "first", b))
+        // Address changed AND the user chose a certificate for B: that explicit act wins.
+        assertEquals(MtlsConfig.SaveAlias.Write("second"), MtlsConfig.saveAlias(a, b, "second", b))
+        // Changed to B, chose for B, then changed back to A: A is untouched (and the
+        // choice made for B is not written to A).
+        assertEquals(MtlsConfig.SaveAlias.Leave, MtlsConfig.saveAlias(a, b, "second", a))
+        // A blank alias is an absent one, never a stored empty string.
+        assertEquals(MtlsConfig.SaveAlias.Write(null), MtlsConfig.saveAlias(a, a, "  ", a))
+    }
+
     @Test
     fun testSocketFactoryCreationAndCaching() {
         val provider = TestKeyProvider()

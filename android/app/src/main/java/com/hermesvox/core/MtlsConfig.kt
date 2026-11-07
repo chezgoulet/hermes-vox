@@ -184,6 +184,43 @@ object MtlsConfig {
         return "$head::$tail"
     }
 
+    /**
+     * What a Save may do with the alias for [finalOrigin].
+     *
+     * [Write] with a null alias means "remove whatever this origin held"; [Leave] means
+     * "this origin is not the subject of the edit, do not touch its certificate".
+     */
+    sealed class SaveAlias {
+        object Leave : SaveAlias()
+        data class Write(val alias: String?) : SaveAlias()
+    }
+
+    /**
+     * The origin-binding rule, in one testable place.
+     *
+     * A certificate belongs to the origin it was explicitly chosen on:
+     *
+     *  * the user chose it while the address field spelled [finalOrigin] → write it;
+     *  * the address changed away from [initialOrigin] and was not chosen for again →
+     *    write nothing and clear [finalOrigin]. An alias must never travel to a new host
+     *    because the edit left it on screen: that would silently make the old host's
+     *    client certificate the new host's credential, while the row still showed the old
+     *    alias and read as confirmation;
+     *  * otherwise (the address is unchanged) → leave the stored value alone, which keeps
+     *    a certificate configured in an earlier session.
+     */
+    fun saveAlias(
+        initialOrigin: Origin?,
+        chosenFor: Origin?,
+        alias: String?,
+        finalOrigin: Origin,
+    ): SaveAlias {
+        val clean = alias?.trim()?.takeIf { it.isNotEmpty() }
+        if (finalOrigin == chosenFor) return SaveAlias.Write(clean)
+        if (finalOrigin != initialOrigin) return SaveAlias.Write(null)
+        return SaveAlias.Leave
+    }
+
     /** Retrieves the configured certificate alias for [origin], or null if unconfigured. */
     fun getAlias(prefs: SharedPreferences, origin: Origin): String? {
         return prefs.getString(PREF_PREFIX + origin.key, null)?.takeIf { it.isNotBlank() }
