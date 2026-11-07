@@ -277,10 +277,15 @@ action and its outcome.
 access the owner gives once in Android's notification-access screen, and the system may keep the
 service bound between calls. The app therefore separates the *grant* from the *listener's
 lifetime*: `PhoneNotifications` attaches when a Vox call starts and detaches when it ends — the same
-lifetime rule as the MCP server — and `detach` drops every record and every id. Outside a call both
-actions refuse `ok:false, reason:"unavailable"` and say the listener is only open during a call. A
-summary of a phone with no live call is not "0 notifications"; it is a refusal that names the
-lifetime.
+lifetime rule as the MCP server — and `detach` drops every record and every id. Outside a call all
+three actions refuse `ok:false, reason:"unavailable"` and say the listener is only open during a
+call. A summary of a phone with no live call is not "0 notifications"; it is a refusal that names
+the lifetime.
+
+**These three actions exist only during a call.** `notifications`, `notification_read` and
+`notification_dismiss` need the listener a live call attaches, so off a call — including every
+off-device test run — the only honest answer is `unavailable`, and the matrix test in
+`PhoneSurfaceAuditTest` asserts exactly that. It is expected behaviour, not a broken grant.
 
 **A summary is counts, and nothing to read aloud.**
 
