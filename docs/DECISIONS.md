@@ -711,6 +711,21 @@ and the profile switcher are on for every install. Nothing about either feature 
 gate. Profiles also stopped being an editor before it left: the picker lists the host's profiles
 and switches, and never creates or changes one — profiles are configured on the host.
 
+**Amended 2026-11-06, the owner's settings pass.** The master switch is no longer the first row of
+Settings. The home list now reads: the ordinary sections (Entity & Connection, Hearing, Voice
+models, Voice & sounds, Appearance), then one contiguous **alpha block** with the **Alpha features**
+switch immediately above it, then **About & Diagnostics** last. The block holds every gated
+section — **Presence**, **Phone Tools**, **Wake word** and **Set Digital Assistant to Hermes Vox**
+— and the rail is data (`AlphaBlock`), so gated ⇒ in the block and the list, the dimming and the
+section's own refusal cannot disagree. Two sets joined the panel: **Wake word** (`alpha_set_wake_word`)
+and **Digital assistant** (`alpha_set_digital_assistant`), making **six sets** in all; the panel
+order is Presence, Continuous listening, Turn-taking, Phone tools, Wake word, Digital assistant.
+The wake word's set is enforced where it listens, not only where it is drawn: with the set off
+`WakeListening` refuses and no microphone is opened. The assistant row was renamed from a state to
+an instruction because that is what a tap does — it asks Android for the role. `#418`'s
+`/diagnostics` command and its About switch were removed on the same instruction; the Presence
+row's copy action is the block's one door.
+
 **The release notes.** Presence is **announced** — named, described as a layer you turn on through
 Alpha, and honest about being unfinished. It is not buried, and it is not oversold.
 ## D30 — The soul is a companion, not a gatekeeper
