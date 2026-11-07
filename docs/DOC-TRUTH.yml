@@ -341,3 +341,101 @@
   file: android/app/src/main/java/com/hermesvox/PhoneFiles.kt
   match: 'const val MAX_READ_BYTES = 64 \* 1024L'
 
+# ---- the three policy documents: the claims a reader relies on ----
+
+- id: contributing-gate-green
+  says: "prints `GATE-GREEN`"
+  doc: CONTRIBUTING.md
+  file: scripts/gate.sh
+  match: 'echo "GATE-GREEN"'
+
+- id: contributing-doc-truth-runs
+  says: "`scripts/check-doc-truth.py`"
+  doc: CONTRIBUTING.md
+  file: scripts/gate.sh
+  match: 'python3 scripts/check-doc-truth.py'
+
+- id: contributing-ci-branches
+  says: "into `testing` or `main` and on every push to either"
+  doc: CONTRIBUTING.md
+  file: .github/workflows/ci.yml
+  match: 'branches: \[testing, main\]'
+
+- id: contributing-cla-red-until-signed
+  says: "sets the CLA status red"
+  doc: CONTRIBUTING.md
+  file: .github/scripts/cla.py
+  match: 'status\("failure"'
+
+- id: privacy-backup-off
+  says: "Android backup is off"
+  doc: PRIVACY.md
+  file: android/app/src/main/AndroidManifest.xml
+  match: 'android:allowBackup="false"'
+
+- id: privacy-transcript-log-off-by-default
+  says: "Log spoken transcript"
+  doc: PRIVACY.md
+  file: android/app/src/main/java/com/hermesvox/VoiceController.kt
+  match: 'getBoolean\("log_transcripts", false\)'
+
+- id: privacy-stt-platform-fallback
+  says: "the app falls back to the platform recogniser"
+  doc: PRIVACY.md
+  file: android/app/src/main/java/com/hermesvox/VoiceController.kt
+  match: 'else -> if \(onDeviceInstalled\) ModelCatalog\.BACKEND_ONDEVICE else ModelCatalog\.BACKEND_PLATFORM'
+
+- id: privacy-grants-default-off
+  says: "Every capability group starts"
+  doc: PRIVACY.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
+  match: 'val DEFAULT: State = State\.OFF'
+
+- id: privacy-file-read-cap
+  says: "64 KiB"
+  doc: PRIVACY.md
+  file: android/app/src/main/java/com/hermesvox/PhoneFiles.kt
+  match: 'const val MAX_READ_BYTES = 64 \* 1024L'
+
+- id: security-key-alias
+  says: "alias `hv_api_key`"
+  doc: SECURITY.md
+  file: android/app/src/main/java/com/hermesvox/SecureStore.kt
+  match: 'const val ALIAS = "hv_api_key"'
+
+- id: security-cleartext-fails-closed
+  says: "Every other `http://` URL is refused while the tailnet is down"
+  doc: SECURITY.md
+  file: android/app/src/main/java/com/hermesvox/core/CleartextPolicy.kt
+  match: 'return if \(tunnelUp\) null else REFUSAL'
+
+- id: security-approval-timeout-denies
+  says: "The local timeout is 290 seconds"
+  doc: SECURITY.md
+  file: android/app/src/main/java/com/hermesvox/core/Approval.kt
+  match: 'DEFAULT_TIMEOUT_MS = 290_000L'
+
+- id: security-phone-approval-two-minutes
+  says: "The card is good for **two minutes**"
+  doc: SECURITY.md
+  file: android/app/src/main/java/com/hermesvox/PhoneApproval.kt
+  match: 'TIMEOUT_MS = 120_000L'
+
+- id: security-mcp-refuses-anylocal
+  says: "It refuses `0.0.0.0` and `::`"
+  doc: SECURITY.md
+  file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
+  match: 'require\(!bind\.isAnyLocalAddress\)'
+
+- id: security-mcp-token-constant-time
+  says: "compared in constant time"
+  doc: SECURITY.md
+  file: android/app/src/main/java/com/hermesvox/PhoneMcpToken.kt
+  match: 'MessageDigest\.isEqual'
+
+- id: security-c0-release-guard
+  says: "`HERMES_VOX_API_KEY`"
+  doc: SECURITY.md
+  file: android/app/build.gradle
+  match: 'System.getenv\('HERMES_VOX_API_KEY'\)'
+

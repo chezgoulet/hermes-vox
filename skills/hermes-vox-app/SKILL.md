@@ -41,10 +41,10 @@ is absent (section 7) or a preview (the wake word).
    the same turn retries once on `/v1/responses`. Tools, memory and context stay
    server-side (docs/ARCHITECTURE.md `the default (#404)`).
 4. **By default nothing leaves the phone except that turn** — text to your own gateway, plus
-   model files fetched over HTTPS when you install them (PRIVACY.md `your server`). Two
-   opt-in paths send audio elsewhere: the remote-STT backend and the platform (Google)
-   recogniser; both are described in section 2 and must be named when a user asks about
-   privacy.
+   model files fetched over HTTPS when you install them (PRIVACY.md `A model host`). Two
+   paths send audio elsewhere: the remote-STT backend you configure and the platform
+   (Google) recogniser the app falls back to when no on-device model is installed; both
+   are described in section 2 and must be named when a user asks about privacy.
 
 **Presence** is the layer that gives the agent a body and a voice on the phone — on by
 default, and switchable off: an on-device Gemma 4 E2B model, the mirrored `VOX.md`, the
@@ -1144,8 +1144,9 @@ These prevent confident wrong advice. None of them is a bug report; they are the
 
 - **No cloud, no account, no vendor server.** There is no hosted service, no sign-up and
   nothing operated by the maintainers (README.md `Bring your own gateway`); the gateway
-  key goes only to the gateway (PRIVACY.md `preferences on your device and is transmitted **only to the gateway you configured** —`). The only *default*
-  network peer is your gateway plus the model host you install from (PRIVACY.md `your server`).
+  key goes only to the gateway (SECURITY.md `The key goes to one destination`). The only *default*
+  network peer is your gateway plus the model host you install from
+  (PRIVACY.md `Model files are downloaded; nothing is sent back`).
 - **No Play Store, no AAB.** Google Play is dropped as a rail; distribution is GitHub,
   Obtainium and F-Droid, always with our own signature (docs/DECISIONS.md `Google Play is dropped`).
 - **No iOS, no desktop.** Android only; the reusable core that a port would have needed was
