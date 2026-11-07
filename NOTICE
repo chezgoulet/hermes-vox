@@ -38,7 +38,33 @@ These are data, not code, and carry their own terms:
   - Parakeet-TDT 0.6B v2 (NVIDIA) — CC-BY-4.0
   - Nemotron Speech Streaming 0.6B (NVIDIA) — NVIDIA Open Model License Agreement
   - Silero VAD — MIT
-  - Piper voices — per-voice licences, shown in the model list
+  - Piper voices — per-voice licences, shown in the model list; the French
+    set is attributed in full below
+
+### French Piper voices (fr-FR)
+
+These three voices were contributed to the app by PierreCsn (#477) and are
+downloaded from the upstream sherpa-onnx release at runtime. This repository
+contains no voice weights, and Hermes Vox does not modify them or redistribute
+them — the app only downloads the unmodified artifact onto the user's phone.
+
+  - **Siwis** — CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+    Dataset named by the card: the SIWIS French speech database, University of
+    Edinburgh — https://datashare.is.ed.ac.uk/handle/10283/2353
+    Model card: https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/siwis/medium/MODEL_CARD
+    One speaker.
+
+  - **Tom** — AGPLv3 (https://www.gnu.org/licenses/agpl-3.0.html).
+    Dataset/model named by the card: https://git.bksp.space/Tjiho/French-tts-model-piper
+    Model card: https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/tom/medium/MODEL_CARD
+    One speaker. (An earlier draft of this work labelled it CC0; the card says
+    AGPLv3 and that is the claim this file and the catalogue make.)
+
+  - **UPMC** — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
+    Dataset named by the card: MaryTTS UPMC Pierre data —
+    https://github.com/marytts/upmc-pierre-data
+    Model card: https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/upmc/medium/MODEL_CARD
+    Two speakers (jessica, pierre).
   - Gemma 4 E2B (Google) — Gemma Terms of Use
 
 LiteRT-LM, the on-device runtime that loads Gemma, is distributed through Google Maven and

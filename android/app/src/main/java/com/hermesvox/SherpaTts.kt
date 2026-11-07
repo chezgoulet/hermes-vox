@@ -26,7 +26,32 @@ import kotlin.concurrent.thread
  */
 enum class SherpaVoice(val modelId: String, val displayName: String) {
     PIPER("piper-lessac", "Piper"),
+    // The fr-FR voices (#477). Same VITS runtime as PIPER — only the downloaded model
+    // differs — so they share one synthesis path and one set of speaker rules
+    // ([VoiceSpeakers]); UPMC is the one with two built-in speakers.
+    PIPER_SIWIS("piper-siwis", "Piper · fr-FR (Siwis)"),
+    PIPER_TOM("piper-tom", "Piper · fr-FR (Tom)"),
+    PIPER_UPMC("piper-upmc", "Piper · fr-FR (UPMC)"),
     SUPERTONIC("supertonic", "Supertonic"),
+    ;
+
+    val isSupertonic: Boolean get() = this == SUPERTONIC
+
+    companion object {
+        /** The engine behind a catalogue model id. */
+        fun fromModelId(modelId: String): SherpaVoice? =
+            entries.firstOrNull { it.modelId == modelId.trim().lowercase() }
+
+        /** The engine behind a `tts` pref token. "piper" is the en-US LibriTTS-R voice
+         *  (the historical token); "piper-lessac" is its model id, accepted so a stored
+         *  model id and a stored token cannot disagree. Unknown tokens resolve to null —
+         *  the caller decides what an unknown voice means, this never guesses. */
+        fun fromEngineToken(token: String): SherpaVoice? {
+            val t = token.trim().lowercase()
+            if (t == "piper") return PIPER
+            return fromModelId(t)
+        }
+    }
 }
 
 /**
@@ -146,9 +171,8 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         VoiceSpeakers.resolve(speakers, voice, eng.numSpeakers())
 
     /** One phrase through the engine, with the voice's own controls. */
-    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when (voice) {
-        SherpaVoice.PIPER -> eng.generate(text, speakerFor(eng), voiceSpeed)
-        SherpaVoice.SUPERTONIC -> {
+    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when {
+        voice.isSupertonic -> {
             val m = mood
             eng.generateWithConfig(text, GenerationConfig().apply {
                 sid = speakerFor(eng)
@@ -156,6 +180,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 silenceScale = m.silenceScale
             })
         }
+        // Every Piper voice — en-US and fr-FR alike — is a VITS model with plain
+        // speaker/speed controls and no mood parameters.
+        else -> eng.generate(text, speakerFor(eng), voiceSpeed)
     }
 
     /** `tts_voice_usage` kill-switch (default false): route the playback AudioTracks

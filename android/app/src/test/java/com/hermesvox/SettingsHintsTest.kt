@@ -321,6 +321,8 @@ class SettingsHintsTest {
             // section and its restore are gone; the store's own "Use default" resets the source.
             "ModelCatalog.KEY_STT_BACKEND",
             "ModelCatalog.KEY_STT_MODEL",
+            // #477: the spoken-language row, shown only for a multilingual recogniser.
+            "ModelCatalog.KEY_STT_LANGUAGE",
             "ModelCatalog.KEY_STT_STREAM_MODEL",
             "PresenceGate.KEY_PRESENCE_ENABLED",
             "PresenceCadence.LEGACY_PREF",

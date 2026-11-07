@@ -246,6 +246,7 @@ the section's own refusal cannot disagree.
 |---|---|---|---|---|
 | Speech-to-text backend | `stt_backend` | `on-device` | `on-device`, `platform` (Google), or `remote` (a server you run) | (android/app/src/main/java/com/hermesvox/VoiceController.kt `val backend = prefString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)`) |
 | STT model | `stt_model` | `whisper-base` | Which offline recogniser runs | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `const val DEFAULT_STT_MODEL = "whisper-base"`) |
+| Spoken language | `stt_language` | "" (auto-detect) | Decode language for a **multilingual** Whisper. The row is HIDDEN unless the selected recogniser is multilingual; picking an English-only model with a language stored offers the multilingual one with its download size | (android/app/src/main/java/com/hermesvox/SttLanguage.kt `fun rowVisible(backend: String?, shippedModel: String?, streamingModel: String?): Boolean =`) |
 | (streaming arm) | `stt_stream_model` | unset | Selecting a streaming model stores it here and leaves `stt_model` as the fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `stt_stream_model`) |
 | Voice CPU threads | `voice_threads` | Auto (0) | Thread override for STT and TTS; applies on the next model load | (android/app/src/main/java/com/hermesvox/VoxThreads.kt `fun stt`) |
 | Remote STT URL | `stt_remote_url` | "" | The server audio is POSTed to; blank means the remote leg is unavailable | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `bindRemoteTextField(R.id.stt_remote_url, KEY_STT_REMOTE_URL) { it.trim() }`) |
@@ -257,9 +258,9 @@ the section's own refusal cannot disagree.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Text-to-speech | `tts` | unset → best installed (`supertonic` → `piper` → `system`) | Which engine speaks | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun defaultTts`) |
+| Text-to-speech | `tts` | unset → best installed (`supertonic` → `piper` → a fr-FR voice → `system`) | Which engine speaks | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun defaultTts`) |
 | Delivery | `voice` | `system` (shown as "Natural") | Synthesis register: Natural / Bright / Deep | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `private fun deliveryLabel(): String = when (prefs.getString("voice", "system")) {`) |
-| Speaker | `tts_speaker_<model>` | Supertonic F2 (id 1), Piper 0 | The engine's built-in voice; per engine | (android/app/src/main/java/com/hermesvox/VoiceSpeakers.kt `fun defaultId(engine: SherpaVoice): Int = when (engine) {`) |
+| Speaker | `tts_speaker_<model>` | Supertonic F2 (id 1), Piper 0 | The engine's built-in voice, per engine. UPMC has two (Jessica, Pierre); Siwis and Tom have one, so their row hides | (android/app/src/main/java/com/hermesvox/VoiceSpeakers.kt `fun defaultId(engine: SherpaVoice): Int = when (engine) {`) |
 | Speak responses | `speak_responses` | true | Whether replies are voiced at all | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `speak.isChecked = prefs.getBoolean("speak_responses", true)`) |
 
 **Engine, register and speaker belong to the profile.** All three rows carry "· profile <name>", are
@@ -590,9 +591,9 @@ Do not send a user hunting for these.
 - `vad_max_hard_ms` — hard utterance ceiling, read with a default of 0 = disabled
   (android/app/src/main/java/com/hermesvox/EndpointRule.kt `DEFAULT_HARD_MS = 0`). This tree
   never writes it, so the ceiling is always off; do not offer it as an adjustable setting.
-- `stt_language` — decode language for a **multilingual** Whisper; the shipped `.en` models
-  ignore it and always decode English (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `const val KEY_STT_LANGUAGE = "stt_language"`).
-  This tree never writes it either, so multilingual models always auto-detect.
+- `stt_language` — no longer in this list: Settings writes it, and only for a multilingual
+  recogniser (the row is hidden otherwise). The `.en` models always decode English
+  (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun whisperLanguage(modelId: String, pref: String?): String =`).
 - `provider` — the per-request provider override, written when a model is picked from the
   gateway's model list (android/app/src/main/java/com/hermesvox/MainActivity.kt `putString("provider"`).
 - `agent_name` — the big title above the being; read with the Hermes agent's own name as
@@ -840,13 +841,19 @@ Silero VAD, Supertonic and Whisper base.en: the offline voice needs all three
 | Model id | Kind | Download | Required? | Notes | Reference |
 |---|---|---|---|---|---|
 | `silero-vad` | VAD | 0.6 MB | **yes** | Speech start/stop; without it barge-in is level-only | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.6,`) |
-| `supertonic` | TTS | 80.3 MB | **yes** | Ten voices at 44.1 kHz; the recommended voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 80.3,`) |
+| `supertonic` | TTS | 84.7 MB | **yes** | Ten voices at 44.1 kHz; the recommended voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 84.7,`) |
 | `whisper-base` | STT | 208.6 MB | **yes** | The blessed default recogniser | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 208.6,`) |
 | `whisper-tiny` | STT | 118.1 MB | no | Fastest, least accurate | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 118.1,`) |
 | `whisper-small` | STT | 635.7 MB | no | Most accurate Whisper, heaviest | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 635.7,`) |
 | `parakeet-v2` | STT | 482.5 MB | no | Measured best accuracy+speed on the host bench; larger resident set, so not the default | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("parakeet-v2", "Parakeet TDT 0.6B v2 (int8)", "stt", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2", 482.5,`) |
 | `nemotron-stream-160ms` | STT (streaming) | 463.9 MB | no | Opt-in streaming arm; ~900 MB resident. **Licence gate** | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec(NEMOTRON_STREAM_ID, "Nemotron Speech Streaming 0.6B (160 ms, int8)", "stt",`) |
 | `piper-lessac` | TTS | 82.0 MB | no | Lighter alternative voice (904 speakers, 8 curated in the picker) | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,`) |
+| `piper-siwis` | TTS (fr-FR) | 67.2 MB | no | French voice, CC BY 4.0, one speaker; card in the row | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-siwis", "Piper · fr-FR (Siwis, medium)", "tts", "vits-piper-fr_FR-siwis-medium.tar.bz2", 67.2,`) |
+| `piper-tom` | TTS (fr-FR) | 67.2 MB | no | French voice, **AGPLv3** (not CC0), one speaker | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-tom", "Piper · fr-FR (Tom, medium)", "tts", "vits-piper-fr_FR-tom-medium.tar.bz2", 67.2,`) |
+| `piper-upmc` | TTS (fr-FR) | 80.4 MB | no | French voice, CC BY-SA 4.0, **two speakers** (Jessica, Pierre) | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-upmc", "Piper · fr-FR (UPMC, medium)", "tts", "vits-piper-fr_FR-upmc-medium.tar.bz2", 80.4,`) |
+| `whisper-tiny-multi` | STT | 116.2 MB | no | Multilingual tiny: the language row appears for it | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-tiny-multi", "Whisper tiny (multilingual)", "stt", "sherpa-onnx-whisper-tiny.tar.bz2", 116.2,`) |
+| `whisper-base-multi` | STT | 207.6 MB | no | Multilingual base; the offer when an .en model cannot hear French | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-base-multi", "Whisper base (multilingual)", "stt", "sherpa-onnx-whisper-base.tar.bz2", 207.6,`) |
+| `whisper-small-multi` | STT | 639.4 MB | no | Multilingual small: most accurate, heaviest | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-small-multi", "Whisper small (multilingual)", "stt", "sherpa-onnx-whisper-small.tar.bz2", 639.4,`) |
 | `gemma-e2b` | Presence | 2588.1 MB | no | The on-device expression layer; needs a working GPU/CPU backend | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,`) |
 
 ### Licences that need acceptance

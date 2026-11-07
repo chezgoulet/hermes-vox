@@ -137,6 +137,13 @@ object ModelRowState {
         else -> "Licence needed: ${licence.name} — tap to review and accept"
     }
 
+    /** A voice whose licence permits use but asks for attribution (#477: the fr-FR
+     *  Piper voices) needs no acceptance, so it gets a card chip instead of a gate:
+     *  the model card is where the licence claim can be read. Null when the row
+     *  publishes no card. */
+    fun cardBadge(cardUrl: String): String? =
+        if (cardUrl.isBlank()) null else "Licence & model card — tap to read"
+
     /** The catalogue's decimal MB, rendered exactly as catalogued (no re-rounding). */
     fun sizeLabel(sizeMB: Double): String = String.format(Locale.US, "%.1f MB", sizeMB)
 }
