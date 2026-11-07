@@ -447,6 +447,13 @@ class PhoneMcpServer private constructor(
 
     /**
      * `tools/call`: the arguments object in, the handler's result JSON out as a text block.
+     *
+     * `isError` is the three-way signal the mind needs, and it is read from the result itself: a
+     * performed action is `isError:false`; a refusal — `not_granted`, `approval-required`,
+     * `permission`, `unavailable`, … — is `isError:true`, with the human sentence in the JSON's
+     * `detail` and the stable word in `reason`. An HTTP 500, an empty result, or a refusal dressed
+     * as success would each leave the mind unable to tell "you are not allowed" from "it did not
+     * work" from "done".
      */
     private fun callTool(params: JObj?): ToolReply {
         val name = (params?.get("name") as? JStr)?.value.orEmpty()
@@ -470,16 +477,17 @@ class PhoneMcpServer private constructor(
                 "the phone failed to run that action",
             ).json()
         }
-        // `isError` stays false: a described refusal is a legitimate result the mind reasons about,
-        // not a transport failure. (Hermes counts `{"error":...}` payloads as server errors, which is
-        // why the refusal vocabulary is `ok`/`reason`, never `error`.)
+        // The result is the handler's own JSON, and `ok` is the only field that decides `isError`:
+        // the transport must not out-vote the phone about whether something happened.
+        val ok = runCatching { (Json.parse(resultJson) as? JObj)?.get("ok") as? JBool }
+            .getOrNull()?.value ?: false
         return ToolReply.Ok(
             Json.encode(
                 linkedMapOf<String, Any?>(
                     "content" to listOf(
                         linkedMapOf<String, Any?>("type" to "text", "text" to resultJson),
                     ),
-                    "isError" to false,
+                    "isError" to !ok,
                 )
             )
         )

@@ -47,6 +47,13 @@ object PhoneAudit {
     /** The longest a single displayed argument may be. */
     const val MAX_ARG_CHARS = 80
 
+    /**
+     * The row's outcome for an action that was dispatched and whose result the phone no longer
+     * knows (a live-call dial that has not opened the dialer yet). Not a refusal: it may have
+     * happened, and the row must not tell the owner otherwise.
+     */
+    const val UNCERTAIN = "uncertain"
+
     /** One call, as the owner reads it. */
     data class Entry(
         val atEpochMs: Long,
@@ -109,7 +116,15 @@ object PhoneAudit {
             action = result.action.ifBlank { (args["action"] as? String).orEmpty() },
             arguments = arguments,
             ok = result.ok,
-            outcome = if (result.ok) "done" else (result.reason ?: "refused"),
+            outcome = when {
+                result.ok -> "done"
+                // Work that was already dispatched is **not** a refusal. A row saying
+                // `unavailable` about a dial the phone may still have opened would be the record
+                // claiming something it cannot know; `outcome_uncertain` in the result is the
+                // truth, and the row says the same word.
+                result.facts["outcome_uncertain"] == true -> UNCERTAIN
+                else -> result.reason ?: "refused"
+            },
             undoId = if (undoable) result.id else null,
         )
     }

@@ -131,6 +131,7 @@ class PhoneToolTest {
         for (action in listOf("apps", "launch", "open", "uninstall")) {
             val parsed = PhoneTool.parse(
                 when (action) {
+                    "apps" -> mapOf("action" to action)
                     "launch" -> mapOf("action" to action, "app" to "Firefox")
                     "open" -> mapOf("action" to action, "uri" to "https://example.org")
                     else -> mapOf("action" to action, "package" to "org.mozilla.firefox")

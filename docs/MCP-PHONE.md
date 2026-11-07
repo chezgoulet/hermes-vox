@@ -252,6 +252,29 @@ line carries the compact `timer(remaining=3m12s)` form.
 something the owner already allowed, and `status` only reports; a phone whose grants are all Off must
 still be able to say so.
 
+**The arguments are the schema's, per action.** `additionalProperties:false` is enforced, not
+advertised: a key the action does not take — a misspelt `duration` for `duration_ms`, a `to` on a
+`note` — is `invalid-arguments` naming it, not something silently dropped. `PhoneTool.ARGUMENTS` is
+the table of what each action reads, and a test pins it against the schema's `properties` in **both**
+directions, so an action cannot read an argument the model was never told about and the schema cannot
+advertise one no action reads.
+
+### What a call answers
+
+Every `tools/call` is a `CallToolResult` with one text block — the result JSON — and `isError` set
+from that JSON's `ok`. The mind can therefore tell the three cases apart without reading prose:
+
+| what happened | `isError` | the result |
+|---|---|---|
+| **done** | `false` | `ok:true`, `action`, and what changed (`id`, `level`, `count`, …), plus `undo` when one exists |
+| **not allowed, or did not work** | `true` | `ok:false`, a stable `reason` (`not_granted`, `approval-required`, `permission`, `unavailable`, …) and a human `detail` that says nothing was performed |
+| **dispatched, outcome unknown** | `true` | `ok:false`, with **`outcome_uncertain:true`** — the work may still complete, so ask `status` rather than telling the caller nothing happened |
+
+An unknown tool, an argument object that is not an object, or a body that is not JSON-RPC is a
+protocol error (a JSON-RPC `error` at HTTP 200). The phone refusing to act never is: that is always a
+result the model can read and repeat, which is how "you are not allowed" stays distinguishable from
+"it did not work" and from "done".
+
 ---
 
 ## Grants: what the agent may try (#429)

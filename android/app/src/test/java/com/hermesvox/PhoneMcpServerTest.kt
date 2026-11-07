@@ -14,7 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.Socket
 
@@ -648,6 +647,115 @@ class PhoneMcpServerTest {
         }
     }
 
+    // ---- the tool surface over the wire (#503) ----
+
+    /** Every card the engine raises; a group at Ask must raise one. */
+    private class Surface : PhoneApproval.Surface {
+        val raised = ArrayList<PhoneApproval.Card>()
+        override fun raise(card: PhoneApproval.Card): Boolean {
+            raised.add(card)
+            return true
+        }
+    }
+
+    /**
+     * A server whose handler is a **real** engine over a recording fake platform, so the wire can
+     * be asked what the tool surface actually does: list, run, refuse, and perform nothing.
+     */
+    private fun serveEngine(grants: PhoneGrants.Source): FakePhonePlatform {
+        val platform = FakePhonePlatform()
+        server.close()
+        val engine = PhoneEngine(
+            platform,
+            grants = grants,
+            approvalSurface = Surface(),
+        )
+        server = PhoneMcpServer.start(
+            bind = InetAddress.getLoopbackAddress(),
+            token = token,
+            handler = { args -> engine.dispatch(args, 1_000L, 1_800_000_000_000L).json() },
+            port = 0,
+            log = { log.add(it) },
+            grants = grants,
+        )
+        return platform
+    }
+
+    private fun actionEnum(c: Client): List<String> {
+        val tools = (obj(c.rpc("tools/list"))["result"] as JObj)["tools"] as JArr
+        val schema = (tools.items[0] as JObj)["inputSchema"] as JObj
+        val action = (schema["properties"] as JObj)["action"] as JObj
+        return (action["enum"] as JArr).items.map { (it as JStr).value }
+    }
+
+    private fun innerText(result: JObj): JObj =
+        Json.parse(((result["content"] as JArr).items[0] as JObj).let { (it["text"] as JStr).value }) as JObj
+
+    @Test fun tools_list_follows_the_grants_and_changes_when_they_do() {
+        var timers = PhoneGrants.State.OFF
+        serveEngine(PhoneGrants.Source { g ->
+            if (g.id == "timers-alarms") timers else PhoneGrants.State.OFF
+        })
+        Client().use { c ->
+            assertFalse("an Off group is absent", "timer" in actionEnum(c))
+            assertTrue("the two that are always offered are still offered", "status" in actionEnum(c))
+
+            timers = PhoneGrants.State.ASK
+            assertTrue("Ask is present", "timer" in actionEnum(c))
+
+            timers = PhoneGrants.State.ALLOW
+            assertTrue("Allow is present", "timer" in actionEnum(c))
+
+            timers = PhoneGrants.State.OFF
+            assertFalse(
+                "the sheet's promise: turning it off takes effect on the next call, no reconnect",
+                "timer" in actionEnum(c),
+            )
+        }
+    }
+
+    @Test fun a_call_to_an_off_group_is_an_mcp_error_that_performs_nothing() {
+        val platform = serveEngine(PhoneGrants.ALL_OFF)
+        Client().use { c ->
+            val r = c.call("""{"action":"timer","duration_ms":60000}""")
+            assertEquals("the transport answered", 200, r.status)
+            val result = obj(r)["result"] as JObj
+            assertEquals(true, (result["isError"] as JBool).value)
+            val inner = innerText(result)
+            assertEquals(false, (inner["ok"] as JBool).value)
+            assertEquals("not_granted", (inner["reason"] as JStr).value)
+            assertTrue("the refusal is a sentence", (inner["detail"] as JStr).value.isNotBlank())
+            assertTrue("nothing was armed: ${platform.called}", platform.called.isEmpty())
+        }
+    }
+
+    @Test fun a_call_to_an_ask_group_is_an_error_with_a_card_until_it_is_approved() {
+        val platform = serveEngine(PhoneGrants.Source { g ->
+            if (g.id == "timers-alarms") PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        })
+        Client().use { c ->
+            assertTrue("Ask is advertised", "timer" in actionEnum(c))
+            val r = c.call("""{"action":"timer","duration_ms":60000}""")
+            val result = obj(r)["result"] as JObj
+            assertEquals("asking is not success", true, (result["isError"] as JBool).value)
+            val inner = innerText(result)
+            assertEquals("approval-required", (inner["reason"] as JStr).value)
+            assertNotNull("the mind needs the id for its second call", inner["approval_id"])
+            assertTrue("no timer was armed on the way to the card", platform.performed.isEmpty())
+        }
+    }
+
+    @Test fun a_performed_call_is_not_an_error() {
+        serveEngine(PhoneGrants.Source { g ->
+            if (g.id == "timers-alarms") PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+        })
+        Client().use { c ->
+            val result = obj(c.call("""{"action":"timer","duration_ms":60000}"""))["result"] as JObj
+            assertEquals(false, (result["isError"] as JBool).value)
+            assertTrue((innerText(result)["ok"] as JBool).value)
+        }
+    }
+
     /**
      * A handler that throws is a described refusal, not a dead socket — and the session survives it.
      * The transport's job ends at "the client got a CallToolResult"; what the text and `isError`
@@ -668,7 +776,7 @@ class PhoneMcpServerTest {
                 val r = c.call("""{"action":"timer"}""")
                 assertEquals("the socket survived the throw", 200, r.status)
                 val result = obj(r)["result"] as JObj
-                assertEquals(false, (result["isError"] as JBool).value)
+                assertEquals("a refusal is an MCP error", true, (result["isError"] as JBool).value)
                 val inner = Json.parse(
                     ((result["content"] as JArr).items[0] as JObj).let { (it["text"] as JStr).value }
                 ) as JObj
