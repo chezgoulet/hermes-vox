@@ -1,298 +1,335 @@
-# Hermes Vox — Architecture
+# How Hermes Vox is put together
 
-A one-page map of how Vox works, what it is measured against, and where each piece
-lives. Deeper rationale is linked from each section; this page is the entry point.
+Hermes Vox is an Android voice client for Hermes, the agent you run yourself. The phone carries the
+conversation and everything that must be immediate: the microphone, voice-activity detection,
+speech recognition, speech synthesis, interruption by voice, the on-screen words and the figure
+that shows state. The server you run carries everything that must be true: reasoning, tools,
+long-term memory, skills and identity. The two halves meet on one exchange at a time, over HTTP.
 
-## The benchmark, and the thesis
+## The words this document uses
 
-The target experience is Sesame's Maya/Miles: a voice that feels *present*. Sesame
-names four components of voice presence ([Crossing the uncanny valley of voice][sesame]):
+- **The gateway** is the Hermes API server you run. The app addresses it by base URL and
+  authenticates with its `API_SERVER_KEY`.
+- **The agent**, or **the mind**, is the Hermes instance behind that gateway. It is the only part
+  that reasons, calls tools or remembers. Vox does not run a second agent.
+- **A turn** is one message exchange: the caller's words go to the mind; the reply comes back as a
+  stream of events.
+- **A run** is the gateway's execution of one turn on the `/v1/runs` route. It has a run id and a
+  resumable event stream.
+- **A call** is the open, hands-free line. The microphone stays live under voice-activity
+  detection, and the caller can interrupt by speaking.
+- **The being** is the GPU-drawn figure that shows state: resting, listening, thinking, speaking,
+  or the motif of a tool the mind is running.
+- **Presence** is the optional layer that gives the phone's small voice its turn: a greeting, the
+  opening beat (two to six words while the mind starts to answer), and short asides during a long
+  run.
+- **The soul** is the on-device voice Presence uses. It is a small language model, not an agent:
+  it produces short lines in the agent's style and has no tools.
+- **A profile** is one saved connection: base URL, key, model value, voice and look.
+- **A session** is one conversation as the host files it. The `/sessions` command lists and adopts
+  one.
+- **Phone tools** is the optional surface through which the mind acts on the phone, over the
+  Model Context Protocol (MCP), the protocol the gateway uses to reach tools.
+- **An approval** is the gateway's request for consent before a consequential action.
+- **The alpha gate** is the one switch that opens unfinished feature sets.
 
-1. **Emotional intelligence** — reading and responding to emotional context.
-2. **Conversational dynamics** — natural timing, pauses, interruptions and emphasis.
-3. **Contextual awareness** — adjusting tone and style to the situation.
-4. **Consistent personality** — a coherent, reliable presence.
+## What you need
 
-Sesame gets there with one model family (CSM: a Llama backbone plus a small audio
-decoder). By its authors' own account CSM models the *content* of speech, **not the
-structure of the conversation** ("turn taking, pauses, pacing"), and it is a voice
-without an agent behind it.
+To run the pieces this document describes you need a Hermes gateway with its endpoint and
+`API_SERVER_KEY`, an Android phone (API 24 or later), the three required on-device models
+(Silero VAD, Supertonic, Whisper base.en), and a network route between the phone and the gateway.
+A tailnet is a private network run by a mesh VPN; Tailscale is the one whose addresses the
+phone's servers bind to. For Presence you also need the Gemma 4 E2B model and a phone with 8 GB
+of memory. For phone tools and file offers you need Tailscale on the phone, because those servers
+bind only to a tailnet address.
 
-**Vox's thesis:** split the problem along the line Sesame leaves open. The *mind* is a
-real agent you already run — **Hermes**, with its tools, memory, skills and `SOUL.md`
-identity. The *phone* owns everything that has to be instant: hearing, turn-taking,
-interruption, the voice, the presence. A small on-device model (Gemma 4 E2B) gives
-the presence words in the agent's own voice while the mind works. Where Vox aims to go
-beyond Sesame:
+---
 
-- **It is your agent.** The entity has real tools and long-term memory, on a gateway
-  you own. The same agent answers you on Telegram, desktop and here.
-- **Conversation structure is engineered, not hoped for.** Barge-in, backchannel
-  detection, a priority audio arbiter and a presence ladder are explicit, tested code.
-- **Sovereign by construction.** Speech processing is on-device; the only network
-  peers are your own gateway (and, if you set it up, the phone's MCP listener).
-- **Open.** GPL-3.0, reproducible build, secret-free CI.
+## 1. Audio in, and hearing — on the phone
 
-## The shape
+The microphone feeds Silero VAD through sherpa-onnx. `BargeGate` decides whether speech during
+playback is a real interruption: level and VAD agreement must both hold for a sustained window,
+with a level-only escape for the case where the echo canceller starves the VAD.
+
+Recognition is on-device through `OfflineStt`. The default is Whisper base.en; the catalogue also
+offers Whisper tiny and small (English and multilingual), NVIDIA Parakeet-TDT 0.6B v2 and, as a
+separate opt-in arm, NVIDIA Nemotron streaming 0.6B. Recognition is batch: it sees a finished
+utterance. `SttWindows` splits anything past 25 seconds. A streaming partial may end a capture
+early only on a genuine finished-sentence pause, and may stand in for the text only when it
+covered the whole utterance (`EarlyStartRule`). Every transcript passes `TranscriptValidator` —
+Whisper's non-speech tags, decoder loops and prior phrases on near-silence are rejected — before
+it becomes a turn. The words that were sent appear briefly as the dim "heard" line
+(`HeardLine`).
+
+Optional **continuous listening** keeps the microphone and recogniser live for the whole call.
+Partials are read every 100 ms and `SemanticEndpoint` judges the end of the turn from silence,
+partial stability and whether the words can end a sentence. With continuous listening off, the
+normal 800 ms silence endpoint runs.
+
+The optional **remote recognition** backend (`RemoteStt`) sends the utterance to an
+OpenAI-compatible transcription URL you configure instead of using the on-device model.
+
+**It cannot** recognise without a downloaded model; the default model is English. It cannot judge
+a semantic endpoint without continuous listening. It cannot send microphone audio anywhere unless
+you configure the remote backend.
+
+## 2. The turn route — phone to gateway
+
+A turn has two possible HTTP routes, chosen in `core/TurnRoute.kt`:
+
+- **`POST /v1/runs` — the default.** The admission answers `202 {run_id}`. The app reads
+  `GET /v1/runs/{run_id}/events`; the run's sequence-numbered backlog lets a dropped events socket
+  reattach from its last `seq`. A barge-in sends `POST /v1/runs/{run_id}/stop`. An approval is
+  answered with `POST /v1/runs/{run_id}/approval`.
+- **`POST /v1/responses` — the fallback.** Only an admission that answers **404** falls back to
+  this route, once. The answer is remembered per profile (`RouteChoice.kt`). The request streams
+  an event stream (SSE) in the OpenAI Responses shape and is chained with `previous_response_id`.
+  Any other status, or a transport failure, is a real error and does not fall back.
+
+`core/Stream.kt` reduces both wire vocabularies to one `StreamState`: text deltas become speech,
+`tool.started` / `tool.completed` drive the being's tool motifs, and `phase: commentary` items are
+shown as progress but never spoken as the answer.
+
+**Conversation identity.** On `/v1/runs` the conversation is the body `session_id`, which the
+client owns and rotates on `/new`, a new call and a profile switch. A session adopted from the
+host replaces that id with the host's. On the fallback route the conversation is
+`previous_response_id`. `X-Hermes-Session-Key` is the long-term-memory scope, not the transcript.
+
+**What a voice turn tells the mind.** The caller's words go as `input`, byte-exact. The voice
+register, what the soul has already said, and the phone's state ride the request's ephemeral
+`instructions`, which the gateway appends to the system prompt for that request and does not
+persist. A per-request `model_options.reasoning` defaults to low.
+
+**Approvals.** The runs route registers the gateway's approval notifier and delivers
+`approval.request` with the command (already redacted), its description, the choices the gateway
+offers and a request id. `core/Approval.kt` renders exactly those choices — `deny` is always
+present — answers once, and lets a timeout resolve to no. The responses route never registers the
+notifier, so no approval reaches the phone on the fallback.
+
+**It cannot** carry approvals on the fallback route. It cannot reattach a dropped responses-route
+stream: the runs route is the one with the sequence-numbered backlog. It cannot fall back on any
+answer other than a 404.
+
+## 3. The mind — on your gateway
+
+Hermes owns the reasoning, the tools, the memory, the skills and the identity. Vox sends text and
+gets events; it does not inspect or reproduce the agent's state.
+
+The app reads four gateway surfaces:
+
+| Surface | What the app uses it for |
+|---|---|
+| `GET /v1/models` | Verifying the connection and adopting the agent name the host answers with |
+| `GET /v1/health` | The connection card |
+| `/api/model/options` | The gateway's model catalogue |
+| `GET /api/sessions` and `GET /api/sessions/{id}/messages` | Listing the host's conversations and reading one transcript |
+
+The profile list comes from the host too: the app asks in conversation and proves names with
+`/v1/models`, and uses `GET /v1/profiles` when the host serves it.
+
+**It cannot** reason, call tools or keep memory for the agent. It cannot see the agent's internal
+state beyond the events the gateway streams.
+
+## 4. Speech out — on the phone
+
+Supertonic (ten voices, 44.1 kHz) is the default voice engine; Piper is the lighter alternative
+and the system voice is the fallback. The voice leg acquires one engine at a time
+(`TtsEngineHost`). The reply is cut into clause-sized chunks from the live stream
+(`StreamTextChunker`) and handed to the engine as it arrives; a barge-in cuts the audio and stops
+the chunk being played. Delivery follows the caller's mood as Presence heard it (`VoiceMood`:
+speed and pause length). `SpeechCursor` locks the on-screen words to what has actually been
+spoken.
+
+A barge-in runs one cut path: it stops audio, cancels the turn, releases the turn gate, and on the
+runs route stops the run on the gateway. The interrupting words are kept from their onset with
+pre-roll and become the next turn (`BargeCarry`).
+
+**It cannot** speak and listen at the same time. It cannot change the voice's emotion: mood moves
+only speed and pauses.
+
+## 5. The being and the words — on the phone
+
+The being is drawn with OpenGL ES 3 on its own thread (`BeingThread`, `BeingRenderer`):
+6,000 stateless particles whose positions are computed in the vertex shader, 27 shapes, staggered
+morphs between any two, two-level bloom, a filmic tone curve and an authored light-mode ground.
+It targets 60 fps, pauses when not visible, and steps quality down — fewer points, a smaller
+buffer, one bloom level — if a device cannot keep up.
+
+`AvatarView` maps state and tool to shape. `CrawlView` renders the reply and holds the scrollback;
+both sit on true black in the dark theme and on paper in the light theme.
+
+**It cannot** show what the agent did not report. State narration never enters the scrollback, and
+the figure is an indicator, not a control surface.
+
+## 6. Presence — the optional layer, on the phone
+
+Presence runs only when the alpha gate allows it *and* its own switch is on. It adds Gemma 4 E2B
+on LiteRT-LM, GPU first with a CPU fallback. It is expression, never authority:
+
+- **VOX.md.** The agent authors a distilled voice file on the gateway. The phone mirrors it
+  read-only, one document per profile (`VoxMirror`), validates it, and never writes identity back.
+- **The beat, not a gate.** Every voice turn is submitted to the mind at once. The soul renders
+  two to six words to fill the wait, or stays silent. The beat is dropped if the mind's first
+  token gets there first.
+- **The soul hears.** Gemma's audio encoder takes the caller's last few seconds of audio alongside
+  the transcript and tags their tone. The audio never leaves the phone.
+- **The ladder.** Under 900 ms: silence. From 900 ms: one recorded nonverbal cue. No words before
+  4 seconds; after that, one in-character line per window, density-capped.
+- **One output.** `ErArbiter` gives strict priority: P0 stop, P1 mind, P2 critical soul, P3 filler.
+- **Safety stays deterministic.** Only backchannel-never-cancels and barge-cancels are enumerated
+  rules; the 2B model is never in the abort path.
+- **Read-only context.** Presence reads the phone's action registry through `PhoneReadout`, which
+  exposes no mutating call, and device facts for the turn's context. It never acts on the phone.
+
+**It cannot** answer a question or take a turn from the mind. It cannot call a tool or change the
+phone. It needs the 2.6 GB model; below a phone with 8 GB of memory it may fail to load, and it
+holds about 3 GB while a call is live.
+
+## 7. The phone tool surface — the mind, through MCP
+
+When the **Phone tools** set is allowed, `PhoneMcpServer` serves one MCP tool, `phone`, at
+`http://<tailnet-address>:8765/mcp`. The server binds only to the tailnet address — never
+`0.0.0.0`, never the LAN, never cellular — and only while a call is live or during the one-button
+setup's open window. Every request needs a bearer credential: the phone's own 128-bit token, or
+the API key of the active connection.
+
+`PhoneGrants` defines thirteen capability groups once. Each is **Off**, **Ask** or **Allow**, and
+all start Off. The tool's advertised `enum` is built from the live grants on every `tools/list`
+and `tools/call`, so revocation lands on the next call. Off means the actions are absent from the
+schema. Ask raises the phone's own card, and the action runs only when the agent calls again with
+that approval id and the same arguments. Allow runs without a card. Every call returns one JSON
+result with `ok` and the facts of what happened; a refusal carries a reason, not a transport
+error. A timeout is recorded as uncertain, not as a refusal of the work.
+
+`LocalActions` executes the action through `PhoneEngine`, which owns the ids, the registry and the
+undo table. Presence and the mind read the same registry, so the phone cannot contradict itself.
+`docs/MCP-PHONE.md` is the operational contract; `docs/MCP-SURFACE.md` is the action-by-action
+one.
+
+**It cannot** act when no call or setup window is open. It cannot be reached off the tailnet. It
+cannot run an action in a group left Off, and it never advertises an action the phone does not
+implement. The phone does not parse the caller's words to choose an action: every voice turn goes
+to the mind, and the mind decides.
+
+## 8. Profiles, sessions and the alpha gate
+
+A profile is the whole connection plus the presentation that belongs to it: base URL, its own
+encrypted key, model and provider, agent name, session scope, voice and look (`Profiles.kt`). The
+list comes from the host. Unknown names are marked unavailable, never deleted. The app is a
+picker, not an editor: nothing in Vox creates or changes a profile on the host. Switching writes
+the chosen connection, rebuilds the session and starts a fresh conversation; a live call ends.
+
+A session is a conversation the host already files. `/sessions` reads `GET /api/sessions` at the
+host root, lists what the key can see, and adopts one by setting the `session_id` on subsequent
+runs. The transcript stays the host's; another surface may be writing it while the phone reads it.
+The phone keeps a bounded in-memory scrollback, not a stored history.
+
+The **alpha gate** (`AlphaGate`) has one master switch, off on a fresh install. Six sets are
+selected individually: **Presence**, **Continuous listening**, **Turn-taking**, **Phone tools**,
+**Wake word** and **Digital assistant**. A set runs only when the master is on and that set is
+selected. Continuous listening also requires Presence, because it is how the being hears; Phone
+tools is independent.
+
+The master switch is the row immediately above **the alpha block** at the end of Settings. The
+block has four rows — Presence, Phone tools, Wake word, Digital assistant (`AlphaBlock`).
+Continuous listening and Turn-taking are switches inside Hearing, gated by their own sets. With
+the master off every alpha surface is dimmed and unreachable. Quiet calls is not a set: it is its
+own switch in Hearing, off by default. Sessions and profile switching are outside the gate and
+available on every install.
+
+**It cannot** create a profile or edit one on the host. It cannot run an alpha set with the
+master off, and it cannot run continuous listening without Presence.
+
+## 9. Files — share with agent
+
+"Share with agent" never uploads to a service. The phone stages the file, hashes it, and serves it
+once on the tailnet (`FileOffer`, `FileStage`, `FileServer`): a 100 MB cap, a five-minute expiry,
+a one-time capability URL, and `410 Gone` after the first transfer. Text under 8,000 bytes travels
+inline instead. The agent fetches and verifies the hash. Nothing is sent until the SEND on the
+confirmation card.
+
+**It cannot** offer a file when Tailscale is down; it offers the inline path for small text
+instead. It cannot serve the same file twice.
+
+## 10. Lifecycle and storage
+
+`VoiceService` is a foreground service of type `microphone` — an Android service that keeps
+running with a notification — and it keeps the process and the call alive in the background. The
+phone's MCP listener lives and dies with the call, plus the setup window. Models download through
+a foreground `dataSync` service (`ModelDownloadService`), resume over HTTP `Range`, wait out
+network loss, and are sha256-verified and path-traversal guarded before install.
+
+The gateway key is user-entered and encrypted with a key in the Android Keystore
+(`SecureStore`). Backups are disabled. A release build fails if a key is ever baked into the
+build. Cleartext is refused for every host except loopback and a tailnet MagicDNS name, and the
+app refuses even that while the tunnel is down (`core/CleartextPolicy.kt`). Logs are local, and
+transcript logging is off by default.
+
+**It cannot** keep a call's microphone service alive without the foreground notification. It
+cannot guarantee encrypted key storage on a device whose Keystore refuses to encrypt: that value
+is kept locally in plain text, logged, and retried at the next start.
+
+---
+
+## What talks to what
 
 ```
- mic ─► Silero VAD ─► Whisper STT ─┬──────────────────────────► Hermes gateway (the MIND)
-  ▲    (BargeGate)   (OfflineStt / │  POST /v1/runs (default), or /v1/responses after a 404
-  │                   RemoteStt)   │  body session_id · ephemeral instructions · X-Hermes-Session-Key
-  │                                │                  │ run events: text deltas, tool calls,
-  │                                ▼                  │ commentary, approval.request, completion
-  │                     Presence (the SOUL)           │
-  │                     ErSoulTurn · ErFillers ·      │
-  │                     GemmaExpress + VOX.md         │
-  │                                │                  ▼
-  │                                └──► ErArbiter (P0 stop · P1 mind · P2 soul · P3 filler)
-  │                                                   │
-  └─── barge-in (cuts audio + POST /v1/runs/{id}/stop) ◄── Supertonic / Piper TTS ─► speaker
-                                                      │
-                             AvatarView (the being) ◄─┴─► CrawlView (the words)
+phone                                                        host
+─────                                                        ────
+mic → Silero VAD → recognition ── text turn ───────────────► Hermes agent (the mind)
+                                   instructions, scope         ├─ reasoning
+                                   ◄── text, tool events ──────┤  tools
+                                                               ├─ memory
+speech ← TTS ← reply ────────────── stream ───────────────────┤  skills
+                                                               └─ identity (SOUL.md → VOX.md)
+being ← state and tools ─────────── events
+words ← SpeechCursor ────────────── text
+
+Presence (Gemma 4 E2B) ← VOX.md mirror (read-only) ◄─────────── agent authors VOX.md
+Presence → beat, asides → speech                              (never written back)
+
+mind ── MCP tools/call ──► phone :8765/mcp (tailnet, call/setup only)
+                          └─► LocalActions → PhoneEngine → the action, one result
+
+mind ── HTTP GET ─────────► phone file offer (tailnet, one transfer, after SEND)
 ```
 
-## The layers
+## The boundary
 
-### 1. The mind — Hermes (server, yours)
-Vox never reasons, calls tools or stores memory itself (`AGENTS.md`, iron rules 1–2).
-It talks to the Hermes API server. Plain Kotlin in `com.hermesvox.core`; no other
-client library and no gateway patch.
-
-**Turns.** A turn is a streamed request and it takes one of two routes
-(`core/TurnRoute.kt`, `docs/RUNS-ROUTE.md`):
-
-- **`POST /v1/runs` — the default (#404).** The admission answers `202 {run_id}`; the
-  app then reads `GET /v1/runs/{run_id}/events` and answers an approval with
-  `POST /v1/runs/{run_id}/approval`. A barge-in is `POST /v1/runs/{run_id}/stop`, so the
-  gateway stops the generation itself rather than losing a subscriber.
-- **`POST /v1/responses` — the fallback.** A gateway that answers the admission with
-  **404** has no `/v1/runs` route. That answer is remembered per profile
-  (`route_no_runs_profiles`, `RouteChoice.kt`) and the same turn is retried once on
-  `/v1/responses`, chained by `previous_response_id`. Every other status — 401, 409,
-  429, 500, a transport failure — is a real error and never falls back.
-
-`core/Stream.kt` consumes both vocabularies into one `StreamState`: text deltas become
-speech, `tool.started` / `tool.completed` items drive the being's tool motifs, and
-`phase: commentary` items are shown as progress but never spoken as the answer. Both
-readers honour the gateway's idle keepalive and keep a sequence-numbered backlog so a
-dropped socket can reattach.
-
-**Conversation identity.** On `/v1/runs` the conversation is a body `session_id` the
-client owns and rotates on `/new`, a new call and a profile switch; on the fallback it
-is `previous_response_id`. `X-Hermes-Session-Key` is the *long-term memory* scope, not
-the transcript.
-
-**What a voice turn tells the mind (D31).** The framing rides the request's ephemeral
-`instructions` — the voice register, what the soul has already said, and the phone's
-state — plus a per-request `model_options.reasoning` (default *low*). The caller's words
-go as `input`, byte-exact. Protocol text never rides the user's message, and a typed
-turn sends an explicit empty `instructions` so it cannot inherit the voice register
-down the chain.
-
-**Approvals (#282).** `/v1/runs` registers the approval notifier and emits
-`approval.request` with the command, its description, the choices the gateway offers and
-a request id. `core/Approval.kt` renders exactly those choices (`deny` always present),
-answers once, and lets a timeout resolve to *no*. The debug arm in
-`docs/APPROVALS-ACCEPTANCE.md` is test tooling, not a shipped surface.
-
-The connector replaced a Go core bound with gomobile in #126; `testdata/stream/` holds
-the fixtures that pin its streaming behaviour to what the Go core did, and to the runs
-wire (`docs/KOTLIN-CORE.md`, `RouteParityTest`).
-
-### 2. Hearing and turn-taking — on-device
-- **VAD:** Silero via sherpa-onnx gates the open line; `BargeGate` decides when speech
-  during playback is a real interruption (level + duration, with a level-only escape).
-- **STT:** on-device via sherpa-onnx (`OfflineStt`) — Whisper base.en by default,
-  tiny/small, NVIDIA Parakeet-TDT 0.6B v2, or the streaming Nemotron 0.6B model — or an
-  optional self-hosted endpoint (`RemoteStt`). Recognition is *batch*: it sees a finished
-  utterance. The streaming arm is the exception and keeps a live hypothesis that feeds
-  partials. The turn text
-  is always the **whole** utterance (`SttWindows` windows anything past 25 s); a partial
-  may only *trigger* an early end on a genuine finished-sentence pause, and is reused as
-  the text only when it covered the whole utterance (`EarlyStartRule`). Every transcript
-  passes `TranscriptValidator` before it is a turn, and the words sent are shown briefly
-  as a dim "heard" line (`HeardLine`). `tools/sttbench` measures all of this.
-- **Continuous listening (Alpha, #228/#229).** The mic and the recogniser stay live for
-  the call; partials are read every 100 ms and `SemanticEndpoint` judges the end of the
-  turn from silence, the partial's stability and whether the words can end a sentence.
-  Both switches default on *inside* the Alpha gate; with the gate off the old 800 ms
-  silence endpoint runs: a conservative finished-sentence check, not semantic.
-- **Barge-in:** one cut path stops audio, cancels the turn and releases the turn gate
-  (`VoiceController`, `StreamFence`, `StreamRetirementState`). On the fallback route,
-  closing the stream aborts the generation; on `/v1/runs` it also POSTs the run's stop. The
-  interrupting words are kept from their onset (with pre-roll) and become the next turn
-  (`BargeCarry`).
-
-### 3. The voice — on-device
-Supertonic (ten voices, 44.1 kHz) via sherpa-onnx is the recommended voice, chosen by a
-measured bake-off ([voice bake-off][bakeoff]); Piper is the lighter option and the system
-TTS the fallback. One engine (`SherpaTts` + `SherpaVoice`) streams by sentence behind the
-same fence for every voice. Delivery follows the caller's mood as the soul heard it
-(`VoiceMood`: speed and pause length). `SpeechCursor` locks the on-screen words to what
-has actually been spoken.
-
-### 4. The presence — the layer (the soul)
-Presence is a layer on the one normal operation (D16), behind the Alpha gate. It adds a
-small on-device model as the *soul's voice*, never a second brain ([design][er-design]):
-
-- **Contract + Soul (`VoxSoul`, VOX.md).** The Hermes agent authors its own distilled
-  voice file from its `SOUL.md`; the device mirrors it **read-only**, one document per
-  profile (`VoxMirror`), and validates it. The device never writes identity back.
-- **A warm soul (`GemmaExpress`, `SoulBudget`).** One rolling LiteRT-LM conversation:
-  the persona is prefilled once, so each render only prefills its own directive, and
-  the soul remembers what it already said this session.
-- **The beat, not a gate (D30).** Every voice turn is submitted to the mind at once and
-  the soul renders two to six words to fill the wait. The `<<SKIP>>` offer is retired:
-  the mind always answers. The beat is dropped if the mind's first token gets there
-  first, and delivery is recorded from playback (`ErHandoff`, `event=er-soul-played`).
-- **The soul hears (`SoulAudio`, `VoiceMood`).** Gemma 4 E2B's own audio encoder takes
-  the caller's last few seconds of audio alongside the transcript. The soul tags their
-  tone (`{calm}` `{warm}` `{lively}` `{tense}`), which steers delivery. On-device only.
-- **Safety lists stay deterministic (`ErIntent`).** Only backchannel-never-cancels and
-  barge-cancels use enumerable rules. A 2B model is never in the abort path.
-- **Presence ladder (`ErFillers`, `ErPresence`, `ErClips`).** Under 900 ms, silence;
-  from 900 ms, one recorded nonverbal cue; no *words* before 4 s, then one in-character
-  fail-soft line per window. Density is capped and user-adjustable.
-- **One output (`ErArbiter`).** Strict priority: P0 stop · P1 mind · P2 critical soul ·
-  P3 filler. Anything at P0–P2 cuts P3 immediately.
-- **Measured (`ErTelemetry`).** Per call: soul-first-word, soul-spoke %, render
-  p50/p95, arbiter and barge outcomes.
-
-### 5. The phone acts — the mind, through MCP (#421, D38)
-One actor. The phone does not parse the caller's words; every voice turn goes to the mind.
-
-- **The mind's lane.** The mind decides whether the phone should act, and while a call is live
-  `PhoneMcpServer` serves **one** MCP tool,
-  `phone`, on the phone's tailnet address (`100.64.0.0/10`, port 8765, `/mcp`), behind a
-  128-bit bearer token stored in the Android Keystore. Every call returns one JSON
-  result with `ok` and the facts of what happened; a refusal is a result with a `reason`,
-  never a transport error. Every action at Ask raises the phone's own card
-  (`approval-required`) and executes only on a second call with that id and the same
-  arguments; Allow runs without a card.
-- **Grants.** `PhoneGrants` defines thirteen capability groups once, each Off / Ask /
-  Allow and Off by default. The tool's advertised `enum` is built from the live grants on
-  every `tools/list` and `tools/call`, so a revocation takes effect on the next call.
-  The three states mean the same thing for every group; the tier only describes the
-  consequence and whether an undo exists. `docs/MCP-PHONE.md` is the contract.
-- **Presence may look, never act.** The being reads the registry and device facts through
-  `PhoneReadout`, which exposes no mutating call. Presence and Phone tools are independent
-  Alpha sets; continuous listening belongs with Presence because it is how the being hears.
-
-### 6. Profiles — saved connections
-A profile is the whole connection: base URL (`https://host/p/<name>`), its own key, model,
-agent name, session scope and provider (`Profiles.kt`). The list comes from the host
-(`/v1/models` plus the agent's own answer, `ProfilesAsk` / `HostProfiles`); unknown names
-are marked unavailable, never deleted. **It is a picker, not an editor:** profiles are
-configured on the host, so nothing in Vox creates or changes one, and a host that serves none
-says so. Switching writes the profile into the ordinary
-prefs and rebuilds the session, so a switch starts a fresh conversation and ends a live
-call.
-
-- **Per-profile secrets.** Each key is encrypted by `SecureStore` (Android Keystore,
-  AES/GCM) before it enters the profile list; nothing in the registry logs, shows or
-  decrypts one.
-- **Per-profile presentation.** Voice, model and look belong to the profile record and
-  are applied by `ProfileScope`; a value a profile does not own falls back to the
-  device-wide one. The connection itself, the Alpha gate, Presence's own switches and
-  everything about the phone stay device-wide (`docs/PRESENCE.md`).
-
-### 7. The file offer (#370, #386)
-"Share with agent" never uploads a file to a service. The phone stages it, hashes it and
-serves it **once** on the tailnet (`FileOffer`, `FileStage`, `FileServer`): a 100 MB cap,
-a five-minute expiry, a one-time capability URL, and `410` after the first transfer. Text
-under 8 KB travels inline; a URL becomes a small named `.txt`. The agent fetches and
-verifies the hash, and nothing leaves the phone until the card is confirmed.
-
-### 8. The Alpha gate (#402, D29)
-**One gate for everything unfinished.** `AlphaGate` has a master switch, **off on a
-fresh install**, and six sets a tester selects individually: **Presence**, **Continuous
-listening**, **Turn-taking**, **Phone tools**, **Wake word** and **Digital assistant**. The
-switch is the row immediately above the alpha block, and that block is every gated section,
-contiguous, at the end of Settings (`AlphaBlock`). A set runs only
-when the master is on *and* that set is selected (`AlphaGate.allows`); with the master
-off every alpha surface is dimmed and unreachable, and the runtime readers ask
-`AlphaGate`, not the feature's own preference. A set's own prefs keep their meaning
-inside the gate. Quiet calls (#325) is deliberately **not** a set: it is its own switch,
-off by default, with no master in front of it. An upgrade keeps what was already running
-(`AlphaGate.migrate`); a fresh install gets nothing. **Sessions** and **Switching profiles**
-left the gate on 2026-11-06 (D39): `/sessions`, the session picker and the profile switcher
-are on for every install.
-
-### 9. The being and the words — UI
-The being is drawn on the GPU (OpenGL ES 3, on its own thread: `BeingThread`,
-`BeingRenderer`):
-- **6,000 stateless particles.** Each one's position is computed in the vertex shader
-  every frame from its identity and its shape's exact geometry (`BeingShaders`), so rings
-  are rings, lids are curves and solids have depth-shaded backs.
-- **27 shapes,** each designed to read as its name: the nebula, iris, galaxy, jellyfish,
-  globe scan, constellation, terminal, flame, Möbius ribbon, black hole, flower,
-  soundwave, lightning, atom, eye, ripples, radar, octopus, lit sphere, DNA helix, knot,
-  aurora, harmonograph, tesseract, mandala, butterfly and hourglass.
-- **Staggered morphs,** with a swirl mid-flight, between any two shapes.
-- **Light:** two-level bloom and a luminance-preserving filmic tone curve, with an
-  authored light-mode ground; categories that want trails get real frame feedback.
-- **Frame pacing:** 60 fps, paused when not visible. It is back-pressured by a GPU fence
-  and steps quality down (fewer points, a smaller buffer, one bloom level) if a device
-  cannot keep up, so it can never starve the UI.
-
-`AvatarView` remains the brain: state and tool → shape (`MotionState`, the per-state
-picks), the palettes and visual categories. `CrawlView` renders the reply locked to the
-voice and holds the scrollback (`docs/CRAWL-SCROLLBACK.md`). Both sit on true OLED black
-in the dark theme.
-
-### 10. Lifecycle and trust
-- `VoiceService` (foreground, microphone type) owns the live call in the background and
-  is also the MCP listener's lifetime.
-- The gateway key is user-entered and Keystore-encrypted (`SecureStore`); release
-  builds fail if a key injection is ever added. Backups are disabled. The stored form
-  is marked (`enc1:`), so a legacy plaintext key containing `:` is read as plaintext
-  rather than lost; a fallback that had to store plaintext is logged and retried on the
-  next start.
-- Models download in-app through a foreground service (`ModelDownloadService`,
-  `ModelDownloads`), so they survive leaving the screen. Downloads are resumable over HTTP
-  `Range` (`DownloadResume`), wait out network loss without failing, and are sha256-verified
-  and zip-slip guarded before install (`ModelDownloader`).
-- Cleartext is refused except loopback and a tailnet MagicDNS name while the tunnel is
-  up (`core/CleartextPolicy.kt`).
-- Logs are local-only and transcript logging is opt-in (`VoxLog`).
-
-## How Vox maps to Sesame's four components
-
-| Sesame component | Vox mechanism | Status |
+| On the phone | On the host | Never sent anywhere |
 |---|---|---|
-| Emotional intelligence | The soul *hears* the caller's tone (Gemma audio input); mood steers the voice's delivery and the vibe Hermes is told | Built, Alpha (Presence); field-verify |
-| Conversational dynamics | The beat on every turn, barge-in, backchannel hold, presence ladder, arbiter, speech-locked text, continuous listening with semantic endpointing | Built; continuous listening is Alpha; device checks outstanding |
-| Contextual awareness | Tool-aware narration; Hermes' own memory and context; the phone's state in `instructions` | Shipped |
-| Consistent personality | One identity: `SOUL.md` → agent-authored VOX.md → soul prompt, one VOX.md per profile | Built, Alpha (Presence) |
-| *(beyond Sesame)* Agency | Real tools, memory, skills; tool calls visible in the being; the phone's own actions through one MCP tool | Shipped / Alpha (Phone tools) |
-| *(beyond Sesame)* Sovereignty | On-device speech; your gateway only | Shipped |
+| Microphone capture, VAD, recognition (default), speech synthesis, Presence model, the being, the reply text on screen | Reasoning, tools, long-term memory, skills, identity, the agent-authored VOX.md, the transcript record | Microphone audio (unless the remote recognition backend is configured), Presence's tone audio, wake-word enrolment recordings, local logs, the Keystore key |
+| Preferences, encrypted gateway key, model files, a staged share copy, a read-only VOX.md mirror | The authoritative VOX.md, profile list, session list, the approval request and its recorded answer | The bearer key beyond the gateway you configured |
 
-## Gaps, honestly
+The app's outbound traffic is: turns and their instructions to the gateway, the gateway reads
+listed above, the model downloads you start, and — only if you configure that backend — the audio
+for a turn to your remote recognition endpoint. A shared file is served on the tailnet only after
+you confirm, and only to the agent that fetches its one-time URL. Its inbound listeners are the
+phone-tools MCP server and the one-shot file server, both on the tailnet address and both closed
+when their window ends.
 
-- **The runs route's device pass.** `/v1/runs` is the default and its parity is proven
-  off-device, but the nine checks in `docs/RUNS-ROUTE.md` — a live approval, a dropped
-  socket, `/new` on a scoped install — still need a real phone and gateway.
-- **Streaming STT on a phone.** The streaming arm exists (Nemotron 0.6B, opt-in) and
-  feeds continuous listening, but its phone RTF and memory are not measured here; the
-  bench numbers are host CPU. Whisper-base stays the default until a phone says otherwise.
-- **Echo-tail judgement, in the field.** After a reply the mic reopens live; a short
-  segment that ended inside the 450 ms tail window is dropped as echo (`EchoTailRule`).
-  Its thresholds are unit-tested, not yet tuned against real speaker echo.
-- **The beat, in the field.** Built and unit-tested; its latency on a real phone GPU
-  is what the `express-probe … warm=` log line and the `soul(beat=…)` counters prove.
-- **Voice expressiveness.** Supertonic is natural but has no emotion control; mood
-  moves only speed and pauses. Prosody conditioned on the conversation is not yet
-  runnable on Android; see the bake-off.
-- **Half-duplex.** Vox listens *or* speaks (with barge-in), not both. Full-duplex
-  models are the long-horizon path ([research][research]).
-- **The phone's surface is narrow on purpose.** Thirteen capability groups are defined and
-  every advertised action is built. A group's actions appear in the schema only while its
-  grant is on; Off is absent, Ask raises the phone's card for every action, and Allow runs
-  without one. Tier 2 is a description, not a refusal: `uninstall` and `file_offer` run at
-  Allow or after their card, and the unbuilt names are never advertised.
+## What it cannot do
 
-[sesame]: https://www.sesame.com/research/crossing_the_uncanny_valley_of_voice
-[er-design]: DESIGN-enhanced-realtime-voice.md
-[research]: research-on-device-voice-2026-08-27.md
-[bakeoff]: VOICE-BAKEOFF.md
+- It cannot work without a Hermes gateway you run.
+- It cannot reason, call tools or keep long-term memory on the phone.
+- It cannot carry approvals on the `/v1/responses` fallback route.
+- It cannot reattach a dropped `/v1/responses` stream.
+- It cannot listen and speak at once.
+- It cannot run Presence without its model and memory bar.
+- It cannot act on the phone without the Phone tools set, a setup with the agent and a grant.
+- It cannot keep the phone-tools listener up when no call or setup window is open.
+- It cannot reach a phone that is not on the tailnet.
+- It cannot create or edit profiles.
+- It cannot store a conversation history on the phone.
+- It cannot change the voice's emotion; mood moves speed and pauses only.
+
+## Where to read more
+
+- [docs/INDEX.md](INDEX.md) — every living document, and the records kept separately.
+- [docs/RUNS-ROUTE.md](RUNS-ROUTE.md) — the default turn route and the checks a device must pass.
+- [docs/KOTLIN-CORE.md](KOTLIN-CORE.md) — the `com.hermesvox.core` connector.
+- [docs/PRESENCE.md](PRESENCE.md) — Presence, VOX.md and the beat.
+- [docs/MCP-PHONE.md](MCP-PHONE.md) and [docs/MCP-SURFACE.md](MCP-SURFACE.md) — the phone tool.
+- [docs/MODELS-SCREEN.md](MODELS-SCREEN.md) — the model catalogue.
+- [PRIVACY.md](../PRIVACY.md) and [SECURITY.md](../SECURITY.md) — data handling and the threat
+  model.

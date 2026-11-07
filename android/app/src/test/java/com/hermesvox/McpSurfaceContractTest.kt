@@ -7,10 +7,9 @@ import java.io.File
 /**
  * The approval card's two safety rules, pinned in the contract document.
  *
- * `docs/MCP-SURFACE.md` is where a reader learns what the MCP surface does. These rules used to be
- * written as requirements for a later lane; the card has landed, so the section must now describe
- * the shipped behaviour. A behaviour that quietly disappears from the document is one the next
- * change never sees, so this test fails if either rule is removed or softened.
+ * `docs/MCP-SURFACE.md` is where a reader learns what the MCP surface does. These rules are stated
+ * there as shipped behaviour. A behaviour that quietly disappears from the document is one the
+ * next change never sees, so this test fails if either rule is removed or softened.
  */
 class McpSurfaceContractTest {
 
@@ -28,11 +27,11 @@ class McpSurfaceContractTest {
 
     @Test
     fun the_approval_card_behaviour_is_stated_as_enforced() {
-        val enforced = section("### What the approval card enforces")
+        val enforced = section("## The approval card")
         assertTrue(
-            "the section must describe shipped behaviour, not a future lane",
+            "the section must describe shipped behaviour, not a plan",
             enforced.contains("behaviours the shipped card implements") &&
-                enforced.contains("not requirements for a later lane"),
+                enforced.contains("for every action at Ask"),
         )
 
         assertTrue(

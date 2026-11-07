@@ -1,5 +1,8 @@
 # Hermes Vox — Roadmap
 
+> Historical record. This describes the state and reasoning at the time it was written; it is not
+> maintained and may describe behaviour that has since changed.
+
 Hermes Vox is an open-source **voice client for the Hermes agent**: a GPU-drawn being
 you talk to on your phone, with on-device speech processing and a hands-free,
 barge-in conversation line. It is a work in progress: installable and useful today,

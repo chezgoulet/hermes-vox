@@ -287,13 +287,13 @@
 # ---- the 0.9.1 release-truth lane: the facts this release rests on ----
 
 - id: phone-surface-no-install
-  says: "**`install` is gone from the surface.**"
+  says: "`install` is not a phone action."
   doc: docs/MCP-SURFACE.md
   file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
   absent: '\binstall\b'
 
 - id: phone-surface-apps-and-dismiss
-  says: "**Added by the apps-and-dismiss lane:**"
+  says: "`apps` lists the launchable entries; `notification_dismiss` removes one."
   doc: docs/MCP-SURFACE.md
   file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
   match: '"apps" -> Parsed\.Run\(Call\.Apps\)[\s\S]*"notification_dismiss" ->'
