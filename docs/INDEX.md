@@ -33,7 +33,7 @@ build.
 | [`docs/MCP-SURFACE.md`](MCP-SURFACE.md) | Every action of the `phone` tool: its group, tier, arguments, result fields, undo, OS needs and refusals. |
 | [`docs/RUNS-ROUTE.md`](RUNS-ROUTE.md) | The `/v1/runs` turn route, the 404 fallback to `/v1/responses`, interrupting a reply, and the device checks still owed. |
 | [`docs/WAKE-WORD.md`](WAKE-WORD.md) | the wake word: the alpha gate, what enrolment records and where it lives, that nothing is trained or installed, cost and limits. Checked against `wake/WakeListening.kt`, `wake/WakeWordEngine.kt`, `wake/EnrolmentStore.kt` |
-| [`docs/APP-SKILL.md`](APP-SKILL.md) | The `hermes-vox-app` skill: what it is, how it is installed on the agent, and why a profile's copy is separate. |
+| [`docs/APP-SKILL.md`](APP-SKILL.md) | The `hermes-vox-app` skill: what it teaches, how it is installed on the agent, and how a false claim is found and fixed. |
 | [`docs/MODELS-SCREEN.md`](MODELS-SCREEN.md) | The Voice models screen and the single model catalogue behind it. |
 | [`docs/APPROVALS-ACCEPTANCE.md`](APPROVALS-ACCEPTANCE.md) | The approval cards on a device, and the debug arm used to test them. |
 | [`docs/ASSISTANT-ROLE.md`](ASSISTANT-ROLE.md) | Android's digital-assistant role: what the app asks for and what the device maker owns. |

@@ -27,7 +27,10 @@ required section can no longer be triggered or trusted:
   * Hermes frontmatter: name, description, version, author, license;
   * the description's first sentence is a self-contained trigger (<= 57 chars)
     and names Hermes Vox;
-  * sections 1-7 required by the issue are present;
+  * the nine sections the skill's contract requires are present, in order:
+    what the app is, what it can do, where the pieces run, the settings map,
+    what it refuses, the log vocabulary, the model catalogue, the failure modes,
+    and how to check a claim;
   * a minimum number of verified claims (the file must not be hollowed out);
   * no personal/build-host paths or e-mail addresses in the skill (leak guard).
 
@@ -61,13 +64,15 @@ REF_RE = re.compile(
 MIN_CLAIMS = 150  # the finished skill carries far more; this catches mass deletion
 TRIGGER_CHARS = 57
 REQUIRED_SECTIONS = [
-    "## 1. What it is, in four lines",
-    "## 2. The pieces and where they run",
-    "## 3. The settings map",
-    "## 4. The log vocabulary",
-    "## 5. The model catalogue",
-    "## 6. Failure modes",
-    "## 7. What the app does not do",
+    "## 1. What this is",
+    "## 2. What a person can do with it",
+    "## 3. What it refuses",
+    "## 4. The pieces and where they run",
+    "## 5. The settings map",
+    "## 6. The log vocabulary",
+    "## 7. The model catalogue",
+    "## 8. Failure modes",
+    "## 9. How to check what you think you know",
 ]
 FRONTMATTER_FIELDS = ["name", "description", "version", "author", "license"]
 

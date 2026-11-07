@@ -99,8 +99,8 @@ python3 scripts/test_invention_report.py 2>&1 | tail -3
 
 # #221: the app skill (skills/hermes-vox-app/SKILL.md) is the app's self-description,
 # and a skill that disagrees with the code is wrong. The checker verifies every
-# file:line claim in it (file exists, line exists, the claim's token is on it), so a
-# refactor that moves the code it describes fails the gate instead of rotting quietly.
+# claim in it (the file exists and the claim's token occurs in it exactly once), so
+# code that moves out from under a sentence fails the gate instead of rotting quietly.
 echo "== [2/6] app skill claims =="
 python3 scripts/check-skill-claims.py
 
