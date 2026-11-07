@@ -1,211 +1,221 @@
-# Privacy Policy — Hermes Vox
+# What leaves your phone, and what does not
 
-**App:** Hermes Vox (Android), version 0.5.7
-**Effective date:** September 8, 2026
-**Repository / source of truth:** https://github.com/chezgoulet/hermes-vox
+Hermes Vox is the Android voice client for Hermes, an agent that runs on a gateway
+you operate. This page lists every destination the app can send data to, what it
+keeps on the phone, how long it keeps it, and what the agent can read through the
+phone tool surface. It describes what the code in this repository does. Where the
+app cannot guarantee something, the limit is named rather than softened.
 
-This policy describes how the Hermes Vox Android app handles data. Every claim below is
-grounded in the app's own source code; the relevant files are named inline and listed in
-the [Sources](#sources) section, so you can verify anything here yourself.
+You need an Android phone (Android 7.0 or newer), a Hermes gateway you can reach,
+and the gateway's API key. Speech models are optional downloads; without one, the
+phone's own recogniser is used, which is the one exception described below.
 
-Hermes Vox is a **client app for a gateway you control**. It gives a voice to "Hermes", an
-AI agent that runs on a **Hermes gateway server that you (or your organisation) set up and
-manage** — typically on your own private network. The app itself is not a service; it has
-no accounts, no sign-up, and no servers operated by the app's developers. **The developers
-of Hermes Vox never receive any of your data.**
+## The parts
 
----
+- **The gateway** is the Hermes server you configure. It holds the agent.
+- **The agent** is the mind on the gateway: it answers, remembers and runs tools.
+- **A profile** is a saved gateway connection — address, key and model — that you can
+  switch between.
+- **A call** is one open session between the app and the agent: the microphone is
+  live, the turn is sent, the reply is spoken.
+- **On-device speech** is voice-activity detection (Silero VAD, which decides when
+  you start and stop talking), speech-to-text (Whisper, Parakeet or Nemotron) and
+  text-to-speech (Supertonic, Piper or the phone's system engine).
+- **Presence** is the optional on-device layer that phrases short conversational
+  asides with a local Gemma model. It sits behind the Alpha gate (the switch that
+  enables preview features), which is off on a fresh install.
+- **Phone tools** are the actions the agent can take on this phone through a small
+  server the app runs on the tailnet (a private network such as Tailscale) while a
+  call is open.
+- **An approval** is the card that asks you to allow one phone action. Silence is
+  never a yes.
 
-## 1. What data is processed
+## What is sent, and where
 
-Hermes Vox is deliberately local-first. It processes the following data, all of which stays
-under your control:
+| Destination | What is sent | When |
+|---|---|---|
+| **Your gateway** | the turn's text — your transcribed speech or what you typed — with the gateway key in an `Authorization: Bearer` header; a session-key header when you set one; the answer to an approval; requests for the model catalogue, health, and session list; a fetch of the profile's `VOX.md` | every turn and every screen that talks to the gateway |
+| **A remote speech server**, if you configure one | the recorded audio as a WAV file, the model name, and the key you saved for it if any | only when the speech-to-text backend is set to Remote **and** a URL is saved |
+| **A model host**, when you install a model | a download request for one model file | only when you start that download |
+| **Your phone's own recogniser**, when the app falls back to it | the audio of the utterance | every turn until an on-device model is installed, or whenever the backend is set to Platform |
+| **The agent, over the tailnet** | the result of a phone-tool call, and the bytes of a file it fetches from an offer | while a call is open and the action's group is not Off |
 
-- **Microphone audio (your speech).** When you talk to the app it records audio through the
-  microphone permission (`RECORD_AUDIO` in `AndroidManifest.xml`, via the foreground
-  "microphone" service `VoiceService`). By default your speech is transcribed **on your
-  device** by downloaded Whisper speech-to-text models (see §4), with on-device Silero VAD
-  detecting when you start/stop speaking (`OfflineStt.kt`, `SileroVadGate`). The
-  transcription text is what the agent hears — see §2 for where it goes.
-- **Text you type or send** to the agent, and the agent's replies (displayed and spoken
-  aloud via on-device Supertonic or Piper TTS, `SherpaTts.kt`).
-- **The gateway endpoint address and API key you enter** during onboarding
-  (`OnboardingActivity.kt`) and in Settings. Both are entered by you; nothing is
-  pre-configured or baked into the app (see §3).
-- **Your model preferences** (which voice models, STT backend and voice mode you choose,
-  theme, debug-log toggle, etc.), stored in the app's local preferences.
-- **Local diagnostic logs.** The app keeps a local, size-bounded log on your device
-  (`filesDir/logs/hermes-vox.log`, rotated at 5 MB — `VoxLog.kt`) and a local crash log
-  (`filesDir/vox_crash.log` — `CrashLog.kt`). These logs are written only to your device.
-  The code has a hard privacy rule: **transcript text, tool arguments, tool outputs and API
-  keys are never written to these logs** — only metadata and lengths (see
-  `RemoteStt.kt` and `VoiceController.kt`). An optional "Log spoken transcript" setting
-  exists and is **off by default** (`VoiceController.kt`).
+The app sends **text**, not audio, to the gateway. Speech recognition and speech
+synthesis run on the phone when a model is installed. The gateway is the only place
+the conversation is kept: the app does not save a transcript of its own.
 
-**Wake-word enrolment recordings (preview).** If you open **Settings → Wake word
-(preview)** and agree to its consent text, the app records your takes of "Hey Hermes",
-about 15 seconds of you talking freely, and about 15 seconds of your room. These are
-recordings of your voice — **voice biometric data** — and are treated as such. They are
-kept only after you consent, encrypted with AES-256-GCM under an Android Keystore key
-reserved for them, and stored in the app's `noBackupFilesDir`, which Android never backs
-up (`EnrolmentStore.kt`, `KeystoreTakeCipher.kt`). They are **never uploaded** — not to
-your gateway, not to any cloud, not to us — and are **never shared**. They exist for one
-purpose only: so a future wake-word detector can learn to recognise your voice saying the
-phrase. In this version **nothing is trained from them**, on your device or anywhere else,
-and nothing listens for the wake word. **Delete all my recordings** on the same screen
-removes every recording and your consent and destroys their key, so any copy left behind
-is unreadable; uninstalling or clearing the app's storage (§6) does the same.
+### The recognition exception
 
-**What we do NOT collect:** no name, email, phone number, contacts, location, device
-identifier, or advertising identifier is collected by the app. There is no account system.
-No personal data is sent to the app's maintainers — there is no server of ours to send it
-to.
+The speech-to-text setting has three backends: **on-device** (the default),
+**Platform (Google)**, and **Remote (server)**. The default is on-device, but the
+app cannot use a model that is not installed. With the on-device backend selected
+and no model on the phone, the app falls back to the platform recogniser
+(`resolveSttLeg` in `VoiceController.kt`; `Settings` labels it "Platform (Google)").
+That recogniser belongs to the phone's maker, and its own policy decides whether the
+audio leaves the device. The app neither sees nor controls that decision.
 
-## 2. Where data goes
+Two consequences, stated plainly:
 
-- **On-device processing (default).** Speech capture, voice-activity detection (VAD),
-  speech-to-text (STT), and text-to-speech (TTS) all run **on your phone** using models you
-  download into the app's private storage (`ModelCatalog.kt`, `OfflineStt.kt`,
-  `SherpaTts.kt`). No cloud is involved in these steps.
-- **The Hermes gateway — your server.** Once your speech is turned into text, that text
-  (and your later typed messages) is sent over the network **only to the gateway endpoint
-  you configured in the app** (`mobile/session.go` — `HermesSession` connects to the
-  `baseURL` you entered, using your API key for Bearer authentication). Hermes runs there
-  and streams its replies back. This is the same gateway that serves your other Hermes
-  front-ends; **the app never sends anything to any other destination.**
-- **Optional remote STT (off by default).** The app can transcribe using an
-  OpenAI-compatible speech server instead of on-device Whisper — but only if you
-  explicitly choose the "remote" backend **and** supply its URL in Settings. There is a
-  privacy hard gate in code: if no URL is saved, audio never leaves the device
-  (`RemoteStt.kt`, `VoiceController.kt` — `resolveSttLeg`). If you enable it, your audio is
-  sent to that URL — a server you chose — and the optional key for it is stored the same
-  encrypted way as your gateway key (§3).
-- **Model file downloads (only when you install models).** Voice models are downloaded by
-  you, on demand, from their public upstream hosts over HTTPS — the k2-fsa sherpa-onnx
-  model releases on GitHub by default (`ModelCatalog.kt`) and, for the optional Gemma
-  expression model, Hugging Face (`litert-community`). These downloads contain only model
-  files and carry no personal data.
+- Install an on-device speech model to keep recognition on the phone.
+- A blank remote URL never reaches the network. The remote leg is used only when the
+  backend is Remote and the URL is non-blank; otherwise the app falls back to the
+  on-device model, or to the platform recogniser.
 
-**The important honest caveat about transport:** Vox speaks HTTP to your gateway. Over a
-**private network you control** (a LAN, VPN or tunnel such as Tailscale/Nebula) your API
-key and conversations are protected by that network's encryption. The app does **not**
-force TLS, and if you point it at a gateway over the public Internet on plain HTTP, your
-key and messages could be read by anyone on the path. The app's own network-security
-configuration requires TLS for everything except explicitly listed local hosts
-(`network_security_config.xml`), and the onboarding screen warns you about this
-(`strings.xml`). Use a private network or TLS.
+Speech synthesis has the same shape: the chosen on-device voice speaks when it is
+installed, and the phone's system TTS engine speaks when it is not.
 
-## 3. How your API key is stored
+## What stays on the phone
 
-- The gateway API key is **entered by you** in the app. The app **never ships with a key**
-  — there is no default, no baked-in value, and no build-time injection: a release-build
-  guard in `app/build.gradle` fails the build if a key is ever added back. `GatewayKey.kt`
-  enforces that an empty or unreadable stored key resolves to "missing" (never to a hidden
-  fallback).
-- The key is stored **encrypted at rest** using the Android Keystore (`SecureStore.kt`):
-  an AES/GCM key is generated inside the Android Keystore and never leaves the device's
-  key store, and the stored value is the ciphertext (`encrypt()` in `SecureStore.kt`,
-  written in `OnboardingActivity.kt`). It is decrypted only in memory when needed.
-- One honest edge case: if on-device encryption fails on a particular device (a rare
-  Keystore error), the app stores the value locally unencrypted rather than losing it
-  (`OnboardingActivity.kt`). In every case the key lives only in the app's local
-  preferences on your device and is transmitted **only to the gateway you configured** —
-  never anywhere else (`hv_key_hint` in `strings.xml`: "encrypted on-device, never sent
-  anywhere but your gateway"). Legacy values written before encryption was added are
-  migrated transparently on read (`SecureStore.kt`).
-- **The APK contains no secret.** You can audit the source in the repository.
+- **Microphone audio**, except when the platform recogniser or a remote speech
+  server is in use, as above.
+- **Recognition and synthesis**, when the models are installed: Silero VAD, Whisper,
+  Parakeet and Nemotron for hearing; Supertonic and Piper for speaking.
+- **Presence**, including the optional Gemma model. It runs on the phone, has no
+  tool access, and is downloaded only if you choose to install it.
+- **The avatar** and the call's visual state.
 
-## 4. On-device models
+## What is stored, and for how long
 
-Voice functionality uses models that you download into the app's **private storage**
-(`filesDir/models/<id>`) from the in-app **Settings → Voice models** screen:
+| What | Where | How long |
+|---|---|---|
+| Connection settings: gateway address, model and voice choices, profile list, speech backend, Alpha-gate choices | the app's private `hv` preferences | until you change them, clear the app's data, or uninstall |
+| The gateway key, the phone-MCP token (the credential the gateway presents to the phone's tool server), and the optional remote speech-server key | the `hv` preferences, as AES/GCM ciphertext (authenticated encryption) from an Android Keystore key (the phone's key store) — `SecureStore` uses `hv_api_key` for the gateway key and `hv_phone_mcp` for the phone token | until replaced, cleared or uninstalled |
+| A secret the Keystore refused to encrypt | the same preferences, as plaintext; the failure is logged and the encryption is retried on the next start | until a later start encrypts it, or the value is cleared |
+| Downloaded models | `filesDir/models/<id>/` | until you delete the model, clear the app's data, or uninstall |
+| The profile's `VOX.md` mirror | `filesDir/vox/<profile>/VOX.md` | until refetched, cleared or uninstalled |
+| The debug log | `filesDir/logs/hermes-vox.log`, capped at 5 MB with one rotated copy | the most recent 5 MB in each of two files, unless you turn on the verbose log, which never prunes |
+| The crash log | `filesDir/vox_crash.log` | the last 9,000 characters |
+| The phone tool audit ("Recent actions") | the `hv` preferences | the last 50 calls, including refusals |
+| Wake-word enrolment takes, if you record any | `noBackupFilesDir/wake/enrol/`, encrypted with an AES-GCM key held in the Android Keystore, plus a consent record | until you use "Delete all my recordings", clear the app's data, or uninstall |
+| A file being offered to the agent | `filesDir/file-offer/` | deleted after the single transfer, or when the five-minute offer expires |
 
-- **Silero VAD** — on-device voice-activity detection (hearing when you speak).
-- **Supertonic TTS** (recommended) and **Piper TTS** (lighter) — fully offline
-  text-to-speech voices (sherpa-onnx runtime).
-- **Whisper (tiny/base/small)** and **Parakeet-TDT 0.6B (optional)** — on-device
-  speech-to-text (sherpa-onnx runtime).
-- **Gemma 4 E2B (optional)** — the on-device "expression layer" used only by the
-  **Presence (alpha)** layer (`GemmaExpress.kt`, loaded via Google's
-  LiteRT-LM engine). It runs entirely on your device, has no tool access, and generates
-  conversational phrasing locally. Because of its separate license, it is **not bundled**
-  with the app: it downloads separately from Hugging Face only if you choose to install it.
+**The logs.** The app writes diagnostics to the local log and to logcat: event
+names, counts, durations and error classes. Transcript text, tool arguments, tool
+outputs and keys are not written by default. The one exception is the
+**Log spoken transcript** setting, which is off by default; while it is on, the words the app
+heard and the reply text are written to the local log. The phone tool audit is
+separate and summarised: a note's text is stored as a character count, and a
+notification, contact or app listing stores a count rather than the contents.
 
-All model files are streamed, SHA-256 verified against a pinned hash, and unpacked
-(zip-slip guarded) into app-private storage (`ModelDownloader.kt`). **No model file or
-model data is ever uploaded anywhere.** Uninstalling the app or clearing its data removes
-them (see §6).
+**The wake word.** Enrolment records short takes of your voice only after you agree
+to the consent text on the screen. The recordings are encrypted, kept outside
+Android backup, and are never uploaded. Nothing in this build listens for the wake
+word: the only detector implementation is inert, and the enrolment screen says
+"not listening". Deleting the recordings removes them and destroys their key, so any
+copy left behind cannot be read.
 
-## 5. Analytics, advertising and third-party sharing
+**Android backup is off.** The manifest sets `allowBackup="false"`, so the app's
+private storage is not copied to Android's cloud backup. The manifest declares no
+device-transfer extraction rules; a transfer performed by the phone's own migration
+tool is outside what the app can control.
 
-- **There is no analytics SDK, no telemetry SDK, no advertising SDK, and no third-party
-  data-sharing code in the app.** The dependency list contains only AndroidX, Kotlin
-  coroutines, the sherpa-onnx runtime, and the LiteRT-LM runtime for the optional Gemma
-  model (`app/build.gradle`). You can confirm there is no Firebase, Crashlytics, Sentry,
-  or ad SDK anywhere in the repository.
-- Crash diagnostics are written to a **local** file on your device (`CrashLog.kt`) and are
-  never transmitted automatically. The in-app log exists for you to export manually if you
-  choose to share it while debugging.
-- We do not sell, rent, or share any data, because **no data ever reaches us.**
+## What the phone tool surface can read, and when
 
-## 6. Data retention and deletion
+The phone tool surface is a server the app runs while a call is open. It binds only
+to the phone's tailnet address, answers only the `/mcp` path, and requires a bearer
+credential on every request. It is off when no call is open and when the phone has no
+tailnet address.
 
-- **Where data lives.** All app data — your preferences (including the endpoint and the
-  encrypted key), downloaded models, logs — is stored **only in the app's private
-  on-device storage** (`SharedPreferences "hv"`, `filesDir/`). Android auto-backup is
-  explicitly disabled for this app (`allowBackup="false"` in `AndroidManifest.xml`), so
-  app data is not copied to Google's cloud backup.
-- **Conversation content.** The app does not keep a conversation history of its own; the
-  only transcript that exists is whatever your **gateway** retains (that data is governed
-  by your gateway's configuration and is yours to manage).
-- **How to delete everything:**
-  1. **Uninstall Hermes Vox** — this removes the app's data and models from your device
-     and destroys the Android Keystore key that protects your API key; or
-  2. **Settings → Apps → Hermes Vox → Clear storage** — removes preferences, the stored
-     key material, downloaded models, and logs without uninstalling.
-- Deleting the app does not delete anything on your **gateway** (your Hermes server), since
-  that is a separate system you operate. Remove data there using your gateway's own tools.
+Every capability group starts **Off**. Each group has exactly three states:
 
-## 7. Children
+- **Off** — the group's actions are absent from the schema the agent sees, and a
+  direct call is refused `not_granted`.
+- **Ask** — the action is offered; a call raises a card naming the action and its
+  arguments. Nothing runs until you answer. The card is good for two minutes, at most
+  three cards are open at once — one on screen and two behind it — and a yes from a
+  locked phone is refused.
+- **Allow** — the action runs without a card. The screen says what that means before
+  you choose it.
 
-Hermes Vox is a technical client intended for adults who operate their own AI gateway. It
-is **not directed to children** and collects no personal information from anyone, child or
-adult. It contains no ads and no purchases. If you believe a child has used the app, note
-that any data involved would go to the family's own gateway (operated by you, not by the
-app's developers). Contact us below and we will help you understand what the app itself
-stores (which is deletable per §6).
+| Group | What the agent can do or read | Default |
+|---|---|---|
+| Timers and alarms | set, cancel and check countdown timers and alarms | Off |
+| Do not disturb and volume | turn Do Not Disturb on or off; change the media volume | Off |
+| Reminders and notes | keep a short note and read it back | Off |
+| Media | play, pause, skip, and ask what is playing | Off |
+| Device state | read battery, charging, connectivity, screen and storage state | Off |
+| Clipboard | write text; read the current clip | Off |
+| Files | list, read and offer files inside the one folder you granted | Off |
+| Calendar | read today's events and create an event, with an undo | Off |
+| Notifications | read the notifications on the phone while a call is open; dismiss one or all of an app's | Off |
+| Messages | write a text and open your messaging app; you press send | Off |
+| Calls | open the dialer with a number ready; you press call | Off |
+| Apps | list the apps a person can open; open an app or a link; remove an app, which Android then confirms | Off |
+| Contacts | look up a contact's number by name | Off |
 
-## 8. Contact
+The read groups are narrower than the action names suggest:
 
-This privacy policy concerns the **Hermes Vox app** and is maintained by the project:
+- **Notifications** are read only while a call is open, and only if you granted
+  notification access on Android's own Settings screen. What the agent receives is
+  the notification's content; the audit keeps a count, not the content.
+- **Clipboard** reads are allowed by Android 10 and newer only for the app in front
+  (or the default keyboard). The app asks the platform and reports the answer; when
+  nothing comes back and Vox is not in front, it says that focus is the likely reason
+  rather than claiming there was nothing there. An Allow for this group means "read
+  without asking while Vox is in front": it can include a password or a code.
+- **Files** are limited to the folder you pick with Android's folder picker. The app
+  declares no storage permission; it reads through that grant. One read returns at
+  most 64 KiB. An offer copies the file into private staging and serves it once over
+  the tailnet; nothing is uploaded.
+- **Contacts** returns names, numbers and labels, never notes, addresses, photos or
+  email.
+- **Apps** lists what a person can open (launcher entries), not every installed
+  package. Recent usage is visible only if you grant usage access on Android's
+  special-access screen.
+- **Messages** and **Calls** hand a draft to your messaging app or dialer. The app
+  does not send the message or place the call; you do.
+- **Notifications**, **contacts** and **apps** are the groups the bulk "allow instant
+  actions" helper deliberately skips; each stays a decision of its own.
 
-- Project repository (source code, issues): https://github.com/chezgoulet/hermes-vox
-- Maintainer contact: chris@coveredbridgecookies.com
+Every call the agent makes, including every refusal, is recorded in Recent actions.
+The entry contains the time, the action, a summary of the arguments, the outcome and
+any undo id. It never contains a token, a message body or a file's contents.
 
-For questions about the **Hermes gateway** or any AI agent it runs — including what it logs,
-retains, or sends to model providers — contact the person who operates your gateway
-(usually you). The gateway is a separate, user-managed system; **data processed by your
-gateway stays under your control and is not governed by this policy.**
+## What nothing ever sends
 
-## Sources
+- **No analytics, telemetry or advertising SDK.** The shipped dependency list is
+  AndroidX, Kotlin and its coroutines, Apache Commons Compress, the sherpa-onnx runtime
+  and the LiteRT-LM runtime. There is no Firebase, Crashlytics, Sentry, analytics or ad
+  library in the tree.
+- **No crash upload.** A crash is written to the local file and nowhere else. You
+  can export the log yourself; the app never sends it.
+- **No account, name, email, phone number, contacts, location, device identifier or
+  advertising identifier goes to the project.** The project operates no server to
+  receive it.
+- **No audio in a turn.** A turn carries text. Audio leaves the phone only through the
+  platform recogniser or a remote speech server you configured.
+- **No file upload.** An offered file is fetched by the agent from the phone over the
+  tailnet; the app does not push it anywhere.
+- **No model upload.** Model files are downloaded; nothing is sent back.
 
-The code files behind each claim (all in the repository at the link above):
+These statements are about the app and the project. A destination you choose — your
+gateway, a remote speech server, a model host — sees the request you or the app sent
+it, under that party's own policy.
 
-| Claim | Source file(s) |
-|---|---|
-| Mic capture + foreground mic service | `android/app/src/main/AndroidManifest.xml` |
-| On-device Whisper STT + Silero VAD, offline | `android/app/src/main/java/com/hermesvox/OfflineStt.kt` |
-| Remote STT opt-in hard gate; no transcript logging | `android/app/src/main/java/com/hermesvox/RemoteStt.kt`, `VoiceController.kt` |
-| On-device Supertonic / Piper TTS | `android/app/src/main/java/com/hermesvox/SherpaTts.kt` |
-| On-device Gemma expression layer (optional model) | `android/app/src/main/java/com/hermesvox/GemmaExpress.kt`, `ModelCatalog.kt` |
-| Model catalog, sources, sizes, hashes; app-private install dir | `android/app/src/main/java/com/hermesvox/ModelCatalog.kt`, `ModelDownloader.kt` |
-| Key entry in onboarding; encrypted write | `android/app/src/main/java/com/hermesvox/OnboardingActivity.kt` |
-| AES/GCM Android-Keystore encryption | `android/app/src/main/java/com/hermesvox/SecureStore.kt` |
-| No default/baked key; empty-key rule; build guard | `android/app/src/main/java/com/hermesvox/GatewayKey.kt`, `android/app/build.gradle` |
-| Local-only logs, rotation, privacy logging rule | `android/app/src/main/java/com/hermesvox/VoxLog.kt`, `CrashLog.kt` |
-| Gateway connectivity to user-entered endpoint (Go connector) | `mobile/session.go`, `voice/` (Go) |
-| Wake-word enrolment: consent, Keystore encryption, `noBackupFilesDir`, delete-all | `android/app/src/main/java/com/hermesvox/wake/EnrolmentStore.kt`, `wake/KeystoreTakeCipher.kt`, `WakeEnrolActivity.kt` |
-| No third-party analytics/ad SDKs (dependency list) | `android/app/build.gradle` |
-| No Android auto-backup | `android/app/src/main/AndroidManifest.xml` (`allowBackup="false"`) |
-| Cleartext/TLS network config; private-network warning | `android/app/src/main/res/xml/network_security_config.xml`, `res/values/strings.xml` |
-| Product privacy/security statements | `README.md` |
+## Contact
+
+Questions about this document and the app's own data can go to the repository
+(`github.com/chezgoulet/hermes-vox`) or to `chris@coveredbridgecookies.com`.
+Questions about what your gateway stores, logs or forwards belong to the person who
+operates that gateway — usually you.
+
+## What it cannot do
+
+- It cannot control what your gateway logs, retains, or forwards to a model provider.
+  That data belongs to the gateway you operate.
+- It cannot make the platform recogniser local. Only an installed on-device model
+  does that.
+- It cannot encrypt a secret if the Android Keystore refuses; it keeps the value in
+  plaintext, logs the failure, and retries on the next start.
+- It cannot protect data from a rooted or otherwise compromised operating system.
+- It cannot hide a model download from the host serving it. The host sees the
+  request, the time and the network address.
+- On Android 10 and newer it cannot read the clipboard while it is not the app in
+  front; older versions allow the read. It cannot make Android grant notification,
+  usage or Do Not Disturb access.
+- It cannot keep more than the last 50 phone-tool calls, and it keeps those as
+  summaries rather than a full record.
+- It cannot delete anything on your gateway. Removing the app removes the phone's
+  copy; the gateway's copy is yours to manage.
+- It cannot promise that a third-party keyboard, launcher or Android build does not
+  observe what it draws or what you type.

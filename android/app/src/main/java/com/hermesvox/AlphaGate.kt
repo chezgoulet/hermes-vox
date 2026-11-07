@@ -6,12 +6,12 @@ import android.content.SharedPreferences
 /**
  * AlphaGate — #402/D29: the single gate for everything unfinished.
  *
- * One master switch, [KEY_MASTER], **off by default**, at the very top of Settings. Behind it,
- * the feature sets marked alpha ([FeatureSet]), **Presence first**, each selected on its own so a
- * tester can take one without taking all. A set runs only when the master is on AND the set is
- * selected ([allows]); with the master off every alpha surface is dimmed and unreachable, and
- * nothing alpha runs — the runtime readers ([PresenceGate.enabled], the call's capture setup) ask
- * this object, not the feature's own preference alone.
+ * One master switch, [KEY_MASTER], **off by default**, immediately above the alpha block at the
+ * end of Settings. Behind it, the feature sets marked alpha ([FeatureSet]), **Presence first**,
+ * each selected on its own so a tester can take one without taking all. A set runs only when the
+ * master is on AND the set is selected ([allows]); with the master off every alpha surface is
+ * dimmed and unreachable, and nothing alpha runs — the runtime readers ([PresenceGate.enabled],
+ * the call's capture setup) ask this object, not the feature's own preference alone.
  *
  * A set's own preferences keep their meaning *inside* the gate: Presence's switch, and the two
  * continuous-listening switches (which default **on**, D29), apply only once the set is allowed.

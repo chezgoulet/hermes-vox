@@ -50,7 +50,7 @@ turn's text to `/v1/runs`
    the same turn retries once on `/v1/responses`. Tools, memory and context stay
    server-side (docs/ARCHITECTURE.md `Only an admission that answers **404** falls back to this route, once.`).
 4. **By default nothing leaves the phone except that turn** — text to your own gateway, plus
-   model files fetched over HTTPS when you install them (PRIVACY.md `your server`). Two
+   model files fetched over HTTPS when you install them (PRIVACY.md `A model host`). Two
    opt-in paths send audio elsewhere: the remote-STT backend and the platform (Google)
    recogniser; both are described in section 4 and must be named when a user asks about
    privacy.
