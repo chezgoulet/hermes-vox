@@ -1,5 +1,8 @@
 # Decisions — 2026-10-19
 
+> Historical record. This describes the state and reasoning at the time it was written; it is not
+> maintained and may describe behaviour that has since changed.
+
 A record of the direction set for 0.9 and 1.0. Each entry is a decision, the
 reason, and what it commits us to. Superseding an entry means adding a new one
 with the date, not editing history.
@@ -1220,3 +1223,14 @@ records the door out, so the sets are not promoted by drift or by a release note
 
 Both were promoted by this decision's own condition, not by a release note. The door this decision
 recorded is closed for both, and the Alpha gate is four sets.
+
+## D40 — 0.9.1 ships before the F-Droid listing
+
+Set 2026-11-07, against D29.
+
+**The decision.** D29 ordered the release after the listing. That ordering is waived for this
+release: 0.9.1 is published to GitHub Releases and Obtainium first, and the F-Droid submission
+follows.
+
+**Why.** The owner's: the release does not wait on someone else's review queue. D29's substance is
+unchanged — F-Droid is the intended third rail, and the recipe stays reproducible.
