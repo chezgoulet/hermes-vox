@@ -1143,14 +1143,12 @@ Debug / crash log → Share full log).
 These prevent confident wrong advice. None of them is a bug report; they are the product.
 
 - **No cloud, no account, no vendor server.** There is no hosted service, no sign-up and
-  nothing operated by the maintainers (README.md `Bring your own gateway`); the gateway
-  key goes only to the gateway (SECURITY.md `The key goes to one destination`). The only *default*
-  network peer is your gateway plus the model host you install from
-  (PRIVACY.md `Model files are downloaded; nothing is sent back`).
-
   nothing operated by the maintainers (README.md `no account, no hosted service`); the gateway
-  key goes only to the gateway (PRIVACY.md `preferences on your device and is transmitted **only to the gateway you configured** —`). The only *default*
-  network peer is your gateway plus the model host you install from (PRIVACY.md `your server`).
+  key goes only to the gateway (SECURITY.md `The key goes to one destination`). The app sends
+  text, not audio (PRIVACY.md `The app sends **text**, not audio, to the gateway`), and the only
+  *default* network peer is the gateway you configure (PRIVACY.md `the Hermes server you
+  configure`) plus the model host you install from
+  (PRIVACY.md `Model files are downloaded; nothing is sent back`).
 
 - **No Play Store, no AAB.** Google Play is dropped as a rail; distribution is GitHub,
   Obtainium and F-Droid, always with our own signature (docs/DECISIONS.md `Google Play is dropped`).
