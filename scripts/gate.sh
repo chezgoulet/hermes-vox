@@ -118,11 +118,15 @@ ls -la android/app/build/outputs/apk/debug/*.apk
 echo "== [4/6] stream parity & mTLS verification harnesses =="
 # StreamParityTest replays testdata/stream/*.sse against the committed goldens.
 # A gate that passes because the harness silently stopped running is not a gate.
+# MtlsEntityTest is the one that goes through Entity.open to a real SSLServerSocket with
+# needClientAuth: the alias lookup, the socket factory, the origin guard and the peer
+# certificate — not a hand-built context that skips all of them.
 for suite in \
   "TEST-com.hermesvox.core.StreamParityTest.xml" \
   "TEST-com.hermesvox.core.MtlsConfigTest.xml" \
   "TEST-com.hermesvox.core.MtlsKeyManagerTest.xml" \
-  "TEST-com.hermesvox.core.MtlsHandshakeTest.xml"; do
+  "TEST-com.hermesvox.core.MtlsHandshakeTest.xml" \
+  "TEST-com.hermesvox.core.MtlsEntityTest.xml"; do
   xml="android/app/build/test-results/testDebugUnitTest/$suite"
   [ -f "$xml" ] || gate_die "Test suite $suite did not run ($xml missing)."
   grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$xml" \

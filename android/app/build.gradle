@@ -113,6 +113,20 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     }
 }
 
+// mTLS end-to-end (MtlsEntityTest). The production path builds its client SSLContext with a
+// NULL TrustManager, which on Android means "the platform's trust manager" — the system
+// store, plus the ts.net network-security-config entry. On this JVM the same null resolves
+// to the JDK default trust store, so the test JVM is given the test CA and nothing else:
+// tls/jvm-truststore.p12 holds exactly the `system-ca` that issued tls/server-trust.p12's
+// server certificate. This is test-environment wiring, not a code path: no app source and
+// no APK sees these properties, and no test makes a public-CA connection.
+tasks.withType(Test).configureEach {
+    def testTrust = file('src/test/resources/tls/jvm-truststore.p12')
+    systemProperty 'javax.net.ssl.trustStore', testTrust.absolutePath
+    systemProperty 'javax.net.ssl.trustStorePassword', 'test-only'
+    systemProperty 'javax.net.ssl.trustStoreType', 'PKCS12'
+}
+
 // #165: the staged from-source runtime, or null for the prebuilt AAR (the default build).
 def sherpaSource = project.findProperty('hermesvox.sherpaSource')?.with { file(it) }
 if (sherpaSource != null) {
