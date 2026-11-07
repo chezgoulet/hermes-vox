@@ -155,6 +155,50 @@ class PhoneSurfaceAuditTest {
         }
     }
 
+    @Test fun an_argument_description_names_no_action_whose_group_is_off() {
+        // Descriptions are read on every turn, exactly like the enum. A `text` description that
+        // says "note, clip or message" while the notes group is Off promises what the grants
+        // forbid: the model is told about an action the schema has already refused to offer.
+        fun descriptions(grants: PhoneGrants.Source): Map<String, String> {
+            val properties = (PhoneTool.schema(grants)["inputSchema"] as Map<*, *>)["properties"] as Map<*, *>
+            val out = LinkedHashMap<String, String>()
+            for ((key, raw) in properties) {
+                val text = (raw as Map<*, *>)["description"] as? String ?: continue
+                out[key.toString()] = text
+            }
+            return out
+        }
+
+        fun names(text: String, action: String): Boolean =
+            Regex("\\b" + Regex.escape(action) + "\\b").containsMatchIn(text)
+
+        for (group in PhoneGrants.GROUPS) {
+            val grants = PhoneGrants.Source { g ->
+                if (g.id == group.id) PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+            }
+            for ((key, text) in descriptions(grants)) {
+                for (action in group.actions) {
+                    assertTrue(
+                        "`$action` belongs to ${group.id}, which is Off, but the `$key` " +
+                            "description names it: $text",
+                        !names(text, action),
+                    )
+                }
+            }
+        }
+
+        // With every group Off, no argument description may name any action at all.
+        val everyAction = PhoneGrants.GROUPS.flatMap { it.actions }
+        for ((key, text) in descriptions(PhoneGrants.ALL_OFF)) {
+            for (action in everyAction) {
+                assertTrue(
+                    "nothing is granted, but the `$key` description names `$action`: $text",
+                    !names(text, action),
+                )
+            }
+        }
+    }
+
     @Test fun an_unknown_argument_is_refused_rather_than_dropped() {
         // The schema says `additionalProperties: false`. Before #503 only `uninstall` enforced it:
         // this note would have been written and the recipient silently ignored.

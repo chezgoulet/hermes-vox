@@ -63,6 +63,12 @@ action does not take (a misspelt `duration` for `duration_ms`, a `to` on a `note
 `invalid-arguments` naming it, never silently dropped. `PhoneTool.ARGUMENTS` is the table, pinned
 against the schema's `properties` in both directions.
 
+**An argument description names no action the grants forbid.** Descriptions are read on every turn
+exactly like the `enum`, so they are phrased around the capability — "the media sound level", "a
+person's full or partial name", "a new event's start" — rather than around action names that may be
+absent. A `text` description never says "note, clip or message" while one of those groups is Off,
+because that would promise what the grants have already refused to offer.
+
 **A timeout is not a refusal of the work.** The phone runs one action at a time on its own thread,
 not on the thread that draws, and a caller's bound stops only its own waiting. When that bound
 expires the result is `ok:false`, `reason:"unavailable"` and **`outcome_uncertain:true`**: the action
