@@ -11,9 +11,9 @@ enrolment screen is the whole feature in this build.
 - An Android phone and the microphone permission. The permission is requested when you first press
   Record, not at install.
 - **Alpha features** on in Settings, and the **Wake word** set selected. Alpha features is one
-  master switch at the top of Settings, off by default; a set behind it runs only when the master
-  is on and that set is selected. The wake-word row is dimmed and its screen refuses to open while
-  the set is off.
+  master switch immediately above the alpha block at the end of Settings, off by default; a set
+  behind it runs only when the master is on and that set is selected. The wake-word row is dimmed
+  and its screen refuses to open while the set is off.
 - Nothing else: no model download, no account, no gateway setting. The recordings stay on the
   phone.
 
