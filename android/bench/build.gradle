@@ -8,6 +8,14 @@ apply plugin: 'org.jetbrains.kotlin.android'
 // on the shared Pixel. It links the same pinned sherpa-onnx AAR the app ships
 // (../app/libs, fetched by scripts/fetch-runtime.sh), so the numbers describe the
 // runtime that would actually ship.
+// #165: the staged from-source runtime, or null for the prebuilt AAR (the default build).
+// The bench measures the runtime that ships, so it follows the same switch the app follows.
+def sherpaSource = project.findProperty('hermesvox.sherpaSource')?.with { file(it) }
+if (sherpaSource != null) {
+    if (!new File(sherpaSource, 'jniLibs').isDirectory() || !new File(sherpaSource, 'kotlin').isDirectory())
+        throw new GradleException("hermesvox.sherpaSource=$sherpaSource has no jniLibs/ + kotlin/ — run scripts/build-sherpa-from-source.sh")
+}
+
 android {
     namespace 'com.hermesvox.bench'
     compileSdk 34
@@ -30,10 +38,19 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    if (sherpaSource != null) {
+        sourceSets.main.jniLibs.srcDirs += new File(sherpaSource, 'jniLibs')
+        sourceSets.main.java.srcDirs += new File(sherpaSource, 'kotlin')
+    }
 }
 
 dependencies {
-    // Same artifact the app packages (named, never '*.aar').
-    implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: '../app/libs')
+    // Same runtime the app packages: the pinned AAR by default (named, never '*.aar'), or the
+    // from-source build when -Phermesvox.sherpaSource is set, with onnxruntime from Maven Central.
+    if (sherpaSource != null) {
+        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'   // = ORT_VERSION
+    } else {
+        implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: '../app/libs')
+    }
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'
 }

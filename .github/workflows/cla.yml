@@ -40,16 +40,21 @@ jobs:
           with open(os.environ["GITHUB_EVENT_PATH"]) as fh:
               event = json.load(fh)
 
+          same_repo = False
           if event.get("pull_request"):
               subject = event["pull_request"]
               number = subject["number"]
               author = subject["user"]["login"]
               association = subject.get("author_association", "")
+              head = (subject.get("head") or {}).get("repo") or {}
+              same_repo = (head.get("full_name") or "").lower() == repo.lower()
           else:
               subject = event["issue"]
               number = subject["number"]
               author = subject["user"]["login"]
               association = subject.get("author_association", "")
+          user_type = (subject.get("user") or {}).get("type", "")
+          print(f"cla: author={author} association={association!r} type={user_type!r} same_repo={same_repo}")
 
           def api(path, method="GET", fields=None):
               cmd = ["gh", "api", "-X", method, path]
@@ -61,9 +66,10 @@ jobs:
                   sys.exit(2)
               return json.loads(done.stdout) if done.stdout.strip() else {}
 
-          # Maintainers do not sign their own project's agreement.
-          if association in ("OWNER", "MEMBER", "COLLABORATOR"):
-              print(f"{author} has write access; no signature required.")
+          # Exempt: a branch in this repository (only write access can open one), a maintainer, or a
+          # bot. A fork pull request is what the agreement is for, and it still has to sign.
+          if same_repo or association in ("OWNER", "MEMBER", "COLLABORATOR") or user_type == "Bot":
+              print(f"cla: {author} is covered (same_repo={same_repo}, association={association!r}, type={user_type!r})")
               sys.exit(0)
 
           marker = "I have read the CLA at CLA.md and I agree to it."
