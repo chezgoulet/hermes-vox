@@ -2,8 +2,9 @@ package com.hermesvox.core
 
 import android.content.Context
 import android.content.SharedPreferences
-import java.net.URI
-import java.net.URL
+import java.net.IDN
+import java.net.InetAddress
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.KeyManager
@@ -19,8 +20,17 @@ import javax.net.ssl.SSLSocketFactory
 object MtlsConfig {
     const val PREF_PREFIX = "mtls_alias_"
 
+    /**
+     * A TLS origin: the normalised host (see [normaliseHost]) and the port.
+     *
+     * [host] is always the ASCII form, with IPv6 brackets stripped, so it can be
+     * compared with the peer the socket reports. [key] puts the brackets back for an
+     * IPv6 literal: as a preference key "::1:443" would be indistinguishable from a
+     * host named "::1:443", and a key that can be misread is a key that can be written
+     * to the wrong origin.
+     */
     data class Origin(val host: String, val port: Int) {
-        val key: String get() = "$host:$port"
+        val key: String get() = if (host.contains(':')) "[$host]:$port" else "$host:$port"
     }
 
     private var appContext: Context? = null
@@ -53,31 +63,125 @@ object MtlsConfig {
         socketFactoryCache.clear()
     }
 
+    /** scheme://authority — the authority ends at the first path, query or fragment. */
+    private val ORIGIN_RE = Regex("^([A-Za-z][A-Za-z0-9+.\\-]*)://([^/?#]*)")
+
+    /** A DNS name / IPv4 literal / percent-escaped reg-name. No spaces, no colon. */
+    private val HOST_RE = Regex("^[A-Za-z0-9._~%\\-]+$")
+
     /**
-     * Extracts canonical [Origin] from a URL string.
-     * Returns null for non-HTTPS schemes or invalid URLs.
+     * Extracts the canonical [Origin] from a URL string, or null when the string is not a
+     * usable HTTPS origin.
+     *
+     * This is the key every certificate decision is stored and compared under, so it is
+     * parsed here once, by hand, rather than through `URI`/`URL`:
+     *
+     *  * `URI.host` is **null** for a non-ASCII host, and `URL.host` is null for one on
+     *    Android — either way an IDN gateway would silently end up with no certificate.
+     *    The host is converted to its ASCII (punycode) form first, which is also what the
+     *    TLS layer will connect to, so both sides agree on one spelling.
+     *  * `URI.host` keeps an IPv6 literal's **brackets** (`[2001:db8::1]`) while a socket
+     *    reports the bare address, so an IPv6 literal could never match and the
+     *    certificate would never be sent. Brackets are stripped and the address is
+     *    canonicalised (`2001:db8:0:0::1` and `2001:db8::1` are one origin).
+     *
+     * Everything else is rejected (plain http, a non-numeric port, a malformed authority)
+     * so a caller can name the reason instead of pretending no certificate was configured.
      */
     fun originOf(urlString: String): Origin? {
         val trimmed = urlString.trim()
         if (trimmed.isEmpty()) return null
-        return try {
-            val uri = URI(trimmed)
-            val scheme = uri.scheme ?: return null
-            if (!scheme.equals("https", ignoreCase = true)) return null
-            val host = uri.host ?: return null
-            val port = if (uri.port > 0) uri.port else 443
-            Origin(host.lowercase(), port)
-        } catch (_: Throwable) {
-            try {
-                val u = URL(trimmed)
-                if (!u.protocol.equals("https", ignoreCase = true)) return null
-                val host = u.host ?: return null
-                val port = if (u.port > 0) u.port else 443
-                Origin(host.lowercase(), port)
-            } catch (_: Throwable) {
-                null
-            }
+        val m = ORIGIN_RE.find(trimmed) ?: return null
+        if (!m.groupValues[1].equals("https", ignoreCase = true)) return null
+        // userinfo ends at the LAST '@': a password may contain one.
+        val hostPort = m.groupValues[2].substringAfterLast('@')
+        if (hostPort.isEmpty()) return null
+        val split = splitHostPort(hostPort) ?: return null
+        val host = normaliseHost(split.first) ?: return null
+        val port = when {
+            split.second.isNullOrEmpty() -> 443
+            else -> split.second!!.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
         }
+        return Origin(host, port)
+    }
+
+    /** `host[:port]`, with an IPv6 literal in brackets as RFC 3986 requires. */
+    private fun splitHostPort(hostPort: String): Pair<String, String?>? {
+        if (hostPort.startsWith("[")) {
+            val close = hostPort.indexOf(']')
+            if (close <= 1) return null
+            val host = hostPort.substring(0, close + 1)
+            val rest = hostPort.substring(close + 1)
+            if (rest.isEmpty()) return host to null
+            if (!rest.startsWith(":")) return null
+            return host to rest.substring(1)
+        }
+        // An IPv6 literal must be bracketed (RFC 3986). Unbracketed, "2001:db8::1:8642"
+        // cannot say which of those groups is the port, and guessing is how one origin
+        // gets filed under another — so it is refused, not interpreted.
+        if (hostPort.contains(':')) {
+            val colon = hostPort.lastIndexOf(':')
+            if (hostPort.substring(0, colon).contains(':')) return null
+        }
+        val colon = hostPort.lastIndexOf(':')
+        if (colon < 0) return hostPort to null
+        val port = hostPort.substring(colon + 1)
+        if (port.isEmpty()) return hostPort.substring(0, colon) to null
+        if (!port.all { it.isDigit() }) return hostPort to null
+        return hostPort.substring(0, colon) to port
+    }
+
+    /**
+     * The one spelling of a host: ASCII, case-folded, no brackets, no trailing root dot,
+     * IPv6 literals in canonical compressed form.
+     *
+     * Used for both sides of every comparison — the origin in preferences and the peer a
+     * socket reports — so the two can never disagree about spelling (which is how an IPv6
+     * or IDN gateway ended up sending no certificate, silently). Returns null for a host
+     * that cannot be a TLS origin at all.
+     */
+    internal fun normaliseHost(raw: String): String? {
+        var h = raw.trim()
+        if (h.startsWith("[") && h.endsWith("]") && h.length > 2) h = h.substring(1, h.length - 1)
+        if (h.isEmpty()) return null
+        if (h.any { it.code >= 128 }) {
+            h = try { IDN.toASCII(h, IDN.ALLOW_UNASSIGNED) } catch (_: Exception) { return null }
+        }
+        h = h.trimEnd('.')
+        if (h.isEmpty()) return null
+        if (h.contains(':')) {
+            // An IPv6 literal: canonicalise through InetAddress, which never does DNS for
+            // a literal (there is no name to resolve).
+            return try { compressV6(InetAddress.getByName(h).hostAddress) } catch (_: Exception) { null }
+        }
+        if (!HOST_RE.matches(h)) return null
+        return h.lowercase(Locale.ROOT)
+    }
+
+    /**
+     * One spelling for an IPv6 literal (RFC 5952: lower case, no leading zeros, the
+     * longest run of zero groups — two or more — written as `::`), because
+     * `InetAddress.getHostAddress` expands every group. Equality is all the guard needs,
+     * but the origin key is also what a log line and a preference carry, and
+     * `[0:0:0:0:0:0:0:1]:8642` is unreadable next to `[::1]:8642`.
+     */
+    private fun compressV6(expanded: String): String {
+        val groups = expanded.split(':')
+        if (groups.size != 8) return expanded
+        var bestStart = -1
+        var bestLen = 0
+        var i = 0
+        while (i < groups.size) {
+            if (groups[i] != "0") { i++; continue }
+            var j = i
+            while (j < groups.size && groups[j] == "0") j++
+            if (j - i > bestLen) { bestLen = j - i; bestStart = i }
+            i = j
+        }
+        if (bestLen < 2) return expanded
+        val head = groups.subList(0, bestStart).joinToString(":")
+        val tail = groups.subList(bestStart + bestLen, groups.size).joinToString(":")
+        return "$head::$tail"
     }
 
     /** Retrieves the configured certificate alias for [origin], or null if unconfigured. */

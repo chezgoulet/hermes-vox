@@ -62,6 +62,38 @@ class MtlsKeyManagerTest {
         assertNull("Mismatched port must not leak client alias", km.chooseEngineClientAlias(null, null, mismatchPortEngine))
     }
 
+    /** The guard and the origin key must agree on IPv6 and case, or a certificate is
+     *  never sent over an IPv6 gateway. */
+    @Test
+    fun testChooseEngineClientAliasNormalisesHostSpelling() {
+        val ctx = SSLContext.getDefault()
+        val v6 = MtlsKeyManager("[2001:db8::1]", 8642, "first", provider)
+        assertEquals("first",
+            v6.chooseEngineClientAlias(null, null, ctx.createSSLEngine("2001:db8:0:0:0:0:0:1", 8642)))
+        assertNull("another address on the same port is another origin",
+            v6.chooseEngineClientAlias(null, null, ctx.createSSLEngine("2001:db8::2", 8642)))
+
+        val folded = MtlsKeyManager("Gateway.Local", 443, "first", provider)
+        assertEquals("first",
+            folded.chooseEngineClientAlias(null, null, ctx.createSSLEngine("gateway.local", 443)))
+    }
+
+    /** The socket branch: the alias follows the host the socket actually used, never its
+     *  reverse-DNS name and never a stale origin. */
+    @Test
+    fun testChooseClientAliasComparesTheHostTheSocketUsed() {
+        val km = MtlsKeyManager("127.0.0.1", 9443, "first", provider)
+        assertEquals("first", km.chooseClientAlias(null, null, socketTo("127.0.0.1", 9443)))
+        assertNull("a different host on the same port must not get the alias",
+            km.chooseClientAlias(null, null, socketTo("127.0.0.2", 9443)))
+        assertNull("the same host on another port must not get the alias",
+            km.chooseClientAlias(null, null, socketTo("127.0.0.1", 9444)))
+    }
+
+    private fun socketTo(host: String, port: Int): Socket = object : Socket() {
+        override fun getRemoteSocketAddress(): java.net.SocketAddress = InetSocketAddress(host, port)
+    }
+
     @Test
     fun testBlankAliasReturnsNull() {
         val km = MtlsKeyManager("gateway.example.com", 443, "", provider)

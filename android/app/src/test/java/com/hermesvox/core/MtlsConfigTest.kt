@@ -42,6 +42,68 @@ class MtlsConfigTest {
         assertNull(MtlsConfig.originOf("not a url"))
     }
 
+    /**
+     * The origin key is what a certificate is filed under and what the runtime guard
+     * compares against. Two spellings of one origin must be one key, or a certificate
+     * chosen under one spelling is never sent under the other — silently.
+     */
+    @Test
+    fun testOriginOfNormalisesIpv6Literals() {
+        val bare = MtlsConfig.originOf("https://[2001:db8::1]:8642/v1/models")
+        assertNotNull("an IPv6 literal origin must parse", bare)
+        // No brackets in the host: this is what a socket reports and what the guard compares.
+        assertEquals("2001:db8::1", bare!!.host)
+        // The preference key keeps brackets, so it can never be read as host+port twice.
+        assertEquals("[2001:db8::1]:8642", bare.key)
+
+        // Every spelling of the same address is the same origin.
+        assertEquals(bare, MtlsConfig.originOf("https://[2001:DB8:0:0:0:0:0:1]:8642"))
+        assertEquals(bare, MtlsConfig.originOf("https://[2001:db8::1]:8642/"))
+
+        val loopback = MtlsConfig.originOf("https://[::1]:8642/")
+        assertNotNull(loopback)
+        assertEquals("::1", loopback!!.host)
+        assertEquals(loopback, MtlsConfig.originOf("https://[0:0:0:0:0:0:0:1]:8642"))
+    }
+
+    /** `URI.host` is null for a non-ASCII host (and `URL.host` is on Android), so an IDN
+     *  gateway used to yield no origin at all — and therefore no certificate. */
+    @Test
+    fun testOriginOfNormalisesIdnToAscii() {
+        val unicode = MtlsConfig.originOf("https://münchen.example:8642/v1/models")
+        assertNotNull("an IDN origin must parse", unicode)
+        assertEquals("xn--mnchen-3ya.example", unicode!!.host)
+        // The punycode spelling is the same origin, so a certificate chosen under
+        // either spelling is found under both.
+        assertEquals(unicode, MtlsConfig.originOf("https://XN--MNCHEN-3YA.example:8642/"))
+    }
+
+    @Test
+    fun testOriginOfRejectsAmbiguousAuthority() {
+        // A non-numeric port must not be read as part of the host.
+        assertNull(MtlsConfig.originOf("https://host:abc/"))
+        // An unbracketed IPv6 literal is not a valid authority.
+        assertNull(MtlsConfig.originOf("https://2001:db8::1:8642/"))
+        // A port outside 1..65535 is not an origin.
+        assertNull(MtlsConfig.originOf("https://host:70000/"))
+        // Userinfo is dropped, not mistaken for the host.
+        assertEquals("gateway.local", MtlsConfig.originOf("https://user:pw@gateway.local:8642/")!!.host)
+        // The root-dot spelling is the same origin.
+        assertEquals(MtlsConfig.originOf("https://gateway.local/"),
+            MtlsConfig.originOf("https://gateway.local./"))
+    }
+
+    @Test
+    fun testOriginAndPeerUseTheSameSpelling() {
+        // The origin key (from a URL) and the peer (from a socket) are normalised by the
+        // same function, so the guard cannot refuse a certificate over spelling.
+        assertEquals(MtlsConfig.normaliseHost("[2001:DB8::1]"), MtlsConfig.normaliseHost("2001:db8::1"))
+        assertEquals(MtlsConfig.normaliseHost("MÜNCHEN.example"), "xn--mnchen-3ya.example")
+        assertEquals(MtlsConfig.normaliseHost("Gateway.Local."), "gateway.local")
+        assertNull(MtlsConfig.normaliseHost(""))
+        assertNull(MtlsConfig.normaliseHost("ho st"))
+    }
+
     @Test
     fun testSocketFactoryCreationAndCaching() {
         val provider = TestKeyProvider()

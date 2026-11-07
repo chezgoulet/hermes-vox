@@ -5,6 +5,7 @@ import java.net.Socket
 import java.security.Principal
 import java.security.PrivateKey
 import java.security.cert.X509Certificate
+import java.util.Locale
 import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509ExtendedKeyManager
@@ -21,25 +22,31 @@ import javax.net.ssl.X509ExtendedKeyManager
  * 3. Server verification remains untouched: platform CA verification applies.
  */
 class MtlsKeyManager(
-    val targetHost: String,
+    targetHost: String,
     val targetPort: Int,
     val configuredAlias: String,
     private val provider: MtlsKeyProvider,
 ) : X509ExtendedKeyManager() {
 
+    /**
+     * The origin this manager will answer for, in the SAME spelling [MtlsConfig.originOf]
+     * produced (ASCII, case-folded, IPv6 unbracketed). Comparing a raw origin key with a
+     * raw socket host is how an IPv6 literal never matched — and therefore never sent a
+     * certificate, silently.
+     */
+    val targetHost: String = MtlsConfig.normaliseHost(targetHost) ?: targetHost.lowercase(Locale.ROOT)
+
     internal fun matchesOrigin(socket: Socket?): Boolean {
-        if (socket == null) return false
-        val endpoint = socket.remoteSocketAddress as? InetSocketAddress ?: return false
-        val port = endpoint.port
-        if (port <= 0 || port != targetPort) return false
-        val host = endpoint.hostString ?: endpoint.hostName ?: return false
-        if (!host.equals(targetHost, ignoreCase = true)) {
-            val altHost = endpoint.hostName
-            if (altHost.isNullOrEmpty() || !altHost.equals(targetHost, ignoreCase = true)) {
-                return false
-            }
-        }
-        return true
+        val endpoint = socket?.remoteSocketAddress as? InetSocketAddress ?: return false
+        if (endpoint.port <= 0 || endpoint.port != targetPort) return false
+        // The host the socket actually connected to — never its reverse-DNS name.
+        // A reverse lookup turns "did we connect to the origin we chose?" into "does
+        // this name point at the same address?", which a redirector controls and a
+        // resolver can answer differently between checks. The socket's own host string
+        // is what the connection was made with, so it is the only answer that means
+        // what the check claims.
+        val peer = MtlsConfig.normaliseHost(endpoint.hostString) ?: return false
+        return peer == targetHost
     }
 
     internal fun matchesEngine(engine: SSLEngine?): Boolean {
@@ -47,8 +54,8 @@ class MtlsKeyManager(
         val port = engine.peerPort
         if (port <= 0 || port != targetPort) return false
         val host = engine.peerHost ?: return false
-        if (!host.equals(targetHost, ignoreCase = true)) return false
-        return true
+        val peer = MtlsConfig.normaliseHost(host) ?: return false
+        return peer == targetHost
     }
 
     override fun chooseClientAlias(
