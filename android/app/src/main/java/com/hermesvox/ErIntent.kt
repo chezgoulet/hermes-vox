@@ -51,6 +51,10 @@ object ErIntent {
         "keep going", "mhmm", "mmhmm", "mm-hmm", "uh huh", "uh-huh", "okay",
         "ok ", "ok", "right", "sure", "yes", "yeah", "yep", "mm", "hm", "hmm",
         "i'm listening", "im listening", "still there", "you there",
+        // French backchannels
+        "prends ton temps", "prenez votre temps", "pas de souci", "pas de probleme",
+        "c'est bon", "cest bon", "vas-y", "vas y", "d'accord", "d accord",
+        "oui", "ouais", "hum", "je t'écoute", "je tecoute", "t'es là", "tes la",
     )
 
     // Genuine barge markers: a redirect/stop/new instruction — the mind's current turn is
@@ -59,6 +63,8 @@ object ErIntent {
         "stop", "never mind", "nevermind", "actually", "wait", "no wait",
         "forget it", "scratch that", "instead", "what?", "excuse me",
         "let me ask", "i want to ask", "hold on", "cancel",
+        // French barge markers
+        "arrete", "arrête", "laisse tomber", "attends", "en fait", "oublie", "annule",
     )
 
     /** Normalize for matching: lowercase, collapse spaces, keep punctuation

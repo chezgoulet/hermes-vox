@@ -124,6 +124,10 @@ internal object ApprovalVoice {
         "reject", "reject it", "cancel", "cancel that", "cancel it", "stop", "stop it",
         "never", "block", "block it", "don't", "do not", "not now", "no don't",
         "don't approve", "do not approve", "no don't approve", "don't do it", "no stop",
+        // French refusals
+        "non", "non merci", "refuser", "refuse", "refuse le", "rejeter", "rejette",
+        "annuler", "annule", "annule ca", "arreter", "arrete", "arrete ca", "stop",
+        "jamais", "bloquer", "bloque", "pas maintenant", "ne fais pas", "ne le fais pas",
     )
 
     /** Plain approvals, matched as the whole utterance. No bare soft words: `sure`, `ok`,
@@ -132,18 +136,27 @@ internal object ApprovalVoice {
         "approve", "approved", "approve it", "approve once", "approve that",
         "yes", "yes approve", "yes approve it", "yes please", "yes do it",
         "do it", "go ahead", "proceed", "confirm", "confirmed",
+        // French approvals
+        "approuver", "approuve", "approuve le", "oui", "oui approuve", "oui s'il te plait",
+        "oui sil te plait", "fais le", "fais-le", "vas-y", "vas y", "poursuivre",
+        "confirmer", "confirme", "d'accord", "d accord",
     )
 
     /** Any of these makes a non-deny utterance no answer (re-prompt), never a yes. */
     internal val NEGATION = setOf(
         "not", "no", "don't", "dont", "never", "nope", "nah", "can't", "cannot", "won't",
         "wouldn't", "shouldn't", "isn't", "doesn't", "without",
+        // French negations
+        "pas", "ne", "non", "jamais", "aucun", "sans", "impossible",
     )
 
     /** An utterance that opens like a question is a question, whatever follows. */
     internal val QUESTION = setOf(
         "what", "what's", "whats", "where", "why", "how", "who", "which", "when", "is",
         "are", "does", "did", "can", "could", "should", "would", "will", "wait",
+        // French questions
+        "quoi", "qu'est-ce", "quest ce", "pourquoi", "comment", "qui", "quel", "quelle",
+        "quand", "est-ce", "est ce", "peut", "peux",
     )
 
     internal const val MAX_WORDS = 3
@@ -171,6 +184,18 @@ internal object ApprovalVoice {
     internal fun normalize(text: String): String =
         text.lowercase()
             .replace('\u2019', '\'')
+            .replace('é', 'e')
+            .replace('è', 'e')
+            .replace('ê', 'e')
+            .replace('ë', 'e')
+            .replace('à', 'a')
+            .replace('â', 'a')
+            .replace('î', 'i')
+            .replace('ï', 'i')
+            .replace('ô', 'o')
+            .replace('û', 'u')
+            .replace('ù', 'u')
+            .replace('ç', 'c')
             .replace(Regex("[^a-z0-9' ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -208,6 +233,9 @@ internal class ApprovalNudge {
         /** Four words on purpose: an echo of it is longer than any answer, so it can never
          *  resolve to a choice. */
         const val LINE = "say approve or no"
+        const val LINE_FR = "dites approuver ou non"
+
+        fun line(lang: String = "en"): String = if (lang == "fr") LINE_FR else LINE
 
         /** No transcript, no command: the request id and why. */
         fun logLine(key: String): String = "event=approval-prompt request=$key reason=not-an-answer"

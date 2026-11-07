@@ -24,4 +24,65 @@
     <string name="hv_not_connected">Not connected</string>
     <string name="hv_models_advanced_show">Show advanced download source</string>
     <string name="hv_models_advanced_hide">Hide advanced download source</string>
+
+    <!-- mTLS Certificate Selection -->
+    <string name="mtls_cert_title">Client certificate (mTLS)</string>
+    <string name="mtls_cert_none">None (system default)</string>
+    <string name="mtls_cert_choose">Choose</string>
+    <string name="mtls_cert_clear">Clear</string>
+
+    <!-- Models Management -->
+    <string name="models_title">Voice models</string>
+    <string name="models_setup_required">⚠ Setup required</string>
+    <string name="models_install_prompt">Install the required voice models</string>
+    <string name="models_adv_source">Advanced — download source</string>
+    <string name="models_adv_show">show ›</string>
+    <string name="models_adv_desc">Where new model files are fetched from. The default is the upstream release; leave it alone unless you mirror the models yourself.</string>
+    <string name="models_save_source">Save source</string>
+    <string name="models_use_default">Use default</string>
+    <string name="models_source_note">Installed models are not affected by this address. Changing it only changes where a future download is fetched from.</string>
+    <string name="model_recommended">★ Recommended</string>
+    <string name="model_not_installed">Not installed</string>
+    <string name="model_download">Download</string>
+
+    <!-- Wake Enrolment -->
+    <string name="wake_title">Wake word (preview)</string>
+    <string name="wake_agree_label">I agree — keep my recordings on this phone</string>
+    <string name="wake_record">Record</string>
+    <string name="wake_delete_all">Delete all my recordings</string>
+
+    <!-- Onboarding -->
+    <string name="onboard_how_works">HOW THIS WORKS</string>
+    <string name="onboard_how_works_desc">Hermes is your AI agent — an entity that lives on your own gateway. Vox gives it a body: a presence that listens, thinks and speaks back. You talk to it like a person, not a chatbot page.</string>
+    <string name="onboard_setup_title">WHAT YOU ARE SETTING UP</string>
+    <string name="onboard_presence_title">PRESENCE — ALPHA, OFF UNTIL YOU TURN IT ON</string>
+    <string name="onboard_mic_note">Mic vs push-to-talk: Vox is hands-free — you just talk. There is no PTT button to hold.</string>
+    <string name="onboard_got_it">Got it — connect</string>
+    <string name="onboard_skip">Skip for now</string>
+
+    <!-- Settings Main Sections & Actions -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_entity_conn">Entity &amp; Connection</string>
+    <string name="settings_hearing">Hearing</string>
+    <string name="settings_voice_assets">Voice models</string>
+    <string name="settings_voice_sounds">Voice &amp; sounds</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_alpha_features">Alpha features</string>
+    <string name="settings_alpha_sub">Off · unfinished features stay out of the way</string>
+    <string name="settings_presence">Presence</string>
+    <string name="settings_phone_tools">Phone Tools</string>
+    <string name="settings_wake_word">Wake word (preview)</string>
+    <string name="settings_assistant_role">Set Digital Assistant to Hermes Vox</string>
+    <string name="settings_about_diag">About &amp; Diagnostics</string>
+    <string name="settings_test_conn">Test entity connection</string>
+    <string name="settings_test_run">run</string>
+    <string name="settings_agent_model">Agent model</string>
+    <string name="settings_teach_agent">Teach your agent this app</string>
+    <string name="settings_new_conv">New conversation (clear context)</string>
+    <string name="settings_clear">clear</string>
+    <string name="settings_reset">reset</string>
+    <string name="settings_restore_defaults">Restore defaults</string>
+    <string name="settings_barge_in">Barge-in (interrupt)</string>
+    <string name="settings_spoken_language">Spoken language</string>
+    <string name="settings_spoken_language_desc">What the recogniser expects; multilingual models only</string>
 </resources>
