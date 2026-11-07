@@ -37,26 +37,41 @@ class MtlsKeyManager(
     val targetHost: String = MtlsConfig.normaliseHost(targetHost) ?: targetHost.lowercase(Locale.ROOT)
 
     internal fun matchesOrigin(socket: Socket?): Boolean {
-        val endpoint = socket?.remoteSocketAddress as? InetSocketAddress ?: return false
-        if (endpoint.port <= 0 || endpoint.port != targetPort) return false
+        val endpoint = socket?.remoteSocketAddress as? InetSocketAddress ?: return refuse(UNVERIFIED)
+        if (endpoint.port <= 0 || endpoint.port != targetPort) return refuse(MISMATCH)
         // The host the socket actually connected to — never its reverse-DNS name.
         // A reverse lookup turns "did we connect to the origin we chose?" into "does
         // this name point at the same address?", which a redirector controls and a
         // resolver can answer differently between checks. The socket's own host string
         // is what the connection was made with, so it is the only answer that means
         // what the check claims.
-        val peer = MtlsConfig.normaliseHost(endpoint.hostString) ?: return false
-        return peer == targetHost
+        val peer = MtlsConfig.normaliseHost(endpoint.hostString) ?: return refuse(UNVERIFIED)
+        return peer == targetHost || refuse(MISMATCH)
     }
 
     internal fun matchesEngine(engine: SSLEngine?): Boolean {
-        if (engine == null) return false
-        val port = engine.peerPort
-        if (port <= 0 || port != targetPort) return false
-        val host = engine.peerHost ?: return false
-        val peer = MtlsConfig.normaliseHost(host) ?: return false
-        return peer == targetHost
+        val port = engine?.peerPort ?: return refuse(UNVERIFIED)
+        if (port <= 0 || port != targetPort) return refuse(MISMATCH)
+        val host = engine.peerHost ?: return refuse(UNVERIFIED)
+        val peer = MtlsConfig.normaliseHost(host) ?: return refuse(UNVERIFIED)
+        return peer == targetHost || refuse(MISMATCH)
     }
+
+    /** Fail closed, and say why: a redirect to another host is a named reason, not just a
+     *  handshake that unexpectedly asked for a certificate the app did not send. */
+    private fun refuse(reason: MtlsConfig.Reason): Boolean {
+        MtlsConfig.unavailable(reason, originKey())
+        return false
+    }
+
+    private companion object {
+        val MISMATCH = MtlsConfig.Reason.ORIGIN_MISMATCH
+        val UNVERIFIED = MtlsConfig.Reason.ORIGIN_UNVERIFIED
+    }
+
+    /** The origin key for a failure line, in the same spelling the preferences use. */
+    private fun originKey(): String =
+        if (targetHost.contains(':')) "[$targetHost]:$targetPort" else "$targetHost:$targetPort"
 
     override fun chooseClientAlias(
         keyType: Array<out String>?,
@@ -78,12 +93,23 @@ class MtlsKeyManager(
 
     override fun getPrivateKey(alias: String?): PrivateKey? {
         if (alias.isNullOrBlank() || alias != configuredAlias) return null
-        return provider.getPrivateKey(alias)
+        val key = try { provider.getPrivateKey(alias) } catch (_: Throwable) { null }
+        // The alias exists but its key does not come back: revoked, locked, removed from
+        // the store, or the store refused the IPC. The handshake will fail with no client
+        // certificate either way; naming it is the difference between "never sent" and
+        // "sent and rejected".
+        if (key == null) MtlsConfig.unavailable(MtlsConfig.Reason.KEY_UNAVAILABLE, originKey())
+        return key
     }
 
     override fun getCertificateChain(alias: String?): Array<X509Certificate>? {
         if (alias.isNullOrBlank() || alias != configuredAlias) return null
-        return provider.getCertificateChain(alias)
+        val chain = try { provider.getCertificateChain(alias) } catch (_: Throwable) { null }
+        if (chain.isNullOrEmpty()) {
+            MtlsConfig.unavailable(MtlsConfig.Reason.CERT_UNAVAILABLE, originKey())
+            return null
+        }
+        return chain
     }
 
     override fun getClientAliases(

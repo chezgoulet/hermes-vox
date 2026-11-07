@@ -2,6 +2,8 @@ package com.hermesvox.core
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.annotation.VisibleForTesting
+import com.hermesvox.VoxLog
 import java.net.IDN
 import java.net.InetAddress
 import java.util.Locale
@@ -33,10 +35,38 @@ object MtlsConfig {
         val key: String get() = if (host.contains(':')) "[$host]:$port" else "$host:$port"
     }
 
+    /**
+     * Why no client certificate was attached.
+     *
+     * Every failure used to look the same from the outside — "no certificate sent", a bare
+     * 401 from the server — so "the app never sent one" and "the server rejected the one it
+     * got" were indistinguishable. Each reason has one stable token: it is the `reason=` in
+     * the log line and the text the settings row shows. [label] is the sentence for a
+     * person; it never contains key material.
+     */
+    enum class Reason(val token: String, val label: String) {
+        ORIGIN_UNPARSEABLE("origin-unparseable", "the address is not an HTTPS origin"),
+        NO_CONTEXT("no-context", "the app could not read its settings"),
+        NO_PROVIDER("no-provider", "the certificate store is not available"),
+        NO_ALIAS("no-alias", "no certificate is chosen for this address"),
+        CERT_UNAVAILABLE("cert-unavailable", "the chosen certificate is missing or revoked"),
+        KEY_UNAVAILABLE("key-unavailable", "its private key is missing, locked or revoked"),
+        ORIGIN_MISMATCH("origin-mismatch", "the connection went to a different host"),
+        ORIGIN_UNVERIFIED("origin-unverified", "the connection's origin could not be verified"),
+        PICKER_CANCELLED("picker-cancelled", "the certificate picker was dismissed"),
+    }
+
+    /** The last named failure, with the origin key (`host:port`) it happened on. */
+    data class Failure(val reason: Reason, val host: String)
+
     @Volatile private var appContext: Context? = null
     @Volatile private var appPrefs: SharedPreferences? = null
     @Volatile private var activeProvider: MtlsKeyProvider? = null
     @Volatile private var testPrefs: SharedPreferences? = null
+    @Volatile private var lastFailure: Failure? = null
+    /** The device sink for the one failure line. Installed by [init]; a JVM test installs
+     *  its own (or none) so nothing here depends on android.util.Log. */
+    @Volatile private var logSink: ((String) -> Unit)? = null
     private val socketFactoryCache = ConcurrentHashMap<String, SSLSocketFactory>()
 
     /**
@@ -54,18 +84,57 @@ object MtlsConfig {
         appContext = app
         if (prefs != null) appPrefs = prefs
         if (activeProvider == null) activeProvider = AndroidKeyChainProvider(app)
+        if (logSink == null) logSink = { VoxLog.w(it) }
     }
 
     /** Overrides the [MtlsKeyProvider] for JVM unit testing. */
-    fun setProviderForTest(provider: MtlsKeyProvider?) {
+    @VisibleForTesting
+    internal fun setProviderForTest(provider: MtlsKeyProvider?) {
         activeProvider = provider
         invalidateCache()
     }
 
     /** Overrides [SharedPreferences] for JVM unit testing. */
-    fun setPrefsForTest(prefs: SharedPreferences?) {
+    @VisibleForTesting
+    internal fun setPrefsForTest(prefs: SharedPreferences?) {
         testPrefs = prefs
+        lastFailure = null
         invalidateCache()
+    }
+
+    /** Collects (or silences) the failure line in a JVM test. */
+    @VisibleForTesting
+    internal fun setLogSinkForTest(sink: ((String) -> Unit)?) {
+        logSink = sink
+    }
+
+    /**
+     * Records one named failure and logs it ONCE — on the transition, not on every
+     * request — as `event=mtls state=unavailable reason=<token> host=<origin key>`.
+     * Repeated failures of the same kind for the same origin are silent.
+     */
+    internal fun unavailable(reason: Reason, host: String?) {
+        val failure = Failure(reason, host.orEmpty())
+        synchronized(this) {
+            if (lastFailure == failure) return
+            lastFailure = failure
+        }
+        logSink?.invoke("event=mtls state=unavailable reason=${reason.token} host=${failure.host}")
+    }
+
+    /** The named failure recorded for [origin], if it is still the current one. */
+    fun failureFor(origin: Origin): Reason? =
+        lastFailure?.takeIf { it.host == origin.key }?.reason
+
+    /** The most recent failure, whatever origin it was on — for the settings summary. */
+    fun lastFailure(): Failure? = lastFailure
+
+    /** A certificate landed on [origin]: the previous failure there no longer describes
+     *  the app's state, so clear it (and let a later failure be logged again). */
+    internal fun clearFailure(origin: Origin) {
+        synchronized(this) {
+            if (lastFailure?.host == origin.key) lastFailure = null
+        }
     }
 
     /** Clears cached SSLSocketFactories. */
@@ -270,22 +339,55 @@ object MtlsConfig {
     }
 
     /**
-     * Applies the configured client certificate SSLSocketFactory to [conn] if [url]
-     * has a configured alias in preferences.
+     * Applies the configured client certificate SSLSocketFactory to [conn] if [url] has a
+     * configured alias in preferences.
+     *
+     * Returns null when a certificate was attached, otherwise the [Reason] it was not —
+     * recorded and logged once by [unavailable] on the way out, so a caller that only
+     * wants the connection (every request path) can keep ignoring the result.
      */
     fun applyIfConfigured(
         conn: HttpsURLConnection,
         url: String,
         explicitPrefs: SharedPreferences? = null,
-    ) {
-        val origin = originOf(url) ?: return
+    ): Reason? {
+        val origin = originOf(url)
+        if (origin == null) {
+            unavailable(Reason.ORIGIN_UNPARSEABLE, authorityOf(url))
+            return Reason.ORIGIN_UNPARSEABLE
+        }
         val prefs = explicitPrefs
             ?: testPrefs
             ?: appPrefs
-            ?: appContext?.getSharedPreferences("hv", Context.MODE_PRIVATE)
-            ?: return
-        val alias = getAlias(prefs, origin) ?: return
-        val factory = getSocketFactory(origin, alias) ?: return
+            ?: appContext?.getSharedPreferences(PREF_STORE, Context.MODE_PRIVATE)
+        if (prefs == null) {
+            unavailable(Reason.NO_CONTEXT, origin.key)
+            return Reason.NO_CONTEXT
+        }
+        val alias = getAlias(prefs, origin)
+        if (alias == null) {
+            unavailable(Reason.NO_ALIAS, origin.key)
+            return Reason.NO_ALIAS
+        }
+        val factory = getSocketFactory(origin, alias)
+        if (factory == null) {
+            unavailable(Reason.NO_PROVIDER, origin.key)
+            return Reason.NO_PROVIDER
+        }
         conn.sslSocketFactory = factory
+        clearFailure(origin)
+        return null
     }
+
+    /** The certificate picker came back empty. Settings calls this so a dismissal is a
+     *  named reason too, not a row that quietly says "None". */
+    fun notePickerCancelled(origin: Origin) = unavailable(Reason.PICKER_CANCELLED, origin.key)
+
+    /** The authority of [url] for a failure line, when it cannot even be parsed. */
+    private fun authorityOf(url: String): String? =
+        ORIGIN_RE.find(url.trim())?.groupValues?.get(2)
+            ?.substringAfterLast('@')
+            ?.takeIf { it.isNotEmpty() }
+
+    private const val PREF_STORE = "hv"
 }

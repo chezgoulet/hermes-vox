@@ -477,6 +477,11 @@ class SettingsActivity : AppCompatActivity() {
             fun updateMtlsViews() {
                 val typed = typedOrigin()
                 val changed = typed != chosenFor
+                // A named reason (if one was recorded for THIS origin) belongs on the row:
+                // "the server rejected my certificate" and "the app never sent one" must
+                // not both read as "None".
+                val failure = typed?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
+                    ?.takeIf { it != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS }
                 when {
                     changed && !currentAlias.isNullOrBlank() -> {
                         // Say it here, before Save: the old certificate is still stored
@@ -485,11 +490,12 @@ class SettingsActivity : AppCompatActivity() {
                         dMtlsClear.visibility = View.GONE
                     }
                     currentAlias.isNullOrBlank() -> {
-                        dMtlsAlias.text = "None (system default)"
+                        dMtlsAlias.text = failure?.let { "No certificate sent — ${it.label}" }
+                            ?: "None (system default)"
                         dMtlsClear.visibility = View.GONE
                     }
                     else -> {
-                        dMtlsAlias.text = currentAlias
+                        dMtlsAlias.text = failure?.let { "$currentAlias — ${it.label}" } ?: currentAlias
                         dMtlsClear.visibility = View.VISIBLE
                     }
                 }
@@ -513,7 +519,9 @@ class SettingsActivity : AppCompatActivity() {
                         runOnUiThread {
                             if (alias.isNullOrBlank()) {
                                 // Dismissed or denied: the previous choice (if it belongs
-                                // to this origin) stands, and nothing new is recorded.
+                                // to this origin) stands, and the dismissal is a named
+                                // reason rather than a row that quietly says "None".
+                                com.hermesvox.core.MtlsConfig.notePickerCancelled(target)
                                 Toast.makeText(this, "No certificate chosen", Toast.LENGTH_SHORT).show()
                             } else {
                                 currentAlias = alias
@@ -1009,8 +1017,19 @@ class SettingsActivity : AppCompatActivity() {
         // the host's (T7); the model id is only the fallback until a verify names it.
         val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         val who = if (scope.isEmpty()) "no scope" else "scope · $scope"
+        // mTLS, as it actually stands for this origin: a certificate is configured, or a
+        // named reason says why none is being sent. The reason token is the same one the
+        // log line carries, so a report ("it says cert-unavailable") can be grepped.
         val origin = com.hermesvox.core.MtlsConfig.originOf(u)
-        val mtls = if (origin != null && com.hermesvox.core.MtlsConfig.getAlias(prefs, origin) != null) " · mTLS" else ""
+        val alias = origin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+        val reason = origin?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
+        val mtls = when {
+            origin == null -> ""
+            alias != null -> " · mTLS" + (reason?.let { " (${it.token})" } ?: "")
+            reason != null && reason != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS ->
+                " · no certificate (${reason.token})"
+            else -> ""
+        }
         findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls"
     }
 

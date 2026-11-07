@@ -7,8 +7,98 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocketFactory
 
 class MtlsConfigTest {
+
+    /** A connection is not opened: [MtlsConfig.applyIfConfigured] only sets the factory,
+     *  so the test sees exactly what the request would have carried. */
+    private class FakeHttps : HttpsURLConnection(java.net.URL("https://example.test/")) {
+        var applied: SSLSocketFactory? = null
+        override fun setSSLSocketFactory(sf: SSLSocketFactory?) { applied = sf }
+        override fun getSSLSocketFactory(): SSLSocketFactory? = applied
+        override fun connect() = Unit
+        override fun disconnect() = Unit
+        override fun usingProxy(): Boolean = false
+        override fun getCipherSuite(): String = "NONE"
+        override fun getLocalCertificates(): Array<java.security.cert.Certificate>? = null
+        override fun getServerCertificates(): Array<java.security.cert.Certificate>? = null
+    }
+
+    @org.junit.After
+    fun resetSingleton() {
+        MtlsConfig.setProviderForTest(null)
+        MtlsConfig.setPrefsForTest(null)
+        MtlsConfig.setLogSinkForTest(null)
+    }
+
+    /**
+     * Every way of not sending a certificate has a name, and the name is logged once —
+     * so "the app never sent one" and "the server rejected the one it got" stop looking
+     * like the same bare 401.
+     */
+    @Test
+    fun testEveryFailureHasANamedReasonAndOneLogLine() {
+        val prefs = FakeSharedPreferences()
+        MtlsConfig.setPrefsForTest(prefs)
+        MtlsConfig.setProviderForTest(TestKeyProvider())
+        val lines = mutableListOf<String>()
+        MtlsConfig.setLogSinkForTest { lines += it }
+
+        // A URL that is not an HTTPS origin.
+        assertEquals(MtlsConfig.Reason.ORIGIN_UNPARSEABLE,
+            MtlsConfig.applyIfConfigured(FakeHttps(), "http://gateway.example:8642"))
+        // Nothing chosen for this origin.
+        assertEquals(MtlsConfig.Reason.NO_ALIAS,
+            MtlsConfig.applyIfConfigured(FakeHttps(), "https://gateway.example/"))
+        // Asked twice: the second time is the same state, so it is not logged again.
+        assertEquals(MtlsConfig.Reason.NO_ALIAS,
+            MtlsConfig.applyIfConfigured(FakeHttps(), "https://gateway.example/"))
+
+        // A chosen alias builds the factory through the production path.
+        val origin = MtlsConfig.originOf("https://gateway.example/")!!
+        MtlsConfig.setAlias(prefs, origin, "first")
+        val conn = FakeHttps()
+        assertNull(MtlsConfig.applyIfConfigured(conn, "https://gateway.example/"))
+        assertNotNull("the configured certificate must be attached", conn.applied)
+
+        // A revoked/missing certificate cannot even build a factory: no provider.
+        MtlsConfig.setProviderForTest(null)
+        assertEquals(MtlsConfig.Reason.NO_PROVIDER,
+            MtlsConfig.applyIfConfigured(FakeHttps(), "https://gateway.example/"))
+
+        assertEquals(1, lines.count { it.contains("reason=no-alias") })
+        assertEquals(listOf(
+            "event=mtls state=unavailable reason=origin-unparseable host=gateway.example:8642",
+            "event=mtls state=unavailable reason=no-alias host=gateway.example:443",
+            "event=mtls state=unavailable reason=no-provider host=gateway.example:443",
+        ), lines)
+    }
+
+    @Test
+    fun testMissingPreferencesIsNamedNotSilent() {
+        MtlsConfig.setPrefsForTest(null)
+        MtlsConfig.setProviderForTest(TestKeyProvider())
+        MtlsConfig.setLogSinkForTest { }
+        // No prefs, no context: the store this decision needs was never installed.
+        assertEquals(MtlsConfig.Reason.NO_CONTEXT,
+            MtlsConfig.applyIfConfigured(FakeHttps(), "https://gateway.example/"))
+    }
+
+    @Test
+    fun testFailureIsClearedWhenACertificateIsAttached() {
+        val prefs = FakeSharedPreferences()
+        MtlsConfig.setPrefsForTest(prefs)
+        MtlsConfig.setProviderForTest(TestKeyProvider())
+        MtlsConfig.setLogSinkForTest { }
+        val origin = MtlsConfig.originOf("https://gateway.example/")!!
+        MtlsConfig.applyIfConfigured(FakeHttps(), "https://gateway.example/")
+        assertEquals(MtlsConfig.Reason.NO_ALIAS, MtlsConfig.failureFor(origin))
+
+        MtlsConfig.setAlias(prefs, origin, "first")
+        assertNull(MtlsConfig.applyIfConfigured(FakeHttps(), "https://gateway.example/"))
+        assertNull("a working certificate clears the stale reason", MtlsConfig.failureFor(origin))
+    }
 
     @Test
     fun testOriginOfParsing() {
