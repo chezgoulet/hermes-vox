@@ -260,8 +260,9 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- #329/D29: the assistant row asks Android for the role; it is unfinished
-                     on several builds, so it sits behind the same gate. -->
+                <!-- #329/D29: the row is an instruction, not a state — it asks Android for the
+                     role — so it says what a tap does. Unfinished on several builds, so it
+                     sits behind the same gate. -->
                 <LinearLayout
                     android:id="@+id/row_grp_assistant"
                     style="@style/HvRow"
@@ -271,7 +272,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Be the phone's assistant"
+                        android:text="Set Digital Assistant to Hermes Vox"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_assistant_grpval"
@@ -2287,7 +2288,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_assistant: Be the phone's assistant (#329).
+            <!-- ══ sec_assistant: Set Digital Assistant to Hermes Vox (#329).
                  Android's role is the part this app can ask for; the side-button mapping is
                  the maker's, so the section says which is which instead of promising a key. ══ -->
             <LinearLayout

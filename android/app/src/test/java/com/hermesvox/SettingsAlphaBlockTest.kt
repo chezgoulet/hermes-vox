@@ -72,19 +72,20 @@ class SettingsAlphaBlockTest {
         for (row in blockRows) assertFalse("$row is outside the block", ordinary.contains(row))
     }
 
-    /** Gated ⇒ in the block: the block holds every section the gate owns, and only those. */
+    /** Gated ⇒ in the block: the block holds every gated section, in its own order, and only
+     *  those — the list between the master switch and About is exactly [AlphaBlock]. */
     @Test
     fun everyGatedSectionIsInTheBlock() {
-        // Every gated row the table knows about is drawn inside the block, in its order.
-        val tableRows = AlphaBlock.ROWS.map { it.row }
-        assertEquals(tableRows, homeRows.filter { tableRows.contains(it) })
+        // Every row between the master switch and About is the table, in the table's order.
+        assertEquals(blockRows, AlphaBlock.ROWS.map { it.row })
         for (row in AlphaBlock.ROWS) {
             assertTrue("${row.row} is missing from the layout", blockRows.contains(row.row))
             assertEquals("the row opens its own section", row.section, row.section.trim())
         }
-        // Presence, Phone tools and the wake word are the sections the gate owns in this step.
-        assertEquals(listOf("row_grp_presence", "row_grp_phone", "row_grp_wake"), tableRows)
-        assertEquals(setOf("presence", "phone", "wake"), AlphaBlock.ROWS.map { it.section }.toSet())
+        assertEquals(
+            listOf("presence", "phone", "wake", "assistant"),
+            AlphaBlock.ROWS.map { it.section },
+        )
     }
 
     /** With the gate off every gated row is inert: no tap, and no section opens behind it. */
@@ -129,5 +130,25 @@ class SettingsAlphaBlockTest {
         assertFalse("a hand-written gated row is left behind",
             settings.contains("gate(R.id.row_grp_presence,"))
         assertFalse(settings.contains("gate(R.id.row_grp_phone,"))
+    }
+
+    /**
+     * #329, the owner's rename: the row is an instruction, not a state — a tap asks Android for
+     * the role — so it reads "Set Digital Assistant to Hermes Vox". The old name is gone from
+     * everything the app puts in front of a person.
+     */
+    @Test
+    fun theAssistantRowIsAnInstructionAndItsOldNameIsGone() {
+        val row = elements().first { it.id() == "row_grp_assistant" }
+        val title = row.getElementsByTagName("TextView").item(0) as Element
+        assertEquals("Set Digital Assistant to Hermes Vox", title.getAttribute("android:text"))
+
+        val old = "Be the phone's assistant"
+        val surfaces = File("src/main").walkTopDown()
+            .filter { it.isFile && (it.extension == "kt" || it.extension == "xml") } +
+            sequenceOf(File("../../skills/hermes-vox-app/SKILL.md"))
+        for (f in surfaces) {
+            assertFalse("the old row name is still in ${f.name}", f.readText().contains(old))
+        }
     }
 }

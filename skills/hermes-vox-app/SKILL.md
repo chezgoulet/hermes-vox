@@ -171,17 +171,17 @@ cadence, its asides, its narration voice, its reasoning effort — the layer bel
 agent is on); and **anything about the phone itself** — theme, screen layout, keep-screen-on, the
 microphone and hearing, the sound cues, the wake word. `docs/PRESENCE.md` states the same list.
 
-**The UI/UX pass re-grouped the home list by the question a person arrives with**, in set-up
-order: Alpha features, Entity & Connection, **Hearing** (now also the recogniser — the old
-*Transcription (STT)* section is its *Recognition* block), Wake word, **Voice & sounds** (the
-voice, then the *Sound cues* block, moved out of Being), **Voice models** (the row opens the
-model store itself; the one-row section is gone), Presence, **Appearance** (the old
-*Appearance & Layout* rows as a *Screen* block, then the *Being* block), the assistant role,
-About & Diagnostics. Each section has one restore row, and restoring asks first. A section's
-title is read from the home row that opened it
+**The home list runs the owner's order (2026-11-06)**: the ordinary sections first — Entity &
+Connection, **Hearing** (now also the recogniser — the old *Transcription (STT)* section is its
+*Recognition* block), **Voice models** (the row opens the model store itself; the one-row section
+is gone), **Voice & sounds** (the voice, then the *Sound cues* block, moved out of Being),
+**Appearance** (the old *Appearance & Layout* rows as a *Screen* block, then the *Being* block) —
+then the alpha block, the Alpha features switch immediately above it: Presence, Phone Tools, Wake
+word, Set Digital Assistant to Hermes Vox; then About & Diagnostics last. Each section has one
+restore row, and restoring asks first. A section's title is read from the home row that opened it
 (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `findViewById<TextView>(R.id.set_title).text = sectionTitle(target)`).
 
-### Alpha features (the first row of Settings, #402)
+### Alpha features (one block at the end of Settings, #402)
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
@@ -190,10 +190,16 @@ title is read from the home row that opened it
 | Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29). Requires Presence, because it is how the being hears: selected without Presence it is inert, and the picker refuses the tap with that line. Its description states about 300 MB more memory during a call | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_continuous_listening"`) |
 | Turn-taking (set) | `alpha_set_turn_taking` | false | The being keeps up mid-conversation: a soft acknowledgement while you talk at length, a quick word to stop it told apart from a new question, and the thread picked up after you cut in. Its acknowledgements need continuous listening; the set itself adds no second gate dependency | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_turn_taking"`) |
 | Phone tools (set) | `alpha_set_phone_tools` | false | The mind acting on the phone: the MCP `phone` tool, its tailnet server and its grants. Independent of Presence — either can be taken without the other (D38) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_phone_tools"`) |
+| Wake word (set) | `alpha_set_wake_word` | false | Saying the wake phrase wakes the app hands-free. Enrolment records the owner's takes into an encrypted store; nothing is trained yet and the detector is a preview. With the set off the row is dimmed and the capture path opens no microphone — off stops it listening, not just the row | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_wake_word"`) |
+| Digital assistant (set) | `alpha_set_digital_assistant` | false | Asks Android for the digital-assistant role, so the assistant gesture opens Vox. Android owns the role and the maker owns the button, so the row asks and points at Android's settings; it grants nothing by itself | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_digital_assistant"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
-dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
-semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `gate(R.id.row_grp_presence, presence`)`).
+master switch is the row immediately above the alpha block, the block holds every gated section
+(Presence, Phone Tools, Wake word, Set Digital Assistant to Hermes Vox) contiguously before
+About, and in Hearing the tone, continuous-capture and semantic-endpointing rows are dimmed too.
+The block's rows, their sections and their sets are one table
+(android/app/src/main/java/com/hermesvox/AlphaBlock.kt `val ROWS`), so the list, the dimming and
+the section's own refusal cannot disagree.
 
 Turning the master **on** also turns **Diagnostic summary** (`diag_summary`) on, because someone
 who opts into alpha is a tester and should be able to hand us a bug without hunting for a switch
@@ -324,13 +330,13 @@ layout and keep-screen-on stay device-wide: they are about the phone the agent i
 
 ### The phone's assistant (#329)
 
-The Settings home has one more row: **Be the phone's assistant**
+The Settings home has one more row, in the alpha block: **Set Digital Assistant to Hermes Vox**
 (android/app/src/main/res/layout/activity_settings.xml `row_grp_assistant`). It is the only
 place the app ever asks for the role, and it asks nothing at first launch.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Be the phone's assistant | — | off | Reads Android's `android.app.role.ASSISTANT` state; the first row asks Android for the role (its consent dialog where the build allows one, then an honest fallback), the second opens Android's digital-assistant screen — the only place the role can be taken back, since there is no relinquish API | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `findViewById<android.view.View>(R.id.row_assistant_request)?.setOnClickListener { requestAssistantRole() }`) |
+| Set Digital Assistant to Hermes Vox | — | off | Reads Android's `android.app.role.ASSISTANT` state; the first row asks Android for the role (its consent dialog where the build allows one, then an honest fallback), the second opens Android's digital-assistant screen — the only place the role can be taken back, since there is no relinquish API | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `findViewById<android.view.View>(R.id.row_assistant_request)?.setOnClickListener { requestAssistantRole() }`) |
 | What the gesture then does | — | — | A live call is focused (never a second session); an idle configured app opens the call screen ready to listen; a first run goes to onboarding | (android/app/src/main/java/com/hermesvox/AssistRoute.kt `fun target`) |
 | The entry point Android calls | — | — | A translucent, no-history bridge over `android.intent.action.ASSIST` that hands `MainActivity` the `EXTRA_ASSIST` extra with `CLEAR_TOP`/`SINGLE_TOP` | (android/app/src/main/java/com/hermesvox/AssistActivity.kt `putExtra(MainActivity.EXTRA_ASSIST`) |
 

@@ -71,11 +71,11 @@ class CommandGateTest {
     }
 
     /**
-     * The panel and the catalogue agree on the same fact: the gate has five sets, and the two
+     * The panel and the catalogue agree on the same fact: the gate has six sets, and the two
      * that left it are ordinary commands.
      */
-    @Test fun theGateHasFiveSetsAndNeitherPromotedFeatureIsOne() {
-        assertEquals(5, AlphaGate.FeatureSet.entries.size)
+    @Test fun theGateHasSixSetsAndNeitherPromotedFeatureIsOne() {
+        assertEquals(6, AlphaGate.FeatureSet.entries.size)
         assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_profiles" })
         assertFalse(AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_sessions" })
     }

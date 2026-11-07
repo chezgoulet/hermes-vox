@@ -358,7 +358,11 @@ class SettingsActivity : AppCompatActivity() {
         val state = AssistantRole.state(this)
         val summary = AssistantRole.summary(state, AssistantRole.otherHolderLabel(this))
         findViewById<TextView>(R.id.set_assistant_status)?.text = summary
-        findViewById<TextView>(R.id.set_assistant_grpval)?.text = summary
+        // The row is in the alpha block, so off the gate it says why it is dimmed instead of
+        // reporting a role nobody can ask for yet.
+        findViewById<TextView>(R.id.set_assistant_grpval)?.text =
+            if (AlphaGate.allows(prefs, AlphaGate.FeatureSet.DIGITAL_ASSISTANT)) summary
+            else "Alpha · select Digital assistant in Alpha features above"
         val request = findViewById<android.view.View>(R.id.row_assistant_request)
         request?.isEnabled = state != AssistantRole.State.HELD && state != AssistantRole.State.UNAVAILABLE
         request?.alpha = if (request?.isEnabled == true) 1f else 0.4f

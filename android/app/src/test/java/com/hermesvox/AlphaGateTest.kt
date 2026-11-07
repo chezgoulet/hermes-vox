@@ -282,10 +282,11 @@ class AlphaGateTest {
      */
     @Test fun the_panel_lists_every_set_and_no_stale_row() {
         assertEquals(
-            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools", "Wake word"),
+            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools", "Wake word",
+                "Digital assistant"),
             AlphaGate.FeatureSet.entries.map { it.label },
         )
-        assertEquals(5, AlphaGate.FeatureSet.entries.size)
+        assertEquals(6, AlphaGate.FeatureSet.entries.size)
         val gate = File(src, "AlphaGate.kt").readText()
         assertFalse(gate.contains("alpha_set_profiles"))
         assertFalse(gate.contains("alpha_set_sessions"))

@@ -30,7 +30,7 @@ class SettingsHintsTest {
         "sec_visuals" to "Appearance",
         "sec_entity" to "Entity & Connection",
         "sec_about" to "About & Diagnostics",
-        "sec_assistant" to "Be the phone's assistant",   // #329
+        "sec_assistant" to "Set Digital Assistant to Hermes Vox",   // #329
         "sec_phone" to "Phone Tools",                    // #453
     )
 

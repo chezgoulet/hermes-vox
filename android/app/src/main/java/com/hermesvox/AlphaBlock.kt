@@ -40,6 +40,7 @@ object AlphaBlock {
         Row("presence", "row_grp_presence", AlphaGate.FeatureSet.PRESENCE),
         Row("phone", "row_grp_phone", AlphaGate.FeatureSet.PHONE_TOOLS),
         Row("wake", "row_grp_wake", AlphaGate.FeatureSet.WAKE_WORD),
+        Row("assistant", "row_grp_assistant", AlphaGate.FeatureSet.DIGITAL_ASSISTANT),
     )
 
     private val BY_SECTION: Map<String, Row> = ROWS.filter { it.section.isNotEmpty() }.associateBy { it.section }
