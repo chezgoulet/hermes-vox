@@ -34,10 +34,12 @@ object AlphaBlock {
 
     /** The block, top to bottom. Presence first, as the panel lists it. The section tokens are
      *  [SettingsActivity]'s own (`SECTION_PRESENCE`, `SECTION_PHONE`); they are written out
-     *  here because that companion is private, and pinned by a test. */
+     *  here because that companion is private, and pinned by a test. A row that opens a screen
+     *  of its own still names its token: the door checks the same answer the row is dimmed by. */
     val ROWS: List<Row> = listOf(
         Row("presence", "row_grp_presence", AlphaGate.FeatureSet.PRESENCE),
         Row("phone", "row_grp_phone", AlphaGate.FeatureSet.PHONE_TOOLS),
+        Row("wake", "row_grp_wake", AlphaGate.FeatureSet.WAKE_WORD),
     )
 
     private val BY_SECTION: Map<String, Row> = ROWS.filter { it.section.isNotEmpty() }.associateBy { it.section }

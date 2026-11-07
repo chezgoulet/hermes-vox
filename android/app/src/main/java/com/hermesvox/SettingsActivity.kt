@@ -186,6 +186,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
         findViewById<android.view.View>(R.id.row_grp_presence)?.setOnClickListener { showSection(SECTION_PRESENCE) }
         findViewById<android.view.View>(R.id.row_grp_wake)?.setOnClickListener {
+            // The row is dimmed and takes no tap when its set is off; the door asks the same
+            // question anyway, so a stale tap (or a future caller) cannot start the screen.
+            if (!AlphaBlock.canOpen(prefs, "wake")) return@setOnClickListener
             startActivity(android.content.Intent(this, WakeEnrolActivity::class.java))
         }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
@@ -1421,7 +1424,7 @@ class SettingsActivity : AppCompatActivity() {
             refreshVoxRows()   // rule (a): the VOX.md rows follow the Presence switch
             findViewById<TextView>(R.id.set_presence_grpval)?.text =
                 if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE))
-                    "Alpha · select Presence in Alpha features at the top"
+                    "Alpha · select Presence in Alpha features above"
                 else when (presenceState()) {
                 PresenceGate.State.ON ->
                     if (prefs.getBoolean("er_presence", true))
@@ -1432,10 +1435,13 @@ class SettingsActivity : AppCompatActivity() {
                 PresenceGate.State.NO_MODEL -> "On · model not downloaded"
                 PresenceGate.State.CANNOT_START -> "On · model cannot start here"
             }
-            // Counting files only — no decryption on the Settings home.
+            // Counting files only — no decryption on the Settings home. Behind the gate, the
+            // line says why it is quiet instead of reporting takes nobody can use yet.
             findViewById<TextView>(R.id.set_wake_grpval)?.text =
-                "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
-                "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.WAKE_WORD))
+                    "Alpha · select Wake word in Alpha features above"
+                else "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
+                    "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
                 label("theme", "system") + " · " + label("layout_mode", "presence") + " · " +
                     VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label

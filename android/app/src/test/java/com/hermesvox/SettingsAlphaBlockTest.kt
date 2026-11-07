@@ -82,9 +82,41 @@ class SettingsAlphaBlockTest {
             assertTrue("${row.row} is missing from the layout", blockRows.contains(row.row))
             assertEquals("the row opens its own section", row.section, row.section.trim())
         }
-        // Presence and Phone tools are the sections the gate owns in this step.
-        assertEquals(listOf("row_grp_presence", "row_grp_phone"), tableRows)
-        assertEquals(setOf("presence", "phone"), AlphaBlock.ROWS.map { it.section }.toSet())
+        // Presence, Phone tools and the wake word are the sections the gate owns in this step.
+        assertEquals(listOf("row_grp_presence", "row_grp_phone", "row_grp_wake"), tableRows)
+        assertEquals(setOf("presence", "phone", "wake"), AlphaBlock.ROWS.map { it.section }.toSet())
+    }
+
+    /** With the gate off every gated row is inert: no tap, and no section opens behind it. */
+    @Test
+    fun withTheGateOffEveryRowInTheBlockIsInert() {
+        val off = AlphaGate.Reader { _, default -> default }   // nothing stored: a fresh install
+        for (row in AlphaBlock.ROWS) {
+            assertFalse(row.row, AlphaGate.allows(off, row.set))
+            assertFalse("${row.row} can still open", AlphaBlock.canOpen(off, row.section))
+        }
+    }
+
+    /** With the gate on and one set selected, only that set's section opens. */
+    @Test
+    fun withTheGateOnOnlyTheSelectedSetOpens() {
+        for (only in AlphaBlock.ROWS) {
+            val r = AlphaGate.Reader { key, _ ->
+                key == AlphaGate.KEY_MASTER || key == only.set.key
+            }
+            for (row in AlphaBlock.ROWS) {
+                assertEquals(row.row, row == only, AlphaBlock.canOpen(r, row.section))
+            }
+        }
+    }
+
+    /** An ungated section is untouched by the gate; it must not be dragged behind it. */
+    @Test
+    fun anOrdinarySectionAlwaysOpens() {
+        val off = AlphaGate.Reader { _, default -> default }
+        for (section in listOf("entity", "speech", "tts", "visuals", "about")) {
+            assertTrue(section, AlphaBlock.canOpen(off, section))
+        }
     }
 
     /** The screen asks [AlphaBlock] both questions — no second list to drift from. */

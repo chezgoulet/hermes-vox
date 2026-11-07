@@ -280,12 +280,12 @@ class AlphaGateTest {
      * The panel is drawn from [AlphaGate.FeatureSet.entries], so the list the owner sees is this
      * list: four sets, and no row left behind for the two that left Alpha.
      */
-    @Test fun the_panel_lists_four_sets_and_no_stale_row() {
+    @Test fun the_panel_lists_every_set_and_no_stale_row() {
         assertEquals(
-            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools"),
+            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools", "Wake word"),
             AlphaGate.FeatureSet.entries.map { it.label },
         )
-        assertEquals(4, AlphaGate.FeatureSet.entries.size)
+        assertEquals(5, AlphaGate.FeatureSet.entries.size)
         val gate = File(src, "AlphaGate.kt").readText()
         assertFalse(gate.contains("alpha_set_profiles"))
         assertFalse(gate.contains("alpha_set_sessions"))
