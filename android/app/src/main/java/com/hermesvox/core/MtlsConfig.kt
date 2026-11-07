@@ -316,6 +316,9 @@ object MtlsConfig {
         }
         editor.apply()
         invalidateCache()
+        // The stored value and the recorded failure describe the same origin; a write makes
+        // the old failure stale (it would otherwise label the newly chosen certificate).
+        clearFailure(origin)
     }
 
     /**
@@ -378,6 +381,10 @@ object MtlsConfig {
         clearFailure(origin)
         return null
     }
+
+    /** A certificate was chosen for [origin] (not yet saved): the picker's own "dismissed"
+     *  reason no longer describes the row. */
+    fun notePicked(origin: Origin) = clearFailure(origin)
 
     /** The certificate picker came back empty. Settings calls this so a dismissal is a
      *  named reason too, not a row that quietly says "None". */

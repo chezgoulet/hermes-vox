@@ -551,6 +551,7 @@ class SettingsActivity : AppCompatActivity() {
                                 currentAlias = alias
                                 chosenFor = target
                                 detailFor = null
+                                com.hermesvox.core.MtlsConfig.notePicked(target)
                             }
                             updateMtlsViews()
                             refreshAliasDetail()

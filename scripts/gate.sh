@@ -115,6 +115,14 @@ echo "== [3/6] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
 
+# The mTLS fixtures are test-only keys. "They are under src/test/resources" is a claim
+# about the source layout; this checks the ARTIFACT, so a packaging change that swept the
+# test tree into the APK would fail here instead of shipping a private key.
+apk="$(ls android/app/build/outputs/apk/debug/*.apk | head -n1)"
+key_material="$(unzip -l "$apk" | grep -Ei '\.(p12|pfx|jks|bks|keystore|pem)$' || true)"
+[ -z "$key_material" ] || gate_die "the APK contains key material:
+$key_material"
+
 echo "== [4/6] stream parity & mTLS verification harnesses =="
 # StreamParityTest replays testdata/stream/*.sse against the committed goldens.
 # A gate that passes because the harness silently stopped running is not a gate.
