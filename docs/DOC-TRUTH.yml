@@ -385,3 +385,60 @@
   doc: docs/RUNS-ROUTE.md
   file: android/app/src/main/java/com/hermesvox/core/Stream.kt
   match: 'event=route-fallback reason=no-runs-route'
+
+# ---- the shipping documents: the pins they teach are the pins the build uses ----
+
+- id: ship-gradle-pin
+  says: "gradle-8.12.1-bin.zip"
+  doc: docs/REPRODUCIBLE.md
+  file: android/gradle/wrapper/gradle-wrapper.properties
+  match: 'gradle-8\.12\.1-bin\.zip'
+
+- id: ship-unsigned-property
+  says: "hermesvox.unsigned"
+  doc: docs/REPRODUCIBLE.md
+  file: android/app/build.gradle
+  match: 'hasProperty\(.hermesvox\.unsigned.\)'
+
+- id: ship-runtime-aar-sha
+  says: "0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698"
+  doc: docs/REPRODUCIBLE.md
+  file: scripts/fetch-runtime.sh
+  match: 'SHA256="0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698"'
+
+- id: ship-ort-sha
+  says: "077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb"
+  doc: docs/REPRODUCIBLE.md
+  file: scripts/build-sherpa-from-source.sh
+  match: 'ORT_SHA256=077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb'
+
+- id: ship-ndk-pin
+  says: "28.2.13676358"
+  doc: docs/FDROID.md
+  file: scripts/build-sherpa-from-source.sh
+  match: 'NDK_VERSION=28\.2\.13676358'
+
+- id: ship-sherpa-commit-pin
+  says: "1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911"
+  doc: docs/FDROID.md
+  file: scripts/build-sherpa-from-source.sh
+  match: 'SHERPA_COMMIT=1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911'
+
+- id: ship-sherpa-source-property
+  says: "hermesvox.sherpaSource"
+  doc: docs/FDROID.md
+  file: android/app/build.gradle
+  match: 'findProperty\(.hermesvox\.sherpaSource.\)'
+
+- id: ship-allowed-signing-keys
+  says: "AllowedAPKSigningKeys"
+  doc: docs/FDROID.md
+  file: docs/fdroiddata/com.hermesvox.yml
+  match: 'AllowedAPKSigningKeys: [0-9a-f]{64}'
+
+- id: ship-no-baked-key
+  says: "HERMES_VOX_API_KEY"
+  doc: docs/RELEASE-PROCESS.md
+  file: android/app/build.gradle
+  match: 'C0 build guard FAILED: HERMES_VOX_API_KEY is set'
+
