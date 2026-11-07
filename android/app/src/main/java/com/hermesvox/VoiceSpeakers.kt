@@ -35,12 +35,23 @@ object VoiceSpeakers {
     fun countKey(engine: SherpaVoice): String = "tts_speaker_count_${engine.modelId}"
 
     /** Speaker counts shipped with the blessed models, used before an engine has
-     *  ever loaded (the numeric-entry bounds). SherpaTts refines them at load. */
+     *  ever loaded (the numeric-entry bounds, and whether the Speaker row is offered
+     *  at all). SherpaTts refines them at load from the engine's own report.
+     *
+     *  Per model, from each artifact's `.onnx.json` (`num_speakers`): LibriTTS-R 904,
+     *  Siwis 1, Tom 1, UPMC 2. UPMC is the one French voice with a second speaker —
+     *  reading it as 1 hid the row and made that voice unreachable. */
     fun knownCount(engine: SherpaVoice): Int = when (engine) {
         SherpaVoice.PIPER -> 904        // vits-piper-en_US-libritts_r-medium
         SherpaVoice.SUPERTONIC -> 10    // ten built-in voices
-        else -> 1                       // single-speaker Piper models
+        SherpaVoice.PIPER_SIWIS -> 1    // fr_FR-siwis-medium: num_speakers 1
+        SherpaVoice.PIPER_TOM -> 1      // fr_FR-tom-medium: num_speakers 1
+        SherpaVoice.PIPER_UPMC -> 2     // fr_FR-upmc-medium: num_speakers 2
     }
+
+    /** Whether this engine's model offers more than one voice — i.e. whether the
+     *  Settings Speaker row is worth showing. A one-voice model would be a no-op row. */
+    fun hasVoiceChoice(engine: SherpaVoice): Boolean = knownCount(engine) > 1
 
     /** The curated Piper voices offered by the Settings picker (8 of the model's 904).
      *

@@ -48,22 +48,34 @@ object ModelCatalog {
             "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
             "Speaks Hermes' replies aloud in a natural voice — fully offline"),
-        ModelSpec("piper-siwis", "Piper · fr-FR (Siwis, medium)", "tts", "vits-piper-fr_FR-siwis-medium.tar.bz2", 64.1,
-            "Piper fr-FR canonical Siwis medium · clear natural French voice (CC-BY-4.0)", true, 8,
+        ModelSpec("piper-siwis", "Piper · fr-FR (Siwis, medium)", "tts", "vits-piper-fr_FR-siwis-medium.tar.bz2", 67.2,
+            "Piper fr-FR canonical Siwis medium · clear natural French voice (CC-BY 4.0) — " +
+                "https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/siwis/medium/MODEL_CARD", true, 8,
             "375909aa30842b3a4efa10b1beb1d761af792960ae6873b4d53889f96c66195b", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2",
             "Speaks Hermes' replies aloud in French — natural, fully offline"),
-        ModelSpec("piper-tom", "Piper · fr-FR (Tom, medium)", "tts", "vits-piper-fr_FR-tom-medium.tar.bz2", 64.1,
-            "Piper fr-FR Tom medium · alternative French voice (CC0)", true, 9,
+        // Tom is AGPLv3 per the card shipped inside the tarball (fr_FR/tom/medium/MODEL_CARD) —
+        // it is NOT CC0. Tom stays: the weights are downloaded at runtime and never linked into
+        // the app, so AGPL on a downloaded model is acceptable — it just has to be said straight.
+        ModelSpec("piper-tom", "Piper · fr-FR (Tom, medium)", "tts", "vits-piper-fr_FR-tom-medium.tar.bz2", 67.2,
+            "Piper fr-FR Tom medium · alternative French voice (AGPLv3) — " +
+                "https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/tom/medium/MODEL_CARD", true, 9,
             "3d8258ef8466b5d5f2cc46c06e1415d3d01c9cbaeed8b6d5b3d152073672472c", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tom-medium.tar.bz2",
             "Speaks Hermes' replies aloud in French — alternative voice, fully offline"),
-        ModelSpec("piper-upmc", "Piper · fr-FR (UPMC, medium)", "tts", "vits-piper-fr_FR-upmc-medium.tar.bz2", 76.7,
-            "Piper fr-FR UPMC medium · French academic voice (CC-BY-NC-SA-4.0)", true, 10,
+        // UPMC is CC BY-SA 4.0 per its card — NOT the NC variant the entry used to claim — and it
+        // is a 2-speaker model (`num_speakers: 2` in fr_FR-upmc-medium.onnx.json), so both voices
+        // are reachable (VoiceSpeakers.knownCount).
+        ModelSpec("piper-upmc", "Piper · fr-FR (UPMC, medium)", "tts", "vits-piper-fr_FR-upmc-medium.tar.bz2", 80.4,
+            "Piper fr-FR UPMC medium · French academic voice, 2 voices (CC BY-SA 4.0) — " +
+                "https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/upmc/medium/MODEL_CARD", true, 10,
             "e9830a331a16f6cc5ef3116a287065e015d3495c3f56b974889a266da7f89a7f", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-upmc-medium.tar.bz2",
             "Speaks Hermes' replies aloud in French — fully offline"),
-        ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 80.3,
+        // sizeMB is decimal MB (bytes / 1_000_000), not MiB: the value below is the measured
+        // Content-Length of the asset named above, re-measured 2026-11-06 (the previous 80.3
+        // was 5.2% low, outside the 5% band ModelMetadataTest enforces).
+        ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 84.7,
             "On-device neural voice · fast, natural (model: OpenRAIL-M)", true, 2,
             "8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259", true,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2",
@@ -80,16 +92,19 @@ object ModelCatalog {
             "Offline STT · best accuracy, heaviest", true, 5,
             "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a", false, "",
             "Turns your speech into text on-device — most accurate, heavier"),
-        ModelSpec("whisper-tiny-multi", "Whisper tiny (multilingual)", "stt", "sherpa-onnx-whisper-tiny.tar.bz2", 110.8,
-            "Offline STT · multilingual, fastest and lightest", true, 11,
+        // The multilingual sherpa-onnx archives ship NO LICENSE/MODEL_CARD (verified with a full
+        // `tar -tjf` of each): the licence is the upstream project's — Whisper's "code and model
+        // weights are released under the MIT License" (openai/whisper README + LICENSE).
+        ModelSpec("whisper-tiny-multi", "Whisper tiny (multilingual)", "stt", "sherpa-onnx-whisper-tiny.tar.bz2", 116.2,
+            "Offline STT · multilingual, fastest and lightest (MIT · Whisper weights; the archive ships no model card)", true, 11,
             "c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1", false, "",
             "Turns multilingual speech into text on-device — fast, supports French"),
-        ModelSpec("whisper-base-multi", "Whisper base (multilingual)", "stt", "sherpa-onnx-whisper-base.tar.bz2", 197.9,
-            "Offline STT · multilingual balanced default", true, 12,
+        ModelSpec("whisper-base-multi", "Whisper base (multilingual)", "stt", "sherpa-onnx-whisper-base.tar.bz2", 207.6,
+            "Offline STT · multilingual balanced default (MIT · Whisper weights; the archive ships no model card)", true, 12,
             "911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de", false, "",
             "Turns multilingual speech into text on-device — balanced accuracy and speed"),
-        ModelSpec("whisper-small-multi", "Whisper small (multilingual)", "stt", "sherpa-onnx-whisper-small.tar.bz2", 609.8,
-            "Offline STT · multilingual best accuracy, heavier", true, 13,
+        ModelSpec("whisper-small-multi", "Whisper small (multilingual)", "stt", "sherpa-onnx-whisper-small.tar.bz2", 639.4,
+            "Offline STT · multilingual best accuracy, heavier (MIT · Whisper weights; the archive ships no model card)", true, 13,
             "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6", false, "",
             "Turns multilingual speech into text on-device — most accurate, heavier download"),
         // Parakeet-TDT 0.6B v2 (NVIDIA, CC-BY-4.0), the sherpa-onnx int8 packaging;

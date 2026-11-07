@@ -57,10 +57,25 @@ class VoiceSpeakersTest {
         assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER_SIWIS, 1))
     }
 
-    @Test fun single_speaker_piper_voices_have_count_one() {
+    @Test fun the_french_voices_report_their_real_speaker_counts() {
+        // From each artifact's .onnx.json `num_speakers`: Siwis 1, Tom 1, UPMC 2.
         assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_SIWIS))
         assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_TOM))
-        assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_UPMC))
+        assertEquals(2, VoiceSpeakers.knownCount(SherpaVoice.PIPER_UPMC))
+    }
+
+    @Test fun upmc_offers_its_second_voice() {
+        // UPMC is a 2-speaker model. Reading it as single-speaker hid the Speaker row and
+        // made voice 1 unreachable, so both the row and the id must be available.
+        assertTrue(VoiceSpeakers.hasVoiceChoice(SherpaVoice.PIPER_UPMC))
+        assertFalse(VoiceSpeakers.hasVoiceChoice(SherpaVoice.PIPER_SIWIS))   // 1 speaker: no row
+        assertFalse(VoiceSpeakers.hasVoiceChoice(SherpaVoice.PIPER_TOM))
+        val store = MapPrefs()
+        assertEquals(2, VoiceSpeakers.speakerCount(store, SherpaVoice.PIPER_UPMC))
+        assertEquals(1, VoiceSpeakers.clamp(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_UPMC)))
+        VoiceSpeakers.save(store, SherpaVoice.PIPER_UPMC, 1)
+        assertEquals(1, VoiceSpeakers.resolve(store, SherpaVoice.PIPER_UPMC,
+            VoiceSpeakers.speakerCount(store, SherpaVoice.PIPER_UPMC)))
     }
 
     @Test fun default_is_clamped_by_a_tiny_engine() {

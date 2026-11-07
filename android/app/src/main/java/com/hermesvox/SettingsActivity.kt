@@ -1186,7 +1186,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun syncSpeakerRow() {
         val row = findViewById<LinearLayout>(R.id.row_tts_speaker) ?: return
         val engine = ttsVoiceEngine()
-        if (engine == null || VoiceSpeakers.knownCount(engine) <= 1) { row.visibility = android.view.View.GONE; return }
+        if (engine == null || !VoiceSpeakers.hasVoiceChoice(engine)) { row.visibility = android.view.View.GONE; return }
         row.visibility = android.view.View.VISIBLE
         findViewById<TextView>(R.id.set_tts_speaker_title).text = when (engine) {
             SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
@@ -1220,8 +1220,24 @@ class SettingsActivity : AppCompatActivity() {
         when (engine) {
             SherpaVoice.SUPERTONIC -> pickSupertonicSpeaker()
             SherpaVoice.PIPER -> pickPiperSpeaker()
-            else -> {}
+            // The small French voices ship a handful of ids (Siwis/Tom 1, UPMC 2), so the
+            // dialog can list every one of them by number instead of a curated subset.
+            else -> pickNumberedSpeaker(engine)
         }
+    }
+
+    /** Every built-in voice of a model with only a few of them (fr-FR UPMC: 2). */
+    private fun pickNumberedSpeaker(engine: SherpaVoice) {
+        val count = VoiceSpeakers.speakerCount(speakerStore(), engine)
+        val cur = VoiceSpeakers.resolve(speakerStore(), engine, count)
+        val labels = (0 until count).map { speakerLabel(engine, it) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (${engine.displayName})")
+            .setSingleChoiceItems(labels, cur) { d, which ->
+                d.dismiss()
+                saveSpeaker(engine, which)
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun pickSupertonicSpeaker() {
