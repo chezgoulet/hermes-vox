@@ -237,18 +237,15 @@ class SettingsHintsTest {
     }
 
     /**
-     * The UI/UX pass's grouping, pinned. The home list runs in the order a person sets the app
-     * up — who it talks to, how it hears, how it speaks, how it looks, the phone, the insides —
-     * and every home row reaches its settings in one step.
+     * The owner's order (2026-11-06): the ordinary sections, then the alpha block under its
+     * master switch, then About. Each home row reaches its settings in one step.
      */
     @Test fun theHomeListRunsInSetUpOrderAndEachRowIsOneStep() {
         val home = allElements.filter { sectionOf(it) == "grp_list" }
             .mapNotNull { it.id() }.filter { it.startsWith("row_grp_") }
-        // #453: Phone Tools sits with the behaviour sections and before the insides: what the
-        // agent may do with the phone is not a diagnostic.
-        assertEquals(listOf("row_grp_alpha", "row_grp_entity", "row_grp_speech", "row_grp_wake",
-            "row_grp_tts", "row_grp_models", "row_grp_presence", "row_grp_visuals",
-            "row_grp_assistant", "row_grp_phone", "row_grp_about"), home)
+        assertEquals(listOf("row_grp_entity", "row_grp_speech", "row_grp_models", "row_grp_tts",
+            "row_grp_visuals", "row_grp_alpha", "row_grp_presence", "row_grp_phone",
+            "row_grp_wake", "row_grp_assistant", "row_grp_about"), home)
         val source = activityFile.readText()
         // Voice models is the store: its row opens it, there is no section in between.
         assertTrue(source.contains("R.id.row_grp_models)?.setOnClickListener { openModelsStore() }"))

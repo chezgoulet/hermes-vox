@@ -311,15 +311,23 @@ class AlphaGateTest {
         assertTrue(vc.contains("listeningAlpha && micBool(SemanticEndpoint.KEY"))
     }
 
-    @Test fun the_master_switch_is_the_first_row_of_settings() {
+    @Test fun the_master_switch_sits_above_the_alpha_block_and_not_at_the_top() {
         val layout = File("src/main/res/layout/activity_settings.xml").readText()
         val list = layout.substringAfter("@+id/grp_list\"")
-        assertTrue(list.indexOf("@+id/row_grp_alpha\"") in 0 until list.indexOf("@+id/row_grp_models\""))
+        val masterAt = list.indexOf("@+id/row_grp_alpha\"")
+        assertTrue("the ordinary sections come first", masterAt > list.indexOf("@+id/row_grp_entity\""))
+        assertTrue("the switch is above the block it governs",
+            masterAt < list.indexOf("@+id/row_grp_presence\""))
     }
 
     @Test fun settings_dims_every_alpha_row() {
         val s = File(src, "SettingsActivity.kt").readText()
-        for (row in listOf("row_grp_presence", "row_er_hears", "row_mic_continuous", "row_mic_semantic")) {
+        // The block's rows are dimmed from the one table, so none can be forgotten.
+        assertTrue(s.contains("for (row in AlphaBlock.ROWS)"))
+        assertTrue(s.contains("gate(it, allowed)"))
+        assertTrue(AlphaBlock.ROWS.any { it.row == "row_grp_presence" })
+        // The Hearing rows behind sets that are not rows of the block.
+        for (row in listOf("row_er_hears", "row_mic_continuous", "row_mic_semantic")) {
             assertTrue(row, s.contains("gate(R.id.$row,"))
         }
     }

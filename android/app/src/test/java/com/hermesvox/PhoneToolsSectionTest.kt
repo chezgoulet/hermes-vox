@@ -114,9 +114,9 @@ class PhoneToolsSectionTest {
             }
         }
 
-        // After the behaviour sections, before the insides.
+        // Inside the alpha block, before About.
         val order = allElements.filter { it.id()?.startsWith("row_grp_") == true }.mapNotNull { it.id() }
-        assertTrue("Phone Tools comes after the assistant", order.indexOf("row_grp_phone") > order.indexOf("row_grp_assistant"))
+        assertTrue("Phone Tools sits in the alpha block", order.indexOf("row_grp_phone") > order.indexOf("row_grp_alpha"))
         assertTrue("Phone Tools comes before About & Diagnostics", order.indexOf("row_grp_phone") < order.indexOf("row_grp_about"))
         val phoneAt = source.indexOf("@+id/sec_phone")
         val aboutAt = source.indexOf("@+id/sec_about")
@@ -318,10 +318,15 @@ class PhoneToolsSectionTest {
 
     @Test
     fun withTheGateOffTheRowIsInertAndTheSectionDoesNotOpen() {
-        // Dimmed and taking no tap, exactly as the grant row behaved inside About.
+        // Dimmed and taking no tap: the row is in the block, and the block drives every row's
+        // gate ([AlphaBlock]).
         assertTrue(
-            "the section row must be gated",
-            settings.contains("gate(R.id.row_grp_phone, phoneTools)"),
+            "the section row must be in the alpha block",
+            AlphaBlock.ROWS.any { it.row == "row_grp_phone" },
+        )
+        assertTrue(
+            "the block's rows are gated from one table",
+            settings.contains("for (row in AlphaBlock.ROWS)"),
         )
         assertTrue(
             "the setup row inside it must be gated too",
@@ -333,18 +338,14 @@ class PhoneToolsSectionTest {
         )
         // A dimmed row is not enough: the section itself refuses to open while the set is off,
         // so a banner extra, the debug harness or a stale link cannot get around the gate.
-        val guardAt = settings.indexOf("section == SECTION_PHONE &&")
-        val modelsAt = settings.indexOf("if (section == SECTION_MODELS) { openModelsStore(); return }")
-        assertTrue("the section has no gate of its own", guardAt in 1 until modelsAt)
         assertTrue(
-            "the guard names the feature set",
-            settings.substring(guardAt, guardAt + 200)
-                .contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)"),
+            "the section's own gate is the table's answer",
+            settings.contains("if (!AlphaBlock.canOpen(prefs, section)) return"),
         )
         // And it closes under the owner if the set is switched off while he is in it.
         assertTrue(
             "the section closes when the gate goes off",
-            settings.contains("if (!phoneTools && currentSection == SECTION_PHONE) showGroupList()"),
+            settings.contains("if (!allowed && currentSection == row.section) showGroupList()"),
         )
         // The row says why it is off, in the one line every Phone-tools surface uses.
         assertEquals(
