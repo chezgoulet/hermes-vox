@@ -133,6 +133,66 @@ class SettingsAlphaBlockTest {
     }
 
     /**
+     * The owner's words are about where the block sits, not only about set membership: the
+     * block is the last thing before About in the view hierarchy. The home list's own children
+     * are the sections, so this reads them directly — a gated row that drifted into another
+     * wrapper or into a section's container would still flatten into the right order and pass a
+     * list-level check.
+     */
+    @Test
+    fun theBlockIsTheLastThingBeforeAboutInTheHierarchy() {
+        val list = elements().first { it.id() == "grp_list" }
+        val sections = (0 until list.childNodes.length)
+            .mapNotNull { list.childNodes.item(it) as? Element }
+            .mapNotNull { it.id() }
+            .filter { it.startsWith("row_grp_") }
+
+        assertEquals(
+            "the block, then About, ends the home list",
+            AlphaBlock.ROWS.map { it.row } + AlphaBlock.ABOUT_ROW,
+            sections.takeLast(AlphaBlock.ROWS.size + 1),
+        )
+        // The switch that governs the block is the direct sibling immediately above it.
+        assertEquals(
+            "the master switch is the row immediately above the block",
+            AlphaBlock.MASTER_ROW,
+            sections[sections.size - AlphaBlock.ROWS.size - 2],
+        )
+
+        // A gated row lives in the block and nowhere else — drawn once, and parented by the home
+        // list rather than by another section that would still show it.
+        val occurrences = elements().mapNotNull { it.id() }.groupingBy { it }.eachCount()
+        val parents = mutableMapOf<String, String?>()
+        fun walk(e: Element, parent: String?) {
+            e.id()?.let { parents[it] = parent }
+            val kids = e.childNodes
+            for (i in 0 until kids.length) (kids.item(i) as? Element)?.let { walk(it, e.id() ?: parent) }
+        }
+        walk(document.documentElement, null)
+        for (row in AlphaBlock.ROWS) {
+            assertEquals("${row.row} is drawn once", 1, occurrences[row.row])
+            assertEquals("${row.row} escaped the home list", "grp_list", parents[row.row])
+        }
+    }
+
+    /**
+     * Moving the switch is only half the change: a surface that still sends the owner to the top
+     * of Settings for it is a lie. Two Phone tools' off states were user-facing strings saying
+     * exactly that, so the shot is pinned, not just corrected.
+     */
+    @Test
+    fun noSurfaceSendsTheOwnerToTheTopOfSettings() {
+        val surfaces = File("src/main").walkTopDown()
+            .filter { it.isFile && (it.extension == "kt" || it.extension == "xml") }
+        for (f in surfaces) {
+            assertFalse(
+                "the gate's old position is still described in ${f.name}",
+                f.readText().contains("top of Settings"),
+            )
+        }
+    }
+
+    /**
      * #329, the owner's rename: the row is an instruction, not a state — a tap asks Android for
      * the role — so it reads "Set Digital Assistant to Hermes Vox". The old name is gone from
      * everything the app puts in front of a person.

@@ -212,7 +212,7 @@ object PhoneToolsView {
 
     /** The next step for the state, in the owner's words. Never a dead end. */
     fun setupNext(state: PhoneSetup.State, allowed: Boolean = true): String = when {
-        !allowed -> "Select Phone tools in Alpha features at the top of Settings to use this."
+        !allowed -> "Select Phone tools in Alpha features, the block just above About in Settings, to use this."
         state == PhoneSetup.State.IDLE -> NOT_SET_UP_MEANING
         state == PhoneSetup.State.WAITING -> WAITING_MEANING
         state == PhoneSetup.State.CONNECTED ->

@@ -531,7 +531,7 @@ class PhoneToolsSheet(
             body(
                 col,
                 "Phone tools is off, so there is no token, no listener and no config to copy. " +
-                    "Select Phone tools in Alpha features at the top of Settings.",
+                    "Select Phone tools in Alpha features, the block just above About in Settings.",
                 dim = true,
             )
             return

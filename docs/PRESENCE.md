@@ -29,10 +29,10 @@ is true. **The being** is the voice you hear on the phone: the soul's output, de
   its humour). The phone holds a read-only mirror per profile. The app asks the agent to author it
   the first time a call needs one; a call with no valid VOX.md for the active profile runs without
   Presence rather than speaking a stale or generic soul.
-- **The alpha gate open.** **Alpha features** is one master switch at the very top of Settings,
-  off by default. A **set** is one unfinished feature behind it; a set runs only when the master is
-  on and that set is selected. Presence is the first set, and its own switch still has to be on.
-  On a fresh install nothing alpha runs.
+- **The alpha gate open.** **Alpha features** is one master switch immediately above the alpha
+  block at the end of Settings, off by default. A **set** is one unfinished feature behind it; a set
+  runs only when the master is on and that set is selected. Presence is the first set, and its own
+  switch still has to be on. On a fresh install nothing alpha runs.
 
 Continuous listening belongs to Presence: it is how the being hears the call, so its set requires
 the Presence set. Turn-taking's acknowledgements also need continuous listening; its interruption
