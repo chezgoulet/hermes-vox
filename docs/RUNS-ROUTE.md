@@ -1,214 +1,224 @@
-# The `/v1/runs` turn route
+# The turn route: from speech to audio
 
-Status: **the default (#404), device pass outstanding.** `StreamRoute.active` is
-`TurnRoute.RUNS`. A gateway that answers `POST /v1/runs` with **404** has no such
-route; that profile's turns fall back to `/v1/responses` (below). The cut waits on the
-device pass below (D29).
+A **turn** is one thing you said and the answer to it. On this route the app submits that turn to
+the gateway as a **run**: a unit of work with an id, a status, an ordered event stream and a stop
+endpoint. The app admits the run, follows its events, turns the text into speech, and ends the turn
+on the run's terminal event. This is the route every voice turn takes; the alternative,
+`/v1/responses`, is only used for a gateway that does not have runs.
 
-## Why
+## What you need
 
-`POST /v1/responses` has no approval notifier on Hermes 0.22.6: a flagged command
-resolves from `approvals.unattended_mode` with no event reaching the phone
-(`docs/NOTES-api-events.md`, `docs/APPROVALS-ACCEPTANCE.md`). `/v1/runs` registers the
-notifier, so it is the route that can carry an approval to the device. It also has a
-barge-in the run itself learns about (`POST /v1/runs/{id}/stop`), `clarify.request`
-control events, and a sequence-numbered event backlog (`GET /v1/runs/{id}/events`) a
-dropped socket can reattach to.
+- A Hermes gateway whose API server serves `POST /v1/runs`. The route is chosen automatically;
+  there is no setting for it.
+- The gateway's API key and a saved profile, as for any turn.
+- Nothing else. A gateway without the route is detected on the first admission and remembered for
+  that profile (see **The 404 fallback**).
 
-## Where the switch lives
+Two terms used throughout: an **event** is one JSON record on the run's stream — a token of text, a
+tool starting, an approval request, a terminal result. An **approval** is the gateway stopping to
+ask whether it may perform a consequential action; the request arrives as an event and the answer
+goes back to the run.
 
-`android/app/src/main/java/com/hermesvox/core/TurnRoute.kt`:
+## The shape of a turn
 
-```kotlin
-internal object StreamRoute {
-    @Volatile
-    var active: TurnRoute = TurnRoute.RUNS        // #404
-    fun routeFor(hasSessionKey: Boolean): TurnRoute =
-        if (requiresResponses()) TurnRoute.RESPONSES else active
-}
-```
+1. **Submit.** The caller's speech is transcribed (or the text is typed) and handed to
+   `HermesSession`. A voice turn carries the voice register and a per-request reasoning effort in
+   the request's ephemeral `instructions`, plus the presence context when Presence is on; the
+   caller's words go as `input`, byte-exact. `Streams.start` asks `StreamRoute.routeFor` for the
+   route **once**, and that route is fixed for the life of the turn: a settings flip mid-turn
+   cannot move a live stream between vocabularies. The route is `RUNS` — **the default (#404)**.
 
-`Streams.start` and `HermesSession.turnStored` read `routeFor` once per turn; tests
-set and restore `active`. Nothing above `HermesSession` turns a route into a different
-wire vocabulary; the controller asks the session for the route only to decide what
-abandoning a turn means.
+2. **Admit.** `POST /v1/runs` carries `model`, `input`, `instructions`, the optional `provider`,
+   the client `session_id`, and optional `model_options.reasoning`. It also carries one
+   **`Idempotency-Key`** for the turn, so a lost reply can be retried without starting the work
+   twice. The gateway answers **202** with `{run_id}` (200 is accepted from older builds). The run
+   id and its stop action are bound in one atomic step with the cancellation check, so a barge-in
+   landing at any instant either sees the stop or is seen by the reader — never neither.
 
-## A gateway without `/v1/runs`
+3. **Subscribe.** `GET /v1/runs/{id}/events` streams the run's events, each with a sequence number.
+   A reattach sends `?last_seq=N` and receives exactly what it missed. The reader translates the
+   runs vocabulary into the event shapes the rest of the app already renders.
 
-An older gateway answers `POST /v1/runs` with **404**. That is the only answer treated as
-"this host has no such route": the admission catches exactly that status, remembers the
+4. **Render and speak.** `message.delta` appends text to the reply and feeds the voice; tool events
+   add the `◆ tool` markers the transcript shows; `message.interim` carries the mind's own progress
+   commentary as an aside.
+
+5. **End.** `run.completed` (or `done`) is the terminal event and settles the turn; a failed run
+   that had already produced text becomes the app's "incomplete" answer — what was said is still
+   the answer. The done poll retires the stream.
+
+6. **Report.** The app's turn ending is the audio: the reply is spoken, or a failed or empty turn is
+   ended with one repair line. A turn the caller cut is not repaired — they know they cut it.
+
+## What the events become
+
+The translation lives in `core/Stream.kt` (`dispatchRun`). Both routes write the same stream state,
+so every consumer above the session is route-blind.
+
+| runs wire event | what the app does |
+|---|---|
+| `message.delta` (`assistant.delta` accepted) | reply text, preview, and the stream into TTS |
+| `message.interim` (`assistant.commentary` accepted) | a commentary aside: logged, and spoken through the working-line guards when the narration voice is not `silent` and the reply has not started. `already_streamed: true` suppresses the copy that already went out as answer deltas |
+| `tool.started` | tool marker and tool name, plus the gateway's one-line `preview` |
+| `tool.completed` / `tool.failed` | the tool-done marker; `error=true` is the same fact |
+| `tool.progress`, `reasoning.available` | ignored by today's consumers; never enters the reply |
+| `run.completed` / `done` | terminal: settle the turn; the terminal `output` is the whole answer when no text streamed |
+| `run.failed` with partial text, `run.cancelled`, `run.interrupted` with text | the app's "incomplete": whatever was said is the answer |
+| `run.failed` / `error` | the turn fails with the gateway's reason |
+| `approval.request` | the approval card; the answer goes to `/v1/runs/{id}/approval` |
+| `clarify.request`, `clarify.settled`, `approval.responded`, `approval.settled`, `run.steered` | pass through to the app, which has no surface for them yet; a clarify is never mistaken for an approval |
+
+## The 404 fallback, and why it is sticky
+
+A gateway from before the runs API answers `POST /v1/runs` with **404**. That is the only answer
+treated as "this host has no such route". The admission catches exactly that status, remembers the
 answer for the active profile, logs
 
 ```
 event=route-fallback reason=no-runs-route profile=<name>
 ```
 
-and retries the same turn **once** on `/v1/responses`. The profile is remembered in
-`route_no_runs_profiles` (`RouteChoice`), so the probe is paid once and a later turn — or
-a later launch with the same profile — starts on responses. A profile switch loads that
-profile's own answer, so one host's fallback never leaks into another.
+and retries **the same turn once** on `/v1/responses`. Both readers fill the same stream state, so
+nothing above the session can tell the two apart except that log line.
 
-Every other answer is a real error and surfaces exactly as before: **401, 409, 429, 500
-and a transport failure never fall back**, because a bad key hidden behind another route
-is worse than a visible failure. A profile whose admission succeeded keeps riding
-`/v1/runs`.
+The answer is persisted per profile (`route_no_runs_profiles`) and loaded when that profile is
+connected. The probe is therefore paid once per profile, not once per turn; a later turn — or a
+later launch with the same profile — starts on responses. A profile switch loads that profile's own
+answer, so one host's fallback never leaks into another. That is why the fallback is sticky: a
+per-turn probe would send two requests for every turn against an old gateway.
 
-## The scope requirement (lifted in 0.9.1, H2)
+A 404 is also how a host answers a `/p/<name>` profile it does not serve. That is a fact about the
+address, not about the route, so it is reported as an error and never remembered as a fallback.
 
-A run has no response id. With neither a declared `X-Hermes-Session-Key` nor a body
-`session_id` the gateway keys the run's session by its own `run_id`
-(`api_server_runs.py`: `session_id = selected_session_id or run_id`) — every turn would
-be a new conversation. Until the 0.9.1 review this kept an unscoped install (the scope is
-**blank by default**: Onboarding, `SessionScope`) on `/v1/responses`, with no approval
-card.
+**Every other answer is a real error and never falls back.** 401, 409, 429, 500 and a transport
+failure surface as the turn's error, because a bad key hidden behind another route is worse than a
+visible failure. A profile whose admission succeeded keeps riding `/v1/runs`.
 
-The run body now carries the session's own client `session_id` (see the gaps below), so
-the conversation no longer depends on the scope. **Every install rides runs** when its
-gateway has the route; a gateway that answers 404 on admission uses the fallback above.
-The scope only decides long-term memory: with no key, memory follows the transcript,
-exactly as an unscoped `/v1/responses` conversation did.
+## Talking over the reply: the stop
 
-## The barge-in (#404)
+A barge-in cuts the voice first, and the app then cancels the stream. On this route the events
+connection is only a subscriber: closing it does **not** stop the run. `Streams.cancel` posts
+`POST /v1/runs/{id}/stop` with the same bearer and scope, off the drawing thread.
 
-- The run id and its stop are bound **atomically** with the cancel check
-  (`StreamState.bindRun`): a barge-in landing at any instant either sees the stop or is
-  seen by the reader — never neither.
-- A barge-in **does not cut the admission**. Once `POST /v1/runs` is sent the gateway may
-  already have made the run; cutting it would lose the only id that can stop it. The
-  admission finishes (bounded by the idle timeout, on the daemon reader, with the stream
-  already retired) and the run it names is stopped; no events are subscribed for it.
-- **A lost admission reply is retried once** (0.9.1 review H4). Each turn carries one
-  `Idempotency-Key` (`StreamState.idempotencyKey`). When the reply to a sent
-  `POST /v1/runs` is lost (a reset, or no 202 before the idle timeout), the identical
-  request is sent once more; the gateway replays the original `run_id`
-  (`Idempotency-Replayed: true`) instead of starting the turn twice, and that id is bound
-  or stopped as usual — on a cancelled turn too.
-- **A lost events stream never walks away from the run** (0.9.1 review H3). After the
-  one immediate reattach, the reader reads `GET /v1/runs/{id}` (after 1 s, 2 s, 4 s): a
-  terminal status ends the turn, a live one (`running`, `waiting_for_approval`, …) is
-  reattached from the last seq. When the rounds are spent the run is **stopped**. Only
-  when neither the status nor the stop can be had does the done poll say
-  `run_end:"lost"` — and that, not the loop's `done` flag, is what keeps a pending
-  approval card on screen (`TurnApprovalHold.runEnded`).
-- **A truncated replay never leaves a hole in the answer** (0.9.1 review L3). If the
-  gateway no longer retains every event we missed, it says so with `replay.truncated`
-  (`oldest_retained_seq`). The replayed deltas then have a hole, so the reader does not
-  present them as the reply: the terminal `run.completed.output` is the whole answer and
-  replaces the gapped text (tool markers kept). If the terminal event carries no text,
-  the turn fails honestly rather than speaking the prefix and suffix around the hole.
-- `POST /v1/runs/{id}/stop` goes through the stream's own client (same bearer, same
-  scope), off-thread. 200, 404 `run_not_found` and 409 `run_not_active` all mean there is
-  nothing left to stop; nothing about the stop is ever thrown to the caller.
-- **A turn with no clock** (the one-button phone setup) rides the same route with
-  `Streams.startPersistent` (`StreamState.keepRun`). On a drop it reattaches to the
-  **same** run — `last_seq` first, then `GET /v1/runs/{id}` — for as long as the gateway
-  says the run is alive, and it never posts `/stop`. Only `Streams.cancel` ends it,
-  which is the owner stopping the attempt or the sheet going away. This is the one
-  route where the ordinary 120 s turn ceiling would have cut a working run in half.
+- A barge-in **does not cut the admission**. Once `POST /v1/runs` has been sent the gateway may
+  already have made the run; cutting the connection would lose the only id that can stop it. The
+  admission finishes (bounded by the 60 s idle timeout), and the run it names is stopped. No events
+  are subscribed for it.
+- A **lost admission reply is retried once**. When the reply to a sent `POST /v1/runs` is lost —
+  a reset, or no 202 before the idle timeout — the identical request is sent again with the same
+  `Idempotency-Key`; the gateway replays the original `run_id` (`Idempotency-Replayed: true`)
+  instead of doing the work twice. That id is bound, or stopped on a cancelled turn, like any other.
+- **The stop is never an error for the caller.** A 2xx is the stop; 404 `run_not_found` (the
+  record aged out) and 409 `run_not_active` (another gateway process) both mean there is nothing
+  left to stop. A dead gateway or any other answer is the same to the caller: the turn is already
+  retired and the mic is already theirs.
 
-- `RunsStreamTest` pins each of these; `LiveGatewayTest` asserts the stop reaches the
-  (fake) gateway on a barge-in.
+## Approvals arriving mid-run
 
-## The mapping (runs wire → app vocabulary → consumer)
+The run can stop in `waiting_for_approval` and emit:
 
-The translation lives in `core/Stream.kt` (`dispatchRun` / `normalizeRunEvent`). Both
-readers write the same `StreamState`, and every event the app sees is the vocabulary
-it already renders.
+```
+approval.request { run_id, request_id?, command (already redacted), description?,
+                   reason?, choices: [once|session|always|deny] }
+```
 
-| Responses event | runs event (0.22.6) | Reader emits | What the app does |
-|---|---|---|---|
-| `response.created` | *(admission 202 `{run_id}`)* | `response.created` | dev log `// entity responding…` |
-| `response.output_text.delta` | `message.delta` (`assistant.delta` accepted) | `response.output_text.delta` | `onDelta` → preview text, `streamFeed` → TTS; appended to the reply transcript |
-| `response.output_item.added` (message, phase=commentary) + `response.output_item.done` | `message.interim` (`assistant.commentary` accepted) | `response.output_item.done` (commentary) | dev log `// entity: …` — the presence aside; never spoken |
-| `response.output_item.added` (function_call) | `tool.started` | `response.output_item.added` (`function_call`) | dev log `◆ tool: name …`, `onTool(name, args)`, `[tool:name]` marker |
-| `response.output_item.added` (function_call_output) | `tool.completed` / `tool.failed` | `response.output_item.added` (`function_call_output`) | dev log `◆ tool · …`, `onToolOutput`, `[tool-done]` marker |
-| *(no equivalent)* | `tool.progress`, `reasoning.available` | same names (unknown to consumers) | ignored by today's consumers; never enters the reply |
-| `response.completed` | `run.completed` (`done` accepted) | `response.completed` | turn settles; done poll carries the reply |
-| `response.incomplete` | `run.failed` with `partial: true` (or `run.cancelled` / `run.interrupted` with text) | `response.incomplete` | done + whatever was said is the answer |
-| `response.failed` | `run.failed` / `error` | `response.failed` | failure reason surfaced; the controller falls back to assembled text |
-| `approval.request` | `approval.request` (identical payload) | `approval.request` | `ApprovalGate` card; answer posted to `/v1/runs/{id}/approval` |
-| *(none)* | `approval.responded`, `approval.settled`, `clarify.request`, `clarify.settled`, `run.steered` | same names | no consumer yet; clarify is surfaced, not rendered |
+The request is a card in the app. The gateway's `choices` list is authoritative: the app renders
+exactly what was offered and always makes `deny` available, even when the list is malformed. A
+session-authority gateway may add a `prompt_id` and an `execution_generation`; the app echoes the
+generation only when the event carried one.
 
-Deliberate gaps:
+The answer is `POST /v1/runs/{id}/approval` with `{choice, request_id}`, posted off the main
+thread. One request is answered once: the first answer removes it and records its key, so a double
+tap, a duplicate voice match or a late timeout is a local no-op, never a second POST. The only
+automatic path is the timeout, and it always chooses `deny`; there is no auto-approve. A spoken
+answer is a whole short utterance (at most three words), never a substring search: "I'm not sure"
+and "where does that go" are not answers, and only a plain no denies. A positive answer takes the
+least privilege the gateway offered (`once` before `session` before `always`).
 
-- **No response id.** A run has none (the terminal event carries `output`, `usage`,
-  `runtime`, not an id). The runs body therefore omits `previous_response_id`. The
-  conversation is a **client-owned `session_id`** in the body (0.9.1 review H2), which
-  the gateway ranks above `X-Hermes-Session-Key` (`api_server_runs.py`: body
-  `session_id` > response chain > declared key > `run_id`). The key stays the
-  long-term-memory scope; the `session_id` is the transcript. `HermesSession` makes one
-  per session object and rotates it in `resetConversation` (`RESET_CHAIN`), so `/new`,
-  a new call and a profile switch start a fresh transcript. A stored turn (`/compress`,
-  the VOX.md directive) rides `/v1/runs` with the same id, because `/v1/responses`
-  cannot address a body `session_id`. `lastID` is left untouched by a runs turn — it
-  names a stored `/v1/responses` snapshot that a run cannot advance.
-- **`tool.started` has no `args`.** The responses route carries the tool's raw JSON
-  arguments; runs carries only the gateway's `preview` — the tool's primary argument as
-  one line (`agent/display.py`, `build_tool_preview`). The tool marker lines and the tool
-  name are identical; the detail text is not (see `RouteParityTest`). The operations line
-  keeps its subject on both: `Operations.step` reads a non-JSON argument as that preview
-  (`date`, a URL → its host, a path → its file).
+While a card is up, the turn's clock pauses. The turn budget measures agent time, not wall time, so
+a human reading the card is not charged against the run; several approvals accumulate their pauses
+rather than restarting the clock.
 
-## The interim commentary finding
+If the events socket is lost while the run is parked on an approval, the card is **kept**, because a
+lost stream is not a dead run. The app re-reads the run when it can; only a run known to have ended,
+the app abandoning the turn, or the owner cancelling withdraws the card.
 
-The brief's target list did not name it, and it is the one thing this port had to
-prove. On `/v1/runs` it is **`message.interim`**: `{run_id, text, already_streamed}`
-(`api_server_runs.py`, `_execute_run._interim_cb`, the same contract as the TUI
-gateway). It exists, so shipping the runs route does not lose the presence asides.
+## When the route fails
 
-`already_streamed: true` means the text already went out as answer deltas; the
-responses writer suppresses that commentary copy for exactly that reason, so the runs
-reader drops it too. `RouteParityTest` pins both the aside and the suppression.
+| failure | what happens |
+|---|---|
+| admission 404 | remembered for the profile, same turn retried once on `/v1/responses` |
+| any other admission status, or no route to the host | the turn fails with the gateway's error; no fallback |
+| reply lost after the body went out | one identical retry with the same `Idempotency-Key`; a replay returns the original run id |
+| events socket dropped | one immediate reattach from `last_seq`, then status reads after 1 s, 2 s and 4 s: a terminal status ends the turn, a live one reattaches from the last seq, and when the rounds are spent the run is stopped |
+| gateway no longer retains the missed events | `replay.truncated` marks the hole; the terminal `run.completed.output` replaces the gapped text, tool markers kept. If the terminal event carries no text, the turn fails rather than speaking a sentence with a missing middle |
+| no data for 60 s | the idle timeout ends the turn as `hermes stream: connection lost (no data from the gateway)`; any bytes, keepalives included, reset it |
+| the run cannot be followed or stopped | the done poll says `run_end:"lost"`, which is what keeps a pending approval card on screen |
 
-## Fixtures and the proof
+A **setup turn** — the one-button phone setup, `Streams.startPersistent` — rides the same route
+with no clock. On a drop it reattaches to the **same** run, from `last_seq` or from the run's
+status, for as long as the gateway says it is alive; the recovery path never stops it. Only
+`Streams.cancel` ends the attempt — the owner cancelling or the screen going away — and that
+cancel does stop the run. This is the one place where the ordinary turn ceiling would otherwise
+cut a working run in half.
 
-`testdata/stream/runs-*.sse` (normal, tools, error, incomplete, approval, commentary,
-clarify) are **hand-built from the gateway source**, not captured — no gateway was
-reachable. The provenance line is in `testdata/stream/README.md`.
+## Conversation identity
 
-`RouteParityTest` replays a responses fixture and its runs twin through the real
-`HermesSession` wait → poll loop and asserts both produce the same:
+A run has no response id. The terminal event carries output, usage and runtime, not an id, so the
+runs body omits `previous_response_id` and the app leaves its stored chain head untouched.
 
-- reply text and reply transcript (including the `[tool:…]` / `[tool-done]` lines),
-- terminal event type and done flag,
-- error reason (the `hermes response failed:` / `hermes run failed:` prefix names the
-  route on purpose),
-- tool marker lines and tool names,
-- presence asides,
-- approval map (including the session-authority `prompt_id` → `request_id` handle).
+The conversation is a **client-owned `session_id`** in the request body. `HermesSession` makes one
+per session object and rotates it in `resetConversation`, so `/new`, a new call and a profile
+switch each start a fresh transcript. The gateway ranks it above the declared
+`X-Hermes-Session-Key`, which remains the long-term-memory scope. A stored turn — `/compress`, the
+VOX.md authoring directive, the skill install — rides `/v1/runs` with the same `session_id` and
+blocks for the run's answer, because `/v1/responses` cannot address a body `session_id`.
 
-`RunsStreamTest` covers the transport-only behaviour: barge-in posts `/stop`, a
-dropped socket reattaches at `last_seq`, the body carries no chain head, and clarify
-arrives as its own event.
+## What is proven, and what is not
 
-## The device pass (the cut gate)
+`testdata/stream/runs-*.sse` are **hand-built from the gateway source**, not captured; the
+provenance line is in `testdata/stream/README.md`. `RouteParityTest` replays a responses fixture and
+its runs twin through the real session and asserts the same reply text, transcript, terminal type,
+error reason, tool lines and names, presence asides and approval map. `RunsStreamTest` covers the
+transport-only behaviour: barge-in posts `/stop`, a dropped socket reattaches at `last_seq`, the
+body carries no chain head, clarify arrives as its own event. `LiveGatewayTest` runs against a
+deterministic fake gateway.
 
-The parity proof is off-device. Run every check on a **scoped** install (Settings →
-the conversation scope is not blank) *and* on an unscoped one (check 9): since 0.9.1's H2 fix
-both ride `/v1/runs`, because the run body carries its own `session_id`. A gateway without the
-route falls back to `/v1/responses` (see above), which proves the fallback rather than the route.
+None of that is a live gateway, and no test in the repo talks to one. The route's behaviour against
+a real Hermes build can only be confirmed on a device; the gate does not confirm it.
 
-1. One live voice turn on the runs route: text streams, TTS starts on the first delta,
-   the reply settles once.
-2. A tool turn: `◆ tool` lines render, the reply is spoken (not swallowed), and the
-   transcript keeps its line breaks.
-3. Barge-in: the run reaches `cancelled` in `GET /v1/runs/{id}` (not merely a closed
-   subscriber) and the gateway stops generating.
-4. An approval: the card appears on a run that parks in `waiting_for_approval`, the
-   answer posts once, and the run resumes. This is the capability the port exists for.
-5. A dropped socket: airplane mode mid-turn, restore, and the turn completes from
-   replay rather than the "voice stream was lost" error. If the drop outlives the
-   gateway's retained backlog, the reply still matches the run's final answer (or the
-   turn says it failed) — never a sentence with a missing middle.
-6. `/compress` after a runs turn: with no response id on the route, confirm the
-   compaction targets the same conversation the run wrote to. If it does not, the
-   stored-turn path needs its own route-aware chain before the flip.
-7. A `clarify.request` (when a tool asks): the event reaches the app without being
-   mistaken for an approval.
-8. `/new` on a scoped install: the next turn does not remember the last one. Before
-   0.9.1's H2 fix it did: the run body carried no `session_id`, so the gateway resolved
-   the declared key to the same conversation. The run body now carries a client
-   `session_id` that `/new` rotates (pinned off-device by `RunsStreamTest`) — confirm on
-   the device that "what did I just say?" after `/new` gets no memory of the turn.
-9. An unscoped install: turns ride `/v1/runs` with no `X-Hermes-Session-Key`, carry the
-   same body `session_id` each turn, and keep their conversation ("what did I just say?").
+## What it writes, sends or changes
+
+- One `POST /v1/runs` per turn, at least one events `GET`, and further reattach or status `GET`s only
+  after a drop. A stop is posted when the turn is cancelled or the reader gives up; an approval
+  answer is posted when the card is answered.
+- The request fields above, plus one random `Idempotency-Key` per turn. The key is not a secret and
+  names no user.
+- The `event=route-fallback` log line the first time a profile's gateway answers 404, and the
+  transport diagnostics the app already keeps.
+- Nothing else on the gateway. The run is the gateway's record; the app holds only the stream and
+  the conversation id.
+
+## What it cannot do
+
+- It cannot fall back on any answer except an exact 404 on admission. A 401, 409, 429, 500 or a
+  transport failure is the turn's error, by design.
+- It cannot probe again once a profile is remembered as having no runs route. The answer is stored
+  under the profile's name and is not cleared when the profile is deleted, so a later profile with
+  the same name inherits it.
+- It cannot stop a run it never learned the id of. A run admitted while the app dies keeps working
+  at the gateway with nobody following it.
+- It cannot keep following a run it gave up on: when the recovery rounds are spent the run is
+  stopped, not abandoned.
+- It cannot present a gapped replay as the answer. When the backlog is truncated, the run's terminal
+  output replaces the text or the turn fails; there is no third option.
+- It cannot surface a `clarify.request`. It reaches the app as its own event and is not mistaken for
+  an approval, but there is no screen for it yet.
+- It cannot carry tool arguments on `tool.started`. The runs route sends the gateway's one-line
+  `preview`, not the raw JSON arguments the responses route carries.
+- It cannot answer an approval whose run is known to have ended, and cannot auto-approve anything;
+  the only automatic answer is a timeout, and it denies.
+- It cannot keep a conversation by response id. A run has none; continuity is the body `session_id`
+  plus the declared scope, and a stored `/v1/responses` snapshot is never advanced by a run.
+- It cannot prove a live gateway in the gate. The fixtures are hand-built and the parity proof is
+  off-device.

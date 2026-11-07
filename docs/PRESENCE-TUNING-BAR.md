@@ -10,9 +10,9 @@ python3 scripts/presence-session-report.py --bar logcat.txt    # just the verdic
 python3 scripts/presence-session-report.py --check logcat.txt  # exit 1 if a measured row fails
 ```
 
-`--bar` prints the five criteria only — verdict, measured number and `n` on each line — and
-exits 1 unless every measured row passes and at least one row measured. `--check` is the same
-verdict without the rows.
+`--bar` prints the five criteria only — verdict, measured number and `n` on each line — and exits 0
+when every measured row passes, 1 when a measured row fails, and 2 when nothing was measured.
+`--check` is the same verdict without the rows.
 
 ## The bar
 

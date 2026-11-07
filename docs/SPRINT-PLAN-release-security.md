@@ -1,4 +1,6 @@
 # Hermes Vox — Sprint 3 Plan Brief: Release Signing + Security Cluster + Streaming Tidy-Up
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
 
 > **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
