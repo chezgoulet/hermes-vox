@@ -1,5 +1,8 @@
 # Performance baseline, per release (#209)
 
+> Historical record. This describes the state and reasoning at the time it was written; it is not
+> maintained and may describe behaviour that has since changed.
+
 The point is **drift**: the same list at each cut, so a regression is visible before a user
 reports it. `docs/PRESENCE-BENCH.md` and `docs/STT-AB.md` measured the parts alone; this is the
 assembled product.
