@@ -365,4 +365,30 @@ class TtsEngineHostTest {
         assertTrue("an all-zero synth did not speak", audioIsSilent(FloatArray(4096)))
         assertFalse(audioIsSilent(floatArrayOf(0f, 0.001f, 0f)))
     }
+
+    @Test fun a_silent_stream_chunk_rewarms_and_the_turn_keeps_going() {
+        val built = ArrayList<Fake>()
+        val h = TtsEngineHost(
+            requested = { "piper" }, installed = { true },
+            factory = { token -> Fake(token).also { built += it } },
+            warn = { warns += it },
+        )
+        h.ensure()
+        assertTrue(h.state.speaking)
+
+        // What VoiceController does when streamChunk() returns false on a live reply:
+        // report the engine, not the end of the turn.
+        h.noteFailure("stream-synth")
+        assertTrue(
+            "the silent chunk must name the engine and its code: $warns",
+            warns.any { it.startsWith("event=tts-fail engine=piper code=stream-synth") },
+        )
+        assertEquals("one re-warm, not a release", 2, built.size)
+        assertEquals("the silent engine was replaced", 1, built[0].shutdowns)
+        assertTrue("the reply can keep speaking", h.state.speaking)
+
+        // The next chunk plays on the re-warmed engine: a dropped phrase did not end the reply.
+        assertTrue(h.speak("la suite") {})
+        assertEquals(1, built[1].spoken)
+    }
 }

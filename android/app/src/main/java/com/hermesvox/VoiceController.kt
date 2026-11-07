@@ -3252,10 +3252,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
                             // as firstByte/firstText, keeping the fields comparable within a version.
                             val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
-                            if (!wrote && !genCancelled && !sClosed) {
+                            if (StreamSynthResult.failed(wrote, genCancelled, sClosed)) {
                                 // A streaming synth that returned no audio is an engine failure,
-                                // not a cut. Feed it to the same bounded lifecycle the one-shot
-                                // path uses: one re-warm, one degradation, then a stated reason.
+                                // not a cut — and not the end of the reply. The phrase is lost,
+                                // the turn keeps draining, and the host runs the same bounded
+                                // lifecycle the one-shot path uses: one re-warm, one degradation,
+                                // then a stated reason.
                                 ttsHost?.noteFailure("stream-synth")
                             }
                             if (wrote && !firstAudioPushed) {
