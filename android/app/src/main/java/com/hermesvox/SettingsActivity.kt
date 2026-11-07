@@ -471,8 +471,13 @@ class SettingsActivity : AppCompatActivity() {
             // it belongs instead of silently becoming the new host's credential.
             var chosenFor = initialOrigin
             var currentAlias = initialOrigin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+            // The alias is opaque; what the user is approving is a subject and an expiry.
+            // Read from the certificate, off the UI thread (KeyChain is a blocking IPC).
+            var aliasDetail: String? = null
+            var detailFor: String? = null
 
             fun typedOrigin() = com.hermesvox.core.MtlsConfig.originOf(eurl.text.toString().trim())
+
 
             fun updateMtlsViews() {
                 val typed = typedOrigin()
@@ -495,12 +500,31 @@ class SettingsActivity : AppCompatActivity() {
                         dMtlsClear.visibility = View.GONE
                     }
                     else -> {
-                        dMtlsAlias.text = failure?.let { "$currentAlias — ${it.label}" } ?: currentAlias
+                        dMtlsAlias.text = failure?.let { "${aliasDetail ?: currentAlias} — ${it.label}" }
+                            ?: aliasDetail ?: currentAlias
                         dMtlsClear.visibility = View.VISIBLE
                     }
                 }
             }
+
+            fun refreshAliasDetail() {
+                val alias = currentAlias?.takeIf { it.isNotBlank() }
+                if (alias == null) { aliasDetail = null; detailFor = null; return }
+                if (alias == detailFor) return
+                val origin = chosenFor ?: typedOrigin() ?: return
+                Thread {
+                    val line = com.hermesvox.core.MtlsConfig.describe(origin, alias)
+                    runOnUiThread {
+                        if (currentAlias == alias) {
+                            aliasDetail = line
+                            detailFor = alias
+                            updateMtlsViews()
+                        }
+                    }
+                }.start()
+            }
             updateMtlsViews()
+            refreshAliasDetail()
             eurl.addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -526,8 +550,10 @@ class SettingsActivity : AppCompatActivity() {
                             } else {
                                 currentAlias = alias
                                 chosenFor = target
+                                detailFor = null
                             }
                             updateMtlsViews()
+                            refreshAliasDetail()
                         }
                     },
                     arrayOf("RSA", "EC"),
@@ -540,6 +566,8 @@ class SettingsActivity : AppCompatActivity() {
 
             dMtlsClear.setOnClickListener {
                 currentAlias = null
+                aliasDetail = null
+                detailFor = null
                 chosenFor = typedOrigin()
                 updateMtlsViews()
             }

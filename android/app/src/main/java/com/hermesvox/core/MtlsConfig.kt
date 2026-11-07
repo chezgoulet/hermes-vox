@@ -383,6 +383,45 @@ object MtlsConfig {
      *  named reason too, not a row that quietly says "None". */
     fun notePickerCancelled(origin: Origin) = unavailable(Reason.PICKER_CANCELLED, origin.key)
 
+    /**
+     * The certificate behind [alias] as a person can check it:
+     * `CN=gateway-client · expires 2027-04-01`.
+     *
+     * The row used to show the KeyChain alias, which is an opaque store key: approving
+     * "mtls-3f2a" is not consent to anything a person can verify. The subject and expiry
+     * are read from the certificate itself.
+     *
+     * Reads the provider — on a device that is a blocking KeyChain IPC — so callers must
+     * be off the UI thread. Returns null (and names the reason) when the store no longer
+     * has the certificate.
+     */
+    fun describe(origin: Origin, alias: String): String? {
+        val chain = try { activeProvider?.getCertificateChain(alias) } catch (_: Throwable) { null }
+        val leaf = chain?.firstOrNull()
+        if (leaf == null) {
+            unavailable(Reason.CERT_UNAVAILABLE, origin.key)
+            return null
+        }
+        return "${subjectOf(leaf)} · expires ${dateOf(leaf.notAfter)}"
+    }
+
+    /**
+     * The certificate's own subject, as RFC 2253 spells it (`CN=gateway-client,O=…`).
+     *
+     * The whole Name, not a hand-picked CN: parsing a DN to find one component is a
+     * quoting problem (escaped commas, quoted values) with no upside here, and the full
+     * subject is what the certificate actually says. `javax.naming` is not on Android, so
+     * this is also the only spelling that works on the platform and in the JVM tests.
+     */
+    internal fun subjectOf(cert: java.security.cert.X509Certificate): String =
+        cert.subjectX500Principal.name
+
+    /** UTC, so the date is the certificate's, not the phone's timezone guess. */
+    private fun dateOf(date: java.util.Date): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            .format(date)
+
     /** The authority of [url] for a failure line, when it cannot even be parsed. */
     private fun authorityOf(url: String): String? =
         ORIGIN_RE.find(url.trim())?.groupValues?.get(2)

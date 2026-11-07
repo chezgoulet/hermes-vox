@@ -2,6 +2,8 @@ package com.hermesvox.core
 
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -219,6 +221,27 @@ class MtlsConfigTest {
         assertEquals(MtlsConfig.SaveAlias.Leave, MtlsConfig.saveAlias(a, b, "second", a))
         // A blank alias is an absent one, never a stored empty string.
         assertEquals(MtlsConfig.SaveAlias.Write(null), MtlsConfig.saveAlias(a, a, "  ", a))
+    }
+
+    /** What is being approved is the certificate, not the KeyChain alias. */
+    @Test
+    fun testDescribeShowsSubjectAndExpiryInsteadOfTheAlias() {
+        MtlsConfig.setProviderForTest(TestKeyProvider())
+        MtlsConfig.setLogSinkForTest { }
+        val origin = MtlsConfig.originOf("https://gateway.example/")!!
+
+        val first = MtlsConfig.describe(origin, "first")
+        assertNotNull(first)
+        assertTrue("the row names the subject: $first", first!!.startsWith("CN=first-client · expires "))
+        assertTrue("the expiry is a date: $first",
+            Regex("\\d{4}-\\d{2}-\\d{2}$").containsMatchIn(first))
+
+        // A different alias is a different certificate — the alias alone would hide that.
+        assertNotEquals(first, MtlsConfig.describe(origin, "second"))
+
+        // A certificate the store no longer has is a named reason, not a blank row.
+        assertNull(MtlsConfig.describe(origin, "revoked-elsewhere"))
+        assertEquals(MtlsConfig.Reason.CERT_UNAVAILABLE, MtlsConfig.failureFor(origin))
     }
 
     @Test
