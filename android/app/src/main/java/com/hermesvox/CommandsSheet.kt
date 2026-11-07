@@ -17,8 +17,10 @@ import androidx.core.content.ContextCompat
 /**
  * The commands screen (#226): the app's own components on the app's own ground — the OLED
  * black and the authored light page alike — grouped by what each command does, every row
- * stating its effect and, when it has one, its cost or risk, with a running state where the
- * command was invoked.
+ * stating its effect and, when the catalogue states one, a quiet line saying what the
+ * command costs, with a running state where the command was invoked. Every row is drawn in
+ * the same command colour: the owner's rule (2026-11-06) is that no command row looks like a
+ * warning — `/clear` and `/new` are told apart by their wording and their marks.
  *
  * An inline command runs in place and the sheet stays open so its outcome can be read; a
  * card command (a chooser, a status card) closes the sheet and opens its own view — its row
@@ -132,10 +134,13 @@ class CommandsSheet(
             setPadding(dp(14), dp(12), dp(14), dp(12))
             minimumHeight = dp(56)
         }
-        // The command's kind, drawn as the being draws it; amber only when something is lost.
+        // One ink for every command row (owner, 2026-11-06): [CommandCatalog.ROW_INK],
+        // resolved here. `/clear` and `/new` are told apart by their names and their marks,
+        // not by a colour that makes one row look like a warning.
+        // The command's kind, drawn as the being draws it; the same tint for every row.
         // A command whose own drawing says it better (#3: /new and the share row) keeps the
         // same size, the same tint and the same stroke — only the geometry is its own.
-        val tint = color(if (CommandCatalog.tint(c) == CommandCatalog.Tint.RISK) R.color.hv_warn else R.color.hv_cyan)
+        val tint = color(R.color.hv_cyan)
         val mark: View = c.glyph?.let { GlyphMark(act, Marks.shapes(it), tint) }
             ?: VerbMark(act, CommandMotion.verbFor(c.category), tint)
         r.addView(mark, LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(14) })
@@ -149,13 +154,12 @@ class CommandsSheet(
         words.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
             text = c.effect; setTextColor(color(R.color.hv_text))
         })
-        // What it loses, only when it loses something. Amber means irreversible (the thing is
-        // gone afterwards); a loss the command accepts by design is quiet, so the colour
-        // stays a fact about the command rather than a mood over the whole screen.
+        // What it loses, only when the catalogue states it. Always quiet ink: what a command
+        // costs is a fact about the command, not a mood over the whole screen.
         c.cost?.let { cost ->
             words.addView(TextView(act, null, 0, R.style.HvRowValue).apply {
-                text = cost.text
-                setTextColor(color(if (cost.risk) R.color.hv_warn else R.color.hv_text_dim))
+                text = cost
+                setTextColor(color(R.color.hv_text_dim))
             })
         }
         r.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))

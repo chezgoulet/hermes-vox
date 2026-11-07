@@ -162,8 +162,17 @@ class MarksTest {
                 Regex("""Color\.(parseColor|rgb|argb|valueOf|BLACK|WHITE|GRAY)""").containsMatchIn(source))
         }
         val source = File("src/main/java/com/hermesvox/CommandsSheet.kt").readText()
+        // One ink for every command row, and it is the theme's accent. There is no
+        // per-row warning tint any more: /clear and /new look like every other row, and
+        // the difference between them lives in their words.
         assertTrue("the row mark is tinted by the theme's accent",
-            source.contains("R.color.hv_cyan") && source.contains("R.color.hv_warn"))
+            source.contains("R.color.hv_cyan"))
+        assertFalse("no row carries a warning tint",
+            source.contains("R.color.hv_warn"))
+        // One expression resolves the row ink for every command; reintroducing a
+        // per-command tint means deleting it, and this test then fails.
+        assertTrue("one expression resolves the row ink",
+            source.contains("val tint = color(R.color.hv_cyan)"))
         // The mark is placed at the sheet's row size, where the 2-unit stroke still reads.
         assertTrue(source.contains("dp(26), dp(26)"))
     }

@@ -350,13 +350,18 @@ declaration is what makes the app eligible
 Grouped by what a person is acting on — **This conversation** and **The agent** — never by the
 subsystem that does the work (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `enum class Group`). Two groups, one row per command: there is no second "Fits now" section and no
 search field above the list (#499, #500). Each row leads with a mark drawn from
-the being's six-verb motion grammar for that kind of command, amber only when something is lost
-for good (android/app/src/main/java/com/hermesvox/VerbMark.kt `class VerbMark`); a command whose
+the being's six-verb motion grammar for that kind of command
+(android/app/src/main/java/com/hermesvox/VerbMark.kt `class VerbMark`), every row in the same
+command colour — `/clear` and `/new` included, told apart by their wording and their marks
+rather than by a colour that would make one row read as a warning
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt `const val ROW_INK = "hv_cyan"`); a command whose
 category's still would say the wrong thing names its own drawing in the same vector vocabulary —
 `/new` an open ring around a plus, `/sessions` a short list, the share row the platform's
 three-node share graph (android/app/src/main/java/com/hermesvox/Marks.kt `object Marks`). Each row
-states its effect in one line and, only when the command loses something, what it loses in a
-second line (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `val cost`). `/help` is not listed on the sheet (it would open a copy of the
+states its effect in one line and, only where the catalogue states one, what the command costs
+in a quiet second line — `/compress`, `/models` and `/profiles`; `/clear` and `/new` keep their
+name and their one line and nothing else
+(android/app/src/main/java/com/hermesvox/CommandCatalog.kt `val cost`). `/help` is not listed on the sheet (it would open a copy of the
 sheet); a typed "/help" still reaches it (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `val listed`).
 
 A command that runs in place shows *queued / running… / done / failed* on the row where it was
@@ -368,8 +373,8 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | Command | Group | What it does | What it loses | Reference |
 |---|---|---|---|---|
 | `/compress` | This conversation | (also `/compact`) Asks the agent to fold a long thread into a summary | Older detail survives only in the summary | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Fold a long thread`) |
-| `/clear` | This conversation | (also `/reset`) Clears the screen; the agent keeps the thread, and a live call is re-dialled | The screen's copy, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Clear the screen`) |
-| `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | This thread, for good | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Start a fresh thread`) |
+| `/clear` | This conversation | (also `/reset`) Clears the screen; the agent keeps the thread, and a live call is re-dialled | nothing stated on the row (clearing still drops the scrollback) | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Clear the screen`) |
+| `/new` | This conversation | A fresh thread; the agent forgets this one. Ends and re-dials a live call | nothing stated on the row (the agent still forgets this thread) | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Start a fresh thread`) |
 | `/sessions` | This conversation | Opens the session card: the conversations the host already has, newest activity first, with the one in use marked. Picking one continues THAT conversation and shows what was said | nothing — the session keeps its history and so does this app | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Pick up a thread`) |
 | `/models` | The agent | Opens the model switcher: provider → model, one list, each model carrying small marks for what it can do — only the `reasoning`/`can_disable_reasoning` and `fast` flags `/api/model/options` states, never a guess from the model's name | Switching starts a fresh thread | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Choose the model`) |
 | `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look. A picker only — add and edit were removed, because profiles are made on the host | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
