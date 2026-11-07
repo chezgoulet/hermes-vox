@@ -49,8 +49,8 @@ sets a tester takes one at a time. This document is ordered that way.
 - **The line (#281).** One plain-language line saying what is running and on what; long jobs show
   movement without inventing a percentage; failures name what failed.
 - **Commands screen (#226).** Grouped by what a command does, in two groups, with real
-  queued/running/done/failed state instead of a toast. `/diagnostics` is in the catalogue only
-  while its switch in About & Diagnostics is on.
+  queued/running/done/failed state instead of a toast. Every command in the catalogue is on for
+  every install: there is no per-command switch.
 - **Discovery (#284).** The stuck hint, error naming, and a searchable catalogue that matches what
   a person says ("it's slow" finds `/compress`, "can't reach it" finds `/reconnect`).
 - **Assistant role (#329).** Vox can hold `android.app.role.ASSISTANT`; the side-button mapping

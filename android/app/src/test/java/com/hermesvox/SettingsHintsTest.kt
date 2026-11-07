@@ -214,8 +214,8 @@ class SettingsHintsTest {
      */
     @Test fun theScreenReadsAndWritesTheSamePrefKeysAsBeforeTheSplit() {
         // #418: the Presence density read — and its legacy filler-cap migration — moved to the
-        // file that owns the report block, so the row and `/diagnostics` cannot read it
-        // differently. The screen still reaches it, one call away, so the key is still here.
+        // file that owns the report block. The screen still reaches it, one call away, so the
+        // key is still here.
         val keys = prefKeysIn(activityFile.readText()) +
             prefKeysIn(File("src/main/java/com/hermesvox/PresenceDiagnosticCollect.kt").readText())
         assertEquals("pref keys the Settings screen touches changed — a moved row lost or " +

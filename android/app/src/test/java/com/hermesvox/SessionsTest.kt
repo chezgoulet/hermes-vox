@@ -426,7 +426,7 @@ class SessionsTest {
         assertNull(Sessions.commandFor("show me the sessions I had yesterday"))
         assertNull(Sessions.commandFor("/profiles"))
         // Nothing hides it: the catalogue lists it even for a gate that allows nothing.
-        assertTrue(CommandCatalog.commands(CommandCatalog.Gate.NOTHING)
+        assertTrue(CommandCatalog.commands()
             .any { it.name == Sessions.COMMAND })
     }
 

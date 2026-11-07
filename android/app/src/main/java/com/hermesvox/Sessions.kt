@@ -467,7 +467,7 @@ object Sessions {
     fun commandFor(input: String): CommandCatalog.Command? {
         val word = input.trim().lowercase().removePrefix("/")
         if (word != COMMAND.removePrefix("/")) return null
-        return CommandCatalog.find(COMMAND, CommandCatalog.Gate.EVERYTHING)
+        return CommandCatalog.find(COMMAND)
     }
 
     // ---- timestamps -------------------------------------------------------------------

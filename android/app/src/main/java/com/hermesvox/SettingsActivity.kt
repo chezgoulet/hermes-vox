@@ -208,15 +208,6 @@ class SettingsActivity : AppCompatActivity() {
         sw.isChecked = AlphaGate.masterOn(AlphaGate.reader(prefs))
         sw.setOnCheckedChangeListener { _, on ->
             prefs.edit().putBoolean(AlphaGate.KEY_MASTER, on).apply()
-            // #418: someone who opts into alpha is a tester, and a tester should be able to
-            // hand us a bug without hunting for a switch — so the report command comes with
-            // it. One-way (off is not undone), and never over a switch set by hand. The
-            // switch is re-read so the row shows what just happened; re-binding it does not
-            // record a choice the user did not make.
-            if (on) {
-                DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs))
-                bindDiagSummary()
-            }
             refreshAlpha()
             if (on) alphaPanel()
         }
@@ -224,24 +215,6 @@ class SettingsActivity : AppCompatActivity() {
             if (AlphaGate.masterOn(AlphaGate.reader(prefs))) alphaPanel() else sw.isChecked = true
         }
         refreshAlpha()
-    }
-
-    /**
-     * #418: the switch behind `/diagnostics`, off by default, beside the logging switches
-     * because it is the same kind of tool. It gates the command's existence and nothing else —
-     * the Presence section's own copy row is untouched by it. A flip here is the user's
-     * decision, recorded as one ([DiagnosticSummary.setByUser]) so a later Alpha-on cannot
-     * overrule it.
-     *
-     * Re-binding is how the row is re-read after Alpha turns it on: the checked state is set
-     * before the listener exists, so showing the new state records no choice.
-     */
-    private fun bindDiagSummary() {
-        val sw = findViewById<SwitchCompat>(R.id.set_diag_summary) ?: return
-        sw.isChecked = DiagnosticSummary.on(DiagnosticSummary.store(prefs))
-        sw.setOnCheckedChangeListener { _, on ->
-            DiagnosticSummary.setByUser(DiagnosticSummary.store(prefs), on)
-        }
     }
 
     private fun alphaPanel() = AlphaPanel(this, prefs, ::alphaAdvice) { refreshAlpha() }.show()
@@ -715,9 +688,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         // #417: the report block. Everything on the clipboard is a setting, a device fact or
         // a measured number — no transcript text, key, URL, hostname or path. Omitted metrics
-        // stay omitted rather than being printed as an invented zero.
-        // #418: the `/diagnostics` command copies the same block through the same helper; this
-        // row is the Presence section's door and stays exactly where it is.
+        // stay omitted rather than being printed as an invented zero. This row is the one door
+        // to the block: #418's command and its switch are gone.
         findViewById<LinearLayout>(R.id.row_presence_diag).setOnClickListener {
             DiagnosticClipboard.copy(this, prefs)
         }
@@ -1061,7 +1033,6 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
-        bindDiagSummary()
         // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
         // long-press on the debug-log row in the developer section. Both settings default to
         // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens

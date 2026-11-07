@@ -31,7 +31,7 @@ class DiscoveryTest {
         // not in the catalogue, so it is not in the blank search either.
         assertEquals(CommandCatalog.commands(), CommandCatalog.search("  "))
         assertEquals(CommandCatalog.ALL,
-            CommandCatalog.search("  ", CommandCatalog.Gate.EVERYTHING))
+            CommandCatalog.search("  "))
         assertTrue(CommandCatalog.search("zzqx").isEmpty())
     }
 

@@ -8,16 +8,16 @@ import android.content.SharedPreferences
 import android.widget.Toast
 
 /**
- * DiagnosticClipboard — the one copy of the report block (#417, #418).
+ * DiagnosticClipboard — the one copy of the report block (#417).
  *
- * The block has two doors: the Presence row in Settings and the `/diagnostics` command. Two
- * doors that each assembled their own block would drift the moment one of them gained a line,
- * and the field would be told two different stories about the same phone. So the text comes
- * from one place — [PresenceDiagnosticCollect.collect], the collector #417 shipped — and the
- * door only decides *when* to copy, never *what*.
+ * The block has one door left: the Presence row in Settings. (#418 opened a second door, a
+ * command and its switch; both are gone, see D29.) A door that assembled its
+ * own block would drift the moment the collector gained a line, so the text comes from one
+ * place — [PresenceDiagnosticCollect.collect], the collector #417 shipped — and the door only
+ * decides *when* to copy, never *what*.
  *
- * The clipboard label and the two outcomes are here too, for the same reason: the words a
- * person reads after the tap are the same whichever door they used.
+ * The clipboard label and the two outcomes are here too, so the words a person reads after
+ * the tap are the block's own.
  */
 object DiagnosticClipboard {
 
@@ -27,7 +27,7 @@ object DiagnosticClipboard {
     const val COPIED = "Diagnostic summary copied — safe to paste in a public report"
     const val FAILED = "Could not copy the diagnostic summary"
 
-    /** The exact text both doors put on the clipboard. */
+    /** The exact text the door puts on the clipboard. */
     fun block(activity: Activity, prefs: SharedPreferences): String =
         PresenceDiagnosticCollect.collect(activity, prefs)
 

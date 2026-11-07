@@ -109,9 +109,9 @@ class AlphaGateTest {
         assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ")?.name)
         // It is not a gated command: the catalogue lists it even for a gate that allows nothing.
         assertTrue("the catalogue no longer hides it",
-            CommandCatalog.commands(CommandCatalog.Gate.NOTHING).any { it.name == Sessions.COMMAND })
+            CommandCatalog.commands().any { it.name == Sessions.COMMAND })
         // It is still the last-but-one row of the conversation group, beside /new.
-        val c = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        val c = CommandCatalog.find("/sessions")!!
         assertEquals("This conversation", c.group.label)
         assertNull("nothing is lost, so there is no cost line", c.cost)
     }
@@ -272,7 +272,7 @@ class AlphaGateTest {
         val dialogs = File(src, "ProfileDialogs.kt").readText()
         assertFalse(dialogs, dialogs.contains("AlphaGate"))
         // The catalogue no longer hides it either.
-        assertTrue(CommandCatalog.commands(CommandCatalog.Gate.NOTHING)
+        assertTrue(CommandCatalog.commands()
             .any { it.name == "/profiles" })
     }
 
@@ -344,8 +344,9 @@ class AlphaGateTest {
             .substringBefore("fun switchProfile")
         assertTrue(header, header.contains("profiles.activeName()"))
         assertFalse(header, header.contains("AlphaGate"))
-        // The commands sheet is still the way in, and it still asks the one gate object.
-        assertTrue(File(src, "CommandsSheet.kt").readText().contains("gate = gate"))
-        assertTrue(main.contains("CommandGate.of(DiagnosticSummary.store(prefs))"))
+        // The commands sheet is still the way in, and it has no switch left to ask.
+        val sheet = File(src, "CommandsSheet.kt").readText()
+        assertFalse(sheet, sheet.contains("Gate"))
+        assertFalse(main, main.contains("commandGate()"))
     }
 }

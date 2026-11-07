@@ -47,9 +47,6 @@ class CommandsSheet(
     private val act: AppCompatActivity,
     /** #284: what the app knows about the moment — the row that fits it says so in place. */
     private val situation: () -> CommandCatalog.Situation,
-    /** #418: which optional commands exist right now (the sheet and its states ask the same
-     *  gate, so a command with its switch off is simply not there). */
-    private val gate: CommandCatalog.Gate,
     private val run: (CommandCatalog.Command, (Boolean) -> Unit) -> Unit,
 ) {
     private var dialog: Dialog? = null
@@ -119,8 +116,8 @@ class CommandsSheet(
         // #499: what fits the moment is a mark on the row it belongs to. The screen had
         // a "Fits now" section above the groups, so `/reconnect` and `/health` appeared
         // twice — once there and once under The agent. Two groups, one row per command.
-        fits += CommandCatalog.suggest(situation(), gate).map { it.name }
-        for ((group, cmds) in CommandCatalog.grouped(gate = gate)) {
+        fits += CommandCatalog.suggest(situation()).map { it.name }
+        for ((group, cmds) in CommandCatalog.grouped()) {
             list.addView(header(group.label))
             for (c in cmds) list.addView(row(c, d))
         }
@@ -223,7 +220,7 @@ class CommandsSheet(
 
     private fun paint(name: String) {
         val chip = chips[name] ?: return
-        val c = CommandCatalog.find(name, gate) ?: return
+        val c = CommandCatalog.find(name) ?: return
         val s = state[name] ?: CommandCatalog.RunState.IDLE
         val elapsed = if (s == CommandCatalog.RunState.RUNNING)
             SystemClock.elapsedRealtime() - (startedAt[name] ?: SystemClock.elapsedRealtime()) else 0L

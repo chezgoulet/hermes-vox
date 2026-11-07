@@ -201,11 +201,7 @@ The block's rows, their sections and their sets are one table
 (android/app/src/main/java/com/hermesvox/AlphaBlock.kt `val ROWS`), so the list, the dimming and
 the section's own refusal cannot disagree.
 
-Turning the master **on** also turns **Diagnostic summary** (`diag_summary`) on, because someone
-who opts into alpha is a tester and should be able to hand us a bug without hunting for a switch
-(android/app/src/main/java/com/hermesvox/SettingsActivity.kt `DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs`))`).
-It is one-way — turning Alpha off does not turn it off — and it never overrules the user: a flip
-of that switch records `diag_summary_chosen`, so an explicit off survives every later Alpha-on.
+
 
 ### Entity & Connection
 
@@ -282,7 +278,7 @@ voice replies at all) stays device-wide: it is about how you use the phone, not 
 | Presence while working | `er_presence_density` | `conversational` | How often Presence speaks during a long mind run: quiet 30 s / conversational 18 s / chatty 10 s intervals, with caps | (android/app/src/main/java/com/hermesvox/PresenceCadence.kt `val DEFAULT = Density.CONVERSATIONAL`) |
 | Voice-call reasoning | `voice_reasoning_effort` | `low` | How hard the mind thinks on a voice turn (`off`, `low`, `medium`, `high`), sent per request as `model_options.reasoning`. Lower answers sooner; a provider that ignores it behaves as before | (android/app/src/main/java/com/hermesvox/VoiceTurn.kt `PREF_REASONING`) |
 | Echo guard | `er_echo_skip_ms` | 700 ms | Silences barge capture for this long after Presence speaks, so the phone does not hear itself | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `val curEcho = prefs.getFloat("er_echo_skip_ms", 700f).toInt()`) |
-| Copy diagnostic summary | — | — | Puts the `vox-diag` block on the clipboard for a `presence-report`: build, preset, device, mind side, e2, session counters, on-device model. No transcript, key, URL or hostname. A metric the build cannot measure is omitted, never printed as zero; docs/PRESENCE-REPORTS.md lists what is excluded. `/diagnostics` is the second door to the same bytes (`DiagnosticClipboard` copies one block from one collector); this row stays inside Presence | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `row_presence_diag`) |
+| Copy diagnostic summary | — | — | Puts the `vox-diag` block on the clipboard for a `presence-report`: build, preset, device, mind side, e2, session counters, on-device model. No transcript, key, URL or hostname. A metric the build cannot measure is omitted, never printed as zero; docs/PRESENCE-REPORTS.md lists what is excluded. This row is the one door to those bytes — the bug-report command that used to share them is gone (`DiagnosticClipboard` copies one block from one collector) | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `row_presence_diag`) |
 | Resync VOX.md | (file, not pref) | not mirrored | Pulls the agent-authored voice-export and mirrors it read-only | (android/app/src/main/java/com/hermesvox/VoxSync.kt `event=vox-resync profile=`) |
 
 ### Wake word (preview)
@@ -321,7 +317,6 @@ The row's subtitle is computed from the take count and the words "not listening"
 | Developer console | `dev_console` | false | Shows the raw SSE drawer on the main screen | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `devc.isChecked = prefs.getBoolean("dev_console", false)`) |
 | Log spoken transcript | `log_transcripts` | false | Prints what was heard/decided into logs — privacy sensitive | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `ltr.isChecked = prefs.getBoolean("log_transcripts", false)`) |
 | Verbose file log | `debug_log` | false | `dd()` probes reach the log file; also disables log rotation | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `dbl.isChecked = prefs.getBoolean("debug_log", false)`) |
-| Diagnostic summary | `diag_summary` | false | Adds the `/diagnostics` command to the commands sheet: it copies the same `vox-diag` block the Presence row copies. The switch gates the command's existence and nothing else — the Presence row keeps its own copy. Turning Alpha features on turns it on once; an explicit off (`diag_summary_chosen`) wins over every later Alpha-on | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `DiagnosticSummary.on`) |
 
 **The being's rows are the profile's; the screen's are the phone's.** Visual category, its five
 scalars, cycle-all, the resting shape and its rotation, and the three state shapes carry "· profile
@@ -378,15 +373,15 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look. A picker only — add and edit were removed, because profiles are made on the host | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
 | `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Reach the gateway again`) |
 | `/health` | The agent | (also `/status`) Whether the agent is up, and its version | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Whether the agent is up`) |
-| `/diagnostics` | The agent (only while `diag_summary` is on) | Copies the `vox-diag` report block — the same one the Presence row copies, from the same collector | nothing — it reads and copies | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Copy a report block`) |
 | `/help` | The agent (not listed on the sheet) | The list, with these same lines | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `What each command does`) |
 
-Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue —
-`/diagnostics` only while its switch is on. `/profiles` and `/sessions` have no switch: both left
-Alpha on 2026-11-06 (D39) and are on for every install. A command added without a group, an effect or an alias target fails
+Those nine (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue. No command
+has a switch: `/profiles` and `/sessions` left Alpha on 2026-11-06 (D39), and the bug-report
+command and its switch were removed on the owner's instruction the same day. A command added
+without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt `everyCommandBelongsToALabelledGroup`).
-**There is no `/file` command.** The dispatch has exactly the ten names above
+**There is no `/file` command.** The dispatch has exactly the nine names above
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `"/models" -> showModelChooser()`), and no build of
 this tree has ever had a handler for one. Files arrive a different way: the **Share with agent**
 row inside the commands sheet, or sharing one to Vox from another app, offers it to the agent —

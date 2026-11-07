@@ -135,7 +135,7 @@ class PhoneToolsSectionTest {
         )
     }
 
-    // ---- 2. About & Diagnostics keeps only diagnostics ----
+    // ---- 2. the grants leave About, and About keeps no diagnostics switch ----
 
     @Test
     fun theGrantsLeaveAboutAndDiagnosticsAndKeepTheirSummary() {
@@ -158,12 +158,12 @@ class PhoneToolsSectionTest {
         )
         assertTrue("its value line moved with it", inside("set_phone_mcp_val", "sec_phone"))
 
-        // Nothing but diagnostics is left in About.
+        // About keeps the log switches and the developer console — and no diagnostics row.
         val aboutRows = allElements.filter { it.id()?.startsWith("row_") == true }
             .mapNotNull { e -> e.id()?.takeIf { inside(it, "sec_about") } }
             .toSet()
         assertEquals(
-            setOf("row_devconsole", "row_logtranscripts", "row_debuglog", "row_diag_summary",
+            setOf("row_devconsole", "row_logtranscripts", "row_debuglog",
                 "row_debug", "row_restore_about"),
             aboutRows,
         )
