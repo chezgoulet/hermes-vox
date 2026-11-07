@@ -35,6 +35,7 @@ root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | how a cut is made (version bump on `testing`, gate, reproducibility, signing). Checked against `scripts/gate.sh` and `release.yml` |
 | [`docs/GIT-FLOW.md`](GIT-FLOW.md) | the branch and release flow. Checked against the current branches and tags |
 | [`docs/DOC-TRUTH.yml`](DOC-TRUTH.yml) | the machine-checked invariants behind the claims above (`scripts/check-doc-truth.py`) |
+| [`docs/MTLS-PER-ORIGIN.md`](MTLS-PER-ORIGIN.md) | per-origin client certificates: what is sent, to whom, the named failure reasons and what it does not protect. Checked against `core/MtlsConfig.kt`, `core/MtlsKeyManager.kt`, `core/MtlsEntityTest.kt` |
 | [`docs/KOTLIN-CORE.md`](KOTLIN-CORE.md) | the `com.hermesvox.core` connector. Corrected: the runs API is no longer “deliberately dropped”; it is the default route |
 | [`docs/MODELS-SCREEN.md`](MODELS-SCREEN.md) | the Voice models screen and its one catalogue (`ModelCatalog.blessed`) |
 | [`docs/PRESENCE.md`](PRESENCE.md) | Presence: the layer, VOX.md, the beat, the read-only phone context, the MCP phone tool, the handoff receipt. Corrected: it runs only behind the Alpha gate, off on a fresh install |

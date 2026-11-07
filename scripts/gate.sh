@@ -115,13 +115,32 @@ echo "== [3/6] gradle assembleDebug + unit tests =="
 (cd android && ./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest)
 ls -la android/app/build/outputs/apk/debug/*.apk
 
-echo "== [4/6] stream parity harness ran =="
+# The mTLS fixtures are test-only keys. "They are under src/test/resources" is a claim
+# about the source layout; this checks the ARTIFACT, so a packaging change that swept the
+# test tree into the APK would fail here instead of shipping a private key.
+apk="$(ls android/app/build/outputs/apk/debug/*.apk | head -n1)"
+key_material="$(unzip -l "$apk" | grep -Ei '\.(p12|pfx|jks|bks|keystore|pem)$' || true)"
+[ -z "$key_material" ] || gate_die "the APK contains key material:
+$key_material"
+
+echo "== [4/6] stream parity & mTLS verification harnesses =="
 # StreamParityTest replays testdata/stream/*.sse against the committed goldens.
 # A gate that passes because the harness silently stopped running is not a gate.
-parity=android/app/build/test-results/testDebugUnitTest/TEST-com.hermesvox.core.StreamParityTest.xml
-[ -f "$parity" ] || gate_die "StreamParityTest did not run ($parity missing)."
-grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$parity" \
-  || gate_die "StreamParityTest did not pass cleanly: $(grep -o 'tests="[^>]*' "$parity" | head -n1)"
+# MtlsEntityTest is the one that goes through Entity.open to a real SSLServerSocket with
+# needClientAuth: the alias lookup, the socket factory, the origin guard and the peer
+# certificate — not a hand-built context that skips all of them.
+for suite in \
+  "TEST-com.hermesvox.core.StreamParityTest.xml" \
+  "TEST-com.hermesvox.core.MtlsConfigTest.xml" \
+  "TEST-com.hermesvox.core.MtlsKeyManagerTest.xml" \
+  "TEST-com.hermesvox.core.MtlsHandshakeTest.xml" \
+  "TEST-com.hermesvox.core.MtlsEntityTest.xml"; do
+  xml="android/app/build/test-results/testDebugUnitTest/$suite"
+  [ -f "$xml" ] || gate_die "Test suite $suite did not run ($xml missing)."
+  grep -q 'tests="[1-9][0-9]*" skipped="0" failures="0" errors="0"' "$xml" \
+    || gate_die "Test suite $suite did not pass cleanly: $(grep -o 'tests="[^>]*' "$xml" | head -n1)"
+  echo "gate: $suite OK ($(grep -o 'tests="[0-9]*"' "$xml" | head -n1))"
+done
 echo "gate: parity OK over $(ls testdata/stream/*.sse | wc -l) fixtures"
 
 echo "== [5/6] live gateway suite ran =="

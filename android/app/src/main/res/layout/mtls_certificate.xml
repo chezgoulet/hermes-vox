@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The client-certificate row: a credential for the DEVICE's gateway origin, stored per
+     origin in the "hv" prefs. It lives in its own layout because `dialog_entity` is
+     inflated by BOTH Settings → Entity and the profile editor (ProfileDialogs), and a
+     certificate per profile is a different feature: in the editor this row would do
+     nothing and would describe a value unrelated to that profile. Settings adds it to the
+     dialog it controls; the editor never inflates it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/d_mtls_block"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:orientation="vertical"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Client certificate (mTLS)"
+        android:textAllCaps="true"
+        android:textColor="@color/hv_text_dim"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/d_mtls_alias"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="None (system default)"
+            android:textColor="@color/hv_text"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/d_mtls_choose"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Choose"
+            android:textColor="@color/hv_cyan"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/d_mtls_clear"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clear"
+            android:textColor="@color/hv_text_dim"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

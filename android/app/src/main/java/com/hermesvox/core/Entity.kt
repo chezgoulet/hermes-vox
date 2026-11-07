@@ -84,6 +84,9 @@ internal object Entity {
         // (a resync, a first-call ask) goes through.
         CleartextPolicy.refusal(url)?.let { throw HermesException(it) }
         val c = URL(url).openConnection() as HttpURLConnection
+        if (c is javax.net.ssl.HttpsURLConnection) {
+            MtlsConfig.applyIfConfigured(c, url)
+        }
         c.requestMethod = method
         c.connectTimeout = connectTimeoutMs
         c.readTimeout = readTimeoutMs

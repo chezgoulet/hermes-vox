@@ -4054,12 +4054,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         var out = "endpoint=" + u
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection
+            if (c is javax.net.ssl.HttpsURLConnection) com.hermesvox.core.MtlsConfig.applyIfConfigured(c, u)
             c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Authorization", "Bearer " + k)
             out += "\nping -> " + c.responseCode
         } catch (e: Throwable) { out += "\nping error: " + e.message }
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
+            if (c is javax.net.ssl.HttpsURLConnection) com.hermesvox.core.MtlsConfig.applyIfConfigured(c, u)
             try {
                 c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
                 c.setRequestProperty("Authorization", "Bearer " + k)
@@ -4109,6 +4111,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         var pingCode = ConnectionPhase.NO_RESPONSE; var pingRe = ""; var pingBody = ""
         try {
             val c = java.net.URL(u.trimEnd('/') + "/v1/models").openConnection() as java.net.HttpURLConnection
+            if (c is javax.net.ssl.HttpsURLConnection) com.hermesvox.core.MtlsConfig.applyIfConfigured(c, u)
             c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Authorization", "Bearer " + k)
             pingCode = c.responseCode
@@ -4127,6 +4130,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (includeStream) {
             try {
                 val c = java.net.URL(u.trimEnd('/') + "/v1/responses").openConnection() as java.net.HttpURLConnection
+                if (c is javax.net.ssl.HttpsURLConnection) com.hermesvox.core.MtlsConfig.applyIfConfigured(c, u)
                 try {
                     c.requestMethod = "POST"; c.connectTimeout = 8000; c.readTimeout = 8000; c.doOutput = true
                     c.setRequestProperty("Authorization", "Bearer " + k)

@@ -71,6 +71,14 @@ class NetworkSecurityConfigTest {
         }
     }
 
+    /** A debug build trusts exactly what a release build trusts. `<debug-overrides>` would
+     *  accept every user-installed root for every host in the build people test with, which
+     *  is the M4 hole this file exists to close. */
+    @Test fun thereIsNoDebugTrustEscape() {
+        assertNull("no <debug-overrides> block may appear in the network security config",
+            child(xml(), "debug-overrides"))
+    }
+
     @Test fun thePolicyAndTheXmlAgreeThatOnlyTheTailnetIsSpecial() {
         val root = xml()
         assertNull("there is no user anchor at the base level", child(root, "base-config")?.let {

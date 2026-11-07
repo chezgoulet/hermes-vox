@@ -209,6 +209,7 @@ the section's own refusal cannot disagree.
 |---|---|---|---|---|
 | Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, and a switch closes the sheet and ends a live call first. It is a **picker, not an editor**: profiles are configured on the host, so there is no add row and no edit row and nothing in the sheet writes a profile — a host that serves none says "No profiles yet. Profiles are set up on the host, not on this phone.", and `Refresh from host` is the one action The list is **asked in conversation** (#384) on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt `agentName.setOnClickListener { profiles.showSwitcher() }`)`) |
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `testConnectionAsync`) |
+| Client certificate (mTLS) | `mtls_alias_<host>:<port>` | none | A certificate the app presents to a gateway that asks for one, stored per **origin** (host + port) — one device setting, not per profile, and not shown in the profile editor. **Choose** opens Android's own certificate picker; the row then names the certificate's subject and expiry, not the KeyChain alias. Changing the gateway address never carries it to the new host: Save clears it there and the row says *"Address changed — choose the certificate again"* (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `Address changed — choose the certificate again`). The private key stays in KeyChain — only a `PrivateKey` handle is ever used (android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt `PREF_PREFIX = "mtls_alias_"`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `AppSkillInstall.ask(this, s, versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))`)`) |
 | Entity name | `agent_name` | the host's `data[0].id`, else `model` | The name above the being and in Settings → Entity. It is **read-only and host-derived**: the same `GET /v1/models` probe as connect adopts `data[0].id`; a 200 with no id says "connected, but the host did not name itself" and keeps the fallback. It is not the request route | (android/app/src/main/java/com/hermesvox/OnboardingActivity.kt `HostEntity.answer`) |
 | Teach your agent this app | (action) | — | Asks the agent to install this skill on its gateway, or copies the `hermes skills install …` command (with `-p <profile>` for a profile address) | (android/app/src/main/java/com/hermesvox/AppSkill.kt `fun command`) |
@@ -822,6 +823,22 @@ before answering", look at `er-soul-drop`.
 | `event=session-transcript … state=key-rejected / no-answer` | The read failed, and which of the two it was | `key-rejected` on the root = the same wall as #436, not a missing session | (android/app/src/main/java/com/hermesvox/MainActivity.kt `state=key-rejected`) |
 | `event=session-clear` | The adopted session was let go (`id=`): `/new`, `/clear`, a profile switch, a saved connection | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=session-clear id=`) |
 
+### I. Client certificates (mTLS)
+
+| Event | Meaning | Bad values | Reference |
+|---|---|---|---|
+| `event=mtls state=unavailable reason=<token> host=<host:port>` | No client certificate was attached to a request. Written **once per state change**, not per request | `no-alias` is normal (nothing chosen for that origin). Anything else with a certificate configured is a real failure | (android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt ``logSink?.invoke("event=mtls state=unavailable reason=${reason.token} host=${failure.host}")``) |
+
+The tokens: `origin-unparseable` (not an HTTPS origin), `no-context` (the app could not read
+its settings), `no-provider` (the certificate store is unavailable), `no-alias` (nothing
+chosen), `cert-unavailable` (the chosen certificate is missing or revoked),
+`key-unavailable` (its private key is missing, locked or revoked), `origin-mismatch` (the
+connection went to a different host or port — a redirect), `origin-unverified`,
+`picker-cancelled` (the picker was dismissed)
+(android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt `ORIGIN_MISMATCH("origin-mismatch"`).
+The sanity check that matters is the HOST half of the guard: a 30x to another host must get
+no certificate (android/app/src/test/java/com/hermesvox/core/MtlsEntityTest.kt `fun aRedirectToAnotherHostGetsNoCertificate()`).
+
 ---
 
 ## 5. The model catalogue
@@ -910,7 +927,7 @@ Debug / crash log → Share full log).
   (docs/RELEASE-0.9.0.md `plain HTTP is refused`) (android/app/src/main/res/xml/network_security_config.xml `cleartextTrafficPermitted="false"`).
 - **Do:** serve the gateway over HTTPS (`tailscale serve`, Caddy, or any TLS terminator) and
   enter the HTTPS URL. For a tailnet certificate, install the CA and use the HTTPS name
-  (android/app/src/main/res/xml/network_security_config.xml `certificates src="user"`). Do
+  (android/app/src/main/res/xml/network_security_config.xml `<certificates src="user"/>`). Do
   not suggest uninstalling or downgrading.
 
 ### 6.2 The selected STT model "isn't working" — it never loaded
@@ -1095,6 +1112,24 @@ Debug / crash log → Share full log).
   override silently falls back to the default)
   (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun resolveSource(input: String?): String {`); the partial
   file is kept and resumes (android/app/src/main/java/com/hermesvox/ModelDownloader.kt `* itself with backoff, resuming each time. The sha256 over the COMPLETE file is still the gate`).
+
+### 6.16 The gateway answers 401 and the client certificate is the suspect
+
+- **Signature:** turns fail with the gateway's 401/403, and Settings → Entity & Connection →
+  Entity shows a reason on the certificate row — `No certificate sent — …` or
+  `… — the chosen certificate is missing or revoked`
+  (android/app/src/main/java/com/hermesvox/SettingsActivity.kt ` · no certificate (`); the log
+  carries one `event=mtls state=unavailable reason=…` line.
+- **Cause:** the certificate is not being sent, or the server is not accepting it. `no-alias`
+  means nothing is chosen for *this* origin (the common case after a gateway address change:
+  the row says the address changed and the certificate must be chosen again); `cert-unavailable`
+  / `key-unavailable` mean it was chosen but the store no longer has it (revoked, re-installed,
+  or a locked keystore); `origin-mismatch` means the request went somewhere else.
+- **Do:** open the certificate row, choose the certificate again, and Save. If it says
+  `key-unavailable`, re-install the certificate in Android (Settings → Security → Encryption &
+  credentials) — the app cannot recover a revoked key. Do not suggest disabling TLS
+  verification or a custom trust manager: server verification is the platform's and must stay
+  that way (android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt `fun applyIfConfigured(`).
 
 ---
 

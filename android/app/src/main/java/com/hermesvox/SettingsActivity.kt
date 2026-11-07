@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -446,6 +447,12 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_entity).setOnClickListener {
             val view = layoutInflater.inflate(R.layout.dialog_entity, null)
+            // The client-certificate row is added HERE, not in dialog_entity.xml: the
+            // profile editor inflates that layout too, and a certificate is per gateway
+            // origin (one device setting), not per profile. In the editor the row would do
+            // nothing and describe a value unrelated to the profile being edited.
+            (view as android.view.ViewGroup)
+                .addView(layoutInflater.inflate(R.layout.mtls_certificate, view, false))
             val eurl = view.findViewById<EditText>(R.id.d_url)
             val emodel = view.findViewById<EditText>(R.id.d_model)
             val ekey = view.findViewById<EditText>(R.id.d_key)
@@ -459,9 +466,129 @@ class SettingsActivity : AppCompatActivity() {
             emodel.isCursorVisible = false
             emodel.keyListener = null
             emodel.setText(storedEntityName())
-            eurl.setText(prefs.getString("url", ""))
+
+            val dMtlsAlias = view.findViewById<TextView>(R.id.d_mtls_alias)
+            val dMtlsChoose = view.findViewById<Button>(R.id.d_mtls_choose)
+            val dMtlsClear = view.findViewById<Button>(R.id.d_mtls_clear)
+
+            val initialUrl = prefs.getString("url", "").orEmpty()
+            eurl.setText(initialUrl)
             ekey.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
             escope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
+
+            val initialOrigin = com.hermesvox.core.MtlsConfig.originOf(initialUrl)
+            // The origin the certificate on screen was chosen FOR — not the origin the
+            // address field happens to spell. An alias may only ever be set by an explicit
+            // act on that origin, so editing the URL must leave the old certificate where
+            // it belongs instead of silently becoming the new host's credential.
+            var chosenFor = initialOrigin
+            var currentAlias = initialOrigin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+            // The alias is opaque; what the user is approving is a subject and an expiry.
+            // Read from the certificate, off the UI thread (KeyChain is a blocking IPC).
+            var aliasDetail: String? = null
+            var detailFor: String? = null
+
+            fun typedOrigin() = com.hermesvox.core.MtlsConfig.originOf(eurl.text.toString().trim())
+
+
+            fun updateMtlsViews() {
+                val typed = typedOrigin()
+                val changed = typed != chosenFor
+                // A named reason (if one was recorded for THIS origin) belongs on the row:
+                // "the server rejected my certificate" and "the app never sent one" must
+                // not both read as "None".
+                val failure = typed?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
+                    ?.takeIf { it != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS }
+                // A certificate this edit would leave behind: the one on screen (stored
+                // under the old address) or one the new address already holds, which Save
+                // clears so it cannot be used without being chosen again.
+                val stale = changed && (!currentAlias.isNullOrBlank() ||
+                    (typed != null && com.hermesvox.core.MtlsConfig.getAlias(prefs, typed) != null))
+                when {
+                    stale -> {
+                        // Say it here, before Save: neither certificate will follow this change.
+                        dMtlsAlias.text = "Address changed — choose the certificate again"
+                        dMtlsClear.visibility = View.GONE
+                    }
+                    currentAlias.isNullOrBlank() -> {
+                        dMtlsAlias.text = failure?.let { "No certificate sent — ${it.label}" }
+                            ?: "None (system default)"
+                        dMtlsClear.visibility = View.GONE
+                    }
+                    else -> {
+                        dMtlsAlias.text = failure?.let { "${aliasDetail ?: currentAlias} — ${it.label}" }
+                            ?: aliasDetail ?: currentAlias
+                        dMtlsClear.visibility = View.VISIBLE
+                    }
+                }
+            }
+
+            fun refreshAliasDetail() {
+                val alias = currentAlias?.takeIf { it.isNotBlank() }
+                if (alias == null) { aliasDetail = null; detailFor = null; return }
+                if (alias == detailFor) return
+                val origin = chosenFor ?: typedOrigin() ?: return
+                Thread {
+                    val line = com.hermesvox.core.MtlsConfig.describe(origin, alias)
+                    runOnUiThread {
+                        if (currentAlias == alias) {
+                            aliasDetail = line
+                            detailFor = alias
+                            updateMtlsViews()
+                        }
+                    }
+                }.start()
+            }
+            updateMtlsViews()
+            refreshAliasDetail()
+            eurl.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = updateMtlsViews()
+            })
+
+            dMtlsChoose.setOnClickListener {
+                val target = typedOrigin()
+                if (target == null) {
+                    Toast.makeText(this, "Enter a valid HTTPS endpoint URL first", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                android.security.KeyChain.choosePrivateKeyAlias(
+                    this,
+                    { alias ->
+                        runOnUiThread {
+                            if (alias.isNullOrBlank()) {
+                                // Dismissed or denied: the previous choice (if it belongs
+                                // to this origin) stands, and the dismissal is a named
+                                // reason rather than a row that quietly says "None".
+                                com.hermesvox.core.MtlsConfig.notePickerCancelled(target)
+                                Toast.makeText(this, "No certificate chosen", Toast.LENGTH_SHORT).show()
+                            } else {
+                                currentAlias = alias
+                                chosenFor = target
+                                detailFor = null
+                                com.hermesvox.core.MtlsConfig.notePicked(target)
+                            }
+                            updateMtlsViews()
+                            refreshAliasDetail()
+                        }
+                    },
+                    arrayOf("RSA", "EC"),
+                    null,
+                    target.host,
+                    target.port,
+                    currentAlias?.takeIf { chosenFor == target }
+                )
+            }
+
+            dMtlsClear.setOnClickListener {
+                currentAlias = null
+                aliasDetail = null
+                detailFor = null
+                chosenFor = typedOrigin()
+                updateMtlsViews()
+            }
+
             val dlg = AlertDialog.Builder(this)
                 .setTitle("Entity")
                 .setView(view)
@@ -485,6 +612,32 @@ class SettingsActivity : AppCompatActivity() {
                     com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
                         Toast.makeText(this, it, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
+                    }
+                    // The origin-binding rule: a certificate is written only for the origin
+                    // it was explicitly chosen on. If the address changed, the old alias is
+                    // NOT carried over — it is cleared from the new origin and the user has
+                    // to choose again (the row said so while they typed). Writing it here
+                    // would make the old host's client certificate the new host's
+                    // credential, with no prompt and no visible change.
+                    val finalOrigin = com.hermesvox.core.MtlsConfig.originOf(u)
+                    if (finalOrigin != null) {
+                        // Was a certificate dropped by this edit — the one on screen, or one
+                        // the new origin already held? Either way the address changed, and
+                        // the user has to choose again; say so rather than let the row go
+                        // quietly back to "None".
+                        val dropped = com.hermesvox.core.MtlsConfig.getAlias(prefs, finalOrigin)
+                        val addressChanged = finalOrigin != chosenFor && finalOrigin != initialOrigin
+                        when (val d = com.hermesvox.core.MtlsConfig.saveAlias(
+                            initialOrigin, chosenFor, currentAlias, finalOrigin)) {
+                            is com.hermesvox.core.MtlsConfig.SaveAlias.Write ->
+                                com.hermesvox.core.MtlsConfig.setAlias(prefs, finalOrigin, d.alias)
+                            com.hermesvox.core.MtlsConfig.SaveAlias.Leave -> Unit
+                        }
+                        if (addressChanged && (dropped != null || !currentAlias.isNullOrBlank())) {
+                            Toast.makeText(this,
+                                "The address changed, so the certificate must be chosen again for it.",
+                                Toast.LENGTH_LONG).show()
+                        }
                     }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
@@ -913,7 +1066,20 @@ class SettingsActivity : AppCompatActivity() {
         // the host's (T7); the model id is only the fallback until a verify names it.
         val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         val who = if (scope.isEmpty()) "no scope" else "scope · $scope"
-        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who"
+        // mTLS, as it actually stands for this origin: a certificate is configured, or a
+        // named reason says why none is being sent. The reason token is the same one the
+        // log line carries, so a report ("it says cert-unavailable") can be grepped.
+        val origin = com.hermesvox.core.MtlsConfig.originOf(u)
+        val alias = origin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+        val reason = origin?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
+        val mtls = when {
+            origin == null -> ""
+            alias != null -> " · mTLS" + (reason?.let { " (${it.token})" } ?: "")
+            reason != null && reason != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS ->
+                " · no certificate (${reason.token})"
+            else -> ""
+        }
+        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls"
     }
 
     /** The host's adopted name, or the old `model` value until a verify gives one. */

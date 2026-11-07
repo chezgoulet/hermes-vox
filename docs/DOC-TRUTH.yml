@@ -263,6 +263,27 @@
   file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
   match: 'BAD_URI = "bad_uri"'
 
+
+# ---- per-origin mTLS: docs/MTLS-PER-ORIGIN.md makes claims about the code ----
+
+- id: mtls-per-origin-key
+  says: "host and a port"
+  doc: docs/MTLS-PER-ORIGIN.md
+  file: android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt
+  match: 'PREF_PREFIX \+ origin\.key'
+
+- id: mtls-null-trust-manager
+  says: "resolves to Android's platform trust manager"
+  doc: docs/MTLS-PER-ORIGIN.md
+  file: android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt
+  match: 'ctx\.init\(arrayOf<KeyManager>\(km\), null, null\)'
+
+- id: mtls-save-never-inherits
+  says: "An alias is only ever written by an explicit choice made"
+  doc: docs/MTLS-PER-ORIGIN.md
+  file: android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt
+  match: 'fun saveAlias\('
+
 # ---- the 0.9.1 release-truth lane: the facts this release rests on ----
 
 - id: phone-surface-no-install
@@ -319,3 +340,4 @@
   doc: docs/MCP-SURFACE.md
   file: android/app/src/main/java/com/hermesvox/PhoneFiles.kt
   match: 'const val MAX_READ_BYTES = 64 \* 1024L'
+
