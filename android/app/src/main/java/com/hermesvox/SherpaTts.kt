@@ -424,11 +424,21 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
     }
 
-    /** Build + play a single persistent AudioTrack at the given rate (the actual one). */
+    /** Build + play a single persistent AudioTrack at the given rate (the actual one).
+     *
+     *  The capacity is [STREAM_BUFFER_SECS] = 4 s of float mono PCM. The number is not a
+     *  tuning knob: it is the headroom the synthesis worker needs. [streamChunk] writes each
+     *  chunk BLOCKING into this track, so the buffer must exceed the longest single write or
+     *  it blocks the worker until playback drains — that is one inference of silence at every
+     *  chunk boundary (the defect this PR fixes). The longest write is bounded by one chunk,
+     *  and chunks are capped at StreamTextChunker.CHUNK_CAP_CHARS = 30 characters ≈ 2.1–2.5 s
+     *  at the device's measured 12–16 chars/s (mean 14.2). 4 s therefore leaves ~1.5–2×
+     *  headroom. Raising that cap without raising this buffer re-introduces the boundary
+     *  silence; keep the two numbers together. */
     private fun buildStreamTrack(sr: Int): AudioTrack? {
         return try {
             val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
-            val bufBytes = maxOf(minBuf, (sr / 4) * 4)
+            val bufBytes = maxOf(minBuf, sr * STREAM_BUFFER_SECS * 4)   // 4s PCM float buffer
             val t = AudioTrack.Builder()
                 .setAudioAttributes(speechAttributes())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
@@ -580,3 +590,5 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
     @Synchronized
     override fun shutdown() { tts = null }
 }
+
+private const val STREAM_BUFFER_SECS = 4
