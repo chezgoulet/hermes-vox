@@ -10,6 +10,13 @@ capability is missing.
 `docs/MCP-PHONE.md` remains the operational document: how the agent is asked to add the server, the
 token, the wire, the device pass for the tool as a whole. This one is the surface itself.
 
+**The entry is lazy.** The server entry the agent writes sets the documented per-server key
+`lazy: true` (`hermes config set mcp_servers.vox.lazy true`). The tool is registered from its schema
+cache, so it is in the model's hands whether or not the phone has been reached recently; the
+connection is made when the tool is used, and the phone is listening whenever a call is live. The
+surface below is therefore callable whenever a call is up, without waiting for an eager client to
+retry a phone that was idle.
+
 **Built today (lane 1):** `media`, `device-state`, `clipboard` — plus the three groups that were
 already real (`timers-alarms`, `dnd-volume`, `notes`).
 **Built today (lane 2):** `files` and `calendar`.

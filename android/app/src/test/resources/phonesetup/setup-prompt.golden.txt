@@ -13,7 +13,13 @@ When it asks for the API key / bearer token, paste exactly the token above. This
 
 `hermes mcp add` verifies the connection before it saves, and it will refuse a server it cannot reach. If it refuses, do not write a dead entry and do not guess: say plainly that the add did not succeed and name what the command said.
 
-This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `http://100.101.102.103:8765/mcp` and an `Authorization: "Bearer 0123456789abcdef0123456789abcdef"` header. Whichever route you use, the server name stays `vox`.
+This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `http://100.101.102.103:8765/mcp`, an `Authorization: "Bearer 0123456789abcdef0123456789abcdef"` header, and `lazy: true`. Whichever route you use, the server name stays `vox`.
+
+Set that lazy key with the documented command, whichever route you used:
+
+hermes config set mcp_servers.vox.lazy true
+
+The tool is registered from its schema, so it is always available to you; the connection is made when it is used, so this phone does not need to have been reached recently for the tool to be there. `hermes mcp add` has already connected once, which fills that schema cache; if the cache is missing, the entry falls back to connecting at startup as it did before.
 
 No restart is needed and none is wanted. A running gateway picks the new server up from its own configuration and registers the tool by itself; there is no restart, reload or lifecycle command on this surface, so do not call one and do not create or run a job for it.
 

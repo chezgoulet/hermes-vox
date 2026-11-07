@@ -508,6 +508,7 @@ object PhoneMcpConfig {
             append("      Authorization: \"Bearer ${token}\"\n")
             append("    connect_timeout: 5\n")
             append("    timeout: 30\n")
+            append("    lazy: true   # register the tool from its schema; connect when it is used\n")
             append("    trust: full   # set `untrusted` to require an approval card for every call\n")
             append("    tools:\n")
             append("      include: [").append(PhoneTool.NAME).append("]\n")
