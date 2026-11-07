@@ -664,7 +664,10 @@ stored, because they are the guard, not something the owner needs to read.
 `notification_read` row is `app` and `notification_count=1`. Neither keeps a title, a body, or an
 id the owner could not see. A `contact` row is `count` alone: never the query name, a display name
 or a number. These are the owner's data, not facts the audit list may keep. The audit's one
-summarising function is the place a future action has to pass through.
+summarising function is the place a future action has to pass through. **A refused dismissal keeps
+its app, not its id:** the row names the app the call named, or the app behind a summary id when the
+board still knows it, and says nothing at all when the phone cannot know which app was meant —
+never a guessed or invented app.
 
 ---
 
