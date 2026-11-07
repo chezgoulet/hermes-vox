@@ -3158,7 +3158,6 @@ class VoiceController(private val context: Context, private val session: HermesS
         replyOwnsTrack = false
         if (sRunning && sClosed) sRunning = false   // re-arm a drained worker (stuck sRunning) so this new turn can start
         synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false; sFinal = false }
-        lastStreamFlush = android.os.SystemClock.uptimeMillis()   // arm the #44 timer for THIS turn
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
         try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
@@ -3325,36 +3324,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (!streamed || sClosed || sFinal) return   // not active, stream closed, or the queue is final
         if (tts?.supportsStreaming != true) return   // non-streaming TTS -> full-text fallback, no queue
         synchronized(sLock) {
-            val now = android.os.SystemClock.uptimeMillis()
             sAccum.append(delta)
-            // Slice from the LIVE accumulator, not a snapshot: after the first sentence
-            // our boundary index is relative to the shortened sAccum, so slicing the
-            // snapshot re-extracted the start (duplicate sentences -> garbage chunks).
-            var b = indexOfSentenceEnd(sAccum.toString())
-            var emitted = false
-            while (b >= 0) {
-                val sent = sAccum.substring(0, b + 1).trim()
-                sAccum.replace(0, b + 1, "")
-                if (sent.isNotBlank()) { sQueue.add(Chunk(gen, sent)); emitted = true }
-                b = indexOfSentenceEnd(sAccum.toString())
-            }
-            // #44: a punctuation-light open phrase that hasn't hit a terminator in the
-            // flush window is emitted as a short partial so the first audio (and every
-            // pause in a ramble) plays sooner, not at the next sentence terminator.
-            // Cut at the LAST word break so we never synthesize a half word.
-            if (!emitted && now - lastStreamFlush >= STREAM_CHUNK_FLUSH_MS) {
-                val cut = sAccum.toString().trimEnd()
-                val lastSpace = cut.lastIndexOf(' ') + 1   // offset after the final word break
-                if (lastSpace > 0 && lastSpace < cut.length) {
-                    val rest = cut.substring(0, lastSpace).trim()
-                    if (rest.isNotBlank()) {
-                        sQueue.add(Chunk(gen, rest))
-                        sAccum.setLength(0); sAccum.append(cut.substring(lastSpace))
-                        emitted = true
-                    }
-                }
-            }
-            if (emitted) lastStreamFlush = now
+            // Cut on a clause seam or at the 30-char cap (StreamTextChunker). The rule
+            // reads the accumulated text only — never the clock, never where this delta
+            // ended — so the same reply chunks identically however the network packs it.
+            StreamTextChunker.drain(sAccum) { sQueue.add(Chunk(gen, it)) }
             sLock.notifyAll()
         }
     }
@@ -3370,9 +3344,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         }
         streamed = false
         synchronized(sLock) {
-            val rest = sAccum.toString().trim()
-            if (rest.isNotBlank()) sQueue.add(Chunk(gen, rest))
-            sAccum.setLength(0)
+            // The end-of-turn flush: a genuine trailing full stop (held back because a
+            // buffer-end dot is not a sentence end) and the short tail are spoken here.
+            for (tail in StreamTextChunker.flush(sAccum)) sQueue.add(Chunk(gen, tail))
             sFinal = true
             sLock.notifyAll()
         }
@@ -3570,11 +3544,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var sFinal = false
     private var sDone = java.util.concurrent.CountDownLatch(1)
     @Volatile private var sRunning = false
-    // #44: time-based partial-audio flush. `lastStreamFlush` is the wall-clock of
-    // the last chunk emitted; an open phrase that hasn't hit a boundary (and so
-    // hasn't been chunked) within STREAM_CHUNK_FLUSH_MS is cut at the last word
-    // break and emitted so audio tracks the text rather than the terminator.
-    private var lastStreamFlush = 0L
+    // #44's time-based partial flush is gone: the 30-char cap emits punctuation-light
+    // text without waiting for a terminator, and a wall-clock cut made the boundaries
+    // depend on delta arrival again (the bug class StreamTextChunker removes).
 
     /** The streaming-reply guard condition, in ONE place: a glue one-shot is forbidden
      *  only once the reply has actually BEGUN producing output, because that is when a
@@ -4335,49 +4307,6 @@ internal fun pickOnDeviceStt(streamPref: String?, streamStatus: StreamSttStatus,
     if (streamStatus == StreamSttStatus.READY) return OnDeviceSttPick(streamPref, null)
     return OnDeviceSttPick(shipped, streamStatus.name.lowercase().replace('_', '-'))
 }
-
-/** #30/#44: chunk-seam helper (pure, unit-testable). Returns the index of the
- *  next text boundary to split a streaming-TTS chunk at, or -1. '!' / '?' /
- *  newline are always boundaries; '.' only when it genuinely ends a sentence —
- *  followed by end-of-text or whitespace + a letter, and NOT an abbreviation
- *  ("Dr.", "Mr.", "St.") — so "71.5%" and "Dr. Chen" never split into an
- *  audible seam. A comma/colon/semicolon FOLLOWED BY whitespace is a SOFT seam
- *  (#44) so a punctuation-light reply yields partial audio sooner, while
- *  "1,000" / "a:b" stay whole (no whitespace follows the punctuation). */
-internal fun indexOfSentenceEnd(s: String): Int {
-    for (i in s.indices) {
-        when (s[i]) {
-            '!', '?', '\n' -> return i
-            '.' -> if (isSentenceDot(s, i)) return i
-            ',', ';', ':' -> if (i + 1 < s.length && s[i + 1].isWhitespace()) return i
-        }
-    }
-    return -1
-}
-
-private fun isSentenceDot(s: String, i: Int): Boolean {
-    val j = i + 1
-    if (j >= s.length) return true                // "Hello." at the very end -> end
-    if (!s[j].isWhitespace()) return false        // "71.5%" -> '.' then a digit, no space
-    var k = j
-    while (k < s.length && s[k].isWhitespace()) k++
-    if (k >= s.length) return true                // "Hello.   " trailing edge -> end
-    if (!s[k].isLetter()) return false            // '.' + space + punctuation -> not a seam
-    // Only treat as a sentence end if the token before '.' isn't a common
-    // abbreviation (title/initial): "Dr. Chen", "Mr. Smith", "St. Louis".
-    var w = i - 1
-    while (w >= 0 && s[w].isLetterOrDigit()) w--
-    return s.substring(w + 1, i).lowercase() !in STREAM_CHUNK_ABBREVIATIONS
-}
-
-private val STREAM_CHUNK_ABBREVIATIONS = setOf(
-    "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "vs", "etc",
-    "approx", "dept", "inc", "ltd", "co", "ave", "blvd", "mt"
-)
-
-/** #44: an open streaming phrase with no boundary emits as a partial chunk once
- *  this window elapses (so time-to-first-audio isn't gated on a terminator). */
-private const val STREAM_CHUNK_FLUSH_MS = 500L
 
 /** #18: a bounded FIFO ring of float samples — an O(1) append/overwrite sliding
  *  window used for the ~250ms capture pre-roll. The old `ArrayList<Float>` did
