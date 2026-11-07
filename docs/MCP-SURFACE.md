@@ -76,7 +76,7 @@ refusal means the work was not dispatched.
 |---|---|---|
 | **0** | instant | executes now, private, and reversible *where reversal is real* — an undo is offered |
 | **1** | reported | executes now, is reported to the mind on the next turn, and is undoable where the row says |
-| **2** | consequential | executes now at Allow or after its card at Ask; no undo. `uninstall` and `file_offer` are built; the other names are never advertised |
+| **2** | consequential | executes now at Allow or after its card at Ask; no undo. `uninstall` and `file_offer` are built; `delete` is declared for Files and is refused `not_built`, never advertised |
 
 The tier no longer limits which states are offered: every row has Off, Ask and Allow.
 
@@ -111,6 +111,7 @@ has run. A dialer that did not open is a refusal, never a success.
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
+| `not_built` | the action is declared by a group but this phone does not implement it yet; it is not offered, no card exists to raise, nothing was performed, and the detail names the action and the group it is planned for |
 | `approval-required` | the group is Ask: nothing was done, and a card with `approval_id`, `expires_at` and `summary` is waiting for the owner. Any action can answer it |
 | `approval_denied` | the owner answered the card with no; nothing was performed, and the id is burnt |
 | `approval_expired` | the card was not answered within two minutes (silence is no); nothing was performed |
@@ -410,7 +411,8 @@ the event it created and nothing else.
 
 **Built in lane 2:** `files` and `calendar`. Their actions are advertised only while the group is
 on, and both groups are reported: turning one on is the grant. `delete`, a file delete that cannot
-be undone, remains a Tier 2 name and is deliberately not built or advertised.
+be undone, is the files group's one **planned** name: it is deliberately not built or advertised,
+and a direct call is `not_built` naming Files.
 
 **Built by the read lane:** `contacts` and `notifications`, both instant and both Allow. Contacts is
 a `ContactsContract` lookup that returns names, numbers and labels only. Notifications is a
@@ -423,9 +425,11 @@ id. Neither group stores its payload in the audit.
 ## Tier 2 — consequential
 
 Tier 2 is for what cannot be undone and cannot be handed to another app. `uninstall` and
-`file_offer` are built and use the same card as every action at Ask; the unbuilt names
-(`delete`, `purchase`, `pay`, `transfer`) are never advertised, because a card cannot be
-raised for something the phone cannot do.
+`file_offer` are built and use the same card as every action at Ask. `delete` is declared by the
+files group as **planned** and is not built: it is never advertised, and a direct call is
+`not_built` naming Files rather than `approval-required` for a card nothing can raise. `purchase`,
+`pay` and `transfer` are not phone actions at all — no group declares them, so a direct call is
+`unknown-action`, the same answer `install` gets.
 
 `file_offer` is here because offering a file **exports** it: the bytes leave the granted folder,
 travel over the tailnet, land in the conversation and stay. The folder grant makes that export

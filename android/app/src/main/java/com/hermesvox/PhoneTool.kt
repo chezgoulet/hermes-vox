@@ -33,12 +33,15 @@ import com.hermesvox.core.Json
  * |---|---|---|
  * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `apps`, `launch`, `open`, `status`, `undo` | executed when the group allows or after the card; reversible, private. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. `apps` is a read of launchable entries and what the phone can honestly see running |
  * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create`, `notification_dismiss` | executed when the group allows or after the card, and reported to the mind on the next turn; undoable where the row says. A dismissal cannot be undone |
- * | 2 — consequential | `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` are implemented and use the one card handshake; the rest are named but never built, so they are never offered and a direct call is refused |
+ * | 2 — consequential | `uninstall`, `file_offer`, `delete` (planned) | `uninstall` and `file_offer` are implemented and use the one card handshake; `delete` is declared by the files group and not built, so a direct call is refused `not_built` naming that group |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 names that are not implemented are refused rather than offered: an entry in an `enum` is
- * a promise the phone must be able to keep, and these cannot raise a card. `uninstall` and
- * `file_offer` can, and do — through the same two-step handshake as every other action at Ask.
+ * a promise the phone must be able to keep. `uninstall` and `file_offer` can be kept — through the
+ * same two-step handshake as every other action at Ask. `delete` cannot: it is planned for Files,
+ * is never advertised, and a call naming it says so instead of pretending a card could be raised.
+ * `purchase`, `pay` and `transfer` are not phone actions at all; a call naming one is
+ * `unknown-action`, like the other retired names (`call`, `send`, `email`).
  * The owner may still put this whole tool behind the gateway's approval surface with
  * `trust: untrusted` in the gateway config (`docs/MCP-PHONE.md`).
  *
@@ -686,6 +689,23 @@ object PhoneTool {
         if (action.isEmpty()) return Parsed.Refuse(PhoneResult.refused("", PhoneReason.INVALID, "action is required"))
         val group = PhoneGrants.groupOf(action)
         if (group != null) {
+            // A planned name belongs to this group but is not a capability yet. It is refused
+            // before the grant is read: "Files is off" would suggest that granting Files would
+            // make it possible, and a bare `approval-required` would promise a card the phone
+            // cannot raise. The sentence names the action and the group it is planned for.
+            if (action in group.planned) {
+                return Parsed.Refuse(
+                    PhoneResult.refused(
+                        action,
+                        PhoneReason.NOT_BUILT,
+                        "this phone cannot do `$action` yet: it is planned for the " +
+                            "\"${group.label}\" group and is not built, so nothing was " +
+                            "performed and no card was raised. Only the actions in `action` are " +
+                            "capabilities on this phone.",
+                        tier = PhoneGrants.tierOf(action) ?: group.tier,
+                    )
+                )
+            }
             return when (PhoneGrants.stateOf(grants, group)) {
                 PhoneGrants.State.OFF -> Parsed.Refuse(
                     PhoneResult.refused(
@@ -706,15 +726,6 @@ object PhoneTool {
             }
         }
         return when (PhoneTiers.of(action)) {
-            PhoneTiers.APPROVAL -> Parsed.Refuse(
-                PhoneResult.refused(
-                    action,
-                    PhoneReason.APPROVAL,
-                    "this action leaves the phone or cannot be undone; it needs the owner's approval " +
-                        "on the phone and was not performed",
-                    tier = PhoneTiers.APPROVAL,
-                )
-            )
             null -> Parsed.Refuse(
                 PhoneResult.refused(
                     action,
@@ -1237,23 +1248,24 @@ object PhoneTiers {
 
     /**
      * The consequential capabilities. `uninstall` and `file_offer` are implemented and run through
-     * the same card handshake as every action at Ask (or directly at Allow). The rest are named so
-     * a direct call gets "this needs the owner" rather than "unknown action"; they are never built,
-     * so they are never offered and can never raise a card.
+     * the same card handshake as every action at Ask (or directly at Allow). `delete` is declared
+     * by the files group as **planned** and is not built: a direct call is `not_built` naming that
+     * group, and it is never offered. `purchase`, `pay` and `transfer` are not phone actions at
+     * all — no group declares them, no card can be raised for them, and a direct call is
+     * `unknown-action`, exactly as the other retired names (`call`, `send`, `email`) are.
+     *
+     * `call`, `send` and `email` were names under the old messages-calls group. They are gone
+     * with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
+     * (SENDTO, never SEND_SMS).
      */
     private val TIER_2 = setOf(
-        "purchase", "pay", "uninstall", "transfer",
+        "uninstall",
         // `file_offer` exports the owner's content over the tailnet. The folder grant makes the
         // export possible, not intended: at Ask every offer gets its own card, showing name, type
         // and size; at Allow the owner has granted the export outright.
         "file_offer",
-        // `call`, `send` and `email` were names under the old messages-calls group. They are gone
-        // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
-        // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the
-        // phone is pretending not to have.
-        //
-        // A file delete is a Tier 2 capability that this lane deliberately does not build: there
-        // is no undo, so it is named here and never advertised.
+        // Declared, not built: `PhoneGrants.groupOf("delete")` is the files group, and its
+        // `planned` list is what refuses the call with that group's name.
         "delete",
     )
 
@@ -1271,7 +1283,11 @@ object PhoneTiers {
     /** True when the phone can perform [action] — directly at Allow, or after its card at Ask. */
     fun executable(action: String): Boolean {
         val a = action.trim().lowercase()
-        return of(a)?.let { it <= REPORTED || a == "uninstall" || a == "file_offer" } == true
+        // A declared-but-unbuilt name has a tier and a group, but no implementation: it must
+        // never count as executable, or `PhoneToolTest`'s "offered implies executable" rule
+        // would stop meaning anything.
+        if (PhoneGrants.groupOf(a)?.planned?.contains(a) == true) return false
+        return of(a) != null
     }
 }
 
@@ -1322,6 +1338,12 @@ object PhoneReason {
      * grant state, not a tier — a timer at Ask answers with it exactly as an uninstall does.
      */
     const val APPROVAL = "approval-required"
+
+    /**
+     * The action is declared by a group but not built on this phone yet. Nothing was performed,
+     * no card exists to raise, and the detail names the action and the group it is planned for.
+     */
+    const val NOT_BUILT = "not_built"
 
     /** The owner denied the card. Nothing was performed, and the id is burnt. */
     const val APPROVAL_DENIED = "approval_denied"

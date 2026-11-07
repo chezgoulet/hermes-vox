@@ -240,15 +240,36 @@ class PhoneGrantsTest {
         // `install` left the surface with the apps-and-dismiss lane: no group, no tier, no promise.
         assertNull("install belongs to no group", PhoneGrants.groupOf("install"))
         assertNull("install is not a phone action", PhoneGrants.tierOf("install"))
-        for (g in PhoneGrants.GROUPS) {
-            assertTrue("${g.id} must have no planned actions left", g.planned.isEmpty())
-            assertFalse(
-                "install must not be advertised even when every group is allowed",
-                "install" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
-            )
-        }
+        assertFalse(
+            "install must not be advertised even when every group is allowed",
+            "install" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
+        )
         assertNull(PhoneGrants.groupOf("fly"))
         assertNull(PhoneGrants.tierOf("fly"))
+    }
+
+    @Test fun a_planned_action_is_declared_by_its_group_and_never_advertised() {
+        // `planned` is not dead: the files group declares the one capability it will hold but does
+        // not implement, and `PhoneTool.parse` reads it to refuse the call with that group's name.
+        val files = PhoneGrants.GROUPS.first { it.id == "files" }
+        assertEquals(listOf("delete"), files.planned)
+        assertTrue("a planned name is not a built action", "delete" !in files.actions)
+        assertEquals("delete belongs to files", "files", PhoneGrants.groupOf("delete")?.id)
+        assertEquals("and keeps its consequential tier", PhoneTiers.APPROVAL, PhoneGrants.tierOf("delete"))
+
+        val all = PhoneGrants.Source { PhoneGrants.State.ALLOW }
+        for (group in PhoneGrants.GROUPS) {
+            for (planned in group.planned) {
+                assertTrue(
+                    "$planned is planned for ${group.id}, so it is never advertised",
+                    planned !in PhoneGrants.advertised(all),
+                )
+            }
+        }
+        for (gone in listOf("purchase", "pay", "transfer")) {
+            assertNull("$gone is no longer a declared capability", PhoneGrants.groupOf(gone))
+            assertNull("$gone has no tier", PhoneGrants.tierOf(gone))
+        }
     }
 
     @Test fun the_summary_names_every_group_and_its_state() {
