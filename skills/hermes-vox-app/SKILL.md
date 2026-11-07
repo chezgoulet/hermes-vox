@@ -32,14 +32,14 @@ is absent (section 7) or a preview (the wake word).
 ## 1. What it is, in four lines
 
 1. **Hermes Vox is an Android voice client for Hermes, a self-hosted agent you run yourself.**
-   There is no hosted service and nothing to sign up for (README.md `Bring your own gateway`).
+   There is no hosted service and nothing to sign up for (README.md `no account, no hosted service`).
 2. **By default, hearing and speaking happen on the phone.** Silero VAD, Whisper/Parakeet/Nemotron
-   STT and Supertonic/Piper TTS run on-device, fully offline (docs/ARCHITECTURE.md `Speech processing is on-device`);
+   STT and Supertonic/Piper TTS run on-device, fully offline (docs/ARCHITECTURE.md `Recognition is on-device through`);
    the two opt-in exceptions are in the table below.
 3. **The thinking happens on your gateway.** The app sends the turn's text to `/v1/runs`
    (the default) and streams the reply back; a gateway with no runs route answers 404 and
    the same turn retries once on `/v1/responses`. Tools, memory and context stay
-   server-side (docs/ARCHITECTURE.md `the default (#404)`).
+   server-side (docs/ARCHITECTURE.md `Only an admission that answers **404** falls back to this route, once.`).
 4. **By default nothing leaves the phone except that turn** — text to your own gateway, plus
    model files fetched over HTTPS when you install them (PRIVACY.md `your server`). Two
    opt-in paths send audio elsewhere: the remote-STT backend and the platform (Google)
@@ -50,7 +50,7 @@ is absent (section 7) or a preview (the wake word).
 default, and switchable off: an on-device Gemma 4 E2B model, the mirrored `VOX.md`, the
 being and its asides
 (docs/DECISIONS.md `## D16 — There is one product, and presence is a layer on it`). It is an expression layer, never a second brain
-(docs/ARCHITECTURE.md `never a second`).
+(docs/ARCHITECTURE.md `It is expression, never authority`).
 
 ---
 
@@ -63,14 +63,14 @@ being and its asides
 | 3 | STT | on-device by default | sherpa-onnx offline recogniser (Whisper base.en default) — batch: it sees a finished utterance | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `DEFAULT_STT_MODEL`) |
 | 3a | STT alternative | **remote** | optional OpenAI-compatible server; audio is POSTed to the URL the user typed | (android/app/src/main/java/com/hermesvox/RemoteStt.kt `audio never leaves the`) |
 | 3b | STT alternative | **remote (platform)** | Android `SpeechRecognizer`; the device's provider may process audio off-device — do not call it local | (android/app/src/main/java/com/hermesvox/VoiceController.kt `createSpeechRecognizer`) |
-| 4 | The mind | **remote** | your Hermes gateway: `POST /v1/runs` by default (a body `session_id` continues the conversation), falling back to `POST /v1/responses` on a 404, chained by `previous_response_id` | (docs/ARCHITECTURE.md `the default (#404)`) (android/app/src/main/java/com/hermesvox/core/HermesSession.kt `* previous_response_id on the next turn.`) |
+| 4 | The mind | **remote** | your Hermes gateway: `POST /v1/runs` by default (a body `session_id` continues the conversation), falling back to `POST /v1/responses` on a 404, chained by `previous_response_id` | (docs/ARCHITECTURE.md `Only an admission that answers **404** falls back to this route, once.`) (android/app/src/main/java/com/hermesvox/core/HermesSession.kt `* previous_response_id on the next turn.`) |
 | 5 | TTS | on-device | Supertonic (recommended), Piper, or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `defaultTts`) |
 | 6 | Presence (optional) | on-device | Gemma 4 E2B via LiteRT-LM on the GPU; speaks asides in the agent's mirrored voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,`) |
 | 7 | Avatar + words | on-device | GPU-drawn being and the speech-locked crawl | (docs/ARCHITECTURE.md `6,000 stateless particles`) |
 | 8 | Phone actions | on-device engine, plus a tailnet MCP listener while a call is live | timers, alarms, do-not-disturb, volume, media, device state, clipboard, files, calendar, a contacts lookup by name, the installed-apps list, notifications (a counts-per-app summary while a call is live, one notification's content by id, and dismissal), and handoffs: a text is composed for the owner's messaging app, the dialer opens with a number ready, apps launch or open, and an uninstall opens Android's own confirmation. **The phone parses nothing**: every voice turn goes to the mind, which acts through one MCP tool and gets a result back (D38). Nothing is sent or dialled by Vox. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt `val GROUPS: List<Group> = listOf(`) (android/app/src/main/java/com/hermesvox/AppsAccess.kt `const val ACTION_APPS = "apps"`) (android/app/src/main/java/com/hermesvox/PhoneNotifications.kt `const val ACTION_DISMISS = "notification_dismiss"`) |
 
 Only leg 4 is a network peer. Barge-in cancels the stream rather than leaving it running
-(docs/ARCHITECTURE.md `closing the stream aborts the generation`).
+(docs/ARCHITECTURE.md `A barge-in runs one cut path`).
 
 **What the agent is doing** is the pill under the agent's name — the state line, shown whenever
 a step is running or a failure is held, not only during a call, and mirrored in the call
@@ -1143,7 +1143,7 @@ Debug / crash log → Share full log).
 These prevent confident wrong advice. None of them is a bug report; they are the product.
 
 - **No cloud, no account, no vendor server.** There is no hosted service, no sign-up and
-  nothing operated by the maintainers (README.md `Bring your own gateway`); the gateway
+  nothing operated by the maintainers (README.md `no account, no hosted service`); the gateway
   key goes only to the gateway (PRIVACY.md `preferences on your device and is transmitted **only to the gateway you configured** —`). The only *default*
   network peer is your gateway plus the model host you install from (PRIVACY.md `your server`).
 - **No Play Store, no AAB.** Google Play is dropped as a rail; distribution is GitHub,
@@ -1175,14 +1175,14 @@ These prevent confident wrong advice. None of them is a bug report; they are the
   Samsung). Never promise a Samsung user that installing Vox rebinds their key
   (docs/ASSISTANT-ROLE.md `Android owns the **role**; the phone maker owns the **button**. Vox asks for the role when`).
 - **No full duplex.** It listens *or* speaks, with barge-in; it does not hear you while it is
-  talking (docs/ARCHITECTURE.md `Half-duplex`).
+  talking (docs/ARCHITECTURE.md `speak and listen at the same time`).
 - **No streaming partials by default.** Recognition is batch: a turn is transcribed after it
   ends. Partials only trigger an early end, and the streaming arm is opt-in
-  (docs/ARCHITECTURE.md `Recognition is *batch*`).
+  (docs/ARCHITECTURE.md `Recognition is batch: it sees a finished utterance.`).
 - **No semantic end-of-turn.** Endpointing is silence plus a conservative finished-sentence
-  check (docs/ARCHITECTURE.md `not semantic`).
+  check (docs/ARCHITECTURE.md `the normal 800 ms silence endpoint runs`).
 - **No emotion in the voice.** Mood moves speed and pauses only; Supertonic has no emotion
-  control (docs/ARCHITECTURE.md `no emotion control`).
+  control (docs/ARCHITECTURE.md `mood moves only speed and pauses`).
 - **No session store of its own.** The app keeps no session list on disk: what the card shows is
   what the host answered a moment ago, and the transcript on screen is the host's, re-read rather
   than remembered. Offline it says `the host did not answer` instead of showing a stale copy
