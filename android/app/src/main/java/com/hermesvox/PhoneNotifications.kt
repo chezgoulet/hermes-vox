@@ -346,12 +346,24 @@ object PhoneNotifications {
      * The audit row's whole content for a dismissal: the app and the count, nothing else. The
      * dispatch path replaces the raw arguments (which may carry an id) with this map before
      * [PhoneAudit] sees them, so a listener id can never become an owner-visible record.
+     *
+     * A refusal that knows the app still carries it; one that does not carries nothing, rather
+     * than an empty or invented app. The id is never a fact the audit may keep, on either path.
      */
     fun auditArguments(result: PhoneResult): Map<String, Any?> {
         if (result.action != ACTION_DISMISS) return emptyMap()
         val app = result.facts["app"] as? String ?: return emptyMap()
         val count = (result.facts["count"] as? Number)?.toLong() ?: 0L
         return linkedMapOf("app" to app, "notification_count" to count.toString())
+    }
+
+    /**
+     * The app behind a summary id, for a refusal that has to name what the call was about without
+     * keeping the id. Only an id a summary of this call has shown answers; a guessed or stale id
+     * answers null, so this cannot be used to probe the board.
+     */
+    fun appOf(id: String): String? = synchronized(lock) {
+        if (id !in summarised) null else items[id]?.takeIf { !it.own }?.app
     }
 
     /** A dismissal refusal. The app is included only when the call named one; an id never is. */

@@ -173,6 +173,9 @@ object AppsAccess {
             },
             "total" to installed.total,
             "truncated" to installed.truncated,
+            // Reading the launchable list changes nothing, and the mind is told so rather than
+            // left to infer it from a missing key.
+            "undoable" to false,
         )
         val running = running(host)
         if (running == null) {

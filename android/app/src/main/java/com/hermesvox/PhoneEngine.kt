@@ -1733,10 +1733,15 @@ class PhoneEngine(
      * phone with no live call answers `unavailable` even if the system grant is also missing.
      */
     private fun notificationDismiss(call: PhoneTool.Call.NotificationDismiss): PhoneResult {
+        // An engine-level refusal happens before the payload is read. The app is still known when
+        // the call named one, or when the id is one a summary has shown — the audit must carry
+        // it. The id is never a fact the row may keep, and an id nobody can place contributes
+        // nothing rather than a guess.
+        val refusalFacts = dismissRefusalFacts(call)
         if (!PhoneNotifications.attached()) {
-            return listenerClosed(PhoneNotifications.ACTION_DISMISS)
+            return listenerClosed(PhoneNotifications.ACTION_DISMISS, refusalFacts)
         }
-        listenerPermission(PhoneNotifications.ACTION_DISMISS)?.let { return it }
+        listenerPermission(PhoneNotifications.ACTION_DISMISS, refusalFacts)?.let { return it }
         val result = PhoneNotifications.dismiss(call.id, call.app)
         log(
             "event=phone-mcp action=${PhoneNotifications.ACTION_DISMISS} ok=${result.ok} " +
@@ -1745,13 +1750,23 @@ class PhoneEngine(
         return result
     }
 
+    /** What a refusal knows about a dismissal: its app, never its id. */
+    private fun dismissRefusalFacts(call: PhoneTool.Call.NotificationDismiss): Map<String, Any?> {
+        val app = call.app?.trim()?.takeIf { it.isNotEmpty() }
+            ?: call.id?.trim()?.takeIf { it.isNotEmpty() }?.let { PhoneNotifications.appOf(it) }
+        return if (app == null) emptyMap() else linkedMapOf("app" to app)
+    }
+
     /**
      * Both notification reads say the same thing when no call is live: the system grant may be
      * held, but this app's use of it is not. It names the listener's lifetime rather than a
      * generic failure.
      */
     /** The system grant is missing (the group is on, but Android has not been asked or said no). */
-    private fun listenerPermission(action: String): PhoneResult? {
+    private fun listenerPermission(
+        action: String,
+        facts: Map<String, Any?> = emptyMap(),
+    ): PhoneResult? {
         if (platform.notificationListenerGranted()) return null
         log("event=phone-mcp action=$action ok=false reason=permission")
         return PhoneResult.refused(
@@ -1759,16 +1774,21 @@ class PhoneEngine(
             PhoneReason.PERMISSION,
             "this app does not hold notification-listener access; only the owner can grant it in " +
                 "Phone tools, on Android's notification-access screen",
+            facts = facts,
         )
     }
 
-    private fun listenerClosed(action: String): PhoneResult {
+    private fun listenerClosed(
+        action: String,
+        facts: Map<String, Any?> = emptyMap(),
+    ): PhoneResult {
         log("event=phone-mcp action=$action ok=false reason=unavailable live=false")
         return PhoneResult.refused(
             action,
             PhoneReason.UNAVAILABLE,
             "the notification listener is only open during a call; no call is live, so nothing " +
                 "was read",
+            facts = facts,
         )
     }
 
@@ -2346,12 +2366,20 @@ class PhoneEngine(
         }
         val facts = linkedMapOf<String, Any?>(
             "offered" to offered,
+            // `status` reports the same names `tools/list` offers, from the same call, tier by
+            // tier. A name the schema would refuse is not a capability and is never listed here:
+            // a mind reading this is being told what this phone can do now, not what a later
+            // version might. The tier is the action's own, never its group's.
             "tiers" to linkedMapOf(
                 "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
                 "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
-                // Named from the one tier table, so a name cannot linger here after it moved.
-                "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
+                "2" to offered.filter { PhoneTiers.of(it) == PhoneTiers.APPROVAL },
             ),
+            // Which groups are on, positively, so a mind does not have to read absence as a
+            // denial: `grants` carries every group below, and this is the list that is live.
+            "groups_on" to PhoneGrants.GROUPS
+                .filter { PhoneGrants.stateOf(grants, it) != PhoneGrants.State.OFF }
+                .map { it.id },
             "grants" to PhoneGrants.summary(grants),
             "running" to running,
             "notes" to saved,

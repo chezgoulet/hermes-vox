@@ -31,10 +31,11 @@ package com.hermesvox
  * reversible and register an undo; consequential ones do not. The tier still groups the rows in the
  * sheet, so a reader can see which actions are cheap to reverse and which are not.
  *
- * A group's `actions` are the ones the phone implements **today** and may advertise; `planned` names
- * the actions the group will hold when its capability lands, so a direct call today gets a governance
- * refusal that names the group instead of "unknown action" — and is never advertised, because a
- * promise in an `enum` is a capability the phone must be able to keep.
+ * A group's `actions` are the ones the phone implements **today** and may advertise; `planned`
+ * names the actions the group will hold when its capability lands. A planned name is never
+ * advertised — a promise in an `enum` is a capability the phone must be able to keep — and a
+ * direct call naming one is refused `not_built` with the group's own name, never a bare
+ * `approval-required` for a card that cannot be raised.
  *
  * Pure JVM, so [PhoneGrantsTest] proves the defaults and the uniform states without a device. The
  * Android side (reading and writing the owner's choices) is [PhoneGrantStore].
@@ -74,6 +75,7 @@ object PhoneGrants {
         /** What Allow means for this group, shown only at Allow. Loud where it matters. */
         val allowWarning: String? = null,
         val actions: List<String> = emptyList(),
+        /** Declared for a later capability; refused `not_built` and never advertised. */
         val planned: List<String> = emptyList(),
     ) {
         /** True when the phone can perform at least one action of this group today. */
@@ -142,6 +144,9 @@ object PhoneGrants {
             allowWarning = "Allow: Vox can read a file in the folder you granted, and offer it to " +
                 "your agent, without asking. Reading inside that folder is no longer a decision.",
             actions = listOf("file_list", "file_read", "file_offer"),
+            // A file delete is consequential and has no undo, so it is declared for the group
+            // that would own it and not built. A direct call is `not_built` naming Files.
+            planned = listOf("delete"),
         ),
         Group(
             id = "calendar",

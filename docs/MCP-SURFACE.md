@@ -63,6 +63,17 @@ action does not take (a misspelt `duration` for `duration_ms`, a `to` on a `note
 `invalid-arguments` naming it, never silently dropped. `PhoneTool.ARGUMENTS` is the table, pinned
 against the schema's `properties` in both directions.
 
+**An argument description names no action the grants forbid.** Descriptions are read on every turn
+exactly like the `enum`, so they are phrased around the capability — "the media sound level", "a
+person's full or partial name", "a new event's start" — rather than around action names that may be
+absent. A `text` description never says "note, clip or message" while one of those groups is Off,
+because that would promise what the grants have already refused to offer.
+
+**`required` names only `action`, and that is all it can name.** One tool carries many actions, so
+per-action requirements (`duration_ms`, `at`, `on`, `text`, `to`, `uri`, `package`,
+`title`/`start`/`duration_min`) are enforced by the parser, not the schema: a call missing one is
+`invalid-arguments` whose detail names **the action and the argument it is missing**.
+
 **A timeout is not a refusal of the work.** The phone runs one action at a time on its own thread,
 not on the thread that draws, and a caller's bound stops only its own waiting. When that bound
 expires the result is `ok:false`, `reason:"unavailable"` and **`outcome_uncertain:true`**: the action
@@ -76,7 +87,7 @@ refusal means the work was not dispatched.
 |---|---|---|
 | **0** | instant | executes now, private, and reversible *where reversal is real* — an undo is offered |
 | **1** | reported | executes now, is reported to the mind on the next turn, and is undoable where the row says |
-| **2** | consequential | executes now at Allow or after its card at Ask; no undo. `uninstall` and `file_offer` are built; the other names are never advertised |
+| **2** | consequential | executes now at Allow or after its card at Ask; no undo. `uninstall` and `file_offer` are built; `delete` is declared for Files and is refused `not_built`, never advertised |
 
 The tier no longer limits which states are offered: every row has Off, Ask and Allow.
 
@@ -111,6 +122,7 @@ has run. A dialer that did not open is a refusal, never a success.
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
+| `not_built` | the action is declared by a group but this phone does not implement it yet; it is not offered, no card exists to raise, nothing was performed, and the detail names the action and the group it is planned for |
 | `approval-required` | the group is Ask: nothing was done, and a card with `approval_id`, `expires_at` and `summary` is waiting for the owner. Any action can answer it |
 | `approval_denied` | the owner answered the card with no; nothing was performed, and the id is burnt |
 | `approval_expired` | the card was not answered within two minutes (silence is no); nothing was performed |
@@ -140,7 +152,10 @@ Every action in the tables below can also return `not_granted`, `approval-requir
 ## Tier 0 — instant
 
 Every result carries `ok`, `action` and `tier`; the "result fields" column lists what is added on
-success (an `undo` object is added only when the row's undo column says it is real).
+success (an `undo` object is added only when the row's undo column says it is real). Every success
+also carries **`undoable` explicitly** — `true` exactly when an `undo` object is present, `false`
+for every read and every irreversible action. Absence never means "unknown" in that field: a mind
+can tell "this cannot be reversed" from "the phone did not say" without guessing.
 
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
@@ -164,7 +179,7 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `apps` | apps | — | `apps` — each `package` and `label`; `total`, `truncated`; with usage access `can_see_running: true`, `foreground` and `recent`; without it `can_see_running: false`, `running_detail`, `usage_settings` | **no** — reading the launchable list changes nothing | the launcher query `ACTION_MAIN` / `CATEGORY_LAUNCHER` from the manifest's `<queries>` (no `QUERY_ALL_PACKAGES`). What is **running** needs **usage access** (`PACKAGE_USAGE_STATS`), a special access the owner grants on Android's own screen; without it the result says it cannot see what is running and never returns an empty list as "nothing is running" | none of its own: it always answers the installed half; the running half is absent and explained |
 | `contact` | contacts | `name` — a full or partial name, case-insensitive, 1 – 200 characters | `count`, `matches` — each `display_name` and `numbers`, each number `{label, number}` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission asked when Contacts is turned on; **[ContactsContract](https://developer.android.com/reference/android/provider/ContactsContract) only**. The projection is a display name and the numbers with their labels; **no note, address, photo or email** is read. Up to 20 matches; no match is `ok:true, count:0` | `permission` (naming `android.permission.READ_CONTACTS`), `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
-| `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dial` (the last handoff's `to`, `dialer` — `opened` / `not_opened` — and `at`), `dnd`, `volume` | **no** — reporting only | nothing | — |
+| `status` | — (always offered) | — | `offered`, `tiers` (only the names `tools/list` advertises, under their own tier), `groups_on` (the ids whose grant is not Off), `grants` (every group and its state), `running`, `notes`, `registry`, `dial` (the last handoff's `to`, `dialer` — `opened` / `not_opened` — and `at`), `dnd`, `volume` | **no** — reporting only | nothing | — |
 
 `undo` and `status` are not a capability: `undo` only reverses something the owner already allowed,
 and `status` only reports. They are therefore always advertised, even with every group Off.
@@ -203,8 +218,12 @@ one. The result's `dispatched` is exactly that: the audio service accepted the k
   blaming a missing grant.
 
 `skip`'s `direction` defaults to `next` when omitted; any other value is `invalid-arguments`. It
-shares the `direction` property with `volume`, so the schema lists `up`, `down`, `next` and
-`previous`, and each action accepts only its own pair.
+shares the `direction` property with `volume`, and the two sets of words are disjoint, so the
+schema advertises **no `enum`** for it: an enum on a shared property would advertise `next` for a
+volume and `up` for a skip, and a schema-valid call would then be refused. The property's
+description names both pairs — `up`/`down` for the media volume, `next`/`previous` for a track —
+and the parser accepts exactly those, refusing anything else with a sentence that names the action
+and the value it was given. `prev` is not advertised and is not accepted: one word, one value.
 
 ### Device state, and the null rule
 
@@ -258,10 +277,15 @@ action and its outcome.
 access the owner gives once in Android's notification-access screen, and the system may keep the
 service bound between calls. The app therefore separates the *grant* from the *listener's
 lifetime*: `PhoneNotifications` attaches when a Vox call starts and detaches when it ends — the same
-lifetime rule as the MCP server — and `detach` drops every record and every id. Outside a call both
-actions refuse `ok:false, reason:"unavailable"` and say the listener is only open during a call. A
-summary of a phone with no live call is not "0 notifications"; it is a refusal that names the
-lifetime.
+lifetime rule as the MCP server — and `detach` drops every record and every id. Outside a call all
+three actions refuse `ok:false, reason:"unavailable"` and say the listener is only open during a
+call. A summary of a phone with no live call is not "0 notifications"; it is a refusal that names
+the lifetime.
+
+**These three actions exist only during a call.** `notifications`, `notification_read` and
+`notification_dismiss` need the listener a live call attaches, so off a call — including every
+off-device test run — the only honest answer is `unavailable`, and the matrix test in
+`PhoneSurfaceAuditTest` asserts exactly that. It is expected behaviour, not a broken grant.
 
 **A summary is counts, and nothing to read aloud.**
 
@@ -410,7 +434,8 @@ the event it created and nothing else.
 
 **Built in lane 2:** `files` and `calendar`. Their actions are advertised only while the group is
 on, and both groups are reported: turning one on is the grant. `delete`, a file delete that cannot
-be undone, remains a Tier 2 name and is deliberately not built or advertised.
+be undone, is the files group's one **planned** name: it is deliberately not built or advertised,
+and a direct call is `not_built` naming Files.
 
 **Built by the read lane:** `contacts` and `notifications`, both instant and both Allow. Contacts is
 a `ContactsContract` lookup that returns names, numbers and labels only. Notifications is a
@@ -423,9 +448,11 @@ id. Neither group stores its payload in the audit.
 ## Tier 2 — consequential
 
 Tier 2 is for what cannot be undone and cannot be handed to another app. `uninstall` and
-`file_offer` are built and use the same card as every action at Ask; the unbuilt names
-(`delete`, `purchase`, `pay`, `transfer`) are never advertised, because a card cannot be
-raised for something the phone cannot do.
+`file_offer` are built and use the same card as every action at Ask. `delete` is declared by the
+files group as **planned** and is not built: it is never advertised, and a direct call is
+`not_built` naming Files rather than `approval-required` for a card nothing can raise. `purchase`,
+`pay` and `transfer` are not phone actions at all — no group declares them, so a direct call is
+`unknown-action`, the same answer `install` gets.
 
 `file_offer` is here because offering a file **exports** it: the bytes leave the granted folder,
 travel over the tailnet, land in the conversation and stay. The folder grant makes that export
@@ -647,7 +674,10 @@ stored, because they are the guard, not something the owner needs to read.
 `notification_read` row is `app` and `notification_count=1`. Neither keeps a title, a body, or an
 id the owner could not see. A `contact` row is `count` alone: never the query name, a display name
 or a number. These are the owner's data, not facts the audit list may keep. The audit's one
-summarising function is the place a future action has to pass through.
+summarising function is the place a future action has to pass through. **A refused dismissal keeps
+its app, not its id:** the row names the app the call named, or the app behind a summary id when the
+board still knows it, and says nothing at all when the phone cannot know which app was meant —
+never a guessed or invented app.
 
 ---
 

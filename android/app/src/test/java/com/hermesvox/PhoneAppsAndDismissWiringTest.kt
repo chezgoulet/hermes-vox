@@ -25,6 +25,7 @@ class PhoneAppsAndDismissWiringTest {
     private class Fake : PhoneEngine.PhonePlatform {
         var appsAsked = 0
         var usage = false
+        var listenerGranted = true
         val installed = listOf(
             AppsAccess.App("com.messages", "Messages"),
             AppsAccess.App("com.mail", "Mail"),
@@ -50,6 +51,7 @@ class PhoneAppsAndDismissWiringTest {
         override fun saveNote(id: String, text: String, atEpochMs: Long): Boolean = true
         override fun deleteNote(id: String): Boolean = true
         override fun mediaKey(key: PhoneEngine.PhonePlatform.MediaKey): Boolean = true
+        override fun notificationListenerGranted(): Boolean = listenerGranted
         override fun playback(): PhoneEngine.PhonePlatform.Playback =
             PhoneEngine.PhonePlatform.Playback(
                 known = false,
@@ -309,5 +311,70 @@ class PhoneAppsAndDismissWiringTest {
         for (secret in listOf("Invoice", "Attached is the invoice", id)) {
             assertFalse("the dismissal audit leaked '$secret'", dismissText.contains(secret))
         }
+    }
+
+    // ---- a refusal keeps what it knows, and only that ----
+
+    @Test fun a_refused_dismiss_records_the_app_the_call_named() {
+        PhoneNotifications.detach()
+        val e = engine(only("notifications", PhoneGrants.State.ALLOW))
+
+        val r = e.dispatch(
+            mapOf("action" to "notification_dismiss", "app" to "Messages"),
+            t0,
+            e0,
+        )
+
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertEquals(
+            "the row names the app the call named, and an explicit zero it dismissed",
+            mapOf("app" to "Messages", "notification_count" to "0"),
+            audits.single().args,
+        )
+    }
+
+    @Test fun a_refused_dismiss_by_id_records_nothing_it_cannot_know() {
+        PhoneNotifications.detach()
+        val e = engine(only("notifications", PhoneGrants.State.ALLOW))
+
+        val r = e.dispatch(
+            mapOf("action" to "notification_dismiss", "id" to "n1"),
+            t0,
+            e0,
+        )
+
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.UNAVAILABLE, r.reason)
+        assertEquals(
+            "with no listener the app behind the id is unknown: the row says nothing, " +
+                "not something false",
+            emptyMap<String, Any?>(),
+            audits.single().args,
+        )
+    }
+
+    @Test fun a_permission_refusal_names_the_app_behind_the_id_but_never_the_id() {
+        val id = seed()
+        fake.listenerGranted = false
+        val e = engine(only("notifications", PhoneGrants.State.ALLOW))
+
+        val r = e.dispatch(
+            mapOf("action" to "notification_dismiss", "id" to id),
+            t0,
+            e0,
+        )
+
+        assertFalse(r.ok)
+        assertEquals(PhoneReason.PERMISSION, r.reason)
+        assertEquals(
+            "the board still knows which app the id belonged to",
+            mapOf("app" to "Mail", "notification_count" to "0"),
+            audits.single().args,
+        )
+        assertFalse(
+            "the listener id is never an audit fact",
+            audits.single().args.toString().contains(id),
+        )
     }
 }

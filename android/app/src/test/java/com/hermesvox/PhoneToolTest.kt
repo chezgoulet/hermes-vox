@@ -188,8 +188,21 @@ class PhoneToolTest {
         assertEquals(PhoneTool.MAX_DURATION_MS, ((props["duration_ms"] as JObj)["maximum"] as com.hermesvox.core.JNum).raw.toLong())
         assertEquals("0", ((props["level"] as JObj)["minimum"] as com.hermesvox.core.JNum).raw)
         assertEquals("100", ((props["level"] as JObj)["maximum"] as com.hermesvox.core.JNum).raw)
-        val direction = ((props["direction"] as JObj)["enum"] as JArr).items.map { (it as JStr).value }
-        assertEquals(listOf("up", "down", "next", "previous"), direction)
+        val direction = (props["direction"] as JObj)
+        assertNull(
+            "volume and skip share `direction` with disjoint values, so an enum here would " +
+                "advertise a value one of them refuses",
+            direction["enum"],
+        )
+        val directionText = (direction["description"] as JStr).value
+        for (values in PhoneTool.DIRECTIONS.values) {
+            for (value in values) {
+                assertTrue(
+                    "`$value` is accepted but the schema does not name it: $directionText",
+                    directionText.contains(value),
+                )
+            }
+        }
         for (key in listOf("at", "on", "text", "id", "to", "app", "uri", "package")) {
             assertNotNull("$key must be documented", props[key])
         }
@@ -213,7 +226,8 @@ class PhoneToolTest {
         assertEquals(listOf("play", "pause", "skip", "now_playing", "undo", "status"), enumOf(mediaOn))
     }
 
-    @Test fun skip_defaults_to_next_and_accepts_only_its_own_directions() {        val next = PhoneTool.parse(mapOf("action" to "skip"), open)
+    @Test fun skip_defaults_to_next_and_accepts_only_its_own_directions() {
+        val next = PhoneTool.parse(mapOf("action" to "skip"), open)
         assertEquals(false, ((next as PhoneTool.Parsed.Run).call as PhoneTool.Call.Skip).previous)
 
         val explicit = PhoneTool.parse(mapOf("action" to "skip", "direction" to "next"), open) as PhoneTool.Parsed.Run
@@ -222,13 +236,92 @@ class PhoneToolTest {
         val back = PhoneTool.parse(mapOf("action" to "skip", "direction" to "previous"), open) as PhoneTool.Parsed.Run
         assertEquals(true, (back.call as PhoneTool.Call.Skip).previous)
 
-        // The two actions share the `direction` property; each rejects the other's words.
-        val up = PhoneTool.parse(mapOf("action" to "skip", "direction" to "up"), open)
-        assertEquals(PhoneReason.INVALID, (up as PhoneTool.Parsed.Refuse).result.reason)
+        // The two actions share the `direction` property; each rejects the other's words, and the
+        // refusal names the action and the value it was given — "invalid-arguments" alone would
+        // leave the mind guessing which of two actions and four words was wrong.
+        val up = PhoneTool.parse(mapOf("action" to "skip", "direction" to "up"), open) as PhoneTool.Parsed.Refuse
+        assertEquals(PhoneReason.INVALID, up.result.reason)
+        assertTrue(up.result.detail!!, up.result.detail!!.contains("skip"))
+        assertTrue(up.result.detail!!, up.result.detail!!.contains("up"))
         val previousVolume = PhoneTool.parse(
             mapOf("action" to "volume", "direction" to "previous"), open,
+        ) as PhoneTool.Parsed.Refuse
+        assertEquals(PhoneReason.INVALID, previousVolume.result.reason)
+        assertTrue(previousVolume.result.detail!!, previousVolume.result.detail!!.contains("volume"))
+        assertTrue(previousVolume.result.detail!!, previousVolume.result.detail!!.contains("previous"))
+    }
+
+    @Test fun a_missing_per_action_argument_names_the_action_and_the_argument() {
+        // `required` can only name `action`: one tool carries many actions, so the per-action
+        // requirements are the parser's job. A refusal that says only "duration_ms is required"
+        // leaves a mind holding eight actions and no idea which one asked for it.
+        val cases = listOf<Pair<Map<String, Any?>, String>>(
+            mapOf("action" to "timer") to "duration_ms",
+            mapOf("action" to "alarm") to "at",
+            mapOf("action" to "dnd") to "on",
+            mapOf("action" to "volume") to "direction",
+            mapOf("action" to "note") to "text",
+            mapOf("action" to "clip") to "text",
+            mapOf("action" to "file_read") to "name",
+            mapOf("action" to "file_offer") to "name",
+            mapOf("action" to "event_create") to "title",
+            mapOf("action" to "event_create", "title" to "Standup") to "start",
+            mapOf(
+                "action" to "event_create",
+                "title" to "Standup",
+                "start" to "2026-11-06T09:00",
+            ) to "duration_min",
+            mapOf("action" to "notification_read") to "id",
+            mapOf("action" to "notification_dismiss") to "id",
+            mapOf("action" to "contact") to "name",
+            mapOf("action" to "message") to "text",
+            mapOf("action" to "message", "text" to "hello") to "to",
+            mapOf("action" to "dial") to "to",
+            mapOf("action" to "launch") to "app",
+            mapOf("action" to "open") to "uri",
+            mapOf("action" to "uninstall") to "package",
+            mapOf("action" to "undo") to "id",
         )
-        assertEquals(PhoneReason.INVALID, (previousVolume as PhoneTool.Parsed.Refuse).result.reason)
+        for ((args, missing) in cases) {
+            val action = args["action"] as String
+            val parsed = PhoneTool.parse(args, open)
+            val refused = parsed as? PhoneTool.Parsed.Refuse
+                ?: throw AssertionError("$action with no `$missing` parsed into a call")
+            val detail = refused.result.detail.orEmpty()
+            assertTrue("$action's refusal does not name the action: $detail", detail.contains(action))
+            assertTrue("$action's refusal does not name `$missing`: $detail", detail.contains(missing))
+        }
+    }
+
+    @Test fun every_direction_value_is_accepted_by_the_action_it_is_advertised_for() {
+        val all = PhoneTool.DIRECTIONS.values.flatten().toSet()
+        for ((action, values) in PhoneTool.DIRECTIONS) {
+            for (value in values) {
+                val parsed = PhoneTool.parse(mapOf("action" to action, "direction" to value), open)
+                assertTrue(
+                    "$action advertises `$value` and must accept it: ${(parsed as? PhoneTool.Parsed.Refuse)?.result?.detail}",
+                    parsed is PhoneTool.Parsed.Run,
+                )
+            }
+            // Every accepted value is advertised: a value that is not in the action's own set is
+            // refused, and the refusal names both.
+            for (other in all - values) {
+                val refused = PhoneTool.parse(
+                    mapOf("action" to action, "direction" to other),
+                    open,
+                ) as PhoneTool.Parsed.Refuse
+                assertEquals(PhoneReason.INVALID, refused.result.reason)
+                assertTrue(refused.result.detail!!, refused.result.detail!!.contains(action))
+                assertTrue(refused.result.detail!!, refused.result.detail!!.contains(other))
+            }
+        }
+
+        // `prev` was accepted but never advertised. Either word can go; both cannot stay.
+        val prev = PhoneTool.parse(mapOf("action" to "skip", "direction" to "prev"), open)
+            as PhoneTool.Parsed.Refuse
+        assertEquals(PhoneReason.INVALID, prev.result.reason)
+        assertTrue(prev.result.detail!!, prev.result.detail!!.contains("skip"))
+        assertTrue(prev.result.detail!!, prev.result.detail!!.contains("prev"))
     }
 
     @Test fun the_state_action_is_offered_only_when_device_state_is_granted_and_takes_no_arguments() {
@@ -256,7 +349,11 @@ class PhoneToolTest {
         assertEquals(listOf("clip", "clip_read", "undo", "status"), enumOf(on))
         val text = ((input(on)["properties"] as JObj)["text"] as JObj)["description"] as JStr
         assertTrue("the bound is in the schema", text.value.contains(PhoneTool.MAX_CLIP_CHARS.toString()))
-        assertTrue("and the action is named", text.value.contains("clip"))
+        assertFalse(
+            "the description does not name an action: clipboard may be Off while it is read, " +
+                "and a description must not promise what the grants forbid",
+            Regex("\\bclip\\b").containsMatchIn(text.value),
+        )
         assertTrue(PhoneTool.parse(mapOf("action" to "clip", "text" to "hi"), on) is PhoneTool.Parsed.Run)
         assertTrue(
             "the read is offered by the same group and takes no text",
@@ -383,7 +480,11 @@ class PhoneToolTest {
         }
         assertEquals(listOf("contact", "undo", "status"), enumOf(on))
         val name = ((input(on)["properties"] as JObj)["name"] as JObj)["description"] as JStr
-        assertTrue("the name is documented for contact", name.value.contains("contact"))
+        assertTrue(
+            "the name's two shapes are documented without naming an action that may be Off: " +
+                name.value,
+            name.value.contains("person") && name.value.contains("file"),
+        )
         assertTrue("the bound is in the schema", name.value.contains(PhoneTool.MAX_CONTACT_NAME_CHARS.toString()))
         assertTrue(PhoneTool.parse(mapOf("action" to "contact", "name" to "Mo"), on) is PhoneTool.Parsed.Run)
         assertEquals(

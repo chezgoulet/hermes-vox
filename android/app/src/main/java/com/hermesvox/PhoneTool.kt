@@ -33,12 +33,15 @@ import com.hermesvox.core.Json
  * |---|---|---|
  * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `apps`, `launch`, `open`, `status`, `undo` | executed when the group allows or after the card; reversible, private. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. `apps` is a read of launchable entries and what the phone can honestly see running |
  * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create`, `notification_dismiss` | executed when the group allows or after the card, and reported to the mind on the next turn; undoable where the row says. A dismissal cannot be undone |
- * | 2 — consequential | `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` are implemented and use the one card handshake; the rest are named but never built, so they are never offered and a direct call is refused |
+ * | 2 — consequential | `uninstall`, `file_offer`, `delete` (planned) | `uninstall` and `file_offer` are implemented and use the one card handshake; `delete` is declared by the files group and not built, so a direct call is refused `not_built` naming that group |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
  * Tier 2 names that are not implemented are refused rather than offered: an entry in an `enum` is
- * a promise the phone must be able to keep, and these cannot raise a card. `uninstall` and
- * `file_offer` can, and do — through the same two-step handshake as every other action at Ask.
+ * a promise the phone must be able to keep. `uninstall` and `file_offer` can be kept — through the
+ * same two-step handshake as every other action at Ask. `delete` cannot: it is planned for Files,
+ * is never advertised, and a call naming it says so instead of pretending a card could be raised.
+ * `purchase`, `pay` and `transfer` are not phone actions at all; a call naming one is
+ * `unknown-action`, like the other retired names (`call`, `send`, `email`).
  * The owner may still put this whole tool behind the gateway's approval surface with
  * `trust: untrusted` in the gateway config (`docs/MCP-PHONE.md`).
  *
@@ -116,6 +119,19 @@ object PhoneTool {
         PhoneGrants.advertised(grants)
 
     /**
+     * The `direction` values each action takes. They are disjoint: the two actions share one
+     * schema property, and no value is valid for both. The schema therefore advertises the
+     * vocabulary in the property's description and **no `enum`** — an enum on a shared property
+     * would advertise `up` for a skip and `next` for a volume, and a schema-valid call would then
+     * be `invalid-arguments`. The parser reads this table, so a value cannot be accepted without
+     * being named to the model, or named without being accepted.
+     */
+    internal val DIRECTIONS: Map<String, Set<String>> = linkedMapOf(
+        "volume" to setOf("up", "down"),
+        "skip" to setOf("next", "previous"),
+    )
+
+    /**
      * The rule that makes `sensitive:true` on a notification result mean something. It lives in
      * the **tool description**, not only in the docs, because the description is what the agent
      * reads on every turn and the docs are not.
@@ -177,7 +193,7 @@ object PhoneTool {
         "pause" to "send the pause key to the active player",
         "skip" to "next or previous track",
         "now_playing" to "what the phone will admit to playing",
-        "state" to "battery, charging, screen, network, storage, volume, time",
+        "state" to "battery, charging, screen, network, storage, sound level, time",
         "clip" to "put text on the clipboard",
         "clip_read" to "the clipboard's text, when the phone allows the read",
         "file_list" to "list a folder you granted (depth-limited, paged, names and sizes only)",
@@ -189,11 +205,11 @@ object PhoneTool {
         "notification_read" to "one notification's app, time, title and text by id from a summary",
         "notification_dismiss" to "dismiss one notification by id, or all of an app's; not undoable",
         "contact" to "a contact's numbers by full or partial name",
-        "message" to "compose a text and open the messaging app; you send it",
-        "dial" to "open the dialer with a number ready; you make the call",
+        "message" to "compose a text and hand it to the messaging app; you send it",
+        "dial" to "bring up the dialer with a number ready; you make the call",
         "apps" to "what is installed, and what the phone can honestly see running",
-        "launch" to "open a launchable app by package or name",
-        "open" to "open a URI in the app that claims it",
+        "launch" to "start a launchable app by package or name",
+        "open" to "hand a URI to the app that claims it",
         "uninstall" to "remove an app by package",
     )
 
@@ -283,69 +299,76 @@ object PhoneTool {
                     "type" to "integer",
                     "minimum" to MIN_DURATION_MS.toInt(),
                     "maximum" to MAX_DURATION_MS.toInt(),
-                    "description" to "timer only: how long, in milliseconds.",
+                    "description" to
+                        "how long the countdown should run, in milliseconds ($MIN_DURATION_MS " +
+                        "to $MAX_DURATION_MS).",
                 ),
                 "at" to linkedMapOf(
                     "type" to "string",
-                    "description" to "alarm only: 24-hour clock time, HH:MM (for example 07:30).",
+                    "description" to
+                        "the wall-clock time to arm, 24-hour HH:MM (for example 07:30).",
                 ),
                 "on" to linkedMapOf(
                     "type" to "boolean",
-                    "description" to "dnd only: true turns do not disturb on, false turns it off.",
+                    "description" to "true turns Do not Disturb on and false turns it off.",
                 ),
                 "level" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 0,
                     "maximum" to 100,
-                    "description" to "volume only: the media volume to set, in percent.",
+                    "description" to "the media sound level to set, in percent (0–100).",
                 ),
                 "direction" to linkedMapOf(
                     "type" to "string",
-                    "enum" to listOf("up", "down", "next", "previous"),
+                    // No `enum`: two actions share this property and their values are disjoint, so
+                    // any enum here would advertise a value one of them refuses.
                     "description" to
-                        "volume only: up or down for one stream step. skip only: next (the " +
-                        "default) or previous. Each action accepts only its own pair.",
+                        "one step in a direction: up or down for the media sound level, next or " +
+                        "previous for a track (next is the default when omitted). Each action " +
+                        "accepts only its own two values; a value it does not take is " +
+                        "invalid-arguments naming the action and the value.",
                 ),
                 "text" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "note, clip or message only: the text to keep or send — at most " +
-                        "$MAX_NOTE_CHARS characters for a note, $MAX_CLIP_CHARS for a clip, " +
-                        "$MAX_MESSAGE_CHARS for a message. A message is composed here and " +
-                        "handed to your messaging app; this tool never sends it.",
+                        "the text to keep, hand to the owner's messaging app, or put on the " +
+                        "clipboard — at most $MAX_NOTE_CHARS characters when kept, " +
+                        "$MAX_MESSAGE_CHARS when handed to the messaging app, and " +
+                        "$MAX_CLIP_CHARS on the clipboard. A handed-off text is a draft: this " +
+                        "tool never sends it.",
                 ),
                 "to" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "message or dial only: the recipient — a phone number, or a contact name " +
-                        "when the Contacts group is granted. At most $MAX_TO_CHARS characters. " +
-                        "The dialer opens with the number filled in, and the messaging app opens " +
-                        "with the draft; the owner presses send or call.",
+                        "the recipient — a phone number, or a person's name when the address-book " +
+                        "group is on. At most $MAX_TO_CHARS characters. The dialer opens with the " +
+                        "number filled in and the messaging app opens with the draft; the owner " +
+                        "presses send or call.",
                 ),
                 "app" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "launch only: the package name, or the name the launcher shows. At most " +
+                        "a package name, or the name the launcher shows, at most " +
                         "$MAX_APP_CHARS characters. Only an activity with a launcher entry can " +
-                        "be started; a package with no launchable activity is no_app. " +
-                        "notification_dismiss: the launcher label or package whose notifications " +
-                        "are all dismissed.",
+                        "be started; a package with no launchable activity is no_app. For a " +
+                        "dismissal: the launcher label or package whose entries are all " +
+                        "dismissed.",
                 ),
                 "uri" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "open only: the URI to open, such as https://…, mailto:… or a deep link. " +
+                        "the link to hand to the platform — https://…, mailto:… or a deep link. " +
                         "It must carry a scheme and contain no whitespace, at most " +
                         "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments. " +
                         "intent:, file: and a string with no scheme are bad_uri and are never " +
-                        "opened.",
+                        "handed over.",
                 ),
                 "package" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "open only: the package that must receive the URI. uninstall only: the " +
-                        "package to remove. Omit it for open to let the phone choose among the " +
-                        "apps that claim the link; uninstall requires it.",
+                        "the package that must receive the link; omit it to let the phone choose " +
+                        "among the installed applications that claim it. For a removal: the " +
+                        "package to remove, as a dotted package name.",
                 ),
                 "approval" to linkedMapOf(
                     "type" to "string",
@@ -360,20 +383,19 @@ object PhoneTool {
                 "id" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "undo: the id an earlier result returned. notification_read: one of the " +
-                        "ids a notifications summary returned — never guess one. " +
-                        "notification_dismiss: an id a `notifications` summary returned — the " +
-                        "notification to dismiss.",
+                        "an id an earlier result returned: the thing to undo, one entry from a " +
+                        "summary (never guess one), or the one to dismiss. Never a title, a body " +
+                        "or an invented handle.",
                 ),
                 "name" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "contact: a full or partial contact name, case-insensitive, at most " +
+                        "a person's full or partial name, case-insensitive, at most " +
                         "$MAX_CONTACT_NAME_CHARS characters; the lookup returns up to " +
                         "$MAX_CONTACT_MATCHES matching people and their numbers with labels. " +
-                        "file_read or file_offer: the file's name inside the folder the owner " +
-                        "granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a path: " +
-                        "\"..\", an absolute path and a separator are refused.",
+                        "Or a file's name inside the folder the owner granted, at most " +
+                        "$MAX_FILE_NAME_CHARS characters. A name, never a path: \"..\", an " +
+                        "absolute path and a separator are refused.",
                 ),
                 "folder" to linkedMapOf(
                     "type" to "string",
@@ -381,58 +403,57 @@ object PhoneTool {
                     // enum is: a folder that is not granted is not a name the phone can keep.
                     *folderEnum(folderChoices),
                     "description" to if (folderChoices.isEmpty()) {
-                        "file_list, file_read or file_offer only: the folder the owner granted. " +
-                            "No folder is granted yet, so these actions refuse no_folder until the " +
-                            "owner picks one in Phone tools → Files."
+                        "the folder the owner granted. No folder is granted yet, so these " +
+                            "actions refuse no_folder until the owner picks one in Phone tools " +
+                            "→ Files."
                     } else {
                         val which = if (folderChoices.size == 1) {
                             "It is the only grant, so it is the default when folder is omitted."
                         } else {
                             "Name one of them: with several folders granted there is no default."
                         }
-                        "file_list, file_read or file_offer only: which granted folder to look in " +
-                            "— ${folderChoices.joinToString(", ")}. $which Everything is inside " +
-                            "that folder only."
+                        "which granted folder to look in — ${folderChoices.joinToString(", ")}. " +
+                            "$which Everything is inside that folder only."
                     },
                 ),
                 "path" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "file_list only: a subdirectory relative to the folder you granted " +
-                        "(for example \"reports/2026\"); leave it out, or \"\", for the folder " +
-                        "itself. An absolute path, \"..\" and a backslash are refused.",
+                        "a subdirectory relative to the folder you granted (for example " +
+                        "\"reports/2026\"); leave it out, or \"\", for the folder itself. An " +
+                        "absolute path, \"..\" and a backslash are refused.",
                 ),
                 "depth" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
                     "maximum" to PhoneFiles.MAX_DEPTH,
                     "description" to
-                        "file_list only: 1 (the default) lists that directory's entries; 2 also " +
-                        "lists each subdirectory's, and so on, up to ${PhoneFiles.MAX_DEPTH}.",
+                        "1 (the default) lists that directory's entries; 2 also lists each " +
+                        "subdirectory's, and so on, up to ${PhoneFiles.MAX_DEPTH}.",
                 ),
                 "pattern" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "file_list only: a case-insensitive glob on the file name, such as " +
-                        "\"*.pdf\" or \"invoice*\" (\"*\" is any run of characters, \"?\" one). " +
-                        "Applied to files, never to directories.",
+                        "a case-insensitive glob on the file name, such as \"*.pdf\" or " +
+                        "\"invoice*\" (\"*\" is any run of characters, \"?\" one). Applied to " +
+                        "files, never to directories.",
                 ),
                 "offset" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 0,
                     "description" to
-                        "file_list: the page to start at, from 0 (the default). file_read: the byte " +
-                        "to start a window at (a file larger than the whole-file cap is read this " +
-                        "way, never refused).",
+                        "for a listing, the page to start at, from 0 (the default). For a read, " +
+                        "the byte to start a window at (a file larger than the whole-file cap " +
+                        "is read this way, never refused).",
                 ),
                 "limit" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
                     "maximum" to PhoneFiles.MAX_LIST_LIMIT,
                     "description" to
-                        "file_list only: entries per page, ${PhoneFiles.DEFAULT_LIST_LIMIT} by " +
-                        "default, at most ${PhoneFiles.MAX_LIST_LIMIT}. More entries are not lost: " +
-                        "the result says has_more and gives next_offset.",
+                        "for a listing, entries per page, ${PhoneFiles.DEFAULT_LIST_LIMIT} by " +
+                        "default, at most ${PhoneFiles.MAX_LIST_LIMIT}. More entries are not " +
+                        "lost: the result says has_more and gives next_offset.",
                 ),
                 "length" to linkedMapOf(
                     "type" to "integer",
@@ -441,14 +462,14 @@ object PhoneTool {
                     // next window; without a maximum one call reads a whole file into the answer.
                     "maximum" to PhoneFiles.MAX_READ_BYTES,
                     "description" to
-                        "file_read only: the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
+                        "for a read, the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
                         "by default and at most that. The result says truncated and the file's " +
                         "total bytes; read the rest with a later offset.",
                 ),
                 "start" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "event_create only: the start as local ISO-8601, YYYY-MM-DDTHH:MM (seconds " +
+                        "a new event's start as local ISO-8601, YYYY-MM-DDTHH:MM (seconds " +
                         "optional), in the phone's own time zone. A trailing Z or an offset is " +
                         "refused: this is the phone's local clock.",
                 ),
@@ -456,21 +477,21 @@ object PhoneTool {
                     "type" to "integer",
                     "minimum" to MIN_EVENT_MINUTES,
                     "description" to
-                        "event_create only: how long the event lasts, in minutes — at least " +
-                        "$MIN_EVENT_MINUTES. Zero and negative durations are refused; there is no " +
-                        "upper bound here, so the calendar provider's own limits apply.",
+                        "a new event's length, in minutes — at least $MIN_EVENT_MINUTES. Zero " +
+                        "and negative durations are refused; there is no upper bound here, so " +
+                        "the calendar provider's own limits apply.",
                 ),
                 "calendar" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "event_create only: the name of the calendar to create the event in. Omit " +
-                        "it for the phone's default calendar.",
+                        "a new event's calendar, by name. Omit it for the phone's default " +
+                        "calendar.",
                 ),
                 "title" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "event_create only: the event's title, at most $MAX_EVENT_TITLE_CHARS " +
-                        "characters. The audit stores it as a length, never as the text.",
+                        "a new event's title, at most $MAX_EVENT_TITLE_CHARS characters. The " +
+                        "audit stores it as a length, never as the text.",
                 ),
             ),
             "required" to listOf("action"),
@@ -686,6 +707,23 @@ object PhoneTool {
         if (action.isEmpty()) return Parsed.Refuse(PhoneResult.refused("", PhoneReason.INVALID, "action is required"))
         val group = PhoneGrants.groupOf(action)
         if (group != null) {
+            // A planned name belongs to this group but is not a capability yet. It is refused
+            // before the grant is read: "Files is off" would suggest that granting Files would
+            // make it possible, and a bare `approval-required` would promise a card the phone
+            // cannot raise. The sentence names the action and the group it is planned for.
+            if (action in group.planned) {
+                return Parsed.Refuse(
+                    PhoneResult.refused(
+                        action,
+                        PhoneReason.NOT_BUILT,
+                        "this phone cannot do `$action` yet: it is planned for the " +
+                            "\"${group.label}\" group and is not built, so nothing was " +
+                            "performed and no card was raised. Only the actions in `action` are " +
+                            "capabilities on this phone.",
+                        tier = PhoneGrants.tierOf(action) ?: group.tier,
+                    )
+                )
+            }
             return when (PhoneGrants.stateOf(grants, group)) {
                 PhoneGrants.State.OFF -> Parsed.Refuse(
                     PhoneResult.refused(
@@ -706,15 +744,6 @@ object PhoneTool {
             }
         }
         return when (PhoneTiers.of(action)) {
-            PhoneTiers.APPROVAL -> Parsed.Refuse(
-                PhoneResult.refused(
-                    action,
-                    PhoneReason.APPROVAL,
-                    "this action leaves the phone or cannot be undone; it needs the owner's approval " +
-                        "on the phone and was not performed",
-                    tier = PhoneTiers.APPROVAL,
-                )
-            )
             null -> Parsed.Refuse(
                 PhoneResult.refused(
                     action,
@@ -769,12 +798,21 @@ object PhoneTool {
             if (raw != null && raw !in 0L..100L) return bad(action, "level must be between 0 and 100")
             val level = raw?.toInt()
             if (level != null) return Parsed.Run(Call.Volume(level, 0))
-            val direction = when ((args["direction"] as? String)?.trim()?.lowercase()) {
-                "up" -> 1
-                "down" -> -1
-                else -> return bad(action, "give level 0-100, or direction up or down")
+            val direction = (args["direction"] as? String)?.trim()?.lowercase()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return bad(
+                    action,
+                    "level or direction is required: give level 0-100, or direction up or down",
+                )
+            when (direction) {
+                "up" -> Parsed.Run(Call.Volume(null, 1))
+                "down" -> Parsed.Run(Call.Volume(null, -1))
+                else -> bad(
+                    action,
+                    "direction \"$direction\" is not valid for volume; volume takes up or down " +
+                        "(or give level 0-100)",
+                )
             }
-            Parsed.Run(Call.Volume(null, direction))
         }
         "note" -> {
             val text = (args["text"] as? String)?.trim().orEmpty()
@@ -787,11 +825,17 @@ object PhoneTool {
         "play" -> Parsed.Run(Call.PlayPause(pause = false))
         "pause" -> Parsed.Run(Call.PlayPause(pause = true))
         "skip" -> {
-            val dir = (args["direction"] as? String)?.trim()?.lowercase()
+            val dir = (args["direction"] as? String)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
             when (dir) {
-                null, "", "next" -> Parsed.Run(Call.Skip(previous = false))
-                "previous", "prev" -> Parsed.Run(Call.Skip(previous = true))
-                else -> bad(action, "direction must be next (the default) or previous")
+                // `prev` is not a word this tool advertises or accepts: either would be a second
+                // name for the same value, and the schema names `previous`.
+                null, "next" -> Parsed.Run(Call.Skip(previous = false))
+                "previous" -> Parsed.Run(Call.Skip(previous = true))
+                else -> bad(
+                    action,
+                    "direction \"$dir\" is not valid for skip; skip takes next (the default) or " +
+                        "previous",
+                )
             }
         }
         "now_playing" -> Parsed.Run(Call.NowPlaying)
@@ -809,6 +853,11 @@ object PhoneTool {
         "clip_read" -> Parsed.Run(Call.ClipRead)
         "file_read", "file_offer" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
+            // A missing name is an invalid argument, not a bad path: `badPath` answers the same
+            // way for a blank name, but this refusal names the action and the argument it needs.
+            if (name.isEmpty()) {
+                return bad(action, "name is required: the file's name inside the folder the owner granted")
+            }
             PhoneFiles.badPath(name)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
             val (folder, folderError) = folderArg(args, action)
             folderError?.let { return it }
@@ -1027,7 +1076,10 @@ object PhoneTool {
     }
 
     private fun bad(action: String, detail: String): Parsed =
-        Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, detail))
+        // The action is prefixed rather than assumed: one tool with many actions means the
+        // schema's `required` can only say `action`, so the parser's refusal is the only place a
+        // mind learns *which* action wanted *which* argument. Every message here names both.
+        Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, "$action: $detail"))
 
     /**
      * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
@@ -1109,7 +1161,7 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.INVALID,
-                    "uri is required and at most $MAX_URI_CHARS characters",
+                    "$action: uri is required and at most $MAX_URI_CHARS characters",
                 ),
             )
         }
@@ -1118,7 +1170,7 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.INVALID,
-                    "uri must contain no whitespace",
+                    "$action: uri must contain no whitespace",
                 ),
             )
         }
@@ -1128,8 +1180,8 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.BAD_URI,
-                    "uri has no scheme; write it in full (https://…), because nothing is " +
-                        "guessed into one",
+                    "$action: uri has no scheme; write it in full (https://…), because nothing " +
+                        "is guessed into one",
                 ),
             )
         if (scheme == "intent" || scheme == "file") {
@@ -1137,9 +1189,9 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.BAD_URI,
-                    "the $scheme: scheme is refused; nothing was opened. A file belongs to " +
-                        "file_offer or file_read inside a granted folder, and a component is " +
-                        "never started from a URI",
+                    "$action: the $scheme: scheme is refused; nothing was opened. A file belongs " +
+                        "to file_offer or file_read inside a granted folder, and a component " +
+                        "is never started from a URI",
                 ),
             )
         }
@@ -1237,32 +1289,26 @@ object PhoneTiers {
 
     /**
      * The consequential capabilities. `uninstall` and `file_offer` are implemented and run through
-     * the same card handshake as every action at Ask (or directly at Allow). The rest are named so
-     * a direct call gets "this needs the owner" rather than "unknown action"; they are never built,
-     * so they are never offered and can never raise a card.
+     * the same card handshake as every action at Ask (or directly at Allow). `delete` is declared
+     * by the files group as **planned** and is not built: a direct call is `not_built` naming that
+     * group, and it is never offered. `purchase`, `pay` and `transfer` are not phone actions at
+     * all — no group declares them, no card can be raised for them, and a direct call is
+     * `unknown-action`, exactly as the other retired names (`call`, `send`, `email`) are.
+     *
+     * `call`, `send` and `email` were names under the old messages-calls group. They are gone
+     * with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
+     * (SENDTO, never SEND_SMS).
      */
     private val TIER_2 = setOf(
-        "purchase", "pay", "uninstall", "transfer",
+        "uninstall",
         // `file_offer` exports the owner's content over the tailnet. The folder grant makes the
         // export possible, not intended: at Ask every offer gets its own card, showing name, type
         // and size; at Allow the owner has granted the export outright.
         "file_offer",
-        // `call`, `send` and `email` were names under the old messages-calls group. They are gone
-        // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
-        // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the
-        // phone is pretending not to have.
-        //
-        // A file delete is a Tier 2 capability that this lane deliberately does not build: there
-        // is no undo, so it is named here and never advertised.
+        // Declared, not built: `PhoneGrants.groupOf("delete")` is the files group, and its
+        // `planned` list is what refuses the call with that group's name.
         "delete",
     )
-
-    /** The names in one tier, sorted — the shape `status` reports without a second list. */
-    fun names(tier: Int): List<String> = when (tier) {
-        INSTANT -> TIER_0.sorted()
-        REPORTED -> TIER_1.sorted()
-        else -> TIER_2.sorted()
-    }
 
     /** The tier of [action], or null when it is not a phone action at all. */
     fun of(action: String): Int? {
@@ -1278,7 +1324,11 @@ object PhoneTiers {
     /** True when the phone can perform [action] — directly at Allow, or after its card at Ask. */
     fun executable(action: String): Boolean {
         val a = action.trim().lowercase()
-        return of(a)?.let { it <= REPORTED || a == "uninstall" || a == "file_offer" } == true
+        // A declared-but-unbuilt name has a tier and a group, but no implementation: it must
+        // never count as executable, or `PhoneToolTest`'s "offered implies executable" rule
+        // would stop meaning anything.
+        if (PhoneGrants.groupOf(a)?.planned?.contains(a) == true) return false
+        return of(a) != null
     }
 }
 
@@ -1329,6 +1379,12 @@ object PhoneReason {
      * grant state, not a tier — a timer at Ask answers with it exactly as an uninstall does.
      */
     const val APPROVAL = "approval-required"
+
+    /**
+     * The action is declared by a group but not built on this phone yet. Nothing was performed,
+     * no card exists to raise, and the detail names the action and the group it is planned for.
+     */
+    const val NOT_BUILT = "not_built"
 
     /** The owner denied the card. Nothing was performed, and the id is burnt. */
     const val APPROVAL_DENIED = "approval_denied"
@@ -1410,13 +1466,27 @@ data class PhoneResult(
     fun json(): String = Json.encode(toMap())
 
     companion object {
+        /**
+         * Every success says whether it is reversible, explicitly. Absence is not "unknown" in
+         * this field: a read carries `undoable:false`, and only an action that registered an undo
+         * carries `undoable:true` (and the `undo` object that goes with it). A caller therefore
+         * never has to guess whether a missing key means "not reversible" or "the phone did not
+         * say" — it always says.
+         */
+        private fun withUndoable(facts: Map<String, Any?>): Map<String, Any?> =
+            if (facts.containsKey("undoable")) {
+                facts
+            } else {
+                LinkedHashMap(facts).apply { put("undoable", false) }
+            }
+
         /** A performed action. [facts] carries what the caller needs to know it happened. */
         fun done(action: String, id: String?, facts: Map<String, Any?> = emptyMap()): PhoneResult =
-            PhoneResult(true, action, PhoneTiers.of(action), id, facts = facts)
+            PhoneResult(true, action, PhoneTiers.of(action), id, facts = withUndoable(facts))
 
         /** A performed action that cannot be undone (status), or carries no id. */
         fun info(action: String, facts: Map<String, Any?>): PhoneResult =
-            PhoneResult(true, action, PhoneTiers.of(action), null, facts = facts)
+            PhoneResult(true, action, PhoneTiers.of(action), null, facts = withUndoable(facts))
 
         /**
          * The answer for an action whose work was already dispatched but whose outcome the caller

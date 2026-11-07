@@ -155,6 +155,50 @@ class PhoneSurfaceAuditTest {
         }
     }
 
+    @Test fun an_argument_description_names_no_action_whose_group_is_off() {
+        // Descriptions are read on every turn, exactly like the enum. A `text` description that
+        // says "note, clip or message" while the notes group is Off promises what the grants
+        // forbid: the model is told about an action the schema has already refused to offer.
+        fun descriptions(grants: PhoneGrants.Source): Map<String, String> {
+            val properties = (PhoneTool.schema(grants)["inputSchema"] as Map<*, *>)["properties"] as Map<*, *>
+            val out = LinkedHashMap<String, String>()
+            for ((key, raw) in properties) {
+                val text = (raw as Map<*, *>)["description"] as? String ?: continue
+                out[key.toString()] = text
+            }
+            return out
+        }
+
+        fun names(text: String, action: String): Boolean =
+            Regex("\\b" + Regex.escape(action) + "\\b").containsMatchIn(text)
+
+        for (group in PhoneGrants.GROUPS) {
+            val grants = PhoneGrants.Source { g ->
+                if (g.id == group.id) PhoneGrants.State.OFF else PhoneGrants.State.ALLOW
+            }
+            for ((key, text) in descriptions(grants)) {
+                for (action in group.actions) {
+                    assertTrue(
+                        "`$action` belongs to ${group.id}, which is Off, but the `$key` " +
+                            "description names it: $text",
+                        !names(text, action),
+                    )
+                }
+            }
+        }
+
+        // With every group Off, no argument description may name any action at all.
+        val everyAction = PhoneGrants.GROUPS.flatMap { it.actions }
+        for ((key, text) in descriptions(PhoneGrants.ALL_OFF)) {
+            for (action in everyAction) {
+                assertTrue(
+                    "nothing is granted, but the `$key` description names `$action`: $text",
+                    !names(text, action),
+                )
+            }
+        }
+    }
+
     @Test fun an_unknown_argument_is_refused_rather_than_dropped() {
         // The schema says `additionalProperties: false`. Before #503 only `uninstall` enforced it:
         // this note would have been written and the recipient silently ignored.
@@ -280,6 +324,35 @@ class PhoneSurfaceAuditTest {
                 result.toMap()["undo"] != null,
             )
         }
+    }
+
+    @Test fun every_success_says_whether_it_is_undoable() {
+        // Absence used to mean "not reversible" for most actions and "unknown" for a few: a mind
+        // could not tell a read apart from an action the phone had silently failed to describe.
+        // Every success now carries the field explicitly, false unless an undo was registered.
+        for ((action, case) in cases) {
+            platform.performed.clear()
+            val result = engine(open).dispatch(case.args, t0, e0)
+            if (!result.ok) continue
+            assertTrue(
+                "$action succeeded without saying whether it is undoable: ${result.json()}",
+                result.facts.containsKey("undoable"),
+            )
+            assertTrue(
+                "$action's undoable is not a boolean: ${result.json()}",
+                result.facts["undoable"] is Boolean,
+            )
+            assertEquals(
+                "$action's undoable and its undo object disagree",
+                result.facts["undoable"] == true,
+                result.toMap()["undo"] != null,
+            )
+        }
+
+        // The one non-action success shape: `status` reports, so it is explicitly not undoable.
+        val status = engine(open).dispatch(mapOf("action" to "status"), t0, e0)
+        assertTrue(status.json(), status.ok)
+        assertEquals(false, status.facts["undoable"])
     }
 
     // ---- the result shape is the same across actions ----
@@ -451,6 +524,57 @@ class PhoneSurfaceAuditTest {
             "an all-off phone must say so, group by group",
             (r.facts["grants"] as String).contains("timers-alarms=off"),
         )
+    }
+
+    @Test fun status_names_only_the_actions_tools_list_advertises() {
+        // Before this test, `tiers.2` was the whole Tier-2 table — including `delete`, `pay`,
+        // `purchase` and `transfer`, which are never advertised and which a direct call refuses.
+        // A mind reading `status` was told this phone could delete and pay. It cannot.
+        val sources = listOf(PhoneGrants.ALL_OFF, open) + PhoneGrants.GROUPS.map { only(it.id) }
+        for (grants in sources) {
+            val advertised = PhoneTool.offeredActions(grants).toSet()
+            val r = engine(grants).dispatch(mapOf("action" to "status"), t0, e0)
+            assertTrue(r.json(), r.ok)
+
+            @Suppress("UNCHECKED_CAST")
+            val tiers = r.facts["tiers"] as Map<String, List<String>>
+            val named = tiers.values.flatten().toSet()
+            for (action in named) {
+                assertTrue(
+                    "status named `$action`, which tools/list does not advertise and a call " +
+                        "would refuse: ${r.json()}",
+                    action in advertised,
+                )
+            }
+            assertEquals(
+                "every advertised name is reported under its own tier, and nothing else",
+                advertised,
+                named,
+            )
+            assertEquals(
+                "an advertised action sits under the tier the dispatcher reports",
+                named.all { PhoneTiers.of(it)?.let { tier -> tiers[tier.toString()]?.contains(it) } == true },
+                true,
+            )
+            @Suppress("UNCHECKED_CAST")
+            val groupsOn = (r.facts["groups_on"] as List<String>).toSet()
+            for (group in PhoneGrants.GROUPS) {
+                assertEquals(
+                    "groups_on must say whether ${group.id} is on",
+                    PhoneGrants.stateOf(grants, group) != PhoneGrants.State.OFF,
+                    group.id in groupsOn,
+                )
+            }
+        }
+
+        // The exact names the audit found: no unbuilt capability may be reported as a capability.
+        val all = engine(open).dispatch(mapOf("action" to "status"), t0, e0)
+        @Suppress("UNCHECKED_CAST")
+        val tierTwo = (all.facts["tiers"] as Map<String, List<String>>)["2"].orEmpty()
+        for (unbuilt in listOf("delete", "pay", "purchase", "transfer")) {
+            assertFalse("$unbuilt is not built and must not be reported", unbuilt in tierTwo)
+        }
+        assertEquals(setOf("uninstall", "file_offer"), tierTwo.toSet())
     }
 
     // ---- the audit ----
