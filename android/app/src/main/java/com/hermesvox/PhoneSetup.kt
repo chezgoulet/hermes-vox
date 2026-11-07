@@ -69,9 +69,11 @@ object PhoneSetup {
 
     /**
      * The exact turn the app sends. It carries the address, the server and tool names, the token,
-     * the documented `hermes mcp add` command, the statement that the listener is open for this
-     * setup, what the phone can and cannot do, and the idempotence rule. It asks for no restart and
-     * no job id: a running gateway reconciles its MCP configuration by itself.
+     * the documented `hermes mcp add` command, the documented per-server `lazy` key
+     * (`hermes config set mcp_servers.<name>.lazy true`) that keeps the tool registered while the
+     * phone is idle, the statement that the listener is open for this setup, what the phone can and
+     * cannot do, and the idempotence rule. It asks for no restart and no job id: a running gateway
+     * reconciles its MCP configuration by itself.
      *
      * **It carries this phone's token** because `hermes mcp add` writes it into the agent's own
      * configuration as the server's bearer. The token leaves the phone only on this turn, over the
@@ -106,7 +108,13 @@ object PhoneSetup {
             appendLine()
             appendLine("`hermes mcp add` verifies the connection before it saves, and it will refuse a server it cannot reach. If it refuses, do not write a dead entry and do not guess: say plainly that the add did not succeed and name what the command said.")
             appendLine()
-            appendLine("This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `$url` and an `Authorization: \"Bearer $token\"` header. Whichever route you use, the server name stays `${PhoneMcpConfig.SERVER_NAME}`.")
+            appendLine("This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `$url`, an `Authorization: \"Bearer $token\"` header, and `lazy: true`. Whichever route you use, the server name stays `${PhoneMcpConfig.SERVER_NAME}`.")
+            appendLine()
+            appendLine("Set that lazy key with the documented command, whichever route you used:")
+            appendLine()
+            appendLine("hermes config set mcp_servers.${PhoneMcpConfig.SERVER_NAME}.lazy true")
+            appendLine()
+            appendLine("The tool is registered from its schema, so it is always available to you; the connection is made when it is used, so this phone does not need to have been reached recently for the tool to be there. `hermes mcp add` has already connected once, which fills that schema cache; if the cache is missing, the entry falls back to connecting at startup as it did before.")
             appendLine()
             appendLine("No restart is needed and none is wanted. A running gateway picks the new server up from its own configuration and registers the tool by itself; there is no restart, reload or lifecycle command on this surface, so do not call one and do not create or run a job for it.")
             appendLine()

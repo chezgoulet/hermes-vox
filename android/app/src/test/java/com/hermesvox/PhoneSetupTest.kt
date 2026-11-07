@@ -75,18 +75,44 @@ class PhoneSetupTest {
 
     /**
      * The equivalent config entry is still named, with the phone's token — no invented key, no
-     * undocumented per-server key. `mcp_servers` and `Authorization` are the facts the agent can
-     * check, and the token is the credential this server actually accepts.
+     * undocumented per-server key. `mcp_servers`, `Authorization` and `lazy` are the facts the agent
+     * can check, and the token is the credential this server actually accepts.
      */
     @Test fun the_prompt_names_the_equivalent_entry_without_inventing_a_key() {
         val p = PhoneSetup.prompt(host, token)
         assertTrue("the block the agent may edit is named", p.contains("mcp_servers"))
         assertTrue("the bearer rides the header", p.contains("Authorization: \"Bearer $token\""))
+        assertTrue("the documented lazy key is in the block", p.contains("lazy: true"))
         assertFalse("no invented per-server tool filter", p.contains("tools.include"))
         assertFalse("`tools:` is not a per-server key", p.contains("    tools:"))
         assertFalse("`trust:` is implemented but not documented; do not teach it here", p.contains("trust:"))
         assertFalse("this is a remote HTTP server: no stdio command", p.contains("command:"))
         assertFalse("an undeclared key is ignored, so never tell the agent to write it", p.contains("tool_timeout"))
+    }
+
+    /**
+     * The tool has to stay in the agent's hands while the phone is idle. `lazy` is the documented
+     * per-server key that does it: the schema cache registers the tool at startup and the connection
+     * is made on first use. The prompt names the key, the exact command, and the reason the agent
+     * can repeat to the owner.
+     */
+    @Test fun the_prompt_sets_the_documented_lazy_key_and_says_why() {
+        val p = PhoneSetup.prompt(host, token)
+        assertTrue(
+            "the documented command, with this server's key path",
+            p.contains("hermes config set mcp_servers.vox.lazy true"),
+        )
+        assertTrue(
+            "and the reason, in the owner's words",
+            p.contains(
+                "The tool is registered from its schema, so it is always available to you; " +
+                    "the connection is made when it is used",
+            ),
+        )
+        assertTrue(
+            "availability must not be tied to a recent connection",
+            p.contains("does not need to have been reached recently"),
+        )
     }
 
     @Test fun the_prompt_says_what_the_phone_can_and_cannot_do() {
@@ -117,6 +143,7 @@ class PhoneSetupTest {
         val block = PhoneMcpConfig.snippet(host, token)
         assertTrue(block, block.contains("Authorization: \"Bearer $token\""))
         assertTrue("and the documented timeout key", block.contains("timeout: 30"))
+        assertTrue("and the documented lazy key", block.contains("lazy: true"))
         assertFalse("not the invented one", block.contains("tool_timeout"))
     }
 
@@ -438,6 +465,38 @@ class PhoneSetupTest {
             assertFalse(line, line.contains("Not set up"))
             assertFalse(line, line.contains("Connected"))
         }
+    }
+
+    /**
+     * The lazy key is not only in the prompt. Both documents that describe the entry name it, and
+     * no surface may promise a connection that is kept warm or comes back within seconds: the tool
+     * is registered; the phone is reached on use, when a call is live.
+     */
+    @Test fun the_documents_name_the_lazy_entry_and_promise_nothing_warmer() {
+        val paths = listOf(
+            "docs/MCP-PHONE.md",
+            "docs/MCP-SURFACE.md",
+            "skills/hermes-vox-app/SKILL.md",
+        )
+        for (path in paths) {
+            val text = repoFile(path).readText()
+            assertFalse("$path must not promise a kept-warm connection", text.contains("kept warm"))
+            assertFalse("$path must not promise a reconnect in seconds", text.contains("reconnects within seconds"))
+            assertFalse("$path must not promise a reconnect in seconds", text.contains("reconnect within seconds"))
+        }
+        for (path in paths.take(2)) {
+            assertTrue("$path must name the lazy key", repoFile(path).readText().contains("lazy"))
+        }
+    }
+
+    private fun repoFile(path: String): java.io.File {
+        var d: java.io.File? = java.io.File(System.getProperty("user.dir")).absoluteFile
+        while (d != null) {
+            val f = java.io.File(d, path)
+            if (f.isFile) return f
+            d = d.parentFile
+        }
+        error("$path not found above ${System.getProperty("user.dir")}")
     }
 
     @Test fun the_token_fingerprint_is_stable_and_not_the_token() {

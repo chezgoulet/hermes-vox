@@ -36,11 +36,12 @@ refuses.
 
 The turn carries the server name (`vox`), the real tailnet URL (`http://<tailnet-ip>:8765/mcp`), the
 tool name the model will see (`mcp__vox__phone`), the phone's `Token:`, the documented
-`hermes mcp add vox --url ... --auth header --connect-timeout 5` command, the equivalent
-`mcp_servers` entry, what the phone can and cannot do, the idempotence rule, the fact that this
-phone's listener is open for as long as this attempt runs, and the rule that **no restart is needed and none is wanted**. It asks for no job id: the gateway reconciles its own MCP configuration while it
-runs. The exact turn is rendered by `PhoneSetup.prompt` and is pinned byte for byte by
-`PhoneSetupTest`.
+`hermes mcp add vox --url ... --auth header --connect-timeout 5` command, the documented per-server
+`lazy` key (`hermes config set mcp_servers.vox.lazy true`), the equivalent `mcp_servers` entry, what
+the phone can and cannot do, the idempotence rule, the fact that this phone's listener is open for
+as long as this attempt runs, and the rule that **no restart is needed and none is wanted**. It asks
+for no job id: the gateway reconciles its own MCP configuration while it runs. The exact turn is
+rendered by `PhoneSetup.prompt` and is pinned byte for byte by `PhoneSetupTest`.
 
 **The token rides this one turn.** `hermes mcp add` needs it to write the server's bearer, so it is
 the one secret in the instruction. It leaves the phone only on this turn, over the same authenticated
@@ -97,7 +98,7 @@ separate, one-time step — and a running gateway only reads it when someone add
 | **not set up** | *Your agent does not know about this phone yet* — until it is set up, the agent cannot see the phone at all, and any answer it gives about the phone is honest but unhelpful. The button's line names the token and the listener that follows the attempt; the setup turn is shown in full below it with **Copy setup prompt** and the sentence *Your agent writes the entry itself while this phone's listener is open. Nothing on your host restarts, and Vox writes nothing there.* | **Set this up with my agent**, or **Copy setup prompt** as the fallback |
 | **adding / waiting** | *Your agent is working on this*, with **What your agent did** — one line per tool call, appended in arrival order — and *Your agent has answered* once the run ends. Never Connected | Wait, or **Stop this attempt**; a second press is ignored. The agent's reply and the step are shown |
 | **waiting** | *Asked — your agent is working*, with the agent's reply beneath: the prompt has been handed over, no handshake has arrived | **Ask again**; the press opens the listener for it |
-| **connected** | *Connected* — the only state that may say it — plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
+| **connected** | *Connected* — the only state that may say it — plus *Verified by an MCP initialize …* and the reply. The meaning also says the entry is lazy: the tool is registered from its schema, so the agent can reach the phone whenever a call is live and does not need to have reached it recently | **Ask again** (updates in place) |
 | **failed** | *Your agent could not add this phone*, *This phone could not be made reachable*, *The setup may not have taken*, or another named cause, plus the step it reached and the agent's last words | Read the step, then use the copyable prompt (the fallback). A failed attempt does not retry by itself |
 | **unreachable** | the cause, in its own words: *No connection configured*, *Key rejected*, *Your agent did not answer: …*, or *Turn failed: …* | Fix what is named — the connection in Entity & Connection, the profile's key, the gateway — then **Try again** |
 | **refused** | *Your agent could not edit its configuration*, with its own explanation | Fix its file access and **Try again**, or use the manual fallback |
@@ -453,6 +454,7 @@ mcp_servers:
       Authorization: "Bearer <the token from the phone>"
     connect_timeout: 5
     timeout: 30
+    lazy: true    # register the tool from its schema; connect when it is used
     trust: full   # set `untrusted` to require an approval card for every call
     tools:
       include: [phone]
@@ -467,6 +469,13 @@ mcp_servers:
 - `timeout: 30` is the documented per-server tool-call timeout (the MCP config reference's `timeout`
   key). `tool_timeout` is not a server key: an unknown key is ignored, so a block that names it reads
   as though the timeout were set when nothing was.
+- `lazy: true` is the documented per-server key (MCP config reference, `lazy`; `hermes config set
+  mcp_servers.vox.lazy true`). The gateway registers `mcp__vox__phone` from the schema cache on disk
+  at startup and only connects to the phone on the first tool call. That is what keeps the tool in
+  the model's hands while the phone is idle: availability does not depend on a recent connection, so
+  a call started a minute after the last one finds the tool, and the connection is made when it is
+  used. The cache needs one live connect to fill it — the add's own verification does that — and a
+  missing or stale cache falls back to the normal eager connect.
 - `trust: full` leaves the phone's own grants in charge: Off refuses, Ask raises the phone's card,
   Allow runs. `untrusted` adds the gateway's approval surface in front of every call — correct for
   a cautious owner, and it means an Allow group still asks at the gateway.
@@ -514,10 +523,14 @@ The server is up **while a voice call is up**: `VoiceController.start` starts it
 
 What that means, in order of who notices:
 
-1. **Gateway connect fails.** With `connect_timeout: 5` the failure is quick. The gateway parks the
-   server with backoff and the model simply does not see `mcp__vox__phone` for that turn.
-2. **A call starts.** The phone binds again; the next connect (or the gateway's retry) finds the tool.
-3. **The tool is missing or the call fails.** The mind must not claim the action. There is no second
+1. **The tool is still there.** The entry is `lazy: true`, so the gateway registered
+   `mcp__vox__phone` from its schema cache at startup, whether or not a call is live. The model does
+   not lose the tool because the phone was unreachable recently.
+2. **The first call connects.** With `connect_timeout: 5`, a tool call while the phone is idle is a
+   quick connect attempt made for that call; the lazy entry is not connected in the background, so
+   no failed reconnects accumulate while the phone is down. Start a call and the next tool call
+   connects, then completes.
+3. **The call fails while the phone is down.** The mind must not claim the action. There is no second
    path — a directive-in-reply fallback would be the fire-and-forget shape #421 rejected, and the
    phone does not parse the caller's words (D38): every voice turn goes to the mind, so a mind that
    cannot reach the phone says what it cannot do instead of the phone acting on its own.
@@ -652,6 +665,9 @@ Every exchange therefore ended the connection, every probe was a fresh reconnect
 parked before `tools/list` was ever read — which is why the agent could see no phone tool at all,
 with the app reporting *Connected*. A session and keep-alive are the two halves of the fix; the
 `405` on `GET` is the spec's answer for a server with nothing to push, and the client stops asking.
+The `lazy` entry keeps that failure from coming back on an idle phone: the tool is registered from
+its schema cache, so the client's probe cadence decides only whether one tool call can reach the
+phone, not whether the tool exists.
 
 **Verified against the client this has to satisfy**, not only against the spec: the `mcp` SDK the
 Hermes runtime ships (`mcp/client/streamable_http.py`) stores the session id from `initialize`, sends
@@ -709,7 +725,8 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
     undoable row: the action is reversed, or the toast says the undo expired.
 13. **The sheet's groups match the wire.** Turn a group Off in the sheet, then ask the client for
     `tools/list` without leaving the call: the action is gone. Turn it on: it is back.
-14. **Turn the call off** → the next tool call from the gateway fails (server parked), and the agent
+14. **Turn the call off** → the next tool call from the gateway fails because the phone is no longer
+    listening; the tool is still registered, so the agent
     says it could not reach the phone rather than claiming the action.
 15. **Turn Tailscale off** → no listener at all (`reason=no-tailnet`), and the app is otherwise
     unaffected.
