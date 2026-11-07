@@ -216,8 +216,9 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- #453: what an outside mind may do with this phone is a consent decision,
-                     not a diagnostic, so it has its own section. The second line is the one
+                <!-- #453/#511: what an outside mind may do with this phone is a consent decision,
+                     not a diagnostic, so it has its own row. The row is the door to the one Phone
+                     tools screen — one tap, no section in between — and its second line is the one
                      place the phone's standing is stated, read from PhoneBootstrap.Step. -->
                 <LinearLayout
                     android:id="@+id/row_grp_phone"
@@ -2383,53 +2384,11 @@
                     style="@style/HvRowValue" />
             </LinearLayout>
 
-            <!-- ══ sec_phone: Phone Tools (#453).
-                 What your agent may do with this phone, and whether it is set up yet. Two rows:
-                 the sheet's own one-button setup, surfaced here so the press is one tap from the
-                 section, and the capabilities door. No internal vocabulary — nothing here names
-                 the mechanism, only what the owner is deciding. ══ -->
-            <LinearLayout
-                android:id="@+id/sec_phone"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <LinearLayout
-                    android:id="@+id/row_phone_boot"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:id="@+id/set_phone_boot_title"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Set this up with my agent"
-                        style="@style/HvRowTitle" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_phone_mcp"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="What your agent may do"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_phone_mcp_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:paddingLeft="16dp"
-                        android:text="view"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-            </LinearLayout>
+            <!-- ══ Phone Tools (#453/#511).
+                 The screen itself is the one Phone tools screen (PhoneToolsSheet): the state,
+                 the setup, the grants and Recent actions all on it, opened by row_grp_phone in one
+                 tap. There is no section container here on purpose — a section holding a row whose
+                 only job was to open the screen is the extra step the owner asked to remove. ══ -->
 
             <!-- ══ sec_about: About & Diagnostics ══ -->
             <LinearLayout

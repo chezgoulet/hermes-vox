@@ -536,7 +536,9 @@ class PhoneBootstrapTest {
         val worked = PhoneBootstrap.observed(waiting(), tools("terminal"), now + 5_000L)
         val next = PhoneToolsSheet.drawn(status(), record, tag, now + 5_000L, worked)
         assertEquals(listOf("terminal · ran a command"), next.activity)
-        assertTrue("a new line is a change, so the sheet repaints", PhoneToolsSheet.repaints(shown, next))
+        val work = PhoneToolsSheet.work(shown, next)
+        assertTrue("a new line is a change, so the setup block is rewritten", work.setup)
+        assertEquals("and the grant list is not", false, work.body)
         assertEquals("and the step did not move", PhoneBootstrap.Step.WAITING, next.bootstrap.step)
     }
 

@@ -108,7 +108,7 @@ class PhoneToolsSheetLayoutTest {
                 )
                 assertTrue(
                     "and the restart sentence must follow it",
-                    texts.any { it == PhoneToolsView.SETUP_RESTART },
+                    texts.any { it == PhoneToolsView.SETUP_NOTE },
                 )
                 for (row in listOf(
                     "Reachability", "Server", "Do Not Disturb access",
@@ -172,19 +172,24 @@ class PhoneToolsSheetLayoutTest {
     }
 
     @Test fun a_tick_while_waiting_does_not_rebuild_the_sheet_and_a_repaint_keeps_the_place() {
-        // A setup that is waiting for the agent: this is the state that used to repaint every second.
+        // A screen with a setup record and no attempt in this process: a settled step, which is
+        // exactly the state that used to tick — and repaint — once a second for no reason.
         val (scenario, sheet) = openSheet { PhoneSetupStore.begin(it, System.currentTimeMillis()) }
         try {
             var opened: ScrollView? = null
             scenario.onActivity { opened = sheet.scroller }
             assertNotNull("the sheet must be open", opened)
 
-            // Two poll ticks pass and the sheet would draw exactly the same thing.
+            // Nothing is in flight, so no tick is scheduled at all.
+            assertFalse("a settled screen must not schedule a tick", sheet.ticking)
+
+            // Two seconds pass; with no tick, nothing is replaced.
             Thread.sleep(2_500L)
             instrumentation.waitForIdleSync()
             scenario.onActivity {
+                assertFalse("and still none", sheet.ticking)
                 assertSame(
-                    "a tick that draws the same sheet must not replace its content view",
+                    "a settled screen must not replace its content view",
                     opened,
                     sheet.scroller,
                 )
@@ -213,6 +218,108 @@ class PhoneToolsSheetLayoutTest {
         } finally {
             close(scenario, sheet)
         }
+    }
+
+    /**
+     * The owner's second complaint, measured: a step change rewrites the state line by `setText`
+     * and the setup block on its own — the grant list keeps the very views it had, so the rows the
+     * owner is reading are never re-inflated under him.
+     *
+     * `PhoneToolsSheet.work` is the rule ([PhoneToolsSheetPollTest]); this is what it looks like on
+     * a screen: same column, same capabilities block, same grant row, one different line of text.
+     */
+    @Test fun a_step_change_rewrites_the_state_line_and_leaves_the_grant_list_alone() {
+        val (scenario, sheet) = openSheet { PhoneSetupStore.rotate(it) }
+        try {
+            var stateLine: TextView? = null
+            var grants: ViewGroup? = null
+            var aGrantRow: View? = null
+            var scroller: ScrollView? = null
+
+            scenario.onActivity { act ->
+                val tag = PhoneMcp.tokenTag(act)
+                val status = PhoneMcp.status(act)
+                val record = PhoneSetupStore.read(act)
+                val now = System.currentTimeMillis()
+                // The attempt as it is in flight: one step, and its own words.
+                sheet.render(
+                    PhoneToolsSheet.drawn(
+                        status,
+                        record,
+                        tag,
+                        now,
+                        PhoneBootstrap.Progress(step = PhoneBootstrap.Step.ADDING, startedAt = now),
+                    ),
+                )
+                val scroll = sheet.scroller!!
+                scroller = scroll
+                val col = scroll.getChildAt(0) as ViewGroup
+                // The first region of the screen is the state row; its value is the state line.
+                stateLine = (col.getChildAt(0) as ViewGroup).getChildAt(1) as TextView
+                // The grant list: the block under the "Capabilities" subhead.
+                grants = findText(col, "Capabilities")?.parent as? ViewGroup
+                aGrantRow = grants?.let { viewsWithDescription(it).firstOrNull() }
+                assertEquals(PhoneToolsView.STEP_ADDING, stateLine!!.text.toString())
+                assertNotNull("the grant list must be on the screen", grants)
+                assertNotNull("a grant row must be on the screen", aGrantRow)
+            }
+            instrumentation.waitForIdleSync()
+
+            scenario.onActivity { act ->
+                val tag = PhoneMcp.tokenTag(act)
+                val status = PhoneMcp.status(act)
+                val record = PhoneSetupStore.read(act)
+                val now = System.currentTimeMillis()
+                sheet.render(
+                    PhoneToolsSheet.drawn(
+                        status,
+                        record,
+                        tag,
+                        now,
+                        PhoneBootstrap.Progress(step = PhoneBootstrap.Step.WAITING, startedAt = now - 60_000L),
+                    ),
+                )
+            }
+            instrumentation.waitForIdleSync()
+
+            scenario.onActivity {
+                // The line moved by setText...
+                assertEquals(
+                    "the step settled: the line says so",
+                    PhoneToolsView.STEP_WAITING,
+                    stateLine!!.text.toString(),
+                )
+                // ...and nothing around it was re-made.
+                assertSame("the screen was not replaced", scroller, sheet.scroller)
+                val col = sheet.scroller!!.getChildAt(0) as ViewGroup
+                assertSame(
+                    "the grant list is the same block of views, not a new one",
+                    grants,
+                    findText(col, "Capabilities")?.parent,
+                )
+                assertSame(
+                    "and the rows in it are the ones the owner was already reading",
+                    aGrantRow,
+                    viewsWithDescription(grants!!).firstOrNull(),
+                )
+            }
+        } finally {
+            close(scenario, sheet)
+        }
+    }
+
+    /** The TextView whose text is [label], so a block can be found by what it says. */
+    private fun findText(v: View, label: String): TextView? = when (v) {
+        is TextView -> if (v.text.toString().equals(label, true)) v else null
+        is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { findText(v.getChildAt(it), label) }
+        else -> null
+    }
+
+    /** The grant rows: the only boxes on the screen that describe themselves. */
+    private fun viewsWithDescription(v: View): List<View> = when (v) {
+        is ViewGroup -> (0 until v.childCount).flatMap { viewsWithDescription(v.getChildAt(it)) } +
+            listOfNotNull(v.takeIf { it.contentDescription?.contains(": ") == true })
+        else -> listOfNotNull(v.takeIf { it.contentDescription?.contains(": ") == true })
     }
 
     /** Every text in the sheet's column, so an assertion can name what it found. */

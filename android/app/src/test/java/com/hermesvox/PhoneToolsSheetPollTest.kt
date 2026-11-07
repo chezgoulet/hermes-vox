@@ -2,22 +2,24 @@ package com.hermesvox
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #451: the poll's rule — a tick repaints the phone tools sheet only when the sheet would draw
- * something new.
+ * The phone tools screen's tick — what one second of it is allowed to draw.
  *
- * The sheet polls once a second so the "last request" line and a setup's silence age can move.
- * It used to repaint on the clock itself: for as long as a setup was WAITING the whole content view
- * was replaced every second, which put the scroll back at the top and dropped a drag in flight. On a
- * phone that had ever asked its agent to set itself up, nothing below the fold could be reached at
- * all — the sheet read as unscrollable.
+ * The owner's second complaint was a visible refresh every second while he was reading the grant
+ * rows. The cause was two rules compounding: the tick was re-posted unconditionally for as long as
+ * the screen was open, and anything in [PhoneToolsSheet.Drawn] that differed rebuilt the whole
+ * column — and the lines that age always differ eventually.
  *
- * What the sheet draws is data ([PhoneToolsSheet.Drawn]), so the rule is proved without a device:
- * a second passing is not, on its own, a reason to rebuild the column. [PhoneToolsSheetLayoutTest]
- * measures the same thing on a phone.
+ * So the rule is in two parts, and both are proved here without a device:
+ *  1. a tick exists only while an attempt is in flight ([PhoneToolsPoll]);
+ *  2. a tick rewrites only the region whose own inputs moved ([PhoneToolsSheet.work]).
+ *
+ * [PhoneToolsPollTest] proves part 1 — including that a settled screen has no tick scheduled at
+ * all. This file proves part 2 — including that a step change never re-inflates the grant list.
  */
 class PhoneToolsSheetPollTest {
 
@@ -42,12 +44,27 @@ class PhoneToolsSheetPollTest {
 
     private fun waiting(at: Long = now) = PhoneSetup.Record(requestedAt = at, tokenTag = tag)
 
+    private fun adding(at: Long = now) =
+        PhoneBootstrap.Progress(step = PhoneBootstrap.Step.ADDING, startedAt = at)
+
+    private fun answered(at: Long = now) = PhoneBootstrap.Progress(
+        step = PhoneBootstrap.Step.WAITING,
+        startedAt = at - 60_000L,
+        answeredAt = at,
+    )
+
+    // ---- 1. a second passing with nothing new to say draws nothing ----
+
     @Test fun a_tick_a_second_later_while_waiting_draws_the_same_sheet() {
         val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now)
         val next = PhoneToolsSheet.drawn(status(), waiting(), tag, now + 1_000L)
         assertEquals(PhoneSetup.State.WAITING, shown.state)
         assertEquals("a second passing is not a change the owner can see", shown, next)
-        assertFalse("a tick that draws the same sheet must not repaint", PhoneToolsSheet.repaints(shown, next))
+        assertEquals(
+            "nothing is rewritten when nothing changed",
+            PhoneToolsSheet.Work(lines = false, setup = false, body = false),
+            PhoneToolsSheet.work(shown, next),
+        )
     }
 
     /**
@@ -65,39 +82,107 @@ class PhoneToolsSheetPollTest {
         assertEquals(shown.listening, next.listening)
         assertEquals(shown.activity, next.activity)
         assertEquals(shown.silence, next.silence)
-        // The sheet still redraws when the handshake line's age rolls over; that is a fact about
-        // when the `initialize` was seen, not about a countdown ending the attempt.
+        assertEquals("and the step did not move either", shown.step, next.step)
+        // The handshake line's age is a line, not a rebuild: see the aging test below.
     }
 
-    @Test fun a_request_landing_repaints_because_the_last_request_line_changed() {
+    // ---- 2. an age is a setText, and the grant list is not part of it ----
+
+    @Test fun an_aging_line_is_rewritten_in_place_and_nothing_is_rebuilt() {
+        // The same status and record, ten seconds later: the "last request" line has aged from
+        // "just now" to "11s", and that is the only difference the owner can see.
+        val s = status("status", now - 1_000L)
+        val shown = PhoneToolsSheet.drawn(s, waiting(), tag, now)
+        val next = PhoneToolsSheet.drawn(s, waiting(), tag, now + 10_000L)
+        assertNotEquals("the age moved", shown.lastRequest, next.lastRequest)
+        val work = PhoneToolsSheet.work(shown, next)
+        assertEquals("the phone's status did not change", false, work.body)
+        assertEquals("the setup block did not change", false, work.setup)
+        assertTrue("only the line is rewritten", work.lines)
+    }
+
+    @Test fun an_aging_handshake_line_is_also_only_a_line() {
+        val record = PhoneSetup.observedHandshake(PhoneSetup.Record(), now - 60_000L, tag)
+        val shown = PhoneToolsSheet.drawn(status(), record, tag, now)
+        val next = PhoneToolsSheet.drawn(status(), record, tag, now + 6 * 60 * 60_000L)
+        assertEquals(PhoneBootstrap.Step.CONNECTED, shown.step)
+        val work = PhoneToolsSheet.work(shown, next)
+        assertEquals(false, work.body)
+        assertEquals(false, work.setup)
+        assertTrue("the proof's age is a line", work.lines)
+    }
+
+    // ---- 3. the agent's own events redraw what they change ----
+
+    @Test fun the_agent_answering_rebuilds_the_setup_block_only() {
+        val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now, adding())
+        val reply = PhoneSetup.replied(waiting(), "added the vox server")
+        val boot = PhoneBootstrap.answered(adding(), "added the vox server", now + 1_000L)
+        val next = PhoneToolsSheet.drawn(status(), reply, tag, now + 1_000L, boot)
+        val work = PhoneToolsSheet.work(shown, next)
+        assertTrue("the attempt's own words move the setup block", work.setup)
+        assertEquals("and nothing else", false, work.body)
+    }
+
+    @Test fun a_handshake_rewrites_the_setup_block_and_the_state_line_never_the_grants() {
+        val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now, adding())
+        val connected = PhoneSetup.observedHandshake(waiting(), now + 2_000L, tag)
+        val next = PhoneToolsSheet.drawn(status(), connected, tag, now + 3_000L, adding())
+        assertEquals(PhoneSetup.State.CONNECTED, next.state)
+        assertEquals(PhoneBootstrap.Step.CONNECTED, next.step)
+        assertEquals("the state line is the step's own line", PhoneToolsView.CONNECTED_HEADING, next.stateLine)
+        val work = PhoneToolsSheet.work(shown, next)
+        assertTrue("the step moved, so the line and the setup block are rewritten", work.lines && work.setup)
+        assertEquals("the grant list's inputs did not move, so it is not rebuilt", false, work.body)
+    }
+
+    /**
+     * The blink, expressed as the rule: a step change must not touch the body. The body is what
+     * holds the grant groups and Recent actions, so `body == false` is this codebase's equivalent of
+     * "the adapter keeps its identity" — there is no adapter here; the column is the list, and its
+     * views are only re-made by [PhoneToolsSheet.Work.body].
+     */
+    @Test fun no_step_change_ever_rebuilds_the_body() {
+        val now = this.now
+        val boots = listOf(
+            PhoneBootstrap.Progress(),
+            adding(now),
+            answered(now),
+            PhoneBootstrap.Progress(
+                step = PhoneBootstrap.Step.FAILED,
+                failure = PhoneBootstrap.Failure.NO_HANDSHAKE,
+                reached = PhoneBootstrap.Step.WAITING,
+                startedAt = now - 200_000L,
+                answeredAt = now - 100_000L,
+            ),
+        )
+        for (boot in boots) {
+            val next = PhoneToolsSheet.drawn(status(), waiting(), tag, now, boot)
+            val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now - 1_000L, PhoneBootstrap.Progress())
+            assertEquals(
+                "a step change to ${next.step} must not rebuild the grant list",
+                false,
+                PhoneToolsSheet.work(shown, next).body,
+            )
+        }
+    }
+
+    @Test fun a_request_landing_rebuilds_the_phone_rows_because_the_status_changed() {
         val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now)
         val next = PhoneToolsSheet.drawn(status("status", now), waiting(), tag, now + 1_000L)
         assertEquals("None yet", shown.lastRequest)
-        assertTrue(PhoneToolsSheet.repaints(shown, next))
-    }
-
-    @Test fun the_agent_answering_repaints() {
-        val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now)
-        val answered = PhoneSetup.replied(waiting(), "added the vox server")
-        assertTrue(PhoneToolsSheet.repaints(shown, PhoneToolsSheet.drawn(status(), answered, tag, now + 1_000L)))
-    }
-
-    @Test fun a_handshake_repaints_because_the_state_and_the_line_change() {
-        val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now)
-        val connected = PhoneSetup.observedHandshake(waiting(), now + 2_000L, tag)
-        val next = PhoneToolsSheet.drawn(status(), connected, tag, now + 3_000L)
-        assertEquals(PhoneSetup.State.CONNECTED, next.state)
-        assertTrue(PhoneToolsSheet.repaints(shown, next))
+        assertTrue("the phone's own rows changed", PhoneToolsSheet.work(shown, next).body)
     }
 
     @Test fun the_first_paint_always_happens() {
-        assertTrue(PhoneToolsSheet.repaints(null, PhoneToolsSheet.drawn(status(), waiting(), tag, now)))
+        val work = PhoneToolsSheet.work(null, PhoneToolsSheet.drawn(status(), waiting(), tag, now))
+        assertTrue(work.any && work.body && work.setup && work.lines)
     }
 
     /**
      * The step after the handover: the agent has written the entry, the gateway restarts, the tool
      * connects, and the phone's own server records the `initialize`. Nothing else happens — the
-     * sheet is not reopened, the prompt is not re-sent — and the next tick draws Connected.
+     * screen is not reopened, the prompt is not re-sent — and the next tick draws Connected.
      */
     @Test fun a_handshake_after_a_restart_clears_the_waiting_state_by_itself() {
         val asked = PhoneSetup.replied(waiting(), "Added vox to my configuration; the gateway needs a restart.")
@@ -108,21 +193,26 @@ class PhoneToolsSheetPollTest {
         val handshake = PhoneSetup.observedHandshake(asked, now + 30_000L, tag)
         val next = PhoneToolsSheet.drawn(status(), handshake, tag, now + 31_000L)
         assertEquals("the handshake alone is the transition", PhoneSetup.State.CONNECTED, next.state)
-        assertTrue("the owner sees the change on the next tick", PhoneToolsSheet.repaints(shown, next))
+        assertTrue("the owner sees the change on the next tick", PhoneToolsSheet.work(shown, next).setup)
         assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(next.state, next.record.failure))
     }
 
     /**
-     * The same clearing, from a sheet that was never asked anything: a gateway already holding the
+     * The same clearing, from a screen that was never asked anything: a gateway already holding the
      * entry connects on its own, and the loud not-set-up block goes away without a setup turn.
      */
-    @Test fun a_handshake_alone_connects_a_sheet_that_was_never_asked() {
+    @Test fun a_handshake_alone_connects_a_screen_that_was_never_asked() {
         val shown = PhoneToolsSheet.drawn(status(), PhoneSetup.Record(), tag, now)
         assertEquals(PhoneSetup.State.IDLE, shown.state)
         assertEquals(PhoneToolsView.NOT_SET_UP_HEADING, PhoneToolsView.setupHeadline(shown.state))
 
-        val next = PhoneToolsSheet.drawn(status(), PhoneSetup.observedHandshake(PhoneSetup.Record(), now, tag), tag, now + 1_000L)
+        val next = PhoneToolsSheet.drawn(
+            status(),
+            PhoneSetup.observedHandshake(PhoneSetup.Record(), now, tag),
+            tag,
+            now + 1_000L,
+        )
         assertEquals(PhoneSetup.State.CONNECTED, next.state)
-        assertTrue(PhoneToolsSheet.repaints(shown, next))
+        assertTrue(PhoneToolsSheet.work(shown, next).setup)
     }
 }

@@ -31,7 +31,6 @@ class SettingsHintsTest {
         "sec_entity" to "Entity & Connection",
         "sec_about" to "About & Diagnostics",
         "sec_assistant" to "Set Digital Assistant to Hermes Vox",   // #329
-        "sec_phone" to "Phone Tools",                    // #453
     )
 
     private fun Element.id(): String? {
@@ -250,9 +249,12 @@ class SettingsHintsTest {
         // Voice models is the store: its row opens it, there is no section in between.
         assertTrue(source.contains("R.id.row_grp_models)?.setOnClickListener { openModelsStore() }"))
         assertFalse("a one-row section is back", "sec_models" in ids)
+        // Phone tools (#511) is the screen itself: its row opens it, one step, the same shape.
+        assertTrue(source.contains("if (section == SECTION_PHONE) { openPhoneTools(); return }"))
+        assertFalse("a section holding a single door is back", "sec_phone" in ids)
         // Every other home row opens a section whose title is that row's own label.
         for (s in listOf("row_grp_entity", "row_grp_speech", "row_grp_tts", "row_grp_presence",
-            "row_grp_visuals", "row_grp_assistant", "row_grp_phone", "row_grp_about"))
+            "row_grp_visuals", "row_grp_assistant", "row_grp_about"))
             assertTrue("$s has no section", source.contains("R.id.$s)"))
     }
 
@@ -262,7 +264,7 @@ class SettingsHintsTest {
         // Phone Tools has none on purpose (#453): a capability grant is consent, not a setting.
         // Un-granting is the group's own row; a "restore defaults" that silently withdrew what the
         // owner had allowed would be a way to lose a permission he granted without meaning to.
-        for (sec in sections.keys - "grp_list" - "sec_assistant" - "sec_phone") {
+        for (sec in sections.keys - "grp_list" - "sec_assistant") {
             // `row_reset` is "New conversation", not a restore.
             val restores = rowsIn(sec).filter { it.startsWith("row_restore_") || (it.endsWith("_reset") && it != "row_reset") }
             assertEquals("$sec restores: $restores", 1, restores.size)
