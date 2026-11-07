@@ -122,8 +122,8 @@ answer. State it plainly, in these words; none of them is a bug report.
 
 - **No cloud, no account, no vendor server.** There is no hosted service, no sign-up and
   nothing operated by the maintainers (README.md `no account, no hosted service`); the gateway
-  key goes only to the gateway (PRIVACY.md `preferences on your device and is transmitted **only to the gateway you configured** —`). The only *default*
-  network peer is your gateway plus the model host you install from (PRIVACY.md `your server`).
+  key goes only to the gateway (PRIVACY.md `The app sends **text**, not audio, to the gateway`). The only *default*
+  network peer is your gateway plus the model host you install from (PRIVACY.md `the Hermes server you configure`).
 - **No Play Store, no AAB.** Google Play is dropped as a rail; distribution is GitHub,
   Obtainium and F-Droid, always with our own signature (docs/DECISIONS.md `Google Play is dropped`).
 - **No iOS, no desktop.** Android only; the reusable core that a port would have needed was
