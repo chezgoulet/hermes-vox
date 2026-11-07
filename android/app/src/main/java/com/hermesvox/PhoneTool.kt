@@ -193,7 +193,7 @@ object PhoneTool {
         "pause" to "send the pause key to the active player",
         "skip" to "next or previous track",
         "now_playing" to "what the phone will admit to playing",
-        "state" to "battery, charging, screen, network, storage, volume, time",
+        "state" to "battery, charging, screen, network, storage, sound level, time",
         "clip" to "put text on the clipboard",
         "clip_read" to "the clipboard's text, when the phone allows the read",
         "file_list" to "list a folder you granted (depth-limited, paged, names and sizes only)",
@@ -205,11 +205,11 @@ object PhoneTool {
         "notification_read" to "one notification's app, time, title and text by id from a summary",
         "notification_dismiss" to "dismiss one notification by id, or all of an app's; not undoable",
         "contact" to "a contact's numbers by full or partial name",
-        "message" to "compose a text and open the messaging app; you send it",
-        "dial" to "open the dialer with a number ready; you make the call",
+        "message" to "compose a text and hand it to the messaging app; you send it",
+        "dial" to "bring up the dialer with a number ready; you make the call",
         "apps" to "what is installed, and what the phone can honestly see running",
-        "launch" to "open a launchable app by package or name",
-        "open" to "open a URI in the app that claims it",
+        "launch" to "start a launchable app by package or name",
+        "open" to "hand a URI to the app that claims it",
         "uninstall" to "remove an app by package",
     )
 
@@ -299,28 +299,31 @@ object PhoneTool {
                     "type" to "integer",
                     "minimum" to MIN_DURATION_MS.toInt(),
                     "maximum" to MAX_DURATION_MS.toInt(),
-                    "description" to "timer only: how long, in milliseconds.",
+                    "description" to
+                        "how long the countdown should run, in milliseconds ($MIN_DURATION_MS " +
+                        "to $MAX_DURATION_MS).",
                 ),
                 "at" to linkedMapOf(
                     "type" to "string",
-                    "description" to "alarm only: 24-hour clock time, HH:MM (for example 07:30).",
+                    "description" to
+                        "the wall-clock time to arm, 24-hour HH:MM (for example 07:30).",
                 ),
                 "on" to linkedMapOf(
                     "type" to "boolean",
-                    "description" to "dnd only: true turns do not disturb on, false turns it off.",
+                    "description" to "true turns Do not Disturb on and false turns it off.",
                 ),
                 "level" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 0,
                     "maximum" to 100,
-                    "description" to "volume only: the media volume to set, in percent.",
+                    "description" to "the media sound level to set, in percent (0–100).",
                 ),
                 "direction" to linkedMapOf(
                     "type" to "string",
-                    // No `enum`: `volume` and `skip` share this property and their values are
-                    // disjoint, so any enum here would advertise a value one of them refuses.
+                    // No `enum`: two actions share this property and their values are disjoint, so
+                    // any enum here would advertise a value one of them refuses.
                     "description" to
-                        "one step in a direction: up or down for the media volume, next or " +
+                        "one step in a direction: up or down for the media sound level, next or " +
                         "previous for a track (next is the default when omitted). Each action " +
                         "accepts only its own two values; a value it does not take is " +
                         "invalid-arguments naming the action and the value.",
@@ -328,43 +331,44 @@ object PhoneTool {
                 "text" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "note, clip or message only: the text to keep or send — at most " +
-                        "$MAX_NOTE_CHARS characters for a note, $MAX_CLIP_CHARS for a clip, " +
-                        "$MAX_MESSAGE_CHARS for a message. A message is composed here and " +
-                        "handed to your messaging app; this tool never sends it.",
+                        "the text to keep, hand to the owner's messaging app, or put on the " +
+                        "clipboard — at most $MAX_NOTE_CHARS characters when kept, " +
+                        "$MAX_MESSAGE_CHARS when handed to the messaging app, and " +
+                        "$MAX_CLIP_CHARS on the clipboard. A handed-off text is a draft: this " +
+                        "tool never sends it.",
                 ),
                 "to" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "message or dial only: the recipient — a phone number, or a contact name " +
-                        "when the Contacts group is granted. At most $MAX_TO_CHARS characters. " +
-                        "The dialer opens with the number filled in, and the messaging app opens " +
-                        "with the draft; the owner presses send or call.",
+                        "the recipient — a phone number, or a person's name when the address-book " +
+                        "group is on. At most $MAX_TO_CHARS characters. The dialer opens with the " +
+                        "number filled in and the messaging app opens with the draft; the owner " +
+                        "presses send or call.",
                 ),
                 "app" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "launch only: the package name, or the name the launcher shows. At most " +
+                        "a package name, or the name the launcher shows, at most " +
                         "$MAX_APP_CHARS characters. Only an activity with a launcher entry can " +
-                        "be started; a package with no launchable activity is no_app. " +
-                        "notification_dismiss: the launcher label or package whose notifications " +
-                        "are all dismissed.",
+                        "be started; a package with no launchable activity is no_app. For a " +
+                        "dismissal: the launcher label or package whose entries are all " +
+                        "dismissed.",
                 ),
                 "uri" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "open only: the URI to open, such as https://…, mailto:… or a deep link. " +
+                        "the link to hand to the platform — https://…, mailto:… or a deep link. " +
                         "It must carry a scheme and contain no whitespace, at most " +
                         "$MAX_URI_CHARS characters; an unusable URI is invalid-arguments. " +
                         "intent:, file: and a string with no scheme are bad_uri and are never " +
-                        "opened.",
+                        "handed over.",
                 ),
                 "package" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "open only: the package that must receive the URI. uninstall only: the " +
-                        "package to remove. Omit it for open to let the phone choose among the " +
-                        "apps that claim the link; uninstall requires it.",
+                        "the package that must receive the link; omit it to let the phone choose " +
+                        "among the installed applications that claim it. For a removal: the " +
+                        "package to remove, as a dotted package name.",
                 ),
                 "approval" to linkedMapOf(
                     "type" to "string",
@@ -379,20 +383,19 @@ object PhoneTool {
                 "id" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "undo: the id an earlier result returned. notification_read: one of the " +
-                        "ids a notifications summary returned — never guess one. " +
-                        "notification_dismiss: an id a `notifications` summary returned — the " +
-                        "notification to dismiss.",
+                        "an id an earlier result returned: the thing to undo, one entry from a " +
+                        "summary (never guess one), or the one to dismiss. Never a title, a body " +
+                        "or an invented handle.",
                 ),
                 "name" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "contact: a full or partial contact name, case-insensitive, at most " +
+                        "a person's full or partial name, case-insensitive, at most " +
                         "$MAX_CONTACT_NAME_CHARS characters; the lookup returns up to " +
                         "$MAX_CONTACT_MATCHES matching people and their numbers with labels. " +
-                        "file_read or file_offer: the file's name inside the folder the owner " +
-                        "granted, at most $MAX_FILE_NAME_CHARS characters. A name, never a path: " +
-                        "\"..\", an absolute path and a separator are refused.",
+                        "Or a file's name inside the folder the owner granted, at most " +
+                        "$MAX_FILE_NAME_CHARS characters. A name, never a path: \"..\", an " +
+                        "absolute path and a separator are refused.",
                 ),
                 "folder" to linkedMapOf(
                     "type" to "string",
@@ -400,58 +403,57 @@ object PhoneTool {
                     // enum is: a folder that is not granted is not a name the phone can keep.
                     *folderEnum(folderChoices),
                     "description" to if (folderChoices.isEmpty()) {
-                        "file_list, file_read or file_offer only: the folder the owner granted. " +
-                            "No folder is granted yet, so these actions refuse no_folder until the " +
-                            "owner picks one in Phone tools → Files."
+                        "the folder the owner granted. No folder is granted yet, so these " +
+                            "actions refuse no_folder until the owner picks one in Phone tools " +
+                            "→ Files."
                     } else {
                         val which = if (folderChoices.size == 1) {
                             "It is the only grant, so it is the default when folder is omitted."
                         } else {
                             "Name one of them: with several folders granted there is no default."
                         }
-                        "file_list, file_read or file_offer only: which granted folder to look in " +
-                            "— ${folderChoices.joinToString(", ")}. $which Everything is inside " +
-                            "that folder only."
+                        "which granted folder to look in — ${folderChoices.joinToString(", ")}. " +
+                            "$which Everything is inside that folder only."
                     },
                 ),
                 "path" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "file_list only: a subdirectory relative to the folder you granted " +
-                        "(for example \"reports/2026\"); leave it out, or \"\", for the folder " +
-                        "itself. An absolute path, \"..\" and a backslash are refused.",
+                        "a subdirectory relative to the folder you granted (for example " +
+                        "\"reports/2026\"); leave it out, or \"\", for the folder itself. An " +
+                        "absolute path, \"..\" and a backslash are refused.",
                 ),
                 "depth" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
                     "maximum" to PhoneFiles.MAX_DEPTH,
                     "description" to
-                        "file_list only: 1 (the default) lists that directory's entries; 2 also " +
-                        "lists each subdirectory's, and so on, up to ${PhoneFiles.MAX_DEPTH}.",
+                        "1 (the default) lists that directory's entries; 2 also lists each " +
+                        "subdirectory's, and so on, up to ${PhoneFiles.MAX_DEPTH}.",
                 ),
                 "pattern" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "file_list only: a case-insensitive glob on the file name, such as " +
-                        "\"*.pdf\" or \"invoice*\" (\"*\" is any run of characters, \"?\" one). " +
-                        "Applied to files, never to directories.",
+                        "a case-insensitive glob on the file name, such as \"*.pdf\" or " +
+                        "\"invoice*\" (\"*\" is any run of characters, \"?\" one). Applied to " +
+                        "files, never to directories.",
                 ),
                 "offset" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 0,
                     "description" to
-                        "file_list: the page to start at, from 0 (the default). file_read: the byte " +
-                        "to start a window at (a file larger than the whole-file cap is read this " +
-                        "way, never refused).",
+                        "for a listing, the page to start at, from 0 (the default). For a read, " +
+                        "the byte to start a window at (a file larger than the whole-file cap " +
+                        "is read this way, never refused).",
                 ),
                 "limit" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
                     "maximum" to PhoneFiles.MAX_LIST_LIMIT,
                     "description" to
-                        "file_list only: entries per page, ${PhoneFiles.DEFAULT_LIST_LIMIT} by " +
-                        "default, at most ${PhoneFiles.MAX_LIST_LIMIT}. More entries are not lost: " +
-                        "the result says has_more and gives next_offset.",
+                        "for a listing, entries per page, ${PhoneFiles.DEFAULT_LIST_LIMIT} by " +
+                        "default, at most ${PhoneFiles.MAX_LIST_LIMIT}. More entries are not " +
+                        "lost: the result says has_more and gives next_offset.",
                 ),
                 "length" to linkedMapOf(
                     "type" to "integer",
@@ -460,14 +462,14 @@ object PhoneTool {
                     // next window; without a maximum one call reads a whole file into the answer.
                     "maximum" to PhoneFiles.MAX_READ_BYTES,
                     "description" to
-                        "file_read only: the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
+                        "for a read, the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
                         "by default and at most that. The result says truncated and the file's " +
                         "total bytes; read the rest with a later offset.",
                 ),
                 "start" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "event_create only: the start as local ISO-8601, YYYY-MM-DDTHH:MM (seconds " +
+                        "a new event's start as local ISO-8601, YYYY-MM-DDTHH:MM (seconds " +
                         "optional), in the phone's own time zone. A trailing Z or an offset is " +
                         "refused: this is the phone's local clock.",
                 ),
@@ -475,21 +477,21 @@ object PhoneTool {
                     "type" to "integer",
                     "minimum" to MIN_EVENT_MINUTES,
                     "description" to
-                        "event_create only: how long the event lasts, in minutes — at least " +
-                        "$MIN_EVENT_MINUTES. Zero and negative durations are refused; there is no " +
-                        "upper bound here, so the calendar provider's own limits apply.",
+                        "a new event's length, in minutes — at least $MIN_EVENT_MINUTES. Zero " +
+                        "and negative durations are refused; there is no upper bound here, so " +
+                        "the calendar provider's own limits apply.",
                 ),
                 "calendar" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "event_create only: the name of the calendar to create the event in. Omit " +
-                        "it for the phone's default calendar.",
+                        "a new event's calendar, by name. Omit it for the phone's default " +
+                        "calendar.",
                 ),
                 "title" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "event_create only: the event's title, at most $MAX_EVENT_TITLE_CHARS " +
-                        "characters. The audit stores it as a length, never as the text.",
+                        "a new event's title, at most $MAX_EVENT_TITLE_CHARS characters. The " +
+                        "audit stores it as a length, never as the text.",
                 ),
             ),
             "required" to listOf("action"),

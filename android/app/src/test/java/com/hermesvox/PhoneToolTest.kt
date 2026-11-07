@@ -307,7 +307,11 @@ class PhoneToolTest {
         assertEquals(listOf("clip", "clip_read", "undo", "status"), enumOf(on))
         val text = ((input(on)["properties"] as JObj)["text"] as JObj)["description"] as JStr
         assertTrue("the bound is in the schema", text.value.contains(PhoneTool.MAX_CLIP_CHARS.toString()))
-        assertTrue("and the action is named", text.value.contains("clip"))
+        assertFalse(
+            "the description does not name an action: clipboard may be Off while it is read, " +
+                "and a description must not promise what the grants forbid",
+            Regex("\\bclip\\b").containsMatchIn(text.value),
+        )
         assertTrue(PhoneTool.parse(mapOf("action" to "clip", "text" to "hi"), on) is PhoneTool.Parsed.Run)
         assertTrue(
             "the read is offered by the same group and takes no text",
@@ -434,7 +438,11 @@ class PhoneToolTest {
         }
         assertEquals(listOf("contact", "undo", "status"), enumOf(on))
         val name = ((input(on)["properties"] as JObj)["name"] as JObj)["description"] as JStr
-        assertTrue("the name is documented for contact", name.value.contains("contact"))
+        assertTrue(
+            "the name's two shapes are documented without naming an action that may be Off: " +
+                name.value,
+            name.value.contains("person") && name.value.contains("file"),
+        )
         assertTrue("the bound is in the schema", name.value.contains(PhoneTool.MAX_CONTACT_NAME_CHARS.toString()))
         assertTrue(PhoneTool.parse(mapOf("action" to "contact", "name" to "Mo"), on) is PhoneTool.Parsed.Run)
         assertEquals(
