@@ -68,6 +68,7 @@ build.
 | [`docs/MILESTONES.md`](MILESTONES.md) | The milestone map: what the current beta means, what the alpha gate (the switch for unfinished features) holds, and what is open. |
 | [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | Every item in the current release, by real status. |
 | [`docs/RELEASE-0.9.1.md`](RELEASE-0.9.1.md) | The current release's contents and the open items before the cut. |
+| [`docs/RELEASE-NOTES-0.9.1.md`](RELEASE-NOTES-0.9.1.md) | the published note for 0.9.1, as written by the owner: what changed, grouped by what the reader is trying to do, with contributors named |
 | [`docs/BUDGETS-0.9.1.md`](BUDGETS-0.9.1.md) | The CPU, GPU, battery and memory budget for the continuous listening lane. |
 
 ### Instruments and measurements
