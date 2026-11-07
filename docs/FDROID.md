@@ -67,12 +67,14 @@ the prebuilt AAR is not used, the staged JNI libraries and Kotlin sources are, a
 comes from the Gradle dependency. **Without the property nothing changes** — the gate, CI and
 nightlies keep the prebuilt AAR.
 
-The unsigned release build, which is what the recipe and the reproducibility check run, is then:
+The recipe runs this build, unsigned because it has no maintainer keystore:
 
 ```sh
 cd android
 ./gradlew -Phermesvox.sherpaSource=../sherpa-src -Phermesvox.unsigned assembleRelease
 ```
+
+`scripts/repro-check.sh` builds an unsigned release the same way, from the prebuilt AAR instead.
 
 The GitHub release workflow takes the same inputs — submodules checked out, NDK r28c installed,
 the script run, `-Phermesvox.sherpaSource` set — and adds the keystore, so its APK is signed.
