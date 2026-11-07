@@ -160,6 +160,35 @@ class LightModeContrastTest {
         }
     }
 
+    /**
+     * One command colour for every row (owner, 2026-11-06): `/clear` and `/new` used to be
+     * tinted differently so they stood out; they now look like the rest, distinguished by
+     * their wording and their marks. A command row is its own ground — `bg_command_row`
+     * fills `@color/hv_surface` — so the row's text is measured there, on both grounds: the
+     * effect line is the `hv_text` token, its quiet cost line `hv_text_dim`, and the mark
+     * (with the idle state chip) is the catalogue's one token, [CommandCatalog.ROW_INK].
+     * Printed, not eyeballed.
+     */
+    @Test fun everyCommandRowClears4_5InTheOneCommandColour() {
+        assertEquals("hv_cyan", CommandCatalog.ROW_INK)
+        println("ground,row_ground,mark,effect,cost")
+        for (night in listOf(false, true)) {
+            val ground = if (night) "night" else "light"
+            val row = resColor("hv_surface", night)
+            val ratios = linkedMapOf(
+                "mark" to Contrast.ratio(resColor(CommandCatalog.ROW_INK, night), row),
+                "effect" to Contrast.ratio(resColor("hv_text", night), row),
+                "cost" to Contrast.ratio(resColor("hv_text_dim", night), row),
+            )
+            println("%s,#%06X,%s".format(ground, row and 0xFFFFFF,
+                ratios.values.joinToString(",") { "%.2f".format(it) }))
+            for ((where, r) in ratios) {
+                assertTrue("$ground/$where is ${"%.2f".format(r)}:1 on the command row " +
+                    "(#%06X, floor 4.5)".format(row and 0xFFFFFF), r >= 4.5f)
+            }
+        }
+    }
+
     @Test fun the_dark_theme_text_tokens_are_the_shipped_ones() {
         // #275 changed only the light ground; these are the night values from before it,
         // so the hero scheme is provably untouched (not just "looks the same").

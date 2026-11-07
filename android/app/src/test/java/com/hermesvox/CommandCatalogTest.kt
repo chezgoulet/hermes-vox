@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /** #226: the commands, grouped by what they do, each saying what it does and what it costs. */
 class CommandCatalogTest {
@@ -94,44 +95,66 @@ class CommandCatalogTest {
     }
 
     /**
-     * Only useful text: a second line says what is *lost*, and only a command that loses
-     * something has one. "/reconnect stays down if the gateway does not answer" restated the
-     * command; it is gone. The four that lose something keep their line.
+     * Only useful text: a second line says what is *lost*, and only a command whose row
+     * states one has it. "/reconnect stays down if the gateway does not answer" restated the
+     * command; it is gone. `/clear` and `/new` lost their caution lines on 2026-11-06 (owner):
+     * the row keeps its name and its one-line description, and nothing else.
      */
     @Test fun aCommandThatLosesSomethingSaysWhatAndNoOtherDoes() {
-        for (name in listOf("/new", "/clear", "/compress", "/models", "/profiles")) {
+        for (name in listOf("/compress", "/models", "/profiles")) {
             val cost = CommandCatalog.find(name)!!.cost
             assertTrue("$name loses something and must say what", cost != null)
-            assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)
-            assertTrue("$name's cost has no line break", !cost.text.contains('\n'))
+            assertTrue("$name's cost is a sentence", cost!!.length in 20..48)
+            assertTrue("$name's cost has no line break", !cost.contains('\n'))
         }
-        for (name in listOf("/reconnect", "/health", "/help", "/sessions"))
-            assertNull("$name loses nothing; it has no cost line",
+        for (name in listOf("/clear", "/new", "/reconnect", "/health", "/help", "/sessions"))
+            assertNull("$name states only its name and its effect",
                 CommandCatalog.find(name)!!.cost)
         assertNull("the share row sends nothing by itself", CommandCatalog.SHARE.cost)
     }
 
-    /** The row's mark is amber exactly when its cost line is: one fact, two signals. */
-    @Test fun theMarkTintIsTheRiskFact() {
-        for (c in CommandCatalog.ALL + CommandCatalog.SHARE)
-            assertEquals(c.name, c.cost?.risk == true, CommandCatalog.tint(c) == CommandCatalog.Tint.RISK)
+    /** The row's mark is the command colour for every command: one rule, no warning tint. */
+    @Test fun everyCommandRowIsDrawnInTheOneCommandColour() {
+        // The token is the theme's command colour, named once in the catalogue.
+        assertEquals("hv_cyan", CommandCatalog.ROW_INK)
+        // `/clear` and `/new` resolve to exactly what every other row resolves to.
+        val clear = CommandCatalog.find("/clear")!!
+        val new = CommandCatalog.find("/new")!!
+        assertEquals(CommandCatalog.ROW_INK, CommandCatalog.rowInk(clear))
+        assertEquals(CommandCatalog.ROW_INK, CommandCatalog.rowInk(new))
+        for (c in CommandCatalog.ALL + CommandCatalog.SHARE) {
+            assertEquals("${c.name} has a colour of its own",
+                CommandCatalog.ROW_INK, CommandCatalog.rowInk(c))
+            assertEquals("${c.name} resolves like /clear", CommandCatalog.rowInk(clear), CommandCatalog.rowInk(c))
+        }
+        // And the sheet resolves that one token for the row's mark, in the theme's command
+        // colour — no warning colour, and no branch on which command it is.
+        val sheet = File("src/main/java/com/hermesvox/CommandsSheet.kt").readText()
+        assertTrue("the row's mark is not the command colour",
+            sheet.contains("val tint = color(R.color.hv_cyan)"))
+        assertFalse("a command row is drawn in the warning colour again",
+            Regex("""R\.color\.hv_warn""").containsMatchIn(sheet))
+        assertFalse("the sheet still branches its tint", sheet.contains("CommandCatalog.tint"))
     }
 
     /**
-     * Amber is a fact, not a mood: only a command that loses something for good is drawn in
-     * the warning colour. If a future command starts shouting in amber without being
-     * irreversible, this fails and the row can be argued about instead of assumed.
+     * The owner removed the two caution sentences on 2026-11-06: `/clear` and `/new` keep
+     * their name and their one-line description, and nothing else. They were the only two
+     * commands drawn as risks, so no row is a warning any more — and the two are still two
+     * rows, told apart by their marks as well as their words.
      */
-    @Test fun onlyTheIrreversibleCommandsAreDrawnAsRisks() {
-        val risks = CommandCatalog.ALL.filter { it.cost?.risk == true }.map { it.name }
-        assertEquals(listOf("/clear", "/new"), risks)
-        // And a risk's line says what cannot come back, in words — the colour alone is not
-        // the message, because colour is the first thing a colour-blind person loses.
-        for (c in CommandCatalog.ALL) {
-            val cost = c.cost ?: continue
-            if (cost.risk) assertTrue("${c.name}: '${cost.text}' must say what is lost",
-                cost.text.contains("cannot") || cost.text.contains("Cannot"))
-        }
+    @Test fun theTwoClearRowsKeepTheirMarksAndNoWarningColour() {
+        val clear = CommandCatalog.find("/clear")!!
+        val new = CommandCatalog.find("/new")!!
+        assertNull(clear.cost)
+        assertNull(new.cost)
+        // What still distinguishes them is wording and drawing, both of which stay.
+        assertTrue(clear.effect != new.effect)
+        assertNull("clear draws the category's still", clear.glyph)
+        assertEquals(Marks.Mark.NEW_THREAD, new.glyph)
+        for (c in CommandCatalog.ALL + CommandCatalog.SHARE)
+            assertNull("${c.name} still carries a caution sentence",
+                c.cost?.takeIf { it.contains("cannot", ignoreCase = true) })
     }
 
     @Test fun inlineCommandsAreTheOnesThatRunInPlace() {

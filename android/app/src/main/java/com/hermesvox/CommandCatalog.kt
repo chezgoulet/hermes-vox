@@ -39,19 +39,16 @@ object CommandCatalog {
      *  its own view (a chooser, a status card) and closes the sheet. */
     enum class Kind { INLINE, CARD }
 
-    /** What a command costs — and whether it can be taken back. */
-    data class Cost(val text: String, val risk: Boolean)
-
     data class Command(
         val name: String,
         val aliases: List<String>,
         val group: Group,
         /** What it does, in one line. */
         val effect: String,
-        /** What it loses, in one line — null when nothing is lost. [Cost.risk] is true only
-         *  when something is gone for good, so the row's warning colour means
-         *  "irreversible", not "unpleasant". */
-        val cost: Cost?,
+        /** What it loses, in one line — null when nothing is lost, or when the row states
+         *  nothing beyond its name and its effect. The line is always quiet ink: no command
+         *  row is drawn as a warning (owner, 2026-11-06). */
+        val cost: String?,
         val category: Category,
         val kind: Kind,
         /** #284: the words a person uses for what they want, not for the command. */
@@ -73,17 +70,20 @@ object CommandCatalog {
     val ALL: List<Command> = listOf(
         Command(CompressCommand.NAME, listOf(CompressCommand.ALIAS), Group.CONVERSATION,
             effect = "Fold a long thread into a summary",
-            cost = Cost("Older detail survives only in the summary", risk = false),
+            cost = "Older detail survives only in the summary",
             category = Category.CONDENSE, kind = Kind.INLINE,
             listOf("slow", "too long", "summarize", "summarise", "shorten", "memory full", "context")),
+        // The owner removed this row's caution line on 2026-11-06: the row keeps its name and
+        // its one-line description, and nothing else. `/clear` is told apart from `/new` by
+        // what it says and the mark it draws, never by a warning colour.
         Command("/clear", listOf("/reset"), Group.CONVERSATION,
             effect = "Clear the screen; the agent keeps the thread",
-            cost = Cost("The screen's copy cannot be brought back", risk = true),
+            cost = null,
             category = Category.CLEAR, kind = Kind.INLINE,
             listOf("wipe", "clean", "erase", "screen")),
         Command("/new", emptyList(), Group.CONVERSATION,
             effect = "Start a fresh thread; the agent forgets this one",
-            cost = Cost("This thread cannot be brought back", risk = true),
+            cost = null,
             category = Category.CLEAR, kind = Kind.INLINE,
             listOf("start over", "fresh", "new topic", "forget", "begin again"),
             glyph = Marks.Mark.NEW_THREAD),
@@ -100,14 +100,14 @@ object CommandCatalog {
             glyph = Marks.Mark.SESSIONS),
         Command("/models", emptyList(), Group.AGENT,
             effect = "Choose the model the agent thinks with",
-            cost = Cost("Switching starts a fresh thread", risk = false),
+            cost = "Switching starts a fresh thread",
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
         // Profiles left Alpha on 2026-11-06 (#436, D39), so the switcher is a command every
         // install has.
         Command("/profiles", emptyList(), Group.AGENT,
             effect = "Talk to another of this host's agents",
-            cost = Cost("Switching starts a fresh conversation", risk = false),
+            cost = "Switching starts a fresh conversation",
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("profile", "agent", "another agent", "who am i talking to", "switch agent",
                 "connection", "home", "work"),
@@ -230,10 +230,20 @@ object CommandCatalog {
      *  retire or tune it if the field says the offer comes too early or too late). */
     const val COMPRESS_AFTER_TURNS = 16L
 
-    /** How a row tints its verb mark: the warning colour for a command that loses something
-     *  for good (the same fact as its amber cost line), the accent otherwise. */
-    enum class Tint { ACCENT, RISK }
-    fun tint(c: Command): Tint = if (c.cost?.risk == true) Tint.RISK else Tint.ACCENT
+    /**
+     * The colour token every command row is drawn in — one token, whatever the command
+     * (owner, 2026-11-06). `/clear` and `/new` used to be given their own colour so they
+     * stood out from the other rows; they are told apart by their wording and their marks,
+     * not by a colour that makes one row look like a warning. [rowInk] answers for every
+     * row, so a new command cannot arrive with a colour of its own.
+     */
+    const val ROW_INK = "hv_cyan"
+
+    /** The token [c]'s row is drawn in: [ROW_INK], the same for every command by design.
+     *  The parameter is deliberate — the answer is a property of "a command row", not of
+     *  this command, and the test states it that way for `/clear` and `/new` too. */
+    @Suppress("UNUSED_PARAMETER")
+    fun rowInk(c: Command): String = ROW_INK
 
     /** What a row says when its command fits the moment (#284/#499) — the row's own state
      *  slot, so the screen marks the row it already has rather than repeating it. */
