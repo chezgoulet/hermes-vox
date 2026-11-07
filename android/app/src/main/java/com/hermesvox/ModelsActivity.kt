@@ -165,6 +165,13 @@ class ModelsActivity : AppCompatActivity() {
         showLicence(spec)
     }
 
+    /** Open a permissively licensed voice's model card — the licence claim, readable
+     *  without leaving the app for anyone who wants to check it. */
+    private fun openCard(url: String) {
+        try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+        catch (_: Throwable) { Toast.makeText(this, url, Toast.LENGTH_LONG).show() }
+    }
+
     /**
      * The one licence acceptance flow: the Download button and the licence badge
      * both land here, so there is exactly one place that can accept a licence.
@@ -190,8 +197,7 @@ class ModelsActivity : AppCompatActivity() {
             .show()
     }
 
-    /** The Advanced disclosure: collapsed by default, at the bottom of the list. */
-    private fun bindAdvanced() {
+    /** The Advanced disclosure: collapsed by default, at the bottom of the list. */    private fun bindAdvanced() {
         val row = findViewById<View>(R.id.m_advanced)
         val panel = findViewById<View>(R.id.m_adv_panel)
         val label = findViewById<TextView>(R.id.m_adv_state)
@@ -269,11 +275,14 @@ class ModelsActivity : AppCompatActivity() {
         c.action.setOnClickListener(onClick)
 
         val badge = ModelRowState.licenceBadge(spec.licence, accepted)
+            ?: ModelRowState.cardBadge(spec.cardUrl)
         c.licence.visibility = if (badge == null) View.GONE else View.VISIBLE
         if (badge != null) {
             c.licence.text = badge
             c.licence.contentDescription = "$badge — ${spec.name}"
-            c.licence.setOnClickListener { showLicence(spec) }
+            c.licence.setOnClickListener {
+                if (spec.licence != null) showLicence(spec) else openCard(spec.cardUrl)
+            }
         }
 
         c.recommended.visibility = if (spec.recommended) View.VISIBLE else View.GONE

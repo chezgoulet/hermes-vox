@@ -263,11 +263,13 @@ class WarmTts(private val context: Context) : VoxTts {
  * got the system voice".
  */
 fun ttsEngineFor(context: Context, token: String): VoxTts? = try {
-    when (TtsPolicy.localEngineOf(token)) {
-        "piper" -> SherpaTts(context, SherpaVoice.PIPER)
-        "supertonic" -> SherpaTts(context, SherpaVoice.SUPERTONIC)
+    val local = TtsPolicy.localEngineOf(token)
+    val voice = local?.let { SherpaVoice.fromEngineToken(it) }
+    when {
         // Kokoro's runtime is a stub (isWarm is always false); it can never speak.
-        "kokoro" -> WarmTts(context).takeIf { it.isWarm }
+        local == "kokoro" -> WarmTts(context).takeIf { it.isWarm }
+        // A catalogue voice token (piper, supertonic, piper-siwis, piper-tom, piper-upmc).
+        voice != null -> SherpaTts(context, voice)
         else -> SystemTts(context)
     }
 } catch (_: Throwable) { null }

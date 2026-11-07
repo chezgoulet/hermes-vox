@@ -70,6 +70,12 @@ object ProfileScope {
         Scoped("voice", Kind.TEXT, Group.VOICE),
         Scoped(VoiceSpeakers.key(SherpaVoice.PIPER), Kind.WHOLE, Group.VOICE),
         Scoped(VoiceSpeakers.key(SherpaVoice.SUPERTONIC), Kind.WHOLE, Group.VOICE),
+        // The fr-FR voices (#477): their speaker selection is a profile's for the same
+        // reason as the en-US one — UPMC really has two, and a switch must not silently
+        // hand a profile another profile's speaker.
+        Scoped(VoiceSpeakers.key(SherpaVoice.PIPER_SIWIS), Kind.WHOLE, Group.VOICE),
+        Scoped(VoiceSpeakers.key(SherpaVoice.PIPER_TOM), Kind.WHOLE, Group.VOICE),
+        Scoped(VoiceSpeakers.key(SherpaVoice.PIPER_UPMC), Kind.WHOLE, Group.VOICE),
         // ---- look --------------------------------------------------------------------
         Scoped(VisualStyle.KEY_CATEGORY, Kind.TEXT, Group.LOOK),
         Scoped(VisualStyle.KEY_ENERGY, Kind.NUMBER, Group.LOOK),
@@ -148,11 +154,12 @@ object ProfileScope {
 
     /** The voice in one line for the switcher: the engine, then the register. */
     fun voiceLine(own: Map<String, String>): String {
-        val engine = when (own["tts"]?.trim()?.lowercase()) {
-            "supertonic" -> "Supertonic"
-            "piper" -> "Piper"
-            "system" -> "System voice"
-            else -> ""
+        val token = own["tts"]?.trim()?.lowercase().orEmpty()
+        val engine = when {
+            token == "system" -> "System voice"
+            else -> SherpaVoice.fromEngineToken(token)?.let {
+                if (it == SherpaVoice.PIPER) "Piper" else it.displayName
+            } ?: ""
         }
         // "system" is the *register's* token for the unmarked register; the Settings row calls
         // it "Natural" and so does this line, so the two cannot read as different settings.

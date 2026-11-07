@@ -61,6 +61,7 @@ object SettingsHints {
         // Transcription
         "row_stt" to "Which recogniser turns your speech into text",
         "row_stt_model" to "The on-device model that recogniser uses",
+        "row_stt_language" to "What the recogniser expects; multilingual models only",
         "row_stt_threads" to "Processor cores for speech in and out; Auto suits most phones",
         "row_test_stt_conn" to "Checks that your own speech-to-text server answers",
         // Voice

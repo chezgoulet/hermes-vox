@@ -40,12 +40,18 @@ internal object TtsPolicy {
     const val SYSTEM = "system"
 
     /** The engine name as the owner reads it in Settings. */
-    fun displayName(engine: String): String = when (engine.trim().lowercase()) {
-        SYSTEM -> "System"
-        "piper" -> "Piper"
-        "supertonic" -> "Supertonic"
-        "kokoro" -> "Kokoro"
-        else -> engine.trim().replaceFirstChar { it.uppercase() }
+    fun displayName(engine: String): String {
+        val t = engine.trim().lowercase()
+        SherpaVoice.fromEngineToken(t)?.let {
+            // Keep the short historical name for the en-US Piper token; a French voice
+            // has no shorter name and is named exactly as Settings names it.
+            return if (it == SherpaVoice.PIPER) "Piper" else it.displayName
+        }
+        return when (t) {
+            SYSTEM -> "System"
+            "kokoro" -> "Kokoro"
+            else -> engine.trim().replaceFirstChar { it.uppercase() }
+        }
     }
 
     /** Mid-sentence name: "the system voice", "the Piper voice". */
@@ -90,18 +96,21 @@ internal object TtsPolicy {
 
     /** Which local voice a pref token selects, or null for the system voice. An unknown
      *  or blank token resolves to the system engine — never to a silent or ignore-the-pref
-     *  engine (the pre-#31 behaviour). */
-    fun localEngineOf(requested: String): String? = when (requested.trim().lowercase()) {
-        "piper", "supertonic", "kokoro" -> requested.trim().lowercase()
-        else -> null
+     *  engine (the pre-#31 behaviour). "piper" is normalized to the token Settings writes,
+     *  so the stored model id of the en-US voice cannot become a second spelling. */
+    fun localEngineOf(requested: String): String? {
+        val t = requested.trim().lowercase()
+        if (t == "kokoro") return "kokoro"
+        return when (val voice = SherpaVoice.fromEngineToken(t)) {
+            null -> null
+            SherpaVoice.PIPER -> "piper"
+            else -> voice.modelId
+        }
     }
 
     /** The model-catalogue id behind a local engine token, or null when it has none. */
-    fun modelIdOf(engine: String): String? = when (engine) {
-        "piper" -> SherpaVoice.PIPER.modelId
-        "supertonic" -> SherpaVoice.SUPERTONIC.modelId
-        else -> null   // kokoro: the runtime was never shipped (see WarmTts.kokoroBackend)
-    }
+    fun modelIdOf(engine: String): String? =
+        SherpaVoice.fromEngineToken(engine)?.modelId   // kokoro: never shipped (WarmTts.kokoroBackend)
 
     /**
      * The decision. [engineReady] is about the REQUESTED local engine only; it says

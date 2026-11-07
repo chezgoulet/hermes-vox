@@ -229,19 +229,20 @@ class ModelDownloader(context: Context) {
             val m = files.firstOrNull { it.name.matches(Regex(pat)) } ?: return
             if (!m.name.equals(to)) m.renameTo(File(dir, to))
         }
-        when (specId) {
-            "whisper-tiny", "whisper-base", "whisper-small" -> {
+        when {
+            specId.startsWith("whisper-") -> {
                 rename(".*-encoder\\.int8\\.onnx", "encoder.int8.onnx")
                 rename(".*-decoder\\.int8\\.onnx", "decoder.int8.onnx")
                 rename(".*-encoder\\.onnx", "encoder.onnx")
                 rename(".*-decoder\\.onnx", "decoder.onnx")
                 rename(".*-tokens\\.txt", "tokens.txt")
             }
-            "piper-lessac" -> {
+            // Every Piper voice ships one `<voice>.onnx` and one tokens file at the tarball root.
+            specId.startsWith("piper-") -> {
                 rename(".*\\.onnx", "model.onnx")
             }
             // Already canonical (STREAMING_TRANSDUCER_FILES) once hoisted: nothing to rename.
-            ModelCatalog.NEMOTRON_STREAM_ID -> Unit
+            specId == ModelCatalog.NEMOTRON_STREAM_ID -> Unit
         }
     }
 

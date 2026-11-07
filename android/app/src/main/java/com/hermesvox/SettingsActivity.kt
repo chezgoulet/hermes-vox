@@ -990,9 +990,13 @@ class SettingsActivity : AppCompatActivity() {
             pick("Speech-to-text (backend)",
                 arrayOf("On-device (offline)", "Platform (Google)", "Remote (server)"),
                 arrayOf(ModelCatalog.BACKEND_ONDEVICE, ModelCatalog.BACKEND_PLATFORM, ModelCatalog.BACKEND_REMOTE),
-                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val) { refreshSttRemotePanel() }
+                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val) { refreshSttRemotePanel(); refreshSttLanguageRow() }
         }
         findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener { pickSttModel() }
+        // The spoken language of the recogniser. The row is only visible when the
+        // selected model can decode more than English (refreshSttLanguageRow) —
+        // offering it for an .en checkpoint is what made the old row a lie.
+        findViewById<LinearLayout>(R.id.row_stt_language)?.setOnClickListener { pickSttLanguage() }
         // 0.7.3: the speech-pipeline CPU budget. Stored as an INT (0 = Auto), so it
         // cannot ride the String-based pick() helper. Applies on the next voice-model
         // load — numThreads is baked into the recognizer/synth session at build.
@@ -1012,8 +1016,16 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
-                arrayOf("Supertonic (on-device, recommended)", "Piper (on-device, lighter)", "System (fallback)"),
-                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
+                arrayOf(
+                    "Supertonic (on-device, recommended)",
+                    "Piper · fr-FR Siwis (on-device, French)",
+                    "Piper · fr-FR Tom (on-device, French)",
+                    "Piper · fr-FR UPMC (on-device, French, two voices)",
+                    "Piper · en-US (on-device, lighter)",
+                    "System (fallback)"
+                ),
+                arrayOf("supertonic", "piper-siwis", "piper-tom", "piper-upmc", "piper", "system"),
+                "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
         // option was removed — WarmTts is a no-op stub, so it never produced
@@ -1243,8 +1255,89 @@ class SettingsActivity : AppCompatActivity() {
                     prefs.edit().putString(ModelCatalog.KEY_STT_MODEL, id).remove(ModelCatalog.KEY_STT_STREAM_MODEL).apply()
                 }
                 findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+                refreshSttLanguageRow()
                 d.dismiss()
+                // The new recogniser may not be able to hear the language that is
+                // stored. Say so and offer the model that can — never leave the choice
+                // sitting in prefs to be discarded at decode time.
+                resolveSttLanguageMismatch()
             }
+            .show()
+    }
+
+    /** The language row's picker: only reachable while the recogniser is multilingual
+     *  (the row itself is hidden otherwise — [refreshSttLanguageRow]). */
+    private fun pickSttLanguage() {
+        val labels = SttLanguage.CHOICES.map { it.label }.toTypedArray()
+        val codes = SttLanguage.CHOICES.map { it.code }
+        val cur = prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, "").orEmpty().trim().lowercase()
+        AlertDialog.Builder(this)
+            .setTitle("Spoken language")
+            .setSingleChoiceItems(labels, codes.indexOf(cur).coerceAtLeast(0)) { d, which ->
+                prefs.edit().putString(ModelCatalog.KEY_STT_LANGUAGE, codes[which]).apply()
+                findViewById<TextView>(R.id.set_stt_language_val).text = SttLanguage.label(codes[which])
+                d.dismiss()
+                Toast.makeText(this, "Applies on the next voice-model load", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Show the language row only when the recogniser that will run can decode a
+     *  language. Hidden is the honest state for the .en checkpoints, Parakeet and
+     *  Nemotron — there is no choice to make, not a choice we forgot to offer. */
+    private fun refreshSttLanguageRow() {
+        val row = findViewById<LinearLayout>(R.id.row_stt_language) ?: return
+        val visible = SttLanguage.rowVisible(
+            prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE),
+            prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL),
+            prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, ""),
+        )
+        row.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<TextView>(R.id.set_stt_language_val)?.text =
+            SttLanguage.label(prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, ""))
+    }
+
+    /** The stored language cannot be decoded by the selected recogniser. Offer the
+     *  multilingual model with its REAL download size before anything starts; if the
+     *  English-only model is kept, the dead preference is cleared and said out loud. */
+    private fun resolveSttLanguageMismatch() {
+        val shipped = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+        val stream = prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, "")
+        val code = prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, "").orEmpty()
+        if (!SttLanguage.englishOnlyMismatch(shipped, stream, code)) return
+        val model = SttLanguage.chosenModel(shipped, stream)
+        val sibling = ModelCatalog.blessed.firstOrNull { it.id == SttLanguage.multilingualSibling(model) }
+            ?: return
+        val size = ModelRowState.sizeLabel(sibling.sizeMB)
+        val current = sttModelLabel(model)
+        AlertDialog.Builder(this)
+            .setTitle("$current hears English only")
+            .setMessage("Your spoken language is ${SttLanguage.label(code)}, which $current " +
+                "cannot decode — it would be ignored on the next call.\n\n" +
+                "${sibling.name} understands it. Download: $size.")
+            .setPositiveButton("Use ${sibling.name} ($size)") { _, _ ->
+                prefs.edit()
+                    .putString(ModelCatalog.KEY_STT_MODEL, sibling.id)
+                    .remove(ModelCatalog.KEY_STT_STREAM_MODEL)
+                    .apply()
+                findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+                refreshSttLanguageRow()
+                if (ModelCatalog.isInstalled(this, sibling.id)) {
+                    Toast.makeText(this, "${sibling.name} is installed", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Download $size in Voice models — your language is kept",
+                        Toast.LENGTH_LONG).show()
+                    openModelsStore()
+                }
+            }
+            .setNegativeButton("Keep $current (English)") { _, _ ->
+                prefs.edit().putString(ModelCatalog.KEY_STT_LANGUAGE, "").apply()
+                refreshSttLanguageRow()
+                Toast.makeText(this,
+                    "$current hears English only — spoken language set to Auto-detect",
+                    Toast.LENGTH_LONG).show()
+            }
+            .setCancelable(false)
             .show()
     }
 
@@ -1261,6 +1354,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshFlowVals() {
         findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
         findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+        refreshSttLanguageRow()
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
         syncSpeakerRow()   // title + value follow the selected engine
@@ -2267,7 +2361,13 @@ class SettingsActivity : AppCompatActivity() {
         t.init { ok ->
             if (!ok || preview !== t) return@init
             val t0 = android.os.SystemClock.uptimeMillis()
-            t.speak("Hi — this is how I'll sound when we talk.") {
+            // A French voice previews a French sentence: an English line through a
+            // fr-FR model is the one preview that cannot tell the owner what it is.
+            val phrase = if (SherpaVoice.fromEngineToken(ttsEngine())?.let { it in FRENCH_VOICES } == true)
+                "Bonjour — voici ma voix lorsque nous parlerons."
+            else
+                "Hi — this is how I'll sound when we talk."
+            t.speak(phrase) {
                 VoxLog.d("event=voice-preview engine=${t.name} ms=${android.os.SystemClock.uptimeMillis() - t0}")
                 if (preview === t) { try { t.shutdown() } catch (_: Throwable) {}; preview = null }
             }
@@ -2296,11 +2396,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** The on-device engine the row controls, or null for the system voice (which
      *  has no speaker choice — the row hides rather than offering a no-op). */
-    private fun ttsVoiceEngine(): SherpaVoice? = when (ttsEngine()) {
-        "supertonic" -> SherpaVoice.SUPERTONIC
-        "piper" -> SherpaVoice.PIPER
-        else -> null
-    }
+    private fun ttsVoiceEngine(): SherpaVoice? = SherpaVoice.fromEngineToken(ttsEngine())
 
     private fun speakerStore(): SpeakerPrefs = AndroidSpeakerPrefs(prefs)
 
@@ -2313,11 +2409,18 @@ class SettingsActivity : AppCompatActivity() {
     private fun syncSpeakerRow() {
         val row = findViewById<LinearLayout>(R.id.row_tts_speaker) ?: return
         val engine = ttsVoiceEngine()
-        if (engine == null) { row.visibility = android.view.View.GONE; return }
+        // No engine, or an engine with a single built-in voice (Siwis, Tom): there is
+        // no choice to make, so there is no row. UPMC's two speakers make it appear.
+        if (engine == null || VoiceSpeakers.speakerCount(speakerStore(), engine) <= 1) {
+            row.visibility = android.view.View.GONE
+            return
+        }
         row.visibility = android.view.View.VISIBLE
         findViewById<TextView>(R.id.set_tts_speaker_title).text = when (engine) {
             SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
             SherpaVoice.PIPER -> "Speaker (Piper)"
+            SherpaVoice.PIPER_UPMC -> "Speaker (UPMC · French)"
+            else -> "Speaker (${engine.displayName})"
         }
         // #224: this row's title is rewritten whenever the engine changes; keep its
         // one-line statement attached to the new title.
@@ -2349,7 +2452,25 @@ class SettingsActivity : AppCompatActivity() {
         when (engine) {
             SherpaVoice.SUPERTONIC -> pickSupertonicSpeaker()
             SherpaVoice.PIPER -> pickPiperSpeaker()
+            // UPMC is the one French voice with two speakers (jessica, pierre).
+            else -> pickUpmcSpeaker(engine)
         }
+    }
+
+    /** A French voice whose speaker count is 1 never reaches here (the row is hidden);
+     *  the only one that does is UPMC, whose two speakers are named in the model's own
+     *  `speaker_id_map`. */
+    private fun pickUpmcSpeaker(engine: SherpaVoice) {
+        val names = VoiceSpeakers.UPMC_SPEAKERS
+        val cur = VoiceSpeakers.resolve(speakerStore(), engine, names.size)
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (UPMC · French)")
+            .setSingleChoiceItems(names.map { it.second }.toTypedArray(),
+                names.indexOfFirst { it.first == cur }.coerceAtLeast(0)) { d, which ->
+                d.dismiss()
+                saveSpeaker(engine, names[which].first)
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun pickSupertonicSpeaker() {
@@ -2424,6 +2545,9 @@ class SettingsActivity : AppCompatActivity() {
             val curated = VoiceSpeakers.PIPER_CURATED.firstOrNull { it.first == id }
             if (curated != null) "Voice ${curated.second}" else "Voice id $id"
         }
+        SherpaVoice.PIPER_UPMC -> VoiceSpeakers.UPMC_SPEAKERS.firstOrNull { it.first == id }?.second
+            ?: "Voice id $id"
+        else -> "Voice $id"
     }
 
     private fun label(prefKey: String, default: String): String {
@@ -2432,6 +2556,9 @@ class SettingsActivity : AppCompatActivity() {
             "on-device" -> "On-device"
             "presence" -> "Being"; "conversation" -> "Transcript"
             "system" -> "System"; "kokoro" -> "System"; "piper" -> "Piper"; "supertonic" -> "Supertonic"
+            "piper-siwis" -> "Piper · fr-FR (Siwis)"
+            "piper-tom" -> "Piper · fr-FR (Tom)"
+            "piper-upmc" -> "Piper · fr-FR (UPMC)"
             "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
             "dark" -> "Dark"; "light" -> "Light"
             else -> tok
@@ -2464,6 +2591,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+                .putString(ModelCatalog.KEY_STT_LANGUAGE, "")   // the default row is hidden anyway
                 .remove(ModelCatalog.KEY_STT_STREAM_MODEL)   // the default: no streaming arm
                 .putInt(VoxThreads.PREF, VoxThreads.AUTO)   // 0.7.3: the thread override folds into the STT scope
                 .putString(KEY_STT_REMOTE_URL, "")
@@ -2566,6 +2694,10 @@ class SettingsActivity : AppCompatActivity() {
         /** #225: how long the preview holds each state before the next. */
         const val PREVIEW_STATE_MS = 2800L
         const val GROUP_ABOUT = "about"
+
+        /** The fr-FR voices (#477): previewed with a French sentence, since an English
+         *  line through a French model says nothing about the voice. */
+        val FRENCH_VOICES = setOf(SherpaVoice.PIPER_SIWIS, SherpaVoice.PIPER_TOM, SherpaVoice.PIPER_UPMC)
 
         const val SECTION_ENTITY = "entity"
         const val SECTION_SPEECH = "speech"

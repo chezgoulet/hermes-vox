@@ -228,7 +228,9 @@ class ProfileScopeTest {
         // switch applies them without a second copy that could drift.
         assertTrue(Profiles.toPrefs(legacy("home")).containsKey(Profiles.K_MODEL))
         assertTrue(Profiles.toPrefs(legacy("home")).containsKey(Profiles.K_PROVIDER))
-        assertEquals(listOf("tts", "voice", "tts_speaker_piper-lessac", "tts_speaker_supertonic"),
+        assertEquals(listOf("tts", "voice",
+            "tts_speaker_piper-lessac", "tts_speaker_supertonic",
+            "tts_speaker_piper-siwis", "tts_speaker_piper-tom", "tts_speaker_piper-upmc"),
             ProfileScope.keys(ProfileScope.Group.VOICE))
         assertTrue(ProfileScope.keys(ProfileScope.Group.LOOK).contains(VisualStyle.KEY_CATEGORY))
 
