@@ -72,7 +72,7 @@ the app is eligible; the role decides whether the gesture reaches it.
    | first run (or "Skip for now" with no endpoint) | `ONBOARD` — no call it cannot hold |
 
    It is a pure Kotlin object, unit-tested in `AssistRouteTest` without an engine or a device.
-3. **Settings → Be the phone's assistant** — the only way the app ever asks. It shows the
+3. **Settings → Set Digital Assistant to Hermes Vox** — the only way the app ever asks. It shows the
    role's real state (read from Android every time, never cached), a row that opens Android's
    consent dialog, and a row that opens Android's own digital-assistant screen.
 

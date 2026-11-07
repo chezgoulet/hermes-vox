@@ -20,6 +20,7 @@ import com.hermesvox.wake.InertWakeWordEngine
 import com.hermesvox.wake.KeystoreTakeCipher
 import com.hermesvox.wake.TakeKind
 import com.hermesvox.wake.TakeMeasure
+import com.hermesvox.wake.WakeListening
 import com.hermesvox.wake.WakeWordEngine
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -70,10 +71,11 @@ class WakeEnrolActivity : AppCompatActivity() {
 
         findViewById<android.view.View>(R.id.wk_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.wk_status).text =
-            "Not listening. This preview only records your takes of \"${EnrolmentPrompts.PHRASE}\", " +
-            "15 seconds of you talking and 15 seconds of your room, so the wake word can later " +
-            "learn your voice. Nothing runs in the background and nothing is sent anywhere. " +
-            "(Detector: ${engine.id}.)"
+            if (!WakeListening.listening(prefs)) WakeListening.REFUSAL
+            else "Not listening. This preview only records your takes of \"${EnrolmentPrompts.PHRASE}\", " +
+                "15 seconds of you talking and 15 seconds of your room, so the wake word can later " +
+                "learn your voice. Nothing runs in the background and nothing is sent anywhere. " +
+                "(Detector: ${engine.id}.)"
         findViewById<TextView>(R.id.wk_consent_text).text =
             "These recordings — your takes of the phrase, 15 seconds of you talking freely, and " +
             "15 seconds of your room — are recordings of your voice: biometric data. They are " +
@@ -134,7 +136,9 @@ class WakeEnrolActivity : AppCompatActivity() {
             TakeKind.ROOM -> EnrolmentPrompts.ROOM_WHY
         }
         why.visibility = if (step.kind == TakeKind.PHRASE) android.view.View.GONE else android.view.View.VISIBLE
-        record.isEnabled = consented
+        // The microphone answers to the Alpha gate as well as to consent: with the set off this
+        // screen records nothing, because the wake word is not allowed to listen.
+        record.isEnabled = consented && WakeListening.listening(prefs)
         record.text = when {
             recording -> "Stop"
             store.has(step) -> "Record again"
@@ -143,6 +147,10 @@ class WakeEnrolActivity : AppCompatActivity() {
     }
 
     private fun startTake() {
+        // Last line of defence, and the one that matters: the gate says whether the wake word
+        // may listen at all. Off means no AudioRecord is opened, even if the screen is already
+        // here or a queued permission result arrives after the set was switched off.
+        if (!WakeListening.listening(prefs)) { result.text = WakeListening.REFUSAL; render(); return }
         if (!store.hasConsent() || busy) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)

@@ -9,10 +9,9 @@ import android.os.Build
  * numbers, and nothing else. Keeping this separate is what lets the exact block be tested
  * on the JVM (PresenceDiagnosticTest) while the real values still come from the running app.
  *
- * [#418] There are two doors to the block — the Presence row in Settings and the
- * `/diagnostics` command — and they must copy the same bytes. So the phone's facts are read
- * into [Facts] once, the settings into [PresenceDiagnostic.Settings], and [block] joins them;
- * neither door assembles a block of its own.
+ * There is one door to the block — the Presence row in Settings (#418's command and switch
+ * are gone). The phone's facts are read into [Facts] once, the settings into
+ * [PresenceDiagnostic.Settings], and [block] joins them; the door assembles nothing of its own.
  */
 object PresenceDiagnosticCollect {
 

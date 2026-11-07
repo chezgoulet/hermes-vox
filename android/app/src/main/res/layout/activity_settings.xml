@@ -51,60 +51,18 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- ══ Group list (the Settings home: section rows only) ══ -->
+            <!-- ══ Group list (the Settings home: section rows only) ══
+                 The order is the owner's (2026-11-06): the app as it is, then the unfinished
+                 things under one switch, then About. So the ordinary sections come first, the
+                 Alpha master switch is the row immediately above the alpha block, and every
+                 gated section sits in that block, contiguous, before About & Diagnostics. -->
             <LinearLayout
                 android:id="@+id/grp_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-
-
-
-
-
-
-
-
-
-
-
-                <!-- #222/D16: the voice-mode selector is retired. Presence is a
-                     layer on the one normal operation, with its own switch inside the
-                     Presence section. -->
-
-                <!-- #402/D29: the Alpha gate — the master switch at the very top of
-                     Settings, off by default. Turning it on slides out the panel of
-                     feature sets (Presence first); the row reopens it. -->
-                <LinearLayout
-                    android:id="@+id/row_grp_alpha"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Alpha features"
-                            style="@style/HvRowTitle" />
-                        <TextView
-                            android:id="@+id/set_alpha_grpval"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Off · unfinished features stay out of the way"
-                            style="@style/HvRowValue" />
-                    </LinearLayout>
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/sw_alpha_master"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:contentDescription="Alpha features" />
-                </LinearLayout>
+                <!-- ── The ordinary sections: the app as it is ── -->
 
                 <LinearLayout
                     android:id="@+id/row_grp_entity"
@@ -144,46 +102,6 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- #45: wake-word enrolment (preview). Opens WakeEnrolActivity; nothing
-                     listens in the background yet. Value set by refreshGrpVals(). -->
-                <LinearLayout
-                    android:id="@+id/row_grp_wake"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Wake word (preview)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_wake_grpval"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="—"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_grp_tts"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Voice &amp; sounds"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_tts_grpval"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="—"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
                 <LinearLayout
                     android:id="@+id/row_grp_models"
                     style="@style/HvRow"
@@ -204,7 +122,7 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/row_grp_presence"
+                    android:id="@+id/row_grp_tts"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -212,10 +130,10 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Presence"
+                        android:text="Voice &amp; sounds"
                         style="@style/HvRowTitle" />
                     <TextView
-                        android:id="@+id/set_presence_grpval"
+                        android:id="@+id/set_tts_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="—"
@@ -241,8 +159,46 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- ── The alpha block: the unfinished things, together ──
+                     #402/D29: the master switch, off by default, sits immediately above the
+                     block it governs — not at the top of the screen. Turning it on slides out
+                     the panel of feature sets (Presence first); the row reopens it. Every
+                     gated section belongs in this block, and the block ends where About
+                     begins. -->
                 <LinearLayout
-                    android:id="@+id/row_grp_assistant"
+                    android:id="@+id/row_grp_alpha"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Alpha features"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_alpha_grpval"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Off · unfinished features stay out of the way"
+                            style="@style/HvRowValue" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_alpha_master"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="Alpha features" />
+                </LinearLayout>
+
+                <!-- #222/D16: Presence is a layer on the one normal operation, with its own
+                     switch inside its section. -->
+                <LinearLayout
+                    android:id="@+id/row_grp_presence"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -250,19 +206,19 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Be the phone's assistant"
+                        android:text="Presence"
                         style="@style/HvRowTitle" />
                     <TextView
-                        android:id="@+id/set_assistant_grpval"
+                        android:id="@+id/set_presence_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="not set"
+                        android:text="—"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- #453: what an outside mind may do with this phone is a consent decision, not
-                     a diagnostic, so it has its own section. The second line is the one place the
-                     phone's standing is stated, read from PhoneBootstrap.Step. -->
+                <!-- #453: what an outside mind may do with this phone is a consent decision,
+                     not a diagnostic, so it has its own section. The second line is the one
+                     place the phone's standing is stated, read from PhoneBootstrap.Step. -->
                 <LinearLayout
                     android:id="@+id/row_grp_phone"
                     style="@style/HvRow"
@@ -282,6 +238,51 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- #45: wake-word enrolment. Opens WakeEnrolActivity; behind the Alpha
+                     gate, so with it off the row is dimmed and cannot open. Value set by
+                     refreshGrpVals(). -->
+                <LinearLayout
+                    android:id="@+id/row_grp_wake"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Wake word (preview)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_wake_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- #329/D29: the row is an instruction, not a state — it asks Android for the
+                     role — so it says what a tap does. Unfinished on several builds, so it
+                     sits behind the same gate. -->
+                <LinearLayout
+                    android:id="@+id/row_grp_assistant"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Set Digital Assistant to Hermes Vox"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_assistant_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="not set"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- ── About: last, as it was ── -->
                 <LinearLayout
                     android:id="@+id/row_grp_about"
                     style="@style/HvRow"
@@ -300,6 +301,7 @@
                         android:text="—"
                         style="@style/HvRowValue" />
                 </LinearLayout>
+
             </LinearLayout>
 
             <!-- ══ sec_entity: Entity & Connection ══ -->
@@ -2286,7 +2288,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_assistant: Be the phone's assistant (#329).
+            <!-- ══ sec_assistant: Set Digital Assistant to Hermes Vox (#329).
                  Android's role is the part this app can ask for; the side-button mapping is
                  the maker's, so the section says which is which instead of promising a key. ══ -->
             <LinearLayout
@@ -2462,37 +2464,6 @@
                         style="@style/HvRowTitle" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/set_debuglog"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
-                </LinearLayout>
-
-                <!-- #418: the switch behind the /diagnostics command. Off by default; it gates
-                     the command's existence and nothing else. Alpha turns it on once for a
-                     tester, and an off the user set themselves wins. -->
-                <LinearLayout
-                    android:id="@+id/row_diag_summary"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Diagnostic summary"
-                            style="@style/HvRowTitle" />
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Adds a command that copies a report block for a bug report; contains no conversations."
-                            style="@style/HvRowValue" />
-                    </LinearLayout>
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/set_diag_summary"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>

@@ -109,9 +109,9 @@ class AlphaGateTest {
         assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ")?.name)
         // It is not a gated command: the catalogue lists it even for a gate that allows nothing.
         assertTrue("the catalogue no longer hides it",
-            CommandCatalog.commands(CommandCatalog.Gate.NOTHING).any { it.name == Sessions.COMMAND })
+            CommandCatalog.commands().any { it.name == Sessions.COMMAND })
         // It is still the last-but-one row of the conversation group, beside /new.
-        val c = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        val c = CommandCatalog.find("/sessions")!!
         assertEquals("This conversation", c.group.label)
         assertNull("nothing is lost, so there is no cost line", c.cost)
     }
@@ -272,7 +272,7 @@ class AlphaGateTest {
         val dialogs = File(src, "ProfileDialogs.kt").readText()
         assertFalse(dialogs, dialogs.contains("AlphaGate"))
         // The catalogue no longer hides it either.
-        assertTrue(CommandCatalog.commands(CommandCatalog.Gate.NOTHING)
+        assertTrue(CommandCatalog.commands()
             .any { it.name == "/profiles" })
     }
 
@@ -280,12 +280,13 @@ class AlphaGateTest {
      * The panel is drawn from [AlphaGate.FeatureSet.entries], so the list the owner sees is this
      * list: four sets, and no row left behind for the two that left Alpha.
      */
-    @Test fun the_panel_lists_four_sets_and_no_stale_row() {
+    @Test fun the_panel_lists_every_set_and_no_stale_row() {
         assertEquals(
-            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools"),
+            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools", "Wake word",
+                "Digital assistant"),
             AlphaGate.FeatureSet.entries.map { it.label },
         )
-        assertEquals(4, AlphaGate.FeatureSet.entries.size)
+        assertEquals(6, AlphaGate.FeatureSet.entries.size)
         val gate = File(src, "AlphaGate.kt").readText()
         assertFalse(gate.contains("alpha_set_profiles"))
         assertFalse(gate.contains("alpha_set_sessions"))
@@ -311,15 +312,23 @@ class AlphaGateTest {
         assertTrue(vc.contains("listeningAlpha && micBool(SemanticEndpoint.KEY"))
     }
 
-    @Test fun the_master_switch_is_the_first_row_of_settings() {
+    @Test fun the_master_switch_sits_above_the_alpha_block_and_not_at_the_top() {
         val layout = File("src/main/res/layout/activity_settings.xml").readText()
         val list = layout.substringAfter("@+id/grp_list\"")
-        assertTrue(list.indexOf("@+id/row_grp_alpha\"") in 0 until list.indexOf("@+id/row_grp_models\""))
+        val masterAt = list.indexOf("@+id/row_grp_alpha\"")
+        assertTrue("the ordinary sections come first", masterAt > list.indexOf("@+id/row_grp_entity\""))
+        assertTrue("the switch is above the block it governs",
+            masterAt < list.indexOf("@+id/row_grp_presence\""))
     }
 
     @Test fun settings_dims_every_alpha_row() {
         val s = File(src, "SettingsActivity.kt").readText()
-        for (row in listOf("row_grp_presence", "row_er_hears", "row_mic_continuous", "row_mic_semantic")) {
+        // The block's rows are dimmed from the one table, so none can be forgotten.
+        assertTrue(s.contains("for (row in AlphaBlock.ROWS)"))
+        assertTrue(s.contains("gate(it, allowed)"))
+        assertTrue(AlphaBlock.ROWS.any { it.row == "row_grp_presence" })
+        // The Hearing rows behind sets that are not rows of the block.
+        for (row in listOf("row_er_hears", "row_mic_continuous", "row_mic_semantic")) {
             assertTrue(row, s.contains("gate(R.id.$row,"))
         }
     }
@@ -335,8 +344,9 @@ class AlphaGateTest {
             .substringBefore("fun switchProfile")
         assertTrue(header, header.contains("profiles.activeName()"))
         assertFalse(header, header.contains("AlphaGate"))
-        // The commands sheet is still the way in, and it still asks the one gate object.
-        assertTrue(File(src, "CommandsSheet.kt").readText().contains("gate = gate"))
-        assertTrue(main.contains("CommandGate.of(DiagnosticSummary.store(prefs))"))
+        // The commands sheet is still the way in, and it has no switch left to ask.
+        val sheet = File(src, "CommandsSheet.kt").readText()
+        assertFalse(sheet, sheet.contains("Gate"))
+        assertFalse(main, main.contains("commandGate()"))
     }
 }

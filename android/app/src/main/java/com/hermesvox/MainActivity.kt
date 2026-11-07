@@ -2400,15 +2400,6 @@ open class MainActivity : AppCompatActivity() {
      *  offer (name, size, hash, URL) or — for the inline fallback — the body itself; the
      *  transcript shows only the card (name, type, size), so a file's contents never enter it. */
     protected fun send(text: String, transcript: String? = null) {
-        // #418: a typed (or dictated) "/diagnostics" copies the report block — and it is
-        // answered BEFORE the connection checks, because "it will not connect" and "the key is
-        // empty" are exactly the bugs a report is for. With the switch off [commandFor] is
-        // null, so the word goes on to the agent like any name nothing answers to: it never
-        // copies silently.
-        DiagnosticSummary.commandFor(text, DiagnosticSummary.store(prefs))?.let { c ->
-            runCommand(c) {}
-            return
-        }
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         // #437: a typed (or dictated) "/sessions" opens the session card. It left Alpha
         // (#437, D39), so the word reaches the card for every install.
@@ -2925,20 +2916,12 @@ open class MainActivity : AppCompatActivity() {
                     lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
             },
             run = { c, done -> runCommand(c, done) },
-            gate = commandGate(),
         )
     }
     // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
     private var lastTurnFailed = false
     private var stuckShownThisCall = false
     private var callTurns = 0L
-    /** Which optional commands exist right now: `/diagnostics` while its own switch is on
-     *  (#418), and nothing else. One gate for the sheet, /help and the typed word — there is
-     *  no second way a row is absent (#501). `/profiles` and `/sessions` left Alpha (#436,
-     *  #437, D39) and are no longer asked. */
-    private fun commandGate(): CommandCatalog.Gate =
-        CommandGate.of(DiagnosticSummary.store(prefs))
-
     protected fun showCommands() = commandsSheet.show()
 
     // ---- #437: sessions — the conversations the host already has -------------------------
@@ -3317,9 +3300,6 @@ open class MainActivity : AppCompatActivity() {
                 showSessions()
                 done(true)
             }
-            // #418: the second door to the report block the Presence row copies. Same
-            // collector, same bytes — the door only decides when, never what.
-            DiagnosticSummary.COMMAND -> done(DiagnosticClipboard.copy(this, prefs))
             CompressCommand.NAME -> compressContext(done)
             "/new" -> newSession(onDone = done)
             "/reconnect" -> reconnect(done)
@@ -3488,7 +3468,7 @@ open class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage(CommandCatalog.helpText(commandGate()))   // #226: written from the catalogue, never out of step
+            .setMessage(CommandCatalog.helpText())   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 

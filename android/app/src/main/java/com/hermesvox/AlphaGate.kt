@@ -64,6 +64,20 @@ object AlphaGate {
                 "with its own token, and your agent reaches it over MCP. Off until you set it up. " +
                 "Independent of Presence.",
         ),
+        WAKE_WORD(
+            "alpha_set_wake_word", "Wake word",
+            "Saying the wake phrase wakes the app hands-free. Enrolment records your takes of the " +
+                "phrase, 15 seconds of you talking and 15 seconds of your room into an encrypted " +
+                "store on this phone; nothing is trained yet and the detector is a preview. " +
+                "Turning Alpha features off stops the wake word listening, not just its row.",
+        ),
+        DIGITAL_ASSISTANT(
+            "alpha_set_digital_assistant", "Digital assistant",
+            "Asks Android for the digital-assistant role, so the assistant gesture opens Vox " +
+                "instead of another app. Android owns the role and the phone maker owns the " +
+                "button, so the row asks and points at Android's own settings; it grants nothing " +
+                "by itself and Vox keeps no listener until the call screen is open.",
+        ),
     }
 
     /** What the gate reads, narrow enough for an in-memory fake. */

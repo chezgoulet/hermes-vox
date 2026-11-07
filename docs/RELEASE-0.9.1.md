@@ -6,8 +6,9 @@ compares the payloads before the tag is made. The list below is read from the tr
 `0f3ec3a`; nothing here is announced as shipped until the tag exists.
 
 The shape of this release is the Alpha gate. Most of what 0.9.1 adds needs no switch at all;
-the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in four
-sets a tester takes one at a time. This document is ordered that way.
+the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in sets a
+tester takes one at a time. The switch is the row immediately above the block of unfinished
+sections at the end of Settings. This document is ordered that way.
 
 ## Ships with no gate
 
@@ -49,8 +50,8 @@ sets a tester takes one at a time. This document is ordered that way.
 - **The line (#281).** One plain-language line saying what is running and on what; long jobs show
   movement without inventing a percentage; failures name what failed.
 - **Commands screen (#226).** Grouped by what a command does, in two groups, with real
-  queued/running/done/failed state instead of a toast. `/diagnostics` is in the catalogue only
-  while its switch in About & Diagnostics is on.
+  queued/running/done/failed state instead of a toast. Every command in the catalogue is on for
+  every install: there is no per-command switch.
 - **Discovery (#284).** The stuck hint, error naming, and a searchable catalogue that matches what
   a person says ("it's slow" finds `/compress`, "can't reach it" finds `/reconnect`).
 - **Assistant role (#329).** Vox can hold `android.app.role.ASSISTANT`; the side-button mapping
@@ -184,7 +185,8 @@ Each set is selected on its own; with the master off, everything below is dimmed
   `dialer:"unknown"` with `outcome_uncertain:true` rather than claiming it opened; `status` carries
   the dialer's own `opened` / `not_opened` answer.
 - **Nothing left waiting on D39.** Sessions' and Switching profiles' device passes were both made
-  on 2026-11-06 and both sets are gone; the Alpha gate is four sets.
+  on 2026-11-06 and both sets are gone; the Alpha gate is six sets, and the wake word and the
+  digital-assistant row joined it on the owner's settings pass.
 
 ## Verification
 

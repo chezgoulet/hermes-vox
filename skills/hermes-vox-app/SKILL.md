@@ -171,17 +171,17 @@ cadence, its asides, its narration voice, its reasoning effort — the layer bel
 agent is on); and **anything about the phone itself** — theme, screen layout, keep-screen-on, the
 microphone and hearing, the sound cues, the wake word. `docs/PRESENCE.md` states the same list.
 
-**The UI/UX pass re-grouped the home list by the question a person arrives with**, in set-up
-order: Alpha features, Entity & Connection, **Hearing** (now also the recogniser — the old
-*Transcription (STT)* section is its *Recognition* block), Wake word, **Voice & sounds** (the
-voice, then the *Sound cues* block, moved out of Being), **Voice models** (the row opens the
-model store itself; the one-row section is gone), Presence, **Appearance** (the old
-*Appearance & Layout* rows as a *Screen* block, then the *Being* block), the assistant role,
-About & Diagnostics. Each section has one restore row, and restoring asks first. A section's
-title is read from the home row that opened it
+**The home list runs the owner's order (2026-11-06)**: the ordinary sections first — Entity &
+Connection, **Hearing** (now also the recogniser — the old *Transcription (STT)* section is its
+*Recognition* block), **Voice models** (the row opens the model store itself; the one-row section
+is gone), **Voice & sounds** (the voice, then the *Sound cues* block, moved out of Being),
+**Appearance** (the old *Appearance & Layout* rows as a *Screen* block, then the *Being* block) —
+then the alpha block, the Alpha features switch immediately above it: Presence, Phone Tools, Wake
+word, Set Digital Assistant to Hermes Vox; then About & Diagnostics last. Each section has one
+restore row, and restoring asks first. A section's title is read from the home row that opened it
 (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `findViewById<TextView>(R.id.set_title).text = sectionTitle(target)`).
 
-### Alpha features (the first row of Settings, #402)
+### Alpha features (one block at the end of Settings, #402)
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
@@ -190,16 +190,18 @@ title is read from the home row that opened it
 | Continuous listening (set) | `alpha_set_continuous_listening` | false | Lets continuous capture and semantic endpointing run; both of their own switches default on (D29). Requires Presence, because it is how the being hears: selected without Presence it is inert, and the picker refuses the tap with that line. Its description states about 300 MB more memory during a call | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_continuous_listening"`) |
 | Turn-taking (set) | `alpha_set_turn_taking` | false | The being keeps up mid-conversation: a soft acknowledgement while you talk at length, a quick word to stop it told apart from a new question, and the thread picked up after you cut in. Its acknowledgements need continuous listening; the set itself adds no second gate dependency | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_turn_taking"`) |
 | Phone tools (set) | `alpha_set_phone_tools` | false | The mind acting on the phone: the MCP `phone` tool, its tailnet server and its grants. Independent of Presence — either can be taken without the other (D38) | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_phone_tools"`) |
+| Wake word (set) | `alpha_set_wake_word` | false | Saying the wake phrase wakes the app hands-free. Enrolment records the owner's takes into an encrypted store; nothing is trained yet and the detector is a preview. With the set off the row is dimmed and the capture path opens no microphone — off stops it listening, not just the row | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_wake_word"`) |
+| Digital assistant (set) | `alpha_set_digital_assistant` | false | Asks Android for the digital-assistant role, so the assistant gesture opens Vox. Android owns the role and the maker owns the button, so the row asks and points at Android's settings; it grants nothing by itself | (android/app/src/main/java/com/hermesvox/AlphaGate.kt `"alpha_set_digital_assistant"`) |
 
 Turning the master off keeps the selections, so turning it back on restores the same sets. The
-dimmed rows are the Presence group row and, in Hearing, the tone, continuous-capture and
-semantic-endpointing rows (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `gate(R.id.row_grp_presence, presence`)`).
+master switch is the row immediately above the alpha block, the block holds every gated section
+(Presence, Phone Tools, Wake word, Set Digital Assistant to Hermes Vox) contiguously before
+About, and in Hearing the tone, continuous-capture and semantic-endpointing rows are dimmed too.
+The block's rows, their sections and their sets are one table
+(android/app/src/main/java/com/hermesvox/AlphaBlock.kt `val ROWS`), so the list, the dimming and
+the section's own refusal cannot disagree.
 
-Turning the master **on** also turns **Diagnostic summary** (`diag_summary`) on, because someone
-who opts into alpha is a tester and should be able to hand us a bug without hunting for a switch
-(android/app/src/main/java/com/hermesvox/SettingsActivity.kt `DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs`))`).
-It is one-way — turning Alpha off does not turn it off — and it never overrules the user: a flip
-of that switch records `diag_summary_chosen`, so an explicit off survives every later Alpha-on.
+
 
 ### Entity & Connection
 
@@ -276,7 +278,7 @@ voice replies at all) stays device-wide: it is about how you use the phone, not 
 | Presence while working | `er_presence_density` | `conversational` | How often Presence speaks during a long mind run: quiet 30 s / conversational 18 s / chatty 10 s intervals, with caps | (android/app/src/main/java/com/hermesvox/PresenceCadence.kt `val DEFAULT = Density.CONVERSATIONAL`) |
 | Voice-call reasoning | `voice_reasoning_effort` | `low` | How hard the mind thinks on a voice turn (`off`, `low`, `medium`, `high`), sent per request as `model_options.reasoning`. Lower answers sooner; a provider that ignores it behaves as before | (android/app/src/main/java/com/hermesvox/VoiceTurn.kt `PREF_REASONING`) |
 | Echo guard | `er_echo_skip_ms` | 700 ms | Silences barge capture for this long after Presence speaks, so the phone does not hear itself | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `val curEcho = prefs.getFloat("er_echo_skip_ms", 700f).toInt()`) |
-| Copy diagnostic summary | — | — | Puts the `vox-diag` block on the clipboard for a `presence-report`: build, preset, device, mind side, e2, session counters, on-device model. No transcript, key, URL or hostname. A metric the build cannot measure is omitted, never printed as zero; docs/PRESENCE-REPORTS.md lists what is excluded. `/diagnostics` is the second door to the same bytes (`DiagnosticClipboard` copies one block from one collector); this row stays inside Presence | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `row_presence_diag`) |
+| Copy diagnostic summary | — | — | Puts the `vox-diag` block on the clipboard for a `presence-report`: build, preset, device, mind side, e2, session counters, on-device model. No transcript, key, URL or hostname. A metric the build cannot measure is omitted, never printed as zero; docs/PRESENCE-REPORTS.md lists what is excluded. This row is the one door to those bytes — the bug-report command that used to share them is gone (`DiagnosticClipboard` copies one block from one collector) | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `row_presence_diag`) |
 | Resync VOX.md | (file, not pref) | not mirrored | Pulls the agent-authored voice-export and mirrors it read-only | (android/app/src/main/java/com/hermesvox/VoxSync.kt `event=vox-resync profile=`) |
 
 ### Wake word (preview)
@@ -315,7 +317,6 @@ The row's subtitle is computed from the take count and the words "not listening"
 | Developer console | `dev_console` | false | Shows the raw SSE drawer on the main screen | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `devc.isChecked = prefs.getBoolean("dev_console", false)`) |
 | Log spoken transcript | `log_transcripts` | false | Prints what was heard/decided into logs — privacy sensitive | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `ltr.isChecked = prefs.getBoolean("log_transcripts", false)`) |
 | Verbose file log | `debug_log` | false | `dd()` probes reach the log file; also disables log rotation | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `dbl.isChecked = prefs.getBoolean("debug_log", false)`) |
-| Diagnostic summary | `diag_summary` | false | Adds the `/diagnostics` command to the commands sheet: it copies the same `vox-diag` block the Presence row copies. The switch gates the command's existence and nothing else — the Presence row keeps its own copy. Turning Alpha features on turns it on once; an explicit off (`diag_summary_chosen`) wins over every later Alpha-on | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `DiagnosticSummary.on`) |
 
 **The being's rows are the profile's; the screen's are the phone's.** Visual category, its five
 scalars, cycle-all, the resting shape and its rotation, and the three state shapes carry "· profile
@@ -324,13 +325,13 @@ layout and keep-screen-on stay device-wide: they are about the phone the agent i
 
 ### The phone's assistant (#329)
 
-The Settings home has one more row: **Be the phone's assistant**
+The Settings home has one more row, in the alpha block: **Set Digital Assistant to Hermes Vox**
 (android/app/src/main/res/layout/activity_settings.xml `row_grp_assistant`). It is the only
 place the app ever asks for the role, and it asks nothing at first launch.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Be the phone's assistant | — | off | Reads Android's `android.app.role.ASSISTANT` state; the first row asks Android for the role (its consent dialog where the build allows one, then an honest fallback), the second opens Android's digital-assistant screen — the only place the role can be taken back, since there is no relinquish API | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `findViewById<android.view.View>(R.id.row_assistant_request)?.setOnClickListener { requestAssistantRole() }`) |
+| Set Digital Assistant to Hermes Vox | — | off | Reads Android's `android.app.role.ASSISTANT` state; the first row asks Android for the role (its consent dialog where the build allows one, then an honest fallback), the second opens Android's digital-assistant screen — the only place the role can be taken back, since there is no relinquish API | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `findViewById<android.view.View>(R.id.row_assistant_request)?.setOnClickListener { requestAssistantRole() }`) |
 | What the gesture then does | — | — | A live call is focused (never a second session); an idle configured app opens the call screen ready to listen; a first run goes to onboarding | (android/app/src/main/java/com/hermesvox/AssistRoute.kt `fun target`) |
 | The entry point Android calls | — | — | A translucent, no-history bridge over `android.intent.action.ASSIST` that hands `MainActivity` the `EXTRA_ASSIST` extra with `CLEAR_TOP`/`SINGLE_TOP` | (android/app/src/main/java/com/hermesvox/AssistActivity.kt `putExtra(MainActivity.EXTRA_ASSIST`) |
 
@@ -372,15 +373,15 @@ the card is its report (android/app/src/main/java/com/hermesvox/CommandCatalog.k
 | `/profiles` | The agent | Opens the profile switcher: which agent you are talking to, with its voice, model and look. A picker only — add and edit were removed, because profiles are made on the host | Switching starts a fresh conversation | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Talk to another`) |
 | `/reconnect` | The agent | Reaches the gateway again and re-dials a live call | nothing | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Reach the gateway again`) |
 | `/health` | The agent | (also `/status`) Whether the agent is up, and its version | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Whether the agent is up`) |
-| `/diagnostics` | The agent (only while `diag_summary` is on) | Copies the `vox-diag` report block — the same one the Presence row copies, from the same collector | nothing — it reads and copies | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `Copy a report block`) |
 | `/help` | The agent (not listed on the sheet) | The list, with these same lines | nothing — it only asks | (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `What each command does`) |
 
-Those ten (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue —
-`/diagnostics` only while its switch is on. `/profiles` and `/sessions` have no switch: both left
-Alpha on 2026-11-06 (D39) and are on for every install. A command added without a group, an effect or an alias target fails
+Those nine (with the aliases `/status`, `/reset`, `/compact`) are the whole catalogue. No command
+has a switch: `/profiles` and `/sessions` left Alpha on 2026-11-06 (D39), and the bug-report
+command and its switch were removed on the owner's instruction the same day. A command added
+without a group, an effect or an alias target fails
 `CommandCatalogTest.everyCommandBelongsToALabelledGroup`
 (android/app/src/test/java/com/hermesvox/CommandCatalogTest.kt `everyCommandBelongsToALabelledGroup`).
-**There is no `/file` command.** The dispatch has exactly the ten names above
+**There is no `/file` command.** The dispatch has exactly the nine names above
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `"/models" -> showModelChooser()`), and no build of
 this tree has ever had a handler for one. Files arrive a different way: the **Share with agent**
 row inside the commands sheet, or sharing one to Vox from another app, offers it to the agent —

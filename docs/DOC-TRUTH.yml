@@ -289,12 +289,18 @@
   file: android/app/src/main/java/com/hermesvox/LocalActions.kt
   match: 'interface PhoneReadout \{[\s\S]*?fun registry\('
 
-- id: alpha-four-sets
-  says: "lists four sets"
+- id: alpha-six-sets
+  says: "lists six sets"
   doc: docs/MILESTONES.md
   file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
-  match: 'PRESENCE\([\s\S]*CONTINUOUS_LISTENING\([\s\S]*TURN_TAKING\([\s\S]*PHONE_TOOLS\('
+  match: 'PRESENCE\([\s\S]*CONTINUOUS_LISTENING\([\s\S]*TURN_TAKING\([\s\S]*PHONE_TOOLS\([\s\S]*WAKE_WORD\([\s\S]*DIGITAL_ASSISTANT\('
   absent: 'PROFILES\(|SESSIONS\('
+
+- id: alpha-block-is-every-gated-section
+  says: "the alpha block"
+  doc: docs/ARCHITECTURE.md
+  file: android/app/src/main/java/com/hermesvox/AlphaBlock.kt
+  match: 'Row\("presence"[\s\S]*Row\("phone"[\s\S]*Row\("wake"[\s\S]*Row\("assistant"'
 
 - id: alpha-one-dependency
   says: "four sets and one dependency"

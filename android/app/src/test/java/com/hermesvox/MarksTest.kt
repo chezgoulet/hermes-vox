@@ -96,7 +96,7 @@ class MarksTest {
     @Test fun sessionsIsNotTheSameDrawingAsTheModelPicker() {
         // Both /sessions and /models are CHOOSE → PULSE, and they sit one above the other;
         // /sessions names a list instead.
-        val sessions = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        val sessions = CommandCatalog.find("/sessions")!!
         assertEquals(Marks.Mark.SESSIONS, sessions.glyph)
         assertEquals(null, CommandCatalog.find("/models")!!.glyph)
         // Every row on the sheet a fresh install shows draws a different mark, so no two
@@ -111,9 +111,9 @@ class MarksTest {
     @Test fun profilesIsNotTheSameDrawingAsTheModelPickerEither() {
         // D39: /profiles left Alpha on 2026-11-06, so it and /models are on the sheet together
         // for the first time. /models keeps the CHOOSE nucleus; /profiles names a switch.
-        val profiles = CommandCatalog.find("/profiles", CommandCatalog.Gate.EVERYTHING)!!
+        val profiles = CommandCatalog.find("/profiles")!!
         assertEquals(Marks.Mark.SWITCH, profiles.glyph)
-        assertEquals(null, CommandCatalog.find("/models", CommandCatalog.Gate.EVERYTHING)!!.glyph)
+        assertEquals(null, CommandCatalog.find("/models")!!.glyph)
         assertEquals("a change of agent, said as a change", "switch", Marks.Mark.SWITCH.label)
         // Both rows are visible to a fresh install, which is what makes that matter.
         val shown = CommandCatalog.grouped().flatMap { it.second }.map { it.name }

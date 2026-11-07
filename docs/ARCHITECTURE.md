@@ -206,8 +206,10 @@ verifies the hash, and nothing leaves the phone until the card is confirmed.
 
 ### 8. The Alpha gate (#402, D29)
 **One gate for everything unfinished.** `AlphaGate` has a master switch, **off on a
-fresh install**, and four sets a tester selects individually: **Presence**, **Continuous
-listening**, **Turn-taking** and **Phone tools**. A set runs only
+fresh install**, and six sets a tester selects individually: **Presence**, **Continuous
+listening**, **Turn-taking**, **Phone tools**, **Wake word** and **Digital assistant**. The
+switch is the row immediately above the alpha block, and that block is every gated section,
+contiguous, at the end of Settings (`AlphaBlock`). A set runs only
 when the master is on *and* that set is selected (`AlphaGate.allows`); with the master
 off every alpha surface is dimmed and unreachable, and the runtime readers ask
 `AlphaGate`, not the feature's own preference. A set's own prefs keep their meaning

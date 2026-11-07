@@ -17,11 +17,12 @@ import androidx.core.content.ContextCompat
 import com.hermesvox.core.ProfileReach
 
 /**
- * SettingsActivity — a real settings screen. Home sections: Voice models,
- * Entity & Connection, Hearing, Transcription (STT), Voice, Presence,
- * Appearance & Layout, Being, Phone Tools, About & Diagnostics. Values are stored
- * as stable TOKENS (the logic reads tokens, e.g. buildTts checks
- * "kokoro"/"piper"); the UI renders human labels. Presence is a layer on the one
+ * SettingsActivity — a real settings screen. The home list is ordered as the owner asked
+ * (2026-11-06): the ordinary sections first (Entity & Connection, Hearing, Voice models,
+ * Voice & sounds, Appearance), then the alpha block — every gated section, contiguous, with
+ * the Alpha features master switch immediately above it ([AlphaBlock]) — and About &
+ * Diagnostics last. Values are stored as stable TOKENS (the logic reads tokens, e.g. buildTts
+ * checks "kokoro"/"piper"); the UI renders human labels. Presence is a layer on the one
  * normal operation (#222/D16), so it has a switch, not a mode selector.
  */
 class SettingsActivity : AppCompatActivity() {
@@ -109,17 +110,16 @@ class SettingsActivity : AppCompatActivity() {
     private fun openSectionFromIntent() {
         intent?.getStringExtra("section")
             // #402: a banner cannot open what the Alpha gate keeps unreachable.
-            ?.takeUnless { it == SECTION_PRESENCE && !AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE) }
+            ?.takeUnless { !AlphaBlock.canOpen(prefs, it) }
             ?.let { showSection(it) }
     }
 
     private fun showSection(section: String) {
-        // #402's rule, for the one section the gate now owns: a dimmed row that takes no tap is
-        // not enough on its own. A banner extra, the debug harness or a stale link can name a
-        // section, so the section itself refuses to open while Phone tools is off.
-        if (section == SECTION_PHONE &&
-            !AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
-        ) return
+        // #402/D29, the owner's restructure: the gate owns every section in the alpha block,
+        // and a dimmed row that takes no tap is not enough on its own. A banner extra, the
+        // debug harness or a stale link can name a section, so the section itself refuses to
+        // open while its set is not allowed ([AlphaBlock.canOpen]).
+        if (!AlphaBlock.canOpen(prefs, section)) return
         // UI/UX pass: the model store is its own screen, and the home row is its door — one
         // step, not a section holding a single "open the store" row.
         if (section == SECTION_MODELS) { openModelsStore(); return }
@@ -186,6 +186,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
         findViewById<android.view.View>(R.id.row_grp_presence)?.setOnClickListener { showSection(SECTION_PRESENCE) }
         findViewById<android.view.View>(R.id.row_grp_wake)?.setOnClickListener {
+            // The row is dimmed and takes no tap when its set is off; the door asks the same
+            // question anyway, so a stale tap (or a future caller) cannot start the screen.
+            if (!AlphaBlock.canOpen(prefs, "wake")) return@setOnClickListener
             startActivity(android.content.Intent(this, WakeEnrolActivity::class.java))
         }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
@@ -196,23 +199,15 @@ class SettingsActivity : AppCompatActivity() {
 
     // ---- #402/D29: the Alpha gate --------------------------------------------------------
 
-    /** The master switch at the very top of Settings, off by default. Turning it on slides out
-     *  the panel of feature sets; tapping the row reopens it. Turning it off dims everything
-     *  alpha again — the selections are kept, so turning it back on restores the same sets. */
+    /** The master switch immediately above the alpha block, off by default. Turning it on
+     *  slides out the panel of feature sets; tapping the row reopens it. Turning it off dims
+     *  everything alpha again — the selections are kept, so turning it back on restores the
+     *  same sets. */
     private fun bindAlpha() {
         val sw = findViewById<SwitchCompat>(R.id.sw_alpha_master) ?: return
         sw.isChecked = AlphaGate.masterOn(AlphaGate.reader(prefs))
         sw.setOnCheckedChangeListener { _, on ->
             prefs.edit().putBoolean(AlphaGate.KEY_MASTER, on).apply()
-            // #418: someone who opts into alpha is a tester, and a tester should be able to
-            // hand us a bug without hunting for a switch — so the report command comes with
-            // it. One-way (off is not undone), and never over a switch set by hand. The
-            // switch is re-read so the row shows what just happened; re-binding it does not
-            // record a choice the user did not make.
-            if (on) {
-                DiagnosticSummary.alphaTurnedOn(DiagnosticSummary.store(prefs))
-                bindDiagSummary()
-            }
             refreshAlpha()
             if (on) alphaPanel()
         }
@@ -220,24 +215,6 @@ class SettingsActivity : AppCompatActivity() {
             if (AlphaGate.masterOn(AlphaGate.reader(prefs))) alphaPanel() else sw.isChecked = true
         }
         refreshAlpha()
-    }
-
-    /**
-     * #418: the switch behind `/diagnostics`, off by default, beside the logging switches
-     * because it is the same kind of tool. It gates the command's existence and nothing else —
-     * the Presence section's own copy row is untouched by it. A flip here is the user's
-     * decision, recorded as one ([DiagnosticSummary.setByUser]) so a later Alpha-on cannot
-     * overrule it.
-     *
-     * Re-binding is how the row is re-read after Alpha turns it on: the checked state is set
-     * before the listener exists, so showing the new state records no choice.
-     */
-    private fun bindDiagSummary() {
-        val sw = findViewById<SwitchCompat>(R.id.set_diag_summary) ?: return
-        sw.isChecked = DiagnosticSummary.on(DiagnosticSummary.store(prefs))
-        sw.setOnCheckedChangeListener { _, on ->
-            DiagnosticSummary.setByUser(DiagnosticSummary.store(prefs), on)
-        }
     }
 
     private fun alphaPanel() = AlphaPanel(this, prefs, ::alphaAdvice) { refreshAlpha() }.show()
@@ -250,8 +227,9 @@ class SettingsActivity : AppCompatActivity() {
 
     /**
      * Dim and disable every alpha surface the gate does not allow — dimmed, not hidden, and a
-     * disabled row takes no tap, so it is unreachable. The rows are the Presence group row and
-     * the Hearing rows that only mean something with Presence or continuous listening.
+     * disabled row takes no tap, so it is unreachable. The rows of the alpha block come from
+     * [AlphaBlock], so the list and the gate cannot disagree about what is in it; the Hearing
+     * rows that only mean something with Presence or continuous listening are gated too.
      */
     private fun refreshAlpha() {
         val r = AlphaGate.reader(prefs)
@@ -268,19 +246,21 @@ class SettingsActivity : AppCompatActivity() {
         // Turning the set off while a server is up closes it now, setup window included: a
         // listener that outlives the owner's choice is the one thing the gate must not allow.
         if (!phoneTools) PhoneMcp.closeNow()
-        gate(R.id.row_grp_presence, presence)
+        // The block, row by row: one gate, one answer per row, and the section closes under the
+        // owner if its set is switched off while he is in it.
+        for (row in AlphaBlock.ROWS) {
+            val allowed = AlphaGate.allows(r, row.set)
+            resources.getIdentifier(row.row, "id", packageName)
+                .takeIf { it != 0 }?.let { gate(it, allowed) }
+            if (!allowed && currentSection == row.section) showGroupList()
+        }
         gate(R.id.row_er_hears, presence)
         gate(R.id.row_mic_continuous, listening)
         gate(R.id.row_mic_semantic, listening)
         gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
-        // #453: the section's own row, dimmed and taking no tap — and the section closes under the
-        // owner if the set is switched off while he is in it, as Presence already does.
-        gate(R.id.row_grp_phone, phoneTools)
         gate(R.id.row_phone_boot, phoneTools)
         gate(R.id.row_phone_mcp, phoneTools)
         // Quiet calls is its own Hearing setting now: no Alpha set, no master gate.
-        if (!presence && currentSection == SECTION_PRESENCE) showGroupList()
-        if (!phoneTools && currentSection == SECTION_PHONE) showGroupList()
         refreshGrpVals()
     }
 
@@ -351,7 +331,11 @@ class SettingsActivity : AppCompatActivity() {
         val state = AssistantRole.state(this)
         val summary = AssistantRole.summary(state, AssistantRole.otherHolderLabel(this))
         findViewById<TextView>(R.id.set_assistant_status)?.text = summary
-        findViewById<TextView>(R.id.set_assistant_grpval)?.text = summary
+        // The row is in the alpha block, so off the gate it says why it is dimmed instead of
+        // reporting a role nobody can ask for yet.
+        findViewById<TextView>(R.id.set_assistant_grpval)?.text =
+            if (AlphaGate.allows(prefs, AlphaGate.FeatureSet.DIGITAL_ASSISTANT)) summary
+            else "Alpha · select Digital assistant in Alpha features above"
         val request = findViewById<android.view.View>(R.id.row_assistant_request)
         request?.isEnabled = state != AssistantRole.State.HELD && state != AssistantRole.State.UNAVAILABLE
         request?.alpha = if (request?.isEnabled == true) 1f else 0.4f
@@ -704,9 +688,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         // #417: the report block. Everything on the clipboard is a setting, a device fact or
         // a measured number — no transcript text, key, URL, hostname or path. Omitted metrics
-        // stay omitted rather than being printed as an invented zero.
-        // #418: the `/diagnostics` command copies the same block through the same helper; this
-        // row is the Presence section's door and stays exactly where it is.
+        // stay omitted rather than being printed as an invented zero. This row is the one door
+        // to the block: #418's command and its switch are gone.
         findViewById<LinearLayout>(R.id.row_presence_diag).setOnClickListener {
             DiagnosticClipboard.copy(this, prefs)
         }
@@ -1050,7 +1033,6 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
-        bindDiagSummary()
         // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
         // long-press on the debug-log row in the developer section. Both settings default to
         // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens
@@ -1417,7 +1399,7 @@ class SettingsActivity : AppCompatActivity() {
             refreshVoxRows()   // rule (a): the VOX.md rows follow the Presence switch
             findViewById<TextView>(R.id.set_presence_grpval)?.text =
                 if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE))
-                    "Alpha · select Presence in Alpha features at the top"
+                    "Alpha · select Presence in Alpha features above"
                 else when (presenceState()) {
                 PresenceGate.State.ON ->
                     if (prefs.getBoolean("er_presence", true))
@@ -1428,10 +1410,13 @@ class SettingsActivity : AppCompatActivity() {
                 PresenceGate.State.NO_MODEL -> "On · model not downloaded"
                 PresenceGate.State.CANNOT_START -> "On · model cannot start here"
             }
-            // Counting files only — no decryption on the Settings home.
+            // Counting files only — no decryption on the Settings home. Behind the gate, the
+            // line says why it is quiet instead of reporting takes nobody can use yet.
             findViewById<TextView>(R.id.set_wake_grpval)?.text =
-                "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
-                "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.WAKE_WORD))
+                    "Alpha · select Wake word in Alpha features above"
+                else "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
+                    "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
                 label("theme", "system") + " · " + label("layout_mode", "presence") + " · " +
                     VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
