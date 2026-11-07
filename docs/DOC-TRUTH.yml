@@ -341,3 +341,47 @@
   file: android/app/src/main/java/com/hermesvox/PhoneFiles.kt
   match: 'const val MAX_READ_BYTES = 64 \* 1024L'
 
+
+# ---- the rewritten conversation docs: wake word, overlap, the tuning bar, the fallback ----
+
+- id: wake-inert-engine
+  says: "InertWakeWordEngine"
+  doc: docs/WAKE-WORD.md
+  file: android/app/src/main/java/com/hermesvox/wake/WakeWordEngine.kt
+  match: 'object InertWakeWordEngine'
+
+- id: wake-behind-alpha-gate
+  says: "WakeListening.listening"
+  doc: docs/WAKE-WORD.md
+  file: android/app/src/main/java/com/hermesvox/wake/WakeListening.kt
+  match: 'AlphaGate\.allows\(r, AlphaGate\.FeatureSet\.WAKE_WORD\)'
+
+- id: wake-takes-encrypted
+  says: "AES-256-GCM under a dedicated Android Keystore key"
+  doc: docs/WAKE-WORD.md
+  file: android/app/src/main/java/com/hermesvox/wake/KeystoreTakeCipher.kt
+  match: 'Cipher\.getInstance\("AES/GCM/NoPadding"\)'
+
+- id: presence-overlap-classes
+  says: "BACKCHANNEL"
+  doc: docs/PRESENCE.md
+  file: android/app/src/main/java/com/hermesvox/Overlap.kt
+  match: 'enum class Kind \{ BACKCHANNEL, BARGE, NEW_TURN \}'
+
+- id: presence-semantic-endpoint
+  says: "Semantic endpointing"
+  doc: docs/PRESENCE.md
+  file: android/app/src/main/java/com/hermesvox/SemanticEndpoint.kt
+  match: 'object SemanticEndpoint'
+
+- id: presence-bar-no-data
+  says: "never a pass"
+  doc: docs/PRESENCE.md
+  file: scripts/presence-session-report.py
+  match: 'A row with no samples is `no data`, never a pass'
+
+- id: runs-fallback-log
+  says: "no-runs-route"
+  doc: docs/RUNS-ROUTE.md
+  file: android/app/src/main/java/com/hermesvox/core/Stream.kt
+  match: 'event=route-fallback reason=no-runs-route'

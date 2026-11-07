@@ -38,10 +38,11 @@ root documents, not under `docs/`; `docs/INDEX.md` counts itself.
 | [`docs/MTLS-PER-ORIGIN.md`](MTLS-PER-ORIGIN.md) | per-origin client certificates: what is sent, to whom, the named failure reasons and what it does not protect. Checked against `core/MtlsConfig.kt`, `core/MtlsKeyManager.kt`, `core/MtlsEntityTest.kt` |
 | [`docs/KOTLIN-CORE.md`](KOTLIN-CORE.md) | the `com.hermesvox.core` connector. Corrected: the runs API is no longer “deliberately dropped”; it is the default route |
 | [`docs/MODELS-SCREEN.md`](MODELS-SCREEN.md) | the Voice models screen and its one catalogue (`ModelCatalog.blessed`) |
-| [`docs/PRESENCE.md`](PRESENCE.md) | Presence: the layer, VOX.md, the beat, the read-only phone context, the MCP phone tool, the handoff receipt. Corrected: it runs only behind the Alpha gate, off on a fresh install |
+| [`docs/PRESENCE.md`](PRESENCE.md) | Presence: the layer, the on-device model and its memory, the alpha gate, continuous listening and semantic endpointing, backchannels, overlap, resume, the guard, the tuning bar. Checked against `PresenceGate.kt`, `AlphaGate.kt`, `SemanticEndpoint.kt`, `Overlap.kt`, `Resume.kt`, `ErSoulTurn.kt`, `scripts/presence-session-report.py` |
 | [`docs/MCP-PHONE.md`](MCP-PHONE.md) | the phone’s MCP server: setup turn, one `phone` tool, grants, tiers, results, permissions. Checked against `PhoneTool.kt`, `PhoneGrants.kt`, `PhoneMcpServer.kt` |
 | [`docs/MCP-SURFACE.md`](MCP-SURFACE.md) | the action-by-action contract: groups, tiers, arguments, results, undo, OS needs, refusals, the file rules, the approval handshake. Checked against `PhoneTool.kt`, `PhoneGrants.kt`, `PhoneEngine.kt`, `PhoneFiles.kt`, `PhoneFileAccess.kt`, `AppsAccess.kt`, `PhoneNotifications.kt` |
-| [`docs/RUNS-ROUTE.md`](RUNS-ROUTE.md) | `/v1/runs`, the default route, its 404 fallback, barge-in and the device pass. Checked against `core/TurnRoute.kt`, `core/Stream.kt`, `RouteChoice.kt` |
+| [`docs/RUNS-ROUTE.md`](RUNS-ROUTE.md) | the turn route: a voice turn as a run, its events, the 404 fallback, barge-in, approvals mid-run, failure and recovery. Checked against `core/TurnRoute.kt`, `core/Stream.kt`, `core/HermesSession.kt`, `RouteChoice.kt` |
+| [`docs/WAKE-WORD.md`](WAKE-WORD.md) | the wake word's current state: the alpha gate, what enrolment records and where it lives, that nothing is trained or installed, cost and limits. Checked against `wake/WakeListening.kt`, `wake/WakeWordEngine.kt`, `wake/EnrolmentStore.kt` |
 | [`docs/FDROID.md`](FDROID.md) | the F-Droid rail (path B, source-built runtime, draft recipe). Corrected: releases already build path B; the listing is 0.9.1 work per D29 and does not exist yet |
 | [`docs/APP-SKILL.md`](APP-SKILL.md) | the app skill `hermes-vox-app` and how to install it on the agent. Its claims are checked by `scripts/check-skill-claims.py` — a file and a token each, never a line number |
 | [`docs/APPROVALS-ACCEPTANCE.md`](APPROVALS-ACCEPTANCE.md) | the approval acceptance cards and the debug arm. Corrected: ordinary turns now ride `/v1/runs`, not `/v1/responses` |
@@ -109,7 +110,8 @@ it was written.
 `docs/DESIGN-enhanced-realtime-voice.md` (contradicted — see below) ·
 `design-menu-shapes.md` · `DESIGN-presence-motion.md` · `DESIGN-sound-cues.md` ·
 `docs/SPEC-conversational-bridge.md` (contradicted — see below) ·
-`docs/ACCESSIBILITY-TIER.md` · `docs/WAKE-WORD.md` · `docs/TEST-PLAN-0.9.md` ·
+`docs/ACCESSIBILITY-TIER.md` · `docs/TEST-PLAN-0.9.md` ·
+`docs/WAKE-WORD-RESEARCH.md` (record) ·
 `docs/REVIEW-DIRECTIVE-hermes-gateway.md` · `REVIEW-DIRECTIVE-vox.md` ·
 `REVIEW-0.5.2-findings.md` · `docs/reviews/PRESENCE-REVIEW-2026-11-04.md` ·
 `docs/REFERENCE-retirement-original.diff` — plans, briefs, directives and reviews. Each says what
