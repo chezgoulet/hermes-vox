@@ -147,7 +147,10 @@ Every action in the tables below can also return `not_granted`, `approval-requir
 ## Tier 0 — instant
 
 Every result carries `ok`, `action` and `tier`; the "result fields" column lists what is added on
-success (an `undo` object is added only when the row's undo column says it is real).
+success (an `undo` object is added only when the row's undo column says it is real). Every success
+also carries **`undoable` explicitly** — `true` exactly when an `undo` object is present, `false`
+for every read and every irreversible action. Absence never means "unknown" in that field: a mind
+can tell "this cannot be reversed" from "the phone did not say" without guessing.
 
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|

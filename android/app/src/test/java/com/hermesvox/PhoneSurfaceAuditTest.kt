@@ -326,6 +326,35 @@ class PhoneSurfaceAuditTest {
         }
     }
 
+    @Test fun every_success_says_whether_it_is_undoable() {
+        // Absence used to mean "not reversible" for most actions and "unknown" for a few: a mind
+        // could not tell a read apart from an action the phone had silently failed to describe.
+        // Every success now carries the field explicitly, false unless an undo was registered.
+        for ((action, case) in cases) {
+            platform.performed.clear()
+            val result = engine(open).dispatch(case.args, t0, e0)
+            if (!result.ok) continue
+            assertTrue(
+                "$action succeeded without saying whether it is undoable: ${result.json()}",
+                result.facts.containsKey("undoable"),
+            )
+            assertTrue(
+                "$action's undoable is not a boolean: ${result.json()}",
+                result.facts["undoable"] is Boolean,
+            )
+            assertEquals(
+                "$action's undoable and its undo object disagree",
+                result.facts["undoable"] == true,
+                result.toMap()["undo"] != null,
+            )
+        }
+
+        // The one non-action success shape: `status` reports, so it is explicitly not undoable.
+        val status = engine(open).dispatch(mapOf("action" to "status"), t0, e0)
+        assertTrue(status.json(), status.ok)
+        assertEquals(false, status.facts["undoable"])
+    }
+
     // ---- the result shape is the same across actions ----
 
     @Test fun a_refusal_and_a_success_report_the_same_tier_for_the_same_action() {

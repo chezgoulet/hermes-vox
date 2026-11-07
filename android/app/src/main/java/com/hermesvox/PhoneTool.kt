@@ -1458,13 +1458,27 @@ data class PhoneResult(
     fun json(): String = Json.encode(toMap())
 
     companion object {
+        /**
+         * Every success says whether it is reversible, explicitly. Absence is not "unknown" in
+         * this field: a read carries `undoable:false`, and only an action that registered an undo
+         * carries `undoable:true` (and the `undo` object that goes with it). A caller therefore
+         * never has to guess whether a missing key means "not reversible" or "the phone did not
+         * say" — it always says.
+         */
+        private fun withUndoable(facts: Map<String, Any?>): Map<String, Any?> =
+            if (facts.containsKey("undoable")) {
+                facts
+            } else {
+                LinkedHashMap(facts).apply { put("undoable", false) }
+            }
+
         /** A performed action. [facts] carries what the caller needs to know it happened. */
         fun done(action: String, id: String?, facts: Map<String, Any?> = emptyMap()): PhoneResult =
-            PhoneResult(true, action, PhoneTiers.of(action), id, facts = facts)
+            PhoneResult(true, action, PhoneTiers.of(action), id, facts = withUndoable(facts))
 
         /** A performed action that cannot be undone (status), or carries no id. */
         fun info(action: String, facts: Map<String, Any?>): PhoneResult =
-            PhoneResult(true, action, PhoneTiers.of(action), null, facts = facts)
+            PhoneResult(true, action, PhoneTiers.of(action), null, facts = withUndoable(facts))
 
         /**
          * The answer for an action whose work was already dispatched but whose outcome the caller
