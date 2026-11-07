@@ -204,8 +204,12 @@ one. The result's `dispatched` is exactly that: the audio service accepted the k
   blaming a missing grant.
 
 `skip`'s `direction` defaults to `next` when omitted; any other value is `invalid-arguments`. It
-shares the `direction` property with `volume`, so the schema lists `up`, `down`, `next` and
-`previous`, and each action accepts only its own pair.
+shares the `direction` property with `volume`, and the two sets of words are disjoint, so the
+schema advertises **no `enum`** for it: an enum on a shared property would advertise `next` for a
+volume and `up` for a skip, and a schema-valid call would then be refused. The property's
+description names both pairs — `up`/`down` for the media volume, `next`/`previous` for a track —
+and the parser accepts exactly those, refusing anything else with a sentence that names the action
+and the value it was given. `prev` is not advertised and is not accepted: one word, one value.
 
 ### Device state, and the null rule
 
