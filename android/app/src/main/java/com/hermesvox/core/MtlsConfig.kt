@@ -33,17 +33,27 @@ object MtlsConfig {
         val key: String get() = if (host.contains(':')) "[$host]:$port" else "$host:$port"
     }
 
-    private var appContext: Context? = null
-    private var activeProvider: MtlsKeyProvider? = null
-    private var testPrefs: SharedPreferences? = null
+    @Volatile private var appContext: Context? = null
+    @Volatile private var appPrefs: SharedPreferences? = null
+    @Volatile private var activeProvider: MtlsKeyProvider? = null
+    @Volatile private var testPrefs: SharedPreferences? = null
     private val socketFactoryCache = ConcurrentHashMap<String, SSLSocketFactory>()
 
-    /** Initializes runtime context. Safe to call multiple times. */
-    fun init(context: Context) {
-        appContext = context.applicationContext
-        if (activeProvider == null) {
-            activeProvider = AndroidKeyChainProvider(context.applicationContext)
-        }
+    /**
+     * Installs the process-wide runtime facts: the application context, the preference
+     * store and the KeyChain provider.
+     *
+     * Called once, from `VoxApplication.onCreate`. It used to be called from two
+     * activities' `onCreate`, which left every path that runs before an activity — a
+     * service, a background probe, a cold turn — with `appContext == null`, and a null
+     * context here means "no certificate sent", silently. Idempotent, so a second call
+     * (a test harness, a future entry point) changes nothing.
+     */
+    fun init(context: Context, prefs: SharedPreferences? = null) {
+        val app = context.applicationContext
+        appContext = app
+        if (prefs != null) appPrefs = prefs
+        if (activeProvider == null) activeProvider = AndroidKeyChainProvider(app)
     }
 
     /** Overrides the [MtlsKeyProvider] for JVM unit testing. */
@@ -271,6 +281,7 @@ object MtlsConfig {
         val origin = originOf(url) ?: return
         val prefs = explicitPrefs
             ?: testPrefs
+            ?: appPrefs
             ?: appContext?.getSharedPreferences("hv", Context.MODE_PRIVATE)
             ?: return
         val alias = getAlias(prefs, origin) ?: return

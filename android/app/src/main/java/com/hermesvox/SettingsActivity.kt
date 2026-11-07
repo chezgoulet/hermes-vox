@@ -33,7 +33,6 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         if (prefs.getString("theme", "system") == "dark") AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         super.onCreate(savedInstanceState)
-        com.hermesvox.core.MtlsConfig.init(applicationContext)
         setContentView(R.layout.activity_settings)
 
         // Back button is section-aware: inside a sub-view it returns to the group

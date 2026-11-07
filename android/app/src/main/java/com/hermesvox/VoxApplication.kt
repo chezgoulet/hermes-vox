@@ -24,6 +24,11 @@ class VoxApplication : Application() {
         // M4 (0.9.1 review): the cleartext rule asks the tailnet detector live, and fails
         // closed until this process has installed it.
         com.hermesvox.core.CleartextPolicy.tunnelUp = { Tailnet.address() != null }
+        // M4: per-origin mTLS is a process-wide fact too. The KeyChain provider and the
+        // preference store are needed by every request, including the ones a service or a
+        // background probe makes before any activity exists — and an uninitialised
+        // MtlsConfig means "send no certificate", silently. Install it here, once.
+        com.hermesvox.core.MtlsConfig.init(this, prefs)
         // #402: the Alpha gate first — it tells an upgrade from a fresh install by the Presence
         // key that PresenceGate.migrate is about to write.
         AlphaGate.migrate(prefs, presenceModelInstalled = ModelCatalog.isInstalled(this, "gemma-e2b"))
