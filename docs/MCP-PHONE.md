@@ -252,6 +252,29 @@ line carries the compact `timer(remaining=3m12s)` form.
 something the owner already allowed, and `status` only reports; a phone whose grants are all Off must
 still be able to say so.
 
+**The arguments are the schema's, per action.** `additionalProperties:false` is enforced, not
+advertised: a key the action does not take — a misspelt `duration` for `duration_ms`, a `to` on a
+`note` — is `invalid-arguments` naming it, not something silently dropped. `PhoneTool.ARGUMENTS` is
+the table of what each action reads, and a test pins it against the schema's `properties` in **both**
+directions, so an action cannot read an argument the model was never told about and the schema cannot
+advertise one no action reads.
+
+### What a call answers
+
+Every `tools/call` is a `CallToolResult` with one text block — the result JSON — and `isError` set
+from that JSON's `ok`. The mind can therefore tell the three cases apart without reading prose:
+
+| what happened | `isError` | the result |
+|---|---|---|
+| **done** | `false` | `ok:true`, `action`, and what changed (`id`, `level`, `count`, …), plus `undo` when one exists |
+| **not allowed, or did not work** | `true` | `ok:false`, a stable `reason` (`not_granted`, `approval-required`, `permission`, `unavailable`, …) and a human `detail` that says nothing was performed |
+| **dispatched, outcome unknown** | `true` | `ok:false`, with **`outcome_uncertain:true`** — the work may still complete, so ask `status` rather than telling the caller nothing happened |
+
+An unknown tool, an argument object that is not an object, or a body that is not JSON-RPC is a
+protocol error (a JSON-RPC `error` at HTTP 200). The phone refusing to act never is: that is always a
+result the model can read and repeat, which is how "you are not allowed" stays distinguishable from
+"it did not work" and from "done".
+
 ---
 
 ## Grants: what the agent may try (#429)
@@ -577,32 +600,65 @@ however it authenticates: `message` and `dial` hand a draft or a number to the o
 the owner presses send or call.
 
 **What is deliberately absent.** No MCP resources and no resource listing, no second route, no SSE
-stream, no server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no
-caller on this side. The `file_list` action is a phone capability, not an MCP resource listing.
-There is also no verbose log of the arguments — a note's text is the caller's, and it belongs in the
-note, not in a log that gets attached to bug reports.
+stream and no server-initiated messages: each is a surface with no caller on this side. The
+`file_list` action is a phone capability, not an MCP resource listing. There is also no verbose log
+of the arguments — a note's text is the caller's, and it belongs in the note, not in a log that gets
+attached to bug reports.
 
 ---
 
 ## What the wire actually is
 
-Stateless **Streamable HTTP** JSON-RPC on `POST /mcp`, which is what the gateway's MCP client speaks
-(MCP 2025-03-26 and later). `initialize` negotiates `protocolVersion` (echoed when it is one we
-implement: `2024-11-05`, `2025-03-26`, `2025-06-18`, `2025-11-25`), `notifications/initialized` gets
-`202 Accepted`, `tools/list` returns the one tool, `tools/call` returns a `content` text block.
-`HEAD` answers `application/json` so the gateway's pre-flight probe recognises an MCP endpoint rather
-than a web page; `GET` is `405`.
+**Streamable HTTP** JSON-RPC on `POST /mcp`, with a session, which is what the gateway's MCP client
+speaks (MCP 2025-03-26 and later, `mcp.client.streamable_http`). Sessions are not decoration here:
+they are what makes the phone's tool list survive a keepalive (see "Why there is a session" below).
 
-No `Mcp-Session-Id` is issued, so the client never opens the GET stream: every call is independent,
-which is what a phone that can be backgrounded needs. The state that matters lives in the registry,
-not in a session.
+The handshake, exactly as the client sees it:
+
+| # | request | answer |
+|---|---|---|
+| 1 | `POST /mcp` `initialize` `{protocolVersion, capabilities, clientInfo}` | `200`, JSON-RPC result (negotiated `protocolVersion`, `capabilities.tools`, `serverInfo`), **`Mcp-Session-Id: <32 hex chars>`** |
+| 2 | `POST /mcp` `notifications/initialized` + `Mcp-Session-Id` | `202 Accepted`, no body |
+| 3 | `GET /mcp` + `Mcp-Session-Id` (the SDK opens the session's push stream) | `405`, `Allow: POST, DELETE` — there is nothing to push |
+| 4 | `POST /mcp` `tools/list` + `Mcp-Session-Id` | `200`, the one `phone` tool |
+| 5 | `POST /mcp` `tools/call` + `Mcp-Session-Id` | `200`, a `CallToolResult` whose text block is the result JSON |
+| 6 | `POST /mcp` `ping` + `Mcp-Session-Id` | `200`, `{}` (a real answer; `-32601` would make the SDK latch "ping unsupported") |
+| — | `DELETE /mcp` + `Mcp-Session-Id` | `200`, and the session is gone; a later request with that id is `404` |
+
+`HEAD` answers `application/json` so the gateway's pre-flight probe recognises an MCP endpoint rather
+than a web page.
+
+**The session.** The id is 128 bits from the platform CSPRNG, minted per `initialize`, never derived
+from the token, the clock or a counter. Every later request must carry it: a POST without one, or
+with one this server no longer holds (ended, expired, or from before the listener restarted), is
+`404` — the spec's cue for the client to initialize again. A session expires after 30 idle minutes,
+at most 8 are held at once, and `DELETE` retires one immediately.
+
+**Keep-alive.** Every response is a normal HTTP/1.1 response: the connection stays open, and
+`Connection: close` is sent only when the client asked for it (or is HTTP/1.0 without `keep-alive`),
+when the request could not be drained (an oversized or chunked body), or when this server is
+stopping. A session lives in the server, not on a socket, so the phone closing an idle connection
+costs the client a TCP reconnect and never a session.
+
+### Why there is a session (the failure this fixed)
+
+The gateway does not merely `initialize` once and trust it. It keeps a session alive with
+`session.list_tools()` and `session.send_ping()`, and it only counts the server **healthy** once a
+session has survived one keepalive interval or served one successful tool call. Each failed probe is
+charged as a reconnect, and five in a row park the server for 300 seconds at a time.
+
+The first version of this endpoint answered with `Connection: close` and issued no `Mcp-Session-Id`.
+Every exchange therefore ended the connection, every probe was a fresh reconnect, and the phone was
+parked before `tools/list` was ever read — which is why the agent could see no phone tool at all,
+with the app reporting *Connected*. A session and keep-alive are the two halves of the fix; the
+`405` on `GET` is the spec's answer for a server with nothing to push, and the client stops asking.
 
 **Verified against the client this has to satisfy**, not only against the spec: the `mcp` SDK the
-Hermes runtime ships (`mcp/client/streamable_http.py`, protocol `2025-11-25` as of this build)
-connects to this server, negotiates the version, lists `phone`, gets `ok:true` from `status`, gets
-`approval-required` from `message`, and gets a `McpError` from a tool it does not serve. That run is
-the shape check: if the phone ever needs something this endpoint cannot say, the honest move is to
-report the shape, not to grow a second protocol.
+Hermes runtime ships (`mcp/client/streamable_http.py`) stores the session id from `initialize`, sends
+it on every later request, opens the GET stream after `notifications/initialized`, and accepts a
+`405` there as "no push stream". A session-carrying `tools/list` and `ping` are what its keepalive
+reads. If the phone ever needs something this endpoint cannot say, the honest move is to report the
+shape, not to grow a second protocol.
 
 ---
 
@@ -615,10 +671,13 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
    Hang up: `event=phone-mcp stop served=N`.
 2. **Point a scratch client at the URL with either credential** (`curl` the `initialize` POST, or
    `mcp-server-fetch`-style tooling): the phone's own token from the manual block, or the gateway's
-   `API_SERVER_KEY`. With neither: `401`. With either: `tools/list` returns `phone`. **Run the one
-   button and copy nothing:** the press opens the listener window, the agent's `hermes mcp add`
-   completes with the token in the turn, the gateway picks the entry up without restarting, and the
-   sheet reaches *Connected* only on its handshake.
+   `API_SERVER_KEY`. With neither: `401`. With either: `initialize` returns a `200` and an
+   `Mcp-Session-Id` header; `tools/list` sent **without** that header is `404` (the spec's answer),
+   and with it returns `phone`. **Run the one button and copy nothing:** the press opens the
+   listener window, the agent's `hermes mcp add` completes with the token in the turn, the gateway
+   picks the entry up without restarting, and the sheet reaches *Connected* only on its handshake.
+   The gateway log must then show the server healthy across at least one keepalive interval
+   (`tools/list` + `ping`), not "reconnects without a healthy session".
 3. **With every group Off (a fresh install), `tools/list` offers `undo` and `status` only.** A
    `timer` call returns `ok:false, reason:"not_granted"`; nothing is armed.
 4. **Grant Timers and alarms = Ask.** `tools/list` now includes `timer`; a timer call returns

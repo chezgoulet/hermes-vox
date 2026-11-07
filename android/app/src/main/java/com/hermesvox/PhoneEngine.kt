@@ -2190,9 +2190,10 @@ class PhoneEngine(
 
     /**
      * A number as given, or a name resolved through [PhonePlatform.contactMatches]. The Contacts
-     * grant is enforced before this runs ([PhoneTool.parse]): only Allow reaches here with a name,
-     * because Ask and Off are both refused with a governance reason. What remains here is the
-     * platform's answer: a missing `READ_CONTACTS`, no such person, or a provider failure.
+     * grant is enforced before this runs ([PhoneTool.parse]): Off never reaches here with a name,
+     * and Ask reaches it only after the owner answers the card, because a name is an address-book
+     * read whatever action asked for it. What remains here is the platform's answer: a missing
+     * `READ_CONTACTS`, no such person, or a provider failure.
      */
     private fun resolveRecipient(action: String, raw: String, contact: Boolean): Recipient {
         if (!contact) return Recipient.Number(raw)
@@ -2209,7 +2210,10 @@ class PhoneEngine(
         }
         val number = platform.contactNumber(raw)
         if (number.isNullOrBlank()) {
-            log("event=phone-mcp action=$action ok=false reason=no_match")
+            // The result's reason is `unavailable` (there is no `no_match` in the vocabulary the
+            // model reads), so the log says the same word: a log that disagrees with the result is
+            // a bad witness.
+            log("event=phone-mcp action=$action ok=false reason=unavailable no_match=true")
             return Recipient.Refused(
                 PhoneResult.refused(
                     action,

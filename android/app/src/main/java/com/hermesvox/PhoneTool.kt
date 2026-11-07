@@ -130,12 +130,12 @@ object PhoneTool {
         "Act on the phone this conversation is happening on. Only the actions in `action` are " +
             "granted on this phone right now; the rest are absent because the owner has not given " +
             "them. Every result says what actually happened — check ok before telling the caller an " +
-            "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
-            "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
-            "needs the owner's approval on the phone); the detail says whether a card is waiting, " +
-            "and a refusal means nothing was performed unless it carries `outcome_uncertain:true` " +
-            "— that means the work was already dispatched and may still complete, so call " +
-            "`status` instead of telling the caller nothing happened. " +
+            "action is done, and do not claim one this tool did not confirm. A refusal arrives with " +
+            "`isError:true` and carries a reason (`not_granted` when the owner has not granted it, " +
+            "`approval-required` when it needs the owner's approval on the phone); the detail says " +
+            "whether a card is waiting, and a refusal means nothing was performed unless it carries " +
+            "`outcome_uncertain:true` — that means the work was already dispatched and may still " +
+            "complete, so call `status` instead of telling the caller nothing happened. " +
             NOTIFICATION_PRIVACY + " " +
             "Every action at Ask is two steps: call without `approval`, then call again with the " +
             "returned approval id and identical arguments once the owner answers the card."
@@ -196,6 +196,55 @@ object PhoneTool {
         "open" to "open a URI in the app that claims it",
         "uninstall" to "remove an app by package",
     )
+
+    /**
+     * The arguments each action reads — and the only ones it accepts.
+     *
+     * `additionalProperties: false` in [schema] is a promise to the model, and the first version of
+     * this file kept it in the `uninstall` branch alone: every other action silently ignored an
+     * argument it did not know. A misspelling is the dangerous case — `{"action":"timer","duration":60000}`
+     * ran with no duration and answered `invalid-arguments` only because the real key was absent,
+     * while `{"action":"note","text":"x","to":"Mom"}` quietly wrote a note and dropped the
+     * recipient. So the table is the schema's `properties` read back: an argument no action reads
+     * is a refusal, and a test pins that the two lists are the same set.
+     *
+     * `action` and `approval` are cross-cutting ([allowedArguments] adds them) and are not here.
+     */
+    internal val ARGUMENTS: Map<String, Set<String>> = linkedMapOf(
+        "timer" to setOf("duration_ms"),
+        "alarm" to setOf("at"),
+        "dnd" to setOf("on"),
+        "volume" to setOf("level", "direction"),
+        "note" to setOf("text"),
+        "play" to emptySet(),
+        "pause" to emptySet(),
+        "skip" to setOf("direction"),
+        "now_playing" to emptySet(),
+        "state" to emptySet(),
+        "clip" to setOf("text"),
+        "clip_read" to emptySet(),
+        "file_list" to setOf("folder", "path", "depth", "pattern", "offset", "limit"),
+        "file_read" to setOf("name", "folder", "offset", "length"),
+        "file_offer" to setOf("name", "folder"),
+        "agenda" to emptySet(),
+        "event_create" to setOf("title", "start", "duration_min", "calendar"),
+        "notifications" to emptySet(),
+        "notification_read" to setOf("id"),
+        "notification_dismiss" to setOf("id", "app"),
+        "contact" to setOf("name"),
+        "message" to setOf("to", "text"),
+        "dial" to setOf("to"),
+        "apps" to emptySet(),
+        "launch" to setOf("app"),
+        "open" to setOf("uri", "package"),
+        "uninstall" to setOf("package"),
+        "undo" to setOf("id"),
+        "status" to emptySet(),
+    )
+
+    /** The keys [action] may carry: its own arguments plus the two the handshake needs. */
+    fun allowedArguments(action: String): Set<String> =
+        (ARGUMENTS[action.trim().lowercase()] ?: emptySet()) + setOf("action", "approval")
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
     fun schema(
@@ -644,7 +693,11 @@ object PhoneTool {
                         PhoneReason.NOT_GRANTED,
                         "the \"${group.label}\" group is off on this phone; nothing was performed. " +
                             "Only the owner can grant it in Phone tools.",
-                        tier = group.tier,
+                        // The **action's** tier, not the group's: `uninstall` lives in the instant
+                        // apps group and `notification_dismiss` in the instant notifications group,
+                        // but both are tier 2/1 by their own consequence. Using the group's tier
+                        // here made the same action report tier 0 when refused and tier 2 when run.
+                        tier = PhoneGrants.tierOf(action) ?: group.tier,
                     )
                 )
                 // Ask raises a card; Allow runs. Both need the arguments, and the card names
@@ -679,6 +732,20 @@ object PhoneTool {
         args: Map<String, Any?>,
         grants: PhoneGrants.Source,
     ): Parsed {
+        // `additionalProperties: false` is enforced here, for every action, before any argument is
+        // read: a key no action consumes is a refusal, not something to drop on the floor. The
+        // grant check has already happened in [parse], so this never turns "not granted" into
+        // "bad arguments".
+        val allowed = allowedArguments(action)
+        val unexpected = args.keys - allowed
+        if (unexpected.isNotEmpty()) {
+            val takes = (allowed - setOf("action", "approval")).sorted()
+            val what = if (takes.isEmpty()) "takes no arguments" else "takes only ${takes.joinToString(", ")}"
+            return bad(
+                action,
+                "$action $what; unexpected: ${unexpected.sorted().joinToString(", ")}",
+            )
+        }
         return when (action) {
         "timer" -> {
             val ms = integer(args["duration_ms"])
@@ -933,16 +1000,9 @@ object PhoneTool {
             Parsed.Run(Call.Open(url, pkg))
         }
         // The apps group's safe half is launch/open. `uninstall` is the consequential action: it
-        // parses into a call and the engine cards it at Ask, or runs it at Allow.
+        // parses into a call and the engine cards it at Ask, or runs it at Allow. Its one argument
+        // is checked by the table above, like every other action's.
         "uninstall" -> {
-            val unexpected = args.keys - setOf("action", "package", "approval")
-            if (unexpected.isNotEmpty()) {
-                return bad(
-                    action,
-                    "uninstall takes only package and approval; unexpected: " +
-                        unexpected.sorted().joinToString(", "),
-                )
-            }
             val pkg = PhoneApproval.packageName(args["package"] as? String)
                 ?: return bad(
                     action,
@@ -1264,7 +1324,10 @@ object PhoneReason {
     /** Not a phone action; `detail` carries the offered list. */
     const val UNKNOWN = "unknown-action"
 
-    /** Tier 2: needs the owner's approval, and nothing was done. */
+    /**
+     * The action's group is at **Ask**: a card is up (or pending) and nothing was done. This is a
+     * grant state, not a tier — a timer at Ask answers with it exactly as an uninstall does.
+     */
     const val APPROVAL = "approval-required"
 
     /** The owner denied the card. Nothing was performed, and the id is burnt. */

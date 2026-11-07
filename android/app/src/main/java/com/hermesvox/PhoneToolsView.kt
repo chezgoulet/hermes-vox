@@ -317,6 +317,7 @@ object PhoneToolsView {
         "approved" -> "approved by ${entry.arguments["via"] ?: "tap"} · not performed yet"
         "denied" -> "denied by ${entry.arguments["via"] ?: "tap"}"
         "expired" -> "expired · no answer, so not performed"
+        PhoneAudit.UNCERTAIN -> "may still have happened · outcome unknown"
         else -> when {
             entry.ok -> "done"
             entry.outcome == PhoneReason.NOT_GRANTED -> "refused · not granted"

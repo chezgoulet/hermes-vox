@@ -51,10 +51,17 @@ same card, answered by tap or by voice, and the id is bound to the exact action 
 were approved. `undo` and `status` belong to no group and are always offered, because a phone whose
 grants are all Off must still be able to say so.
 
-**A refusal is a result, not a transport error.** `isError` stays `false`; the JSON carries `ok`,
-`action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform accepted
-the call — and for a handoff, that means the intent was handed over, never that another app reached
-the front. A refusal never carries an `id`, a success fact or an `undo`.
+**A refusal is a result, not a transport error.** There is no HTTP 500 and no empty content: the
+`CallToolResult` carries the result JSON and `isError` set from its `ok`, so a performed action is
+`isError:false` and a refusal is `isError:true` with `action`, `tier`, `reason` and `detail` in the
+JSON. `ok:true` is only ever written after the platform accepted the call — and for a handoff, that
+means the intent was handed over, never that another app reached the front. A refusal never carries
+an `id`, a success fact or an `undo`.
+
+**The arguments are the schema's, per action.** `additionalProperties:false` is enforced: a key the
+action does not take (a misspelt `duration` for `duration_ms`, a `to` on a `note`) is
+`invalid-arguments` naming it, never silently dropped. `PhoneTool.ARGUMENTS` is the table, pinned
+against the schema's `properties` in both directions.
 
 **A timeout is not a refusal of the work.** The phone runs one action at a time on its own thread,
 not on the thread that draws, and a caller's bound stops only its own waiting. When that bound
@@ -616,7 +623,10 @@ These are the behaviours the shipped card implements, not requirements for a lat
 
 Every call the mind makes — success **and** refusal — writes one row through
 [`PhoneAudit`](../android/app/src/main/java/com/hermesvox/PhoneAudit.kt): time, action, the
-arguments summarised, the outcome, and the undo id when there is a real one.
+arguments summarised, the outcome, and the undo id when there is a real one. The row's outcome is
+`done`, the refusal's `reason`, or `uncertain` for an action that was dispatched and whose result the
+phone no longer knows (the live-call dial): such a row must not read as "refused, nothing happened"
+about work that may still complete.
 
 Arguments are **summarised, never copied**: a `note`, `clip` or `message` `text` and an
 `event_create` `title` are stored as `NN chars`; a duration, a clock time, a boolean, a level, a
