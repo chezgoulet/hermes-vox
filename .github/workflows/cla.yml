@@ -1,47 +1,110 @@
 name: CLA
 
-# The CLA is checked on every pull request and cleared by a comment, so a contributor is
-# never waiting on a person to notice them. The logic lives in .github/scripts/cla.py.
-#
-# SECURITY: this job runs on `pull_request_target`, which has a write token. It must check
-# out the BASE branch — never the pull request's head — or a contributor's code would run
-# with our token. The explicit `ref` below is load-bearing, not decoration.
+# Signing is a comment on the pull request, and this check reads it. It never runs code from the
+# pull request: `pull_request_target` uses the workflow on the base branch, and the job only calls
+# the API. A signature is per author, so a contributor signs once and their later pull requests
+# are green without another word.
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
   issues: write
-  statuses: write
+  pull-requests: write
 
 concurrency:
   group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   cla:
-    # A comment matters only when it is on a pull request.
-    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
+    name: CLA signature
+    if: |
+      (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request != null)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - name: Evaluate the agreement
+      - name: Check for the signature
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLA_EVENT: ${{ github.event_name }}
-          CLA_REPO: ${{ github.repository }}
-          CLA_PR: ${{ github.event.pull_request.number || github.event.issue.number }}
-          CLA_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          CLA_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CLA_COMMENT_BODY: ${{ github.event.comment.body }}
-          CLA_COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-        run: python3 .github/scripts/cla.py
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+
+          repo = os.environ["REPO"]
+          with open(os.environ["GITHUB_EVENT_PATH"]) as fh:
+              event = json.load(fh)
+
+          if event.get("pull_request"):
+              subject = event["pull_request"]
+              number = subject["number"]
+              author = subject["user"]["login"]
+              association = subject.get("author_association", "")
+          else:
+              subject = event["issue"]
+              number = subject["number"]
+              author = subject["user"]["login"]
+              association = subject.get("author_association", "")
+
+          def api(path, method="GET", fields=None):
+              cmd = ["gh", "api", "-X", method, path]
+              for key, value in (fields or {}).items():
+                  cmd += ["-f", f"{key}={value}"]
+              done = subprocess.run(cmd, capture_output=True, text=True)
+              if done.returncode != 0:
+                  print(done.stderr, file=sys.stderr)
+                  sys.exit(2)
+              return json.loads(done.stdout) if done.stdout.strip() else {}
+
+          # Maintainers do not sign their own project's agreement.
+          if association in ("OWNER", "MEMBER", "COLLABORATOR"):
+              print(f"{author} has write access; no signature required.")
+              sys.exit(0)
+
+          marker = "I have read the CLA at CLA.md and I agree to it."
+          comments = api(f"repos/{repo}/issues/{number}/comments?per_page=100")
+          if isinstance(comments, dict):
+              comments = comments.get("items", [])
+
+          for comment in comments:
+              if comment["user"]["login"].lower() == author.lower() and marker in comment["body"]:
+                  print(f"{author} signed in a comment on #{number}.")
+                  sys.exit(0)
+
+          # One prompt per pull request, not one per push.
+          prompt_marker = "<!-- cla-check -->"
+          already_asked = any(
+              prompt_marker in c["body"] and c["user"]["type"] == "Bot" for c in comments
+          )
+          if not already_asked:
+              body = (
+                  "<!-- cla-check -->\n"
+                  "Thanks for this. One thing before it can merge: the project asks each contributor "
+                  "to agree to the [CLA](CLA.md) once — it keeps your copyright with you and grants "
+                  "the project the licence it needs to ship your work.\n\n"
+                  "Reply here with:\n\n"
+                  "```\n"
+                  "I have read the CLA at CLA.md and I agree to it.\n"
+                  "Name: <your legal name>\n"
+                  "GitHub handle: <your handle>\n"
+                  "Email: <optional>\n"
+                  "```\n\n"
+                  "This check turns green as soon as the comment is there, and it stays green for "
+                  "your later pull requests."
+              )
+              api(
+                  f"repos/{repo}/issues/{number}/comments",
+                  method="POST",
+                  fields={"body": body},
+              )
+              print("Asked for a signature.")
+          else:
+              print("Already asked; waiting for the signature.")
+
+          sys.exit(1)
+          PY

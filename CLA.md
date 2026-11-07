@@ -1,88 +1,57 @@
 # Contributor Licence Agreement
 
-**In force.** This agreement covers contributions submitted to this repository. It is the
-standard contributor licence agreement for a project that ships under a copyleft licence and
-keeps the option of a separate commercial edition: you keep your copyright, you grant the
-Company the rights it needs, and the community edition stays GPL-3.0.
+Hermes Vox is free software under the **GNU General Public License, version 3**
+(`LICENSE`). That licence covers what everyone may do with the code. This agreement
+covers something the licence cannot: your permission to include *your* contribution in
+it in the first place.
 
-**How to accept it.** On your first pull request, post a comment containing:
+It is short on purpose. If any part of it is unclear, ask in the pull request before you
+sign — an unclear agreement is worse than none.
 
-> I have read the CLA at CLA.md and I agree to it.
-> Name: · GitHub handle: · Email:
+## 1. You keep your copyright
 
-That comment is the signed record; a maintainer adds it to `CLA-SIGNATURES.md` with a link to the
-pull request. Code is merged after that comment, not before.
+You keep the copyright in everything you write. There is **no copyright assignment**.
+Your contribution stays yours; you are granting a licence, not giving anything away.
 
-This agreement is between the contributor (“you”) and **Christopher Goulet**, an individual, on behalf of the Hermes Vox project (“the Company”), and any entity to which this agreement is assigned under section 7. The Company is referred to in the singular whether it is the individual or that entity.
-It covers any contribution you submit to the Hermes Vox repository.
+## 2. What you grant
 
-## 1. Copyright licence
+You grant Christopher Goulet, as maintainer of Hermes Vox, a **perpetual, worldwide,
+non-exclusive, royalty-free, irrevocable** licence to use, reproduce, modify, adapt,
+publish and distribute your contribution as part of Hermes Vox, and to license it to
+others under the project's licence, GPL-3.0.
 
-You keep your copyright. You grant the Company a perpetual, worldwide, non-exclusive,
-royalty-free, irrevocable copyright licence to use, reproduce, modify, prepare derivative
-works of, publicly display, publicly perform, distribute, sublicense and relicense your
-contribution, including under proprietary terms.
+There is no relicensing under other terms: the project is copyleft and stays that way.
+This grant is what lets your work be merged and shipped, and nothing more.
 
-## 2. Patent licence
+## 3. What you confirm
 
-You grant the Company and its licensees a perpetual, worldwide, non-exclusive, royalty-free,
-irrevocable patent licence to make, use, sell, offer for sale, import and otherwise exploit
-the contribution, to the extent your patents are necessarily infringed by the contribution
-alone or by its combination with the repository as it existed when you submitted it.
+By signing you confirm that:
 
-## 3. Your representations
+- the contribution is your own work, or you have the right to submit it;
+- it does not knowingly infringe anyone else's copyright, patent or trade secret;
+- if your employer has rights in work you do, you have permission to submit it; and
+- you are legally able to grant the licence in section 2.
 
-You represent that:
+## 4. What you are not promising
 
-- you have the legal right to grant this licence;
-- the contribution is your original work, or you have identified and are authorised to
-  submit any third-party material in it;
-- the contribution is not subject to terms that conflict with this agreement; and
-- you are not submitting confidential information or someone else’s trade secret.
+Your contribution is provided **as is**, without warranty of any kind. You are not
+promising that it is fit for any particular purpose, and you are not taking on any
+obligation to support or maintain it.
 
-## 4. The community edition
+## 5. How you sign
 
-The Company will make your contribution available under **GPL-3.0** as part of the community
-edition. This agreement does not change the licence of the community edition; it preserves the
-Company’s option to offer a separate commercial edition.
+Comment on your **first** pull request with the following, filled in:
 
-## 5. No warranty; no obligation
+```
+I have read the CLA at CLA.md and I agree to it.
+Name: <your legal name>
+GitHub handle: <your handle>
+Email: <your email, optional>
+```
 
-You provide the contribution “as is”, without warranties. The Company is not obliged to use,
-merge, maintain or distribute it.
+A check runs on every pull request and reads that comment. It turns green once your
+signature is there, and it stays green for your later pull requests: you sign once, not
+every time.
 
-## 6. Records
-
-The Company will keep a record of signed agreements. A contribution is not merged until the
-signed agreement is on file.
-
-## Signature
-
-Name:
-
-GitHub handle:
-
-Email:
-
-Signature:
-
-Date:
-
-## 7. Assignment
-
-The Company may assign this agreement, and the rights you grant in it, to an entity formed to
-hold them — a company, a foundation or a successor — without your further consent, provided that
-entity is bound by these terms. The Company will say in this repository when such an assignment
-takes effect. You may not assign your rights under this agreement without the Company’s written
-agreement.
-
-## 8. Governing law
-
-This agreement is governed by the laws of the State of Vermont, United States, and the courts of
-that state have exclusive jurisdiction over a dispute arising from it.
-
-## 9. Entire agreement
-
-This is the whole agreement between you and the Company about your contributions. If any part of
-it is unenforceable, the rest stands, and that part is read as narrowly as it must be to be
-enforceable.
+If you contribute on behalf of a company, say so in the comment and name the company. A
+maintainer will follow up before the pull request merges.
