@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="700" viewBox="0 0 880 700">
+  <rect width="880" height="700" fill="#FFFFFF"/>
+  <text x="36" y="52" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="bold" fill="#0F172A">Light mode: where the words disappear</text>
+  <text x="36" y="80" font-family="DejaVu Sans, sans-serif" font-size="13.5" fill="#444C5C">Every sample below is drawn with the colours the code actually sets, on the background the light theme actually uses.</text>
+  <text x="36" y="99" font-family="DejaVu Sans, sans-serif" font-size="13.5" fill="#444C5C">Contrast ratios are computed from those values; WCAG AA needs 4.5:1 for text this size.</text>
+
+  <!-- row 1 -->
+  <text x="36" y="146" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#0F172A">State pill, before any call</text>
+  <text x="36" y="164" font-family="DejaVu Sans Mono, monospace" font-size="10.5" fill="#5A6B85">TextVox.Tag → @color/hv_cyan</text>
+  <rect x="300" y="120" width="300" height="60" rx="16" fill="#F3F5F9" stroke="#D2D9E7"/>
+  <rect x="318" y="134" width="264" height="32" rx="16" fill="#EAEFF7" stroke="#D2D9E7"/>
+  <text x="450" y="154" font-family="DejaVu Sans Mono, monospace" font-size="12" letter-spacing="0.8" text-anchor="middle" fill="#0092AE">LISTENING…</text>
+  <text x="624" y="146" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#0F172A">3.18:1 — below AA, but legible.</text>
+  <text x="624" y="164" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#5A6B85">So today's pill is marginal on paper.</text>
+
+  <!-- row 2 -->
+  <text x="36" y="246" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#A33A3A">State pill, after the first call ends</text>
+  <text x="36" y="264" font-family="DejaVu Sans Mono, monospace" font-size="10.5" fill="#A33A3A">MainActivity.setCallTone(false)</text>
+  <rect x="300" y="220" width="300" height="60" rx="16" fill="#F3F5F9" stroke="#D2D9E7"/>
+  <rect x="318" y="234" width="264" height="32" rx="16" fill="#EAEFF7" stroke="#D2D9E7"/>
+  <text x="450" y="254" font-family="DejaVu Sans Mono, monospace" font-size="12" letter-spacing="0.8" text-anchor="middle" fill="#D6F4FF">LISTENING…</text>
+  <text x="624" y="246" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#A33A3A">1.00:1 — the words are there and</text>
+  <text x="624" y="264" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#A33A3A">you cannot see them. Nothing resets it.</text>
+
+  <!-- row 3 -->
+  <text x="36" y="346" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#A33A3A">The reply (presence layout)</text>
+  <text x="36" y="364" font-family="DejaVu Sans Mono, monospace" font-size="10.5" fill="#A33A3A">CrawlView.replyPaint = 0xFFD6F4FF</text>
+  <rect x="300" y="320" width="300" height="60" rx="10" fill="#F3F5F9" stroke="#D2D9E7"/>
+  <text x="316" y="345" font-family="DejaVu Sans Mono, monospace" font-size="11.5" fill="#D6F4FF">I checked your calendar and</text>
+  <text x="316" y="363" font-family="DejaVu Sans Mono, monospace" font-size="11.5" fill="#D6F4FF">Saturday morning is clear.</text>
+  <text x="624" y="346" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#A33A3A">1.05:1. The answer — the "done"</text>
+  <text x="624" y="364" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#A33A3A">state — is unreadable on paper.</text>
+
+  <!-- row 4 -->
+  <text x="36" y="446" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#A33A3A">The "on call" feedback</text>
+  <text x="36" y="464" font-family="DejaVu Sans Mono, monospace" font-size="10.5" fill="#A33A3A">setCallTone(true) = 0xFF35D07F</text>
+  <rect x="300" y="420" width="300" height="60" rx="16" fill="#F3F5F9" stroke="#D2D9E7"/>
+  <rect x="318" y="434" width="264" height="32" rx="16" fill="#EAEFF7" stroke="#D2D9E7"/>
+  <text x="450" y="454" font-family="DejaVu Sans Mono, monospace" font-size="12" letter-spacing="0.8" text-anchor="middle" fill="#35D07F">ON CALL</text>
+  <text x="624" y="446" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#A33A3A">1.74:1 — the call state is the first</text>
+  <text x="624" y="464" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#A33A3A">thing to go in daylight.</text>
+
+  <!-- row 5 -->
+  <text x="36" y="546" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#1B6B45">The transcript layout instead</text>
+  <text x="36" y="564" font-family="DejaVu Sans Mono, monospace" font-size="10.5" fill="#1B6B45">TextVox.Body → @color/hv_text</text>
+  <rect x="300" y="520" width="300" height="60" rx="10" fill="#F3F5F9" stroke="#D2D9E7"/>
+  <text x="316" y="545" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#0F172A">You: check trail conditions near the pass</text>
+  <text x="316" y="563" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#0F172A">Agent: Saturday morning is clear.</text>
+  <text x="624" y="546" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#1B6B45">16.4:1 — this is the only legible</text>
+  <text x="624" y="564" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#1B6B45">copy in light mode today.</text>
+
+  <rect x="36" y="610" width="808" height="66" rx="8" fill="#F7F8FB" stroke="#D2D9E7"/>
+  <text x="50" y="632" font-family="DejaVu Sans, sans-serif" font-size="12.5" font-weight="bold" fill="#0F172A">The being itself is fine on paper (#275 LightInk); the words beside it are not.</text>
+  <text x="50" y="652" font-family="DejaVu Sans, sans-serif" font-size="12.5" fill="#444C5C">Light mode is not a being problem in this code — it is a text-colour problem. The being-off case and the light-mode case</text>
+  <text x="50" y="668" font-family="DejaVu Sans, sans-serif" font-size="12.5" fill="#444C5C">therefore fail in different places: one loses the carrier, the other loses the ink.</text>
+</svg>

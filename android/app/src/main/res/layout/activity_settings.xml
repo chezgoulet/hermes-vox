@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/hv_bg"
@@ -25,10 +26,16 @@
 
         <TextView
             android:id="@+id/set_title"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:layout_marginStart="12dp"
             style="@style/TextVox.Title"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="18sp"
+            app:autoSizeMaxTextSize="30sp"
+            android:accessibilityHeading="true"
             android:text="Settings" />
     </LinearLayout>
 
@@ -44,54 +51,18 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- ══ Group list (the Settings home: section rows only) ══ -->
+            <!-- ══ Group list (the Settings home: section rows only) ══
+                 The order is the owner's (2026-11-06): the app as it is, then the unfinished
+                 things under one switch, then About. So the ordinary sections come first, the
+                 Alpha master switch is the row immediately above the alpha block, and every
+                 gated section sits in that block, contiguous, before About & Diagnostics. -->
             <LinearLayout
                 android:id="@+id/grp_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- #111: Voice mode is the headline interaction model, so it gets
-                     its own TOP-LEVEL home row (above Models) instead of being buried
-                     under Entity &amp; Connection. Tapping it opens the same picker
-                     (bound in bindGroups). -->
-                <LinearLayout
-                    android:id="@+id/row_mode"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Voice mode"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_mode_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Realtime"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_grp_models"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Voice models"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_models_grpval"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0/3 installed · needed for your voice"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
+                <!-- ── The ordinary sections: the app as it is ── -->
 
                 <LinearLayout
                     android:id="@+id/row_grp_entity"
@@ -121,7 +92,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Mic &amp; Barge-in"
+                        android:text="Hearing"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_speech_grpval"
@@ -132,7 +103,7 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/row_grp_stt"
+                    android:id="@+id/row_grp_models"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -140,13 +111,13 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Transcription (STT)"
+                        android:text="Voice models"
                         style="@style/HvRowTitle" />
                     <TextView
-                        android:id="@+id/set_stt_grpval"
+                        android:id="@+id/set_models_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="—"
+                        android:text="0/3 installed · needed for your voice"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
@@ -159,7 +130,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Spoken replies"
+                        android:text="Voice &amp; sounds"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_tts_grpval"
@@ -169,8 +140,108 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- #45: wake-word enrolment (preview). Opens WakeEnrolActivity; nothing
-                     listens in the background yet. Value set by refreshGrpVals(). -->
+                <LinearLayout
+                    android:id="@+id/row_grp_visuals"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Appearance"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_visuals_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- ── The alpha block: the unfinished things, together ──
+                     #402/D29: the master switch, off by default, sits immediately above the
+                     block it governs — not at the top of the screen. Turning it on slides out
+                     the panel of feature sets (Presence first); the row reopens it. Every
+                     gated section belongs in this block, and the block ends where About
+                     begins. -->
+                <LinearLayout
+                    android:id="@+id/row_grp_alpha"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Alpha features"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_alpha_grpval"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Off · unfinished features stay out of the way"
+                            style="@style/HvRowValue" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_alpha_master"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="Alpha features" />
+                </LinearLayout>
+
+                <!-- #222/D16: Presence is a layer on the one normal operation, with its own
+                     switch inside its section. -->
+                <LinearLayout
+                    android:id="@+id/row_grp_presence"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Presence"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_presence_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- #453/#511: what an outside mind may do with this phone is a consent decision,
+                     not a diagnostic, so it has its own row. The row is the door to the one Phone
+                     tools screen — one tap, no section in between — and its second line is the one
+                     place the phone's standing is stated, read from PhoneBootstrap.Step. -->
+                <LinearLayout
+                    android:id="@+id/row_grp_phone"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Phone Tools"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_phone_grpval"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Not set up"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- #45: wake-word enrolment. Opens WakeEnrolActivity; behind the Alpha
+                     gate, so with it off the row is dimmed and cannot open. Value set by
+                     refreshGrpVals(). -->
                 <LinearLayout
                     android:id="@+id/row_grp_wake"
                     style="@style/HvRow"
@@ -190,8 +261,11 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- #329/D29: the row is an instruction, not a state — it asks Android for the
+                     role — so it says what a tap does. Unfinished on several builds, so it
+                     sits behind the same gate. -->
                 <LinearLayout
-                    android:id="@+id/row_grp_appearance"
+                    android:id="@+id/row_grp_assistant"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -199,35 +273,17 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Appearance &amp; Layout"
+                        android:text="Set Digital Assistant to Hermes Vox"
                         style="@style/HvRowTitle" />
                     <TextView
-                        android:id="@+id/set_appearance_grpval"
+                        android:id="@+id/set_assistant_grpval"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="—"
+                        android:text="not set"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/row_grp_visuals"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Visuals"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_visuals_grpval"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="—"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
+                <!-- ── About: last, as it was ── -->
                 <LinearLayout
                     android:id="@+id/row_grp_about"
                     style="@style/HvRow"
@@ -246,6 +302,7 @@
                         android:text="—"
                         style="@style/HvRowValue" />
                 </LinearLayout>
+
             </LinearLayout>
 
             <!-- ══ sec_entity: Entity & Connection ══ -->
@@ -321,8 +378,10 @@
                     android:textColor="@color/hv_text_dim"
                     android:textSize="12sp" />
 
+                <!-- Per-profile pass: the model the agent thinks with, for THIS profile. The
+                     row opens the same model sheet /models does; the hint line says whose it is. -->
                 <LinearLayout
-                    android:id="@+id/row_vox"
+                    android:id="@+id/row_agent_model"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -330,90 +389,19 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Resync VOX.md (the voice-export)"
+                        android:text="Agent model"
                         style="@style/HvRowTitle" />
                     <TextView
-                        android:id="@+id/set_vox_val"
+                        android:id="@+id/set_agent_model_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="not mirrored"
+                        android:text="—"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- 0.6.2: the ER runtime controls (Enhanced Realtime mode only). -->
+                <!-- #285: teach the agent this app — its own description, installed on the gateway. -->
                 <LinearLayout
-                    android:id="@+id/row_er_presence"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Soul narration (mm + fillers)"
-                        style="@style/HvRowTitle" />
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/sw_er_presence"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_er_semantic_barge"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Semantic barge-in — “take your time” keeps the mind working"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/help_semantic_barge"
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:layout_marginEnd="10dp"
-                        android:background="@drawable/bg_chip"
-                        android:clickable="true"
-                        android:contentDescription="What is semantic barge-in?"
-                        android:focusable="true"
-                        android:gravity="center"
-                        android:text="?"
-                        android:textColor="@color/hv_cyan"
-                        android:textSize="14sp" />
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/sw_er_semantic_barge"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_er_hears"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="The soul hears your tone (on-device, audio never leaves the phone)"
-                        style="@style/HvRowTitle" />
-                    <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/sw_er_hears"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
-                </LinearLayout>
-
-                <!-- 0.6.7 Tier 1: the presence-voice mode. -->
-                <LinearLayout
-                    android:id="@+id/row_er_voice"
+                    android:id="@+id/row_app_skill"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -421,77 +409,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Narration voice"
+                        android:text="Teach your agent this app"
                         style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_er_voice_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Sounds"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <!-- How often the entity speaks while the mind works (PresenceCadence). -->
-                <LinearLayout
-                    android:id="@+id/row_er_density"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Presence while working (how often the entity speaks while it works)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_er_density_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Conversational"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_er_echo"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Echo guard (silence barge capture after the soul speaks, ms)"
-                        style="@style/HvRowTitle" />
-                    <SeekBar
-                        android:id="@+id/sb_er_echo"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="6"
-                        android:progress="3" />
-                    <TextView
-                        android:id="@+id/set_er_echo_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="700ms"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_vox_view"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="View the mirrored VOX.md"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="what the on-device soul reads"
-                        style="@style/HvRowValue" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -543,7 +462,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_speech: Mic & Barge-in ══ -->
+            <!-- ══ sec_speech: Hearing (#224) ══ -->
             <LinearLayout
                 android:id="@+id/sec_speech"
                 android:layout_width="match_parent"
@@ -557,6 +476,13 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
                     android:text="Everyday controls" />
+                <TextView
+                    android:id="@+id/hdr_listening"
+                    style="@style/HvSubhead"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="Listening" />
 <LinearLayout
                     android:id="@+id/row_bargein"
                     style="@style/HvRow"
@@ -652,6 +578,116 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 <LinearLayout
+                    android:id="@+id/row_mic_continuous"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Continuous capture"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/help_continuous"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="What is continuous capture?"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="?"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_continuous_capture"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+<LinearLayout
+                    android:id="@+id/row_mic_semantic"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Judge when you finish"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/help_semantic"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="What is semantic endpointing?"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="?"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_semantic_endpoint"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+<LinearLayout
+                    android:id="@+id/row_backchannel"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Acknowledge while I talk"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Acknowledge while I talk"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_backchannel_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
+                </LinearLayout>
+<LinearLayout
+                    android:id="@+id/row_call_quiet"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Silence notifications during a call"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_call_quiet_status"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/hv_cyan"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_call_quiet"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+<LinearLayout
                     android:id="@+id/row_mic_voicecall"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -668,6 +704,207 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
+                <!-- #224: what Presence can HEAR belongs with the other hearing settings,
+                     not with the Presence controls that decide how it behaves. -->
+                <LinearLayout
+                    android:id="@+id/row_er_hears"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="The soul hears your tone (on-device, audio never leaves the phone)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_hears"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/hdr_recognition"
+                    style="@style/HvSubhead"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="Recognition" />
+
+                <LinearLayout
+                    android:id="@+id/row_stt"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Speech-to-text (backend)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="On-device"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_stt_model"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="STT model (on-device)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_model_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Whisper base.en"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- The spoken language of the recogniser. HIDDEN unless the selected
+                     on-device recogniser is multilingual (SettingsActivity.refreshSttLanguageRow):
+                     the .en Whisper checkpoints, Parakeet and Nemotron hear English only,
+                     so offering a language for them would be a control that does nothing.
+                     When it shows, the code it writes is the one OfflineWhisperStt decodes with. -->
+                <LinearLayout
+                    android:id="@+id/row_stt_language"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Spoken language"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_language_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Auto-detect"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- 0.7.3: the CPU-thread budget for BOTH on-device speech legs.
+                     The LLM moved to the GPU, so the CPU is now the speech
+                     pipeline's; this is where you spend it. Auto = derived
+                     (Whisper: half the cores capped at 4; Piper: 2). -->
+                <LinearLayout
+                    android:id="@+id/row_stt_threads"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice CPU threads (STT + TTS)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_stt_threads_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Auto"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- Remote STT (server) config — revealed ONLY when the backend
+                     picker above says "remote". The key field stores via
+                     SecureStore (never in prefs XML in clear). -->
+                <LinearLayout
+                    android:id="@+id/remote_stt_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <EditText
+                        android:id="@+id/stt_remote_url"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="6dp"
+                        android:background="@drawable/bg_input"
+                        android:hint="Server URL · https://your-stt-host/v1"
+                        android:inputType="textUri"
+                        android:padding="14dp"
+                        android:textColor="@color/hv_text"
+                        android:textColorHint="@color/hv_text_dim"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Audio is sent to this server for transcription when remote STT is selected."
+                        android:textColor="@color/hv_warn"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/stt_remote_model"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_input"
+                        android:hint="Model · whisper"
+                        android:inputType="text"
+                        android:padding="14dp"
+                        android:textColor="@color/hv_text"
+                        android:textColorHint="@color/hv_text_dim"
+                        android:textSize="16sp" />
+
+                    <EditText
+                        android:id="@+id/stt_remote_key"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_input"
+                        android:hint="API key (optional, stored encrypted)"
+                        android:inputType="textPassword"
+                        android:padding="14dp"
+                        android:textColor="@color/hv_text"
+                        android:textColorHint="@color/hv_text_dim"
+                        android:textSize="16sp" />
+
+                    <LinearLayout
+                        android:id="@+id/row_test_stt_conn"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="16dp"
+                        android:layout_marginTop="10dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="Test STT server connection"
+                            style="@style/HvRowTitle"
+                            android:textColor="@color/hv_cyan" />
+                        <TextView
+                            android:id="@+id/set_stt_test_val"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="run"
+                            android:textColor="@color/hv_cyan"
+                            android:textAllCaps="true"
+                            android:letterSpacing="0.08"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <!-- #118: Advanced = timing/barge tuning sliders, collapsed until tapped.
                      Reuses the row-into-panel reveal pattern (like remote_stt_panel). -->
                 <LinearLayout
@@ -926,182 +1163,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Mic &amp; Barge-in)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="reset"
-                        style="@style/HvRowAction" />
-                </LinearLayout>
-            </LinearLayout>
-<!-- ══ sec_stt: Transcription (STT) ══ -->
-            <LinearLayout
-                android:id="@+id/sec_stt"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <LinearLayout
-                    android:id="@+id/row_stt"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Speech-to-text (backend)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_stt_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="On-device"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_stt_model"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="STT model (on-device)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_stt_model_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Whisper base.en"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <!-- 0.7.3: the CPU-thread budget for BOTH on-device speech legs.
-                     The LLM moved to the GPU, so the CPU is now the speech
-                     pipeline's; this is where you spend it. Auto = derived
-                     (Whisper: half the cores capped at 4; Piper: 2). -->
-                <LinearLayout
-                    android:id="@+id/row_stt_threads"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Voice CPU threads (STT + TTS)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_stt_threads_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Auto"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <!-- Remote STT (server) config — revealed ONLY when the backend
-                     picker above says "remote". The key field stores via
-                     SecureStore (never in prefs XML in clear). -->
-                <LinearLayout
-                    android:id="@+id/remote_stt_panel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:visibility="gone">
-
-                    <EditText
-                        android:id="@+id/stt_remote_url"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="6dp"
-                        android:background="@drawable/bg_input"
-                        android:hint="Server URL · https://your-stt-host/v1"
-                        android:inputType="textUri"
-                        android:padding="14dp"
-                        android:textColor="@color/hv_text"
-                        android:textColorHint="@color/hv_text_dim"
-                        android:textSize="16sp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="Audio is sent to this server for transcription when remote STT is selected."
-                        android:textColor="@color/hv_warn"
-                        android:textSize="12sp" />
-
-                    <EditText
-                        android:id="@+id/stt_remote_model"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:background="@drawable/bg_input"
-                        android:hint="Model · whisper"
-                        android:inputType="text"
-                        android:padding="14dp"
-                        android:textColor="@color/hv_text"
-                        android:textColorHint="@color/hv_text_dim"
-                        android:textSize="16sp" />
-
-                    <EditText
-                        android:id="@+id/stt_remote_key"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:background="@drawable/bg_input"
-                        android:hint="API key (optional, stored encrypted)"
-                        android:inputType="textPassword"
-                        android:padding="14dp"
-                        android:textColor="@color/hv_text"
-                        android:textColorHint="@color/hv_text_dim"
-                        android:textSize="16sp" />
-
-                    <LinearLayout
-                        android:id="@+id/row_test_stt_conn"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:padding="16dp"
-                        android:layout_marginTop="10dp"
-                        android:layout_marginBottom="8dp"
-                        android:background="@drawable/bg_chip"
-                        android:clickable="true"
-                        android:focusable="true">
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:text="Test STT server connection"
-                            style="@style/HvRowTitle"
-                            android:textColor="@color/hv_cyan" />
-                        <TextView
-                            android:id="@+id/set_stt_test_val"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="run"
-                            android:textColor="@color/hv_cyan"
-                            android:textAllCaps="true"
-                            android:letterSpacing="0.08"
-                            android:textSize="14sp" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_stt_reset"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Restore defaults (Transcription)"
+                        android:text="Restore defaults (Hearing)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1119,6 +1181,13 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
+                <TextView
+                    android:id="@+id/hdr_speaking"
+                    style="@style/HvSubhead"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="Speaking" />
                 <LinearLayout
                     android:id="@+id/row_tts"
                     style="@style/HvRow"
@@ -1198,6 +1267,13 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                <TextView
+                    android:id="@+id/hdr_sound_cues"
+                    style="@style/HvSubhead"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="Sound cues" />
                 <!-- #156 (D7): the being's sound cues. Procedurally generated from its own
                      motion vocabulary (no samples), one toggle + a level that rides the
                      media stream, and a preview so the user can hear one without a turn.
@@ -1212,7 +1288,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Sound cues"
+                        android:text="Play sound cues"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_cue_preview"
@@ -1276,6 +1352,61 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                <LinearLayout
+                    android:id="@+id/row_cue_scope"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Cues play"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_scope_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Only when Presence is off"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_cue_ping"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Soft ping while the agent works"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_cue_ping"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_cue_idle"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Check in after a silent call"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_cue_idle_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="After 2 min"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
                 <!-- #112: ONE reset scope for this section — TTS engine AND voice
                      register fold into GROUP_TTS (the old separate row_voice_reset
                      "Restore defaults (Voice)" duplicated it). -->
@@ -1289,7 +1420,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Spoken replies)"
+                        android:text="Restore defaults (Voice)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1299,35 +1430,20 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_models: Voice models ══ -->
+            <!-- ══ sec_presence: Presence (#224/#222) — the layer's own settings,
+                 moved out of Entity & Connection. Presence is on by default and only
+                 runs when its model is downloaded and able to start. ══ -->
             <LinearLayout
-                android:id="@+id/sec_models"
+                android:id="@+id/sec_presence"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
 
+                <!-- #222/D16: the one switch that means on or off. The line under it
+                     is the ONLY place the layer's absence is explained. -->
                 <LinearLayout
-                    android:id="@+id/row_models"
-                    style="@style/HvRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Open the model store"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:id="@+id/set_models_val"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0/3 installed · needed for your voice"
-                        style="@style/HvRowValue" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/row_restore_models"
+                    android:id="@+id/row_presence_enabled"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1336,7 +1452,269 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Voice models)"
+                        android:text="Presence"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_presence_enabled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/set_presence_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="10dp"
+                    android:text="On"
+                    android:textColor="@color/hv_text_dim"
+                    android:textSize="13sp" />
+
+                <!-- 0.6.2: the presence runtime controls (they matter when the layer runs). -->
+                <LinearLayout
+                    android:id="@+id/row_er_presence"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Soul narration (mm + fillers)"
+                        style="@style/HvRowTitle" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_presence"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <!-- #224: one disclosure for the layer's advanced controls; on/off stays
+                     on the everyday surface above. -->
+                <LinearLayout
+                    android:id="@+id/row_presence_advanced"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@drawable/bg_chip"
+                    android:clickable="true"
+                    android:focusable="true">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Advanced — how Presence behaves"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_presence_adv_state"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="show ›"
+                        android:textColor="@color/hv_cyan"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/adv_presence_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/row_er_semantic_barge"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Semantic barge-in — “take your time” keeps the mind working"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/help_semantic_barge"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_chip"
+                        android:clickable="true"
+                        android:contentDescription="What is semantic barge-in?"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="?"
+                        android:textColor="@color/hv_cyan"
+                        android:textSize="14sp" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw_er_semantic_barge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true" />
+                </LinearLayout>
+
+                <!-- 0.6.7 Tier 1: the narration register. -->
+                <LinearLayout
+                    android:id="@+id/row_er_voice"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Narration voice"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_er_voice_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Sounds"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- How often the entity speaks while the mind works (PresenceCadence). -->
+                <LinearLayout
+                    android:id="@+id/row_er_reasoning"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Reasoning effort on a voice call (lower answers faster)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_er_reasoning_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Low"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_er_density"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Presence while working (how often the entity speaks while it works)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_er_density_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Conversational"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_er_echo"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Echo guard (silence barge capture after the soul speaks, ms)"
+                        style="@style/HvRowTitle" />
+                    <SeekBar
+                        android:id="@+id/sb_er_echo"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="6"
+                        android:progress="3" />
+                    <TextView
+                        android:id="@+id/set_er_echo_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="700ms"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <!-- #417: the report block. Config + measured numbers only; the copy is
+                     safe to paste in public (no transcript, key, address or hostname). -->
+                <LinearLayout
+                    android:id="@+id/row_presence_diag"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Copy diagnostic summary"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_presence_diag_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="configuration and numbers — no transcript or key"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_vox"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Resync VOX.md (the voice-export)"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_vox_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="not mirrored"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_vox_view"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="View the mirrored VOX.md"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="what the on-device soul reads"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_restore_presence"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Restore defaults (Presence)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1346,13 +1724,23 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ══ sec_appearance: Appearance & Layout ══ -->
+
+
+            <!-- ══ sec_visuals: Appearance — the screen, then the being drawn on it ══ -->
             <LinearLayout
-                android:id="@+id/sec_appearance"
+                android:id="@+id/sec_visuals"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/hdr_screen"
+                    style="@style/HvSubhead"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="Screen" />
 
                 <LinearLayout
                     android:id="@+id/row_theme"
@@ -1395,6 +1783,34 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/row_command_icon"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Command icon"
+                        style="@style/HvRowTitle" />
+                    <!-- The choice is made by looking: the row shows the glyph it means,
+                         drawn at the row's own size in the theme's ink, then its name. -->
+                    <com.hermesvox.CommandMark
+                        android:id="@+id/set_command_icon_mark"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center_vertical"
+                        android:layout_marginEnd="10dp" />
+                    <TextView
+                        android:id="@+id/set_command_icon_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Clanker"
+                        style="@style/HvRowValue" />
+                </LinearLayout>
+
+                <LinearLayout
                     android:id="@+id/row_keep_screen_on"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
@@ -1422,33 +1838,28 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/row_restore_appearance"
-                    style="@style/HvRow"
+                <TextView
+                    android:id="@+id/hdr_being"
+                    style="@style/HvSubhead"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Restore defaults (Appearance &amp; Layout)"
-                        style="@style/HvRowTitle" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="reset"
-                        style="@style/HvRowAction" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <!-- ══ sec_visuals: Visuals (the being's category, richness, shape) ══ -->
-            <LinearLayout
-                android:id="@+id/sec_visuals"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
+                    android:accessibilityHeading="true"
+                    android:text="Being" />
+                <!-- #225: the look is judged where it is made — a live being, drawn by the
+                     same code as the main screen, cycling through its states. -->
+                <com.hermesvox.AvatarView
+                    android:id="@+id/set_being_preview"
+                    android:layout_width="match_parent"
+                    android:layout_height="190dp"
+                    android:layout_marginBottom="6dp"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/set_being_preview_state"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:text="resting"
+                    style="@style/HvRowValue" />
 
                 <LinearLayout
                     android:id="@+id/row_visual_category"
@@ -1500,22 +1911,79 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
+                <!-- #224: one disclosure for the being's fine look controls; the category,
+                     the cycle and the cues stay on the everyday surface. -->
+                <LinearLayout
+                    android:id="@+id/row_being_advanced"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@drawable/bg_chip"
+                    android:clickable="true"
+                    android:focusable="true">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Advanced — fine look and shapes"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_being_adv_state"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="show ›"
+                        android:textColor="@color/hv_cyan"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/adv_being_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                <!-- #225: one slider per entry in LookControls.ALL. The header carries the
+                     control's reset so an experiment is reversible in one tap; the value line
+                     reads "current · range"; the max is the control's step count (LookControls
+                     sets it again at bind, so the two can never disagree for long). -->
                 <LinearLayout
                     android:id="@+id/row_visual_energy"
                     style="@style/HvRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Motion energy"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Motion energy"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_energy"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_energy_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0×"
+                        android:text="1.0× · 0.5–1.6 ×"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_energy"
@@ -1530,22 +1998,198 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Glow / bloom"
-                        style="@style/HvRowTitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Glow / bloom"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_glow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/set_visual_glow_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0×"
+                        android:text="1.0× · 0.4–1.6 ×"
                         style="@style/HvRowValue" />
                     <SeekBar
                         android:id="@+id/set_seek_visual_glow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:max="12" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_density"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Density"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_density"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/set_visual_density_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="100 % · 30–100 %"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_density"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="7" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_speed"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Speed"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_speed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/set_visual_speed_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="1.0× · 0.5–1.8 ×"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_speed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="13" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_trail"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Trail"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_trail"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/set_visual_trail_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="the category's · 0–90 %"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_trail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="9" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_visual_hue"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Hue"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:id="@+id/set_reset_visual_hue"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:text="reset"
+                            style="@style/HvRowAction" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/set_visual_hue_val"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0° · −180° … 180°"
+                        style="@style/HvRowValue" />
+                    <SeekBar
+                        android:id="@+id/set_seek_visual_hue"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="24" />
                 </LinearLayout>
 
                 <!-- video-statewire: which archetype fires in each ACTIVE state. Three
@@ -1647,6 +2291,9 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                </LinearLayout>
+
+
                 <LinearLayout
                     android:id="@+id/row_restore_visuals"
                     style="@style/HvRow"
@@ -1657,7 +2304,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Restore defaults (Visuals)"
+                        android:text="Restore defaults (Appearance)"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:layout_width="wrap_content"
@@ -1666,6 +2313,82 @@
                         style="@style/HvRowAction" />
                 </LinearLayout>
             </LinearLayout>
+
+            <!-- ══ sec_assistant: Set Digital Assistant to Hermes Vox (#329).
+                 Android's role is the part this app can ask for; the side-button mapping is
+                 the maker's, so the section says which is which instead of promising a key. ══ -->
+            <LinearLayout
+                android:id="@+id/sec_assistant"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/set_assistant_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="4dp"
+                    android:text="…"
+                    style="@style/HvRowValue" />
+
+                <LinearLayout
+                    android:id="@+id/row_assistant_request"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Use Hermes Vox as the assistant"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:id="@+id/set_assistant_action"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="16dp"
+                        android:text="ask android"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/row_assistant_settings"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Android's digital assistant settings"
+                        style="@style/HvRowTitle" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="16dp"
+                        android:text="open"
+                        style="@style/HvRowAction" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/set_assistant_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="12dp"
+                    android:text="Android owns the role; the phone maker owns the button. Asking makes Hermes Vox the app Android's assistant gesture opens — the same gesture a Pixel fires on a long press of the power button.\n\nOn a Samsung that long press is a One UI setting (the phone's own side-key or Bixby settings), and no app can bind a physical key: if the phone does not send the gesture to the assistant, Vox never sees it.\n\nUndo it here or in Android's default-apps settings at any time. Vox keeps no listener and hears nothing until the call screen is open."
+                    style="@style/HvRowValue" />
+            </LinearLayout>
+
+            <!-- ══ Phone Tools (#453/#511).
+                 The screen itself is the one Phone tools screen (PhoneToolsSheet): the state,
+                 the setup, the grants and Recent actions all on it, opened by row_grp_phone in one
+                 tap. There is no section container here on purpose — a section holding a row whose
+                 only job was to open the screen is the extra step the owner asked to remove. ══ -->
 
             <!-- ══ sec_about: About & Diagnostics ══ -->
             <LinearLayout

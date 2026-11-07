@@ -93,41 +93,51 @@
                 android:textColor="@color/hv_text"
                 android:textSize="15sp" />
 
-            <!-- Voice modes (B: one-line behavioral difference per mode).
-                 The two lines below are filled by OnboardingActivity from the
-                 shared voiceModeLine() copy so Settings/coach marks agree. -->
+            <!-- #230: the three things first run sets up, named the way Settings
+                 names them. Filled by OnboardingActivity. -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 style="@style/TextVox.Label"
-                android:text="VOICE MODE — HOW YOU TALK" />
+                android:text="WHAT YOU ARE SETTING UP" />
 
             <TextView
-                android:id="@+id/ob_mode_realtime"
+                android:id="@+id/ob_three_line"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/hv_text"
+                android:textSize="14sp" />
+
+            <!-- #222/D16: Presence is a layer, not a second mode. One line, filled
+                 by OnboardingActivity from the hardware check (#403), so first run
+                 never asks the user to choose and never switches it on. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                style="@style/TextVox.Label"
+                android:text="PRESENCE — ALPHA, OFF UNTIL YOU TURN IT ON" />
+
+            <TextView
+                android:id="@+id/ob_presence_line"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:textColor="@color/hv_text"
                 android:textSize="14sp" />
 
-            <TextView
-                android:id="@+id/ob_mode_enhanced"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/hv_text"
-                android:textSize="14sp" />
-
-            <!-- Mic vs PTT: this build is hands-free in every mode (the old
-                 walkie-talkie/push-to-talk path was stripped) — say so plainly. -->
+            <!-- Mic vs PTT: this build is hands-free (the old walkie-talkie/
+                 push-to-talk path was stripped) — say so plainly. -->
             <TextView
                 android:id="@+id/ob_mic_note"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="Mic vs push-to-talk: Vox is hands-free in every mode — you just talk. There is no PTT button to hold."
+                android:text="Mic vs push-to-talk: Vox is hands-free — you just talk. There is no PTT button to hold."
                 android:textColor="@color/hv_text_dim"
                 android:textSize="13sp" />
 
@@ -192,14 +202,21 @@
                 android:textColorHint="@color/hv_text_dim"
                 android:textSize="16sp" />
 
+            <!-- T7: the entity's name is the host's to give. This is a display, not a
+                 text field — visible so the user knows who they are talking to, and
+                 read-only so a typed name cannot contradict the host. -->
             <EditText
                 android:id="@+id/model"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_input"
-                android:hint="@string/hv_model_hint"
-                android:inputType="text"
+                android:clickable="false"
+                android:cursorVisible="false"
+                android:focusable="false"
+                android:hint="@string/hv_entity_hint"
+                android:inputType="none"
+                android:longClickable="false"
                 android:padding="14dp"
                 android:textColor="@color/hv_text"
                 android:textColorHint="@color/hv_text_dim"

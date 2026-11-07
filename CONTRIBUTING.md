@@ -1,270 +1,255 @@
 # Contributing to Hermes Vox
 
-Hermes Vox is **the voice of Hermes** — a thin, local-first Android voice client
-where *the entity IS the Hermes agent*: same identity,
-memory, tools, and context. The phone carries the conversation UX, the voice
-pipeline, and the particle-being avatar; Hermes owns the reasoning. The repo is
-`chezgoulet/hermes-vox`. The current release is the latest one on GitHub Releases.
+Hermes Vox is the Android voice client for Hermes, the agent you run on your own
+gateway (the server that holds the agent). The phone carries the conversation, the
+on-device speech pipeline and the avatar; the agent on the gateway does the reasoning,
+keeps the memory and runs the tools. This file is what a change has to satisfy: where
+it goes, what it must pass, and what the project checks it against.
 
-This file is the contribution contract. If a change would break the build gate,
-the KEEP-list invariants, or the security model, it does not land. Everything
-below is grounded in the repo — code and docs — so read the cited anchors
-instead of trusting a paraphrase.
+You need a GitHub account, JDK 17 and the Android SDK (compileSdk 34). A phone is
+needed for anything that touches audio, the service lifecycle, the network or the UI.
+A Hermes gateway is needed only for the optional live suite. The gate downloads its
+own pinned speech runtime, so nothing else is required to build.
 
----
+## Where a change goes
 
-## Where things go
+- **An issue** for anything broken, and for a feature request concrete enough to act
+  on. Say what you are trying to do, not only the feature you have in mind.
+- **A discussion** for questions, open-ended ideas and setups worth showing.
+- **A private report** for a vulnerability, never a public issue. The address and the
+  process are in [`SECURITY.md`](SECURITY.md).
 
-- **Issues** — anything broken, and feature requests concrete enough to act on.
-  Say what you are trying to do, not only the feature you have in mind.
-- **Discussions** — questions, open-ended ideas, and setups worth showing.
-- **Security** — use private vulnerability reporting, not a public issue.
-
-## What "tested" means here
-
-CI proves the app compiles and the unit tests pass; it does not prove the phone
-works. A change that touches audio, the service lifecycle, networking or the UI
-needs a run on a device, with the device named in the pull request. A performance
-claim needs the number and the method. If something could not be tested, say so —
-an honest gap is reviewable, and a green tick that implies more than it earned is
-not.
-
-## Secrets
-
-Never paste API keys, tokens, gateway addresses you would rather not share, or
-personal logs into an issue, a commit or a test fixture. A report that contains
-them gets edited, and the credential gets rotated.
-
-## Licence
-
-The project is GPL-3.0. By opening a pull request you agree your contribution is
-licensed under the same terms; there is no CLA and no copyright assignment. Only
-contribute code you have the right to license this way.
-
-## Repository layout
+The tree is small:
 
 | Path | What lives there |
 |---|---|
-| `android/` | The Gradle project — the actual product. `android/app` (Kotlin, `com.hermesvox`), Kotlin tests under `android/app/src/test/`. The entity connection is `android/app/src/main/java/com/hermesvox/core/` — `HermesSession` (ping, the streamed and stored turns, the chain head, barge-in) — see `docs/KOTLIN-CORE.md`. Gradle 8.12.1 + AGP 8.7.3 + Kotlin 2.2.21, JVM 17, compileSdk 34, minSdk 24 (`android/build.gradle:8-9`, `android/app/build.gradle:17-29`). |
-| `docs/` | The working memory: `docs/RELEASE-<version>.md` release notes, `docs/SPRINT-*.md` / `docs/PLAN-*.md` / `docs/BUILD-DIRECTIVE-*.md` scoped work briefs, `docs/milestones/`, evidence logs. |
-| `scripts/` | The build plumbing: `scripts/gate.sh` (the canonical gate), `scripts/fetch-runtime.sh`, `scripts/build.py` (no-flag build driver behind `make build`). |
-| `testdata/stream/` | The stream parity fixtures and goldens (`testdata/stream/README.md`). |
-| `journal/`, `plans/` | Day logs and plan state. |
-| `tools/turnbench/` | Turn-taking benchmark tooling (research, not shipped). |
+| `android/` | the Gradle project and the product. Kotlin sources in `android/app/src/main/java/com/hermesvox/`; the gateway connector in `.../core/`; JVM tests in `android/app/src/test/` |
+| `scripts/` | the build plumbing. `scripts/gate.sh` is the gate; `scripts/fetch-runtime.sh` fetches the pinned sherpa-onnx AAR; `scripts/check-doc-truth.py` and `scripts/check-skill-claims.py` check documentation |
+| `docs/` | the living documents, the release notes and the records. `docs/DOC-TRUTH.yml` is a checked ledger; `docs/INDEX.md` says which document is current and which is history |
+| `testdata/stream/` | the recorded event streams and their expected output, replayed by the stream parity test |
+| `skills/hermes-vox-app/` | the app skill the agent can install to answer questions about the app |
 
-The Gradle root is `android/`; the repo root holds docs, scripts and fixtures.
+The Gradle root is `android/`; the repository root holds the scripts, the documents
+and the fixtures. The wrapper (`android/gradlew`) pins Gradle 8.12.1; no system
+Gradle is needed.
 
----
+## The branch flow
 
-## Development prerequisites
+Two long-lived branches:
 
-The canonical gate (`scripts/gate.sh`) encodes the full toolchain and runs
-from any checkout. It reads `JAVA_HOME` and `ANDROID_HOME` from the environment
-(falling back to the maintainer's build-host paths only when unset), so export
-those for your machine:
+- **`testing`** is where work lands. Branch from it, open a pull request into it,
+  merge into it.
+- **`main`** carries releases. It changes only when `testing` is known good and a
+  release is cut: the version bump lands on `testing` first, `testing` merges into
+  `main`, and the release is cut from `main`. `docs/RELEASE-PROCESS.md` is the
+  step-by-step version of that cut.
 
-- **JDK 17**, **Android SDK** (compileSdk 34). No NDK and no Go: the app builds
-  no native code of its own (#126).
-- **Gradle** — use the checked-in wrapper (`android/gradlew`). It pins Gradle
-  8.12.1 with a verified distribution checksum; no system Gradle is needed.
+Every push to `testing` builds a **nightly**: a prerelease tagged
+`nightly-<date>-<time>-<sha>` with the signed APK attached
+(`.github/workflows/nightly.yml`). A nightly never becomes the repository's latest
+release, and a red gate publishes nothing.
 
-CI (`.github/workflows/ci.yml`) runs the same checks on every pull request —
-no secrets required, so fork PRs are gated too.
+A hotfix for a broken release branches from `main`, merges there, and is
+cherry-picked back to `testing`.
 
----
+Name a branch for the work: `feature/<slug>`, `fix/<slug>`, `docs/<slug>`. Commit
+one coherent change at a time, with an imperative subject and a conventional prefix
+(`fix(voice):`, `feat(phone):`, `docs:`). Reference the issue when one exists.
 
-## The build/test contract (the gate)
+## The licence and the CLA
 
-**One command, from a clean checkout:** `bash scripts/gate.sh` → prints
-`GATE-GREEN` on success. It runs three stages in order:
+The project is GPL-3.0 ([`LICENSE`](LICENSE)). The GPL covers what anyone may do with the
+code; it does not cover your permission to put your work into it. That is what the
+contributor licence agreement in [`CLA.md`](CLA.md) is for, and every contribution needs it.
 
-1. `scripts/fetch-runtime.sh` — the sherpa-onnx runtime AAR, SHA-256 verified.
-2. `./gradlew --no-daemon clean assembleDebug testDebugUnitTest` (from `android/`)
-3. A check that `StreamParityTest` (the stream parity harness) ran and passed —
-   a gate that goes green because the harness stopped running is not a gate.
+You keep your copyright. You grant Christopher Goulet a perpetual, worldwide,
+non-exclusive, royalty-free and irrevocable licence to use, reproduce, modify and
+distribute your contribution as part of the project under GPL-3.0. There is no copyright
+assignment, and no relicensing under other terms: the project is copyleft and stays that
+way.
 
-Gradle links only `android/app/libs/sherpa-onnx-*.aar`; a leftover `mobile.aar`
-from a pre-#126 checkout is ignored.
+**How to sign.** On your first pull request, comment with:
 
-### Running the tests by hand
-
-```bash
-# The entity connection (com.hermesvox.core) — offline, against a local fake gateway
-./gradlew :app:testDebugUnitTest --tests 'com.hermesvox.core.*' --no-daemon   # from android/
-
-# Live integration (requires a REAL gateway; see below)
-HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> \
-  ./gradlew :app:testDebugUnitTest --tests '*LiveGatewayTest' --no-daemon
-
-# Android — pure-JVM unit tests, no emulator or device needed
-# (from android/)
-./gradlew :app:testDebugUnitTest --no-daemon
-./gradlew :app:testReleaseUnitTest --no-daemon   # the documented whole-tree gate pair
-
-# Android — full app build
-./gradlew --no-daemon clean assembleDebug        # debug: no keystore needed
-./gradlew --no-daemon assembleRelease            # needs keystore/keystore.properties (below)
+```
+I have read the CLA at CLA.md and I agree to it.
+Name: <your legal name>
+GitHub handle: <your handle>
+Email: <optional>
 ```
 
-The documented verification pair used across release notes is
-`assembleRelease + testReleaseUnitTest` (until #126 it also named
-`go test ./voice/...` — e.g. `docs/RELEASE-0.5.4.md:40-44`). A change is not done
-until that whole tree is green **on a fresh clone** (a dirty local tree proves nothing).
+**The check is automatic.** `.github/workflows/cla.yml` runs on every pull request and on
+every new comment. It looks for that sentence in a comment by the pull request's author
+and turns the `CLA signature` check green when it finds it. When it does not, the workflow
+posts the text to copy and the check stays red — including for a one-line typo. A comment
+from anyone other than the author does not count, and a contributor with write access to
+the repository does not need to sign. Signing once covers your later pull requests.
 
-### The live integration test
+Do not send code you do not have the right to license.
 
-`android/app/src/test/java/com/hermesvox/core/LiveGatewayTest.kt` runs real turns
-against a live Hermes gateway and is skipped unless `HERMES_VOX_LIVE=1` **and**
-`HERMES_VOX_HERMES_API_KEY` are set (optional: `HERMES_VOX_HERMES_URL`,
-`HERMES_VOX_HERMES_MODEL`, `HERMES_VOX_HERMES_SESSION_KEY`). That key is the bearer
-credential of a live agent with tools — it is a House secret (env store only).
-**Never** commit it, log it, or paste it into an issue/PR. If you cannot get the
-key, say so and leave the test skipped — a green offline suite still gates.
+## The gate
 
-### Release builds and signing
+One command from a checkout, with `JAVA_HOME` and `ANDROID_HOME` set:
 
-`assembleRelease` is signed with the House release keystore: gitignored
-`keystore/keystore.properties` at the **repo root**, resolved by
-`android/app/build.gradle:10-15,30-38` (`storePassword` from the House env
-store, never the repo). A missing properties file fails the build loudly —
-there is no silent fallback to the public debug key
-(`android/app/build.gradle:4-9`). Verify signatures with
-`apksigner verify --print-certs` (cert must be `hermes-vox`, never
-`androiddebugkey`). Release builds also run R8 shrink
-(`android/app/build.gradle:39-47`); the JNI keep rules in
-`android/app/proguard-rules.pro` are load-bearing — stripping the
-sherpa-onnx / litertlm bindings crashes at runtime, so any dependency change
-must be re-verified on a shrunk build.
+```bash
+bash scripts/gate.sh
+```
 
-### Emulator/device smoke
+`make test` runs the same script. It prints `GATE-GREEN` only when every step below
+has passed.
 
-`adb install -r android/app/build/outputs/apk/debug/app-debug.apk`, then launch
-`com.hermesvox/.MainActivity`. The emulator's `SpeechRecognizer` is flaky at the
-binder level — true mic/voice verification needs a real device
-(`docs/HANDOFF-2026-08-28.md`).
+### What it runs
 
----
+1. **The pinned speech runtime.** `scripts/fetch-runtime.sh` downloads the pinned
+   sherpa-onnx AAR (an Android library archive) and verifies its SHA-256. The file
+   is gitignored, so a clean checkout needs this step before Gradle can compile.
+2. **The report self-tests.** Three Python suites exercise the presence report
+   parser, grouping, counts and the daily-cadence rule, plus the invention
+   classifier. They need no device and no network.
+3. **The app skill claims.** `scripts/check-skill-claims.py` checks every claim in
+   `skills/hermes-vox-app/SKILL.md` against the file and literal token it names.
+4. **The document claims.** `scripts/check-doc-truth.py` reads
+   `docs/DOC-TRUTH.yml` and checks each entry in both directions: the literal phrase
+   is still in the document, and the named pattern is still in the code.
+5. **The Android build and every JVM unit test.** From `android/`:
+   `./gradlew --no-daemon -q clean assembleDebug testDebugUnitTest`.
+6. **The verification harnesses.** The gate requires the result files for
+   `StreamParityTest`, `MtlsConfigTest`, `MtlsKeyManagerTest`, `MtlsHandshakeTest`,
+   `MtlsEntityTest` and `LiveGatewayTest`, and requires each to report a non-zero
+   test count with nothing skipped, failed or errored. A harness that silently stops
+   running fails the gate instead of passing it.
 
-## Conventions
+The gate also unpacks the built APK and fails if it contains key material: any
+`.p12`, `.pfx`, `.jks`, `.bks`, `.keystore` or `.pem` file.
 
-### The KEEP-list — sacred invariants
+### What it refuses
 
-The project has a standing KEEP-list: behavior contracts that no "improvement"
-may violate. They are protected by **behavior-contract tests, not snapshots**
-(`docs/BUILD-DIRECTIVE-fix053.md:21-26,39-41`), and each release notes file
-re-verifies them under a "KEEP-list — verified" section. Current list:
+- A `JAVA_HOME` that is missing, has no `bin/java`, or is any Java other than 17;
+  an `ANDROID_HOME` that does not exist. It exits rather than substituting another
+  toolchain.
+- A second gate running on the same machine. The lock is
+  `/tmp/hermes-vox-gate.lock`, held for the whole run; a waiter prints that it is
+  waiting, blocks, and gives up after an hour, naming the holder when the platform can
+  say who it is. On a host without `flock` it says it is running unlocked.
+- A documentation claim the code does not support, a stale app-skill claim, or a
+  failing report self-test.
+- A compile or unit-test failure.
+- A missing test-result file, a skipped test, or a suite with zero tests.
+- Key material inside the APK.
 
-1. **The entity IS Hermes.** No personality layer, no second brain, no on-device
-   agent pretending to be the entity. Gemma (when enabled) may express; Hermes
-   reasons, runs tools, owns memory and context.
-2. **Per-conversation prompt caching is sacred.** Never invalidate a
-   conversation's cache mid-conversation; never rebuild/resend the message
-   history (no O(n²) uploads — the app sends only the new turn and chains it with
-   `previous_response_id`). The response chain head
-   (`previous_response_id`) is owned by **one** caller
-   (`HermesSession.lastID`) and shared by the streaming voice turns and
-   `/compress` — a second, unsynced id orphaning the chain is the exact bug H2
-   killed (`core/HermesSession.kt`, `lastID`).
-3. **The narrow-waist core — behavior over snapshots.** The voice pipeline's
-   behavior contracts: **barge-in** (cut the reply + cancel the run;
-   `BargeGate.kt`, echo-cancelled source), **reveal-freeze** (the reply crawl
-   never touches the being), the **escape rule** (level-sustained barge escape
-   — `docs/PLAN-0402-level-escape.md`), **reply-settle** (a completed reply
-   settles exactly once, no ghost re-speak after hush — `ReplySettleRule.kt`),
-   and the **crash-guard** (teardown-race guard on every executor submit —
-   `ExecGuard.kt`). Each is extracted as a pure JVM rule class with an off-device
-   test (`BargeGateTest.kt`, `ReplySettleRuleTest.kt`, `ExecGuardTest.kt`,
-   `TurnGateReleaseTest.kt`). Behavior changes here require the matching contract
-   test change in the same commit.
-4. **The being (`AvatarView` + `BeingRenderer`/`BeingShaders`).** `AvatarView` is the
-   brain (state and tool → shape, categories, cycle-all); the GPU renderer draws the 27
-   shapes. The shape tokens in `AvatarView.SHAPE_TOKENS` are persisted in prefs — never
-   renumber or rename them. The launcher icon is rendered from the same shaders
-   (`tools/icon/render_icon.py`); re-run it when the shaders change.
-5. **No secrets in the APK.** The gateway API key is user-entered (onboarding +
-   Settings), stored via `SecureStore`; there is deliberately no compiled-in
-   default and the C0 release guard fails the build if a key injection is ever
-   re-added (`android/app/build.gradle:75-115`).
+The gate builds a debug APK and runs debug unit tests. A release additionally builds
+`assembleRelease` and `testReleaseUnitTest`, as `docs/RELEASE-PROCESS.md` describes;
+a contributor without the release keystore can run the debug gate but not a signed
+release.
 
-### Code style
+### What CI adds
 
-- **Alloc-free hot paths.** The render loop and the audio loop allocate once and
-  reuse. The being's particles are stateless — each one's position is computed in the
-  vertex shader from its identity — so the render thread uploads a handful of uniforms
-  per frame and allocates nothing; the audio loop likewise writes primitives only — no
-  `Pair`, no lambda, no boxing in the hot path.
-  Use **const/preallocated arrays, not `listOf`, in hot loops**.
-- **Pure-JVM rule objects.** Anything with a decision worth testing off-device
-  (gate logic, settle rules, endpoint rules, key resolution) is a plain object
-  with injected dependencies — the Android Keystore, `Context`, and executors
-  stay out of it so the test runs without an emulator (`GatewayKey.kt:11-13`).
-- **Behavior-contract tests over snapshots.** Assert the contract (fires / does
-  not fire / exactly once), never pixel or string snapshots.
-- **Honest logging.** Log through `VoxLog`; a silent `catch` that hides a
-  degraded-but-alive path is a defect (see the logging audit in
-  `docs/LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md`). Never log the key or tokens.
-- **Errors carry context.** The UI side often swallows connector errors — echo
-  them at the call boundary instead of dropping them
-  (`docs/LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md:35`).
-- **Kotlin.** JVM 17, `-Xskip-metadata-version-check`; follow the existing file
-  header convention (the change history + the invariant it touches lives in a
-  comment above the code — `ReplySettleRule.kt:3-26` is the model).
+`.github/workflows/ci.yml` (CI, the pull-request checks) runs on every pull request
+into `testing` or `main` and on every push to either. It runs the same documentation
+checks, the build and the unit tests, with no secrets, so a fork's pull request is
+gated too. It also:
 
-### Commits
+- runs `scripts/check-version-code.sh`, which fails a branch whose `versionCode` (the
+  Android build number) is behind a shipped release;
+- checks that `LiveGatewayTest` ran its six cases plus its self-check, and fails on
+  a skip;
+- for a change to `android/`, `libs/`, `scripts/repro-check.sh` or
+  `scripts/fetch-runtime.sh`, builds an unsigned release APK twice from different
+  absolute paths and requires the two to be byte-identical (`scripts/repro-check.sh`).
 
-- One coherent change per commit (one commit per fix; never a grab-bag).
-- Conventional prefixes: `fix(voice):`, `fix(android):`, `feat(android):`,
-  `docs:`, `chore(release):`. Reference issue numbers (`#N`).
-- **Never commit secrets** — no keys, no tokens, no keystore material
-  (`keystore/` is gitignored; keep it that way).
+### Running a subset by hand
 
-### Where docs go
+```bash
+# The gateway connector, offline against the deterministic fake gateway
+(cd android && ./gradlew :app:testDebugUnitTest --tests 'com.hermesvox.core.*' --no-daemon)
 
-- **Every release** gets `docs/RELEASE-<version>.md`: what shipped, the
-  verification transcript, a "KEEP-list — verified" section, and honest notes.
-- Scoped work gets a plan brief first: `docs/SPRINT-*.md` (sprint), then
-  `docs/PLAN-*.md` / `docs/BUILD-DIRECTIVE-*.md` / `docs/CLAUDE-BRIEF-*.md`
-  with exact file:line targets, a KEEP-list, verification, and risk.
-- Milestone status lives in `docs/milestones/`; day logs in `journal/`;
-  screenshots in `docs/screenshots/` (the README's images; recapture them when the UI
-  changes). The public site is a separate repo, `chezgoulet/hermes-vox-site`
-  (hermesvox.org).
+# The live suite against a real gateway (the key is an environment value only)
+(cd android && HERMES_VOX_LIVE=1 HERMES_VOX_HERMES_API_KEY=<secret> \
+  ./gradlew :app:testDebugUnitTest --tests '*LiveGatewayTest' --no-daemon)
 
----
+# A debug APK
+(cd android && ./gradlew --no-daemon clean assembleDebug)
+```
 
-## Contribution flow
+Without the two variables the live suite runs every assertion against `FakeGateway`,
+a deterministic HTTP server on a loopback port. Setting `HERMES_VOX_LIVE=1` without
+a key fails rather than quietly using the fake. The key is the bearer credential of
+an agent with tools: keep it in the environment, never in a commit, a log or an
+issue.
 
-1. **Branch off `main`.** Name it for the work: `feature/<slug>`,
-   `fix/<slug>` (history: `feature/release-security`, `fix-batch-053`,
-   `er-alpha`).
-2. **Commit per change** with the conventions above; run the change's tests
-   before moving on.
-3. **Open a PR to `main`.** The PR body states: what changed, the KEEP-list
-   items it touches and why they survive, and the verification evidence
-   (commands + output — run, don't guess).
-4. **The gate must pass on a fresh clone**: `bash scripts/gate.sh` +
-   `:app:testReleaseUnitTest` + `assembleRelease` (+ emulator/device smoke when
-   the change touches the runtime). A PR that cannot demonstrate this is not
-   reviewable.
-5. **Review expectations.** Every PR gets an adversarial read (the reviewer
-   hunts for what the author missed, not typos). Security-sensitive work gets
-   the full `REVIEW-DIRECTIVE` treatment — a separate, read-only adversarial
-   review pass before merge — and security clusters are double-read by the
-   adversarial co-steward pair (`docs/SPRINT-PLAN-release-security.md` review
-   gate). If your change touches the security model, say so in the PR so it is
-   routed for that review.
+## The rule that surprises people: the gate reads the documentation
 
----
+A sentence in this repository that says what the code does is treated as a claim,
+and the gate checks it. Changing behaviour can therefore fail the gate because a
+document became false.
 
-## Releases (how versions move)
+Two ledgers enforce it:
 
-- Version lives in `android/app/build.gradle:23-24` (`versionCode`,
-  `versionName`). Bump both; the APK is named `hermes-vox-<versionName>.apk`
-  (`android/app/build.gradle:48-52`).
-- Write `docs/RELEASE-<version>.md`; commit the bump + notes as
-  `chore(release): <version> (<code>) — <summary>`.
-- Convention: **tag === versionName === APK**, no leading `v`; clean semver
-  (Obtainium-friendly). Releases are signed with the House release keystore.
-- Signature-change note: a release-signed build will **not** install over a
-  debug-signed install (Android signature mismatch) — the first release-signed
-  build after a debug-signed one is a fresh install (`docs/SPRINT-PLAN-release-security.md`).
+- **`docs/DOC-TRUTH.yml`** — each entry names the document, a literal phrase in it,
+  the source file that settles the claim, and a regular expression that must still
+  match that file. `scripts/check-doc-truth.py` fails if either side drifts. The
+  entries cover the architecture, the phone surface, the approval rules, the
+  per-origin certificate rule, the cleartext rule and the claims in these three
+  policy documents.
+- **`skills/hermes-vox-app/SKILL.md`** — each claim names a file and a literal token,
+  never a line number. `scripts/check-skill-claims.py` fails on a token that is gone
+  or ambiguous.
+
+When the check fails, fix the sentence or fix the code. Deleting an entry is also a
+change to what the project promises, and it has to be justified in the pull request.
+The living documents — `README.md`, `docs/ARCHITECTURE.md`, `docs/MCP-PHONE.md`,
+`docs/MCP-SURFACE.md`, `PRIVACY.md`, `SECURITY.md` and the rest of the list in
+`docs/INDEX.md` — are meant to describe the build in this tree, not an earlier one.
+
+## How a change is reviewed
+
+Three things are mechanical and must be green before a merge: CI, the CLA check and
+the gate. The pull request states what changed, which behaviour contracts it
+touches, and the commands and output that show the change was run rather than
+guessed. A change that touches audio, the service lifecycle, networking or the UI
+names the phone it was tried on; a performance claim carries the number and the
+method. If something could not be tested, say so — a named gap is reviewable.
+
+The rest is practice, and nothing in the repository enforces its shape. A maintainer
+reads every pull request and looks for what the author missed. Security-sensitive
+work gets a separate read before merge. Say in the pull request when a change
+touches the trust model, the key, cleartext or approvals, so it is routed for that
+read.
+
+## What you are credited for
+
+- **Your copyright.** The CLA grants a licence; it does not assign ownership.
+- **A row in `CLA-SIGNATURES.md`**, written by the workflow with the date, your
+  name, your handle and the pull request number.
+- **Authorship of your commits**, which the history keeps.
+- **The change itself**, under GPL-3.0, in the repository and in the APKs built
+  from it.
+
+## What a contribution writes and changes
+
+- Files under `android/`, `scripts/`, `docs/`, `testdata/` or `skills/`, depending on
+  the change.
+- One row in `CLA-SIGNATURES.md`, on your first pull request, written by the CLA
+  workflow.
+- A nightly prerelease on `testing` after the merge, signed with the release key,
+  with the APK attached.
+- Local build output under `android/app/build/` and the fetched runtime under
+  `android/app/libs/`. Both are gitignored.
+
+Never commit a key, a token, a gateway address you would rather not share, a
+keystore, or a personal log. `keystore/` and `keystore/keystore.properties` are
+gitignored and stay that way.
+
+## What it cannot do
+
+- CI proves the code compiles and the JVM tests pass; it does not prove the phone
+  works. A device run is the only evidence for audio, echo, wake, battery and the
+  system TTS engine.
+- The gate cannot sign a release: the release keystore is not in the repository, and
+  a release build refuses to fall back to the debug key.
+- The live suite cannot reach a real gateway from a fork, because a fork has no
+  secret to give it. It runs against the deterministic fake instead.
+- The documentation checks are specific claims, not a proof of the prose. A sentence
+  with no ledger entry can still drift.
+- The CLA check sets a status; whether that status blocks a merge is a repository
+  setting, not something this tree can prove.
+- There is no bug bounty and no response-time guarantee.

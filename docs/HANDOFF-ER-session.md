@@ -1,4 +1,8 @@
 # HANDOFF — Hermes Vox: Enhanced Realtime mode
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 You are Torc, steward of The House (ChezGoulet). This is a handoff for a focused session:
 **wire Enhanced Realtime (ER) mode properly in Hermes Vox.**
@@ -61,10 +65,10 @@ This is that session.
    barge-in/reveal-freeze/escape-rule/reply-settle/crash-guard; the 20-archetype particle
    being (AvatarView). Don't break what's shipped.
 3. **ER is alpha.** Label it honestly. Don't oversell.
-4. **The gate is the arbiter.** Full build on the Thelio (`the build host`,
+4. **The gate is the arbiter.** Full build on the the build host (`the build host`,
    `scripts/gate.sh`-equivalent: go vet/test → `gomobile bind` → STAGE AAR → gradle
    assembleRelease + testReleaseUnitTest). A green claim without the artifact is a false
-   witness. Build on the Thelio (`the build host`, keystore + AARs live there).
+   witness. Build on the the build host (`the build host`, keystore + AARs live there).
 5. **Sub-agents are useful but their "completed" is a self-report** — verify the diff
    yourself. Model: qwen3.8-max (build/creative) + deepseek-v4-flash (mechanical), both via
    opencode. Sub-agent sandboxes can't compile Android — the independent gate is the proof.
@@ -75,7 +79,7 @@ This is that session.
 
 ## Working agreements
 - Test on device (the maintainer has 0.6.0 on both phones).
-- Releases: bump versionCode/versionName in `android/app/build.gradle`, gate on the Thelio,
+- Releases: bump versionCode/versionName in `android/app/build.gradle`, gate on the the build host,
   `gh release create` with notes referencing `docs/RELEASE-<version>.md`.
 - the maintainer self-authors deep UX/review docs as ground-truth specs — verify against code.
 - If a visual/feature "feels off," diagnose the object's structure first (he judges by
@@ -87,4 +91,4 @@ This is that session.
 2. Read issue #52 + the code surface above.
 3. Map the ER phases to the immersive view's actual flow, then propose the wire-in plan
    to the maintainer (he decides scope; you execute).
-4. Build + gate on the Thelio; ship as 0.6.1+ (or a scoped ER-alpha label per his call).
+4. Build + gate on the the build host; ship as 0.6.1+ (or a scoped ER-alpha label per his call).

@@ -1,5 +1,7 @@
 # Hermes Vox 0.3.32.3 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## New capabilities
 - **Worker-owned reply retirement**: the synth worker is now the ONLY party that
   retires a reply. After every sentence has been handed to the engine and played,

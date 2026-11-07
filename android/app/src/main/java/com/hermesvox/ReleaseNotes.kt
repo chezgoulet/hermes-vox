@@ -108,5 +108,22 @@ internal object ReleaseNotes {
                 "If no speech engine is available at all, the call still opens as text and the status line names the reason.",
             ),
         ),
+        ReleaseNote(
+            versionCode = 147,
+            versionName = "0.9.1",
+            title = "The daylight release",
+            bullets = listOf(
+                "Light mode is a real ground now, not a black panel: every visual family has its own light value, a hot core is drawn as denser ink rather than brighter light, and the reply text, call glyphs and verdict chips all clear a measured contrast floor.",
+                "Settings is split by what you are changing — Being, Hearing, Voice, Presence — and every row says what it changes. Advanced rows sit behind one disclosure per section.",
+                "The status line says what is running, and on what, in plain verbs. A long job shows movement without inventing a percentage, and a failure says what failed in the same line.",
+                "Share with agent: the clipboard and any file on the phone become a named artifact — a URL becomes a .txt, an image stays an image — and other apps can hand Vox a file. Nothing is sent until you confirm.",
+                "Vox can be your phone's assistant. Granting the role is a Settings action, and the side-button mapping itself belongs to the phone maker, not to this app.",
+                "A new session during a call re-opens the microphone immediately, so /new no longer leaves the call deaf for a turn; starting over never waits on the gateway.",
+                "An interrupted reply stops the audio that was already in flight: every frame is keyed to its reply, so nothing from the old answer resumes after you start speaking.",
+                "Presence is a layer rather than a mode, and a repaired presence line is logged as repaired — a shortened reply is never read as silence.",
+                "Presence may see what the phone is doing but never act on it. Phone actions belong to Hermes: with Phone tools set up and the action's permission granted, Hermes sets the timer; without it, it says so. The two Alpha choices are independent.",
+                "The app can teach your agent about itself: after the connection is verified it offers, once, to install the app skill on the gateway.",
+            ),
+        ),
     )
 }

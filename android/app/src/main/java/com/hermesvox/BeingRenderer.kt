@@ -27,6 +27,13 @@ class BeingFrame {
     var core = 1f; var edge = 1f; var glow = 1f; var halo = 1f; var trails = 0f
     var baseR = 0.4f; var baseG = 0.7f; var baseB = 0.8f
     var accR = 0.7f; var accG = 0.9f; var accB = 1f
+    /** #275: the light theme draws ink on this paper; 0 = the dark theme, light on black.
+     *  [inkValue] is the family's authored ink darkness, [inkCover] how eagerly emission
+     *  becomes coverage (both mirrored by [LightInk]). */
+    var ink = 0f; var paperR = 0f; var paperG = 0f; var paperB = 0f
+    var inkValue = 1f; var inkCover = 1.6f
+    /** #225: the fraction of particles drawn (1 = all the quality level allows). */
+    var density = 1f
 
     fun copyFrom(o: BeingFrame) {
         t = o.t; archA = o.archA; archB = o.archB; mix = o.mix
@@ -39,6 +46,9 @@ class BeingFrame {
         core = o.core; edge = o.edge; glow = o.glow; halo = o.halo; trails = o.trails
         baseR = o.baseR; baseG = o.baseG; baseB = o.baseB
         accR = o.accR; accG = o.accG; accB = o.accB
+        ink = o.ink; paperR = o.paperR; paperG = o.paperG; paperB = o.paperB
+        inkValue = o.inkValue; inkCover = o.inkCover
+        density = o.density
     }
 }
 
@@ -167,7 +177,9 @@ class BeingRenderer {
         GLES30.glUseProgram(point)
         setPointUniforms(f)
         GLES30.glBindVertexArray(vao)
-        GLES30.glDrawArrays(GLES30.GL_POINTS, 0, counts[quality])
+        // #225: any prefix of the shuffled buffer is a uniform sample, so density is a prefix;
+        // per-point brightness stays the quality level's, so a sparser being is also lighter.
+        GLES30.glDrawArrays(GLES30.GL_POINTS, 0, VisualStyle.drawCount(counts[quality], f.density))
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBindVertexArray(quadVao)
 
@@ -192,6 +204,8 @@ class BeingRenderer {
         f3(comp, "uBase", f.baseR, f.baseG, f.baseB)
         f2(comp, "uCenterUv", f.cx / w, 1f - f.cy / h)
         f2(comp, "uHaloR", f.bodyR * 1.7f / w, f.bodyR * 1.7f / h)
+        f3(comp, "uPaper", f.paperR, f.paperG, f.paperB); f1(comp, "uInk", f.ink)
+        f1(comp, "uInkValue", f.inkValue); f1(comp, "uInkCover", f.inkCover)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
     }
 

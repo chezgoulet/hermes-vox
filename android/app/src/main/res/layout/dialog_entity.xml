@@ -16,6 +16,9 @@
         android:textColorHint="@color/hv_text_dim"
         android:textSize="16sp" />
 
+    <!-- T7: in Settings → Entity this is the host-given entity name, read-only. This
+         layout is the connection form's alone (first run and Settings → Entity); the
+         profile picker writes nothing, so the read-only state is set by Settings, not XML. -->
     <EditText
         android:id="@+id/d_model"
         android:layout_width="match_parent"
@@ -27,6 +30,16 @@
         android:textColor="@color/hv_text"
         android:textColorHint="@color/hv_text_dim"
         android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/d_entity_note"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="2dp"
+        android:textColor="@color/hv_text_dim"
+        android:textSize="12sp"
+        android:visibility="gone" />
 
     <EditText
         android:id="@+id/d_key"
@@ -54,4 +67,9 @@
         android:textColor="@color/hv_text"
         android:textColorHint="@color/hv_text_dim"
         android:textSize="16sp" />
+
+    <!-- No client-certificate row here: this layout is inflated by the profile editor as
+         well as Settings → Entity, and the certificate is per gateway ORIGIN (one device
+         setting), not per profile. Settings adds `mtls_certificate.xml` to the dialog it
+         owns; the editor never sees it. -->
 </LinearLayout>

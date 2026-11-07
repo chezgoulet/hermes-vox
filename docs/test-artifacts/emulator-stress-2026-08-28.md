@@ -1,7 +1,9 @@
 # Emulator Agent->App Stress — 2026-08-28 (0.3.26.0, debug harness)
 
-Bridge: emulator-5554 -> adb reverse tcp:8642 -> host gwproxy.py -> Odroid gateway <your-gateway-host>:8642 (real Hermes instance).
-Drive: debug-gated harness intent (isDebuggable-only `--es text`); text turns; `adb logcat` evidence.
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
+Bridge: emulator-5554 -> adb reverse tcp:8642 -> host gwproxy.py -> gateway <your-gateway-host>:8642 (real Hermes instance).
+Drive: debug-gated harness intent (debug-only `--es text`); text turns; `adb logcat` evidence.
 
 Result (8-turn multi-turn, real gateway):
 - Chain ADVANCES per turn, NO repeats: resp_ff4aea3b -> resp_432330ea -> resp_3050de3a -> resp_9a6ee673 -> resp_70dd07c0 -> resp_4086ee3c.

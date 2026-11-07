@@ -1,4 +1,8 @@
 # SPEC — 0.4.0.1: barge near-miss telemetry + log-honesty fixes
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 ## Field evidence (2026-09-06 20:03 log, 0.4.0)
 Silence 3-9ms, retirement clean, focus/route symmetric, provenance + session_turns

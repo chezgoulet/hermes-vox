@@ -1,5 +1,7 @@
 # Hermes Vox 0.7.0 — the naturalness release
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The first release of the new git flow (`testing` → nightly → `main`), and the
 one where Enhanced Realtime stops being a mode that's merely wired and starts
 being a mode that *sounds alive*. Everything below rode the nightly track
@@ -75,6 +77,6 @@ build from a fresh clone). README FAQ has the recipe. Thank you,
 ## Verification
 
 Every change rode the nightly CI: five green nightlies, each gated on a clean
-Thelio build (go vet/test → gomobile bind → assembleRelease +
+the build host build (go vet/test → gomobile bind → assembleRelease +
 testReleaseUnitTest), final gate 34 suites / 258 tests / 0 failures. APK
 versionCode 112 / 0.7.0, signer CN=Hermes Vox.

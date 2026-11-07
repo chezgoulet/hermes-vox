@@ -1,5 +1,6 @@
 package com.hermesvox.core
 
+import com.hermesvox.VoiceTurn
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,6 +13,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  * stored turn and the chain head. Ported from the Go voice/ and mobile/ tests.
  */
 class HermesSessionTest {
+
+    /** This class pins the `/v1/responses` reader; the shipped route is runs, which
+     *  every install now takes (0.9.1 H2), so the route is set for each test. */
+    private var routeBefore = StreamRoute.active
+
+    @org.junit.Before
+    fun pinResponsesRoute() { routeBefore = StreamRoute.active; StreamRoute.active = TurnRoute.RESPONSES }
+
+    @org.junit.After
+    fun restoreRoute() { StreamRoute.active = routeBefore }
+
 
     private val okReply = """{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"the voice of Hermes"}]}]}"""
 
@@ -51,6 +63,15 @@ class HermesSessionTest {
             assertEquals("/v1/models", r.path)
             assertEquals("Bearer testkey", r.header("Authorization"))
             assertEquals("agent:vox:tablet:member-42", r.header(Entity.SESSION_KEY_HEADER))
+        }
+    }
+
+    /** T7: the probe's body is the host naming itself — ping must hand it back, not discard it. */
+    @Test
+    fun `ping returns the v1 models body`() {
+        TestServer { _, w -> w.send(200, "OK", """{"object":"list","data":[{"id":"hermes-agent"}]}""") }.use { srv ->
+            val body = HermesSession(srv.url, "testkey", "hermes-agent").ping()
+            assertEquals("hermes-agent", Json.str(((Json.parse(body) as JObj)["data"] as JArr).items.first() as JObj, "id"))
         }
     }
 
@@ -134,36 +155,6 @@ class HermesSessionTest {
     }
 
     @Test
-    fun `deleteLastResponse deletes the head and is a no-op without one`() {
-        TestServer { r, w ->
-            if (r.method == "DELETE") w.send(204, "No Content", "") else w.send(200, "OK", okReply)
-        }.use { srv ->
-            val s = HermesSession(srv.url, "k", "m")
-            s.setSessionKey("agent:vox:x")
-            s.deleteLastResponse()
-            assertTrue("nothing stored server-side, nothing sent", srv.requests.isEmpty())
-            s.turnStored("hi")
-            s.deleteLastResponse()
-            val del = srv.requests.last()
-            assertEquals("DELETE", del.method)
-            assertEquals("/v1/responses/resp_1", del.path)
-            assertEquals("Bearer k", del.header("Authorization"))
-            assertEquals("gateway calls carry no scope", "", del.header(Entity.SESSION_KEY_HEADER))
-        }
-    }
-
-    @Test
-    fun `deleteLastResponse surfaces a failure`() {
-        TestServer { r, w ->
-            if (r.method == "DELETE") w.send(500, "Internal Server Error", "boom") else w.send(200, "OK", okReply)
-        }.use { srv ->
-            val s = HermesSession(srv.url, "k", "m")
-            s.turnStored("hi")
-            expectError("hermes delete response 500 Internal Server Error: boom") { s.deleteLastResponse() }
-        }
-    }
-
-    @Test
     fun `gateway endpoints return the raw body and report the code`() {
         TestServer { r, w ->
             when (r.path) {
@@ -196,7 +187,7 @@ class HermesSessionTest {
     /** The port of entity_race_test: the app re-declares the scope from Settings while
      *  turns are in flight. Every request must carry one whole declared value. */
     @Test
-    fun `scope re-declaration during turns is consistent`() {
+    fun `scope re-declaration during turns is consistent`() = onResponses {
         TestServer { _, w -> w.send(200, "OK", okReply) }.use { srv ->
             val s = HermesSession(srv.url, "testkey", "m")
             val scopes = (0 until 8).map { "agent:vox:dev:member-$it" }
@@ -213,10 +204,19 @@ class HermesSessionTest {
     }
 
     @Test
-    fun `voice prefix contract`() {
-        val p = ResponsesClient.USER_TURN_PREFIX
-        assertTrue(p.startsWith("[Voice input"))
-        assertTrue(p.endsWith("] "))
-        assertFalse(p.contains("\n"))
+    fun `the voice register is the caller-visible contract, not user text`() {
+        // A2/F4: the register is a request field now (core.StreamTest pins the wire). What the
+        // session promises is that `voiceTurn` takes it as an argument rather than prepending
+        // anything to the caller's words — there is no prefix constant left to leak.
+        assertTrue(VoiceTurn.REGISTER.contains("phone call"))
+        assertFalse(VoiceTurn.REGISTER.contains("exhaustive tool work"))
+    }
+
+    /** The responses chain contract, pinned to its route: with the shipped runs route
+     *  a scoped session keeps no response head (RunsStreamTest covers that side). */
+    private fun onResponses(block: () -> Unit) {
+        val old = StreamRoute.active
+        StreamRoute.active = TurnRoute.RESPONSES
+        try { block() } finally { StreamRoute.active = old }
     }
 }

@@ -1,0 +1,482 @@
+package com.hermesvox
+
+import com.hermesvox.core.TestServer
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * #437 — browsing the host's sessions: where the list is asked, what its four failure lines
+ * are, what the card says, and how a transcript is merged so a re-fetch cannot duplicate it.
+ */
+class SessionsTest {
+
+    private val now = 1_800_000_000_000L   // a fixed "now": ages are arithmetic, not a clock
+
+    private fun at(minutesAgo: Long): String {
+        val ms = now - minutesAgo * 60_000L
+        val cal = java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC")).apply {
+            timeInMillis = ms
+        }
+        return String.format(
+            "%04d-%02d-%02dT%02d:%02d:%02dZ",
+            cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1,
+            cal.get(java.util.Calendar.DAY_OF_MONTH), cal.get(java.util.Calendar.HOUR_OF_DAY),
+            cal.get(java.util.Calendar.MINUTE), cal.get(java.util.Calendar.SECOND),
+        )
+    }
+
+    // ---- where the list is asked ------------------------------------------------------
+
+    /**
+     * The one that matters on a profile install: the card is asked at the HOST, not at the
+     * profile base. Proven on the wire — a fake gateway records the path it was asked for.
+     */
+    @Test fun the_list_is_asked_at_the_root_base_even_when_the_profile_is_scoped() {
+        var asked: String? = null
+        TestServer { r, w ->
+            asked = r.path
+            w.send(200, "OK", """{"object":"list","data":[],"limit":20,"offset":0,"has_more":false}""")
+        }.use { srv ->
+            val scoped = srv.url + "/p/home"
+            SessionsClient.list(scoped, "k")
+            assertEquals("/api/sessions?limit=20&offset=0", asked)
+            // The bearer is the profile's own key; the entity scope is not sent (this is not a turn).
+            assertEquals("", srv.requests.single().header(SessionScope.HEADER))
+        }
+    }
+
+    @Test fun a_profile_base_and_the_host_base_are_one_rule() {
+        assertEquals("https://host", Sessions.rootBase("https://host/p/home"))
+        assertEquals("https://host", Sessions.rootBase("https://host/p/home/"))
+        assertEquals("https://host", Sessions.rootBase("https://host"))
+        // The default profile answers at the host itself: nothing to strip.
+        assertEquals("https://host:8642", Sessions.rootBase("https://host:8642/"))
+        // It is the profile listing's own rule, not a second copy of it.
+        assertEquals(HostProfiles.rootBase("https://host/p/work"), Sessions.rootBase("https://host/p/work"))
+    }
+
+    @Test fun one_session_is_addressed_as_one_path_segment() {
+        assertEquals("/api/sessions/vox_abc/messages", Sessions.messagesPath("vox_abc"))
+        assertEquals("/api/sessions/20261030_235403_045e2835/messages",
+            Sessions.messagesPath("20261030_235403_045e2835"))
+        // An id is the host's, but it never travels raw: a slash or a space is encoded.
+        assertFalse(Sessions.messagesPath("a/b").contains("a/b"))
+        assertFalse(Sessions.messagesPath("a b").contains(" "))
+    }
+
+    // ---- 401, transport failure and empty are three different messages ----------------
+
+    @Test fun a_refused_key_is_not_an_empty_list() {
+        assertEquals(Sessions.Listing.KeyRejected, Sessions.listing(SessionsClient.Fetched(401, "")))
+        assertEquals(Sessions.Listing.KeyRejected, Sessions.listing(SessionsClient.Fetched(403, "")))
+        assertEquals(Sessions.KEY_REJECTED, Sessions.summary(Sessions.listing(SessionsClient.Fetched(401, ""))))
+        // The line names the cause, and it is not the empty-host line.
+        assertTrue(Sessions.KEY_REJECTED.contains("key was not accepted"))
+        assertTrue(Sessions.KEY_REJECTED.contains("session list"))
+        assertFalse(Sessions.KEY_REJECTED == Sessions.EMPTY)
+    }
+
+    @Test fun a_host_that_does_not_answer_says_so() {
+        // No answer at all (a transport failure or a timeout is -1).
+        assertEquals(Sessions.Listing.NoAnswer, Sessions.listing(SessionsClient.Fetched(-1, "")))
+        // An answer that is not a list is the same fact: the host did not answer *with a list*.
+        assertEquals(Sessions.Listing.NoAnswer, Sessions.listing(SessionsClient.Fetched(500, "boom")))
+        assertEquals(Sessions.Listing.NoAnswer, Sessions.listing(SessionsClient.Fetched(200, "<html>proxy</html>")))
+        assertEquals(Sessions.NO_ANSWER, Sessions.summary(Sessions.listing(SessionsClient.Fetched(-1, ""))))
+    }
+
+    @Test fun an_empty_host_says_no_sessions_and_not_a_failure() {
+        val body = """{"object":"list","data":[],"limit":20,"offset":0,"has_more":false}"""
+        assertEquals(Sessions.Listing.Empty, Sessions.listing(SessionsClient.Fetched(200, body)))
+        assertEquals(Sessions.EMPTY, Sessions.summary(Sessions.listing(SessionsClient.Fetched(200, body))))
+        assertTrue(Sessions.EMPTY == "no sessions on this host")
+    }
+
+    @Test fun the_four_lines_are_four_facts() {
+        val lines = setOf(Sessions.KEY_REJECTED, Sessions.NO_ANSWER, Sessions.EMPTY, Sessions.TRANSCRIPT_FAILED)
+        assertEquals(4, lines.size)
+        for (l in lines) assertTrue("'$l' must be a sentence", l.length > 10 && !l.contains('\n'))
+        assertEquals(Sessions.TRANSCRIPT_FAILED,
+            "the host did not answer with this session's transcript")
+    }
+
+    // ---- the list, parsed -------------------------------------------------------------
+
+    @Test fun the_list_carries_the_fields_the_host_serves() {
+        val body = """
+            {"object":"list","limit":20,"offset":0,"has_more":true,"data":[
+              {"id":"20261030_235403_045e2835","source":"telegram","user_id":"cody","model":"hermes-agent",
+               "title":"Convert gdrive contents to llm-wiki","started_at":"${at(120)}","ended_at":"${at(60)}"},
+              {"id":"vox_03c5c905","source":"api_server","title":"Handle voice input greeting",
+               "started_at":"${at(5)}","ended_at":""}
+            ]}
+        """.trimIndent()
+        val page = Sessions.parsePage(body)!!
+        assertEquals(2, page.rows.size)
+        assertTrue(page.hasMore)
+        val first = page.rows[0]
+        assertEquals("20261030_235403_045e2835", first.id)
+        assertEquals("telegram", first.source)
+        assertEquals("Convert gdrive contents to llm-wiki", first.title)
+        assertEquals(60L * 60_000L, now - first.activityAt)
+        // The host stated no count, so there is none: not a zero we made up.
+        assertNull(first.messages)
+        // An untitled row says so rather than printing a blank line.
+        assertEquals(Sessions.UNTITLED, Sessions.Row("vox_x").label)
+    }
+
+    @Test fun the_message_count_is_shown_only_when_the_host_states_one() {
+        val body = """
+            {"data":[{"id":"a","message_count":12},{"id":"b","messages":1},{"id":"c"}]}
+        """.trimIndent()
+        val rows = Sessions.parsePage(body)!!.rows
+        assertEquals(12, rows[0].messages)
+        assertEquals(1, rows[1].messages)
+        assertNull("an absent count is absent, not zero", rows[2].messages)
+        assertEquals("12 messages", Sessions.line(rows[0], now))
+        assertEquals("1 message", Sessions.line(rows[1], now))
+        assertEquals("", Sessions.line(rows[2], now))
+    }
+
+    @Test fun a_row_without_an_id_is_not_a_session() {
+        val page = Sessions.parsePage("""{"data":[{"title":"no id"},{"id":"ok"}]}""")!!
+        assertEquals(listOf("ok"), page.rows.map { it.id })
+    }
+
+    @Test fun a_full_page_without_has_more_still_offers_more() {
+        // The host states has_more; when it does not, a full page may have more behind it.
+        val body = """{"limit":2,"data":[{"id":"a"},{"id":"b"}]}"""
+        assertTrue(Sessions.parsePage(body)!!.hasMore)
+        val short = """{"limit":20,"data":[{"id":"a"}]}"""
+        assertFalse(Sessions.parsePage(short)!!.hasMore)
+    }
+
+    // ---- newest activity first, in the card's own words -------------------------------
+
+    @Test fun the_card_lists_newest_activity_first() {
+        val rows = listOf(
+            Sessions.Row("old", source = "telegram", startedAt = at(600), endedAt = at(600)),
+            Sessions.Row("new", source = "api_server", startedAt = at(3), endedAt = at(2)),
+            Sessions.Row("undated", source = "api_server"),
+        )
+        assertEquals(listOf("new", "old", "undated"), Sessions.order(rows).map { it.id })
+        // A session that started earlier but was written to last sorts by its LAST activity.
+        val resumed = Sessions.Row("resumed", startedAt = at(900), endedAt = at(1))
+        assertEquals("resumed", Sessions.order(rows + resumed).first().id)
+    }
+
+    @Test fun a_row_says_title_source_age_and_count() {
+        val row = Sessions.Row(
+            id = "vox_1", title = "Handle voice input greeting", source = "api_server",
+            startedAt = at(10), endedAt = at(4), messages = 7,
+        )
+        assertEquals("api server · 4 min ago · 7 messages", Sessions.line(row, now))
+        assertEquals("just now", Sessions.age(now - 10_000L, now))
+        assertEquals("2 h ago", Sessions.age(now - 120 * 60_000L, now))
+        assertEquals("3 d ago", Sessions.age(now - 3 * 24 * 60 * 60_000L, now))
+        // No timestamp, no age claim.
+        assertEquals("", Sessions.age(0L, now))
+    }
+
+    @Test fun the_card_says_how_many_sessions_the_host_served() {
+        val one = Sessions.parsePage("""{"data":[{"id":"a"}]}""")!!
+        assertEquals("1 session from this host", Sessions.summary(Sessions.Listing.Ok(one)))
+        val two = Sessions.parsePage("""{"data":[{"id":"a"},{"id":"b"}]}""")!!
+        assertEquals("2 sessions from this host", Sessions.summary(Sessions.Listing.Ok(two)))
+    }
+
+    @Test fun a_host_timestamp_is_read_the_way_the_host_writes_it() {
+        // ISO with Z, the shape the API serves.
+        assertEquals(1_767_323_043_000L, Sessions.parseTime("2026-01-02T03:04:03Z"))
+        // No offset means UTC — the host's own ids are UTC, so local time would move every age.
+        assertEquals(1_767_323_043_000L, Sessions.parseTime("2026-01-02T03:04:03"))
+        assertEquals(1_767_323_043_000L, Sessions.parseTime("2026-01-02 03:04:03"))
+        // An explicit offset is honoured.
+        assertEquals(1_767_323_043_000L, Sessions.parseTime("2026-01-02T05:04:03+02:00"))
+        // Fractions, epoch seconds and epoch milliseconds.
+        assertEquals(1_767_323_043_500L, Sessions.parseTime("2026-01-02T03:04:03.500Z"))
+        assertEquals(1_767_323_043_000L, Sessions.parseTime("1767323043"))
+        assertEquals(1_767_323_043_000L, Sessions.parseTime("1767323043000"))
+        // Anything unreadable is 0: the card leaves the age out instead of guessing.
+        assertEquals(0L, Sessions.parseTime("yesterday"))
+        assertEquals(0L, Sessions.parseTime(""))
+        assertEquals(0L, Sessions.parseTime("2026-13-45T99:99:99Z"))
+    }
+
+    // ---- the transcript ---------------------------------------------------------------
+
+    @Test fun a_transcript_is_roles_and_text_in_the_hosts_order() {
+        val body = """
+            {"object":"list","session_id":"vox_1","data":[
+              {"role":"user","content":"what is the plan","created_at":"${at(30)}"},
+              {"role":"assistant","content":[{"type":"text","text":"the plan is"}],"created_at":"${at(29)}"},
+              {"role":"tool","content":"ignored","created_at":"${at(28)}"}
+            ],"pagination":{"limit":50,"offset":0}}
+        """.trimIndent()
+        val messages = Sessions.parseMessages(body)!!
+        assertEquals(listOf("user", "assistant", "tool"), messages.map { it.role })
+        assertEquals("the plan is", messages[1].content)
+        assertEquals(listOf("You: what is the plan", "Agent: the plan is"),
+            Sessions.render(messages).map { it.text })
+        assertEquals(CrawlHistory.Kind.SAID, Sessions.render(messages)[0].kind)
+        assertEquals(CrawlHistory.Kind.REPLY, Sessions.render(messages)[1].kind)
+    }
+
+    @Test fun a_transcript_that_is_not_a_list_says_the_host_did_not_answer() {
+        assertEquals(Sessions.Transcript.NoAnswer, Sessions.transcript(SessionsClient.Fetched(200, "{}")))
+        assertEquals(Sessions.Transcript.NoAnswer, Sessions.transcript(SessionsClient.Fetched(-1, "")))
+        assertEquals(Sessions.Transcript.KeyRejected, Sessions.transcript(SessionsClient.Fetched(401, "")))
+        // An empty transcript is a real answer: a session with nothing said in it.
+        assertEquals(Sessions.Transcript.Ok(emptyList()),
+            Sessions.transcript(SessionsClient.Fetched(200, """{"data":[]}""")))
+    }
+
+    // ---- merging: the screen must not duplicate what it already showed ----------------
+
+    private fun msg(role: String, text: String, at: String, id: String = "") =
+        Sessions.Message(role = role, content = text, createdAt = at, id = id)
+
+    @Test fun a_refetch_never_duplicates_what_is_already_on_screen() {
+        val shown = listOf(
+            msg("user", "one", at(10)),
+            msg("assistant", "two", at(9)),
+        )
+        // The host serves the same two, in the same shape, plus one written elsewhere meanwhile.
+        val fetched = shown + msg("assistant", "three, written at the desk", at(1))
+        val merged = Sessions.merge(shown, fetched)
+        assertEquals(listOf("one", "two", "three, written at the desk"), merged.map { it.content })
+        // And merging the same answer again changes nothing: the rule is idempotent.
+        assertEquals(merged, Sessions.merge(merged, fetched))
+        assertEquals(merged, Sessions.merge(shown, fetched))
+    }
+
+    @Test fun identity_is_the_hosts_id_else_the_timestamp_and_role() {
+        assertEquals("id:msg_1", Sessions.identity(msg("user", "x", at(5), "msg_1")))
+        assertEquals("at:${at(5)}|user", Sessions.identity(msg("user", "x", at(5))))
+        // The same second, two roles: two messages, not one.
+        assertTrue(Sessions.identity(msg("user", "x", at(5))) != Sessions.identity(msg("assistant", "x", at(5))))
+        assertEquals("", Sessions.identity(msg("assistant", "x", "")))
+    }
+
+    @Test fun a_local_echo_is_dropped_once_the_host_serves_it() {
+        // The app's own reply, recorded before the host had written it (no id, no timestamp).
+        val echo = msg("assistant", "yes, I can do that", "")
+        val shown = listOf(msg("user", "can you", at(4)), echo)
+        // The host has not recorded it yet: the screen keeps its own line.
+        assertEquals(2, Sessions.merge(shown, listOf(msg("user", "can you", at(4)))).size)
+        // Now it has: the echo does not become a second copy of the same reply.
+        val fetched = listOf(msg("user", "can you", at(4)), msg("assistant", "yes, I can do that", at(3)))
+        val merged = Sessions.merge(shown, fetched)
+        assertEquals(listOf("can you", "yes, I can do that"), merged.map { it.content })
+    }
+
+    @Test fun a_message_the_host_has_not_served_yet_survives_the_merge() {
+        val shown = listOf(msg("assistant", "only on the phone", at(2)))
+        val merged = Sessions.merge(shown, listOf(msg("user", "older", at(9))))
+        assertEquals(listOf("older", "only on the phone"), merged.map { it.content })
+    }
+
+    /**
+     * The §5 test, as the app performs it: fetch, resume, ask a turn, reconnect, fetch again —
+     * the screen must not duplicate what it already showed.
+     *
+     * Off-device this is the sequence the activity runs: the first fetch fills the block, the
+     * app records its own reply as an echo (no id, no timestamp, because the host has not
+     * written it yet), the reconnect re-adopts and fetches, and the second fetch has the host's
+     * copy of that reply. Every line appears exactly once, in the host's order.
+     */
+    @Test fun the_reconnect_sequence_does_not_duplicate_a_single_line() {
+        val first = listOf(msg("user", "where were we", at(20)), msg("assistant", "on the wiki move", at(19)))
+        var resumed = Sessions.merge(emptyList(), first)
+        assertEquals(2, resumed.size)
+
+        // The phone asks a turn; the host has not recorded it at the instant it is drawn.
+        resumed = Sessions.merge(resumed + msg("assistant", "publishing it now", ""), resumed)
+        assertEquals(3, resumed.size)
+        assertEquals("publishing it now", resumed.last().content)
+
+        // Reconnect: re-adopt, fetch again — now the host has the same turn, with its own row.
+        val second = first + msg("user", "publish it", at(18)) + msg("assistant", "publishing it now", at(17))
+        resumed = Sessions.merge(resumed, second)
+
+        val trail = Sessions.trail(resumed)
+        for (said in listOf("where were we", "on the wiki move", "publish it", "publishing it now")) {
+            assertEquals("'$said' appears once", 1, Regex(Regex.escape(said)).findAll(trail).count())
+        }
+        // The host's order wins, and it put the echo where the turn really happened.
+        assertEquals(
+            listOf("where were we", "on the wiki move", "publish it", "publishing it now"),
+            resumed.map { it.content },
+        )
+        // And a third fetch of the same answer is a no-op.
+        assertEquals(trail, Sessions.trail(Sessions.merge(resumed, second)))
+    }
+
+    // ---- the trail block --------------------------------------------------------------
+
+    @Test fun the_trail_is_the_transcript_in_order_with_the_transcripts_labels() {
+        val messages = listOf(
+            msg("user", "first", at(3)),
+            msg("assistant", "second", at(2)),
+            msg("system", "never spoken", at(1)),
+            msg("assistant", "third", at(1)),
+        )
+        assertEquals(
+            listOf("You: first", "Agent: second", "Agent: third"),
+            Sessions.render(messages).map { it.text },
+        )
+        assertEquals("You: first\n\nAgent: second\n\nAgent: third", Sessions.trail(messages))
+    }
+
+    @Test fun a_long_trail_keeps_its_newest_lines_and_whole_lines() {
+        val messages = (1..10).map { n -> msg("assistant", "line $n " + "x".repeat(20), at(100L - n)) }
+        val capped = Sessions.trail(messages, maxChars = 120)
+        assertTrue("bounded: ${capped.length}", capped.length <= 120)
+        // The newest lines are the ones kept…
+        assertTrue(capped, capped.contains("line 10"))
+        assertFalse(capped, capped.contains("line 1 "))
+        // …and what is kept ends at a line the host wrote, not mid-word.
+        for (line in capped.split("\n\n")) assertTrue("'$line'", line.endsWith("x".repeat(20)))
+        // Nothing is dropped when it fits.
+        assertEquals(Sessions.trail(messages), Sessions.trail(messages, maxChars = 10_000))
+    }
+
+    @Test fun an_empty_transcript_is_an_empty_trail() {
+        assertEquals("", Sessions.trail(emptyList()))
+        assertEquals("", Sessions.trail(listOf(msg("tool", "irrelevant", at(1)))))
+    }
+
+    // ---- the adopted session: per profile, and re-read after a gap ---------------------
+
+    private fun row(id: String) = Sessions.Row(id = id, title = "a title", source = "api_server")
+
+    @Test fun adopting_starts_with_nothing_from_the_session_being_left() {
+        val a = Sessions.Adoption()
+        a.adopt(row("first"))
+        a.settle(listOf(msg("user", "from the first session", at(9))))
+        assertEquals("first", a.id)
+        assertTrue(a.active)
+        a.adopt(row("second"))
+        assertEquals("second", a.id)
+        assertEquals("the new session's transcript is not the old one's", 0, a.resumed.size)
+    }
+
+    /** §6: sessions belong to a profile — a switch clears the id AND the transcript. */
+    @Test fun clearing_the_session_clears_the_id_and_the_transcript() {
+        val a = Sessions.Adoption()
+        a.adopt(row("20261030_235403_045e2835"))
+        a.settle(listOf(msg("user", "hello", at(5)), msg("assistant", "hi", at(4))))
+        a.echo("one more")
+        assertEquals(3, a.resumed.size)
+        a.clear()
+        assertEquals("", a.id)
+        assertFalse(a.active)
+        assertEquals(0, a.resumed.size)
+        // Nothing is due for a session that is not adopted: no fetch chases a stale id.
+        assertFalse(a.due(now + 10 * Sessions.GAP_MS))
+    }
+
+    @Test fun an_adopted_session_is_read_again_only_after_a_gap() {
+        val a = Sessions.Adoption()
+        assertFalse("nothing adopted, nothing to re-read", a.due(now))
+        a.adopt(row("vox_1"))
+        assertTrue("never fetched is always due", a.due(now))
+        a.markFetched(now)
+        assertFalse("just read", a.due(now + Sessions.GAP_MS - 1))
+        assertTrue("a gap long enough for a turn elsewhere", a.due(now + Sessions.GAP_MS))
+    }
+
+    @Test fun an_echo_is_one_line_while_the_host_has_not_written_it() {
+        val a = Sessions.Adoption()
+        a.adopt(row("vox_1"))
+        a.settle(listOf(msg("user", "publish it", at(3))))
+        a.echo("publishing now")
+        a.echo("publishing now")
+        assertEquals("an echo is not a second record of itself", 2, a.resumed.size)
+        // And once the host serves it, the echo is gone: one copy, in the host's place.
+        a.settle(listOf(msg("user", "publish it", at(3)), msg("assistant", "publishing now", at(2))))
+        assertEquals(listOf("publish it", "publishing now"), a.resumed.map { it.content })
+    }
+
+    @Test fun nothing_reaches_the_transcript_except_through_the_merge() {
+        val a = Sessions.Adoption()
+        a.adopt(row("vox_1"))
+        // Two fetches of the same answer, and a third that adds one turn written elsewhere.
+        val served = listOf(msg("user", "one", at(3)), msg("assistant", "two", at(2)))
+        a.settle(served); a.settle(served)
+        assertEquals(2, a.resumed.size)
+        a.settle(served + msg("assistant", "three, from the desk", at(1)))
+        assertEquals(listOf("one", "two", "three, from the desk"), a.resumed.map { it.content })
+    }
+
+    // ---- the word that reaches the card (no gate: #437/D39) ---------------------------
+
+    /**
+     * Sessions left Alpha on 2026-11-06 (D39): the word is the catalogue's for every install,
+     * with no switch in front of it. What the parser said before is unchanged — a sentence
+     * that happens to contain the word is a sentence, not a command.
+     */
+    @Test fun the_word_is_the_command_for_every_install() {
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("/sessions")?.name)
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ")?.name)
+        // A sentence that happens to contain the word is a sentence, not a command.
+        assertNull(Sessions.commandFor("show me the sessions I had yesterday"))
+        assertNull(Sessions.commandFor("/profiles"))
+        // Nothing hides it: the catalogue lists it even for a gate that allows nothing.
+        assertTrue(CommandCatalog.commands()
+            .any { it.name == Sessions.COMMAND })
+    }
+
+
+    // ---- the wiring, pinned at source level (the activity is Android-bound) ----------
+
+    private val src = java.io.File("src/main/java/com/hermesvox")
+
+    @Test fun a_profile_switch_and_a_new_conversation_clear_the_adopted_session() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        // §6: sessions belong to a profile. The switch clears the id and the transcript
+        // BEFORE the screen is cleared, so no block of the host just left can survive it.
+        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
+            .substringBefore("clearConversationUi()")
+        assertTrue(switch, switch.contains("clearAdoptedSession()"))
+        // /new and /clear end the host's session too: the next turn is this app's own.
+        val fresh = main.substringAfter("private fun newSession(trigger: ConversationReset.Trigger")
+            .substringBefore("clearConversationUi()")
+        assertTrue(fresh, fresh.contains("clearAdoptedSession()"))
+        // A saved connection is another host, so it is another set of sessions.
+        val saved = main.substringAfter("fun onEntitySaved() {")
+            .substringBefore("resetActiveConversation()")
+        assertTrue(saved, saved.contains("clearAdoptedSession()"))
+    }
+
+    @Test fun a_reconnect_keeps_the_session_and_reads_it_again() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        val reconnect = main.substringAfter("private fun reconnect(onDone: (Boolean) -> Unit = {}) {")
+            .substringBefore("private fun showHelpCard()")
+        assertTrue("the reset rotates the id, so it is taken again",
+            reconnect.contains("adoption.adopt(rejoin)"))
+        assertTrue("and the transcript is read again", reconnect.contains("fetchResumed(rejoin.id)"))
+        assertFalse("a reconnect is not a switch", reconnect.contains("clearAdoptedSession()"))
+    }
+
+    @Test fun returning_to_the_app_after_a_gap_reads_the_transcript_again() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        assertTrue("the foreground asks", main.contains("maybeRefetchResumed()"))
+        val fn = main.substringAfter("private fun maybeRefetchResumed() {")
+            .substringBefore("fetchResumed(adoption.id)")
+        assertTrue(fn, fn.contains("adoption.due(System.currentTimeMillis())"))
+    }
+
+    @Test fun both_reading_surfaces_paint_the_resumed_block_the_same_way() {
+        val main = java.io.File(src, "MainActivity.kt").readText()
+        // The crawl: the resumed block, then this call's own trail — one document.
+        assertTrue(main.contains("CrawlDocument.join(resumedBlock(), crawlHistory.text())"))
+        // The transcript layout: the same block, before this device's own turns.
+        assertTrue(main.contains("transcript.setHistory(resumedBlock(Transcript.MAX_CHARS))"))
+        // And there is no second way to paint the trail that could forget the block.
+        assertFalse(main.contains("setHistory(crawlHistory.text())"))
+    }
+}

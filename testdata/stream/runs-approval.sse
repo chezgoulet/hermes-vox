@@ -1,0 +1,16 @@
+#! route runs
+id: 0
+data: {"event":"run.started","run_id":"run_parity","timestamp":1762300000.0,"seq":0}
+
+id: 1
+data: {"event":"message.delta","run_id":"run_parity","timestamp":1762300000.1,"delta":"I need to delete the scratch directory.","seq":1}
+
+id: 2
+data: {"event":"approval.request","run_id":"run_parity","timestamp":1762300000.2,"request_id":"req_1","command":"rm -rf /tmp/vox-scratch","description":"delete the scratch directory","choices":["once","session","deny"],"seq":2}
+
+id: 3
+data: {"event":"message.delta","run_id":"run_parity","timestamp":1762300000.3,"delta":" It is gone.","seq":3}
+
+id: 4
+data: {"event":"run.completed","run_id":"run_parity","timestamp":1762300000.4,"completed":true,"partial":false,"interrupted":false,"output":"I need to delete the scratch directory. It is gone.","usage":{},"runtime":{},"seq":4}
+

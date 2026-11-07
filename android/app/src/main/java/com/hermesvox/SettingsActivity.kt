@@ -2,6 +2,9 @@ package com.hermesvox
 
 import android.content.Context
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -12,13 +15,16 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
+import com.hermesvox.core.ProfileReach
 
 /**
- * SettingsActivity — a real settings screen. Home sections: Voice mode, Voice
- * models, Entity & Connection, Mic & Barge-in, Transcription (STT), Spoken
- * replies, Appearance & Layout, Visuals, About & Diagnostics. Values are stored
- * as stable TOKENS (the logic reads tokens, e.g. buildTts checks
- * "kokoro"/"piper"); the UI renders human labels.
+ * SettingsActivity — a real settings screen. The home list is ordered as the owner asked
+ * (2026-11-06): the ordinary sections first (Entity & Connection, Hearing, Voice models,
+ * Voice & sounds, Appearance), then the alpha block — every gated section, contiguous, with
+ * the Alpha features master switch immediately above it ([AlphaBlock]) — and About &
+ * Diagnostics last. Values are stored as stable TOKENS (the logic reads tokens, e.g. buildTts
+ * checks "kokoro"/"piper"); the UI renders human labels. Presence is a layer on the one
+ * normal operation (#222/D16), so it has a switch, not a mode selector.
  */
 class SettingsActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
@@ -30,11 +36,13 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
-        // Back button is section-aware: inside a sub-view it returns to the group
-        // list; at the home list it finishes the Activity.
-        findViewById<android.view.View>(R.id.settings_back).setOnClickListener {
-            if (currentSection != null) { showGroupList() } else { finish(); overridePendingTransition(R.anim.fade_in, R.anim.fade_out) }
-        }
+        // Back is a stack, one level per press: a submenu returns to the group list, and the
+        // group list leaves Settings for the main screen. The toolbar arrow and the system
+        // gesture run the same rule, so they cannot disagree (#second phone pass).
+        findViewById<android.view.View>(R.id.settings_back).setOnClickListener { goBack() }
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { goBack() }
+        })
         bindEntity()
         bindFlows()
         bindAppearance()
@@ -43,34 +51,121 @@ class SettingsActivity : AppCompatActivity() {
         bindVisuals()
         bindSoundCues()
         bindGroups()
+        bindAssistant()
         bindSectionRestoreRows()
+        bindAppSkill()
+        bindAlpha()
+        applyHints()
         findViewById<TextView>(R.id.set_about_val).text = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }
         openSectionFromIntent()
+        applyDebugHarness()   // debug-only; inert in a release build
+    }
+
+    /** #224: one line under each row's title saying what it changes (SettingsHints). */
+    private fun applyHints() {
+        for (name in SettingsHints.LINED) {
+            val id = resources.getIdentifier(name, "id", packageName)
+            val row = findViewById<android.view.ViewGroup>(id) ?: continue
+            val title = firstTitle(row) ?: continue
+            applyHint(name, title)
+        }
+    }
+
+    /** The profile these scoped rows apply to (per-profile pass). */
+    private fun activeProfileName(): String =
+        Profiles.activeName { prefs.getString(it, "").orEmpty() }
+
+    /**
+     * Put [SettingsHints]' line under a title that another refresh may have just rewritten, and
+     * — for a row whose setting is the active profile's — say which profile that is, in the same
+     * line. One screen, scoped: there is no second settings screen per profile.
+     */
+    private fun applyHint(rowName: String, title: TextView) {
+        val line = SettingsHints.line(rowName, activeProfileName()) ?: return
+        val dim = ContextCompat.getColor(this, R.color.hv_text_dim)
+        // The head is the row's own label, never a hint stacked on a previous one.
+        val head = title.text.toString().substringBefore('\n')
+        val s = android.text.SpannableString("$head\n$line")
+        s.setSpan(android.text.style.RelativeSizeSpan(0.82f), head.length + 1, s.length, 0)
+        s.setSpan(android.text.style.ForegroundColorSpan(dim), head.length + 1, s.length, 0)
+        title.text = s
+    }
+
+    private fun firstTitle(v: android.view.ViewGroup): TextView? {
+        for (i in 0 until v.childCount) {
+            val c = v.getChildAt(i)
+            if (c is TextView && c !is android.widget.Button) {
+                // The Speaker row's title carries an id because its refresh rewrites it.
+                val namedTitle = c.id != android.view.View.NO_ID &&
+                    runCatching { resources.getResourceEntryName(c.id).endsWith("_title") }.getOrDefault(false)
+                if (c.id == android.view.View.NO_ID || namedTitle) return c
+            }
+            if (c is android.view.ViewGroup) firstTitle(c)?.let { return it }
+        }
+        return null
     }
 
     /** WS1: open a nested sub-view (hide the group list, show the section container). */
     /** A banner action may name the section it wants opened. */
     private fun openSectionFromIntent() {
-        intent?.getStringExtra("section")?.let { showSection(it) }
+        intent?.getStringExtra("section")
+            // #402: a banner cannot open what the Alpha gate keeps unreachable.
+            ?.takeUnless { !AlphaBlock.canOpen(prefs, it) }
+            ?.let { showSection(it) }
     }
 
     private fun showSection(section: String) {
-        currentSection = section
+        // #402/D29, the owner's restructure: the gate owns every section in the alpha block,
+        // and a dimmed row that takes no tap is not enough on its own. A banner extra, the
+        // debug harness or a stale link can name a section, so the section itself refuses to
+        // open while its set is not allowed ([AlphaBlock.canOpen]).
+        if (!AlphaBlock.canOpen(prefs, section)) return
+        // UI/UX pass: the model store is its own screen, and the home row is its door — one
+        // step, not a section holding a single "open the store" row.
+        if (section == SECTION_MODELS) { openModelsStore(); return }
+        // #511: Phone tools is the same shape. Its section used to hold two rows, one of which only
+        // opened the screen that had the grants; the screen is the section now, one tap from home.
+        if (section == SECTION_PHONE) { openPhoneTools(); return }
+        // Transcription folded into Hearing and the screen settings into Appearance: an old
+        // link (a banner, the debug harness) still lands where those rows live now.
+        val target = when (section) {
+            SECTION_STT -> SECTION_SPEECH
+            SECTION_APPEARANCE -> SECTION_VISUALS
+            else -> section
+        }
+        currentSection = target
         findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.GONE
-        val ids = mapOf(
-            SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
-            SECTION_STT to R.id.sec_stt, SECTION_TTS to R.id.sec_tts,
-            SECTION_MODELS to R.id.sec_models, SECTION_APPEARANCE to R.id.sec_appearance,
-            SECTION_VISUALS to R.id.sec_visuals, SECTION_ABOUT to R.id.sec_about)
-        ids.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
-        findViewById<android.view.View>(ids[section]!!).visibility = android.view.View.VISIBLE
-        findViewById<android.widget.ScrollView>(R.id.settings_scroll).scrollTo(0, 0)
-        findViewById<TextView>(R.id.set_title).text = when (section) {
-            SECTION_ENTITY -> "Entity & Connection"; SECTION_SPEECH -> "Mic & Barge-in"
-            SECTION_STT -> "Transcription (STT)"; SECTION_TTS -> "Spoken replies"
-            SECTION_MODELS -> "Voice models"; SECTION_APPEARANCE -> "Appearance & Layout"
-            SECTION_VISUALS -> "Visuals"
-            else -> "About & Diagnostics"
+        SECTION_VIEWS.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
+        findViewById<android.view.View>(SECTION_VIEWS.getValue(target)).visibility = android.view.View.VISIBLE
+        val scroll = findViewById<android.widget.ScrollView>(R.id.settings_scroll)
+        scroll.scrollTo(0, 0)
+        if (section == SECTION_STT) scroll.post {
+            findViewById<android.view.View>(R.id.hdr_recognition)?.let { scroll.scrollTo(0, it.top) }
+        }
+        // #224: named by what the user is changing — and by the same words as the home row
+        // that opened it, read from that row, so the two cannot drift apart.
+        findViewById<TextView>(R.id.set_title).text = sectionTitle(target)
+        syncPreview()   // #225: the being only renders while its own section is open
+    }
+
+    /** The home row's own label for [section] (its first line; the hint is not part of it). */
+    private fun sectionTitle(section: String): String {
+        val row = SECTION_HOME_ROWS[section] ?: return "Settings"
+        return findViewById<android.view.ViewGroup>(row)?.let { firstTitle(it) }
+            ?.text?.toString()?.substringBefore('\n') ?: "Settings"
+    }
+
+    /**
+     * One press of Back, from either door (the toolbar arrow, the system gesture). The rule
+     * is [SettingsBack]'s, so both doors are the same stack: submenu → group list → main.
+     */
+    private fun goBack() {
+        when (SettingsBack.from(currentSection != null)) {
+            SettingsBack.To.GROUP_LIST -> showGroupList()
+            SettingsBack.To.LEAVE -> {
+                finish()
+                overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+            }
         }
     }
 
@@ -78,48 +173,259 @@ class SettingsActivity : AppCompatActivity() {
     private fun showGroupList() {
         currentSection = null
         findViewById<android.view.View>(R.id.grp_list).visibility = android.view.View.VISIBLE
-        val ids = listOf(R.id.sec_entity, R.id.sec_speech, R.id.sec_stt, R.id.sec_tts,
-            R.id.sec_models, R.id.sec_appearance, R.id.sec_visuals, R.id.sec_about)
-        ids.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
+        SECTION_VIEWS.values.forEach { findViewById<android.view.View>(it).visibility = android.view.View.GONE }
         findViewById<TextView>(R.id.set_title).text = "Settings"
         // Subtitles are a summary of what changed while inside a section.
         refreshModelsVal()
         refreshGrpVals()
+        refreshAssistant()   // #329: the role can change in Android's settings while we are away
+        syncPreview()   // #225: back on the home list, nothing of the being's is drawing
     }
 
     private fun bindGroups() {
-        // #111: Voice mode now lives as a TOP-LEVEL home row (first in grp_list) —
-        // its picker is wired here with the other home rows, and its value label is
-        // refreshed from modeLabel() by refreshFlowVals() (see refreshFlowVals).
-        findViewById<LinearLayout>(R.id.row_mode).setOnClickListener {
-            pick("Voice mode",
-                arrayOf("Realtime", "Enhanced Realtime (alpha)"),
-                arrayOf(ModelCatalog.MODE_REALTIME, ModelCatalog.MODE_ENHANCED),
-                ModelCatalog.KEY_VOICE_MODE, R.id.set_mode_val) {
-                if (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED) {
-                    maybeBootstrapVox()
-                }
-            }
-        }
-        findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { showSection(SECTION_MODELS) }
+        findViewById<android.view.View>(R.id.row_grp_models)?.setOnClickListener { openModelsStore() }
         findViewById<android.view.View>(R.id.row_grp_entity)?.setOnClickListener { showSection(SECTION_ENTITY) }
         findViewById<android.view.View>(R.id.row_grp_speech)?.setOnClickListener { showSection(SECTION_SPEECH) }
-        findViewById<android.view.View>(R.id.row_grp_stt)?.setOnClickListener { showSection(SECTION_STT) }
         findViewById<android.view.View>(R.id.row_grp_tts)?.setOnClickListener { showSection(SECTION_TTS) }
+        findViewById<android.view.View>(R.id.row_grp_presence)?.setOnClickListener { showSection(SECTION_PRESENCE) }
         findViewById<android.view.View>(R.id.row_grp_wake)?.setOnClickListener {
+            // The row is dimmed and takes no tap when its set is off; the door asks the same
+            // question anyway, so a stale tap (or a future caller) cannot start the screen.
+            if (!AlphaBlock.canOpen(prefs, "wake")) return@setOnClickListener
             startActivity(android.content.Intent(this, WakeEnrolActivity::class.java))
         }
-        findViewById<android.view.View>(R.id.row_grp_appearance)?.setOnClickListener { showSection(SECTION_APPEARANCE) }
         findViewById<android.view.View>(R.id.row_grp_visuals)?.setOnClickListener { showSection(SECTION_VISUALS) }
+        findViewById<android.view.View>(R.id.row_grp_assistant)?.setOnClickListener { showSection(SECTION_ASSISTANT) }
+        findViewById<android.view.View>(R.id.row_grp_phone)?.setOnClickListener { showSection(SECTION_PHONE) }
         findViewById<android.view.View>(R.id.row_grp_about)?.setOnClickListener { showSection(SECTION_ABOUT) }
+    }
+
+    // ---- #402/D29: the Alpha gate --------------------------------------------------------
+
+    /** The master switch immediately above the alpha block, off by default. Turning it on
+     *  slides out the panel of feature sets; tapping the row reopens it. Turning it off dims
+     *  everything alpha again — the selections are kept, so turning it back on restores the
+     *  same sets. */
+    private fun bindAlpha() {
+        val sw = findViewById<SwitchCompat>(R.id.sw_alpha_master) ?: return
+        sw.isChecked = AlphaGate.masterOn(AlphaGate.reader(prefs))
+        sw.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(AlphaGate.KEY_MASTER, on).apply()
+            refreshAlpha()
+            if (on) alphaPanel()
+        }
+        findViewById<android.view.View>(R.id.row_grp_alpha)?.setOnClickListener {
+            if (AlphaGate.masterOn(AlphaGate.reader(prefs))) alphaPanel() else sw.isChecked = true
+        }
+        refreshAlpha()
+    }
+
+    private fun alphaPanel() = AlphaPanel(this, prefs, ::alphaAdvice) { refreshAlpha() }.show()
+
+    /** The hardware check's advice for a set, shown in the panel (#403). Null when there is none. */
+    private fun alphaAdvice(set: AlphaGate.FeatureSet): String? = when (set) {
+        AlphaGate.FeatureSet.PRESENCE -> HardwareCheck.advice(HardwareCheck.store(prefs))
+        else -> null
+    }
+
+    /**
+     * Dim and disable every alpha surface the gate does not allow — dimmed, not hidden, and a
+     * disabled row takes no tap, so it is unreachable. The rows of the alpha block come from
+     * [AlphaBlock], so the list and the gate cannot disagree about what is in it; the Hearing
+     * rows that only mean something with Presence or continuous listening are gated too.
+     */
+    private fun refreshAlpha() {
+        val r = AlphaGate.reader(prefs)
+        val master = AlphaGate.masterOn(r)
+        findViewById<TextView>(R.id.set_alpha_grpval)?.text = if (!master)
+            "Off · unfinished features stay out of the way"
+        else {
+            val n = AlphaGate.selectedCount(r)
+            "On · $n of ${AlphaGate.FeatureSet.entries.size} selected — tap to choose"
+        }
+        val presence = AlphaGate.allows(r, AlphaGate.FeatureSet.PRESENCE)
+        val listening = AlphaGate.allows(r, AlphaGate.FeatureSet.CONTINUOUS_LISTENING)
+        val phoneTools = AlphaGate.allows(r, AlphaGate.FeatureSet.PHONE_TOOLS)
+        // Turning the set off while a server is up closes it now, setup window included: a
+        // listener that outlives the owner's choice is the one thing the gate must not allow.
+        if (!phoneTools) PhoneMcp.closeNow()
+        // The block, row by row: one gate, one answer per row, and the section closes under the
+        // owner if its set is switched off while he is in it.
+        for (row in AlphaBlock.ROWS) {
+            val allowed = AlphaGate.allows(r, row.set)
+            resources.getIdentifier(row.row, "id", packageName)
+                .takeIf { it != 0 }?.let { gate(it, allowed) }
+            if (!allowed && currentSection == row.section) showGroupList()
+        }
+        gate(R.id.row_er_hears, presence)
+        gate(R.id.row_mic_continuous, listening)
+        gate(R.id.row_mic_semantic, listening)
+        gate(R.id.row_backchannel, AlphaGate.allows(r, AlphaGate.FeatureSet.TURN_TAKING))
+        // Quiet calls is its own Hearing setting now: no Alpha set, no master gate.
+        refreshGrpVals()
+    }
+
+    /** #245: the acknowledgement rate — Off / Sparse / Normal, one tap to the next. Behind the
+     *  turn-taking set; the row is dimmed and takes no tap without it. */
+    private fun bindBackchannelRate() {
+        val value = findViewById<TextView>(R.id.set_backchannel_val) ?: return
+        fun show() { value.text = Backchannel.Rate.of(prefs.getString(Backchannel.KEY_RATE, null)).label }
+        show()
+        findViewById<android.view.View>(R.id.row_backchannel)?.setOnClickListener {
+            val all = Backchannel.Rate.entries
+            val now = Backchannel.Rate.of(prefs.getString(Backchannel.KEY_RATE, null))
+            prefs.edit().putString(Backchannel.KEY_RATE, all[(now.ordinal + 1) % all.size].key).apply()
+            show()
+        }
+    }
+
+    /**
+     * #325: off by default. Switching it on asks for Do Not Disturb access — the one moment the
+     * request makes sense — and the status line says whether the call will actually be silenced.
+     */
+    private fun bindCallQuiet() {
+        val sw = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.set_call_quiet) ?: return
+        sw.isChecked = prefs.getBoolean(CallQuiet.KEY, CallQuiet.DEFAULT_ON)
+        refreshCallQuiet()
+        sw.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(CallQuiet.KEY, on).apply()
+            if (on && !CallQuiet.granted(this)) {
+                try { startActivity(CallQuiet.accessIntent()) } catch (_: Throwable) {}
+            }
+            refreshCallQuiet()
+        }
+    }
+
+    private fun refreshCallQuiet() {
+        val status = findViewById<TextView>(R.id.set_call_quiet_status) ?: return
+        val on = prefs.getBoolean(CallQuiet.KEY, CallQuiet.DEFAULT_ON)
+        status.text = when {
+            !on -> "Off — notifications behave as they always do"
+            CallQuiet.granted(this) -> "On — Do Not Disturb (your exceptions) while a call is open"
+            else -> "Needs Do Not Disturb access — switch off and on to ask again"
+        }
+    }
+
+    private fun gate(id: Int, allowed: Boolean) {
+        val v = findViewById<android.view.View>(id) ?: return
+        v.alpha = if (allowed) 1f else ALPHA_DIM
+        setEnabledDeep(v, allowed)
+    }
+
+    private fun setEnabledDeep(v: android.view.View, on: Boolean) {
+        v.isEnabled = on
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) setEnabledDeep(v.getChildAt(i), on)
+    }
+
+    /** #329: the assistant row opens a section, not a dialog — the state, the request, the
+     *  way out, and the part Android does not control all need a place to be said. */
+    private fun bindAssistant() {
+        findViewById<android.view.View>(R.id.row_assistant_request)?.setOnClickListener { requestAssistantRole() }
+        findViewById<android.view.View>(R.id.row_assistant_settings)?.setOnClickListener {
+            startActivity(AssistantRole.systemSettingsIntent(this))
+        }
+        refreshAssistant()
+    }
+
+    /** Read the role from Android every time; a cached "yes" would outlive the user's change. */
+    private fun refreshAssistant() {
+        val state = AssistantRole.state(this)
+        val summary = AssistantRole.summary(state, AssistantRole.otherHolderLabel(this))
+        findViewById<TextView>(R.id.set_assistant_status)?.text = summary
+        // The row is in the alpha block, so off the gate it says why it is dimmed instead of
+        // reporting a role nobody can ask for yet.
+        findViewById<TextView>(R.id.set_assistant_grpval)?.text =
+            if (AlphaGate.allows(prefs, AlphaGate.FeatureSet.DIGITAL_ASSISTANT)) summary
+            else "Alpha · select Digital assistant in Alpha features above"
+        val request = findViewById<android.view.View>(R.id.row_assistant_request)
+        request?.isEnabled = state != AssistantRole.State.HELD && state != AssistantRole.State.UNAVAILABLE
+        request?.alpha = if (request?.isEnabled == true) 1f else 0.4f
+        findViewById<TextView>(R.id.set_assistant_action)?.text =
+            when (state) {
+                AssistantRole.State.HELD -> "on"
+                AssistantRole.State.UNAVAILABLE -> "unavailable"
+                AssistantRole.State.OTHER -> "ask android"
+            }
+    }
+
+    /**
+     * The ONLY request path in the app, and it is a tap on one row: Android's own consent
+     * dialog decides. Nothing is granted by this call, and nothing runs at first launch.
+     */
+    private fun requestAssistantRole() {
+        val intent = AssistantRole.requestIntent(this)
+        if (intent == null) {
+            Toast.makeText(this, "This Android build has no assistant role to grant", Toast.LENGTH_LONG).show()
+            return
+        }
+        startActivityForResult(intent, REQ_ASSISTANT)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        // #429 lane 2: the Phone tools sheet's folder picker. Routed before this screen's own
+        // assistant-role result, which is the only other request this activity starts.
+        if (PhoneToolsSheet.handleActivityResult(this, requestCode, resultCode, data)) return
+        if (requestCode != REQ_ASSISTANT) return
+        refreshAssistant()
+        if (AssistantRole.state(this) == AssistantRole.State.HELD) {
+            Toast.makeText(this, "Vox is the phone's assistant", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // #329: the other assistant kept the role. Say so and hand over the screen that can
+        // change it — a dialog that just disappeared would look like nothing happened.
+        AlertDialog.Builder(this)
+            .setTitle("Android kept the current assistant")
+            .setMessage(
+                "The assistant gesture still opens the other app. Only Android can change that: " +
+                    "its digital assistant settings list every app that qualifies, Hermes Vox among them."
+            )
+            .setPositiveButton("Open Android settings") { _, _ ->
+                startActivity(AssistantRole.systemSettingsIntent(this))
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        PhoneToolsSheet.handlePermissionResult(this, requestCode)
     }
 
     private fun bindSectionRestoreRows() {
         bindRestoreRow(R.id.row_restore_entity, GROUP_ENTITY, "Entity & Connection")
-        bindRestoreRow(R.id.row_restore_models, GROUP_MODELS, "Voice models")
-        bindRestoreRow(R.id.row_restore_appearance, GROUP_APPEARANCE, "Appearance & Layout")
-        bindRestoreRow(R.id.row_restore_visuals, GROUP_VISUALS, "Visuals")
+        // One section, one restore: Appearance resets the screen and the being together.
+        bindRestoreRow(R.id.row_restore_visuals, GROUP_VISUALS, "Appearance")
+        bindRestoreRow(R.id.row_restore_presence, GROUP_PRESENCE, "Presence")
         bindRestoreRow(R.id.row_restore_about, GROUP_ABOUT, "About & Diagnostics")
+    }
+
+    /** #285: put the app's own description on the agent. The install is the gateway's — the
+     *  app asks the agent to do it, or hands over the exact command (AppSkillInstall). */
+    private fun bindAppSkill() {
+        findViewById<LinearLayout>(R.id.row_app_skill)?.setOnClickListener {
+            val cmd = AppSkillInstall.command(prefs, versionName())
+            AlertDialog.Builder(this)
+                .setTitle("Teach your agent this app")
+                .setMessage("Your agent can answer \"where is that setting?\" from this app's own description, " +
+                    "once it is installed on your gateway.\n\nAsk the agent to install it, or run this on " +
+                    "the machine running Hermes:\n\n$cmd\n\nThen ask: \"${AppSkill.CHECK_QUESTION}\"")
+                .setPositiveButton("Ask the agent") { _, _ -> askAgentToInstall() }
+                .setNeutralButton("Copy command") { _, _ -> AppSkillInstall.copy(this, cmd) }
+                .setNegativeButton("Close", null)
+                .show()
+        }
+    }
+
+    private fun askAgentToInstall() {
+        val s = MainActivity.session ?: run {
+            Toast.makeText(this, "Connect to your gateway first", Toast.LENGTH_LONG).show(); return
+        }
+        AppSkillInstall.ask(this, s, versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
     }
 
     private fun bindEntity() {
@@ -141,14 +447,148 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_entity).setOnClickListener {
             val view = layoutInflater.inflate(R.layout.dialog_entity, null)
+            // The client-certificate row is added HERE, not in dialog_entity.xml: the
+            // profile editor inflates that layout too, and a certificate is per gateway
+            // origin (one device setting), not per profile. In the editor the row would do
+            // nothing and describe a value unrelated to the profile being edited.
+            (view as android.view.ViewGroup)
+                .addView(layoutInflater.inflate(R.layout.mtls_certificate, view, false))
             val eurl = view.findViewById<EditText>(R.id.d_url)
             val emodel = view.findViewById<EditText>(R.id.d_model)
             val ekey = view.findViewById<EditText>(R.id.d_key)
             val escope = view.findViewById<EditText>(R.id.d_scope)
-            eurl.setText(prefs.getString("url", ""))
-            emodel.setText(prefs.getString("model", "hermes-agent"))
+            // T7: `d_model` is the entity's name here, not the request route. It is a
+            // read-only display refreshed from the host, so a typed name can never
+            // contradict the host. The route stays `model` and is chosen in /models.
+            emodel.hint = getString(R.string.hv_entity_hint)
+            emodel.isFocusable = false
+            emodel.isClickable = false
+            emodel.isCursorVisible = false
+            emodel.keyListener = null
+            emodel.setText(storedEntityName())
+
+            val dMtlsAlias = view.findViewById<TextView>(R.id.d_mtls_alias)
+            val dMtlsChoose = view.findViewById<Button>(R.id.d_mtls_choose)
+            val dMtlsClear = view.findViewById<Button>(R.id.d_mtls_clear)
+
+            val initialUrl = prefs.getString("url", "").orEmpty()
+            eurl.setText(initialUrl)
             ekey.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
             escope.setText(prefs.getString(SessionScope.PREF, "").orEmpty())
+
+            val initialOrigin = com.hermesvox.core.MtlsConfig.originOf(initialUrl)
+            // The origin the certificate on screen was chosen FOR — not the origin the
+            // address field happens to spell. An alias may only ever be set by an explicit
+            // act on that origin, so editing the URL must leave the old certificate where
+            // it belongs instead of silently becoming the new host's credential.
+            var chosenFor = initialOrigin
+            var currentAlias = initialOrigin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+            // The alias is opaque; what the user is approving is a subject and an expiry.
+            // Read from the certificate, off the UI thread (KeyChain is a blocking IPC).
+            var aliasDetail: String? = null
+            var detailFor: String? = null
+
+            fun typedOrigin() = com.hermesvox.core.MtlsConfig.originOf(eurl.text.toString().trim())
+
+
+            fun updateMtlsViews() {
+                val typed = typedOrigin()
+                val changed = typed != chosenFor
+                // A named reason (if one was recorded for THIS origin) belongs on the row:
+                // "the server rejected my certificate" and "the app never sent one" must
+                // not both read as "None".
+                val failure = typed?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
+                    ?.takeIf { it != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS }
+                // A certificate this edit would leave behind: the one on screen (stored
+                // under the old address) or one the new address already holds, which Save
+                // clears so it cannot be used without being chosen again.
+                val stale = changed && (!currentAlias.isNullOrBlank() ||
+                    (typed != null && com.hermesvox.core.MtlsConfig.getAlias(prefs, typed) != null))
+                when {
+                    stale -> {
+                        // Say it here, before Save: neither certificate will follow this change.
+                        dMtlsAlias.text = "Address changed — choose the certificate again"
+                        dMtlsClear.visibility = View.GONE
+                    }
+                    currentAlias.isNullOrBlank() -> {
+                        dMtlsAlias.text = failure?.let { "No certificate sent — ${it.label}" }
+                            ?: "None (system default)"
+                        dMtlsClear.visibility = View.GONE
+                    }
+                    else -> {
+                        dMtlsAlias.text = failure?.let { "${aliasDetail ?: currentAlias} — ${it.label}" }
+                            ?: aliasDetail ?: currentAlias
+                        dMtlsClear.visibility = View.VISIBLE
+                    }
+                }
+            }
+
+            fun refreshAliasDetail() {
+                val alias = currentAlias?.takeIf { it.isNotBlank() }
+                if (alias == null) { aliasDetail = null; detailFor = null; return }
+                if (alias == detailFor) return
+                val origin = chosenFor ?: typedOrigin() ?: return
+                Thread {
+                    val line = com.hermesvox.core.MtlsConfig.describe(origin, alias)
+                    runOnUiThread {
+                        if (currentAlias == alias) {
+                            aliasDetail = line
+                            detailFor = alias
+                            updateMtlsViews()
+                        }
+                    }
+                }.start()
+            }
+            updateMtlsViews()
+            refreshAliasDetail()
+            eurl.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = updateMtlsViews()
+            })
+
+            dMtlsChoose.setOnClickListener {
+                val target = typedOrigin()
+                if (target == null) {
+                    Toast.makeText(this, "Enter a valid HTTPS endpoint URL first", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                android.security.KeyChain.choosePrivateKeyAlias(
+                    this,
+                    { alias ->
+                        runOnUiThread {
+                            if (alias.isNullOrBlank()) {
+                                // Dismissed or denied: the previous choice (if it belongs
+                                // to this origin) stands, and the dismissal is a named
+                                // reason rather than a row that quietly says "None".
+                                com.hermesvox.core.MtlsConfig.notePickerCancelled(target)
+                                Toast.makeText(this, "No certificate chosen", Toast.LENGTH_SHORT).show()
+                            } else {
+                                currentAlias = alias
+                                chosenFor = target
+                                detailFor = null
+                                com.hermesvox.core.MtlsConfig.notePicked(target)
+                            }
+                            updateMtlsViews()
+                            refreshAliasDetail()
+                        }
+                    },
+                    arrayOf("RSA", "EC"),
+                    null,
+                    target.host,
+                    target.port,
+                    currentAlias?.takeIf { chosenFor == target }
+                )
+            }
+
+            dMtlsClear.setOnClickListener {
+                currentAlias = null
+                aliasDetail = null
+                detailFor = null
+                chosenFor = typedOrigin()
+                updateMtlsViews()
+            }
+
             val dlg = AlertDialog.Builder(this)
                 .setTitle("Entity")
                 .setView(view)
@@ -166,45 +606,173 @@ class SettingsActivity : AppCompatActivity() {
                         Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
                         return@setOnClickListener
                     }
-                    prefs.edit().putString("url", eurl.text.toString().trim())
-                        .putString("model", emodel.text.toString().trim().ifEmpty { "hermes-agent" })
+                    // M4 (0.9.1 review): a plain-HTTP endpoint is refused while the
+                    // tunnel is down, before anything is saved or sent.
+                    val u = eurl.text.toString().trim()
+                    com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
+                        Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    // The origin-binding rule: a certificate is written only for the origin
+                    // it was explicitly chosen on. If the address changed, the old alias is
+                    // NOT carried over — it is cleared from the new origin and the user has
+                    // to choose again (the row said so while they typed). Writing it here
+                    // would make the old host's client certificate the new host's
+                    // credential, with no prompt and no visible change.
+                    val finalOrigin = com.hermesvox.core.MtlsConfig.originOf(u)
+                    if (finalOrigin != null) {
+                        // Was a certificate dropped by this edit — the one on screen, or one
+                        // the new origin already held? Either way the address changed, and
+                        // the user has to choose again; say so rather than let the row go
+                        // quietly back to "None".
+                        val dropped = com.hermesvox.core.MtlsConfig.getAlias(prefs, finalOrigin)
+                        val addressChanged = finalOrigin != chosenFor && finalOrigin != initialOrigin
+                        when (val d = com.hermesvox.core.MtlsConfig.saveAlias(
+                            initialOrigin, chosenFor, currentAlias, finalOrigin)) {
+                            is com.hermesvox.core.MtlsConfig.SaveAlias.Write ->
+                                com.hermesvox.core.MtlsConfig.setAlias(prefs, finalOrigin, d.alias)
+                            com.hermesvox.core.MtlsConfig.SaveAlias.Leave -> Unit
+                        }
+                        if (addressChanged && (dropped != null || !currentAlias.isNullOrBlank())) {
+                            Toast.makeText(this,
+                                "The address changed, so the certificate must be chosen again for it.",
+                                Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    // The display is not a setting: Save writes the connection, never
+                    // the host-derived name back into the request route (`model`).
+                    prefs.edit().putString("url", u)
                         .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
+                    // L9 (0.9.1 review): a live call belonged to the connection it opened
+                    // on. Saving Entity ends it, exactly as a profile switch does, and the
+                    // shared session is rebuilt from the values just written — so the next
+                    // turn (the phone setup turn included, #430) cannot go to the old endpoint.
+                    MainActivity.onEntitySaved()
                     refreshEntityVal()
                     dlg.dismiss()
                 }
             }
             dlg.show()
+            // The same rule as onboarding: the host is the authority. Ask the probe
+            // the connection flow already makes, and adopt the name it gives.
+            refreshEntityName(dlg, view, eurl.text.toString().trim(), ekey.text.toString().trim())
         }
         refreshEntityVal()
         bindVoxRow()
+        bindAgentModel()
+    }
+
+    /**
+     * The agent's model, for this profile (per-profile pass). It used to be reachable only by
+     * typing `/models` on the call screen; it belongs beside the connection, because which model
+     * the agent thinks with is part of which agent you are talking to. The row opens the same
+     * [ModelSheet] the command does — one switcher, two doors.
+     */
+    private fun bindAgentModel() {
+        findViewById<LinearLayout>(R.id.row_agent_model)?.setOnClickListener { pickAgentModel() }
+        refreshAgentModel()
+    }
+
+    /** The route, as words: "DeepSeek V4 Flash" rather than `deepseek-v4-flash`. */
+    private fun refreshAgentModel() {
+        findViewById<TextView>(R.id.set_agent_model_val)?.text =
+            ModelChoices.displayName(prefs.getString("model", "").orEmpty().ifBlank { "hermes-agent" })
+    }
+
+    private fun pickAgentModel() {
+        val s = MainActivity.session ?: run {
+            Toast.makeText(this, "Connect to your gateway first", Toast.LENGTH_LONG).show(); return
+        }
+        ModelSheet(this,
+            load = { s.modelOptions() },
+            current = { prefs.getString("model", "").orEmpty() to prefs.getString("provider", "").orEmpty() },
+        ) { p, m ->
+            // Choose it on the live session so the NEXT turn uses it, and persist it so a switch,
+            // a restart and the switcher's own line agree. This is this profile's model.
+            val modelId = m?.id ?: p.slug
+            prefs.edit().putString("model", modelId).putString("provider", p.slug).apply()
+            val ok = try { s.setModel(modelId); s.setProvider(p.slug); true } catch (_: Throwable) { false }
+            if (!ok) {
+                Toast.makeText(this, "Couldn't switch the model", Toast.LENGTH_LONG).show()
+            } else {
+                s.resetConversation()
+                LatencyStats.resetSessionTurns()
+                refreshAgentModel()
+                Toast.makeText(this, ModelChoices.switchedLine(p, m), Toast.LENGTH_SHORT).show()
+            }
+        }.show()
     }
 
     /** ER Phase 3: the VOX.md bridge row. Resync = PULL the gateway agent's
      *  voice-export over the same directive turn /compress uses, validate,
-     *  mirror locally. Pull-only invariant: the device never pushes identity. */
+     *  mirror locally. Pull-only invariant: the device never pushes identity.
+     *  Owner rule (a): with Presence off this whole surface is inert — the rows are
+     *  not shown, and nothing is fetched, mirrored, prompted for or reported. */
     private fun bindVoxRow() {
         findViewById<LinearLayout>(R.id.row_vox).setOnClickListener { resyncVox() }
         // 0.6.2: view the mirror — what the on-device soul actually reads.
         findViewById<LinearLayout>(R.id.row_vox_view).setOnClickListener {
+            if (!PresenceGate.enabled(prefs)) return@setOnClickListener
+            val profile = VoxMirror.activeProfile(prefs)
             val doc = VoxMirror.read(this)
             AlertDialog.Builder(this)
-                .setTitle("Mirrored VOX.md")
+                .setTitle(if (profile.isBlank()) "Mirrored VOX.md" else "Mirrored VOX.md · $profile")
                 .setMessage(doc?.take(2000) ?: "Not mirrored yet — Resync VOX.md pulls it from the entity.")
                 .setPositiveButton("OK", null).show()
         }
         bindErControls()
-        refreshVoxVal()
+        refreshVoxRows()
     }
 
-    /** 0.6.2: the ER runtime controls — every tunable the presence runtime reads,
-     *  exposed. All are Enhanced-Realtime-only (Realtime ignores them entirely). */
+    /** Rule (a), on screen: the VOX.md rows exist only while Presence is on. Off hides
+     *  them and reports nothing about the mirror (it is not deleted — turning Presence
+     *  back on finds the active profile's document where it was). */
+    private fun refreshVoxRows() {
+        val on = PresenceGate.enabled(prefs)
+        val v = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<android.view.View>(R.id.row_vox)?.visibility = v
+        findViewById<android.view.View>(R.id.row_vox_view)?.visibility = v
+        if (on) refreshVoxVal()
+    }
+
+    /** 0.6.2: the presence runtime controls — every tunable the presence layer reads,
+     *  exposed. They matter when Presence runs; the layer's on/off switch is above. */
     private fun bindErControls() {
         val swPresence = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_presence)
         val swBarge = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.sw_er_semantic_barge)
         val sbEcho = findViewById<SeekBar>(R.id.sb_er_echo)
         val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
 
+        bindPresenceEnabled()
+        // A2: how hard the mind thinks on a voice turn. The gateway takes it per request
+        // (model_options.reasoning), so this needs no model change and no restart: the next
+        // turn runs at the chosen effort. Low is the default because a spoken turn is waiting.
+        val rowReasoning = findViewById<android.view.View>(R.id.row_er_reasoning)
+        val tvReasoning = findViewById<TextView>(R.id.set_er_reasoning_val)
+        fun reasoningLabel(token: String) = when (token) {
+            "off" -> "Off"
+            "medium" -> "Medium"
+            "high" -> "High"
+            else -> "Low"
+        }
+        val reasoningTokens = arrayOf("off", "low", "medium", "high")
+        tvReasoning.text = reasoningLabel(prefs.getString(VoiceTurn.PREF_REASONING, "low") ?: "low")
+        rowReasoning.setOnClickListener {
+            val cur = prefs.getString(VoiceTurn.PREF_REASONING, "low") ?: "low"
+            AlertDialog.Builder(this)
+                .setTitle("Reasoning effort on a voice call")
+                .setSingleChoiceItems(
+                    arrayOf("Off (fastest)", "Low", "Medium", "High (deepest)"),
+                    reasoningTokens.indexOf(cur).coerceAtLeast(0)
+                ) { d, which ->
+                    prefs.edit().putString(VoiceTurn.PREF_REASONING, reasoningTokens[which]).apply()
+                    tvReasoning.text = reasoningLabel(reasoningTokens[which])
+                    d.dismiss()
+                    Toast.makeText(this, "Voice turns now reason at ${reasoningTokens[which]} effort", Toast.LENGTH_SHORT).show()
+                }
+                .show()
+        }
         swPresence.isChecked = prefs.getBoolean("er_presence", true)
         swPresence.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean("er_presence", checked).apply()
@@ -231,13 +799,13 @@ class SettingsActivity : AppCompatActivity() {
                 else "The soul reads your words only",
                 Toast.LENGTH_SHORT).show()
         }
-        // 0.6.7 Tier 1: the presence-voice mode (silent / sounds / spoken).
+        // 0.6.7 Tier 1: the narration register (silent / sounds / spoken).
         findViewById<LinearLayout>(R.id.row_er_voice).setOnClickListener {
             val modes = arrayOf("Silent (motion only)", "Sounds (natural mm/breath)", "Spoken (sentence fillers)")
             val tokens = arrayOf("silent", "sounds", "spoken")
             val cur = prefs.getString("er_presence_voice", "sounds") ?: "sounds"
             AlertDialog.Builder(this)
-                .setTitle("Narration voice (Enhanced Realtime)")
+                .setTitle("Narration voice")
                 .setSingleChoiceItems(modes, tokens.indexOf(cur).coerceAtLeast(0)) { d, which ->
                     prefs.edit().putString("er_presence_voice", tokens[which]).apply()
                     findViewById<TextView>(R.id.set_er_voice_val).text = modes[which].substringBefore(" (")
@@ -256,7 +824,7 @@ class SettingsActivity : AppCompatActivity() {
                 "silent" -> "Silent"; "spoken" -> "Spoken"; else -> "Sounds"
             }
         // "Presence while working": one register for how often the entity speaks while the mind
-        // works — the mid-run line interval and the filler cap (PresenceCadence). Replaces the raw
+        // works — the mid-run aside interval and the filler cap (PresenceCadence). Replaces the raw
         // filler-density slider, which it migrates from until a register is chosen.
         val tvDensity = findViewById<TextView>(R.id.set_er_density_val)
         tvDensity.text = densityLabel(currentDensity())
@@ -270,6 +838,13 @@ class SettingsActivity : AppCompatActivity() {
                     d.dismiss()
                 }
                 .setNegativeButton("Cancel", null).show()
+        }
+        // #417: the report block. Everything on the clipboard is a setting, a device fact or
+        // a measured number — no transcript text, key, URL, hostname or path. Omitted metrics
+        // stay omitted rather than being printed as an invented zero. This row is the one door
+        // to the block: #418's command and its switch are gone.
+        findViewById<LinearLayout>(R.id.row_presence_diag).setOnClickListener {
+            DiagnosticClipboard.copy(this, prefs)
         }
         // Echo guard slider: 0-6 steps -> 0,300,500,700,1000,1500,2500ms (0 = off).
         val echoSteps = intArrayOf(0, 300, 500, 700, 1000, 1500, 2500)
@@ -287,9 +862,68 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
-    private fun currentDensity(): PresenceCadence.Density = PresenceCadence.resolve(
-        prefs.getString(PresenceCadence.PREF, null),
-        if (prefs.contains(PresenceCadence.LEGACY_PREF)) prefs.getInt(PresenceCadence.LEGACY_PREF, 2) else null)
+    /** #222/D16: the one switch that means Presence on or off. The absence of the
+     *  layer is reported here and nowhere else — this is the only place a user can act
+     *  on it. */
+    private fun bindPresenceEnabled() {
+        val sw = findViewById<SwitchCompat>(R.id.sw_presence_enabled)
+        sw.isChecked = PresenceGate.chosen(prefs)
+        sw.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(PresenceGate.KEY_PRESENCE_ENABLED, checked).apply()
+            // Rule (a): the VOX.md workflow appears and disappears with this switch. Turning
+            // it ON is also when the pre-profile device-wide mirror is migrated, so the
+            // document the user already had is the one the active profile starts with.
+            if (checked) VoxMirror.migrate(this)
+            refreshVoxRows()
+            refreshPresenceRow()
+            if (!checked) return@setOnCheckedChangeListener
+            if (!ModelCatalog.isInstalled(this, "gemma-e2b")) {
+                AlertDialog.Builder(this)
+                    .setTitle("Presence needs its model")
+                    .setMessage("The being, its asides and its voice run on an on-device " +
+                        "model. Download it in Voice models — Presence starts as soon as " +
+                        "it is there.")
+                    .setPositiveButton("Download") { _, _ -> openModelsStore() }
+                    .setNegativeButton("Later", null)
+                    .show()
+            } else maybeBootstrapVox()
+        }
+        refreshPresenceRow()
+    }
+
+    private fun presenceState(): PresenceGate.State = PresenceGate.state(
+        enabled = PresenceGate.enabled(prefs),
+        installed = ModelCatalog.isInstalled(this, "gemma-e2b"),
+        canStart = PresenceGate.modelCanStart,
+    )
+
+    /** The one-line explanation under the switch. Every branch names why, and the two
+     *  the user can fix are tappable. */
+    private fun refreshPresenceRow() {
+        val tv = findViewById<TextView>(R.id.set_presence_status) ?: return
+        tv.setOnClickListener(null)
+        tv.isClickable = false
+        tv.isFocusable = false
+        tv.text = when (presenceState()) {
+            PresenceGate.State.ON ->
+                if (prefs.getBoolean("er_presence", true))
+                    "On · " + PresenceCadence.resolve(
+                        prefs.getString(PresenceCadence.PREF, null), null).key
+                else "On · quiet"
+            PresenceGate.State.OFF ->
+                "Off — turn on to give the agent a body and asides"
+            PresenceGate.State.NO_MODEL -> {
+                tv.isClickable = true
+                tv.isFocusable = true
+                tv.setOnClickListener { openModelsStore() }
+                "On, but the model is not downloaded — tap to download it in Voice models"
+            }
+            PresenceGate.State.CANNOT_START ->
+                "On, but the model cannot start on this device — Presence stays off here"
+        }
+    }
+
+    private fun currentDensity(): PresenceCadence.Density = PresenceDiagnosticCollect.density(prefs)
 
     private fun densityLabel(d: PresenceCadence.Density): String = when (d) {
         PresenceCadence.Density.QUIET -> "Quiet"
@@ -311,30 +945,48 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refreshVoxVal() {
         val v = findViewById<TextView>(R.id.set_vox_val) ?: return
+        // Rule (a): with Presence off the app does not report on VOX.md at all.
+        if (!PresenceGate.enabled(prefs)) { v.text = ""; return }
+        val profile = VoxMirror.activeProfile(prefs)
         v.text = when (val m = VoxSoul.mirrorStatus(VoxMirror.read(this))) {
-            is VoxSoul.Mirror.Present -> if (m.name.isBlank()) "mirrored" else "mirrored · ${m.name}"
-            is VoxSoul.Mirror.Absent -> "not mirrored"
+            is VoxSoul.Mirror.Present ->
+                "mirrored" + (if (m.name.isBlank()) "" else " · ${m.name}") +
+                    (if (profile.isBlank()) "" else " · $profile")
+            is VoxSoul.Mirror.Absent ->
+                if (profile.isBlank()) "not mirrored" else "not mirrored for $profile — tap to pull it"
         }
     }
 
-    /** ER Phase 3 bootstrap: first enable of Enhanced Realtime. When the mode is
-     *  switched to enhanced and no valid mirror exists, pull VOX.md right away
-     *  (the resync flow) and surface the honest state if it fails — the soul
-     *  "can't find its voice" is a visible condition, never a silent proceed. */
+    /** ER Phase 3 bootstrap: first switch-on of Presence. When the ACTIVE PROFILE has no
+     *  valid mirror, pull VOX.md right away (the resync flow) and surface the honest state
+     *  if it fails — the soul "can't find its voice" is a visible condition, never a silent
+     *  proceed. With Presence off this does not run at all (owner rule a). */
     private fun maybeBootstrapVox() {
+        if (!PresenceGate.enabled(prefs)) return
+        VoxMirror.migrate(this)
         if (VoxSoul.mirrorStatus(VoxMirror.read(this)) is VoxSoul.Mirror.Present) return
+        val profile = VoxMirror.activeProfile(prefs)
         AlertDialog.Builder(this)
-            .setTitle("Enhanced Realtime — meet your entity's voice")
+            .setTitle("Presence — meet your entity's voice")
             .setMessage(
-                "Enhanced Realtime adds the on-device presence layer: the being on the " +
-                "phone speaks in your agent's own voice. It needs VOX.md — your agent's " +
-                "voice-export, authored by the agent itself.\n\nPull it from the gateway now?")
+                "Presence is the being on the phone: it speaks asides in your agent's " +
+                    "own voice while the mind works. It needs VOX.md — your agent's " +
+                    "voice-export, authored by the agent itself" +
+                    (if (profile.isBlank()) "" else ", for the profile \"$profile\"") +
+                    ".\n\nPull it from the gateway now?")
             .setPositiveButton("Pull VOX.md") { _, _ -> resyncVox() }
             .setNegativeButton("Later", null)
             .show()
     }
 
     private fun resyncVox(retryNote: String? = null) {
+        // Rule (a): every entry point is inert with Presence off. This is the last line of
+        // defence — the row is hidden — and it means no dialog, no toast, no request.
+        if (!PresenceGate.enabled(prefs)) return
+        VoxMirror.migrate(this)
+        // The profile is captured BEFORE the turn: the document belongs to the entity that
+        // answered, even if the user switches while the ask is in flight.
+        val profile = VoxMirror.activeProfile(prefs)
         val u = prefs.getString("url", "").orEmpty()
         val k = prefs.getString("key", "").orEmpty()
         if (u.isBlank() || GatewayKey.isMissing(k)) {
@@ -344,58 +996,59 @@ class SettingsActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
             return
         }
+        // M6: a snapshot of the profile's own values, taken before the turn. A lazy pref read
+        // inside the thread could see a different active profile after a switch.
+        val model = prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        val provider = prefs.getString("provider", "").orEmpty()
+        val scope = prefs.getString(SessionScope.PREF, "").orEmpty()
         val label = findViewById<TextView>(R.id.set_vox_val)
         label.text = "asking the entity…"
         // Off the UI thread: the directive turn is a real /v1/responses call
         // (turnStored blocks up to 120s) — same shape as /compress.
         kotlin.concurrent.thread {
-            val s = com.hermesvox.core.HermesSession(u, SecureStore.decrypt(k) ?: k, prefs.getString("model", "hermes-agent").orEmpty().ifEmpty { "hermes-agent" })
-            // 0.6.2: a retry rides the SAME server-side chain (previous_response_id
-            // inside turnStored), so the entity still has its prior attempt in
-            // context — the corrective note lands with the entity already knowing
-            // the format it just got wrong.
-            val directive = if (retryNote != null) "$retryNote\n\n${VoxSoul.AUTHOR_DIRECTIVE}" else VoxSoul.AUTHOR_DIRECTIVE
-            val reply = try { s.turnStored(directive) } catch (e: Throwable) {
-                VoxLog.w("event=vox-resync-failed err=${e.message?.take(120)}"); null
-            }
-            val doc = VoxSoul.extract(reply)
-            val validated = VoxSoul.validate(doc)
-            // 0.6.7: capture WHAT the entity actually said (first ~240 chars,
-            // sanitized for a dialog) so a failed sync is diagnosable from the
-            // screenshot — "empty document" alone told us nothing.
-            val replyEvidence = reply?.trim()
-                ?.replace(Regex("\\s+"), " ")
-                ?.take(240)
-                ?.ifBlank { "(reply was blank)" }
-                ?: "(no reply)"
-            VoxLog.er("event=vox-resync doc=${doc?.length ?: 0} result=${validated.let { if (it is VoxSoul.Valid.Bad) it.reason else "ok" }} reply=$replyEvidence")
-            val result = when (validated) {
-                is VoxSoul.Valid.Ok -> {
-                    val wrote = VoxMirror.write(this, validated.document)
-                    if (wrote) "ok" else "mirror-write failed"
-                }
-                is VoxSoul.Valid.Bad -> "invalid: ${validated.reason}"
-            }
+            // M6: declared like the live session (scope + provider), not a bare one.
+            val s = EntitySession.of(u, SecureStore.decrypt(k) ?: k, model, provider, scope)
+            // #220: one call does extract → repair → validate, so a document that arrives
+            // inside a fence or behind a courtesy line is mirrored on the FIRST attempt
+            // instead of costing the user a second button press. The retry below stays as
+            // the fallback for a reply that really has no document in it. VoxSync.refetch is
+            // the same path the first-call ask uses, so the two cannot drift.
+            val a = VoxSync.refetch(filesDir, profile, presenceOn = PresenceGate.enabled(prefs),
+                retryNote = retryNote, log = { VoxLog.er(it) },
+                ask = { note -> VoxSync.ask(s, note, { VoxLog.er(it) }) })
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
-                when (result) {
-                    "ok" -> {
-                        refreshVoxVal()
-                        Toast.makeText(this, "VOX.md synced from the entity", Toast.LENGTH_SHORT).show()
-                    }
-                    else -> {
-                        refreshVoxVal()
-                        AlertDialog.Builder(this)
-                            .setTitle("VOX.md sync failed")
-                            .setMessage(
-                                when {
-                                    result.startsWith("invalid") -> "The entity's reply wasn't a valid VOX.md ($result). It said: \"$replyEvidence\". Its next attempt rides the same conversation, so it remembers the format — one more try usually lands it."
-                                    reply.isNullOrBlank() -> "The entity didn't answer (connection?). Check /health and try again."
-                                    else -> result
-                                })
-                            .setPositiveButton("Try again") { _, _ -> resyncVox(retryNote = "Your last reply wasn't a valid VOX.md (reason: $result). Follow the format EXACTLY — byte-identical Contract lines, every Soul field filled.") }
-                            .setNegativeButton("Later", null).show()
-                    }
+                refreshVoxVal()
+                if (a.need == VoxSync.Need.OFF) return@runOnUiThread   // Presence went off mid-ask
+                if (a.ready) {
+                    Toast.makeText(this, "VOX.md synced from the entity", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                val reason = a.reason ?: "the sync did not complete"
+                val replyEvidence = a.reply?.trim()
+                    ?.replace(Regex("\\s+"), " ")
+                    ?.take(240)
+                    ?.ifBlank { "(reply was blank)" }
+                    ?: "(no reply)"
+                if (a.outcome is VoxSoul.Outcome.Rejected) {
+                    AlertDialog.Builder(this)
+                        .setTitle("VOX.md sync failed")
+                        .setMessage(
+                            if (a.reply.isNullOrBlank())
+                                "The entity didn't answer (connection?). Check /health and try again."
+                            else "The entity's reply wasn't a usable VOX.md: $reason. " +
+                                "It said: \"$replyEvidence\". Its next attempt rides the same " +
+                                "conversation, so it remembers the format — one more try usually " +
+                                "lands it.")
+                        .setPositiveButton("Try again") { _, _ -> resyncVox(retryNote = "Your last reply wasn't a usable VOX.md (reason: $reason). Reply with the VOX.md document itself and nothing else: start at '# Contract' and copy its six rules verbatim, then '# Soul' with every field filled in. No preamble, no commentary, no code fence.") }
+                        .setNegativeButton("Later", null).show()
+                } else {
+                    // Valid document, unwritable file: say so rather than claim a sync.
+                    AlertDialog.Builder(this)
+                        .setTitle("VOX.md sync failed")
+                        .setMessage("The entity's VOX.md was valid but could not be written to this phone (storage?). The mirror is unchanged — try again.")
+                        .setPositiveButton("Try again") { _, _ -> resyncVox() }
+                        .setNegativeButton("Later", null).show()
                 }
             }
         }
@@ -409,11 +1062,76 @@ class SettingsActivity : AppCompatActivity() {
         }
         // A declared scope is an identity, and an identity you cannot see is one
         // you cannot check — the VOX.md row surfaces its state, so this row
-        // states whether a scope is in play (and which one).
+        // states whether a scope is in play (and which one). The entity's name is
+        // the host's (T7); the model id is only the fallback until a verify names it.
         val scope = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
         val who = if (scope.isEmpty()) "no scope" else "scope · $scope"
-        findViewById<TextView>(R.id.set_entity_val).text =
-            "$u · ${prefs.getString("model", "hermes-agent")} · $who"
+        // mTLS, as it actually stands for this origin: a certificate is configured, or a
+        // named reason says why none is being sent. The reason token is the same one the
+        // log line carries, so a report ("it says cert-unavailable") can be grepped.
+        val origin = com.hermesvox.core.MtlsConfig.originOf(u)
+        val alias = origin?.let { com.hermesvox.core.MtlsConfig.getAlias(prefs, it) }
+        val reason = origin?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
+        val mtls = when {
+            origin == null -> ""
+            alias != null -> " · mTLS" + (reason?.let { " (${it.token})" } ?: "")
+            reason != null && reason != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS ->
+                " · no certificate (${reason.token})"
+            else -> ""
+        }
+        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls"
+    }
+
+    /** The host's adopted name, or the old `model` value until a verify gives one. */
+    private fun storedEntityName(): String =
+        prefs.getString(Profiles.K_AGENT, "").orEmpty().ifBlank {
+            prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        }
+
+    /**
+     * T7: refresh the dialog's entity name from the host, using the same
+     * `GET /v1/models` probe the connection flow already makes — one request, on
+     * open, off the UI thread. A 200 with `data[0].id` is adopted (and saved as
+     * `agent_name`); a 200 with no id says [HostEntity.FALLBACK_LINE] and keeps the
+     * stored name; a failed probe keeps it silently. Nothing is invented, and a
+     * closed dialog is not written to.
+     */
+    private fun refreshEntityName(dlg: AlertDialog, view: android.view.View, url: String, key: String) {
+        val field = view.findViewById<EditText>(R.id.d_model)
+        val note = view.findViewById<TextView>(R.id.d_entity_note)
+        val stored = storedEntityName()
+        val u = url.trim()
+        if (u.isBlank() || key.isBlank()) return
+        note.text = "asking the host…"
+        note.visibility = android.view.View.VISIBLE
+        kotlin.concurrent.thread {
+            val answer = try {
+                val body = com.hermesvox.core.HermesSession(
+                    u, key, prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" },
+                ).ping()
+                HostEntity.answer(200, body)
+            } catch (_: Throwable) {
+                HostEntity.Answer.Refused(-1, "no answer")
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !dlg.isShowing) return@runOnUiThread
+                when (answer) {
+                    is HostEntity.Answer.Named -> {
+                        field.setText(answer.name)
+                        // Only a verified host name is adopted; an existing saved name
+                        // is not rewritten by a probe that failed or said nothing.
+                        prefs.edit().putString(Profiles.K_AGENT, answer.name).apply()
+                        note.visibility = android.view.View.GONE
+                    }
+                    is HostEntity.Answer.Unnamed -> {
+                        field.setText(HostEntity.name(answer, stored).orEmpty())
+                        note.text = HostEntity.FALLBACK_LINE
+                        note.visibility = android.view.View.VISIBLE
+                    }
+                    is HostEntity.Answer.Refused -> note.visibility = android.view.View.GONE
+                }
+            }
+        }
     }
 
     private fun bindFlows() {
@@ -421,13 +1139,13 @@ class SettingsActivity : AppCompatActivity() {
             pick("Speech-to-text (backend)",
                 arrayOf("On-device (offline)", "Platform (Google)", "Remote (server)"),
                 arrayOf(ModelCatalog.BACKEND_ONDEVICE, ModelCatalog.BACKEND_PLATFORM, ModelCatalog.BACKEND_REMOTE),
-                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val) { refreshSttRemotePanel() }
+                ModelCatalog.KEY_STT_BACKEND, R.id.set_stt_val) { refreshSttRemotePanel(); refreshSttLanguageRow() }
         }
-        findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener {
-            val labels = ModelCatalog.sttModels.map { it.second }.toTypedArray()
-            val tokens = ModelCatalog.sttModels.map { it.first }.toTypedArray()
-            pick("STT model (on-device)", labels, tokens, ModelCatalog.KEY_STT_MODEL, R.id.set_stt_model_val)
-        }
+        findViewById<LinearLayout>(R.id.row_stt_model).setOnClickListener { pickSttModel() }
+        // The spoken language of the recogniser. The row is only visible when the
+        // selected model can decode more than English (refreshSttLanguageRow) —
+        // offering it for an .en checkpoint is what made the old row a lie.
+        findViewById<LinearLayout>(R.id.row_stt_language)?.setOnClickListener { pickSttLanguage() }
         // 0.7.3: the speech-pipeline CPU budget. Stored as an INT (0 = Auto), so it
         // cannot ride the String-based pick() helper. Applies on the next voice-model
         // load — numThreads is baked into the recognizer/synth session at build.
@@ -447,8 +1165,16 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
-                arrayOf("Supertonic (on-device, recommended)", "Piper (on-device, lighter)", "System (fallback)"),
-                arrayOf("supertonic", "piper", "system"), "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
+                arrayOf(
+                    "Supertonic (on-device, recommended)",
+                    "Piper · fr-FR Siwis (on-device, French)",
+                    "Piper · fr-FR Tom (on-device, French)",
+                    "Piper · fr-FR UPMC (on-device, French, two voices)",
+                    "Piper · en-US (on-device, lighter)",
+                    "System (fallback)"
+                ),
+                arrayOf("supertonic", "piper-siwis", "piper-tom", "piper-upmc", "piper", "system"),
+                "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
         // option was removed — WarmTts is a no-op stub, so it never produced
@@ -466,12 +1192,10 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // Per sub-menu RESTORE DEFAULTS (via the central restoreDefaults helper).
-        // #112 reset scopes: every setting belongs to exactly ONE group. Voice mode
-        // resets with GROUP_ENTITY (row_restore_entity) and the voice register resets
-        // with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice") — the standalone
-        // Mode/Voice branches and their row_mode_reset/row_voice_reset rows are gone.
-        bindRestoreRow(R.id.row_stt_reset, GROUP_STT, "Transcription")
-        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "Spoken replies")
+        // #112 reset scopes: every setting belongs to exactly ONE group. Presence
+        // resets with GROUP_PRESENCE (row_restore_presence) and the voice register
+        // resets with GROUP_TTS (row_tts_reset, relabeled "TTS & Voice").
+        bindRestoreRow(R.id.row_tts_reset, GROUP_TTS, "Voice")
         val barge = findViewById<SwitchCompat>(R.id.set_bargein)
         barge.isChecked = prefs.getBoolean("duplex", true)
         barge.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("duplex", on).apply() }
@@ -487,22 +1211,298 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
-        findViewById<LinearLayout>(R.id.row_models).setOnClickListener {
-            startActivity(android.content.Intent(this, ModelsActivity::class.java))
-        }
+        // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
+        // long-press on the debug-log row in the developer section. Both settings default to
+        // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens
+        // this dialog is byte-for-byte 0.9.1 in its memory behaviour.
+        dbl.setOnLongClickListener { memoryBudgetDialog(); true }
         refreshModelsVal()
         bindSttRemote()
 
         refreshFlowVals()
         refreshGrpVals()   // #115: populate the Settings-home row subtitles
-        bindMicAdvanced()  // #118: collapse/expand the Mic & Barge-in timing-tuner panel
+        bindAdvancedDisclosures()  // #118/#224: one collapsed disclosure per section
+    }
+
+    /** Dev-only: the presence memory knobs. All of them need no reload to be *stored*, and the
+     *  KV size needs one to *exist* — which the dialog's first line says out loud so a
+     *  measurement run is not attributed to the wrong arm.
+     *
+     *  **0.9.1 defect fixed here.** The old dialog called `setMessage()` and
+     *  `setSingleChoiceItems()` on ONE builder, and AppCompat renders that pair as the message
+     *  with NO rows: on the phone the three KV arms were unreachable, which is what blocked the
+     *  KV measurement. The message is now a plain `TextView` inside a custom view and the arms
+     *  are real `RadioButton` rows in a `RadioGroup`, so there is no list panel for the support
+     *  library to lose them into.
+     */
+    private fun memoryBudgetDialog() {
+        val kv = MemoryBudget.kvTokens(prefs.getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
+        val unloadOn = prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false)
+        var delayMin = MemoryBudget.unloadDelayMinutes(
+            prefs.getInt(MemoryBudget.PREF_UNLOAD_DELAY, MemoryBudget.DELAY_DEFAULT))
+        var unloadChecked = unloadOn
+
+        val d = resources.displayMetrics.density
+        val pad = (16 * d).toInt()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, pad / 2)
+        }
+        box.addView(TextView(this).apply {
+            text = "KV cache — the engine is rebuilt on the next presence load " +
+                "(force-stop, or leave Settings and come back). Release policy is read at hangup."
+            textSize = 13f
+        })
+
+        // The three arms, as rows that exist. The index into KV_CHOICES is tracked rather
+        // than the view id, so the write below cannot read the wrong row.
+        val group = android.widget.RadioGroup(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, pad / 2, 0, 0)
+        }
+        val radios = ArrayList<android.widget.RadioButton>(MemoryBudget.KV_CHOICES.size)
+        MemoryBudget.KV_CHOICES.forEach { tokens ->
+            val rb = android.widget.RadioButton(this).apply {
+                id = android.view.View.generateViewId()
+                text = MemoryBudget.kvLabel(tokens)
+                isChecked = tokens == kv
+                setPadding(0, pad / 4, 0, 0)
+            }
+            radios += rb
+            group.addView(rb)
+        }
+        box.addView(group)
+
+        val unloadSw = SwitchCompat(this).apply {
+            text = MemoryBudget.unloadLabel(unloadChecked)
+            isChecked = unloadChecked
+            setPadding(0, pad / 2, 0, 0)
+        }
+        box.addView(unloadSw)
+
+        val delayRow = TextView(this).apply {
+            text = MemoryBudget.delayLabel(delayMin)
+            textSize = 15f
+            setPadding(0, pad, 0, 0)
+        }
+        box.addView(delayRow)
+
+        // The three presence-cost arms (docs/PRESENCE-COST.md). Each is read at ENGINE LOAD,
+        // so changing one needs a reload to exist — except the release, which its timer reads.
+        // All three are off/absent by default: a phone with no pref behaves as 0.9.1.
+        var hearsOn = MemoryBudget.hears(prefs.getBoolean(MemoryBudget.PREF_HEARS, true))
+        val hearsSw = SwitchCompat(this).apply {
+            text = MemoryBudget.hearsLabel(hearsOn)
+            isChecked = hearsOn
+            setPadding(0, pad / 2, 0, 0)
+        }
+        box.addView(hearsSw)
+        hearsSw.setOnCheckedChangeListener { _, on -> hearsOn = on; hearsSw.text = MemoryBudget.hearsLabel(on) }
+
+        var lazyOn = !MemoryBudget.lazyLoad(prefs.getBoolean(MemoryBudget.PREF_LAZY_LOAD, false))
+        val lazySw = SwitchCompat(this).apply {
+            text = MemoryBudget.lazyLabel(lazyOn)
+            isChecked = lazyOn
+            setPadding(0, pad / 2, 0, 0)
+        }
+        box.addView(lazySw)
+        lazySw.setOnCheckedChangeListener { _, on -> lazyOn = on; lazySw.text = MemoryBudget.lazyLabel(on) }
+
+        var openMin = MemoryBudget.idleOpenMinutes(
+            prefs.getInt(MemoryBudget.PREF_IDLE_OPEN_MIN, 0))
+        val openRow = TextView(this).apply {
+            text = MemoryBudget.idleOpenLabel(openMin)
+            textSize = 15f
+            setPadding(0, pad, 0, 0)
+        }
+        box.addView(openRow)
+        openRow.setOnClickListener {
+            val choices = intArrayOf(0, 2, 5, 10, 30)
+            val labels = choices.map { MemoryBudget.idleOpenLabel(it) }.toTypedArray()
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("Release while open")
+                .setSingleChoiceItems(labels, choices.indexOf(openMin).coerceAtLeast(0)) { dd, which ->
+                    openMin = choices[which]
+                    openRow.text = MemoryBudget.idleOpenLabel(openMin)
+                    dd.dismiss()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        // The two release policies are alternatives, not a stack: whichever is picked last
+        // turns the other off, so the arm that is measured is the arm that is shown.
+        unloadSw.setOnCheckedChangeListener { _, on ->
+            unloadChecked = on
+            unloadSw.text = MemoryBudget.unloadLabel(on)
+            if (on && delayMin != 0) { delayMin = 0; delayRow.text = MemoryBudget.delayLabel(0) }
+        }
+        delayRow.setOnClickListener {
+            val labels = MemoryBudget.DELAY_CHOICES.map { MemoryBudget.delayLabel(it) }.toTypedArray()
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("Idle release")
+                .setSingleChoiceItems(labels, MemoryBudget.DELAY_CHOICES.indexOf(delayMin).coerceAtLeast(0)) { dd, which ->
+                    delayMin = MemoryBudget.DELAY_CHOICES[which]
+                    delayRow.text = MemoryBudget.delayLabel(delayMin)
+                    if (delayMin > 0 && unloadChecked) {
+                        unloadChecked = false
+                        unloadSw.isChecked = false
+                    }
+                    dd.dismiss()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Presence memory (dev)")
+            .setView(box)
+            .setPositiveButton("Apply") { _, _ ->
+                val choice = MemoryBudget.KV_CHOICES[radios.indexOfFirst { it.isChecked }.coerceAtLeast(0)]
+                prefs.edit()
+                    .putInt(MemoryBudget.PREF_KV_TOKENS, choice)
+                    .putBoolean(MemoryBudget.PREF_UNLOAD, unloadChecked && delayMin == 0)
+                    .putInt(MemoryBudget.PREF_UNLOAD_DELAY, delayMin)
+                    .putBoolean(MemoryBudget.PREF_HEARS, hearsOn)
+                    .putBoolean(MemoryBudget.PREF_LAZY_LOAD, !lazyOn)
+                    .putInt(MemoryBudget.PREF_IDLE_OPEN_MIN, openMin)
+                    .apply()
+                VoxLog.d("event=memory-budget kv=$choice unload=${unloadChecked && delayMin == 0} " +
+                    "idleMin=$delayMin hears=$hearsOn loadAtLaunch=$lazyOn idleOpenMin=$openMin")
+                Toast.makeText(this,
+                    "KV $choice · ${MemoryBudget.delayLabel(delayMin)} · ${MemoryBudget.idleOpenLabel(openMin)} " +
+                        "— KV, hearing and load-at-launch apply on the next presence load",
+                    Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** The STT model chooser: the shipped models, then the streaming arm. Picking the
+     *  streaming arm sets [ModelCatalog.KEY_STT_STREAM_MODEL] and leaves the shipped
+     *  [ModelCatalog.KEY_STT_MODEL] alone — it is the fallback while the streaming model is
+     *  absent, downloading or will not load. Picking a shipped model clears the streaming one. */
+    private fun pickSttModel() {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val choices = ModelCatalog.sttModels + ModelCatalog.streamingSttModels.map { (id, label) ->
+            id to ModelCatalog.streamingSttLabel(label, am.memoryClass, am.isLowRamDevice)
+        }
+        val stream = prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, "").orEmpty()
+        val cur = if (ModelCatalog.isStreamingStt(stream)) stream
+            else prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
+        AlertDialog.Builder(this)
+            .setTitle("STT model (on-device)")
+            .setSingleChoiceItems(choices.map { it.second }.toTypedArray(), choices.indexOfFirst { it.first == cur }.coerceAtLeast(0)) { d, which ->
+                val id = choices[which].first
+                if (ModelCatalog.isStreamingStt(id)) {
+                    prefs.edit().putString(ModelCatalog.KEY_STT_STREAM_MODEL, id).apply()
+                    if (!ModelCatalog.isInstalled(this, id)) Toast.makeText(this,
+                        "Download it in Voice models — until then ${sttModelLabel(prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL))} is used.",
+                        Toast.LENGTH_LONG).show()
+                } else {
+                    prefs.edit().putString(ModelCatalog.KEY_STT_MODEL, id).remove(ModelCatalog.KEY_STT_STREAM_MODEL).apply()
+                }
+                findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+                refreshSttLanguageRow()
+                d.dismiss()
+                // The new recogniser may not be able to hear the language that is
+                // stored. Say so and offer the model that can — never leave the choice
+                // sitting in prefs to be discarded at decode time.
+                resolveSttLanguageMismatch()
+            }
+            .show()
+    }
+
+    /** The language row's picker: only reachable while the recogniser is multilingual
+     *  (the row itself is hidden otherwise — [refreshSttLanguageRow]). */
+    private fun pickSttLanguage() {
+        val labels = SttLanguage.CHOICES.map { it.label }.toTypedArray()
+        val codes = SttLanguage.CHOICES.map { it.code }
+        val cur = prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, "").orEmpty().trim().lowercase()
+        AlertDialog.Builder(this)
+            .setTitle("Spoken language")
+            .setSingleChoiceItems(labels, codes.indexOf(cur).coerceAtLeast(0)) { d, which ->
+                prefs.edit().putString(ModelCatalog.KEY_STT_LANGUAGE, codes[which]).apply()
+                findViewById<TextView>(R.id.set_stt_language_val).text = SttLanguage.label(codes[which])
+                d.dismiss()
+                Toast.makeText(this, "Applies on the next voice-model load", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Show the language row only when the recogniser that will run can decode a
+     *  language. Hidden is the honest state for the .en checkpoints, Parakeet and
+     *  Nemotron — there is no choice to make, not a choice we forgot to offer. */
+    private fun refreshSttLanguageRow() {
+        val row = findViewById<LinearLayout>(R.id.row_stt_language) ?: return
+        val visible = SttLanguage.rowVisible(
+            prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE),
+            prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL),
+            prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, ""),
+        )
+        row.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<TextView>(R.id.set_stt_language_val)?.text =
+            SttLanguage.label(prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, ""))
+    }
+
+    /** The stored language cannot be decoded by the selected recogniser. Offer the
+     *  multilingual model with its REAL download size before anything starts; if the
+     *  English-only model is kept, the dead preference is cleared and said out loud. */
+    private fun resolveSttLanguageMismatch() {
+        val shipped = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+        val stream = prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, "")
+        val code = prefs.getString(ModelCatalog.KEY_STT_LANGUAGE, "").orEmpty()
+        if (!SttLanguage.englishOnlyMismatch(shipped, stream, code)) return
+        val model = SttLanguage.chosenModel(shipped, stream)
+        val sibling = ModelCatalog.blessed.firstOrNull { it.id == SttLanguage.multilingualSibling(model) }
+            ?: return
+        val size = ModelRowState.sizeLabel(sibling.sizeMB)
+        val current = sttModelLabel(model)
+        AlertDialog.Builder(this)
+            .setTitle("$current hears English only")
+            .setMessage("Your spoken language is ${SttLanguage.label(code)}, which $current " +
+                "cannot decode — it would be ignored on the next call.\n\n" +
+                "${sibling.name} understands it. Download: $size.")
+            .setPositiveButton("Use ${sibling.name} ($size)") { _, _ ->
+                prefs.edit()
+                    .putString(ModelCatalog.KEY_STT_MODEL, sibling.id)
+                    .remove(ModelCatalog.KEY_STT_STREAM_MODEL)
+                    .apply()
+                findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+                refreshSttLanguageRow()
+                if (ModelCatalog.isInstalled(this, sibling.id)) {
+                    Toast.makeText(this, "${sibling.name} is installed", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Download $size in Voice models — your language is kept",
+                        Toast.LENGTH_LONG).show()
+                    openModelsStore()
+                }
+            }
+            .setNegativeButton("Keep $current (English)") { _, _ ->
+                prefs.edit().putString(ModelCatalog.KEY_STT_LANGUAGE, "").apply()
+                refreshSttLanguageRow()
+                Toast.makeText(this,
+                    "$current hears English only — spoken language set to Auto-detect",
+                    Toast.LENGTH_LONG).show()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun sttModelLabel(id: String?): String =
+        (ModelCatalog.sttModels + ModelCatalog.streamingSttModels).firstOrNull { it.first == id }?.second ?: id.orEmpty()
+
+    /** The STT row's value: the streaming arm when selected, else the shipped model. */
+    private fun currentSttModelLabel(): String {
+        val stream = prefs.getString(ModelCatalog.KEY_STT_STREAM_MODEL, "").orEmpty()
+        return if (ModelCatalog.isStreamingStt(stream)) sttModelLabel(stream)
+            else sttModelLabel(prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL)
     }
 
     private fun refreshFlowVals() {
-        findViewById<TextView>(R.id.set_mode_val).text = modeLabel(prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME)
         findViewById<TextView>(R.id.set_stt_val).text = sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
-        val model = prefs.getString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL) ?: ModelCatalog.DEFAULT_STT_MODEL
-        findViewById<TextView>(R.id.set_stt_model_val).text = ModelCatalog.sttModels.firstOrNull { it.first == model }?.second ?: model
+        findViewById<TextView>(R.id.set_stt_model_val).text = currentSttModelLabel()
+        refreshSttLanguageRow()
         findViewById<TextView>(R.id.set_stt_threads_val).text = VoxThreads.label(prefs.getInt(VoxThreads.PREF, VoxThreads.AUTO))
         findViewById<TextView>(R.id.set_tts_val).text = label("tts", ModelCatalog.defaultTts(this))
         syncSpeakerRow()   // title + value follow the selected engine
@@ -532,12 +1532,11 @@ class SettingsActivity : AppCompatActivity() {
         }
         val color = ContextCompat.getColor(this,
             if (complete) R.color.hv_text_dim else R.color.hv_warn)
-        listOf(R.id.set_models_val, R.id.set_models_grpval).forEach { id ->
+        listOf(R.id.set_models_grpval).forEach { id ->
             findViewById<TextView>(id)?.let { v ->
                 v.text = text
                 v.setTextColor(color)
-                // The row itself still opens the Voice models sub-view (source +
-                // reset). The warning line is the direct shortcut to the store.
+                // The row opens the store; the warning line says so too, for a reader.
                 v.isClickable = !complete
                 v.isFocusable = !complete
                 v.contentDescription = if (complete) null else "$text. Opens Voice models."
@@ -555,12 +1554,68 @@ class SettingsActivity : AppCompatActivity() {
         startActivity(android.content.Intent(this, ModelsActivity::class.java))
     }
 
+    /**
+     * The one Phone tools screen (#511). One tap from the Settings home row, no section in between:
+     * the state, the setup, the grant groups and Recent actions are all on it, and it is the sheet
+     * the first-run offer opens, so there is one screen and one set of words.
+     */
+    private fun openPhoneTools() {
+        PhoneToolsSheet(this).show()
+    }
+
     override fun onResume() {
         super.onResume()
+        refreshCallQuiet()   // #325: back from the Do Not Disturb access screen
+        resumed = true
         // A download may have finished while the store was open; the Settings
         // warning must clear (or appear) the moment we come back.
         refreshModelsVal()
         refreshGrpVals()
+        // The profile can have been switched elsewhere; a scoped row must name the one that is
+        // active now, not the one that was active when this screen was built.
+        applyHints()
+        refreshAgentModel()
+        // #225: re-read the look (a theme change recreates the screen; a pref may have moved
+        // elsewhere) and restart the preview only if the Being section is the one on screen.
+        bindBeingPreview()
+        syncPreview()
+        PhoneToolsSheet.refreshOpen()   // #421: a DND grant made in system settings shows at once
+        refreshPhoneTools()
+    }
+
+    /**
+     * Phone tools (#453/#511): the home row's one line.
+     *
+     * The state line is [PhoneBootstrap.Step] — the same value the one screen draws — read the way
+     * that screen reads it: [PhoneBootstrap.settled] folds the handshake the record kept into the
+     * in-flight progress and then applies the clock. The progress alone is per-process, so reading
+     * only its step would say *Not set up* after a restart while the screen, which folds the
+     * record's handshake in, said *Connected*.
+     */
+    private fun refreshPhoneTools() {
+        runCatching {
+            val allowed = AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)
+            // One record, one function, both places: the same call the screen makes, so the row and
+            // the screen cannot disagree about whether this phone is set up — including after a
+            // restart, when this process has no attempt but the record still holds the handshake.
+            val now = System.currentTimeMillis()
+            val record = PhoneSetupStore.read(this)
+            val step = PhoneBootstrap.settled(
+                PhoneBootstrapStore.progress(),
+                record.handshakeAt,
+                now,
+            ).step
+            findViewById<TextView>(R.id.set_phone_grpval)?.text = PhoneToolsView.stepLine(step, allowed)
+        }
+    }
+
+    /** #225: the preview stops at onPause, not at onDestroy — a backgrounded Settings screen
+     *  must not keep a render thread, a GL context or a 60 fps ticker alive. */
+    override fun onPause() {
+        super.onPause()
+        resumed = false
+        previewHandler.removeCallbacks(previewTick)
+        findViewById<AvatarView>(R.id.set_being_preview)?.setPaused(true)
     }
 
     // #115: the Settings-home rows each carry a live-value subtitle so a user can see
@@ -571,47 +1626,81 @@ class SettingsActivity : AppCompatActivity() {
         try {
             findViewById<TextView>(R.id.set_entity_grpval)?.text =
                 connectionLine(prefs.getString("url", "").orEmpty())
-            // "Mic & Barge-in" owns the input side only — voice mode has its own
-            // top-level row, and echoing it here made the sub-title unpredictable.
+            // "Mic & Barge-in" owns the input side only; Presence has its own row.
             findViewById<TextView>(R.id.set_speech_grpval)?.text =
-                "Barge-in ${onOff(prefs.getBoolean("duplex", true))} · AEC ${onOff(prefs.getBoolean("mic_aec", true))}"
-            findViewById<TextView>(R.id.set_stt_grpval)?.text =
-                sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
-            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this))
-            // Counting files only — no decryption on the Settings home.
+                "Barge-in ${onOff(prefs.getBoolean("duplex", true))} · " +
+                    sttBackendLabel(prefs.getString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE) ?: ModelCatalog.BACKEND_ONDEVICE)
+            findViewById<TextView>(R.id.set_tts_grpval)?.text = label("tts", ModelCatalog.defaultTts(this)) +
+                " · cues ${onOff(prefs.getBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED))}"
+            // #224/#222: Presence says whether it is on, and if it cannot be, why.
+            refreshPresenceRow()
+            refreshVoxRows()   // rule (a): the VOX.md rows follow the Presence switch
+            findViewById<TextView>(R.id.set_presence_grpval)?.text =
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PRESENCE))
+                    "Alpha · select Presence in Alpha features above"
+                else when (presenceState()) {
+                PresenceGate.State.ON ->
+                    if (prefs.getBoolean("er_presence", true))
+                        "On · " + PresenceCadence.resolve(
+                            prefs.getString(PresenceCadence.PREF, null), null).key
+                    else "On · quiet"
+                PresenceGate.State.OFF -> "Off"
+                PresenceGate.State.NO_MODEL -> "On · model not downloaded"
+                PresenceGate.State.CANNOT_START -> "On · model cannot start here"
+            }
+            // Counting files only — no decryption on the Settings home. Behind the gate, the
+            // line says why it is quiet instead of reporting takes nobody can use yet.
             findViewById<TextView>(R.id.set_wake_grpval)?.text =
-                "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
-                "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
-            findViewById<TextView>(R.id.set_appearance_grpval)?.text =
-                label("theme", "system") + " · " + label("layout_mode", "presence")
+                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.WAKE_WORD))
+                    "Alpha · select Wake word in Alpha features above"
+                else "${com.hermesvox.wake.KeystoreTakeCipher.store(this).count()} of " +
+                    "${com.hermesvox.wake.EnrolmentPrompts.takes} takes · not listening"
             findViewById<TextView>(R.id.set_visuals_grpval)?.text =
-                VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
+                label("theme", "system") + " · " + label("layout_mode", "presence") + " · " +
+                    VisualStyle.of(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT).label
             findViewById<TextView>(R.id.set_about_grpval)?.text =
                 getString(R.string.app_name) + " " + versionName()
+            // #329: the role's real state, read from Android (never remembered in a pref).
+            findViewById<TextView>(R.id.set_assistant_grpval)?.text =
+                AssistantRole.summary(AssistantRole.state(this), AssistantRole.otherHolderLabel(this))
+            // #453: where the phone stands — the home list's last line, so the state it shows is
+            // the one the flow is in when the list is drawn.
+            refreshPhoneTools()
         } catch (_: Throwable) {
             // never let a subtitle populate crash the settings screen
         }
     }
 
-    private fun connectionLine(url: String): String =
-        if (url.isBlank()) "not configured" else "connected"
+    private fun connectionLine(url: String): String = when {
+        url.isBlank() -> "not configured"
+        // The host answered a request for this profile with "Unknown or unconfigured
+        // profile": say exactly that, in one line, instead of a green "connected".
+        ProfileReach.isMissing() -> ProfileReach.line()
+        else -> "connected"
+    }
 
     private fun onOff(on: Boolean): String = if (on) "on" else "off"
 
-    // The About row's version subtitle. Uses PackageManager (no BuildConfig dependency —
-    // the C0 release guard rejects buildConfigField key injection, and BuildConfig is
-    // not reliably generated). Falls back to the label on any failure.
-    private fun versionName(): String = try {
-        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-    } catch (_: Throwable) { "" }
+    // The About row's version subtitle. PackageManager (no BuildConfig dependency — the C0
+    // release guard rejects buildConfigField key injection, and BuildConfig is not reliably
+    // generated). The reader lives with the report's collector, so the version this screen
+    // prints and the version the block reports are the same read.
+    private fun versionName(): String = PresenceDiagnosticCollect.versionName(this)
 
-    // #118: the Mic & Barge-in "Advanced — timing tuning" chip collapses/expands the
-    // panel of VAD/barge-timing sliders (collapsed by default, progressive disclosure).
-    private fun bindMicAdvanced() {
+    // #118/#224: the advanced panels (Hearing's timing tuning, Being's fine look,
+    // Presence's behaviour controls) are collapsed by default, one disclosure each.
+    private fun bindAdvancedDisclosures() {
+        bindDisclosure(R.id.row_mic_advanced, R.id.adv_mic_panel, R.id.set_mic_adv_state)
+        bindDisclosure(R.id.row_being_advanced, R.id.adv_being_panel, R.id.set_being_adv_state)
+        bindDisclosure(R.id.row_presence_advanced, R.id.adv_presence_panel, R.id.set_presence_adv_state)
+    }
+
+    /** Wire one disclosure chip to the panel it reveals. */
+    private fun bindDisclosure(rowId: Int, panelId: Int, stateId: Int) {
         try {
-            val chip = findViewById<android.view.View>(R.id.row_mic_advanced) ?: return
-            val panel = findViewById<android.view.View>(R.id.adv_mic_panel) ?: return
-            val state = findViewById<TextView>(R.id.set_mic_adv_state) ?: return
+            val chip = findViewById<android.view.View>(rowId) ?: return
+            val panel = findViewById<android.view.View>(panelId) ?: return
+            val state = findViewById<TextView>(stateId) ?: return
             chip.setOnClickListener {
                 val show = panel.visibility != android.view.View.VISIBLE
                 panel.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
@@ -696,8 +1785,8 @@ class SettingsActivity : AppCompatActivity() {
             null -> "…"
         }
         tv.setTextColor(when (state) {
-            true -> 0xFF35D07F.toInt()
-            false -> 0xFFFF5B5B.toInt()
+            true -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_ok)
+            false -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_fail)
             null -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_cyan)
         })
     }
@@ -707,11 +1796,6 @@ class SettingsActivity : AppCompatActivity() {
         ModelCatalog.BACKEND_REMOTE -> "Remote (server)"
         else -> "On-device (offline)"
     }
-    private fun modeLabel(tok: String): String = when (tok) {
-        ModelCatalog.MODE_ENHANCED -> "Enhanced Realtime (alpha)"
-        else -> "Realtime"   // a stale stored token reads as Realtime (never crashes)
-    }
-
     private fun bindAppearance() {
         findViewById<LinearLayout>(R.id.row_theme).setOnClickListener {
             pick("Theme", arrayOf("System", "Dark", "Light"),
@@ -729,6 +1813,11 @@ class SettingsActivity : AppCompatActivity() {
                 arrayOf("presence", "conversation"), "layout_mode", R.id.set_layout_val)
         }
         findViewById<TextView>(R.id.set_layout_val).text = label("layout_mode", "presence")
+        // The glyph on the commands entry. One pref (CommandGlyph.PREF), five drawings;
+        // the picker shows each one drawn live at the row's own size, and the row shows
+        // the current one the same way — the choice is made by looking.
+        findViewById<LinearLayout>(R.id.row_command_icon).setOnClickListener { pickCommandIcon() }
+        showCommandIcon(CommandGlyph.current(this))
         bindKeepScreenOn()
         findViewById<android.view.View>(R.id.row_test_conn)?.setOnClickListener {
             val c = com.hermesvox.VoiceController(this, com.hermesvox.core.HermesSession(
@@ -740,7 +1829,7 @@ class SettingsActivity : AppCompatActivity() {
             // stream=false(unknown)`: a verdict for a test that never reached the network.
             findViewById<TextView>(R.id.set_test_val)?.let {
                 it.text = "testing…"
-                it.setTextColor(0xFFD6F4FF.toInt())
+                it.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.hv_overlay_text))
             }
             c.testConnectionAsync(true) { probe, msg ->
                 val ok = probe == ConnectionPhase.Probe.OK
@@ -752,9 +1841,9 @@ class SettingsActivity : AppCompatActivity() {
                         else -> "FAILED"
                     }
                     it.setTextColor(when (probe) {
-                        ConnectionPhase.Probe.OK -> 0xFF35D07F.toInt()
-                        ConnectionPhase.Probe.COLD -> 0xFFFFB43D.toInt()   // reachable, just not ready
-                        else -> 0xFFFF5B5B.toInt()
+                        ConnectionPhase.Probe.OK -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_ok)
+                        ConnectionPhase.Probe.COLD -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_cold)   // reachable, just not ready
+                        else -> androidx.core.content.ContextCompat.getColor(this, R.color.hv_verdict_fail)
                     })
                 }
                 androidx.appcompat.app.AlertDialog.Builder(this)
@@ -811,12 +1900,67 @@ class SettingsActivity : AppCompatActivity() {
     /** K2 (0.5.0.3) screen-alive toggle: keep_screen_on (default ON since 0.8). The flag it
      *  controls is a plain WINDOW flag (FLAG_KEEP_SCREEN_ON) MainActivity arms at
      *  call start and clears at the call teardown — no permission, no WAKE_LOCK.
-     *  Bound here + re-bound by restore-defaults (GROUP_APPEARANCE). */
+     *  Bound here + re-bound by restore-defaults (GROUP_VISUALS — Appearance). */
     private fun bindKeepScreenOn() {
         findViewById<SwitchCompat>(R.id.set_keep_screen_on).apply {
             isChecked = prefs.getBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
             setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, on).apply() }
         }
+    }
+
+    /**
+     * The chooser for the commands entry's glyph: each choice is drawn live at the row's
+     * own size with its name beside it, so the choice is made by looking. The pref written
+     * here is the one [CommandGlyph.current] reads everywhere the glyph appears.
+     */
+    private fun pickCommandIcon() {
+        val now = CommandGlyph.current(this)
+        val icons = CommandGlyph.Icon.entries
+        val density = resources.displayMetrics.density
+        fun px(v: Int) = (v * density).toInt()
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount(): Int = icons.size
+            override fun getItem(position: Int): Any = icons[position]
+            override fun getItemId(position: Int): Long = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val icon = icons[position]
+                val row = LinearLayout(this@SettingsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(px(20), px(12), px(20), px(12))
+                    minimumHeight = px(56)
+                }
+                row.addView(CommandMark(this@SettingsActivity).apply { this.icon = icon },
+                    LinearLayout.LayoutParams(px(26), px(26)).apply { marginEnd = px(16) })
+                row.addView(TextView(this@SettingsActivity).apply {
+                    text = icon.label
+                    textSize = 16f
+                    setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.hv_text))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                if (icon == now) row.addView(TextView(this@SettingsActivity).apply {
+                    text = "✓"
+                    textSize = 18f
+                    setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.hv_cyan))
+                })
+                return row
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Command icon")
+            .setAdapter(adapter) { dialog, which ->
+                val icon = icons[which]
+                prefs.edit().putString(CommandGlyph.PREF, icon.token).apply()
+                showCommandIcon(icon)
+                VoxLog.d("event=command-icon icon=${icon.token}")
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /** The row's own preview: the glyph the entry will draw, then its name. */
+    private fun showCommandIcon(icon: CommandGlyph.Icon) {
+        findViewById<CommandMark>(R.id.set_command_icon_mark)?.icon = icon
+        findViewById<TextView>(R.id.set_command_icon_val)?.text = icon.label
     }
 
     /** K2: the full runtime session as text — the rotated prior generation
@@ -860,12 +2004,23 @@ class SettingsActivity : AppCompatActivity() {
             "Acoustic echo cancellation. The phone listens to its own speaker and subtracts " +
             "that sound from the mic, so the entity does not hear itself and mistake its own " +
             "voice for yours. Leave it on unless a headset works better with it off.")
+        bindHelp(R.id.help_continuous, "Continuous capture",
+            "Normally the mic works a turn at a time and the recogniser hears it in chunks. " +
+            "With this on, the mic stays open for the whole call and the recogniser follows " +
+            "your words as you say them — the first word after a reply is never lost, and the " +
+            "partial transcript is never more than a tenth of a second old. Costs battery: the " +
+            "recogniser is reading all the time. Leave off unless you want that.")
+        bindHelp(R.id.help_semantic, "Judge when you finish",
+            "Ends your turn by judgement instead of a fixed pause: if the words so far read as " +
+            "finished and have stopped changing, your turn ends sooner; if they trail off " +
+            "(\"…and\", \"…because\") it waits longer. Needs Continuous capture on, because it " +
+            "decides from a transcript that keeps up. Off: the fixed pause below.")
         bindHelp(R.id.help_vad, "VAD (voice activity detection)",
             "A tiny on-device model decides when audio is speech and when it is silence, so " +
             "the app knows when you started and stopped talking. The threshold below is how " +
             "sure it must be before a sound counts as speech.")
         bindHelp(R.id.help_semantic_barge, "Semantic barge-in",
-            "In Enhanced Realtime, some interruptions are not meant to cancel the work — " +
+            "With Presence on, some interruptions are not meant to cancel the work — " +
             "\"take your time\" or \"go on\" means keep going. This lets the entity tell those " +
             "apart from a real interruption. Off: every interruption cancels its work.")
     }
@@ -888,7 +2043,16 @@ class SettingsActivity : AppCompatActivity() {
         bindMicToggle(R.id.set_mic_aec, "mic_aec", true)
         bindMicToggle(R.id.set_ns_extra, "ns_extra", true)
         bindMicToggle(R.id.set_partial_stt, "partial_stt", true)
+        // #228 / #229: both default on (D29) and both sit behind the Alpha gate (#402) — the
+        // rows are dimmed and unreachable until continuous listening is selected there.
+        // Continuous capture keeps the mic open and reads the streaming recogniser every 100 ms;
+        // the semantic endpointer is a judgement that only engages once those partials exist,
+        // behind its own switch because the two fail apart.
+        bindMicToggle(R.id.set_continuous_capture, ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
+        bindMicToggle(R.id.set_semantic_endpoint, SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
         bindMicToggle(R.id.set_tts_voice_usage, "tts_voice_usage", false)   // D2: engine default OFF (field A/B)
+        bindBackchannelRate()
+        bindCallQuiet()
 
         bindFloatSeekBar(R.id.set_seek_vad, R.id.set_mic_vad_val, "vad_threshold",
             0.1f, 0.9f, 0.05f, 0.5f) { "%.2f".format(it) }
@@ -907,16 +2071,27 @@ class SettingsActivity : AppCompatActivity() {
         bindIntSeekBar(R.id.set_seek_barge_level, R.id.set_mic_barge_level_val, "barge_level_only_ms",
             0, 800, 50, BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()) { "${it} ms" }
 
-        findViewById<LinearLayout>(R.id.row_mic_reset).setOnClickListener {
-            restoreDefaults(GROUP_MIC)
-            Toast.makeText(this, "Mic & Barge-in defaults restored", Toast.LENGTH_SHORT).show()
-        }
+        // Hearing holds the recogniser now, so its one restore covers both scopes.
+        bindRestoreRow(R.id.row_mic_reset, GROUP_MIC, "Hearing", GROUP_STT)
     }
 
-    private fun bindRestoreRow(rowId: Int, group: String, label: String) {
+    /**
+     * A section's restore row. It asks first: restoring cannot be undone, and the row is one
+     * stray tap at the bottom of a list a thumb scrolls through (the same rule as the commands
+     * sheet, where only the irreversible commands are drawn as risks).
+     */
+    private fun bindRestoreRow(rowId: Int, group: String, label: String, vararg more: String) {
         findViewById<android.view.View>(rowId).setOnClickListener {
-            restoreDefaults(group)
-            Toast.makeText(this, "$label defaults restored", Toast.LENGTH_SHORT).show()
+            AlertDialog.Builder(this)
+                .setTitle("Restore $label defaults?")
+                .setMessage("Every setting in $label goes back to how the app shipped. This cannot be undone.")
+                .setPositiveButton("Restore") { _, _ ->
+                    restoreDefaults(group)
+                    more.forEach { restoreDefaults(it) }
+                    Toast.makeText(this, "$label defaults restored", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Keep", null)
+                .show()
         }
     }
 
@@ -949,6 +2124,34 @@ class SettingsActivity : AppCompatActivity() {
         }
         bindIntSeekBar(R.id.set_seek_cue_level, R.id.set_cue_level_val, CuePolicy.PREF_LEVEL,
             0, 100, 10, CuePolicy.DEFAULT_LEVEL) { "$it%" }
+
+        // #251: one ambient channel at a time — the cues, or Presence's asides.
+        val scopeLabels = arrayOf("Only when Presence is off", "Always")
+        val scopeTokens = arrayOf(CuePolicy.SCOPE_PRESENCE_OFF, CuePolicy.SCOPE_ALWAYS)
+        val curScope = prefs.getString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE)
+        findViewById<TextView>(R.id.set_cue_scope_val).text = scopeLabels[scopeTokens.indexOf(curScope).coerceAtLeast(0)]
+        findViewById<LinearLayout>(R.id.row_cue_scope).setOnClickListener {
+            pick("Cues play", scopeLabels, scopeTokens, CuePolicy.PREF_SCOPE, R.id.set_cue_scope_val)
+        }
+        findViewById<SwitchCompat>(R.id.set_cue_ping).apply {
+            isChecked = prefs.getBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean(CuePolicy.PREF_PING, on).apply() }
+        }
+        val idleLabels = arrayOf("Never", "After 1 min", "After 2 min", "After 5 min")
+        val idleSecs = intArrayOf(0, 60, 120, 300)
+        fun idleLabel() = idleLabels[idleSecs.indexOf(prefs.getInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)).coerceAtLeast(0)]
+        findViewById<TextView>(R.id.set_cue_idle_val).text = idleLabel()
+        findViewById<LinearLayout>(R.id.row_cue_idle).setOnClickListener {
+            val cur = idleSecs.indexOf(prefs.getInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)).coerceAtLeast(0)
+            AlertDialog.Builder(this)
+                .setTitle("Check in after a silent call")
+                .setSingleChoiceItems(idleLabels, cur) { d, w ->
+                    prefs.edit().putInt(CuePolicy.PREF_IDLE_S, idleSecs[w]).apply()
+                    findViewById<TextView>(R.id.set_cue_idle_val).text = idleLabels[w]
+                    d.dismiss()
+                }
+                .show()
+        }
 
         findViewById<TextView>(R.id.set_cue_preview).setOnClickListener {
             val d = cuePlayerOrCreate().play(CueSynth.Cue.REPLY_READY, preview = true)
@@ -1024,6 +2227,167 @@ class SettingsActivity : AppCompatActivity() {
     // truncated list to drift. A3 adds "cycle all categories" so the whole breadth can be
     // seen animating. The pre-existing shape/theme + cycle controls are preserved verbatim
     // into this group (same prefs, same wording).
+    // ---- #225: the look controls, bound from ONE table ------------------------------
+    // Each slider reads and writes exactly the pref its LookControls entry names, prints
+    // "current · range", and carries a one-tap reset beside its title.
+    private fun bindLookControls() {
+        for (c in LookControls.ALL) bindLookControl(c)
+    }
+
+    private fun bindLookControl(c: LookControls.Control) {
+        val seek = findViewById<SeekBar>(idOf(c.seek)) ?: return
+        val tv = findViewById<TextView>(idOf(c.value)) ?: return
+        val reset = findViewById<TextView>(idOf(LookControls.resetName(c.seek)))
+        // Named `key` on purpose: the Settings pref-key audit (SettingsHintsTest) treats a
+        // helper parameter as a parameter, so this table-driven binding adds no unowned key.
+        val key = c.key
+        seek.max = c.steps
+        // The value line and the reset's state are one thing (the control's position), so
+        // they are refreshed together — a reset can never leave a stale value on screen.
+        val show: (Int) -> Unit = { p ->
+            tv.text = c.labelAt(p)
+            reset?.let {
+                val atDefault = c.isDefault(p)
+                it.alpha = if (atDefault) 0.35f else 1f
+                it.isClickable = !atDefault
+            }
+        }
+        seek.progress = c.progressOf(prefs.getFloat(key, c.default))
+        show(seek.progress)
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.edit().putFloat(key, c.at(p)).apply()
+                show(p)
+            }
+            override fun onStartTrackingTouch(s: SeekBar) {}
+            override fun onStopTrackingTouch(s: SeekBar) {}
+        })
+        reset?.setOnClickListener {
+            prefs.edit().putFloat(key, c.default).apply()
+            seek.progress = c.progressOf(c.default)
+            show(seek.progress)
+        }
+    }
+
+    /** A layout id by resource name — the table stores names so a test can hold it against
+     *  the layout without this file restating every id twice. */
+    private fun idOf(name: String): Int = resources.getIdentifier(name, "id", packageName)
+
+    // ---- #225: the live preview ---------------------------------------------------------
+    // The same AvatarView the main screen draws, fed by the same applyLookPrefs(), so a change
+    // is judged where it is made. It walks through the states a call shows, so a look is seen
+    // listening, working and speaking — not only at rest. It renders ONLY while the Being
+    // section is on screen and the screen is resumed: leaving releases the render thread and
+    // its GPU targets (AvatarView.setPaused), so nothing keeps drawing — or holding memory —
+    // behind the Settings home, another section, or another app.
+    private val previewStates = arrayOf("idle" to "resting", "listening" to "listening",
+        "thinking" to "working", "speaking" to "speaking")
+    private var previewAt = 0
+    /** DEBUG harness only (#225 screenshots): hold one state instead of walking them. */
+    private var previewHold: String? = null
+    /** True between onResume and onPause; the preview may only run when this is set. */
+    private var resumed = false
+    private val previewHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val previewTick = object : Runnable {
+        override fun run() {
+            val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+            val (st, label) = previewStates[previewAt % previewStates.size]
+            previewAt++
+            showPreviewState(v, st, label)
+            previewHandler.postDelayed(this, PREVIEW_STATE_MS)
+        }
+    }
+    private val lookListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, _ ->
+        // A pref written by a row above must show up in the preview at once — but never on a
+        // screen that is in the background (onPause has already released the renderer).
+        if (resumed) findViewById<AvatarView>(R.id.set_being_preview)?.applyLookPrefs(p)
+    }
+    private var previewBound = false
+
+    /** Put the preview in [st] and say which state it is showing. */
+    private fun showPreviewState(v: AvatarView, st: String, label: String) {
+        v.setPresent(st, null, if (st == "thinking") 0.7f else 0.15f,
+            if (st == "speaking") 0.55f else 0.2f)
+        findViewById<TextView>(R.id.set_being_preview_state)?.text = label
+    }
+
+    private fun bindBeingPreview() {
+        val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+        // #275: on the light theme the preview is ink on the page, exactly as the main screen —
+        // setLightSurface snaps the family's authored light axes, so the preview cannot show a
+        // dark panel in light mode.
+        val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        v.setLightSurface(night != android.content.res.Configuration.UI_MODE_NIGHT_YES, ContextCompat.getColor(this, R.color.hv_bg))
+        v.applyLookPrefs(prefs)
+        if (!previewBound) {
+            previewBound = true
+            prefs.registerOnSharedPreferenceChangeListener(lookListener)
+        }
+    }
+
+    /** Run the preview only while it is both on screen and in front; otherwise stop the state
+     *  walk AND hand the GPU back (AvatarView.setPaused tears the render thread down). */
+    private fun syncPreview() {
+        val v = findViewById<AvatarView>(R.id.set_being_preview) ?: return
+        val on = resumed && currentSection == SECTION_VISUALS
+        previewHandler.removeCallbacks(previewTick)
+        v.setPaused(!on)
+        if (!on) return
+        val hold = previewHold
+        if (hold != null) {
+            val label = previewStates.firstOrNull { it.first == hold }?.second ?: hold
+            showPreviewState(v, hold, label)
+        } else {
+            previewHandler.post(previewTick)
+        }
+    }
+
+    // ---- DEBUG harness (screenshots) ------------------------------------------------
+    /** DEBUG-ONLY (#275/#225 convention): make a capture deterministic without taps.
+     *  Extras: `section` (already honoured), `being_advanced` (open the fine-look panel),
+     *  `preview_state` (hold the preview on idle|listening|thinking|speaking) and `scroll_to`
+     *  (a row or seek-bar resource name to scroll the section to). Inert in a release build,
+     *  because it is guarded by the same FLAG_DEBUGGABLE test MainActivity's harness uses. */
+    private fun applyDebugHarness() {
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        intent?.getStringExtra("being_advanced")?.let { want ->
+            if (want != "false") {
+                findViewById<android.view.View>(R.id.adv_being_panel)?.visibility = android.view.View.VISIBLE
+                findViewById<TextView>(R.id.set_being_adv_state)?.text = "hide"
+            }
+        }
+        intent?.getStringExtra("preview_state")?.let { s ->
+            previewHold = previewStates.firstOrNull { it.first == s.lowercase() }?.first
+        }
+        // showSection() already ran, so it started the walk; taking the hold now must take
+        // effect on this same screen, not after the next section switch.
+        if (previewHold != null) syncPreview()
+        intent?.getStringExtra("scroll_to")?.let { name -> scrollToRow(name) }
+    }
+
+    /** DEBUG only: scroll so [name]'s row sits at the BOTTOM of the screen, which keeps the
+     *  preview and the rows above it in frame — the control and (for the upper rows) the
+     *  being it changes in one shot. Waits for the section's first layout: the offset is
+     *  meaningless before it, and a scroll computed too early lands at the top. The row is
+     *  nested (the fine-look panel is one child of the ScrollView), so the offset comes from
+     *  screen coordinates, not from the row's own `bottom`. */
+    private fun scrollToRow(name: String) {
+        val row = findViewById<android.view.View>(idOf(name)) ?: return
+        val scroll = findViewById<android.widget.ScrollView>(R.id.settings_scroll) ?: return
+        val margin = (resources.displayMetrics.density * 16f).toInt()
+        scroll.viewTreeObserver.addOnGlobalLayoutListener(
+            object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    scroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    val r = IntArray(2); row.getLocationOnScreen(r)
+                    val s = IntArray(2); scroll.getLocationOnScreen(s)
+                    val rowBottomInContent = r[1] - s[1] + scroll.scrollY + row.height
+                    scroll.scrollTo(0, (rowBottomInContent - scroll.height + margin).coerceAtLeast(0))
+                }
+            })
+    }
+
     private fun bindVisuals() {
         val catVals = VisualStyle.TOKENS
         val catLabels = VisualStyle.LABELS
@@ -1045,12 +2409,11 @@ class SettingsActivity : AppCompatActivity() {
                 prefs.edit().putBoolean(VisualStyle.KEY_CYCLE_ALL, on).apply()
             }
         }
-        bindFloatSeekBar(R.id.set_seek_visual_energy, R.id.set_visual_energy_val, VisualStyle.KEY_ENERGY,
-            VisualStyle.ENERGY_MIN, VisualStyle.ENERGY_MAX, VisualStyle.ENERGY_STEP,
-            VisualStyle.DEFAULT_ENERGY) { "%.1f×".format(it) }
-        bindFloatSeekBar(R.id.set_seek_visual_glow, R.id.set_visual_glow_val, VisualStyle.KEY_GLOW,
-            VisualStyle.GLOW_MIN, VisualStyle.GLOW_MAX, VisualStyle.GLOW_STEP,
-            VisualStyle.DEFAULT_GLOW) { "%.1f×".format(it) }
+        // #225: the look's sliders are bound from LookControls.ALL — one table that names the
+        // pref, the row, the bounds and the reading, so a slider can only write the pref it
+        // says it writes. Energy and glow ride it too (see the table's own note).
+        bindLookControls()
+        bindBeingPreview()
 
         // video-statewire: WHICH SHAPE FIRES IN EACH ACTIVE STATE. Three pickers over the
         // SAME SHAPE vocabulary as the presence-shape picker below — so the user can put
@@ -1127,7 +2490,13 @@ class SettingsActivity : AppCompatActivity() {
         t.init { ok ->
             if (!ok || preview !== t) return@init
             val t0 = android.os.SystemClock.uptimeMillis()
-            t.speak("Hi — this is how I'll sound when we talk.") {
+            // A French voice previews a French sentence: an English line through a
+            // fr-FR model is the one preview that cannot tell the owner what it is.
+            val phrase = if (SherpaVoice.fromEngineToken(ttsEngine())?.let { it in FRENCH_VOICES } == true)
+                "Bonjour — voici ma voix lorsque nous parlerons."
+            else
+                "Hi — this is how I'll sound when we talk."
+            t.speak(phrase) {
                 VoxLog.d("event=voice-preview engine=${t.name} ms=${android.os.SystemClock.uptimeMillis() - t0}")
                 if (preview === t) { try { t.shutdown() } catch (_: Throwable) {}; preview = null }
             }
@@ -1137,6 +2506,8 @@ class SettingsActivity : AppCompatActivity() {
     override fun onDestroy() {
         preview?.let { try { it.stop(); it.shutdown() } catch (_: Throwable) {} }
         preview = null
+        previewHandler.removeCallbacksAndMessages(null)   // #225
+        prefs.unregisterOnSharedPreferenceChangeListener(lookListener)
         // #156: a Settings cue preview owns an AudioTrack; free it with the screen.
         cuePlayer?.release()
         cuePlayer = null
@@ -1154,11 +2525,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** The on-device engine the row controls, or null for the system voice (which
      *  has no speaker choice — the row hides rather than offering a no-op). */
-    private fun ttsVoiceEngine(): SherpaVoice? = when (ttsEngine()) {
-        "supertonic" -> SherpaVoice.SUPERTONIC
-        "piper" -> SherpaVoice.PIPER
-        else -> null
-    }
+    private fun ttsVoiceEngine(): SherpaVoice? = SherpaVoice.fromEngineToken(ttsEngine())
 
     private fun speakerStore(): SpeakerPrefs = AndroidSpeakerPrefs(prefs)
 
@@ -1171,12 +2538,22 @@ class SettingsActivity : AppCompatActivity() {
     private fun syncSpeakerRow() {
         val row = findViewById<LinearLayout>(R.id.row_tts_speaker) ?: return
         val engine = ttsVoiceEngine()
-        if (engine == null) { row.visibility = android.view.View.GONE; return }
+        // No engine, or an engine with a single built-in voice (Siwis, Tom): there is
+        // no choice to make, so there is no row. UPMC's two speakers make it appear.
+        if (engine == null || VoiceSpeakers.speakerCount(speakerStore(), engine) <= 1) {
+            row.visibility = android.view.View.GONE
+            return
+        }
         row.visibility = android.view.View.VISIBLE
         findViewById<TextView>(R.id.set_tts_speaker_title).text = when (engine) {
             SherpaVoice.SUPERTONIC -> "Speaker (Supertonic)"
             SherpaVoice.PIPER -> "Speaker (Piper)"
+            SherpaVoice.PIPER_UPMC -> "Speaker (UPMC · French)"
+            else -> "Speaker (${engine.displayName})"
         }
+        // #224: this row's title is rewritten whenever the engine changes; keep its
+        // one-line statement attached to the new title.
+        applyHint("row_tts_speaker", findViewById(R.id.set_tts_speaker_title))
         findViewById<TextView>(R.id.set_tts_speaker_val).text = speakerValue(engine)
     }
 
@@ -1204,7 +2581,25 @@ class SettingsActivity : AppCompatActivity() {
         when (engine) {
             SherpaVoice.SUPERTONIC -> pickSupertonicSpeaker()
             SherpaVoice.PIPER -> pickPiperSpeaker()
+            // UPMC is the one French voice with two speakers (jessica, pierre).
+            else -> pickUpmcSpeaker(engine)
         }
+    }
+
+    /** A French voice whose speaker count is 1 never reaches here (the row is hidden);
+     *  the only one that does is UPMC, whose two speakers are named in the model's own
+     *  `speaker_id_map`. */
+    private fun pickUpmcSpeaker(engine: SherpaVoice) {
+        val names = VoiceSpeakers.UPMC_SPEAKERS
+        val cur = VoiceSpeakers.resolve(speakerStore(), engine, names.size)
+        AlertDialog.Builder(this)
+            .setTitle("Speaker (UPMC · French)")
+            .setSingleChoiceItems(names.map { it.second }.toTypedArray(),
+                names.indexOfFirst { it.first == cur }.coerceAtLeast(0)) { d, which ->
+                d.dismiss()
+                saveSpeaker(engine, names[which].first)
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun pickSupertonicSpeaker() {
@@ -1279,6 +2674,9 @@ class SettingsActivity : AppCompatActivity() {
             val curated = VoiceSpeakers.PIPER_CURATED.firstOrNull { it.first == id }
             if (curated != null) "Voice ${curated.second}" else "Voice id $id"
         }
+        SherpaVoice.PIPER_UPMC -> VoiceSpeakers.UPMC_SPEAKERS.firstOrNull { it.first == id }?.second
+            ?: "Voice id $id"
+        else -> "Voice $id"
     }
 
     private fun label(prefKey: String, default: String): String {
@@ -1287,6 +2685,9 @@ class SettingsActivity : AppCompatActivity() {
             "on-device" -> "On-device"
             "presence" -> "Being"; "conversation" -> "Transcript"
             "system" -> "System"; "kokoro" -> "System"; "piper" -> "Piper"; "supertonic" -> "Supertonic"
+            "piper-siwis" -> "Piper · fr-FR (Siwis)"
+            "piper-tom" -> "Piper · fr-FR (Tom)"
+            "piper-upmc" -> "Piper · fr-FR (UPMC)"
             "warm" -> "Warm"; "bright" -> "Bright"; "deep" -> "Deep"
             "dark" -> "Dark"; "light" -> "Light"
             else -> tok
@@ -1305,6 +2706,11 @@ class SettingsActivity : AppCompatActivity() {
                 .putInt("vad_min_speech_ms", 300)
                 .putInt("vad_max_ms", 15000)
                 .putBoolean("partial_stt", true)
+                // #228/#229: both default ON behind the Alpha gate (D29); restore puts them back
+                // that way. Restoring never touches the gate itself.
+                .putBoolean(ContinuousCapture.KEY, ContinuousCapture.DEFAULT_ON)
+                .putBoolean(SemanticEndpoint.KEY, SemanticEndpoint.DEFAULT_ON)
+                .putString(SemanticEndpoint.KEY_EAGERNESS, SemanticEndpoint.Eagerness.BALANCED.key)
                 .putBoolean("mic_aec", true)
                 .putBoolean("ns_extra", true)
                 .putBoolean("tts_voice_usage", false)   // D2: echo-routing default OFF (field A/B 2026-09-06)
@@ -1314,6 +2720,8 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_STT -> e
                 .putString(ModelCatalog.KEY_STT_BACKEND, ModelCatalog.BACKEND_ONDEVICE)
                 .putString(ModelCatalog.KEY_STT_MODEL, ModelCatalog.DEFAULT_STT_MODEL)
+                .putString(ModelCatalog.KEY_STT_LANGUAGE, "")   // the default row is hidden anyway
+                .remove(ModelCatalog.KEY_STT_STREAM_MODEL)   // the default: no streaming arm
                 .putInt(VoxThreads.PREF, VoxThreads.AUTO)   // 0.7.3: the thread override folds into the STT scope
                 .putString(KEY_STT_REMOTE_URL, "")
                 .putString(KEY_STT_REMOTE_MODEL, "")
@@ -1325,10 +2733,13 @@ class SettingsActivity : AppCompatActivity() {
                 e.remove("tts")   // unset = the best installed voice (ModelCatalog.defaultTts), not a forced System
                     .putString("voice", "system")   // #112: voice register folds into TTS (GROUP_VOICE branch removed)
                     .putBoolean("speak_responses", true)   // 0.6.5: the reply-speech toggle belongs to the TTS group's restore scope
-                    // #156: the cue scope is the being's spoken presence too.
-                    .putBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
+                // UI/UX pass: the cues live in "Voice & sounds" now, and their restore scope with them.
+                e.putBoolean(CuePolicy.PREF_ENABLED, CuePolicy.DEFAULT_ENABLED)
                     .putBoolean(CuePolicy.PREF_SILENT, CuePolicy.DEFAULT_SILENT)
                     .putInt(CuePolicy.PREF_LEVEL, CuePolicy.DEFAULT_LEVEL)
+                    .putString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE)
+                    .putBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING)
+                    .putInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)
             }
             GROUP_ENTITY -> e
                 .putString("model", "hermes-agent")
@@ -1339,21 +2750,30 @@ class SettingsActivity : AppCompatActivity() {
                 // flip er_presence back on. The REAL 0.6.4 field bug is below in
                 // refreshFlowVals: restoreDefaults(GROUP_ENTITY) ran refreshFlowVals
                 // which did not re-read the ER switches. Now it does (bindErControls).
+            // #224/#222: the Presence section's own restore scope (these keys lived under Entity).
+            GROUP_PRESENCE -> e
+                .putBoolean(PresenceGate.KEY_PRESENCE_ENABLED, PresenceGate.DEFAULT_ENABLED)
                 .putBoolean("er_presence", true)
                 .putBoolean("er_semantic_barge", true)
                 .putString(PresenceCadence.PREF, PresenceCadence.DEFAULT.key)
                 .putFloat("er_echo_skip_ms", 700f)
                 .putString("er_presence_voice", "sounds")
-                .putString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME)   // #112: voice mode folds into Entity (GROUP_MODE branch removed); url/key untouched (identity)
-            GROUP_APPEARANCE -> e
+            // UI/UX pass: Appearance is one section — the screen, then the being on it — so
+            // its one restore covers both.
+            GROUP_VISUALS -> e
                 .putString("theme", "system")
                 .putString("layout_mode", "presence")
                 .putBoolean(KEY_KEEP_SCREEN_ON, KEEP_SCREEN_ON_DEFAULT)
-            GROUP_VISUALS -> e
+                // The commands entry goes back to the glyph it ships with (Clanker).
+                .remove(CommandGlyph.PREF)
                 .putString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)   // the light/cheap family
                 .putBoolean(VisualStyle.KEY_CYCLE_ALL, VisualStyle.DEFAULT_CYCLE_ALL)   // A3: fixed, not cycling
                 .putFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY)
                 .putFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW)
+                .putFloat(VisualStyle.KEY_DENSITY, VisualStyle.DEFAULT_DENSITY)   // #225
+                .putFloat(VisualStyle.KEY_SPEED, VisualStyle.DEFAULT_SPEED)
+                .putFloat(VisualStyle.KEY_TRAIL, VisualStyle.DEFAULT_TRAIL)
+                .putFloat(VisualStyle.KEY_HUE, VisualStyle.DEFAULT_HUE)
                 .putString("particles_theme", "aura")
                 .putBoolean("particles_cycle", true)
                 // video-statewire: remove the state-shape picks so they fall back to the
@@ -1365,15 +2785,16 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)
                 .putBoolean("debug_log", false)
-            GROUP_MODELS -> e.putString(ModelCatalog.KEY_SOURCE, ModelCatalog.DEFAULT_SOURCE)   // source only; files untouched
         }
         e.apply()
         when (group) {
             GROUP_MIC -> bindMicSettings()
             GROUP_STT -> { loadSttRemoteFields(); refreshFlowVals() }
-            GROUP_APPEARANCE -> bindKeepScreenOn()
-            GROUP_VISUALS -> bindVisuals()
-            GROUP_TTS -> { bindFlows(); bindSoundCues() }   // 0.6.5: re-read the speak toggle after restore; #156: and the cue rows
+            // The theme is applied, not just written: a restore that left the screen dark
+            // under a "Follow the phone" label would be a lie until the next launch.
+            GROUP_VISUALS -> { bindVisuals(); bindKeepScreenOn(); showCommandIcon(CommandGlyph.DEFAULT); refreshFlowVals(); applyTheme("system") }
+            GROUP_TTS -> { bindFlows(); bindSoundCues() }   // 0.6.5 speak toggle; the cue rows live here now
+            GROUP_PRESENCE -> { refreshFlowVals(); bindErControls(); refreshGrpVals() }
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
             GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()
@@ -1389,16 +2810,23 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private companion object {
+        /** #402: how a gated alpha row is dimmed — visibly there, plainly not available. */
+        const val ALPHA_DIM = 0.38f
         const val GROUP_MIC = "mic"
         const val GROUP_STT = "stt"
         const val GROUP_TTS = "tts"
         // #112: no GROUP_VOICE / GROUP_MODE — the voice register folds into GROUP_TTS
-        // and voice mode folds into GROUP_ENTITY, so each setting has ONE reset scope.
+        // and Presence has its own GROUP_PRESENCE scope, so each setting has ONE reset scope.
         const val GROUP_ENTITY = "entity"
-        const val GROUP_APPEARANCE = "appearance"
         const val GROUP_VISUALS = "visuals"
+        const val GROUP_PRESENCE = "presence"
+        /** #225: how long the preview holds each state before the next. */
+        const val PREVIEW_STATE_MS = 2800L
         const val GROUP_ABOUT = "about"
-        const val GROUP_MODELS = "models"
+
+        /** The fr-FR voices (#477): previewed with a French sentence, since an English
+         *  line through a French model says nothing about the voice. */
+        val FRENCH_VOICES = setOf(SherpaVoice.PIPER_SIWIS, SherpaVoice.PIPER_TOM, SherpaVoice.PIPER_UPMC)
 
         const val SECTION_ENTITY = "entity"
         const val SECTION_SPEECH = "speech"
@@ -1408,5 +2836,27 @@ class SettingsActivity : AppCompatActivity() {
         const val SECTION_APPEARANCE = "appearance"
         const val SECTION_VISUALS = "visuals"
         const val SECTION_ABOUT = "about"
+        const val SECTION_PRESENCE = "presence"
+        const val SECTION_ASSISTANT = "assistant"
+        /** #453: the answer to "what may my agent do with my phone, and is it set up yet". */
+        const val SECTION_PHONE = "phone"
+
+        /** The section containers, by section. Transcription, Voice models, Phone tools and the old
+         *  Appearance & Layout section have none of their own any more (see [showSection]). */
+        val SECTION_VIEWS = mapOf(
+            SECTION_ENTITY to R.id.sec_entity, SECTION_SPEECH to R.id.sec_speech,
+            SECTION_TTS to R.id.sec_tts, SECTION_PRESENCE to R.id.sec_presence,
+            SECTION_VISUALS to R.id.sec_visuals, SECTION_ASSISTANT to R.id.sec_assistant,
+            SECTION_ABOUT to R.id.sec_about)
+
+        /** The home row that opens each section; its label is the section's title. */
+        val SECTION_HOME_ROWS = mapOf(
+            SECTION_ENTITY to R.id.row_grp_entity, SECTION_SPEECH to R.id.row_grp_speech,
+            SECTION_TTS to R.id.row_grp_tts, SECTION_PRESENCE to R.id.row_grp_presence,
+            SECTION_VISUALS to R.id.row_grp_visuals, SECTION_ASSISTANT to R.id.row_grp_assistant,
+            SECTION_ABOUT to R.id.row_grp_about)
+
+        /** #329: the system's assistant-role dialog (distinct from REQ_MIC_CALL in MainActivity). */
+        const val REQ_ASSISTANT = 102
     }
 }

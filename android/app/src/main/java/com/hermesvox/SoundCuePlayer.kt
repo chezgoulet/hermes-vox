@@ -71,7 +71,7 @@ class SoundCuePlayer(context: Context) {
                 "haptics=${world.hapticsEnabled} timbre=${timbre().name.lowercase()}")
         try {
             when (decision.action) {
-                CuePolicy.Action.AUDIO -> playAudio(cue, decision.volume)
+                CuePolicy.Action.AUDIO -> playAudio(cue, if (cue == CueSynth.Cue.PING) decision.volume * CuePolicy.Ambient.PING_GAIN else decision.volume)
                 CuePolicy.Action.HAPTIC -> playHaptic(cue)
                 CuePolicy.Action.SILENT -> Unit
             }
@@ -105,6 +105,13 @@ class SoundCuePlayer(context: Context) {
         hapticsEnabled = hapticsEnabled(),
         ttsSpeaking = voiceActive,
         preview = preview,
+        scope = prefs.getString(CuePolicy.PREF_SCOPE, CuePolicy.DEFAULT_SCOPE) ?: CuePolicy.DEFAULT_SCOPE,
+        // Presence speaks asides only when the layer is on, its model is downloaded and
+        // its own narration switch is on. (Whether the engine can start is known only to
+        // the host; if it cannot, there are no asides and cues are not suppressed forever.)
+        presenceOn = PresenceGate.enabled(prefs) &&
+            ModelCatalog.isInstalled(app, "gemma-e2b") &&
+            prefs.getBoolean("er_presence", true),
     )
 
     private fun maxVolume(): Int = am?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0

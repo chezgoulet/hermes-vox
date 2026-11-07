@@ -1,4 +1,8 @@
 # PLAN — Hermes Vox 0.8: the accelerator series
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 Series thesis: **the accelerator work made the hardware path *possible*; 0.8 makes it
 *provable and perceptible*.** GPU acceleration is the hallmark feature. The Enhanced-Realtime presence

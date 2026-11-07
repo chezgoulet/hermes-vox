@@ -2,6 +2,7 @@ package com.hermesvox.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -14,6 +15,17 @@ import java.util.concurrent.TimeUnit
  * by StreamParityTest against the Go goldens.)
  */
 class StreamTest {
+
+    /** This class pins the `/v1/responses` reader; the shipped route is runs, which
+     *  every install now takes (0.9.1 H2), so the route is set for each test. */
+    private var routeBefore = StreamRoute.active
+
+    @org.junit.Before
+    fun pinResponsesRoute() { routeBefore = StreamRoute.active; StreamRoute.active = TurnRoute.RESPONSES }
+
+    @org.junit.After
+    fun restoreRoute() { StreamRoute.active = routeBefore }
+
 
     private fun session(srv: TestServer) = HermesSession(srv.url, "testkey", "hermes-agent")
 
@@ -215,17 +227,37 @@ class StreamTest {
     }
 
     @Test
-    fun `voice turns carry the prefix and plain turns do not`() {
+    fun `voice turns tell the mind through instructions and keep the words byte-exact`() {
+        // A2/F4 (2026-11-04 review): the register and every protocol note ride the request's
+        // ephemeral `instructions`; the caller's words are the input, unchanged. The typed turn
+        // sends an EXPLICIT empty instructions, because the gateway inherits the previous
+        // chained turn's value when the field is absent.
         TestServer { _, w -> w.sse(); w.write("""data: {"type":"response.completed","response":{"id":"r"}}""" + "\n\n") }.use { srv ->
             val s = session(srv)
-            drain(s, s.voiceTurn("what time is it"))
+            drain(s, s.voiceTurn("what time is it", "You are speaking out loud.", ResponsesClient.reasoningOption("low")))
             drain(s, s.startStream("typed"))
-            val (voice, plain) = srv.requests.map { Json.str(obj(it.body), "input") }
-            assertEquals(ResponsesClient.USER_TURN_PREFIX + "what time is it", voice)
-            assertEquals("typed", plain)
-            val body = obj(srv.requests[0].body)
-            assertEquals("BYOG: no voice field", null, body["voice"])
-            assertEquals("never a system mutation", null, body["instructions"])
+            val voice = obj(srv.requests[0].body)
+            val plain = obj(srv.requests[1].body)
+            assertEquals("the caller's words, byte-exact", "what time is it", Json.str(voice, "input"))
+            assertEquals("the register is ephemeral instructions",
+                "You are speaking out loud.", Json.str(voice, "instructions"))
+            assertEquals("typed", Json.str(plain, "input"))
+            assertEquals("a typed turn clears any inherited instructions", "", Json.str(plain, "instructions"))
+            assertNull("BYOG: no voice field", voice["voice"])
+        }
+    }
+
+    @Test
+    fun `the reasoning effort rides model_options and never the input`() {
+        TestServer { _, w -> w.sse(); w.write("""data: {"type":"response.completed","response":{"id":"r"}}""" + "\n\n") }.use { srv ->
+            val s = session(srv)
+            drain(s, s.voiceTurn("hi", "", ResponsesClient.reasoningOption("low")))
+            drain(s, s.startStream("typed"))
+            val opts = Json.obj(obj(srv.requests[0].body), "model_options")
+            val reasoning = Json.obj(opts, "reasoning")
+            assertEquals(true, (reasoning?.get("enabled") as JBool).value)
+            assertEquals("low", Json.str(reasoning, "effort"))
+            assertNull("a typed turn carries no override", Json.obj(obj(srv.requests[1].body), "model_options"))
         }
     }
 

@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.5.1 — eye-fix patch
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Contained patch on 0.5.5. Fixes the one visual defect the maintainer flagged: the eye's
 iris was rendered off-center (rolled toward the lens rim), breaking the eye illusion.
 

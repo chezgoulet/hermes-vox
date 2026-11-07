@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
  * written alongside tool calls) is surfaced as [commentary] — never as [delta] —
  * so the app can show it as progress without speaking it as the answer.
  */
-internal class StreamEvent(val type: String) {
+internal class StreamEvent(var type: String) {
     var responseId = ""
     var itemType = ""   // "message" | "function_call" | "function_call_output"
     var itemId = ""
@@ -29,12 +29,20 @@ internal class StreamEvent(val type: String) {
     var commentary = "" // mid-turn progress text — never spoken as the reply
     var text = ""       // accumulated assistant text so far
     var done = false    // true once the turn completed
+    /** #282: the run's approval request, when this event is `approval.request`. */
+    var approval: ApprovalRequest? = null
 
-    fun toMap(): Map<String, Any?> = linkedMapOf(
-        "type" to type, "response_id" to responseId, "item_type" to itemType, "item_id" to itemId,
-        "name" to name, "arguments" to arguments, "output" to output, "delta" to delta,
-        "commentary" to commentary, "text" to text, "done" to done,
-    )
+    fun toMap(): Map<String, Any?> {
+        val map = linkedMapOf<String, Any?>(
+            "type" to type, "response_id" to responseId, "item_type" to itemType, "item_id" to itemId,
+            "name" to name, "arguments" to arguments, "output" to output, "delta" to delta,
+            "commentary" to commentary, "text" to text, "done" to done,
+        )
+        // Only approval events carry the field: every other event's shape is pinned by
+        // testdata/stream goldens, so an always-present null would rewrite them all.
+        approval?.let { map["approval"] = it.toMap() }
+        return map
+    }
 }
 
 /**
@@ -57,6 +65,45 @@ internal class StreamState {
     /** The gateway's own reason when the turn ends in response.failed / an error
      *  event — surfaced instead of a generic "ended without completion". */
     var failure = ""
+    /** The `/v1/runs` id, once the run is admitted ("" on the responses route). A
+     *  barge-in needs it for `POST /v1/runs/{id}/stop`, and so does a turn that
+     *  abandons on deadline: closing the events GET leaves the run generating. */
+    var runId = ""
+    /** The last `seq` the runs stream delivered, so a reattach replays only the rest. */
+    var lastSeq = -1L
+    /**
+     * L3 (0.9.1 review): the gateway said its retained backlog starts after our last seq,
+     * so the replayed deltas have a hole. The accumulated text is then not the answer; the
+     * terminal `run.completed.output` is (or the turn fails honestly).
+     */
+    var replayTruncated = false
+    /**
+     * H3 (0.9.1 review): how a FAILED runs turn left its run — [RUN_ENDED] when the run is
+     * known to be over (it said so, the gateway's status is terminal, or the reader
+     * stopped it), [RUN_LOST] when the reader failed and could neither confirm the end
+     * nor stop it. "" on success and on the responses route. [RUN_LOST] is surfaced on
+     * the done poll as `run_end`, so the controller holds an approval card only for a
+     * run that may still be parked on it.
+     */
+    var runEnd = ""
+    /** The runs-route barge-in: stop the run itself. Set once the run is admitted. */
+    var stopAction: (() -> Unit)? = null
+
+    /**
+     * A turn that is never abandoned on a clock — the setup turn. On a drop the reader keeps
+     * reattaching to the same run for as long as the gateway says it is alive, and it never posts
+     * `/stop`: only the owner cancelling or the screen going away may do that. Off for every
+     * ordinary turn, whose ceiling is deliberate.
+     */
+    var keepRun = false
+
+    /**
+     * H4 (0.9.1 review): this turn's `Idempotency-Key` for `POST /v1/runs`. One per turn,
+     * fixed for its life, so a retried admission is the SAME request: the gateway answers
+     * an identical retry with the original `run_id` (`Idempotency-Replayed: true`) rather
+     * than starting a second run.
+     */
+    val idempotencyKey: String = "vox-" + java.util.UUID.randomUUID().toString().replace("-", "")
 
     /**
      * The push-side wake (#39): each buffered event, and the terminal done, offers a
@@ -73,15 +120,40 @@ internal class StreamState {
 
     fun signal() { notify.offer(Unit) }
 
+    companion object {
+        const val RUN_ENDED = "ended"
+        const val RUN_LOST = "lost"
+    }
+
+    /**
+     * Binds the admitted run and its stop in ONE step with the cancel check (#404). A
+     * barge-in reads [stopAction] under [lock]; were the id written outside it, a cancel
+     * landing between the write and the check could see neither the stop nor be seen by
+     * the reader, and the run would generate on with nobody listening. True = the turn
+     * was already cancelled, so the caller must stop the run itself.
+     */
+    fun bindRun(id: String, stop: () -> Unit): Boolean = synchronized(lock) {
+        runId = id
+        stopAction = stop
+        cancelled
+    }
+
     /** Registers the live connection; false if the turn was already cancelled. */
     fun attach(c: HttpURLConnection): Boolean = synchronized(lock) {
         if (cancelled) false else { conn = c; true }
     }
 
-    /** Barge-in: closing the connection is what aborts the gateway's generation. */
+    /**
+     * Barge-in. On /v1/responses closing the connection is what aborts the gateway's
+     * generation; on /v1/runs the events GET is only a subscriber, so the run keeps
+     * generating unless it is stopped explicitly — [stopAction] posts the run's own
+     * `/stop`. It fires off-thread: cancel runs on the UI thread and a dead gateway
+     * must not block the mic.
+     */
     fun cancel() {
-        val c = synchronized(lock) { cancelled = true; conn }
+        val (c, stop) = synchronized(lock) { cancelled = true; conn to stopAction }
         c?.disconnect()
+        stop?.invoke()
     }
 }
 
@@ -108,6 +180,9 @@ internal object Streams {
     /** An unreachable gateway fails in seconds instead of the OS connect timeout. */
     const val CONNECT_TIMEOUT_MS = 10_000
 
+    /** `/v1/runs` reattaches once from its recorded backlog after a dropped socket. */
+    private const val REATTACH_ATTEMPTS = 1
+
     const val STALLED = "hermes stream: connection lost (no data from the gateway)"
 
     private val streams = HashMap<String, StreamState>()
@@ -122,8 +197,40 @@ internal object Streams {
      * consumes the SSE into the SAME registered state [poll] drains, so the events
      * the app renders are the events the gateway sent.
      */
-    fun start(client: ResponsesClient, input: String, previousResponseId: String): String {
+    fun start(
+        client: ResponsesClient,
+        input: String,
+        previousResponseId: String,
+        options: RequestOptions = RequestOptions(),
+    ): String =
+        // Captured once: a settings flip mid-turn must not move a live stream between
+        // routes (the reader thread would be half-way through one vocabulary).
+        start(client, input, previousResponseId, StreamRoute.routeFor(client.hasSessionKey()), options).first
+
+    /**
+     * A turn with no clock: the setup turn. Same route and same vocabulary as any other turn,
+     * but on `/v1/runs` the reader keeps reattaching to the **same** run after a drop for as long
+     * as the gateway says it is alive, and never posts `/stop`. Only [cancel] ends it early —
+     * which is the owner cancelling or the screen going away, and nothing else.
+     *
+     * The run id is durable and the events endpoint is resumable (`last_seq`), so a dropped
+     * connection is a reconnect to the run, never a second turn.
+     */
+    internal fun startPersistent(
+        client: ResponsesClient,
+        input: String,
+        previousResponseId: String,
+        options: RequestOptions = RequestOptions(),
+    ): String = start(
+        client, input, previousResponseId,
+        StreamRoute.routeFor(client.hasSessionKey()), options, keepRun = true,
+    ).first
+
+    private fun start(client: ResponsesClient, input: String, previousResponseId: String,
+                      route: TurnRoute, options: RequestOptions, keepRun: Boolean = false): Pair<String, StreamState> {
         val st = StreamState()
+        st.keepRun = keepRun
+        val chainHead = StreamRoute.chainHead(route, previousResponseId)
         val (id, n) = synchronized(streams) {
             seq++
             val id = "hvstream_${System.currentTimeMillis() * 1_000_000}_$seq"
@@ -132,7 +239,29 @@ internal object Streams {
         }
         Thread({
             val err = try {
-                consume(client, input, previousResponseId, st)
+                if (route == TurnRoute.RUNS) {
+                    try {
+                        consumeRuns(client, input, st, options)
+                    } catch (noRuns: NoRunsRoute) {
+                        // A 404 on admission is the one answer that means "this gateway has no
+                        // /v1/runs". Remember it for this profile and retry the SAME turn once
+                        // on the responses route. Nothing above this reader can tell the routes
+                        // apart, so the retry is invisible except for its log line.
+                        val name = StreamRoute.currentProfile()
+                        if (StreamRoute.markNoRuns(name)) {
+                            try {
+                                StreamRoute.log("event=route-fallback reason=no-runs-route profile=$name")
+                            } catch (_: Throwable) { }
+                        }
+                        consume(
+                            client, input,
+                            StreamRoute.chainHead(TurnRoute.RESPONSES, previousResponseId),
+                            st, options,
+                        )
+                    }
+                } else {
+                    consume(client, input, chainHead, st, options)
+                }
                 ""
             } catch (e: Exception) {
                 e.message ?: e.javaClass.name
@@ -146,7 +275,37 @@ internal object Streams {
             // stays registered until the done poll drains it — no final-poll race.
             st.signal()
         }, "hermes-stream-$n").apply { isDaemon = true }.start()
-        return id
+        return id to st
+    }
+
+    /**
+     * H2 (0.9.1 review): a stored (non-streamed) turn on the runs route — `/compress`,
+     * the VOX.md directive, the skill install. It rides the same reader as a voice turn
+     * (same transcript `session_id`, same stop on the way out) and blocks for the reply.
+     * Past [timeoutMs] the run is stopped rather than left generating unheard.
+     */
+    fun complete(client: ResponsesClient, input: String, timeoutMs: Long): String {
+        // A stored turn is not a voice turn: it sends the empty instructions explicitly, which
+        // is what clears an inherited voice register on a chained conversation (A2/F4).
+        val (id, st) = start(client, input, "", TurnRoute.RUNS, RequestOptions())
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            synchronized(st.lock) {
+                if (st.done) {
+                    synchronized(streams) { streams.remove(id) }
+                    if (st.err.isNotEmpty()) throw HermesException(st.err)
+                    val reply = plainText(st.text.toString())
+                    if (reply.isEmpty()) throw HermesException("hermes run: no output in the run's answer")
+                    return reply
+                }
+            }
+            val left = deadline - System.currentTimeMillis()
+            if (left <= 0) {
+                cancel(id)
+                throw HermesException("hermes run: no answer within ${timeoutMs / 1000}s")
+            }
+            st.notify.poll(left, TimeUnit.MILLISECONDS)
+        }
     }
 
     /**
@@ -161,7 +320,9 @@ internal object Streams {
         val err: String
         val transcript: String
         val respId: String
+        val runEnd: String
         synchronized(st.lock) {
+            runEnd = st.runEnd
             batch = st.events
             st.events = ArrayList()
             done = st.done
@@ -179,6 +340,10 @@ internal object Streams {
         payload["response_id"] = respId
         payload["text"] = plainText(transcript)
         payload["transcript"] = transcript
+        // Only a runs turn whose run may outlive it carries the field (`run_end:"lost"`);
+        // its absence on a done poll means the run is known to be over. Every other
+        // payload is pinned by goldens.
+        if (done && runEnd == StreamState.RUN_LOST) payload["run_end"] = runEnd
         return PollResult(Json.encode(payload), respId)
     }
 
@@ -216,13 +381,18 @@ internal object Streams {
     /** Test hook: is [id] still registered? */
     internal fun isRegistered(id: String): Boolean = synchronized(streams) { streams.containsKey(id) }
 
+    /** The gateway run id behind [id] ("" on the responses route or after retirement). */
+    fun runIdOf(id: String): String =
+        synchronized(streams) { streams[id]?.runId }.orEmpty()
+
     /**
      * The SSE consumer: POST stream:true, then frame and dispatch events into [st]
      * until the body ends. Throws the turn's failure; returns normally on a
      * completed turn (or a cancelled one — nobody is left to read the outcome).
      */
-    private fun consume(client: ResponsesClient, input: String, previousResponseId: String, st: StreamState) {
-        val body = client.buildBody(input, previousResponseId, true)
+    private fun consume(client: ResponsesClient, input: String, previousResponseId: String,
+                        st: StreamState, options: RequestOptions) {
+        val body = client.buildBody(input, previousResponseId, true, options.instructions, options.reasoning)
         val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/responses"),
             client.entityHeaders() + mapOf("Content-Type" to "application/json", "Accept" to "text/event-stream"),
             CONNECT_TIMEOUT_MS, idleTimeoutMs)
@@ -247,7 +417,11 @@ internal object Streams {
                 if (e is SocketTimeoutException) throw HermesException(STALLED)
                 throw e
             }
-            if (code != 200) throw HermesException("hermes stream ${Entity.status(c)}: ${Entity.readErrorBody(c)}")
+            if (code != 200) {
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes stream ${Entity.status(c)}: $err")
+            }
 
             val framer = SseFramer { name, data -> dispatch(st, name, data) }
             var readErr: IOException? = null
@@ -265,16 +439,7 @@ internal object Streams {
             if (readErr is SocketTimeoutException) throw HermesException(STALLED)
             if (readErr != null) throw HermesException("hermes stream read: ${readErr.message ?: readErr.javaClass.name}")
 
-            val completed: Boolean
-            val failure: String
-            val reply: String
-            synchronized(st.lock) {
-                completed = st.done
-                failure = st.failure
-                reply = plainText(st.text.toString())
-            }
-            if (!completed && failure.isNotEmpty()) throw HermesException(failure)
-            if (reply.isEmpty() && !completed) throw HermesException("hermes stream: ended without completion")
+            finishTurn(st)
         } finally {
             // A body read to its end goes back to the keep-alive pool (the next turn
             // skips the TCP + TLS handshake). Anything else is torn down.
@@ -282,10 +447,597 @@ internal object Streams {
         }
     }
 
+    /** The turn's post-stream verdict, shared by both readers: the gateway's failure
+     *  reason wins, otherwise an empty turn that never completed is a lost stream. */
+    private fun finishTurn(st: StreamState) {
+        val completed: Boolean
+        val failure: String
+        val reply: String
+        synchronized(st.lock) {
+            completed = st.done
+            failure = st.failure
+            reply = plainText(st.text.toString())
+        }
+        if (!completed && failure.isNotEmpty()) throw HermesException(failure)
+        if (reply.isEmpty() && !completed) throw HermesException("hermes stream: ended without completion")
+    }
+
+    /**
+     * The `/v1/runs` reader (#route parity): `POST /v1/runs` admits a run and returns
+     * 202 `{run_id}`, then `GET /v1/runs/{run_id}/events` carries the same agent turn
+     * as a sequence-numbered SSE stream.
+     *
+     * The runs wire vocabulary is translated HERE into the event shapes [dispatch]
+     * produces, so every consumer above this file is route-blind:
+     *
+     *   runs wire                    -> what the app sees
+     *   message.delta                -> response.output_text.delta
+     *   message.interim              -> response.output_item.done (commentary aside)
+     *   tool.started                 -> response.output_item.added (function_call)
+     *   tool.completed / tool.failed -> response.output_item.added (function_call_output)
+     *   run.completed / done         -> response.completed
+     *   run.failed (partial)         -> response.incomplete (what was said is the answer)
+     *   run.failed / error           -> response.failed
+     *   approval.request             -> approval.request (identical payload)
+     *
+     * `message.interim` is the interim commentary: the phase=commentary analogue. It
+     * does not exist on the brief's target list under that name; it is the runs event
+     * that carries the presence asides. Its `already_streamed` flag is the same
+     * suppression the responses writer applies to commentary items: text that already
+     * went out as answer deltas must not be replayed as a second aside.
+     */
+    private fun consumeRuns(client: ResponsesClient, input: String, st: StreamState, options: RequestOptions) {
+        val runId = admitRun(client, client.buildRunBody(input, options.instructions, options.reasoning), st)
+        if (runId.isEmpty()) return   // cancelled before the run was requested
+        if (st.bindRun(runId) { stopRun(client, runId) }) { stopRun(client, runId); return }
+        // The responses route opens with response.created; the app's "answering" log
+        // marker must not depend on which route the turn took.
+        emitCreated(st)
+
+        var attempt = 0
+        var recoveries = 0
+        var readErr: Exception?
+        while (true) {
+            readErr = null
+            val seqBefore = synchronized(st.lock) { st.lastSeq }
+            try {
+                pumpRunEvents(client, st, runId)
+            } catch (e: IOException) {
+                readErr = e
+            } catch (e: HermesException) {
+                readErr = e   // a non-200 events answer, or no headers before the idle timeout
+            }
+            if (st.cancelled) return
+            val done: Boolean
+            val failed: Boolean
+            synchronized(st.lock) { done = st.done; failed = st.failure.isNotEmpty() }
+            if (done) break
+            if (failed) { synchronized(st.lock) { st.runEnd = StreamState.RUN_ENDED }; break }
+            // The body ended before the run's terminal event. The route retains a
+            // sequence-numbered backlog, so a dropped socket reattaches once from the
+            // last seq seen instead of losing the turn (the responses route cannot).
+            // A read timeout is the idle watchdog, not a drop, and a refused events GET
+            // is not a drop either: neither replays at once.
+            // A subscription that delivered new events was progress: the next drop gets
+            // the full recovery again rather than inheriting this one's spent rounds.
+            if (synchronized(st.lock) { st.lastSeq } > seqBefore) { attempt = 0; recoveries = 0 }
+            val drop = readErr == null || (readErr is IOException && readErr !is SocketTimeoutException)
+            if (drop && attempt < REATTACH_ATTEMPTS) {
+                attempt++
+                continue
+            }
+            // H3 (0.9.1 review): never walk away from a run that may still be working.
+            // Ask the gateway; a live run is reattached after a backoff, and one that
+            // cannot be followed is stopped.
+            when (recover(client, st, runId, recoveries)) {
+                Recovery.CANCELLED -> return
+                Recovery.REATTACH -> { recoveries++; continue }
+                Recovery.ENDED -> { synchronized(st.lock) { st.runEnd = StreamState.RUN_ENDED }; break }
+                Recovery.LOST -> { synchronized(st.lock) { st.runEnd = StreamState.RUN_LOST }; break }
+            }
+        }
+        if (st.cancelled) return
+        val err = readErr
+        if (err is SocketTimeoutException) throw HermesException(STALLED)
+        if (err is HermesException) throw err
+        if (err != null) throw HermesException("hermes stream read: ${err.message ?: err.javaClass.name}")
+        finishTurn(st)
+    }
+
+    private enum class Recovery { REATTACH, ENDED, LOST, CANCELLED }
+
+    /**
+     * H3: the reader lost the run's events. Waits [recoverBackoffMs]`[round]`, then reads
+     * `GET /v1/runs/{id}`: a terminal status means the run is over ([Recovery.ENDED]); any
+     * other status means it is still working or parked on an approval, so the events are
+     * followed again ([Recovery.REATTACH]). An unreadable status is retried on the next
+     * round. Once the rounds are spent, an ordinary turn's run is stopped synchronously —
+     * ENDED when the gateway took the stop (or says the run already finished), LOST when it
+     * could not be reached at all.
+     *
+     * A [StreamState.keepRun] turn (the setup) never spends its rounds: it waits the last
+     * backoff and asks again for ever, because its run has no clock and stopping it would be
+     * the very deadline this route removes. It ends only by the run's own terminal status,
+     * its terminal event, or the owner's cancel.
+     */
+    private fun recover(client: ResponsesClient, st: StreamState, runId: String, round: Int): Recovery {
+        val backoff = recoverBackoffMs
+        if (backoff.isEmpty()) return Recovery.LOST
+        if (round >= backoff.size && !st.keepRun) {
+            val verdict = stopRunNow(client, runId)
+            recoverOutcome?.invoke(runId, "stop=$verdict")
+            return if (verdict == "stopped" || verdict == "already finished") Recovery.ENDED else Recovery.LOST
+        }
+        if (!sleepUnlessCancelled(st, backoff[minOf(round, backoff.size - 1)])) return Recovery.CANCELLED
+        val status = try { runStatus(client, runId) } catch (_: Exception) { "" }
+        if (st.cancelled) return Recovery.CANCELLED
+        recoverOutcome?.invoke(runId, "status=${status.ifEmpty { "unreadable" }}")
+        if (status in ApprovalArm.TERMINAL_STATUSES) return Recovery.ENDED
+        if (status.isNotEmpty()) return Recovery.REATTACH
+        // Unreadable: the network may still be settling. Try the next round, keep following when
+        // the turn has no clock, or stop an ordinary turn whose rounds are spent.
+        if (round + 1 < backoff.size) return recover(client, st, runId, round + 1)
+        if (st.keepRun) return Recovery.REATTACH
+        val verdict = stopRunNow(client, runId)
+        recoverOutcome?.invoke(runId, "stop=$verdict")
+        return if (verdict == "stopped" || verdict == "already finished") Recovery.ENDED else Recovery.LOST
+    }
+
+    /** False when the turn was cancelled during the wait. */
+    private fun sleepUnlessCancelled(st: StreamState, ms: Long): Boolean {
+        val until = System.currentTimeMillis() + ms
+        while (!st.cancelled) {
+            val left = until - System.currentTimeMillis()
+            if (left <= 0) return true
+            Thread.sleep(minOf(left, 50L))
+        }
+        return false
+    }
+
+    /** The run's `status` from `GET /v1/runs/{id}` ("" when the answer has none). */
+    private fun runStatus(client: ResponsesClient, runId: String): String {
+        val c = Entity.open("GET", Entity.url(client.baseURL, "/v1/runs/${segment(runId)}"),
+            client.entityHeaders(), CONNECT_TIMEOUT_MS, GatewayClient.TIMEOUT_MS)
+        try {
+            val code = c.responseCode
+            val body = Entity.body(c)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+            // 404: the record is gone, which only happens to a run that is over.
+            if (code == 404) return "completed"
+            if (code != 200) return ""
+            return ApprovalArm.statusOf(body).lowercase()
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /**
+     * How long [recover] waits before each status read. The first follows the drop by a
+     * second, when a network hand-off is likelier to have settled; ~7 s in all. Tests
+     * shorten it.
+     */
+    @Volatile
+    internal var recoverBackoffMs: LongArray = longArrayOf(1_000, 2_000, 4_000)
+
+    /** Observes each recovery step (run id, what was learned). Diagnostics and tests only. */
+    @Volatile
+    internal var recoverOutcome: ((String, String) -> Unit)? = null
+
+    /**
+     * `POST /v1/runs` — 202 `{run_id}`. Throws the gateway's own refusal.
+     *
+     * A barge-in does NOT abort this request (#404). Once the body is sent the gateway
+     * may already have admitted the run; cutting the connection then would lose the only
+     * id that can stop it, and the run would generate unheard (and hold any approval it
+     * raises). So a cancel before the request goes out skips it, and a cancel after lets
+     * the admission finish — bounded by the idle timeout, on this daemon reader, with the
+     * stream already retired — so [consumeRuns] can stop the run it names. A failure on
+     * a cancelled turn is nobody's error: it returns "" rather than throwing.
+     *
+     * H4 (0.9.1 review): the same hole exists without a barge-in. When the reply is lost
+     * AFTER the body went out (a reset, or no 202 before the idle timeout) the gateway
+     * may already be running the turn. The request carries the turn's
+     * [StreamState.idempotencyKey], and exactly one identical retry is made: a replay
+     * answers with the original `run_id`, which is then bound — or stopped, if the turn
+     * was cancelled meanwhile — like any other. The retry is made on a cancelled turn
+     * too, because it is the only way to learn the id that stops the run.
+     */
+    private fun admitRun(client: ResponsesClient, body: ByteArray, st: StreamState): String {
+        if (st.cancelled) return ""
+        var retried = false
+        while (true) {
+            try {
+                return admitOnce(client, body, st)
+            } catch (lost: AdmissionLost) {
+                if (!retried) { retried = true; continue }
+                if (st.cancelled) return ""
+                val e = lost.cause
+                if (e is SocketTimeoutException) throw HermesException(STALLED)
+                throw e
+            }
+        }
+    }
+
+    /** The reply to an admission whose body had gone out was lost: retry once ([admitRun]). */
+    private class AdmissionLost(override val cause: IOException) : Exception(cause)
+
+    /**
+     * `POST /v1/runs` answered exactly 404: this gateway has no such route. It is not a
+     * failure to surface as the turn's error — it is the probe's answer, and [Streams.start]
+     * retries once on `/v1/responses`. Every other status (401, 409, 429, 500) and every
+     * transport failure remains a real error, because falling back on those would hide a
+     * bad key behind a different route.
+     */
+    private class NoRunsRoute : Exception("this gateway has no POST /v1/runs")
+
+    /** Observes each admission attempt (the idempotency key it carried). Tests only. */
+    @Volatile
+    internal var admitAttempt: ((String) -> Unit)? = null
+
+    private fun admitOnce(client: ResponsesClient, body: ByteArray, st: StreamState): String {
+        try { admitAttempt?.invoke(st.idempotencyKey) } catch (_: Exception) {}
+        val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/runs"),
+            client.entityHeaders() + mapOf("Content-Type" to "application/json",
+                "Idempotency-Key" to st.idempotencyKey),
+            CONNECT_TIMEOUT_MS, idleTimeoutMs)
+        try {
+            c.doOutput = true
+            c.setFixedLengthStreamingMode(body.size)
+            try {
+                c.connect()
+            } catch (e: IOException) {
+                // Nothing reached the gateway: no run exists, so this is the turn's error.
+                if (st.cancelled) return ""
+                if (e is SocketTimeoutException) throw HermesException(STALLED)
+                throw e
+            }
+            val code = try {
+                c.outputStream.use { it.write(body) }
+                c.responseCode
+            } catch (e: IOException) {
+                throw AdmissionLost(e)
+            }
+            // 202 is the documented admission; 200 is accepted by older builds.
+            if (code == 404) {
+                val err = Entity.readErrorBody(c)
+                // A `/p/<name>` the host does not serve answers 404 too. That is NOT "this
+                // gateway has no /v1/runs": falling back would hide the missing profile and
+                // (worse) remember a route lie for a profile that does not exist.
+                if (ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())) {
+                    if (st.cancelled) return ""
+                    throw HermesException("hermes run ${Entity.status(c)}: $err")
+                }
+                if (st.cancelled) return ""
+                throw NoRunsRoute()
+            }
+            if (code != 200 && code != 202) {
+                if (st.cancelled) return ""
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes run ${Entity.status(c)}: $err")
+            }
+            val raw = try {
+                c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            } catch (e: IOException) {
+                throw AdmissionLost(e)
+            }
+            val runId = try {
+                Json.str(Json.parse(raw, allowTrailing = true) as? JObj, "run_id")
+            } catch (e: JsonException) {
+                if (st.cancelled) return ""
+                throw HermesException("hermes run: unreadable body: ${e.message}")
+            }
+            if (runId.isEmpty() && !st.cancelled) throw HermesException("hermes run: no run_id in response")
+            return runId
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /**
+     * One subscription to a run's event stream, from the last seq already delivered.
+     * Replay is the route's recovery primitive: `last_seq` is exclusive, so the
+     * reattach sees exactly the events a dropped socket lost.
+     */
+    private fun pumpRunEvents(client: ResponsesClient, st: StreamState, runId: String) {
+        val lastSeq = synchronized(st.lock) { st.lastSeq }
+        val query = if (lastSeq >= 0) "?last_seq=$lastSeq" else ""
+        val c = Entity.open("GET",
+            Entity.url(client.baseURL, "/v1/runs/${segment(runId)}/events$query"),
+            client.entityHeaders() + ("Accept" to "text/event-stream"),
+            CONNECT_TIMEOUT_MS, idleTimeoutMs)
+        if (!st.attach(c)) return
+        var clean = false
+        try {
+            val code = try {
+                c.responseCode
+            } catch (e: IOException) {
+                if (st.cancelled) return
+                if (e is SocketTimeoutException) throw HermesException(STALLED)
+                throw e
+            }
+            if (code != 200) {
+                val err = Entity.readErrorBody(c)
+                ProfileReach.observe(code, err, client.baseURL, StreamRoute.currentProfile())
+                throw HermesException("hermes events ${Entity.status(c)}: $err")
+            }
+            val framer = SseFramer { name, data -> dispatchRun(st, name, data) }
+            var readErr: IOException? = null
+            try {
+                c.inputStream.use { ins ->
+                    val lines = LineReader(ins)
+                    while (true) framer.line(lines.next() ?: break)
+                }
+                clean = true
+            } catch (e: IOException) {
+                readErr = e
+            }
+            // A partial trailing frame is still ours: dispatch it before deciding.
+            framer.flush()
+            if (readErr != null) throw readErr
+        } finally {
+            if (!clean) c.disconnect()
+        }
+    }
+
+    /** The admission marker; no response id exists on this route (see [StreamRoute]). */
+    private fun emitCreated(st: StreamState) {
+        val ev = StreamEvent("response.created")
+        synchronized(st.lock) {
+            ev.text = st.text.toString()
+            st.events.add(ev)
+        }
+        st.signal()
+    }
+
+    /**
+     * Barge-in on /v1/runs: the subscriber closing is not the run stopping. Posted with
+     * the stream's own authenticated headers (bearer + session key), off-thread.
+     *
+     * The answer is never the caller's error. 200 `stopping` is the stop; a run that
+     * already finished answers 200 with its terminal status, 404 `run_not_found` (the
+     * record aged out) or 409 `run_not_active` (another gateway process) — all mean
+     * there is nothing left to stop. Any other answer, or no answer, is the same to the
+     * caller: the turn is already retired and the mic is already the user's. The
+     * outcome goes to [stopOutcome] so it can be observed, never thrown.
+     */
+    private fun stopRun(client: ResponsesClient, runId: String) {
+        Thread({ stopRunNow(client, runId) }, "hermes-run-stop").apply { isDaemon = true }.start()
+    }
+
+    /** The stop itself, on the calling thread; returns (and reports) its verdict. */
+    private fun stopRunNow(client: ResponsesClient, runId: String): String {
+        val outcome = try {
+            val c = Entity.open("POST", Entity.url(client.baseURL, "/v1/runs/${segment(runId)}/stop"),
+                client.entityHeaders(), CONNECT_TIMEOUT_MS, GatewayClient.TIMEOUT_MS)
+            try { stopVerdict(c.responseCode) } finally { c.disconnect() }
+        } catch (e: Exception) {
+            "unreachable: ${e.javaClass.simpleName}"
+        }
+        try { stopOutcome?.invoke(runId, outcome) } catch (_: Exception) {}
+        return outcome
+    }
+
+    /** What a `/stop` answer means for a cancelled turn: never an error. */
+    internal fun stopVerdict(code: Int): String = when (code) {
+        in 200..299 -> "stopped"
+        404, 409 -> "already finished"
+        else -> "ignored $code"
+    }
+
+    /** Observes each barge-in stop (run id, verdict). Diagnostics and tests only. */
+    @Volatile
+    internal var stopOutcome: ((String, String) -> Unit)? = null
+
+    /** A path segment: run ids are server-generated hex, but never concatenate raw. */
+    private fun segment(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+    /** Decodes one runs event and applies it to [st] in the consumers' vocabulary. */
+    private fun dispatchRun(st: StreamState, evName: String, data: String) {
+        val env = try { Envelope.decode(data) } catch (_: JsonException) { return }
+        val raw = env.type.ifEmpty { env.eventName.ifEmpty { evName } }
+        val ev = StreamEvent(normalizeRunEvent(raw))
+        var emit = true
+        synchronized(st.lock) {
+            if (env.seq >= 0) st.lastSeq = env.seq
+            when (raw) {
+                // Admission/transport markers: response.created already covered them.
+                "run.started", "message.started", "run.queued", "run.stopping" -> emit = false
+
+                "message.delta", "assistant.delta" ->
+                    answerDelta(st, ev, env.itemId, env.delta)
+
+                // The interim commentary. `already_streamed` text went out as answer
+                // deltas; the responses writer drops that copy, so this one must too.
+                "message.interim", "assistant.commentary" -> {
+                    if (env.alreadyStreamed || env.text.isBlank()) emit = false
+                    else aside(st, ev, env.itemId, env.text)
+                }
+
+                "tool.started" ->
+                    openTool(st, ev, env.toolCallId, env.tool, env.preview)
+
+                // A failed tool is the session-stream's tool.failed; the runs writer
+                // reports the same fact as tool.completed + error=true.
+                "tool.completed", "tool.failed" ->
+                    closeTool(st, ev, env.toolCallId, env.preview)
+
+                // Progress/thinking is a display line, never the reply and never an
+                // aside: the responses route has no equivalent and must not gain one.
+                "tool.progress", "reasoning.available" -> {
+                    ev.itemType = "tool_progress"
+                    ev.name = env.tool.ifEmpty { env.toolName }
+                    ev.output = env.preview.ifEmpty { env.text.ifEmpty { env.delta } }
+                    ev.text = st.text.toString()
+                }
+
+                "assistant.completed" -> {
+                    // Authoritative final message content. Only a fallback: text that
+                    // already streamed must not be appended twice.
+                    if (plainText(st.text.toString()).isEmpty() && env.content.isNotEmpty()) {
+                        st.text.append(env.content)
+                    }
+                    ev.itemType = "message"
+                    ev.text = st.text.toString()
+                }
+
+                // L3: the reattach could not replay everything it missed. Do not present the
+                // gapped deltas as the answer: the terminal event carries the whole response.
+                "replay.truncated" -> {
+                    st.replayTruncated = true
+                    recoverOutcome?.invoke(st.runId, "replay.truncated oldest=${env.oldestRetainedSeq}")
+                    emit = false
+                }
+
+                "run.completed", "done" -> {
+                    if (st.replayTruncated) {
+                        if (env.output.isNotEmpty()) {
+                            // Keep the tool markers the transcript rendered; replace the text
+                            // with the run's own final answer.
+                            val tools = toolMarkers(st.text.toString())
+                            st.text.setLength(0)
+                            st.text.append(tools).append(env.output)
+                            st.replayTruncated = false
+                        } else {
+                            // No whole answer to fall back to: never present the gapped text.
+                            st.failure = "hermes stream: the replayed events were truncated " +
+                                "and the run completed without text"
+                            st.text.setLength(0)
+                            ev.text = ""
+                        }
+                    } else if (plainText(st.text.toString()).isEmpty() && env.output.isNotEmpty()) {
+                        // A run that used tools and answered only in its terminal event leaves the
+                        // transcript ending on a `[tool:…]` marker. Without a line break the answer
+                        // is glued to that marker and plainText() drops the whole line — the agent's
+                        // words vanish from the reply (the setup turn's common shape).
+                        if (st.text.isNotEmpty()) st.text.append('\n')
+                        st.text.append(env.output)
+                    }
+                    if (st.failure.isEmpty()) markDone(st, ev)
+                }
+
+                "run.failed", "run.cancelled", "run.interrupted" -> {
+                    val said = plainText(st.text.toString()).isNotEmpty() || env.output.isNotEmpty()
+                    if (said && (env.partial || env.completed == false || raw == "run.cancelled" ||
+                                raw == "run.interrupted")) {
+                        if (plainText(st.text.toString()).isEmpty()) {
+                            if (st.text.isNotEmpty()) st.text.append('\n')
+                            st.text.append(env.output)
+                        }
+                        // Mirror response.incomplete: whatever was said is still answer.
+                        ev.type = "response.incomplete"
+                        ev.done = true
+                        ev.text = st.text.toString()
+                        st.done = true
+                    } else {
+                        val what = when (raw) {
+                            "run.cancelled" -> "cancelled"
+                            "run.interrupted" -> "interrupted"
+                            else -> "failed"
+                        }
+                        val why = env.error.ifEmpty { env.message }
+                        st.failure = "hermes run $what: " + why.ifEmpty { "the gateway reported a failure" }
+                        ev.text = st.text.toString()
+                    }
+                }
+
+                "error" -> {
+                    st.failure = "hermes run failed: " +
+                        env.message.ifEmpty { env.error }.ifEmpty { "the gateway reported a failure" }
+                    ev.text = st.text.toString()
+                }
+
+                // Control events. approval.request keeps the exact payload the approval
+                // gate already consumes; the rest ride through for a consumer that
+                // wants them (clarify has no surface yet — it does not fake one).
+                "approval.request" -> {
+                    ev.approval = env.approval
+                    ev.text = st.text.toString()
+                }
+
+                else -> ev.text = st.text.toString()
+            }
+            if (emit) st.events.add(ev)
+        }
+        if (emit) st.signal()
+    }
+
+    /**
+     * The runs wire name as the app's existing vocabulary: the ONE translation point.
+     * Tool events all become the item events the transcript markers already come from;
+     * assistant text becomes output_text; a terminal run becomes the response terminal
+     * this core has always rendered. Control events keep their names (approval.request
+     * is already the consumer's name; clarify/settled ride through for a future one).
+     */
+    private fun normalizeRunEvent(name: String): String = when (name) {
+        "message.delta", "assistant.delta" -> "response.output_text.delta"
+        "message.interim", "assistant.commentary", "assistant.completed" -> "response.output_item.done"
+        "tool.started", "tool.completed", "tool.failed" -> "response.output_item.added"
+        "run.completed", "done" -> "response.completed"
+        "run.failed", "run.cancelled", "run.interrupted", "error" -> "response.failed"
+        else -> name
+    }
+
+    // ---- Shared state-machine steps: one mutation each, both readers call them ----
+
+    /** Answer text: the only thing that reaches the spoken reply. */
+    private fun answerDelta(st: StreamState, ev: StreamEvent, itemId: String, delta: String) {
+        ev.itemId = itemId
+        ev.delta = delta
+        st.text.append(delta)
+        ev.text = st.text.toString()
+    }
+
+    /**
+     * An interim commentary aside: surfaced as a closed commentary message item, the
+     * shape the responses route already emits and VoiceController logs. It never
+     * enters [StreamState.text].
+     */
+    private fun aside(st: StreamState, ev: StreamEvent, itemId: String, text: String) {
+        ev.itemId = itemId
+        ev.itemType = "message"
+        ev.commentary = text
+        ev.text = st.text.toString()
+    }
+
+    /** A tool call opening: the transcript marker the reply ledger drops from speech. */
+    private fun openTool(st: StreamState, ev: StreamEvent, itemId: String, name: String, args: String) {
+        ev.itemId = itemId
+        ev.itemType = "function_call"
+        ev.name = name
+        ev.arguments = args
+        st.text.append("\n[tool:").append(name).append(']')
+        ev.text = st.text.toString()
+    }
+
+    /** A tool result: closes the marker line (the #126 trailing-newline fix). */
+    private fun closeTool(st: StreamState, ev: StreamEvent, itemId: String, output: String) {
+        ev.itemId = itemId
+        ev.itemType = "function_call_output"
+        ev.output = output
+        st.text.append("\n[tool-done]\n")
+        ev.text = st.text.toString()
+    }
+
+    /** The `[tool:…]` / `[tool-done]` lines a transcript rendered, in order. */
+    private fun toolMarkers(text: String): String {
+        val lines = text.lineSequence().filter { it.startsWith("[tool:") || it == "[tool-done]" }.toList()
+        return if (lines.isEmpty()) "" else "\n" + lines.joinToString("\n") + "\n"
+    }
+
+    /** The terminal success both routes share. */
+    private fun markDone(st: StreamState, ev: StreamEvent) {
+        ev.done = true
+        ev.text = st.text.toString()
+        st.done = true
+    }
+
     /** Decodes one event payload and applies it to [st]. Undecodable payloads are dropped. */
     private fun dispatch(st: StreamState, evName: String, data: String) {
         val env = try { Envelope.decode(data) } catch (_: JsonException) { return }
-        val name = env.type.ifEmpty { evName }
+        // Run events (`approval.request`) carry their name in `event`, OpenAI response
+        // events carry it in `type`; the SSE `event:` line is the fallback for both.
+        val name = env.type.ifEmpty { env.eventName.ifEmpty { evName } }
         val ev = StreamEvent(name)
         synchronized(st.lock) {
             when (name) {
@@ -294,22 +1046,15 @@ internal object Streams {
                     ev.itemId = item.id
                     ev.itemType = item.type
                     when (item.type) {
-                        "function_call" -> {
-                            ev.name = item.name
-                            ev.arguments = item.arguments?.raw.orEmpty().trim('"')
-                            st.text.append("\n[tool:").append(ev.name).append(']')
-                            ev.text = st.text.toString()
-                        }
-                        "function_call_output" -> {
-                            ev.output = toolOutput(item.output)
+                        "function_call" ->
+                            openTool(st, ev, item.id, item.name, item.arguments?.raw.orEmpty().trim('"'))
+                        "function_call_output" ->
                             // Close the marker line. Without the trailing newline the next
                             // output_text delta was appended to "[tool-done]" itself, so
                             // plainText() dropped that whole line and a turn that used a
                             // tool spoke nothing. The Go core had the same bug; the port
                             // preserved it faithfully, and this fixes it deliberately.
-                            st.text.append("\n[tool-done]\n")
-                            ev.text = st.text.toString()
-                        }
+                            closeTool(st, ev, item.id, toolOutput(item.output))
                         "message" -> {
                             val commentary = item.phase == "commentary"
                             if (commentary) st.commentaryItems.add(item.id)
@@ -326,17 +1071,14 @@ internal object Streams {
                     ev.itemId = env.itemId
                     if (env.itemId in st.commentaryItems) {
                         ev.commentary = env.delta
+                        ev.text = st.text.toString()
                     } else {
-                        ev.delta = env.delta
-                        st.text.append(env.delta)
+                        answerDelta(st, ev, env.itemId, env.delta)
                     }
-                    ev.text = st.text.toString()
                 }
                 "response.completed" -> {
                     env.response?.let { ev.responseId = it.id; st.respId = it.id }
-                    ev.done = true
-                    ev.text = st.text.toString()
-                    st.done = true
+                    markDone(st, ev)
                 }
                 "response.incomplete" -> {
                     // Stopped short (e.g. an output budget). Whatever was said is still the
@@ -357,6 +1099,14 @@ internal object Streams {
                     env.response?.errorMessage?.takeIf { it.isNotEmpty() }?.let { msg = it }
                     if (msg.isEmpty()) msg = "the gateway reported a failure"
                     st.failure = "hermes response failed: $msg"
+                    ev.text = st.text.toString()
+                }
+                // #282: the gateway's run event. The command is already redacted
+                // upstream; this layer carries it without rewriting it. The controller
+                // decides whether the request is still answerable (a request that
+                // arrives after response.completed is ignored there).
+                "approval.request" -> {
+                    ev.approval = env.approval
                     ev.text = st.text.toString()
                 }
                 else -> ev.text = st.text.toString()
@@ -474,11 +1224,31 @@ internal class LineReader(private val ins: InputStream, private val maxLine: Int
  */
 internal class Envelope(
     val type: String,
+    val eventName: String,
     val itemId: String,
     val delta: String,
     val message: String,
     val item: Item?,
     val response: Response?,
+    val approval: ApprovalRequest?,
+    // ---- the /v1/runs vocabulary (all empty/zero on a responses payload) ----
+    val text: String = "",
+    val tool: String = "",
+    val toolName: String = "",
+    val toolCallId: String = "",
+    val preview: String = "",
+    val output: String = "",
+    val content: String = "",
+    val error: String = "",
+    val alreadyStreamed: Boolean = false,
+    val partial: Boolean = false,
+    val interrupted: Boolean = false,
+    /** null when the event did not carry the flag (a cancelled run often does not). */
+    val completed: Boolean? = null,
+    /** The runs stream's own sequence number, for replay/re-attach. -1 when absent. */
+    val seq: Long = -1L,
+    /** `replay.truncated`: the oldest seq the gateway still retains. -1 when absent. */
+    val oldestRetainedSeq: Long = -1L,
 ) {
     class Part(val type: String, val text: String)
     class Item(val id: String, val type: String, val phase: String, val name: String,
@@ -516,8 +1286,55 @@ internal class Envelope(
                     incompleteReason = Json.str(Json.obj(r, "incomplete_details"), "reason"),
                 )
             }
-            return Envelope(Json.str(o, "type"), Json.str(o, "item_id"), Json.str(o, "delta"),
-                Json.str(o, "message"), item, response)
+            val type = Json.str(o, "type")
+            val eventName = Json.str(o, "event")
+            val approval = if (type == "approval.request" || eventName == "approval.request") {
+                ApprovalRequest(
+                    runId = Json.str(o, "run_id"),
+                    // Session-authority runs publish the control prompt as the event
+                    // payload, which names the request `prompt_id`; the plain lane
+                    // names it `request_id`. Both are the same handle to answer with.
+                    requestId = lenient(o, "request_id").ifEmpty { lenient(o, "prompt_id") },
+                    command = Json.str(o, "command"),
+                    description = Json.str(o, "description"),
+                    reason = Json.str(o, "reason").ifEmpty { Json.str(o, "why") },
+                    // A malformed choices field must not drop the whole request: with no
+                    // renderable positive choice the surface still offers the safe deny.
+                    choices = try {
+                        Json.arr(o, "choices").mapNotNull { (it as? JStr)?.value }
+                    } catch (_: JsonException) {
+                        emptyList()
+                    },
+                    // Session-authority gateways fence the answer on this; plain ones omit it.
+                    executionGeneration = (o?.get("execution_generation") as? JNum)?.raw?.toIntOrNull(),
+                )
+            } else null
+            // The runs payload has no `type`: `event` names it. `id` is the replay seq.
+            val seq = (o?.get("seq") as? JNum)?.raw?.toLongOrNull()
+                ?: (o?.get("id") as? JNum)?.raw?.toLongOrNull() ?: -1L
+            return Envelope(type, eventName, Json.str(o, "item_id"), Json.str(o, "delta"),
+                Json.str(o, "message"), item, response, approval,
+                text = lenient(o, "text"),
+                tool = lenient(o, "tool"),
+                toolName = lenient(o, "tool_name"),
+                toolCallId = lenient(o, "tool_call_id"),
+                preview = lenient(o, "preview"),
+                output = lenient(o, "output"),
+                content = lenient(o, "content"),
+                // `error` is a STRING on a failed run and a BOOLEAN on tool.completed,
+                // so the runs fields are read leniently: a wrong type must not drop
+                // the event (the strict fields above keep Go's drop semantics).
+                error = lenient(o, "error"),
+                alreadyStreamed = (o?.get("already_streamed") as? JBool)?.value ?: false,
+                partial = (o?.get("partial") as? JBool)?.value ?: false,
+                interrupted = (o?.get("interrupted") as? JBool)?.value ?: false,
+                completed = (o?.get("completed") as? JBool)?.value,
+                seq = seq,
+                oldestRetainedSeq = (o?.get("oldest_retained_seq") as? JNum)?.raw?.toLongOrNull() ?: -1L,
+            )
         }
+
+        /** A string field, or "" when absent or another type. */
+        private fun lenient(o: JObj?, key: String): String = (o?.get(key) as? JStr)?.value ?: ""
     }
 }

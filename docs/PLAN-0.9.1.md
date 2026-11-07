@@ -1,0 +1,201 @@
+# Plan — 0.9.1, the mechanics release
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
+0.9.1 is the release where the loop closes: a stranger gives a real command by voice, sees what the
+agent is doing, gets a clean result, and discovers the next thing without a tutorial. It must also be
+fast, correct and navigable with Presence **off** — a property, not the goal (D24).
+
+Milestone label: `milestone/0.9.1`. Roadmap: [`../ROADMAP.md`](../ROADMAP.md).
+
+## 0. The loop (#279–#285)
+
+**The gate (#279)** is one stranger completing this by voice with no tutorial: read today's calendar;
+decline a meeting; draft the email; edit a part by voice; send it and clear the time; check trail
+conditions. It exercises natural phrasing, a multi-tool run, edits, an approval if one is required,
+reading content back, and recovery when a step fails. Where it breaks, the break is recorded with its
+log line.
+
+What the loop needs:
+
+- **#280 — the state audit.** What states exist, and whether the being or explicit UI carries each.
+  The being is not assumed to be able to carry them all.
+- **#281 — operations.** Which tool is running, and on what. Not a log viewer.
+- **#282 — approvals.** The sign-off Hermes asks for, surfaced on the phone: what, why, and what yes
+  and no do. Voice or touch; timeout is *no*.
+- **#284 — discovery.** The being suggests in context, the interface reveals, search teaches —
+  designed as one system, not three features.
+- **#285 — the app skill.** Bundled and enabled for the agent the app talks to, so it can answer
+  "where is that setting" from the app's own record.
+
+**Failure is defined too:** a regression, or an interface that needs explaining, fails the release
+even if every issue closes.
+
+## What is already in hand, not to be rebuilt
+
+- **The streaming arm is wired** (#207, closed 2026-10-20): `StreamingStt.kt` and
+  `OnlineNemotronStt`, a catalogue entry at the 160 ms chunk, and a Settings chooser that keeps the
+  Apache-2.0 Zipformer as the fallback while the streaming model is absent, downloading, or will
+  not load. The A/B that chose the arm — 11.9 % WER on accented speech against 38.8 %, at 3.1× the
+  CPU and memory — is `docs/STT-AB.md` and D5.
+- **The live gateway suite** (#167, closed 2026-10-21) runs in CI and fails the build if any of its
+  six cases is skipped.
+- **The fixture corpus** in `testdata/stream/` pins streaming behaviour across the Kotlin core, and
+  the STT bench (`android/bench`, `tools/sttbench-stream`) is the instrument the measurement below
+  needs.
+
+## 1. Co-residency (#179) — the gate
+
+One live call with VAD + the streaming arm + TTS + presence resident, on the 8 GB-class device.
+Record RTF, peak RSS, worst `MemAvailable`, presence first token, whether playback stutters, and the
+thermal trace over the run. Then **decide and write it down** in `DECISIONS.md` with the numbers:
+the arm as default on 8 GB-class devices, the Zipformer, or the arm on request only.
+
+Nothing downstream is measurable until this passes; a runtime that fits alone is not evidence that
+it fits beside the rest.
+
+## 2. The listening half, continuous (#228, #235, #229)
+
+The mic stays open for the whole call, VAD and streaming recognition run continuously, and presence
+can trigger on speech onset and partials rather than on turn boundaries. That is the substrate
+0.9.2's behaviours are built on, and it is 0.9.1's work because a call is better with it whether or
+not Presence is on.
+
+- **#235** — the partial worker re-decodes snapshots from scratch; it must consume the new frames.
+- **#229** — semantic endpointing: a probability plus a timeout, with an `eagerness` preset,
+  replacing the hand-tuned silence constants. Commit early and stay walkable back.
+- An explicit CPU/GPU and battery budget in the docs, because the continuous lane collides with the
+  GPU-contention and thermal findings (F4, F5).
+
+## 3. The reply lifecycle under interruption (#240, #202)
+
+- **#240** — one end event per request id, and a PCM frame that can be attributed to the reply it
+  belongs to, so audio already in flight cannot play into the next turn.
+- **#202** — truncation: hold the field channel open and triage every report against the three log
+  lines. The exit is **the cause named**, or the field narrowed to a single candidate with the
+  evidence that did it. Not "fixed" by assertion.
+
+## 4. Profiles (#174)
+
+A registry of saved connections and a switcher: endpoint, key, agent name, session scope. Client-side
+only — `GET /v1/models` returns a single entity name, not a profile list, so discovery from the
+gateway is a separate Hermes-side contract. **Switching ends any live call**; one line at a time is
+an invariant, not a limitation to be engineered around.
+
+## 5. The commands surface (#226, #227, #252)
+
+- **#226** — a themed sub-UI instead of the stock list.
+- **#227** — command animations from a six-verb grammar rather than per-command art.
+- **#252** — the open design question, settled rather than deferred: does the app keep full command
+  parity in-app, or lean into the phone-call identity and make hanging up and calling back the
+  normal way to start a new session? The bug in #252 is fixed and released; what remains is the
+  conversation, and it decides the shape of the two items above.
+
+## 6. The settings and the look (#224, #225, #275)
+
+- **#224** — split the Visuals section by what the user is changing, not by which subsystem owns the
+  preference: **Being** (look, motion, density, cues), **Hearing** (mic, AEC, noise suppression, VAD,
+  silence threshold), **Voice** (TTS model and voice), **Presence** (the layer's own settings and its
+  model state). The Presence section carries today's controls; #222 trims what the mode retirement
+  leaves behind.
+- **#225** — fine-grained particle controls with a live preview, in the Being section #224 creates.
+- **#275** — light mode: the being currently paints inside a black box on a white screen. It needs
+  animations drawn for that background. A theme that only half-works is a setting nobody can trust.
+
+The app's shape is a mechanic: a setting that cannot be found, or a look that can only be judged by
+leaving the screen, is part of what makes a release feel unfinished — with Presence off as much as on.
+
+## 7. The instruments (#209, #208, F4, F5, F8)
+
+- **#209 / #208** — the performance baseline and the behaviour matrix, recorded per release on both
+  devices; these are standing requirements, and 0.9.1 is where they get written down again.
+- **F4 / F5** — GPU contention measured idle versus during a render, and a thirty-minute soak
+  watching RSS after the express engine is released on teardown.
+- **F8** — a fixed ten-utterance verdict script, so "this build is better" stops being an
+  impression.
+
+## 8. The regression and the cues (#191, #251)
+
+- **#191** — Presence hangs on initialising after the Gemma download and the process dies. The code
+  already has a path for a failed load (`loadFailed` excludes the soul from the warm gate), so the
+  failure is below that: memory is the leading hypothesis, at 2.41 GB resident for Gemma on an 8 GB
+  device that also holds the rest of the stack. One attempt to reproduce with logcat on a cold
+  device; if it will not reproduce, record that rather than leaving a sev/high open against the cut.
+  The co-residency run (#179) is where the memory numbers come from.
+- **#251** — ambient cues, with the split named before anything is built: while Presence is off,
+  cues are the channel; while it is on, asides occupy it and a thinking ping would double it. The
+  owner's read is that a user wants one or the other, so the acceptance names cues off / on /
+  presence-off-only, and which is the default.
+
+## 9. The store rail (#165) — alongside, not gating
+
+Replace the prebuilt AAR with sherpa-onnx built from source (pinned submodule or `srclibs`) and
+onnxruntime from Maven Central; add `Binaries:` and `AllowedAPKSigningKeys` naming our signature;
+submit against a released tag and confirm their rebuild reproduces our APK (D15).
+
+It is in this release because a store listing is distribution, not a statement about the feature set:
+it can ship with any release whose recipe is ready. **If the recipe is not ready at the cut, 0.9.1
+ships without it** — this rail never holds the release.
+
+## Exit gates for the cut
+
+- the acceptance run passes on a device, by voice, with no tutorial (#279);
+- no regression and no screen that needs explaining;
+- a stranger installs, connects a gateway, places a call, switches profile and reads the commands
+  screen without help;
+- speech-end to first audio holds D17's budget on the release APK;
+- the streaming arm is co-resident, or the default is the fallback — with the numbers that decided
+  it written into `DECISIONS.md`;
+- no truncation report without a named cause;
+- matrix and baseline recorded on both devices;
+- the standing cut checklist passes: live suite green, reproducible build, no open severe bug
+  without a written reason.
+
+Cut it the way 0.9.0 was cut: bump on `testing` first, notes in `docs/RELEASE-0.9.1.md`, banner
+entry, merge to `main`, tag, reproducible build, release, site dispatch. `docs/RELEASE-PROCESS.md`
+carries the process and its gotchas.
+
+## What is in 0.9.1, and what is not
+
+Superseded on 2026-11-03 by **D28** and `docs/MILESTONES.md`. The short form:
+
+**In 0.9.1 — everything in flight, behind the Alpha gate where it is unfinished.** The loop and
+its surfaces (the state audit, operations, discovery, the commands screen, the settings split,
+light mode, the being's look controls, the entity named by the host); **approvals natively**, which
+means the turn stream moves onto the route that carries `approval.request` (§10 above); **profiles
+from the host** with switching flawless; **share with agent** and Vox as a share target; **the
+transcript scrolls back**; **Presence** — the layer *and* its behaviours: asides and backchannels,
+resume after an interruption, overlap classification, the tuning bar, the Presence transcript, the
+invention measurement, and a fresh pass on the directive and rails; **VOX.md per profile**; **the
+presence cost controls, dormant**; **the turn budget**; **first run (#230)**; **the retirement of
+the mode vocabulary (#222)**.
+
+Carried without a number — done here if achievable, otherwise closed wherever they close: #191,
+#202, #208, #179, #165, #249.
+
+**Not in 0.9.1** — **per-profile settings** (voice, model, look) were deferred here and then
+landed in 0.9.1 anyway: a profile carries its own voice, model and look (`docs/PRESENCE.md`).
+0.9.2 keeps the other half of this line — the Alpha gate opening for Presence, on by default.
+
+## 11. Decisions taken before the build
+
+Between the acceptance run and the rest of the build, the open questions were settled in a
+structured interrogation and recorded as **D29** in `docs/DECISIONS.md`. They are binding on this
+plan, and §13 of `docs/0.9.1-SCOPE.md` carries the list. The ones that change what gets built:
+
+- **#325** ships as a setting, off by default.
+- **#252** is settled: **full command parity in-app**.
+- **Continuous capture and semantic endpointing default on, behind the Alpha gate** — and the
+  release is gated on testing them there.
+- **The hardware bar is 8 GB**, with a free-memory floor; the check advises in the Alpha panel.
+- **The cut waits for the route flip.**
+- **The no-new-numbers rule is dropped**; the false-action-claim guard stays, and #256 measures as
+  observation rather than a gate.
+- **Budgets are re-measured with continuous capture on, and the cut holds to them.**
+- **#165 is in scope and the release waits for the F-Droid listing** — a dependency on someone
+  else's review, accepted deliberately.
+- **Signing 0.9.1** means the acceptance run passes on a device, by voice, with no regressions,
+  **and every milestone issue is closed**.
+

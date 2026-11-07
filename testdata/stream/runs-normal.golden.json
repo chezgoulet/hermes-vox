@@ -1,0 +1,89 @@
+{
+  "fixture": "runs-normal",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "Hello ",
+          "commentary": "",
+          "text": "Hello ",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "world",
+          "commentary": "",
+          "text": "Hello world",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "Hello world",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "",
+          "text": "Hello world",
+          "transcript": "Hello world"
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/runs",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "model": "hermes-agent",
+      "input": "hi",
+      "provider": "",
+      "previous_response_id": ""
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/run_parity/events",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream"
+    }
+  ]
+}

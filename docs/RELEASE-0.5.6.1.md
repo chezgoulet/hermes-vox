@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.6.1 — settings-ux wave 2
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Completes the settings-UX sprint (issues #111-120 all addressed across 0.5.6 + 0.5.6.1).
 Wave 2 covers the P1/P2 clarity + learnability work, built on the P0 fixes (0.5.6).
 

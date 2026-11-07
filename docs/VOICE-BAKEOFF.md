@@ -1,5 +1,7 @@
 # Voice bake-off — 2026-09-29
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 The question: which **on-device** voice should Hermes Vox speak with? No remote GPU; it must run
 live on a phone. Candidates were the open models supported by the sherpa-onnx runtime Vox already
 pins (1.13.6), plus the wider field surveyed first.

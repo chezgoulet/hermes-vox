@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.4 — the cadence fix + the render crash guard
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Both items from the 0.6.3 field session: the robotic double-ack and the
 crash on reply render.
 
@@ -25,5 +27,5 @@ instead of dividing. Crash path closed.
 
 ## Verification
 
-Thelio gate on a clean clone: 32 suites / 250 tests / 0 failures,
+the build host gate on a clean clone: 32 suites / 250 tests / 0 failures,
 assembleRelease + bundleRelease green. versionCode 108 / 0.6.4.

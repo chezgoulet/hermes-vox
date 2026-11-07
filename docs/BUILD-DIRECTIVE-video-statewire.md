@@ -1,5 +1,7 @@
 # BUILD-DIRECTIVE: video state-wiring (Wave 1 shapes fire in their named states + configurable)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 REPO (sandbox): `~/vox-wave1` — branch `video-wave1`, HEAD `6053d55` (the 7 Wave 1
 shapes already landed + gated). Read `docs/design-menu-shapes.md` + the existing
 `docs/BUILD-DIRECTIVE-video-wave1.md`. The 7 shapes are DONE — you add the STATE WIRING +

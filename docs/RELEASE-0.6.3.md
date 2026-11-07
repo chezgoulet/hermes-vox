@@ -1,5 +1,7 @@
 # Hermes Vox 0.6.3 — the field-log fix
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 A same-day showstopper fix from the maintainer's field log, plus the Gemma
 render rails.
 
@@ -18,5 +20,5 @@ render rails.
 
 ## Verification
 
-Thelio gate on a clean clone: 31 suites / 244 tests / 0 failures,
+the build host gate on a clean clone: 31 suites / 244 tests / 0 failures,
 assembleRelease green. versionCode 107 / 0.6.3.

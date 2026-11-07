@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.6.2 — ER-alpha labeling + docs accuracy
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Bundles the Enhanced Realtime (alpha) labeling and the docs-accuracy fixes (the P0s from
 the maintainer's documentation audit).
 

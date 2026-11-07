@@ -1,6 +1,10 @@
 # Hermes Vox — Sprint 1 Plan Brief
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
 
-**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (Thelio) · **Branch:** feature/sprint1-model-downloader
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
+**Repo:** chezgoulet/hermes-vox · **Work clone:** <repo> (the build host) · **Branch:** feature/sprint1-model-downloader
 **Model (plan + build):** `deepseek/deepseek-v4-flash-vision-exp` (DeepSeek API, vision) · **Owner/approver:** Torc
 **Review gate:** Torc adversarial code review + compile + emulator test (`emulator-5554`). **Merge target:** `main` (Vox releases by tag-on-main).
 
@@ -17,7 +21,7 @@
 
 ### #3 — CRITICAL: model integrity decorative; source unvalidated; "no protocol" not fully fixed
 - Only gemma-e2b has a non-empty `sha256`; `ModelDownloader.kt:83-86` skips verification when blank.
-- `ModelCatalog.source()` (lines 76-82) only handles blank. A user typing `models.house.lan` or `10.0.2.2:8899` still reaches `URL(urlStr)` at `ModelDownloader.kt:56` → `MalformedURLException: no protocol` / `unknown protocol`.
+- `ModelCatalog.source()` (lines 76-82) only handles blank. A user typing `models.example.lan` or `10.0.2.2:8899` still reaches `URL(urlStr)` at `ModelDownloader.kt:56` → `MalformedURLException: no protocol` / `unknown protocol`.
 - **Fix:** scheme validation + allowlist at the input (require `https?://`, reject scheme-less hosts in `source()`/URL build); populate a real pinned `sha256` for EVERY blessed model; verify-on-download AND verify-on-load (re-hash the installed file at init).
 
 ### #49 — 5/6 models lack integrity; the Gemma model URL is wrong

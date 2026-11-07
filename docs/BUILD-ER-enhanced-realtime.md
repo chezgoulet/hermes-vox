@@ -1,5 +1,7 @@
 # BUILD SPEC — Enhanced Realtime (ER) mode. The full implementation plan.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 This codifies every decision we've locked. It is the BUILD READY plan: what runs on
 the phone, what runs on the gateway, and in what order. It is NOT a feature list —
 each item maps to a concrete, reviewable change.
@@ -58,20 +60,24 @@ api_server channel Vox uses.
 3. **Serve it**: an endpoint (or include in the responses payload) the app can GET VOX.md
    from the gateway. Gateway-authoritative, read-only. The app never writes it.
 4. **Soul file format**: the Contract (fixed rules 1-6) + Soul (name, essence, register,
-   relationship, distilled memory facts, humor). Keys for app display (name, theme) that
-   the motion system can read (see Phase 4).
+   relationship, humor, what it is proud of). No memory section: the voice speaks the moment.
+   Keys for app display (name, theme) that the motion system can read (see Phase 4).
 
 ## PHASE 3 — App: ER mode toggle + onboarding bootstrap
-1. **Enable ER** in Settings (a toggle). First-enable triggers the bootstrap:
-   the app asks the gateway (already authenticated) to generate VOX.md — the gateway
+1. **Enable ER** in Settings (a toggle). First-enable triggers the bootstrap **for the active
+   profile**: the app asks the gateway (already authenticated) to generate VOX.md — the gateway
    agent runs the authoring contract, writes `$HERMES_HOME/VOX.md` (or serves an existing
-   one), and the app PULLS + mirrors it locally.
-2. **"Resync VOX.md"** button in Settings → re-PULLs from gateway, overwrites local mirror.
-   It is a PULL; the device never pushes. Pull-only invariant.
-3. **On first ER enable**: confirm VOX.md exists; if missing/failed, surface a clear state
-   (the entity can't find its voice) rather than silently proceeding.
+   one), and the app PULLS + mirrors it locally into `filesDir/vox/<profile>/VOX.md`.
+2. **"Resync VOX.md"** button in Settings → re-PULLs from gateway, overwrites the **active
+   profile's** local mirror. It is a PULL; the device never pushes. Pull-only invariant.
+3. **On first ER enable, and on the first call per profile**: confirm the active profile has
+   VOX.md; if missing/failed, surface a clear state (the entity can't find its voice) rather
+   than silently proceeding — and do not let Presence speak. On upgrade, the pre-profile
+   `filesDir/vox/VOX.md` is migrated into the active profile's slot once.
 4. **Onboarding order**: user already enters key + base URL (0.4.0/C0-C1). ER bootstrap is
    a follow-on, gated on key present.
+5. **Presence off means no workflow**: nothing fetches, mirrors, prompts for or reports on
+   VOX.md (no Settings rows, no request, no toast).
 
 ## PHASE 4 — App: ER runtime — the soul's voice + presence
 1. **The soul prompt** (Gemma 2B): VOX.md contract+soul + role:

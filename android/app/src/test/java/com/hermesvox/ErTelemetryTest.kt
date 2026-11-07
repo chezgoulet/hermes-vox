@@ -70,6 +70,19 @@ class ErTelemetryTest {
         assertEquals(1L, n(line, "nothing") - z0)
     }
 
+    @Test fun session_counts_start_at_begin_session() {
+        // #417: the diagnostic block reports the call, not the process. beginSession is called
+        // where LatencyStats.resetSessionTurns() marks a new session.
+        ErTelemetry.beginSession()
+        ErTelemetry.soulDecision("answer")
+        ErTelemetry.soulDecision("escalate")
+        assertEquals(1L, ErTelemetry.sessionAnswered())
+        assertEquals(1L, ErTelemetry.sessionEscalated())
+        ErTelemetry.beginSession()
+        assertEquals(0L, ErTelemetry.sessionAnswered())
+        assertEquals(0L, ErTelemetry.sessionEscalated())
+    }
+
     @Test fun should_emit_fires_exactly_once_per_ten_calls() {
         // Phase-independent: whatever the accumulated count, ten consecutive calls
         // contain exactly one emit.

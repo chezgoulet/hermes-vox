@@ -1,4 +1,8 @@
 # SPRINT-PLAN DIRECTIVE — Plan the fix batch (qwen3.8-max). You plan; a CHEAPER model implements.
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 You are planning a fix sprint for the Hermes Vox codebase at ~/vox-review
 (main, HEAD 9c1a95f5). Read the full findings report at

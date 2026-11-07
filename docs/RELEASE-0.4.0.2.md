@@ -1,5 +1,7 @@
 # Hermes Vox 0.4.0.2 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > The level-escape release: a second, VAD-independent barge path for the missed
 > barge-in under echo-dominant playback, plus its honest leak-band risk. Zero
 > behavior change to silence, retirement, fence, focus, endpointing, or the

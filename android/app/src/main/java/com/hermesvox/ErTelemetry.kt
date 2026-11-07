@@ -39,13 +39,17 @@ object ErTelemetry {
     private var soulAnswer = 0L
     private var soulEscalate = 0L
     private var soulNothing = 0L
-    // The beat: turns the soul opened with a generated opener before the mind's answer, and
-    // turns where the mind chose silence because the voice had already answered.
+    // The beat: turns the soul opened with a generated opener before the mind's answer.
+    // (D30: `answer` now counts renders that ignored the beat format — they are not spoken.)
     private var soulBeat = 0L
-    private var mindSkip = 0L
     // The soul's OWN render latency (the GemmaExpress.express round-trip).
     private val gemmaRender = ArrayList<Long>()
     private val gemmaRenderCap = 64
+    // Session baselines for the diagnostic block (#417). The counters above are cumulative
+    // for the log's continuity; the block reports a call, so it reads these differences.
+    // LatencyStats.resetSessionTurns() is the one session boundary and calls beginSession().
+    private var baseAnswered = 0L
+    private var baseEscalated = 0L
 
     fun classify(route: ErIntent.Route) = synchronized(lock) {
         when (route) {
@@ -92,10 +96,21 @@ object ErTelemetry {
         }
     }
 
-    /** The mind replied with the skip token (the voice's answer stood). */
-    fun mindSkipped() = synchronized(lock) { mindSkip++ }
+    /** Start the diagnostic window where the turn count starts. Never clears the log
+     *  counters; the block subtracts these baselines from them. */
+    fun beginSession() = synchronized(lock) {
+        baseAnswered = soulAnswer
+        baseEscalated = soulEscalate
+    }
 
-    /** Median soul render latency so far, or null before the first render (SoulGate's input). */
+    /** Soul decisions since the session boundary ("answer" / "escalate"). Negative is
+     *  impossible, but a reset from a test that bypasses beginSession must not leak a
+     *  nonsense count into a public report. */
+    fun sessionAnswered(): Long = synchronized(lock) { (soulAnswer - baseAnswered).coerceAtLeast(0) }
+    fun sessionEscalated(): Long = synchronized(lock) { (soulEscalate - baseEscalated).coerceAtLeast(0) }
+
+    /** The mind replied with the skip token (the voice's answer stood). */
+    /** Median soul render latency so far, or null before the first render (the presence bar's latency half). */
     fun renderP50(): Long? = synchronized(lock) { if (gemmaRender.isEmpty()) null else pct(gemmaRender, 50) }
 
     /** The soul's own render latency (ms) for one express() call. */
@@ -125,7 +140,7 @@ object ErTelemetry {
             "p50=${pct(gemmaRender, 50)} p95=${pct(gemmaRender, 95)}ms"
         val soulPct = if (turns == 0L) 0L else turnsSoulSpoke * 100 / turns
         "er: cls(hold=$clsHold yield=$clsYield) " +
-            "soul(answer=$soulAnswer beat=$soulBeat escalate=$soulEscalate nothing=$soulNothing mind-skip=$mindSkip) " +
+            "soul(answer=$soulAnswer beat=$soulBeat escalate=$soulEscalate nothing=$soulNothing) " +
             "barge(cancel=$bargeCancel hold=$bargeHold) " +
             "arb(play=$arbPlay preempt=$arbPreempt reject=$arbReject) soul-first-word[$sw] " +
             "turns=$turns soul-spoke=$turnsSoulSpoke (${soulPct}%) gemma-render[$gr]"

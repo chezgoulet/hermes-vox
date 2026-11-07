@@ -1,335 +1,241 @@
 <p align="center">
-  <img src="docs/screenshots/icon.png" width="128" alt="Hermes Vox icon — the being posed as the voice">
+  <img src="docs/screenshots/icon.png" width="96" alt="Hermes Vox icon">
 </p>
 
-<h1 align="center">Hermes Vox</h1>
+# Hermes Vox
 
-<p align="center">
-  <b>The voice of your Hermes agent — on your phone.</b><br>
-  An open-source Android voice client with on-device speech and a living, GPU-drawn presence.<br>
-  You talk to the same agent you already use everywhere else.
-</p>
+Hermes Vox is an Android app for talking by voice to Hermes — the agent you run yourself. You open
+the voice line and speak; the phone hears you, sends the words to the agent, speaks the reply and
+shows what the agent is doing.
 
-<p align="center">
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/chezgoulet/hermes-vox"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" height="56" alt="Get it on Obtainium"></a>
-</p>
+The app is a client. It has no account, no hosted service and no second brain. Everything that
+must be instant — hearing, turn-taking, speech, the figure on screen — runs on the phone.
+Everything that must be true — reasoning, tools, memory, identity — stays in the Hermes instance
+you run.
 
-<p align="center">
-  <a href="https://hermesvox.org">hermesvox.org</a> ·
-  <a href="https://github.com/chezgoulet/hermes-vox/releases/latest">Latest release</a> ·
-  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="ROADMAP.md">Roadmap</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
-</p>
+## The words this document uses
 
-> **Beta — early days, moving fast.** Hermes Vox is installable and works, but it is
-> a work in progress: expect rough edges and things that shift between releases. Help
-> is very welcome, especially **testing on real phones, polish, and bug reports**.
+- **The gateway** is the Hermes API server you run. You reach it at a URL you own, with the
+  `API_SERVER_KEY` it was started with.
+- **The agent**, or **the mind**, is the Hermes instance on that gateway. It owns the reasoning,
+  tools, long-term memory, skills and identity. Vox never invents a second agent or a persona
+  over it.
+- **A call** is the one kind of conversation the app offers: an open, hands-free line where the
+  microphone stays live under voice-activity detection, and you interrupt by speaking.
+- **A turn** is one exchange on that line: your words go to the agent, and the reply comes back.
+- **The being** is the GPU-drawn figure on screen. It takes a shape for resting, listening,
+  thinking, speaking and for each kind of tool the agent runs.
+- **Presence** is an optional, unfinished layer that gives the being a small on-device voice — the
+  *soul*. It speaks the opening beat of a turn — two to six words spoken while the mind starts to
+  answer — in the agent's style. It is not a second agent, does no reasoning and calls no tools.
+- **A profile** is one saved connection: the gateway address, its key, the request's model value
+  (usually `hermes-agent`), and the voice and look that belong to that agent.
+- **A session** is one conversation as the host files it. The `/sessions` command lists the
+  host's sessions and lets you pick one up.
+- **Phone tools** is the optional surface that lets the mind act on the phone — timers, alarms,
+  Do Not Disturb and volume, media keys, the clipboard, granted folders, calendar, contacts,
+  notifications and app handoffs — through one tool on the Model Context Protocol (MCP), the
+  protocol the gateway uses to reach tools.
+- **An approval** is the gateway's question before a consequential action. The phone shows what
+  is being approved, the choices the gateway offered, and answers once. A timeout is a no.
+- **The alpha gate** is one switch in Settings, off on a fresh install. It opens the unfinished
+  feature sets, each selected on its own. The sets and their dependencies are described in
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-> **Bring your own gateway.** Vox is a **client**, not a service. There is no hosted
-> cloud and nothing to sign up for: you point the app at **your own
-> [Hermes Agent](https://hermes-agent.nousresearch.com)** gateway — the endpoint and
-> API key of an instance *you* run, locally, on your network, or on a box you own.
+## What you need
 
----
-
-## See it
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/call.jpg" width="260" alt="An open call: the being at rest as a quiet nebula of light, with the call timer"></td>
-    <td align="center"><img src="docs/screenshots/speaking.jpg" width="260" alt="Speaking: the being becomes a violet soundwave while the reply scrolls beneath it, locked to the voice"></td>
-    <td align="center"><img src="docs/screenshots/settings.jpg" width="260" alt="Settings: voice mode, models, entity, speech, transcription, voice, appearance, visuals"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>An open call — hands-free, no push-to-talk</sub></td>
-    <td align="center"><sub>Speaking — the words follow the voice</sub></td>
-    <td align="center"><sub>Settings — everything local, in plain language</sub></td>
-  </tr>
-</table>
-
-**The being shows the agent's real work.** Every tool call Hermes makes reaches the
-phone, and the being takes a shape for it:
-
-![Thinking, waiting on the web, running a command, recalling memory, the answer arriving, speaking](docs/screenshots/states.jpg)
-
-**27 shapes**, drawn on the GPU from 6,000 points of light. Pick one for rest, listening,
-thinking and speaking, or let it cycle:
-
-![The 27 shapes: aura, iris, vortex, jellyfish, globe scan, constellation, terminal, flame, ribbon, black hole, bloom, soundwave, lightning, nucleus, eye, ripples, radar, octopus, sphere, helix, knot, aurora, harmonograph, tesseract, mandala, butterfly, hourglass](docs/screenshots/shapes.jpg)
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/models.jpg" width="260" alt="Voice models: the three required models installed, optional ones available to download"></td>
-    <td align="center"><img src="docs/screenshots/tts.jpg" width="260" alt="TTS and voice: Supertonic engine, delivery, speaker"></td>
-    <td align="center"><img src="docs/screenshots/visuals.jpg" width="260" alt="Visuals: category, motion energy, glow, and a shape per state"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Models download in-app, resumable, sha256-verified</sub></td>
-    <td align="center"><sub>Supertonic: ten on-device voices</sub></td>
-    <td align="center"><sub>Visuals: a shape for every state</sub></td>
-  </tr>
-</table>
-
-<sub>Screenshots are from the 0.8.0 build on an Android 15 emulator.</sub>
-
----
-
-## Why it exists
-
-The best voice AI feels **present**: it answers straight away, lets you interrupt,
-and sounds like someone. Most of it is also a voice with no agent behind it, or an
-agent that lives in somebody else's cloud.
-
-[Hermes Agent](https://hermes-agent.nousresearch.com) by
-[Nous Research](https://nousresearch.com) is a real agent you run yourself, with
-tools, long-term memory, skills and a persistent identity. Hermes Vox gives it a voice
-and a face without adding a second brain:
-
-- **The entity IS Hermes.** It is not a persona layered on top. Hermes owns the reasoning,
-  tools, memory and context. The phone owns what has to be instant: hearing,
-  turn-taking, interruption, the voice and the presence.
-- **Sovereign by construction.** Speech recognition and synthesis run on the phone. The
-  only network peer is the gateway you configure. No accounts, no vendor cloud, no
-  keys in the app.
-- **One agent, many doors.** Vox is one more frontend to the same Hermes instance that
-  already serves you on Telegram, desktop or the CLI. It never forks the agent.
-- **Open.** GPL-3.0, reproducible build, secret-free CI.
-
-## What it does
-
-- **Hands-free calls.** An open line, voice-activity gated, with barge-in: talk over a
-  reply and it stops and listens. Your interrupting words become the next turn.
-- **On-device hearing.** Silero VAD plus Whisper (int8) or NVIDIA Parakeet-TDT, via
-  sherpa-onnx. Hermes always receives the **whole** utterance, validated against
-  Whisper's known hallucinations, and a dim "heard" line shows what was sent.
-- **On-device voice.** [Supertonic](https://huggingface.co/Supertone/supertonic-2), with
-  ten voices at 44.1 kHz, about ten times faster than real time. It was chosen by a
-  [measured bake-off](docs/VOICE-BAKEOFF.md). Piper is the lighter option and the
-  system voice the fallback.
-- **The being.** A GPU-rendered presence that breathes at rest, sweeps like radar while
-  thinking, types itself out while running a command, links a constellation while
-  recalling, rises as a flame while the answer streams, and becomes a soundwave as it
-  speaks.
-- **Your headset, not the desk.** A Bluetooth or wired headset attached to the phone
-  becomes the call's route — microphone and speaker — the way a phone call would use it
-  (#149). A headset mic needs the default hardware AEC/NS capture source; see
-  `DEVICE_VERIFY.md` for the log lines and the two honest limits.
-- **The reply, as words.** The answer scrolls under the being, locked to what has actually
-  been spoken.
-- **Enhanced Realtime (alpha).** An on-device Gemma 4 E2B "soul" (LiteRT-LM, on the GPU)
-  takes the opening beat of every turn in the agent's own voice. It hears your tone and
-  hands over to Hermes for anything real.
-- **Downloads that finish.** Models download in the background with pause and resume
-  (HTTP range requests), survive network loss, and are sha256-checked before install.
-- **Stays lit.** The screen stays on while a call is open (switchable), and the power
-  button still works.
-- **More than one person, one gateway.** An optional per-device entity scope gives each
-  person their own memory on a shared gateway.
-
-## Voice modes
-
-Settings → **Voice mode**:
-
-1. **Realtime.** On-device STT, VAD and TTS with Hermes behind them, on a hands-free
-   line with barge-in. It feels like a live call.
-2. **Enhanced Realtime (alpha).** Realtime **plus** the on-device Gemma 4 E2B presence
-   layer: the soul greets you, speaks the first beat of each turn while Hermes thinks,
-   and answers small talk itself. Hermes can then stay silent (`<<SKIP>>`) instead of
-   answering twice. It needs the 2.6 GB presence model and a phone GPU.
-
-**The entity is Hermes in both modes.** Only the foreground voice changes.
-
-## The contract: Hermes decides, the soul expresses
-
-The on-device model is an **expression layer**, never a second brain:
-
-- **Gemma speaks; Hermes acts.** The soul produces conversation: greetings, beats,
-  acknowledgements. It never calls tools or reasons in Hermes' place. It says "let me
-  look that up"; Hermes is the one that looks it up.
-- **No tools at the edge.** The on-device runtime has no tool interface.
-- **One soul.** The soul borrows Hermes' identity through an agent-authored `VOX.md`
-  distilled from its `SOUL.md`. The phone mirrors it read-only and never writes identity
-  back.
-- **Hermes trumps the soul.** Any real answer, tool result or report preempts the voice.
-  Barge-in interrupts both.
-
-The whole system on one page — the layers, the Hermes API contract, how each piece maps
-to Sesame's components of voice presence, and the honest gaps — is in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- An Android phone running Android 7.0 (API 24) or later. The release APK contains the
+  `arm64-v8a` and `armeabi-v7a` libraries.
+- A Hermes gateway you operate, and its `API_SERVER_KEY`. The app verifies the connection with a
+  real request to `GET /v1/models`; a wrong address or key fails before anything is saved.
+- A network route from the phone to the gateway. HTTPS is required except for a tailnet
+  MagicDNS name (`*.ts.net`) while Tailscale is connected. A tailnet is a private network run by
+  a mesh VPN; Tailscale is the one whose addresses the app's own servers recognise and bind to.
+  A VPN or tailnet you control is the intended setup.
+- About 294 MB of on-device models: Silero VAD, Supertonic and Whisper base.en. The app
+  downloads them in **Settings → Voice models**.
+- For Presence: the optional Gemma 4 E2B model (about 2.6 GB) and a phone with 8 GB of memory.
+  First run checks the phone and says so when it falls short.
+- For phone tools and file offers: Tailscale on the phone, because the app's servers bind only
+  to the tailnet address.
 
 ## Install
 
-**Obtainium (recommended).** [Add Hermes Vox to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/chezgoulet/hermes-vox),
-or add `https://github.com/chezgoulet/hermes-vox` as a GitHub source. Obtainium installs
-the signed APK from each GitHub release and keeps it updated.
+**Obtainium.** Add `https://github.com/chezgoulet/hermes-vox` as a GitHub source, or use the
+[Obtainium link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/chezgoulet/hermes-vox).
+Obtainium installs the signed APK from each GitHub release and keeps it updated.
 
-**APK.** Download `hermes-vox-<version>.apk` from
-[Releases](https://github.com/chezgoulet/hermes-vox/releases/latest) and install it
-(allow installs from that source). Nightly pre-releases are published from `testing`.
+**APK.** Download `hermes-vox-<version>.apk` from the
+[latest release](https://github.com/chezgoulet/hermes-vox/releases/latest) and install it,
+allowing installs from that source.
 
-**F-Droid — in preparation.** Hermes Vox is being readied for the F-Droid main
-repository; its speech stack has to be built from source in their recipe, so the
-listing follows that work. Until it is listed, GitHub Releases and Obtainium are
-the rails, and both carry the same signed APK.
+**F-Droid.** Hermes Vox is not listed on F-Droid. The draft recipe and the source-built speech
+runtime it needs are described in [docs/FDROID.md](docs/FDROID.md).
 
-### First run
-
-1. Enter your gateway **endpoint** (for example `https://<machine>.<tailnet>.ts.net`)
-   **and** its `API_SERVER_KEY`. Both are required; the gateway answers an
-   unauthenticated request with `401`.
-2. Download the three required models in **Settings → Voice models**: Silero VAD, Supertonic
-   and Whisper base.en (about 290 MB in total). Parakeet (482 MB) and Gemma 4 E2B
-   (2.6 GB, for Enhanced Realtime) are optional.
-3. Tap the call button and talk.
-
-Notes on the fields:
-
-- **The endpoint may carry a trailing slash.** Vox trims it. (The gateway itself
-  answers `404` for `//v1/...`.)
-- **A Hermes profile name is not a key.** It is the *model* value: on a non-default
-  profile, put the profile's name in **Model** instead of `hermes-agent`. Vox does not
-  yet speak the gateway's `/p/<profile>/` URL-prefix routing.
-
-### Build from source
+**Build from source.** Install JDK 17 and the Android SDK, export `JAVA_HOME` and
+`ANDROID_HOME`, then run the one-command gate:
 
 ```bash
-# JDK 17 and the Android SDK (JAVA_HOME / ANDROID_HOME exported). One command
-# fetches the verified sherpa-onnx runtime, builds the APK and runs every test —
-# see CONTRIBUTING.md:
 bash scripts/gate.sh
-# -> android/app/build/outputs/apk/debug/hermes-vox-<version>.apk
 adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
 ```
 
-## The stack
+The gate fetches the pinned speech runtime, builds the APK and runs every unit test. What a
+change needs to be reviewable is in [CONTRIBUTING.md](CONTRIBUTING.md); the release process is
+in [docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md).
 
-- **Android.** Native Kotlin, AppCompat, no Material. It carries the UI and the voice
-  pipeline.
-- **Speech.** [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runs Silero VAD,
-  Whisper or Parakeet STT, and Supertonic or Piper TTS, all on the CPU with tuned
-  thread counts.
-- **The entity.** The Hermes gateway (`/v1/responses` streaming), reached
-  over your private network. Hermes does all the reasoning, tools and memory.
-- **The connector.** Kotlin (`com.hermesvox.core`, no extra dependencies): the SSE
-  stream, tool events, and stream cancellation for barge-in.
-- **The soul.** Gemma 4 E2B on LiteRT-LM, GPU-first with a CPU fallback (Enhanced
-  Realtime only).
-- **The being.** OpenGL ES 3 on its own thread: 6,000 stateless particles placed by
-  the vertex shader, with two-level bloom and a filmic tone curve. It runs at 60 fps,
-  pauses in the background, and degrades gracefully on weaker GPUs.
-- **The icon.** Rendered from the being's own shaders by `tools/icon/render_icon.py`.
+## Connect it to a gateway
 
-## Security
+1. On first launch, enter the gateway **endpoint** and its **`API_SERVER_KEY`**. Both are
+   required. The endpoint may carry a trailing slash; the app trims it.
+2. Tap **Connect & verify**. The app asks the gateway for `/v1/models` and adopts the agent name
+   the host answers with.
+3. Install the three required models in **Settings → Voice models**. Downloads run in the
+   background, resume after network loss, and are sha256-checked before unpacking.
+4. Optional: accept the one-time offer to **Teach your agent this app**. It asks the agent to
+   install the app's own description (`hermes-vox-app`) on your gateway, so the agent can answer
+   "where is that setting?" about Vox. Nothing is installed unless you choose it; the same
+   action lives in **Settings → Entity & Connection → Teach your agent this app**. See
+   [docs/APP-SKILL.md](docs/APP-SKILL.md).
+5. Tap the call button and talk.
 
-- **Vox never ships with a key; you enter your own.** The gateway API key is entered
-  during onboarding or in Settings → Entity. There is no baked-in, env-injected or
-  default key, and a release-build guard fails the build if one is ever added.
-- The key is encrypted at rest (Android Keystore, AES/GCM). App backups are disabled.
-- Model downloads are streamed, resumable, sha256-verified and unpacked with a zip-slip
-  guard into app-private storage.
-- **TLS everywhere**, except tailnet MagicDNS names (`*.ts.net`), which the tailnet
-  already encrypts. There are no per-host cleartext exceptions.
+On a gateway shared by several people, **Settings → Entity & Connection → Entity scope** sets
+`X-Hermes-Session-Key`, a stable per-person identifier from which the gateway derives the
+long-term-memory scope. Blank means not declared. It is not a credential and is stored in plain
+preferences; the API key is the secret.
 
-See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
+The endpoint may address a profile directly (`https://host/p/<name>`). Profiles are listed and
+switched from the host; they are not created in the app.
 
-## More than one person, one gateway
+## The call
 
-Every Vox install authenticates with the gateway's `API_SERVER_KEY`, which names the
-*deployment*, not the caller. So two people behind one gateway look identical to the
-entity unless the client says who it is.
+The microphone feeds Silero VAD. When a finished utterance exists, it is recognised on the
+phone — Whisper base.en by default, with smaller, larger, Parakeet and multilingual Whisper
+models available — validated against the recogniser's known hallucinations, and sent to the
+gateway as text. The gateway's reply streams back; the phone speaks it in short chunks as it
+arrives and scrolls the words in step with what has actually been spoken. The dim "heard" line
+shows the words that were sent.
 
-Vox says it with the API server's own identity header, **`X-Hermes-Session-Key`**
-(**Settings → Entity → Entity scope**, optional):
+You can talk over a reply. Barge-in cuts the audio, cancels the turn — and on the default
+`/v1/runs` route also stops the run on the gateway — and the interrupting words become the next
+turn. The agent can stop and ask for approval before a consequential command; the phone shows
+the command, the reason and the gateway's own choices, and a timeout answers no.
 
-- It is a **stable per-channel identifier**, such as `agent:vox:phone:alex`.
-- Hermes derives the **long-term-memory scope** from it, so each person gets their own
-  memory while still talking to the *same* agent.
-- **Blank means not declared.** A single-user setup needs nothing here.
-- It is not a credential, so it is stored unencrypted in app prefs. Vox validates it
-  (up to 256 characters, no CR/LF/NUL) before sending.
+The call cannot reason, use a tool or remember anything on the phone. It cannot carry an
+approval when the gateway falls back to `/v1/responses`: that route does not deliver approval
+requests. It is half-duplex — it listens or speaks, with barge-in, not both at once.
 
-Give two devices the same scope only when you *want* them to share one memory.
+## The phone tool surface
 
-## Privacy
+When **Phone tools** is enabled, the app runs a small MCP server on the tailnet address. The
+mind calls one tool, `phone`, with an action; the phone validates the action against the grants
+you set, performs it, and returns a result saying what happened. Thirteen capability groups are
+defined. Every group is **Off**, **Ask** or **Allow**, and every group starts Off. Off means the
+action is absent from the tool's schema; Ask raises the phone's own card and runs only after you
+answer; Allow runs without a card. The server listens only while a call is live or during a
+setup attempt, and only on the tailnet.
 
-- **A private network you control is assumed** — a VPN or tunnel such as Tailscale or
-  Nebula. Vox suggests one but never requires a specific product.
-- **Your audio never leaves the phone** except as text to your own gateway. Speech
-  recognition, synthesis and the Enhanced Realtime tone listening all run on-device.
-  The only other network destinations are the model downloads you start.
-- Logs are local-only, and transcript logging is off by default.
+Presence may read what the phone is doing; it cannot change it. The phone does not parse your
+spoken words to decide an action — every voice turn goes to the mind, and the mind decides
+whether to call the tool.
 
-The full policy, with a source file for every claim, is in [PRIVACY.md](PRIVACY.md).
+The phone tools cannot reach a phone that is not on the tailnet, cannot act while no call or
+setup attempt is open, and cannot act in a group you have left Off. An action that the catalogue
+declares but the phone does not implement is never advertised. [docs/MCP-PHONE.md](docs/MCP-PHONE.md)
+covers setup and the wire; [docs/MCP-SURFACE.md](docs/MCP-SURFACE.md) is the action-by-action
+contract.
 
-## Community
+## Presence
 
-Questions, open-ended ideas and setups live in
-[Discussions](https://github.com/chezgoulet/hermes-vox/discussions) — start with
-the pinned [Start here](https://github.com/chezgoulet/hermes-vox/discussions/187).
-Bugs and concrete feature requests belong in
-[Issues](https://github.com/chezgoulet/hermes-vox/issues).
-[CONTRIBUTING.md](CONTRIBUTING.md) says what a change needs to be reviewable.
+Presence is the optional layer behind the alpha gate. When it is enabled and its model is
+installed, Gemma 4 E2B runs on the phone (GPU first, CPU fallback), reads a read-only mirror of
+the agent's `VOX.md` voice file, and speaks two to six words at the start of a turn while the
+mind works. It also reads the caller's tone from the last few seconds of on-device audio. Every
+turn still goes to the mind; the soul offers the beat and never the answer. The agent writes
+`VOX.md` on the gateway, and the phone never writes identity back.
 
-## Status
+Presence cannot answer a question, call a tool or change the phone. It needs the 2.6 GB model
+and a phone with 8 GB of memory; it holds about 3 GB while a call is live. It is unfinished:
+the alpha gate is off by default, and switching it off stops everything Presence owns.
 
-**0.8.1 — "the headset release"** is the current release
-([notes](docs/RELEASE-0.8.1.md)). What is in progress, honestly:
+## Profiles and sessions
 
-- **Real-phone verification** of the newest pieces: the soul's beat latency on a phone
-  GPU, Parakeet's on-phone speed, echo handling after a reply, and the headset route
-  added in 0.8.1 (step 8 of [`DEVICE_VERIFY.md`](DEVICE_VERIFY.md)).
-- **0.9 — the last series before 1.0:** streaming speech recognition, a measured
-  presence model (Gemma 4 E2B stays the default; Qwen was rejected on Mali —
-  see `docs/PRESENCE-BENCH.md`), a wake word, procedural audio cues, F-Droid
-  inclusion, and reproducible builds. Every 1.0 feature ships during
-  0.9.x first; 1.0 is cut when the set, the polish and the measured performance are
-  all acceptable. The decisions are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
-- **Distribution:** GitHub Releases and Obtainium today; F-Droid in preparation.
-- **Longer horizon:** full-duplex conversation.
+A profile is the whole connection plus the presentation that belongs to it: address, key, model
+value, voice and look. The list comes from the host. Switching profiles writes the chosen
+connection, rebuilds the session and starts a fresh conversation; a live call ends.
 
-The details are in [ROADMAP.md](ROADMAP.md).
+`/sessions` lists the conversations the host already holds and adopts one by setting the
+conversation id (`session_id`) that the next turn is filed under. The transcript stays the host's;
+the app keeps no conversation history on disk. Profiles are a picker, not an editor: nothing in
+the app creates or changes one on the host.
 
-## Troubleshooting
+## What it sends, and what stays on the phone
 
-### "Cleartext HTTP traffic not permitted"
-Vox only speaks HTTPS to your gateway (plain HTTP would expose your API key and
-transcripts). The one exception is a tailnet MagicDNS name. Put the gateway behind
-HTTPS on your tailnet:
+- **To the gateway:** the text of each turn, the per-request voice instructions, the declared
+  entity scope, approval answers, and the reads behind profiles, sessions and the app-skill
+  install. The bearer key travels only to the gateway you configured.
+- **On the tailnet:** the phone-tools MCP server and, only after you confirm a share, a one-time
+  file offer. The file is staged, hashed, capped at 100 MB, expires after five minutes, and is
+  served once; text under 8,000 bytes travels inline instead. Nothing is sent until you press
+  **SEND**.
+- **From model hosts:** the model files you choose to download, from the k2-fsa sherpa-onnx
+  releases and Hugging Face.
+- **On the phone:** microphone audio is transcribed on the device by default; Presence's tone
+  audio goes only to the on-device model. The gateway key is encrypted with a key in the Android
+  Keystore, and app backups are disabled. If the Keystore refuses to encrypt on a device, the
+  value is kept locally in plain text, the failure is logged and the next start retries.
+- **Logs** are local. Transcript logging is off by default.
 
-1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
-2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`
-3. If your tailnet CA isn't publicly trusted, install it on the phone
-   (Settings → Security → Trust device certificates). The app trusts user CAs.
+The app writes on the phone: preferences, the encrypted key, downloaded model files, local logs,
+the read-only `VOX.md` mirror when Presence runs, and a staged copy of a file while an offer is
+open — deleted when the offer ends. The app itself writes nothing on the gateway. The agent may
+write there as part of a flow you start — install the app skill, add the phone-tools entry, or
+author `VOX.md`. Phone actions change the phone only through the granted tool.
 
-### It connects, but every call fails
-Check the endpoint for a **doubled path or a path prefix**. The Hermes API server
-answers `404` for `/v1/models/` and `//v1/models`. If you are behind a reverse proxy or
-a `/p/<profile>` prefix, make sure the forwarded path matches exactly (`/v1/responses`,
-not `/hermes/v1/responses`).
+The one way microphone audio leaves the phone is the optional remote recognition endpoint: if
+you select it and supply a URL, the audio for a turn is sent to that URL. No other path uploads
+microphone audio; a file you choose to share follows the share path above.
 
-### "Preparing your voice…" stays up
-The required models are not all installed yet. Open **Settings → Voice models**; downloads
-continue in the background and resume after network loss.
+See [PRIVACY.md](PRIVACY.md) for the full policy and [SECURITY.md](SECURITY.md) for the threat
+model and how to report a vulnerability.
 
-## Credits
+## What it cannot do
 
-Hermes Vox exists because of **[Hermes Agent](https://hermes-agent.nousresearch.com)**
-([GitHub](https://github.com/NousResearch/hermes-agent)) and the team at
-**[Nous Research](https://nousresearch.com)**, who build and open-source the agent that
-is the mind behind every word Vox speaks. Thank you.
+- It cannot work without a gateway you run, and it cannot install Hermes or start a gateway for
+  you.
+- It cannot reason, call tools or keep long-term memory on the phone; every voice turn goes to
+  the mind.
+- It cannot listen and speak at the same time. Barge-in is the interruption path.
+- It cannot carry approvals on the `/v1/responses` fallback route.
+- It needs the Presence model (2.6 GB); on a phone below 8 GB of memory it may fail to load, and
+  Presence cannot answer or act.
+- It cannot use phone tools without the alpha set, a one-time setup with the agent and a grant
+  for the group; the listener is down when no call or setup attempt is open.
+- It cannot create or edit profiles; the host owns them.
+- It cannot be installed from F-Droid yet.
+- It cannot recognise a language the installed recognition model does not cover. The default is
+  English; multilingual Whisper models are in **Settings → Voice models**.
 
-Also standing on: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (k2-fsa),
-[Supertonic](https://huggingface.co/Supertone/supertonic-2) (Supertone), Whisper
-(OpenAI), Parakeet-TDT (NVIDIA), Silero VAD, Piper, Gemma and LiteRT-LM (Google), and
-the Rajdhani typeface (Indian Type Foundry, OFL). Model licenses are listed in
-[NOTICE](NOTICE).
+## Where the rest of the documentation is
 
-Hermes Vox is an independent community project. It is not affiliated with or endorsed by
-Nous Research.
+[docs/INDEX.md](docs/INDEX.md) is the map: every living document with what it answers, and the
+historical records kept separately. Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
+how the pieces fit together and where the phone/host boundary is. Feature documents:
+[docs/PRESENCE.md](docs/PRESENCE.md), [docs/MCP-PHONE.md](docs/MCP-PHONE.md),
+[docs/MCP-SURFACE.md](docs/MCP-SURFACE.md), [docs/RUNS-ROUTE.md](docs/RUNS-ROUTE.md),
+[docs/APP-SKILL.md](docs/APP-SKILL.md), [docs/MODELS-SCREEN.md](docs/MODELS-SCREEN.md).
 
-## License
+## License and credits
 
-[GPL-3.0](LICENSE).
+[GPL-3.0](LICENSE). The on-device speech runtime statically links espeak-ng, which is GPL-3.0;
+[NOTICE](NOTICE) lists the components and the source offer. On-device models are downloaded
+separately and keep their own terms.
 
-The app is GPL-3.0 because the on-device speech runtime statically links espeak-ng, which is GPL-3.0; see [NOTICE](NOTICE) for the component list and the source-offer. On-device models are downloaded separately and keep their own terms.
+Hermes Vox is built on [Hermes Agent](https://hermes-agent.nousresearch.com) by
+[Nous Research](https://nousresearch.com), and on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
+(k2-fsa), [Supertonic](https://huggingface.co/Supertone/supertonic-2) (Supertone), Whisper
+(OpenAI), Parakeet-TDT (NVIDIA), Silero VAD, Piper, Gemma and LiteRT-LM (Google), and the
+Rajdhani typeface (Indian Type Foundry, OFL).
+
+Hermes Vox is an independent community project. It is not affiliated with or endorsed by Nous
+Research.

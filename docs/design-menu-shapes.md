@@ -1,5 +1,7 @@
 # Shape-Expansion — the maintainer's Shapes (addendum to design menu)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Nine new concepts, each with the one-line "reason" (what the being is DOING that's
 worth showing), the state it serves, the geometry approach, and an honest difficulty
 grade. I've wired them into the same vocabulary as the existing 13 so they slot in as

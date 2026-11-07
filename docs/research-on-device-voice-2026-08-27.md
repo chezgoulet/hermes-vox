@@ -1,5 +1,7 @@
 # On-Device Voice Interaction — Open-Source Landscape, Best Practices, and Patterns for Hermes Vox
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 **Research date:** 2026-08-27 (Torc). Goal: find the best open-source implementations + best
 practices for exactly what we're building — hands-free on-device conversational voice
 (Sesame-style presence, streaming TTS, barge-in, wake-word ambience) — and map concrete

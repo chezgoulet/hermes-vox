@@ -1,4 +1,8 @@
 # SPEC — 0.5.0.3: kill the Star-Wars drift + screen-alive toggle (post-facelift)
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 ## Field evidence (2026-09-07 13:00 log, 0.5.0.2)
 ANIMATION IS GREAT ("holy smokes they look good", "jellyfish animation", "most

@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.0 — the presence release
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 `0.5.0` bundles the two preview feaatures into one stable release. Everything is
 built on top of the 0.4.x polish series (no baked keys, VPN explicit, walkie
 stripped, audio focus + route rebuild, honest metrics, bounded log, no ghost

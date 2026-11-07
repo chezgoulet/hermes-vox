@@ -27,8 +27,8 @@ android {
         applicationId "com.hermesvox"
         minSdkVersion 24
         targetSdkVersion 34
-        versionCode 146
-        versionName "0.9.0.3"
+        versionCode 147
+        versionName "0.9.1"
         // Instrumented tests are the on-device measurement path (docs/PRESENCE-BENCH.md):
         // they need a device, so gate.sh never runs them, and they never ship in an APK.
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -47,6 +47,16 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Bench sibling (#presence-cost): -Phermesvox.benchSuffix=presencecost installs a
+            // DEBUGGABLE app with its own package id NEXT TO the release-signed nightly, so a
+            // measurement run can set its prefs (`scripts/presence-cost.sh pref`) and load a
+            // second copy of the model without touching the owner's install. Absent the
+            // property, debug is exactly what it was: com.hermesvox, debug-signed.
+            if (project.hasProperty('hermesvox.benchSuffix')) {
+                applicationIdSuffix ".${project.property('hermesvox.benchSuffix')}"
+            }
+        }
         release {
             minifyEnabled true
             shrinkResources false
@@ -92,11 +102,51 @@ tasks.configureEach { task ->
     }
 }
 
+// The live-gateway suite (#167) runs against a deterministic fake built on the JDK's
+// com.sun.net.httpserver. Android unit-test Kotlin compilation runs with -no-jdk
+// (android.jar has no httpserver package), so this ONE compile also sees the JDK the
+// tests already execute on. App sources and the APK are untouched: no dependency is
+// added, and com.sun.net.httpserver never reaches the shipped APK.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    if (name.toLowerCase(Locale.ROOT).contains('unittest')) {
+        compilerOptions.noJdk.set(false)
+    }
+}
+
+// mTLS end-to-end (MtlsEntityTest). The production path builds its client SSLContext with a
+// NULL TrustManager, which on Android means "the platform's trust manager" — the system
+// store, plus the ts.net network-security-config entry. On this JVM the same null resolves
+// to the JDK default trust store, so the test JVM is given the test CA and nothing else:
+// tls/jvm-truststore.p12 holds exactly the `system-ca` that issued tls/server-trust.p12's
+// server certificate. This is test-environment wiring, not a code path: no app source and
+// no APK sees these properties, and no test makes a public-CA connection.
+tasks.withType(Test).configureEach {
+    def testTrust = file('src/test/resources/tls/jvm-truststore.p12')
+    systemProperty 'javax.net.ssl.trustStore', testTrust.absolutePath
+    systemProperty 'javax.net.ssl.trustStorePassword', 'test-only'
+    systemProperty 'javax.net.ssl.trustStoreType', 'PKCS12'
+}
+
+// #165: the staged from-source runtime, or null for the prebuilt AAR (the default build).
+def sherpaSource = project.findProperty('hermesvox.sherpaSource')?.with { file(it) }
+if (sherpaSource != null) {
+    if (!new File(sherpaSource, 'jniLibs').isDirectory() || !new File(sherpaSource, 'kotlin').isDirectory())
+        throw new GradleException("hermesvox.sherpaSource=$sherpaSource has no jniLibs/ + kotlin/ — run scripts/build-sherpa-from-source.sh")
+    android.sourceSets.main.jniLibs.srcDirs += new File(sherpaSource, 'jniLibs')
+    android.sourceSets.main.java.srcDirs += new File(sherpaSource, 'kotlin')
+}
+
 dependencies {
     implementation 'org.apache.commons:commons-compress:1.26.2'
-    // Only the pinned sherpa-onnx runtime (scripts/fetch-runtime.sh). Named rather than
-    // '*.aar' so a stale mobile.aar from a pre-#126 checkout can never be packaged.
-    implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: 'libs')
+    // The sherpa-onnx runtime. By default the pinned prebuilt AAR (scripts/fetch-runtime.sh);
+    // named rather than '*.aar' so a stale mobile.aar from a pre-#126 checkout can never be
+    // packaged. With -Phermesvox.sherpaSource=<dir> (#165, F-Droid path B) the runtime is the
+    // one scripts/build-sherpa-from-source.sh built, and onnxruntime comes from Maven Central.
+    if (sherpaSource != null) {
+        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'   // = ORT_VERSION in the script
+    } else {
+        implementation fileTree(include: ['sherpa-onnx-*.aar'], dir: 'libs')
+    }
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'

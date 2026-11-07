@@ -1,4 +1,8 @@
 # Sprint 3 Implementation Plan — Release Signing + Security Cluster + #60 (prepared from `docs/SPRINT-PLAN-release-security.md`)
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 Target artifact: `docs/SPRINT-PLAN-release-security-impl.md`
 
@@ -292,7 +296,7 @@ After `./gradlew assembleRelease`:
          Hermes relay/gateway you run). -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false"><your-gateway-host></domain>
-        <domain includeSubdomains="false">192.168.1.1</domain>
+        <domain includeSubdomains="false"><lan-ip></domain>
         <!-- add your LAN gateway / tailnet host(s) here -->
     </domain-config>
 </network-security-config>

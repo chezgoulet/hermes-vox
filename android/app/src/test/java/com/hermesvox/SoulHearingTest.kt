@@ -40,7 +40,7 @@ class SoulHearingTest {
     }
 
     @Test fun the_heard_mood_becomes_the_vibe_the_mind_is_told() {
-        val e = ErDrift.epilogue(emptyList(), ErDrift.Vibe(VoiceMood.TENSE.vibeMood, VoiceMood.TENSE.vibeEnergy))
+        val e = ErDrift.sync(emptyList(), ErDrift.Vibe(VoiceMood.TENSE.vibeMood, VoiceMood.TENSE.vibeEnergy))
         assertTrue(e.contains("mood=frustrated"))
     }
 

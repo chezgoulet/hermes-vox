@@ -1,4 +1,8 @@
 # Why barge-in worked in 0.7.x and not now
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 Branch `fix/barge-why-090`, on top of `fdf05c1` (the 0.9.1 barge fix that did not fix
 barge). Sources:

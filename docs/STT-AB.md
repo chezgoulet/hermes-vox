@@ -1,5 +1,7 @@
 # Streaming STT A/B — measured on a Pixel 7
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Decision D5 says streaming STT is chosen by measurement, not by reputation. This
 is that measurement: four sherpa-onnx streaming arms, run on the phone through the
 runtime the app ships, in real time, in three noise conditions plus accented
@@ -408,7 +410,7 @@ Before shipping, decide two things this study cannot:
 
 ```bash
 # download + verify (sha256 and size) + extract the arm tarballs
-python3 tools/sttbench-stream/run_ab.py --fetch --arms nemotron160 --models /home/c/stt-ab-models
+python3 tools/sttbench-stream/run_ab.py --fetch --arms nemotron160 --models $HOME/stt-ab-models
 
 # one arm, all four conditions, build included; installs under the phone lock
 scripts/stt-ab.sh --arms nemotron160 --conditions quiet,tv,kitchen,accent

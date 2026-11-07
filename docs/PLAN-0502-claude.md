@@ -1,4 +1,8 @@
 # SPEC — 0.5.2-CLAUDE: fix the false-401 conn-test + add a user-facing /compress command
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 ## Field evidence (2026-09-07 log, 0.5.1 device pass)
 1. `conn-test: verdict=auth ping=401 stream=-1` fires at pipe startup (14:27 and 16:05),

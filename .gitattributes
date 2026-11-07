@@ -1,0 +1,4 @@
+# #220: this fixture is a CRLF reply on purpose — the resync corpus asserts the client
+# repairs CRLF line endings. Git must not normalize it on checkout, or the case would
+# quietly stop being a CRLF case (VoxResyncCorpusTest fails if it is not CRLF).
+testdata/vox-resync/07-crlf.txt -text

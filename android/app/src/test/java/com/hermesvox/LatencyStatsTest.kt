@@ -2,6 +2,7 @@ package com.hermesvox
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -25,10 +26,14 @@ class LatencyStatsTest {
         assertEquals(1, first.size)
         assertTrue(first[0], first[0].contains("event=turn label=turn gen=1 outcome=stream-done"))
         assertTrue(first[0], first[0].contains("stt=40 firstByte=120 firstText=150 firstAudio=180 fullReply=900"))
+        // Phase 1: the speech-end anchored fields exist on the SAME line and are "-" when no
+        // anchor was handed over (a typed turn), never 0 and never a stale one.
+        assertTrue(first[0], first[0].contains("speechEndToFirstText=- speechEndToFirstAudio=- speechEndToRenderDone=- sttDecodeMs=-"))
         // per-turn values clear after every emit
         val second = LatencyStats.summaryLines("turn", "stream-done", 2L)
         assertEquals(1, second.size)
         assertTrue(second[0], second[0].contains("stt=- firstByte=- firstText=- firstAudio=- fullReply=-"))
+        assertTrue(second[0], second[0].contains("speechEndToFirstText=- speechEndToFirstAudio=- speechEndToRenderDone=- sttDecodeMs=-"))
     }
 
     @Test fun rolling_p50_every_8th_then_clear() {
@@ -43,17 +48,22 @@ class LatencyStatsTest {
         for (i in 0L until 7L) { seed(); assertEquals(1, LatencyStats.summaryLines("turn", "stream-done", i).size) }
         seed()
         val eighth = LatencyStats.summaryLines("turn", "stream-done", 7L)
-        assertEquals(6, eighth.size)                                  // 1 turn + 5 event=lat lines (C4 adds first-text)
+        assertEquals(11, eighth.size)                                 // 1 turn + 10 event=lat lines (5 legacy + 4 speech-end + first-sound)
         assertTrue(eighth[0], eighth[0].startsWith("event=turn"))
-        assertEquals(5, eighth.drop(1).count { it.startsWith("event=lat") })
-        assertTrue(eighth.joinToString("\n"), eighth.joinToString("\n").contains("metric=first-text"))
+        assertEquals(10, eighth.drop(1).count { it.startsWith("event=lat") })
+        val text = eighth.joinToString("\n")
+        assertTrue(text, text.contains("metric=first-text"))
+        // the conversational metrics have their own rolling rows, so a memory/cadence run
+        // reads p50/p95 from the same 8-turn window as the legacy ones
+        for (m in listOf("speech-to-text", "speech-to-audio", "speech-to-render", "stt-decode", "speech-to-first-sound"))
+            assertTrue(text, text.contains("metric=$m"))
         // rolling window cleared after the 8th emit
         val cleared = LatencyStats.windowCounts()
-        assertArrayEquals(intArrayOf(0, 0, 0, 0, 0), cleared)
+        assertArrayEquals(IntArray(9) { 0 }, cleared)
         // a fresh push grows from 0
         LatencyStats.pushStt(50)
         val grown = LatencyStats.windowCounts()
-        assertArrayEquals(intArrayOf(0, 0, 0, 0, 1), grown)
+        assertArrayEquals(intArrayOf(0, 0, 0, 0, 1, 0, 0, 0, 0), grown)
     }
 
     @Test fun reset_zeroes_window() {
@@ -63,9 +73,9 @@ class LatencyStatsTest {
         LatencyStats.pushFirstText(150)
         LatencyStats.pushFirstAudio(180)
         LatencyStats.pushFullReply(900)
-        assertArrayEquals(intArrayOf(1, 1, 1, 1, 1), LatencyStats.windowCounts())
+        assertArrayEquals(intArrayOf(1, 1, 1, 1, 1, 0, 0, 0, 0), LatencyStats.windowCounts())
         LatencyStats.reset()
-        assertArrayEquals(intArrayOf(0, 0, 0, 0, 0), LatencyStats.windowCounts())
+        assertArrayEquals(IntArray(9) { 0 }, LatencyStats.windowCounts())
     }
 
     @Test fun session_turns_counts_since_reset() {
@@ -81,5 +91,51 @@ class LatencyStatsTest {
         LatencyStats.resetSessionTurns()   // what MainActivity does beside resetConversation
         val again = LatencyStats.summaryLines("turn", "stream-done", 4L)
         assertTrue(again[0], again[0].contains("session_turns=1"))
+    }
+
+    @Test fun session_e2_survives_the_rolling_window_and_resets_with_the_session() {
+        LatencyStats.reset()
+        assertNull("nothing measured is null, not 0", LatencyStats.sessionSpeechToAudioP50())
+        for (v in listOf(2000L, 4000L, 3000L)) LatencyStats.pushSpeechToAudio(v)
+        assertEquals(3000L, LatencyStats.sessionSpeechToAudioP50())
+        // Eight emits clear the per-turn rolling window; the call's own number stays.
+        repeat(8) { LatencyStats.summaryLines("turn", "stream-done", it.toLong()) }
+        assertArrayEquals(IntArray(9) { 0 }, LatencyStats.windowCounts())
+        assertEquals(3000L, LatencyStats.sessionSpeechToAudioP50())
+        LatencyStats.resetSessionTurns()   // a new call
+        assertNull(LatencyStats.sessionSpeechToAudioP50())
+    }
+
+    @Test fun speech_end_fields_ride_the_same_turn_line_and_clear() {
+        LatencyStats.reset()
+        // Phase 1: what a voice turn now reports — all four from the end of speech, plus the
+        // recogniser's own time. 700/1400 ms is D18; these are the fields that can prove it.
+        LatencyStats.pushSttDecode(420)
+        LatencyStats.pushFirstText(2400)
+        LatencyStats.pushSpeechToText(700)
+        LatencyStats.pushFirstAudio(2100)
+        LatencyStats.pushSpeechToAudio(1400)
+        LatencyStats.pushSpeechToRender(4200)
+        val line = LatencyStats.summaryLines("turn", "stream-done", 9L).first()
+        assertTrue(line, line.contains("speechEndToFirstText=700"))
+        assertTrue(line, line.contains("speechEndToFirstAudio=1400"))
+        assertTrue(line, line.contains("speechEndToRenderDone=4200"))
+        assertTrue(line, line.contains("sttDecodeMs=420"))
+        // the legacy field is unchanged and still present (continuity with recorded baselines)
+        assertTrue(line, line.contains("firstText=2400"))
+        val next = LatencyStats.summaryLines("turn", "stream-done", 10L).first()
+        assertTrue(next, next.contains("speechEndToFirstText=-"))
+        assertTrue(next, next.contains("sttDecodeMs=-"))
+    }
+
+    /** Naturalness pass: the first sound of the turn, whoever made it, on the same line. */
+    @Test fun first_sound_rides_the_turn_line_with_its_source_and_clears() {
+        LatencyStats.reset()
+        LatencyStats.pushSpeechToFirstSound(180, "cue")
+        val line = LatencyStats.summaryLines("turn", "stream-done", 1L).first()
+        assertTrue(line, line.contains("speechEndToFirstSound=180 firstSoundBy=cue"))
+        assertTrue("the existing fields keep their order", line.contains("speechEndToRenderDone=- sttDecodeMs=- speechEndToFirstSound="))
+        val next = LatencyStats.summaryLines("turn", "stream-done", 2L).first()
+        assertTrue(next, next.contains("speechEndToFirstSound=- firstSoundBy=-"))
     }
 }

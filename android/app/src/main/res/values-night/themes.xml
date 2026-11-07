@@ -4,6 +4,7 @@
         <!-- OLED DARK — the hero identity for Hermes Vox. -->
         <item name="colorPrimary">@color/hv_cyan</item>
         <item name="colorAccent">@color/hv_violet</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.HermesVox.Dialog</item>
         <item name="android:windowBackground">@color/hv_bg</item>
         <item name="android:colorBackground">@color/hv_bg</item>
         <item name="android:textColor">@color/hv_text</item>

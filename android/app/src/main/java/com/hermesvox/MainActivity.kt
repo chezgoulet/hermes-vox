@@ -1,9 +1,14 @@
 package com.hermesvox
 
 import android.Manifest
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -12,7 +17,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.hermesvox.core.ApprovalArm
+import com.hermesvox.core.ApprovalChoices
 import com.hermesvox.core.HermesSession
+import com.hermesvox.core.ProfileReach
 
 /**
  * MainActivity — the front-of-house surface. Hosts the avatar, the live reply,
@@ -20,8 +28,73 @@ import com.hermesvox.core.HermesSession
  * VoiceController (streamed SSE turns) and renders the entity's real work.
  * First run routes to OnboardingActivity; subsequent launches auto-connect.
  */
-class MainActivity : AppCompatActivity() {
+open class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    // #282: the approval surface. The card exists for the decision; the state line
+    // carries the waiting phase; the transcript keeps the timed-out request visible.
+    private lateinit var approvalCard: android.widget.LinearLayout
+    private lateinit var approvalTitle: TextView
+    private lateinit var approvalLine: TextView
+    private lateinit var approvalState: TextView
+    private lateinit var approvalChoices: android.widget.LinearLayout
+    private var approvalBusy = false
+    private var approvalWaiting = false
+    /** The silent ceiling's keep/stop question is on the same card surface (never an approval). */
+    private var waitCardUp = false
+    /** The phone action card currently on screen ("" when the gateway's card is the one shown). */
+    private var phoneApprovalId = ""
+
+    /**
+     * An approval answer carried by the notification's Approve action, waiting for this activity
+     * to be resumed. The answer is delivered **here**, not from the receiver, because the action
+     * it authorises starts another activity and Android blocks that from the background (B2).
+     */
+    private var pendingApprovalAnswer: String? = null
+
+    /**
+     * The in-app half of [PhoneApprovals]. The notification half lives in that object; this is the
+     * same card the gateway's approvals use, with the phone action's own two words and timeout.
+     */
+    private val phoneApprovalUi = object : PhoneApprovals.Ui {
+        override fun show(card: PhoneApproval.Card): Boolean {
+            if (!::approvalCard.isInitialized || !AppFocus.inFront) return false
+            runOnUiThread {
+                phoneApprovalId = card.id
+                approvalBusy = false
+                approvalWaiting = true
+                waitCardUp = false
+                approvalCard.visibility = View.VISIBLE
+                approvalTitle.text = "APPROVAL NEEDED"
+                approvalLine.text = card.line
+                approvalLine.contentDescription = card.line
+                approvalState.text = "Two minutes"
+                approvalState.visibility = View.VISIBLE
+                buildApprovalButtons(card.prompt())
+                setStatus("Waiting for your approval", true)
+                if (callLive) VoiceService.update(this@MainActivity, "Waiting for your approval")
+                appendConvo("! Approval needed: ${card.prompt().action}")
+                // Spoken when a call is live: the card must not be a silent toast the owner misses.
+                if (callLive) {
+                    liveController?.speakGlue(card.line, source = "phone-approval")
+                }
+            }
+            return true
+        }
+
+        override fun withdraw(id: String) {
+            if (phoneApprovalId != id) return
+            phoneApprovalId = ""
+            runOnUiThread {
+                approvalBusy = false
+                approvalWaiting = false
+                waitCardUp = false
+                approvalChoices.removeAllViews()
+                approvalChoices.visibility = View.GONE
+                approvalCard.visibility = View.GONE
+                setStatus("The entity is working…", approvalWaiting)
+            }
+        }
+    }
     private lateinit var warming: android.widget.TextView
     // #6/#12: voice models are a first-run REQUIREMENT (nothing works without
     // them). modelsGate = the blocking empty-state overlay shown when NONE of
@@ -34,15 +107,57 @@ class MainActivity : AppCompatActivity() {
     // The mic-state pill is hidden while Connected (the quiet steady state); the
     // tour reveals it so its mark has a real control to point at, then restores.
     private var coachStatusWasVisible = false
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    protected val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
+
+    // The resting sub-pill says which model answers; a change the person caused says so in
+    // blue for a few seconds ([HeaderNotice]) and then settles back to the model.
+    private val headerNotice = HeaderNotice()
+    private var noticeRunnable: Runnable? = null
+    private var noticeToken = 0
+    /** True while the pill carries an action/phase (the green line): that line always wins. */
+    private var actionLine = false
+    /** The model's own name for the resting pill (catalogue name after a switch). */
+    private var modelLabel = ""
+
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
-    private lateinit var avatar: AvatarView
-    private val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
+    protected lateinit var avatar: AvatarView
+
+    // ---- picture-in-picture -------------------------------------------------------------
+    // The compact surface is a SECOND root laid over the full one (activity_pip.xml): the
+    // being and nothing else. Entering PiP hides the full surface and shows this, so the
+    // session, the turn in flight and every listener stay exactly as they are — a window,
+    // not a mode. `compact` guards every path that exists only to draw words.
+    private lateinit var pipSurface: View
+    private lateinit var pipAvatar: AvatarView
+    private var compact = false
+    /** The Stop receiver exists only where PiP does; unregistered with the surface. */
+    private var pipReceiverRegistered = false
+
+    /** The being the window can see: the compact one while floating, the full one otherwise. */
+    private val being: AvatarView
+        get() = if (compact) pipAvatar else avatar
+    protected val prefs by lazy { getSharedPreferences("hv", Context.MODE_PRIVATE) }
     private var replyBuf = ""
+    // #368: the crawl's finished-line ring (bounded) and the turn id that keeps a soul
+    // answer from being recorded twice when the mind echoes it. The in-flight reply is
+    // still replyBuf; it is sealed into this ring when the turn's speech is done.
+    private val crawlHistory = CrawlHistory()
+    private var turnSeq = 0L
     private var sseBuf = "// stream log — watch the agent work"
     private var toolCount = 0
+    // #281: the step the agent is running now, and a failed step's line held to the next turn.
+    private var opStep: Operations.Step? = null
+    private var opStartedAt = 0L
+    private var opHeld: String? = null
+    private val opTicker = object : Runnable {
+        override fun run() {
+            val s = opStep ?: return
+            showOperation(Operations.running(s, android.os.SystemClock.uptimeMillis() - opStartedAt))
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
     private lateinit var conversation: android.widget.ScrollView
     private lateinit var convoText: android.widget.TextView
     // The dim "heard" line (HeardLine): what the last voice turn sent Hermes.
@@ -53,8 +168,8 @@ class MainActivity : AppCompatActivity() {
             heardLine.text = ""; heardLine.contentDescription = null
         }.start()
     }
-    private var convoBuf = ""
-    private val express: VoxExpress = GemmaExpress(this)
+    private val transcript = Transcript.Call.transcript   // #223: survives a recreate, in memory only
+    protected val express: VoxExpress = GemmaExpress(this)
     private val orch = VoiceOrchestrator(express)
 
     // ---- 0.5.0-previewA: the speech-locked transcript reveal (display only) ----
@@ -104,6 +219,9 @@ class MainActivity : AppCompatActivity() {
         if (revealActive) return
         revealActive = true
         revealStartedAt = android.os.SystemClock.uptimeMillis()
+        // The compact window draws no words: the reveal is ARMED but its clock does not
+        // start. leaveCompact starts it, so an expand resumes exactly at the voice.
+        if (compact) return
         mainHandler.post(revealTask)
     }
 
@@ -121,14 +239,21 @@ class MainActivity : AppCompatActivity() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)
         val c = liveController
+        val shown: String
         if (c != null && c.speechFrozen()) {
             // Cut (hush/barge/stop): the boundary stays exactly where the voice stopped —
             // the unspoken tail is left dim and is NEVER auto-completed.
             val txt = c.transcriptText()
-            if (txt.isNotBlank()) reply.setText(txt, c.speechCursor())
+            shown = if (txt.isNotBlank()) txt else replyBuf
+            if (txt.isNotBlank() && !compact) reply.setText(txt, c.speechCursor())
         } else {
-            reply.setText(replyBuf)   // spoken through to the end -> the full reply, plainly
+            shown = replyBuf
+            if (!compact) reply.setText(replyBuf)   // spoken through to the end -> the full reply, plainly
         }
+        // #368: what was said (all of it, or the frozen part after a cut) becomes the
+        // trail's newest line. The live slot is cleared so the same words are not drawn
+        // twice; the document is unchanged in place, so the reader sees no jump.
+        sealLiveReply(shown)
     }
 
     // ---- 0.5.0-previewB: the presence-motion scheduler -----------------------
@@ -149,7 +274,7 @@ class MainActivity : AppCompatActivity() {
     // suppression flag is fed from motionTick's `voicing` witness below — the real
     // audio-on-the-track signal with the inter-phrase hold — so a cue can never
     // land under the being's speech.
-    private var cues: SoundCuePlayer? = null
+    protected var cues: SoundCuePlayer? = null
     private var lastCueState = ""
     private var motionTool: String? = null
     // A signal that arrived DURING the flinch. bargeIn() posts onState("listening")
@@ -162,7 +287,8 @@ class MainActivity : AppCompatActivity() {
         lastCueState = state
         when (state) {
             "listening" -> cues?.play(CueSynth.Cue.LISTENING)
-            "thinking" -> cues?.play(CueSynth.Cue.THINKING)
+            "thinking" -> if (cues?.play(CueSynth.Cue.THINKING)?.action == CuePolicy.Action.AUDIO)
+                liveController?.noteFirstSound("cue")
         }
     }
 
@@ -186,8 +312,83 @@ class MainActivity : AppCompatActivity() {
 
     /** Any evidence the turn is alive: an SSE delta, a console line, a state change,
      *  audible audio. Resets the stall watch and lifts a stall that is showing. */
+    // #251: the ambient cues. The ping pulses while the agent works; the check-in fires once
+    // after a long silence in a call, so a stalled task is noticed without looking.
+    private var ambientWorking = false
+    private var lastPingAt = 0L
+    private var lastHeardFromAt = 0L
+    private var idleFired = false
+    private val ambientTick = object : Runnable {
+        override fun run() {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (prefs.getBoolean(CuePolicy.PREF_PING, CuePolicy.DEFAULT_PING) &&
+                CuePolicy.Ambient.pingDue(ambientWorking, lastPingAt, now)) {
+                lastPingAt = now; cues?.play(CueSynth.Cue.PING)
+            }
+            val idleS = prefs.getInt(CuePolicy.PREF_IDLE_S, CuePolicy.DEFAULT_IDLE_S)
+            if (CuePolicy.Ambient.idleDue(callLive, idleS, lastHeardFromAt, now, idleFired)) {
+                idleFired = true
+                VoxLog.d("event=cue-idle silentS=${(now - lastHeardFromAt) / 1000} working=$ambientWorking")
+                cues?.play(CueSynth.Cue.IDLE)
+            }
+            // #284: the being suggests in context — a caller who has said nothing yet, on one of
+            // their first calls, is told the line is open and what to try.
+            if (callLive && Discovery.stuckHint(android.os.SystemClock.elapsedRealtime() - callStartedAt, callTurns,
+                    prefs.getInt(Discovery.PREF_CALLS, 0), stuckShownThisCall)) {
+                stuckShownThisCall = true
+                VoxLog.d("event=discovery-hint kind=stuck")
+                setStatus(Discovery.STUCK_HINT, true)
+            }
+            if (callLive) mainHandler.postDelayed(this, 1000)
+        }
+    }
+    // #179/#191/#209: what the call costs the phone — RSS, MemAvailable, thermal — every 10 s,
+    // and the worst of it when the call ends. Main-thread reads of tiny files and two system
+    // services; a failure skips the sample, never the call.
+    private var resSummary: ResourceProbe.Summary? = null
+    private var resStartedAt = 0L
+    private val resTick = object : Runnable {
+        override fun run() {
+            sampleResources()
+            if (callLive) mainHandler.postDelayed(this, ResourceProbe.EVERY_MS)
+        }
+    }
+    private fun sampleResources() {
+        val s = try {
+            val am = getSystemService(android.app.ActivityManager::class.java)
+            val mi = android.app.ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+            val rss = ResourceProbe.rssKb(java.io.File("/proc/self/status").readText())
+            val th = if (android.os.Build.VERSION.SDK_INT >= 29)
+                getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: -1 else -1
+            ResourceProbe.Sample(rss, mi.availMem / 1024, mi.totalMem / 1024, mi.lowMemory, th)
+        } catch (_: Throwable) { return }
+        resSummary?.add(s)
+        VoxLog.d(s.line())
+    }
+    private fun startResourceTrace() {
+        resSummary = ResourceProbe.Summary(); resStartedAt = android.os.SystemClock.uptimeMillis()
+        mainHandler.removeCallbacks(resTick); mainHandler.post(resTick)
+    }
+    private fun endResourceTrace() {
+        mainHandler.removeCallbacks(resTick)
+        val sum = resSummary ?: return
+        sampleResources()
+        VoxLog.d(sum.line(android.os.SystemClock.uptimeMillis() - resStartedAt))
+        resSummary = null
+    }
+
+    private fun startAmbient() {
+        lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false
+        // #284: a new call — count it, and let the stuck hint be offered once more if still early days.
+        callTurns = 0L; stuckShownThisCall = false
+        prefs.edit().putInt(Discovery.PREF_CALLS, prefs.getInt(Discovery.PREF_CALLS, 0) + 1).apply()
+        mainHandler.removeCallbacks(ambientTick); mainHandler.postDelayed(ambientTick, 1000)
+    }
+    private fun stopAmbient() { mainHandler.removeCallbacks(ambientTick); ambientWorking = false }
+
     private fun markActivity() {
         lastSignalAt = android.os.SystemClock.uptimeMillis()
+        lastHeardFromAt = lastSignalAt; idleFired = false   // #251: any input or output re-arms the check-in
         if (motionStalled) setMotionStall(false, 0L)
     }
 
@@ -195,11 +396,11 @@ class MainActivity : AppCompatActivity() {
      *  constellation; the table keeps MainActivity's own motion in step so the
      *  repeating ambient "thinking" signals cannot quietly clear the wait. */
     private fun setMotionStall(on: Boolean, idleMs: Long) {
-        if (on == motionStalled) { if (on) avatar.setStall(true, idleMs); return }
+        if (on == motionStalled) { if (on) being.setStall(true, idleMs); return }
         // Nothing in flight -> a stall is meaningless; the table is the judge.
         if (on && MotionState.transition(motion, MotionState.Signal.STALL_ON) != MotionState.Motion.STALL) return
         motionStalled = on
-        avatar.setStall(on, idleMs)   // captures/restores the prior motion first
+        being.setStall(on, idleMs)   // captures/restores the prior motion first
         feed(if (on) MotionState.Signal.STALL_ON else MotionState.Signal.RESUME)
         // 0.6.8 (the car-run silence): a 5s gateway stall during a live call must
         // SAY it's still working — the alternative was the user barging a stalled
@@ -212,7 +413,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderMotion() =
-        avatar.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
+        being.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
 
     /** Effort intensity: how deep into tool work this turn has gone. */
     private fun motionWorkload(): Float = minOf(1f, toolCount * 0.3f)
@@ -230,7 +431,7 @@ class MainActivity : AppCompatActivity() {
         val voicing = lastVoiceAt > 0L && now - lastVoiceAt < VOICE_HOLD_MS
         SoundCuePlayer.setVoiceActive(voicing)
         if (motion == MotionState.Motion.RECOIL) {
-            if (now < recoilUntil) { avatar.driveMotion(level, motionWorkload()); return }
+            if (now < recoilUntil) { being.driveMotion(level, motionWorkload()); return }
             motion = recoilPrior              // the one-shot is spent: back to the work
             val held = recoilPending          // ...and whatever it interrupted lands now
             recoilPending = null
@@ -247,7 +448,7 @@ class MainActivity : AppCompatActivity() {
         // further SSE traffic, which is not a stall — that is the being working.
         val watching = !voicing && (motion == MotionState.Motion.THINKING ||
                 motion == MotionState.Motion.TOOL || motion == MotionState.Motion.TOOL_RESULT)
-        if (motionStalled) avatar.setStall(true, idle)          // deepen the wait as it runs
+        if (motionStalled) being.setStall(true, idle)          // deepen the wait as it runs
         else if (watching && lastSignalAt > 0L && idle >= MotionState.STALL_MS) setMotionStall(true, idle)
         else if (!voicing && idle >= QUIET_MS) {
             // Nothing at all for this long: whatever the being was doing is over. A hush
@@ -258,56 +459,59 @@ class MainActivity : AppCompatActivity() {
         }
         // The per-frame refresh: drive values only. The one-shot setters (onTool's
         // re-seed, pulseTool's ramp) belong to the edges above, never to the frame.
-        avatar.driveMotion(level, motionWorkload())
+        being.driveMotion(level, motionWorkload())
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {
-        super.onNewIntent(intent); setIntent(intent); handleDebugHarness(intent)
+        super.onNewIntent(intent); setIntent(intent)
+        // A notification's Approve action opens Vox with the card's id; answer from here.
+        captureApprovalAnswer(intent)
+        // #329: the assist gesture, arriving at a call screen that already exists (the
+        // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
+        // second one). Deferred like the harness so the intent never runs inside dispatch.
+        if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
+        // §B: a file shared to Vox while the call screen is already up.
+        handleShareIntent(intent)
     }
 
-    /** DEBUG-ONLY harness entry (inert when !isDebuggable). Lets the emulator
-     *  stress script configure the session + drive a text turn without fighting
-     *  onboarding/IME. Extras: url, model, key, scope, text. `scope` is applied
-     *  when PRESENT — an explicit empty string clears the declared scope, which
-     *  is how a script exercises the undeclared path; url/model/key stay
-     *  blank-means-ignore. NOT reachable in release (debuggable=false), so it
-     *  does NOT reopen the #1 intent-injection surface. */
-    private fun handleDebugHarness(intent: android.content.Intent?) {
+    /**
+     * Read the notification's Approve action. It is answered once this activity is resumed, so
+     * the platform's own uninstall confirmation has a visible window to open from (B2).
+     */
+    private fun captureApprovalAnswer(intent: Intent?) {
         if (intent == null) return
-        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
-        val u = intent.getStringExtra("url"); val k = intent.getStringExtra("key")
-        val m = intent.getStringExtra("model"); val text = intent.getStringExtra("text")
-        val sc = intent.getStringExtra("scope")
-        if (!u.isNullOrBlank()) prefs.edit().putString("url", u).putString("model", m ?: "hermes-agent").apply()
-        if (!k.isNullOrBlank()) prefs.edit().putString("key", (SecureStore.encrypt(k) ?: k)).apply()
-        // The SAME rule the UI uses, so a script cannot store a scope the gateway
-        // would reject, nor one silently rewritten into a different identity.
-        if (sc != null) prefs.edit().putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
-        if (text != null) { connectFromPrefs(); send(text) } else if (!u.isNullOrBlank() && !k.isNullOrBlank()) { connectFromPrefs() }
-        // #156: the device matrix needs to PUT the phone into each state and then fire
-        // a cue. There is no shell command for the ringer mode on this build, so the
-        // debug harness sets it through the same API the policy reads (MODIFY_AUDIO_
-        // SETTINGS + DND access for SILENT). Order matters and is deliberate: state
-        // first, the TTS-suppression witness next, and the cue LAST, all on the main
-        // thread, so one intent is one deterministic test. Debug-only by the
-        // FLAG_DEBUGGABLE guard above; inert in a release build.
-        intent.getStringExtra("ringer")?.let { mode ->
-            val am = getSystemService(android.media.AudioManager::class.java)
-            runCatching {
-                am?.ringerMode = when (mode.lowercase()) {
-                    "silent" -> android.media.AudioManager.RINGER_MODE_SILENT
-                    "vibrate" -> android.media.AudioManager.RINGER_MODE_VIBRATE
-                    else -> android.media.AudioManager.RINGER_MODE_NORMAL
-                }
-            }
-            VoxLog.d("event=harness ringer=$mode now=${am?.ringerMode}")
-        }
-        if (intent.hasExtra("cue_voice")) {
-            SoundCuePlayer.setVoiceActive(intent.getBooleanExtra("cue_voice", false))
-        }
-        intent.getStringExtra("cue")?.let { name ->
-            val cue = runCatching { CueSynth.Cue.valueOf(name.uppercase()) }.getOrNull()
-            if (cue != null) cues?.play(cue, preview = intent.getBooleanExtra("cue_preview", false))
+        if (!intent.getBooleanExtra(PhoneApprovals.EXTRA_APPROVE, false)) return
+        pendingApprovalAnswer = intent.getStringExtra(PhoneApprovals.EXTRA_ID)
+            ?.takeIf { it.isNotEmpty() }
+        // Consume the flag: a rotation or a later onNewIntent must not answer twice.
+        intent.removeExtra(PhoneApprovals.EXTRA_APPROVE)
+        mainHandler.post { answerPendingApproval() }
+    }
+
+    /** Deliver a captured approval answer from the resumed activity. Nothing else answers it. */
+    private fun answerPendingApproval() {
+        val id = pendingApprovalAnswer ?: return
+        pendingApprovalAnswer = null
+        val outcome = PhoneApprovals.answer(id, approve = true, via = "notification")
+        VoxLog.d("event=phone-approval source=activity outcome=${outcome.name.lowercase()}")
+    }
+
+    /**
+     * #329: the assistant gesture has opened this screen. What happens next is [AssistRoute]'s
+     * decision, and the only thing this method does is carry it out: focus a live call (the
+     * bridge already brought this screen forward — nothing to start), start the call ready to
+     * listen, or open onboarding when there is no gateway yet.
+     */
+    private fun onAssistInvoked() {
+        val onboarding = FirstRunRoute.shouldOnboard(
+            prefs.getString("url", ""), prefs.getBoolean(FirstRunRoute.PREF_SKIPPED, false)
+        )
+        val target = AssistRoute.target(onboarding, callIsLive())
+        VoxLog.d("event=assist route=${target.name.lowercase()} callLive=$callLive onboarding=$onboarding")
+        when (target) {
+            AssistRoute.Target.FOCUS_LIVE_CALL -> Unit   // the live call is already on this screen
+            AssistRoute.Target.ONBOARD -> openOnboarding()
+            AssistRoute.Target.START_CALL -> startCall()
         }
     }
 
@@ -322,21 +526,40 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
-        // defer past onCreate so the Activity views/session are initialized (harness turn)
-        mainHandler.postDelayed({ handleDebugHarness(intent) }, 800L)
+        // A notification's Approve action arrives as this intent; answer it from the activity.
+        captureApprovalAnswer(intent)
         active = this
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
         CrashLog.init(applicationContext)
+        // The phone's handoff actions (message/dial/launch) need the window that owns the call:
+        // the being to speak the dial line, the one hang-up teardown, and the PiP host. They are
+        // attached for exactly as long as this screen exists; the application context alone
+        // takes the honest fallback (nothing to announce or shrink, the owner's app still opens).
+        PhoneHandoff.attach(phoneHost)
         maybeRunWhisperProbe()
 
         status = findViewById(R.id.status)
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
         status.visibility = android.view.View.GONE
+        approvalCard = findViewById(R.id.approval_card)
+        approvalTitle = findViewById(R.id.approval_title)
+        approvalLine = findViewById(R.id.approval_line)
+        approvalState = findViewById(R.id.approval_state)
+        approvalChoices = findViewById(R.id.approval_choices)
+        // The uninstall card's in-app surface. The object itself falls back to the notification
+        // whenever this activity is not in front, so it is safe to attach for the window's life.
+        PhoneApprovals.ui = phoneApprovalUi
         agentName = findViewById(R.id.agent_name)
+        // #174: the agent's name is where the active profile shows, so it is where it switches.
+        agentName.setOnClickListener { profiles.showSwitcher() }
+        agentName.contentDescription = "Profiles"
         reply = findViewById(R.id.reply_crawl); reply.setRole("reply")
         stream = findViewById(R.id.stream); stream.setRole("sse")
         avatar = findViewById(R.id.avatar)
         avatar.setPortalShape(28f)   // a window onto the void on the light theme; invisible on OLED black
+        avatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))   // #275: ink on the page
+        setUpPipSurface()
         conversation = findViewById(R.id.conversation)
         // #156 (D7): the being's procedural sound cues. On by default; CuePolicy owns
         // every judgement about whether a cue may be heard or felt right now.
@@ -353,9 +576,11 @@ class MainActivity : AppCompatActivity() {
                     android.content.Intent(this, SettingsActivity::class.java)
                         .putExtra("section", "models")   // SettingsActivity.SECTION_MODELS
                 )
-                AlertAction.URL -> startActivity(
-                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(alert.url))
-                )
+                AlertAction.URL -> launchOutside {
+                    startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(alert.url))
+                    )
+                }
                 AlertAction.NONE -> Unit
             }
         }
@@ -369,7 +594,7 @@ class MainActivity : AppCompatActivity() {
         avatar.setOnClickListener {
             liveController?.hush()
             feed(MotionState.Signal.BARGE)   // previewB: it heard you — recoil, then settle
-            setStatus(getString(R.string.hv_connected), false)
+            setStatus(idleStatus(), false)
         }
 
         // First run → onboarding (no stored endpoint yet), unless the user chose
@@ -392,9 +617,9 @@ class MainActivity : AppCompatActivity() {
         warming = android.widget.TextView(this).apply {
             text = "Preparing your voice\u2026"
             textSize = 18f
-            setTextColor(0xFFD6F4FF.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_text))
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(0xFF06070B.toInt())
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_bg))
             typeface = android.graphics.Typeface.MONOSPACE
             visibility = android.view.View.GONE
             layoutParams = android.view.ViewGroup.LayoutParams(
@@ -404,10 +629,21 @@ class MainActivity : AppCompatActivity() {
         (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup)
             .addView(warming, 0)
 
+        // Per-profile pass: the one-time inheritance runs before anything reads a scoped pref,
+        // so the first load after the upgrade is the load that gives each profile its own voice
+        // and look. Idempotent (guarded by Profiles.PREF_SCOPED), and silent.
+        migrateScopedProfiles()
         connectFromPrefs()
         resumeLiveCallIfAny()
+        // #329: launched by the assistant gesture (AssistActivity). After the session and any
+        // surviving call are re-established, so the route sees the truth about both.
+        if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
         refreshModelsGate()   // #6/#12: first-run empty state / warning pill
         wireButtons()
+        // §B: a staged copy from a process that died is never served; a share that started
+        // this activity is offered once the connection exists.
+        FileStage.sweep(this)
+        handleShareIntent(intent)
         startAvatarLoop()
         applyParticlePrefs()
         stageEntrance()
@@ -423,6 +659,16 @@ class MainActivity : AppCompatActivity() {
 
     private var warmRetries = 0
     @Volatile private var callLive = false
+    /** One-shot log for the deferred-load arm: the state, not every resume. */
+    @Volatile private var deferLogged = false
+    /** #373: the last state line the screen showed, so a recovered voice leg can put it
+     *  back instead of inventing one. */
+    private var lastStateLine = ""
+    /** The spoken-replies line that must survive ordinary state changes: a stand-in voice
+     *  ("Piper model not installed — using the system voice") or a stopped leg. It used to
+     *  be written once and immediately overwritten by "On call", which is why the owner
+     *  never saw it. Empty = the leg is clean and the state line owns the pill. */
+    private var voiceLegLine = ""
     private var callSeconds = 0
     private val callHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val callTicker = object : Runnable {
@@ -438,7 +684,15 @@ class MainActivity : AppCompatActivity() {
     /** Start the real-time call: warm + open the continuous voice line and set the
      *  live-call UI (red hang-up button + running timer). The call PERSISTS across
      *  app-close / screen-off (the mic-type foreground service + loop keep running). */
+    // #191: when the Presence wait began (voice legs ready, Gemma still loading), and whether
+    // the caller chose to start this call without it.
+    private var presenceWaitStartedAt = 0L
+    private var skipPresenceThisCall = false
+
     private fun startCall() {
+        skipPresenceThisCall = false; presenceWaitStartedAt = 0L
+        voxFailedFor = null      // each call gets its own first-call ask for the profile
+        sampleResources()   // #191: the memory picture before the models warm, should the load kill us
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
         val s = session ?: run { setStatus("Connect first", true); return }
         if (callLive) return
@@ -469,6 +723,10 @@ class MainActivity : AppCompatActivity() {
      *  and the C3 route-change rebuild (both are start()/stop() compositions; no
      *  new engine code). The caller has already done the reset/permission checks. */
     private fun openVoiceLine(s: HermesSession) {
+        // Phase 5: a call is starting inside (or after) the idle window. The pending delayed
+        // release is cancelled HERE, before anything else touches the engine, so the redial
+        // finds a warm soul instead of paying the 7.7 s cold load the arm exists to avoid.
+        (express as? GemmaExpress)?.cancelIdleUnload("call-start")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             wireSoul(it)
@@ -481,36 +739,106 @@ class MainActivity : AppCompatActivity() {
             modelsMissingPill("Voice model not installed — tap to download")
             return
         }
-        // 0.8/M3: in Enhanced mode the express layer is part of "initialized". A call
-        // must not open with the soul's voice still loading — the field log shows Gemma
+        // 0.8/M3: when Presence runs, its model is part of "initialized". A call must
+        // not open with the soul's voice still loading — the field log shows Gemma
         // finishing 22s INTO a call, with its warm-up renders running over turn 1's
-        // audio (GPU work contending with a live turn). Realtime never waits on it: it
-        // does not use the express model, so gating it there would add a full cold load
-        // for nothing. Diagnostics keep the per-leg detail; the UI shows one word.
+        // audio (GPU work contending with a live turn). With Presence off (or unable to
+        // run) the call never waits on it: it does not use the express model, so gating
+        // it there would add a full cold load for nothing. Diagnostics keep the per-leg
+        // detail; the UI shows one word.
         // Wait for the soul only when it can actually arrive. Without the presence model
         // installed — or with one that failed to start on this device — the old gate waited
         // the full 90 s and then reported "Voice models failed to load", which was false: the
-        // voice was ready, the soul simply was not coming. The call opens, and the ER
-        // requirement pill (refreshModelsGate / the load callback) says what is missing.
-        val soulComing = ModelCatalog.isInstalled(this, "gemma-e2b") && (express as? GemmaExpress)?.loadFailed != true
-        val soulReady = !modeIsEnhanced() || express.available || !soulComing
+        // voice was ready, the soul simply was not coming. The call opens as normal
+        // operation; the Settings presence row is where the absence is explained.
+        var presenceWanted = presenceActive()
+        if (presenceWanted && (express as? GemmaExpress)?.isLoading != true)
+            ensurePresenceLoading()
+        // Owner rule (b): Presence speaks only on a document for THIS profile. With no
+        // valid mirror the first call asks the entity for one (the same resync path) and
+        // waits on it; if no ask can land, Presence stays quiet for this call rather than
+        // speaking a stale or empty soul. With Presence off, soulDocForPresence is never
+        // consulted and nothing is fetched (rule a).
+        var soulDoc = SoulDoc.ABSENT
+        if (presenceWanted) {
+            soulDoc = soulDocForPresence()
+            if (soulDoc == SoulDoc.ABSENT) {
+                presenceWanted = false
+                skipPresenceThisCall = true
+                VoxLog.w("event=presence-unavailable reason=vox-missing profile=${VoxMirror.activeProfile(prefs)}")
+            }
+        }
+        val soulReady = !presenceWanted || skipPresenceThisCall ||
+            (express.available && soulDoc == SoulDoc.READY)
+        c.presenceActive = presenceWanted
         if (!c.isWarm() || !soulReady) {
-            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} enhanced=${modeIsEnhanced()}")
+            if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} presence=$presenceWanted")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
                 // LOCAL pipeline load — this and only this is "Initializing".
                 warmingNow = true
-                showPhase()
+                // #191: when only Presence is pending, say so, count, and after a while offer
+                // to start without it — one word for ~50 s is indistinguishable from a hang.
+                if (presenceWaitStartedAt == 0L && c.isWarm()) presenceWaitStartedAt = android.os.SystemClock.uptimeMillis()
+                val waited = if (presenceWaitStartedAt == 0L) 0L else android.os.SystemClock.uptimeMillis() - presenceWaitStartedAt
+                // A wait on the profile's VOX.md says so: "Loading Presence" while the phone
+                // is asking the entity would be the wrong story.
+                val pw = PresenceWait.line(c.isWarm(), !soulReady, waited,
+                    vox = presenceWanted && soulDoc == SoulDoc.FETCHING)
+                if (pw == null) showPhase() else {
+                    setStatus(pw, true)
+                    if (PresenceWait.canSkip(c.isWarm(), !soulReady, waited)) {
+                        statusOfferShown = true
+                        status.setOnClickListener {
+                            VoxLog.d("event=presence-skip waitedMs=$waited")
+                            skipPresenceThisCall = true
+                        }
+                    }
+                }
                 mainHandler.postDelayed({ if (!isFinishing) openVoiceLine(s) }, 500)
                 return
             }
             warmRetries = 0
             warmingNow = false
             if (::warming.isInitialized) warming.visibility = android.view.View.GONE
-            VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
-            setStatus("Voice models failed to load", true)
+            if (c.isWarm() && (!express.available || soulDoc != SoulDoc.READY)) {
+                // The voice pipeline is ready; only Presence never arrived — no model, or no
+                // document for this profile. That is normal operation, not a failed call, and
+                // it is not announced as a mode: open the line without the layer. The Settings
+                // presence row still explains the state.
+                VoxLog.w("event=presence-unavailable reason=${if (!express.available) "warm-timeout" else "vox-missing"}")
+                skipPresenceThisCall = true
+                presenceWanted = false
+                c.presenceActive = false
+            } else {
+                VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
+                setStatus("Voice models failed to load", true)
+                return
+            }
+        }
+        // #330: warmth no longer includes TTS, so a broken engine reaches this point.
+        // The voice leg has now DECIDED. Two honest outcomes:
+        //  - a stand-in voice speaks (missing model / refused engine): the call opens and
+        //    the line names the voice that is actually speaking;
+        //  - no engine can speak at all: REFUSE the call here, before it starts, naming
+        //    what is missing and where to get it. Proceeding into silence is forbidden.
+        val gate = c.callGate()
+        if (!gate.starts) {
+            VoxLog.w("event=call-refused reason=${gate.line}")
+            warmingNow = false
+            warmRetries = 0
+            if (::warming.isInitialized) warming.visibility = android.view.View.GONE
+            setStatus(gate.line, true)
+            // No call started, so the controller's pipeline is not needed. Drop it so a
+            // later attempt after the user installs/enables a voice builds a fresh leg
+            // instead of reusing this terminal refusal.
+            liveController?.stop()
+            liveController = null
             return
         }
+        // The line is sticky: it must still be there after "On call" and after every
+        // Listening…/Speaking… state update (see onState + onSpokenReplies).
+        voiceLegLine = gate.line
         // #330: warmth no longer includes TTS, so a broken engine reaches this point.
         // Say so once, non-blocking, and name the real cause instead of blaming the models.
         val ttsIssueNow = c.ttsStatus()
@@ -525,6 +853,7 @@ class MainActivity : AppCompatActivity() {
         val wasWarming = warmingNow
         warmingNow = false
         warmRetries = 0
+        presenceWaitStartedAt = 0L
         if (wasWarming) dialGateway()
         if (::warming.isInitialized) warming.visibility = android.view.View.GONE
         // MIC-TYPE FOREGROUND SERVICE keeps the process + the loop alive after the app
@@ -546,23 +875,29 @@ class MainActivity : AppCompatActivity() {
         CommRoute.select(this)
         callStartedAt = android.os.SystemClock.elapsedRealtime()
         callLive = true; callSeconds = 0
+        updatePip()   // the window may now float, and 12+ may auto-enter on a home swipe
+        CallQuiet.begin(this, prefs)   // #325: off by default, Alpha only, restores what it changed
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
-        setStatus("On call", false)
-        // 0.8/M3c: THE SOUL OPENS THE CALL. In ER the entity greets you first, in its own voice,
-        // before the mind has anything to answer — so there is no race to lose and the mode is
-        // perceptible from the first second rather than only on slow turns. The greeting is
-        // RENDERED by the soul against its own VOX.md, so it varies by personality.
-        if (modeIsEnhanced()) c.soulGreet()
+        setStatus(if (voiceLegLine.isBlank()) "On call" else voiceLegLine, voiceLegLine.isNotBlank())
+        // 0.8/M3c: THE SOUL OPENS THE CALL. With Presence on the entity greets you first,
+        // in its own voice, before the mind has anything to answer — so there is no race
+        // to lose and the layer is perceptible from the first second rather than only on
+        // slow turns. The greeting is RENDERED by the soul against its own VOX.md, so it
+        // varies by personality.
+        if (presenceWanted) c.soulGreet()
     }
 
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
         callLive = false
+        updatePip()   // no call -> no actions, and auto-enter off
+        CallQuiet.end(this, prefs)
         mainHandler.removeCallbacks(routeRebuildTask)
         callHandler.removeCallbacks(callTicker)
+        clearOperation()
         liveController?.setVoiceChannelOpen(false)
         liveController?.stop(); liveController = null
         stopVoiceWake()
@@ -570,12 +905,27 @@ class MainActivity : AppCompatActivity() {
         unregisterRouteCallback()  // C3: route callback lives exactly as long as the call
         VoiceService.stop(this)
         exitCallUi()
-        setStatus(getString(R.string.hv_connected), false)
+        voiceLegLine = ""   // a new call re-decides the voice; never carry a stale line over
+        setStatus(idleStatus(), false)
         feed(MotionState.Signal.REST)
+        // Phase 4: the call is over; the presence engine's ~2.2 GB has nothing left to
+        // serve. Phase 5 adds the delayed arm: the release can happen N minutes later
+        // instead of now, so a redial inside the window stays warm. Both are OFF by
+        // default (MemoryBudget.release) — whether the trade is worth it is the owner's
+        // decision, not this branch's.
+        (express as? GemmaExpress)?.requestUnload("call-end")
+        // A dial handoff ends the call from inside PiP. Leaving an idle app floating
+        // contradicts CallWindow's own rule: an idle app must never float (H1).
+        if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
+        // #384: a profile refresh that arrived during the call waited for exactly this
+        // moment — the conversation is over, so asking now cannot disturb it.
+        profiles.runDeferredAsk()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // #429 lane 2: the Phone tools sheet's calendar request. The sheet shows whether it landed.
+        if (PhoneToolsSheet.handlePermissionResult(this, requestCode)) return
         if (requestCode == REQ_MIC_CALL) {
             callStartPending = false
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -597,6 +947,7 @@ class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         callLive = true
         callSeconds = ((android.os.SystemClock.elapsedRealtime() - callStartedAt) / 1000L).toInt().coerceAtLeast(0)
+        updatePip()   // a call re-armed on resume may float again
         enterCallUi()
         setStatus("On call", false)
     }
@@ -605,32 +956,355 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.widget.TextView>(R.id.call_timer)?.text = String.format("%02d:%02d", callSeconds / 60, callSeconds % 60)
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.VISIBLE
         callHandler.postDelayed(callTicker, 1000)
+        startResourceTrace()
+        startAmbient()
         updateCallButton()
         setCallTone(true)
     }
     private fun exitCallUi() {
         callHandler.removeCallbacks(callTicker)
+        endResourceTrace()
+        stopAmbient()
         findViewById<android.widget.TextView>(R.id.call_timer)?.visibility = android.view.View.GONE
         updateCallButton()
         setCallTone(false)
     }
 
+    // -----------------------------------------------------------------------
+    // Picture-in-picture: a window, not a mode.
+    //
+    // The compact view is the being and nothing else (PipCompactLayoutTest pins it). Enter
+    // it -> stop drawing words entirely; leave it -> repaint exactly what was suppressed.
+    // The session, the turn in flight and every listener are untouched in between, so an
+    // expand returns to the same call with no reconnect. The ONLY control that changes
+    // state is Stop, and it runs `endCall()` — the same teardown the on-screen hang-up
+    // uses, never a second one.
+    // -----------------------------------------------------------------------
+
+    /** May this window float? API 26 AND the feature, never either alone (Pip.supported). */
+    private fun pipSupported(): Boolean = Pip.supported(
+        Build.VERSION.SDK_INT,
+        packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE),
+    )
+
+    /**
+     * Whether the controller has a mute. It does not today: `VoiceController` has no
+     * mute, and adding one would be an audio-path change this feature must not make ("PiP
+     * is a window, not a mode"). Stop is therefore the only action a live call offers;
+     * [Pip] already carries Mute/Unmute for the day the controller grows one.
+     */
+    private fun controllerCanMute(): Boolean = false
+
+    /** The compact surface over the full one. GONE from launch; the root stays untouched. */
+    private fun setUpPipSurface() {
+        // Without the feature there is nothing to build and nothing to change: the app
+        // takes exactly the path it took before PiP existed, down to the views it creates.
+        if (!pipSupported()) return
+        val content = findViewById<android.view.ViewGroup>(android.R.id.content)
+        pipSurface = layoutInflater.inflate(R.layout.activity_pip, content, false)
+        pipAvatar = pipSurface.findViewById(R.id.pip_avatar)
+        pipSurface.visibility = View.GONE
+        content.addView(pipSurface)
+        pipAvatar.applyLookPrefs(prefs)
+        pipAvatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))
+        try {
+            ContextCompat.registerReceiver(this, pipReceiver, IntentFilter(ACTION_PIP_STOP), ContextCompat.RECEIVER_NOT_EXPORTED)
+            pipReceiverRegistered = true
+        } catch (e: Throwable) {
+            VoxLog.w("event=pip receiver-failed err=${e.message}")
+        }
+    }
+
+    /** A RemoteAction's tap. Only actions the window actually offers get one. */
+    private fun pipActionPending(action: Pip.Action): PendingIntent? = when (action) {
+        Pip.Action.STOP -> PendingIntent.getBroadcast(
+            this, REQ_PIP_STOP,
+            Intent(ACTION_PIP_STOP).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        else -> null   // no controller mute today: Mute/Unmute are not offered
+    }
+
+    private fun pipActions(): Map<Pip.Action, PendingIntent> {
+        val spec = Pip.params(callLive, canMute = controllerCanMute()) ?: return emptyMap()
+        return spec.actions.mapNotNull { a -> pipActionPending(a)?.let { a to it } }.toMap()
+    }
+
+    /**
+     * Ask the system to shrink this activity. False is a normal answer — no feature, no
+     * live call, or a window manager that refused — and every caller treats it as "the
+     * launch happens anyway" rather than as an error.
+     */
+    private fun enterPip(): Boolean {
+        if (!callLive || !pipSupported() || Build.VERSION.SDK_INT < Pip.MIN_API) return false
+        if (isInPictureInPictureMode) return true
+        val spec = Pip.params(callLive, canMute = controllerCanMute()) ?: return false
+        return try {
+            // auto-enter stays on: entering by hand must not disarm the caller's own home
+            // gesture for the rest of the call.
+            val ok = enterPictureInPictureMode(
+                PipWindow.params(this, spec, pipActions(), autoEnter = Pip.autoEnters(Build.VERSION.SDK_INT))
+            )
+            VoxLog.d("event=pip enter ok=$ok")
+            ok
+        } catch (e: Throwable) {
+            VoxLog.w("event=pip enter-failed err=${e.message}")
+            false
+        }
+    }
+
+    /**
+     * The window's description, refreshed with the call. On 31+ this also carries
+     * auto-enter: a swipe home during a live call shrinks Vox instead of hiding it. With
+     * no call the flag is cleared, so an idle app is never left smallable.
+     */
+    private fun updatePip() {
+        if (!pipSupported() || Build.VERSION.SDK_INT < Pip.MIN_API) return
+        try {
+            val spec = Pip.params(callLive, canMute = controllerCanMute())
+            setPictureInPictureParams(
+                if (spec != null) {
+                    PipWindow.params(this, spec, pipActions(), autoEnter = Pip.autoEnters(Build.VERSION.SDK_INT))
+                } else {
+                    // No call: no actions, and auto-enter explicitly off.
+                    PipWindow.params(
+                        this,
+                        Pip.Params(Pip.ASPECT_NUMERATOR, Pip.ASPECT_DENOMINATOR, emptyList()),
+                        emptyMap(),
+                        autoEnter = false,
+                    )
+                }
+            )
+        } catch (e: Throwable) {
+            VoxLog.w("event=pip params-failed err=${e.message}")
+        }
+    }
+
+    /** Pre-12 only: the home gesture. 12+ owns this itself through auto-enter. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Pip.enterOnLeave(Build.VERSION.SDK_INT, callLive, pipSupported())) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) enterCompact() else leaveCompact()
+    }
+
+    /** Switch to the being-only surface and stop every piece of work that draws words. */
+    private fun enterCompact() {
+        if (compact || !::pipSurface.isInitialized) return
+        compact = true
+        // Stop the reveal clock. revealActive stays true on purpose: the turn's own end
+        // still reaches stopReveal(), which seals the reply without painting it.
+        mainHandler.removeCallbacks(revealTask)
+        mainHandler.removeCallbacks(fadeHeard)
+        if (::heardLine.isInitialized) {
+            heardLine.animate().cancel()
+            heardLine.visibility = View.INVISIBLE
+        }
+        // The compact being inherits the call's look and the motion in flight BEFORE it is
+        // shown, so the first frame is the presence at the right shape, not a reset orb.
+        pipAvatar.applyLookPrefs(prefs)
+        pipAvatar.setLightSurface(isLightTheme(), ContextCompat.getColor(this, R.color.hv_bg))
+        pipAvatar.applyMotion(motion, liveController?.speechLevel() ?: 0f, motionWorkload(), motionTool)
+        findViewById<View>(R.id.main_root)?.visibility = View.GONE
+        pipSurface.visibility = View.VISIBLE
+        VoxLog.d("event=pip mode=compact callLive=$callLive")
+    }
+
+    /** Restore the full surface with the call intact: a repaint, never a reconnect. */
+    private fun leaveCompact() {
+        if (!compact) return
+        compact = false
+        pipSurface.visibility = View.GONE
+        findViewById<View>(R.id.main_root)?.visibility = View.VISIBLE
+        // Put back exactly what the compact window did not draw. The session and the turn
+        // in flight were never touched.
+        applyLayoutMode()
+        renderMotion()   // the full being may have missed a state change while it was hidden
+        paintTrail()
+        paintTranscript()
+        if (revealActive) {
+            // The reveal was armed (and its clock stopped) for the compact window. Start it
+            // again: the cursor is where the voice actually is, so nothing is repainted ahead.
+            mainHandler.removeCallbacks(revealTask)
+            mainHandler.post(revealTask)
+        } else {
+            reply.setText(replyBuf)
+        }
+        VoxLog.d("event=pip mode=full callLive=$callLive")
+    }
+
+    /**
+     * Open another screen or another app without losing the call: PiP first, the start
+     * second ([CallWindow]). This is the funnel `apps.launch` / `open` uses — on 12+ the
+     * system only shrinks us for the caller's own leave gesture, not for a launch the app
+     * performs itself, so the app has to arrange this one. If PiP is unavailable the start
+     * still happens, immediately.
+     */
+    private fun launchOutside(start: () -> Unit) {
+        val plan = CallWindow.launch(pipHost, start)
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH) {
+            VoxLog.d("event=launch pip-first callLive=$callLive posted=${plan.posted}")
+        }
+    }
+
+    private val pipHost = object : CallWindow.Host {
+        override fun callLive(): Boolean = callLive
+        override fun enterPip(): Boolean = this@MainActivity.enterPip()
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
+            if (isFinishing || isDestroyed) return false
+            return mainHandler.postDelayed({
+                if (!isFinishing && !isDestroyed) action()
+            }, delayMs)
+        }
+    }
+
+    /**
+     * The screen's half of the phone's handoff actions. The dial line is voiced through the
+     * **existing being** ([VoiceController.speakGlue]) and the rest of the handoff — the
+     * hang-up teardown, then the dialer — runs when that line is **done**. Firing on start
+     * would let the teardown cut the line that has just begun (H1). A bounded fallback fires
+     * if the engine never reports done, because a dial must never wait on TTS forever.
+     */
+    private val phoneHost = object : PhoneHandoff.Host {
+        override fun callLive(): Boolean = callLive
+
+        override fun canStartActivity(): Boolean =
+            !isFinishing && !isDestroyed && (AppFocus.inFront || isInPictureInPictureMode)
+
+        override fun announceDial(line: String, after: () -> Unit) {
+            val c = liveController
+            if (!callLive || c == null) {
+                after()
+                return
+            }
+            val once = DialHandoff.AnnounceOnce { mainHandler.post(after) }
+            c.speakGlue(
+                line,
+                critical = true,
+                source = "dial-handoff",
+                onDone = { once.onDone() },
+            )
+            mainHandler.postDelayed({ once.onFallback() }, ANNOUNCE_FALLBACK_MS)
+        }
+
+        override fun endCall() = this@MainActivity.endCall()
+
+        override fun window(): CallWindow.Host? = pipHost
+    }
+
+    /** The system's Stop button. The same `endCall()` the on-screen hang-up runs. */
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_PIP_STOP) return
+            VoxLog.d("event=pip action=stop callLive=$callLive")
+            if (!callLive) return
+            endCall()
+            // Nothing is left to show: close the window exactly as hanging up leaves an
+            // idle screen behind. `endCall()` already did the whole teardown.
+            if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
+        }
+    }
+
     private fun updateCallButton() {
         val b = findViewById<Button>(R.id.call) ?: return
-        if (callLive) { b.text = "\u2706"; b.setTextColor(0xFFFF5B5B.toInt()); b.contentDescription = "Hang up call" }
-        else { b.text = "\u2706"; b.setTextColor(0xFF35D07F.toInt()); b.contentDescription = "Start call" }
+        if (callLive) { b.text = "\u2706"; b.setTextColor(ContextCompat.getColor(this, R.color.hv_call_live)); b.contentDescription = "Hang up call" }
+        else { b.text = "\u2706"; b.setTextColor(ContextCompat.getColor(this, R.color.hv_call_idle)); b.contentDescription = "Start call" }
     }
-    private fun setStatus(text: String, show: Boolean) {
-        status.text = text
-        status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+    /** #281: one line of plain language on the state line, mirrored to the call notification. */
+    private fun showOperation(line: String) {
+        setStatus(line, true)
+        if (callLive) VoiceService.update(this, line)
+    }
+    private fun clearOperation() {
+        mainHandler.removeCallbacks(opTicker); opStep = null; opHeld = null
+    }
+
+    private var statusOfferShown = false
+    protected fun setStatus(text: String, show: Boolean) {
+        // An action or a phase taking the pill retires a blue notice: the green line wins.
+        if (show) retireHeaderNotice()
+        if (statusOfferShown) { statusOfferShown = false; status.setOnClickListener(null) }   // #284: the offer goes with its line
+        actionLine = show
+        // With nothing to act on, the pill rests on the model's name: the header says who
+        // you are talking to, the pill says what answers. It is no longer a blank line.
+        status.text = if (show) text else idleStatus()
+        status.visibility = android.view.View.VISIBLE
         // A real phase/status replaces the models-warning pill: drop its tap
-        // handler and restore the tag color so phase pills never read as
-        // warnings or navigate to the model store by accident (#12/#6).
+        // handler so phase pills never read as warnings or navigate to the model
+        // store by accident (#12/#6).
         if (modelsWarnShown) {
             modelsWarnShown = false
             status.setOnClickListener(null)
-            status.setTextColor(ContextCompat.getColor(this, R.color.hv_cyan))
         }
+        // #281/#280 F6: every state word is legible on both themes. The old near-white
+        // after a call was 1.0:1 on the light chip; these colours are AA on each theme's
+        // chip and follow the call tone without a call-only colour surviving the call.
+        status.setTextColor(ContextCompat.getColor(this,
+            if (callLive) R.color.hv_status_live else R.color.hv_status))
+    }
+
+    // ---- the blue notice: a change the person caused, said once -------------------------
+
+    /** Retire the notice and any fade in flight, restoring the pill's ink. */
+    private fun cancelNoticeVisual() {
+        noticeToken++
+        noticeRunnable?.let { mainHandler.removeCallbacks(it) }
+        noticeRunnable = null
+        status.animate().cancel()
+        status.alpha = 1f
+    }
+
+    private fun retireHeaderNotice() {
+        cancelNoticeVisual()
+        headerNotice.clear()
+    }
+
+    /** Put the resting line back: the model's own name, in the pill's normal ink. */
+    private fun paintIdleLine() {
+        if (!::status.isInitialized) return
+        status.alpha = 1f
+        status.text = idleStatus()
+        status.visibility = android.view.View.VISIBLE
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
+        status.setOnClickListener(null)
+    }
+
+    /** Repaint the resting model line unless an action or a blue notice owns the pill. */
+    private fun paintRestingLine() {
+        if (actionLine || headerNotice.showing(android.os.SystemClock.uptimeMillis())) return
+        paintIdleLine()
+    }
+
+    /**
+     * Announce a switch the person caused: the model's name (a model switch) or the
+     * session's title (a session switch), in blue, for [Header.NOTICE_MS], then faded out
+     * to the resting model line. One notice at a time; an action on the pill wins outright.
+     */
+    private fun showHeaderNotice(text: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (!headerNotice.arm(text, now, actionRunning = actionLine)) return
+        cancelNoticeVisual()
+        val token = noticeToken
+        status.animate().cancel()
+        status.alpha = 1f
+        status.text = Header.switchNotice(text)
+        status.visibility = android.view.View.VISIBLE
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_notice))
+        status.setOnClickListener(null)
+        val fade = Runnable {
+            if (token != noticeToken) return@Runnable
+            headerNotice.clear()
+            status.animate().alpha(0f).setDuration(Header.FADE_MS).withEndAction {
+                if (token != noticeToken) return@withEndAction
+                paintIdleLine()
+            }.start()
+        }
+        noticeRunnable = fade
+        mainHandler.postDelayed(fade, Header.NOTICE_MS - Header.FADE_MS)
+        VoxLog.d("event=header-notice text=${Header.switchNotice(text)}")
     }
 
     // -----------------------------------------------------------------------
@@ -652,14 +1326,11 @@ class MainActivity : AppCompatActivity() {
         val missing = ModelCatalog.missingRequired(this)
         val total = ModelCatalog.required.size
         if (missing.isEmpty()) {
+            // #222/D16: the presence model is optional. When it is absent or cannot
+            // start, the app is simply normal operation — no pill, no half-state. The
+            // Settings presence row is the only place the absence is reported, because
+            // it is the only place the user can act on it.
             modelsGate?.visibility = android.view.View.GONE
-            // Locked decision #2: the presence model is a REQUIREMENT of Enhanced Realtime. ER
-            // without it is not a quiet downgrade to a canned stand-in — the user is told, and one
-            // tap takes them to the download.
-            if (modeIsEnhanced() && !ModelCatalog.isInstalled(this, "gemma-e2b")) {
-                modelsMissingPill("⚠ Enhanced Realtime needs the presence model — tap to download")
-                return
-            }
             modelsWarnReset()
             return
         }
@@ -680,11 +1351,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun modelsWarnReset() {
         // setStatus handles clearing the tap handler + restoring the tag color.
-        if (modelsWarnShown && ::status.isInitialized) setStatus(getString(R.string.hv_connected), false)
+        if (modelsWarnShown && ::status.isInitialized) setStatus(idleStatus(), false)
     }
 
     private fun openModelsStore() {
-        startActivity(Intent(this, ModelsActivity::class.java))
+        launchOutside { startActivity(Intent(this, ModelsActivity::class.java)) }
     }
 
     private fun showModelsEmptyState() {
@@ -718,7 +1389,7 @@ class MainActivity : AppCompatActivity() {
             text = "Download the voice models"
             textSize = 22f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setTextColor(0xFFD6F4FF.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_text))
             gravity = android.view.Gravity.CENTER
             setPadding(0, (14 * d).toInt(), 0, 0)
         })
@@ -727,7 +1398,7 @@ class MainActivity : AppCompatActivity() {
                 "Your offline voice needs $need small models downloaded once — " +
                 "after that every conversation runs on-device, no cloud."
             textSize = 15f
-            setTextColor(0xFF9FB3C9.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_dim))
             gravity = android.view.Gravity.CENTER
             setPadding(0, (10 * d).toInt(), 0, 0)
         })
@@ -747,7 +1418,7 @@ class MainActivity : AppCompatActivity() {
         body.addView(Button(this).apply {
             text = "Not now"
             isAllCaps = false
-            setTextColor(0xFF9FB3C9.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_dim))
             background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_button_ghost)
             setOnClickListener {
                 modelsGate?.visibility = View.GONE
@@ -763,7 +1434,7 @@ class MainActivity : AppCompatActivity() {
         return android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(0xFF06070B.toInt())
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_overlay_bg))
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT)
@@ -776,9 +1447,9 @@ class MainActivity : AppCompatActivity() {
     // caller actually has to find — the mic-state pill and the voice control —
     // rather than covering the screen with prose. Dismissing (the button or the
     // scrim) sets the "seen" pref, so they never show twice.
-    // NOTE: this build is hands-free in EVERY mode — the walkie-talkie/PTT path
-    // was stripped in C2 (0.4.0) — so the copy says there is no push-to-talk
-    // button and names the real switch (Settings → Voice mode).
+    // NOTE: this build is hands-free — the walkie-talkie/PTT path was stripped
+    // in C2 (0.4.0) — so the copy says there is no push-to-talk button and names
+    // the one switch that matters (Settings → Presence).
     // -----------------------------------------------------------------------
     private fun maybeShowCoachMarks() {
         if (coachOverlay != null) return
@@ -809,7 +1480,7 @@ class MainActivity : AppCompatActivity() {
      *  rings and bubbles land on the real view bounds (no hardcoded y values). */
     private fun buildCoachOverlay(): android.view.View {
         val root = android.widget.FrameLayout(this).apply {
-            setBackgroundColor(0xE606070B.toInt())
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.hv_scrim))
             // A tap anywhere dismisses; it never reaches the controls underneath.
             isClickable = true
             setOnClickListener { dismissCoachMarks() }
@@ -822,7 +1493,7 @@ class MainActivity : AppCompatActivity() {
         coachStatusWasVisible = statusTarget.visibility == View.VISIBLE
         if (!coachStatusWasVisible) {
             if (statusTarget is TextView && statusTarget.text.isBlank()) {
-                statusTarget.text = getString(R.string.hv_connected)
+                statusTarget.text = idleStatus()
             }
             statusTarget.visibility = View.VISIBLE
         }
@@ -834,11 +1505,11 @@ class MainActivity : AppCompatActivity() {
                 body = "The pill under the name says what your mic is doing: Listening…, " +
                     "The entity is working…, or Speaking…. It updates during a call — " +
                     "tap ✆ to open the line.", withButton = false)
-            addCoachBubble(root, callTarget, above = true, lead = "VOICE MODE",
+            addCoachBubble(root, callTarget, above = true, lead = "THE CALL",
                 body = "✆ opens and closes the hands-free voice line (green = closed, " +
-                    "red = on a call). There is no push-to-talk. Both modes listen hands-free — " +
-                    "switch Realtime ↔ Enhanced Realtime in ⚙ Settings → Voice mode. " +
-                    "Talk over a reply to interrupt.", withButton = true)
+                    "red = on a call). It listens hands-free; there is no push-to-talk. " +
+                    "Presence — the being on the phone — is a layer you can turn off in " +
+                    "⚙ Settings → Presence. Talk over a reply to interrupt.", withButton = true)
         }
         return root
     }
@@ -940,8 +1611,9 @@ class MainActivity : AppCompatActivity() {
 
     /** Render the pill for the current phase. */
     private fun showPhase() {
+        val missing = ProfileReach.missing()
         val phase = ConnectionPhase.resolve(endpointSet(), !GatewayKey.isMissing(storedKey()),
-            !warmingNow, probe)
+            !warmingNow, probe, profileMissing = missing != null)
         // A live call owns the pill ("On call"); only a real problem interrupts it.
         if (callLive) when (phase) {
             ConnectionPhase.Phase.CONNECTED, ConnectionPhase.Phase.DIALING,
@@ -950,7 +1622,17 @@ class MainActivity : AppCompatActivity() {
         }
         // C0 keeps its own, longer prompt — it tells the user where to go.
         if (phase == ConnectionPhase.Phase.NEEDS_KEY) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
-        setStatus(ConnectionPhase.pill(phase), ConnectionPhase.shows(phase))
+        setStatus(ConnectionPhase.pill(phase, missing?.name.orEmpty()), ConnectionPhase.shows(phase))
+    }
+
+    /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
+    private fun idleStatus(): String = when {
+        ProfileReach.isMissing() -> ProfileReach.line()
+        // With nothing to act on, the sub-pill names the model that answers — plainly, the
+        // way the catalogue names it. It is not the header's job: that is the agent's name.
+        else -> Header.modelLine(modelLabel.ifBlank {
+            ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
+        })
     }
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
@@ -989,34 +1671,40 @@ class MainActivity : AppCompatActivity() {
                 ErSoulTurn.KIND_WORKING -> text   // the controller built it: it knows the run's lines
                 else -> ErSoulTurn.directive(text, toolContext, heard)
             }
-            // A mid-run line renders in the narration class: it never preempts a turn decision,
+            // A mid-run aside renders in the narration class: it never preempts a turn decision,
             // and it is dropped (silence) while another render runs.
             val intent = if (kind == ErSoulTurn.KIND_WORKING) VoiceOrchestrator.INTENT_SOUL_NARRATE
                 else VoiceOrchestrator.INTENT_SOUL_TURN
+            // #217: how long a render took, measured at the call site. Without this the
+            // presence bar has no latency half — the field logs showed every other number
+            // but this one.
+            val renderStart = android.os.SystemClock.uptimeMillis()
+            // #217/D18: where the render started relative to the turn boundary.
+            val boundaryMs = c.msSinceSpeechEnd()
             orch.expressAsync(intent, directive, "warm", if (heard) wav else null) { glue ->
                 // The tone tag leads (when the soul heard the caller); the decision follows.
                 val (mood, rest) = VoiceMood.split(glue)
                 val o = ErSoulTurn.parse(rest)
-                val decision = when (o) {
-                    is ErSoulTurn.Outcome.Spoken -> "answer"
-                    is ErSoulTurn.Outcome.Beat -> "beat"
-                    ErSoulTurn.Outcome.Escalate -> "escalate"
-                    ErSoulTurn.Outcome.Nothing -> "nothing"
-                }
+                val decision = ErSoulTurn.decisionName(o)
                 if (kind != ErSoulTurn.KIND_WORKING) ErTelemetry.soulDecision(decision)   // turn routing only
                 val chars = when (o) {
                     is ErSoulTurn.Outcome.Spoken -> o.text.length
                     is ErSoulTurn.Outcome.Beat -> o.opener.length
                     else -> 0
                 }
-                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"}")
+                VoxLog.er("event=er-soul kind=$kind decision=$decision chars=$chars heard=$heard mood=${mood?.name?.lowercase() ?: "-"} ms=${android.os.SystemClock.uptimeMillis() - renderStart} boundaryMs=$boundaryMs")
                 cb(o, mood)
             }
         }
     }
 
     private fun setCallTone(live: Boolean) {
-        try { status.setTextColor(if (live) 0xFF35D07F.toInt() else 0xFFD6F4FF.toInt()) } catch (_: Throwable) {}
+        // #281/#280 F6: theme-aware, AA on the chip. It used to write the dark theme's
+        // near-white into light mode, where SetStatus then left it: 1.0:1 after a call.
+        try {
+            status.setTextColor(ContextCompat.getColor(this,
+                if (live) R.color.hv_status_live else R.color.hv_status))
+        } catch (_: Throwable) {}
     }
     private fun stopVoiceWake() {
         if (voiceWake != null) VoxLog.d("event=wake released")
@@ -1027,8 +1715,115 @@ class MainActivity : AppCompatActivity() {
         // onStop-no-call), so the flag can never outlive the call — no leak.
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
-    private fun modeIsEnhanced() =
-        (prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME) == ModelCatalog.MODE_ENHANCED
+    /** #275: the resolved theme (the app's own choice, or the system's when it follows it). */
+    private fun isLightTheme(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    /** #222/D16: Presence runs only when the user asked for it AND the phone can supply
+     *  it — the model is downloaded and able to start. Otherwise this is normal operation. */
+    private fun presenceActive(): Boolean = PresenceGate.active(
+        enabled = PresenceGate.enabled(prefs),
+        installed = ModelCatalog.isInstalled(this, "gemma-e2b"),
+        canStart = (express as? GemmaExpress)?.loadFailed != true,
+    )
+
+    // ---- The profile's VOX.md (owner rules a, b) ----
+    //
+    // One document per profile, keyed by Profiles.PREF_ACTIVE (VoxMirror). Presence speaks
+    // only on a document for the profile that is active NOW:
+    //   READY    — a valid mirror exists; the soul may speak.
+    //   FETCHING — there is none, and the first call is asking the entity for one (the same
+    //              resync path Settings uses). Presence waits; the wait line names it.
+    //   ABSENT   — no mirror and no ask in flight (Presence off, not connected, or the ask
+    //              already failed this call). Presence stays quiet.
+
+    private enum class SoulDoc { READY, FETCHING, ABSENT }
+
+    /** Profiles whose first-call ask is in flight, so two entry points cannot ask twice. */
+    private val voxFetching: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    /** The profile whose first-call ask failed this call (one attempt per profile per call). */
+    @Volatile private var voxFailedFor: String? = null
+
+    /** Resolve the active profile's document, starting the first-call ask when it is absent. */
+    private fun soulDocForPresence(): SoulDoc {
+        // Rule (a): with Presence off the workflow is inert — no migration, no read for the
+        // soul, no request. (The persona getter is the only other reader, and it is only
+        // reached from a loaded engine, which Presence-off unloads in handleModeUi.)
+        if (!PresenceGate.enabled(prefs)) return SoulDoc.ABSENT
+        // Rule (b), first half: the pre-profile device-wide mirror joins the active profile
+        // once, before we decide it is missing (idempotent; safe to call every call start).
+        VoxMirror.migrate(this)
+        val profile = VoxMirror.activeProfile(prefs)
+        return when (VoxSync.plan(true, VoxMirror.read(filesDir, profile))) {
+            VoxSync.Need.READY -> SoulDoc.READY
+            else -> {
+                if (voxFailedFor == profile) return SoulDoc.ABSENT
+                startVoxFetch(profile)
+                if (voxFetching.contains(profile)) SoulDoc.FETCHING else SoulDoc.ABSENT
+            }
+        }
+    }
+
+    /**
+     * Rule (b): the first call on a profile with no mirror asks the entity for one, through
+     * the existing resync flow (VoxSync.obtain → VoxSoul.resync validates the reply).
+     * Off the UI thread; one attempt per profile per call; no dialog, no toast.
+     *
+     * On success the warm model is re-primed on the new document (VoxSync wrote it, and the
+     * persona getter reads the active profile's file), so the first turn is spoken by the
+     * entity whose soul just arrived. On failure nothing is written and Presence stays quiet.
+     */
+    private fun startVoxFetch(profile: String) {
+        if (!PresenceGate.enabled(prefs)) return              // rule (a)
+        if (voxFailedFor == profile || !voxFetching.add(profile)) return
+        val u = prefs.getString("url", "").orEmpty()
+        val k = storedKey()
+        if (u.isBlank() || GatewayKey.isMissing(k)) {
+            voxFetching.remove(profile); voxFailedFor = profile
+            VoxLog.w("event=vox-first-call profile=$profile phase=skip reason=not-connected")
+            return
+        }
+        // M6: the profile's own values, captured NOW, while it is still the active profile.
+        // Reading prefs lazily inside the thread would let a switch mid-ask declare the new
+        // profile's scope/provider on this profile's document.
+        val model = prefs.getString(EntitySession.PREF_MODEL, EntitySession.DEFAULT_MODEL).orEmpty()
+            .ifBlank { EntitySession.DEFAULT_MODEL }
+        val provider = prefs.getString(EntitySession.PREF_PROVIDER, "").orEmpty()
+        val scope = prefs.getString(SessionScope.PREF, "").orEmpty()
+        VoxLog.d("event=vox-first-call profile=$profile phase=start")
+        kotlin.concurrent.thread(isDaemon = true, name = "vox-first-call") {
+            val session = EntitySession.of(u, SecureStore.decrypt(k) ?: k, model, provider, scope)
+            // The profile is captured here, not re-read at write time: the document belongs
+            // to the entity that answered, even if the user switches during the ask.
+            val log: (String) -> Unit = { VoxLog.er(it) }
+            val a = VoxSync.obtain(filesDir, profile, presenceOn = true, log = log) { note ->
+                VoxSync.ask(session, note, log)
+            }
+            voxFetching.remove(profile)
+            if (!a.ready) voxFailedFor = profile
+            VoxLog.d("event=vox-first-call profile=$profile phase=end ready=${a.ready} reason=${a.reason ?: "-"}")
+            if (a.ready) (express as? GemmaExpress)?.reprime("vox-first-call")
+        }
+    }
+
+    /**
+     * Rule (c): on a profile switch with Presence on, the warm model must hold the NEW
+     * profile's document, not merely have it on disk. [GemmaExpress.reprime] rebuilds the
+     * rolling conversation on the active persona and pays its prefill now; the next render
+     * — the switch's first turn, or the next call's greeting — is the new entity in its own
+     * voice. With no mirror yet for the new profile, the conversation is only closed: the
+     * call gate fetches the document before Presence may speak.
+     */
+    private fun switchPresenceProfile() {
+        val profile = VoxMirror.activeProfile(prefs)
+        VoxMirror.migrate(this)
+        val mirrored = VoxSync.plan(true, VoxMirror.read(filesDir, profile)) == VoxSync.Need.READY
+        voxFailedFor = null              // the profile just left must not silence the new one
+        (express as? GemmaExpress)?.reprime("profile-switch")
+        VoxLog.d("event=presence-profile profile=$profile mirrored=$mirrored")
+    }
 
     // Hold a wake lock while the hands-free line is open so it isn't Dozed.
     private var voiceWake: android.os.PowerManager.WakeLock? = null
@@ -1261,7 +2056,7 @@ class MainActivity : AppCompatActivity() {
     // C0: no stored user key while an endpoint is set -> the connector must not
     // start and the user must add their key in Settings. Surfaces the clear
     // user-facing prompt (wording only — no new UI) instead of a silent no-op.
-    private fun missingKeyPrompt(): Boolean {
+    protected fun missingKeyPrompt(): Boolean {
         if (session != null) return false
         if (!GatewayKey.isMissing(storedKey())) return false
         setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
@@ -1278,6 +2073,26 @@ class MainActivity : AppCompatActivity() {
         const val VOICE_HOLD_MS = 400L    // audible-audio hold across inter-phrase synth gaps
         const val QUIET_MS = 12000L       // rest this long -> widen from IDLE into DRIFT
 
+        /** §B: the system file picker's request code (ACTION_OPEN_DOCUMENT). */
+        const val REQ_FILE = 3271
+
+        /** The PiP Stop RemoteAction's broadcast. Internal: the intent is package-scoped. */
+        const val ACTION_PIP_STOP = "com.hermesvox.action.PIP_STOP"
+        const val REQ_PIP_STOP = 3272
+
+        /**
+         * How long the dial handoff waits for its line to become audible before ending the Vox
+         * call anyway. A courtesy, not a gate: no TTS engine, or a reply already owning the
+         * voice, must never leave the owner waiting on a dialer.
+         */
+        /**
+         * The bound on waiting for the dial line to finish, measured from the moment it is
+         * handed to TTS. Long enough for a short line to synthesise and play; the no-engine
+         * path settles immediately, so this only catches an engine that never reports done.
+         * A longer synthesis than this must not cut the line at 900 ms (H1).
+         */
+        const val ANNOUNCE_FALLBACK_MS = 5_000L
+
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
         @Volatile var session: HermesSession? = null
@@ -1291,6 +2106,17 @@ class MainActivity : AppCompatActivity() {
         @Volatile private var active: MainActivity? = null
         @Volatile var callStartedAt = 0L
         @Volatile var liveController: VoiceController? = null
+
+        /** #329: intent extra set by AssistActivity — this launch came from the assist gesture. */
+        const val EXTRA_ASSIST = "com.hermesvox.extra.ASSIST"
+
+        /**
+         * #329: is a voice call running anywhere in the app? `callLive` is per-Activity, but the
+         * loop lives in VoiceService and survives the screen, so the assistant gesture needs the
+         * app-wide answer: a live controller with a start time, or a live screen that says so.
+         * If this said "not live" while the loop ran, the gesture would dial a second session.
+         */
+        fun callIsLive(): Boolean = active?.callLive == true || (liveController != null && callStartedAt != 0L)
         // #61: dedicated call-start permission request code + pending flag so the
         // warm-retry path never re-requests while the dialog is up / after denial.
         const val REQ_MIC_CALL = 101
@@ -1301,7 +2127,9 @@ class MainActivity : AppCompatActivity() {
         /** Reset the canonical session's conversation and clear the display/reply
          *  buffers. Reaches the LIVE session (MainActivity + live controller), so a
          *  Settings "New conversation" clears the same context an active call sees. */
-        fun resetActiveConversation() {
+        fun resetActiveConversation() {            // #252's class: stopping the controller while `callLive` stays true leaves a call
+            // that looks live and hears nothing. A reset that ends the call ends it properly.
+            active?.let { if (ConversationReset.plan(ConversationReset.Trigger.SETTINGS, it.callLive).endCall) it.endCall() }
             session?.resetConversation()
             LatencyStats.resetSessionTurns()   // C3: a reset conversation is a fresh session
             liveController?.setVoiceChannelOpen(false)
@@ -1313,6 +2141,22 @@ class MainActivity : AppCompatActivity() {
             active?.clearConversationUi()
         }
 
+        /**
+         * L9 (0.9.1 review): Settings → Entity saved a new endpoint, key or scope. A live
+         * call was opened against the old connection, and the controller still holds it;
+         * end it the way a profile switch does ([ConversationReset.Trigger.SETTINGS]),
+         * then rebuild the shared session from the prefs just written. Without the rebuild
+         * the screen would keep dialling the old endpoint until the next launch.
+         */
+        fun onEntitySaved() {
+            val a = active
+            val wasLive = callIsLive()
+            a?.clearAdoptedSession()   // #437 §6: another host, another set of sessions
+            resetActiveConversation()
+            a?.connectFromPrefs()
+            VoxLog.d("event=entity-saved callEnded=$wasLive")
+        }
+
         /** 0.6.7 Tier 1: push a presence-voice mode change from Settings to the
          *  live controller's presence loop (a live read on the next tick).
          *  `liveController` is the COMPANION's var — reach it unqualified here. */
@@ -1321,17 +2165,109 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearConversationUi() {
+    protected fun clearConversationUi() {
         revealActive = false; mainHandler.removeCallbacks(revealTask)
         replyBuf = ""
+        // #368: a new conversation ends the trail too — old replies must not survive a
+        // reset, and a scroll position into them would be a trap.
+        crawlHistory.clear(); turnSeq = 0L
+        paintTrail(); reply.resetScroll()
         reply.setText("")
-        convoBuf = ""
+        transcript.clear()
         convoText.setText("")
         feed(MotionState.Signal.REST)
-        setStatus(getString(R.string.hv_connected), false)
+        setStatus(idleStatus(), false)
     }
 
-    private fun connectFromPrefs() {
+    // #174: saved connections. The switcher lives on the header; a switch ends the call.
+    private val profiles by lazy { ProfileDialogs(this, prefs, { switchProfile(it) }) { refreshHeaderFromRegistry() } }
+
+    /**
+     * The per-profile pass's one-time inheritance: a saved profile that has no voice or look of
+     * its own takes the device-wide values now, and from then on they are its own. Guarded by
+     * [Profiles.PREF_SCOPED] so a *later* device-wide change never overwrites a profile a second
+     * time — the bug this rule exists to prevent. With no profiles saved yet there is nothing to
+     * inherit; the first one is adopted from the live prefs when it is seeded.
+     */
+    private fun migrateScopedProfiles() {
+        if (prefs.getBoolean(Profiles.PREF_SCOPED, false)) return
+        val list = profiles.list()
+        if (list.isEmpty()) return
+        val migrated = ProfileScope.migrate(list, ScopedPrefs.reader(prefs))
+        prefs.edit().apply {
+            putBoolean(Profiles.PREF_SCOPED, true)
+            if (migrated != list) putString(Profiles.PREF_LIST, Profiles.encode(migrated))
+        }.apply()
+        if (migrated != list) {
+            refreshHeaderFromRegistry()
+            VoxLog.d("event=profile-scoped-migrate profiles=${migrated.size}")
+        }
+    }
+
+    /** The header: the agent's name, and the active profile's once there is a choice.
+     *
+     *  The title never names the model — that is what the sub-pill is for. A host that has
+     *  named the entity (`agent_name`) wins, and the Hermes agent's own name is the floor,
+     *  so a fresh install shows an entity rather than a route id. The call notification is
+     *  given the same words: one entity, one name. */
+    private fun headerLabel(model: String): String {
+        val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())
+        val list = profiles.list()
+        val active = profiles.activeName()
+        VoiceService.title = Header.callTitle(agent, active, list.size)
+        modelLabel = ModelChoices.displayName(model)
+        return Profiles.headerLabel(agent, active, list.size)
+    }
+
+    /**
+     * #174/#371: make [p] the active connection. One line at a time is an invariant, so a
+     * live call ends first; the session is rebuilt from the profile's prefs (a new
+     * conversation), and this holds however [p] arrived — typed or host-populated.
+     *
+     * Per-profile pass: a switch is also what makes a profile *present* as itself. The live
+     * voice and look are recorded into the profile being left (so a change made while on it
+     * belongs to it), and the profile being entered writes its own — falling back to the
+     * device-wide value only where it has none, which is the one place that fallback lives.
+     */
+    private fun switchProfile(p: Profiles.Profile) {
+        // Settings → Entity edits the live keys, so fold them back into the profile being
+        // left before overwriting them; otherwise an edit made there is lost on the switch.
+        val cur = profiles.activeName()
+        val list = profiles.list()
+        val deviceWide = ScopedPrefs.reader(prefs)
+        // (Not when the active profile itself was just edited: the saved edit is the newer one.)
+        val synced = if (cur.isNotBlank() && !cur.equals(p.name, ignoreCase = true) && Profiles.find(list, cur) != null) {
+            val left = Profiles.find(list, cur)!!
+            Profiles.upsert(list, Profiles.fromPrefs(left.name) { prefs.getString(it, "").orEmpty() }
+                .copy(own = ProfileScope.capture(deviceWide)))
+        } else list
+        val incoming = ProfileScope.adopt(p, deviceWide)
+        val writes = ProfileScope.switchWrites(incoming, deviceWide)
+        val wasLive = callLive
+        if (ConversationReset.plan(ConversationReset.Trigger.PROFILE_SWITCH, wasLive).endCall) endCall()
+        prefs.edit().apply {
+            putString(Profiles.PREF_LIST, Profiles.encode(Profiles.upsert(synced, incoming, p.name)))
+            ScopedPrefs.write(this, writes)
+            putString(Profiles.PREF_ACTIVE, incoming.name)
+        }.apply()
+        session?.resetConversation()   // the same url+key (two scopes on one gateway) keeps the object
+        LatencyStats.resetSessionTurns()
+        // #437 §6: sessions belong to a profile. Nothing of the host just left — the adopted
+        // id or its listing — survives the switch.
+        clearAdoptedSession()
+        clearConversationUi()
+        connectFromPrefs()
+        // The being is drawn from the prefs just written: re-read the look now, not at the next
+        // resume. Participation of a live call and the voice follow from the same write.
+        applyParticlePrefs()
+        // Rule (c): a switch with Presence on re-primes the warm model on the new profile's
+        // document, so the next render is the new entity — not the one just left.
+        if (PresenceGate.enabled(prefs)) switchPresenceProfile()
+        VoxLog.d("event=profile-switch profiles=${synced.size} callEnded=$wasLive scoped=${writes.size}")
+        setStatus(if (wasLive) "Call ended · ${p.name} · new conversation" else "${p.name} · new conversation", true)
+    }
+
+    protected fun connectFromPrefs() {
         val u = prefs.getString("url", "").orEmpty()
         val k = storedKey()
         val m = prefs.getString("model", "hermes-agent").orEmpty()
@@ -1342,28 +2278,49 @@ class MainActivity : AppCompatActivity() {
         // memory. Blank = undeclared (the gateway's per-transcript default),
         // which is what every install did before this setting existed.
         val sc = SessionScope.normalize(prefs.getString(SessionScope.PREF, "").orEmpty())
-        if (u.isBlank()) return
+        if (u.isBlank()) { PhoneSetupStore.attach(null); return }
         // C0: no user-entered key -> surface the Settings prompt (never connect
         // with an empty auth / baked fallback).
-        if (GatewayKey.isMissing(k)) { setStatus(GatewayKey.MISSING_KEY_PROMPT, true); return }
+        if (GatewayKey.isMissing(k)) {
+            PhoneSetupStore.attach(null)
+            setStatus(GatewayKey.MISSING_KEY_PROMPT, true)
+            return
+        }
+        // M4 (0.9.1 review): never dial plain HTTP while Tailscale is down. The request
+        // path enforces this too; here the pill says why instead of failing on the first turn.
+        com.hermesvox.core.CleartextPolicy.refusal(u)?.let { setStatus(it, true); return }
         if (session == null || sesUrl != u || sesKey != k || sesModel != m || sesProvider != p || sesScope != sc) {
-            session = HermesSession(u, k, m)
-            // The provider is a per-request override the /v1/responses client sends
-            // (the blessed LIGHT PATH) — set it after construction so streamed and
-            // stored turns both forward the chosen gateway backend.
-            session?.setProvider(p)
-            // Same shape for the declared scope: the session stamps it on every
-            // entity request (/v1/models, /v1/responses).
-            session?.setSessionKey(sc)
+            // The provider is a per-request override the client sends (the blessed LIGHT
+            // PATH) and the scope is stamped on every entity request; both are declared by
+            // EntitySession, the one builder every caller uses (M6).
+            session = EntitySession.build(u, k, { key ->
+                when (key) {
+                    EntitySession.PREF_PROVIDER -> p
+                    SessionScope.PREF -> sc
+                    else -> prefs.getString(key, "").orEmpty()
+                }
+            }, m)
             sesUrl = u; sesKey = k; sesModel = m; sesProvider = p; sesScope = sc
         }
+        // #404: the `/v1/runs` fallback belongs to the active profile. This runs on every
+        // connect, and a switch calls connect again, so the choice is re-evaluated rather
+        // than inherited from the profile just left.
+        session?.let { RouteChoice.bind(it, prefs) }
+        // #421 step 5 / #430: the setup sheet sends its turn through THIS session when one is
+        // live, and the connection it was built from is handed over with it — a session keeps the
+        // address and key it was built with, so a later turn must be able to tell whether it still
+        // names the connection in force.
+        PhoneSetupStore.attach(session, PhoneSetupSend.Connection(u, k, m, p, sc))
         // The pill used to assert "Connected" the instant a session OBJECT existed —
         // before a single byte had been sent. Now it says Dialing and waits for the
         // gateway to actually answer.
-        dialGateway()
+        dialGateway(); profiles.refreshFromHost(ProfilesAsk.AskKind.CONNECT)   // #384: ask the agent which profiles it serves
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
-        agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { m }.uppercase()
+        agentName.text = headerLabel(m)
+        // The pill rests on the model's name from the first connect: the header says who,
+        // the pill says what answers. An action already on the pill keeps it.
+        paintRestingLine()
         appendStream("// connected → $u")
         // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
         // (surviving an app-close) is detected on create and resumed below.
@@ -1372,18 +2329,99 @@ class MainActivity : AppCompatActivity() {
     private fun wireButtons() {
         findViewById<Button>(R.id.settings).setOnClickListener { openSettings() }
         findViewById<Button>(R.id.call).setOnClickListener { if (callLive) endCall() else startCall() }
-        findViewById<Button>(R.id.commands).setOnClickListener { showCommands() }
+        // #370: one commands entry. Sharing lives inside its sheet, not beside it.
+        findViewById<View>(R.id.commands).setOnClickListener { showCommands() }
+        applyCommandIcon()
     }
 
-    private fun send(text: String) {
+    /**
+     * The commands entry is whichever glyph Settings → Appearance chose, drawn by
+     * [CommandGlyph] in the theme's ink — the same drawing the chooser showed. The
+     * content description is "Commands" for every one of them ([CommandGlyph.LABEL]);
+     * the icon's name is a choice in a list, not a name to announce.
+     *
+     * Called when the buttons are wired and again on resume, so a choice made in
+     * Settings is on the entry the moment the main screen is back.
+     */
+    private fun applyCommandIcon() {
+        findViewById<android.widget.ImageButton>(R.id.commands)?.apply {
+            val icon = CommandGlyph.current(this@MainActivity)
+            setImageDrawable(CommandGlyph.drawable(this@MainActivity, icon))
+            contentDescription = CommandGlyph.contentDescription(icon)
+        }
+    }
+
+    /**
+     * #370: a typed `/` opens the commands sheet wherever this activity has the keyboard.
+     * The dialogs are separate windows, so a slash typed in the sheet's own search box never
+     * reaches this method; on the main screen it is the same entry as the ⌘ button.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_UP &&
+            event.keyCode == android.view.KeyEvent.KEYCODE_SLASH &&
+            !event.isCtrlPressed && !event.isAltPressed
+        ) {
+            showCommands()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * #376: the debug-only approval arm. Places one run on the gateway's `/v1/runs` lane
+     * (the lane that can carry an approval) and hands the controller a watcher; the card,
+     * the voice answer and the timeout are the SAME ones a real request uses.
+     *
+     * Reachable only through the debug harness ([com.hermesvox.DebugHarnessActivity], debug
+     * source set, protected by android.permission.DUMP), so this cannot run in a release
+     * install. The prompt is [ApprovalArm.PROMPT] — a
+     * harmless recursive delete of an empty temp directory, which the gateway's own
+     * policy must flag before anything runs.
+     */
+    protected fun armApproval(prompt: String?) {
+        if (missingKeyPrompt()) return
+        val s = session ?: run { setStatus("Connect first", true); return }
+        val input = prompt?.takeIf { it.isNotBlank() } ?: ApprovalArm.PROMPT
+        VoxLog.d("event=approval-arm-request prompt=${input.replace('\n', ' ').take(160)}")
+        setStatus("Arming an approval…", true)
+        Thread({
+            try {
+                val runId = s.startArmRun(input)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val c = liveController ?: VoiceController(applicationContext, s).also {
+                        liveController = it
+                        wireSoul(it)
+                    }
+                    c.attachListeners(listener)
+                    c.armApproval(runId)
+                }
+            } catch (e: Exception) {
+                VoxLog.w("event=approval-arm-failed err=${e.message?.take(160)}")
+                runOnUiThread { setStatus("Arm failed: ${e.message?.take(80)}", true) }
+            }
+        }, "approval-arm").start()
+    }
+
+    /** §B: [transcript] overrides the conversation line for a file turn. The turn carries the
+     *  offer (name, size, hash, URL) or — for the inline fallback — the body itself; the
+     *  transcript shows only the card (name, type, size), so a file's contents never enter it. */
+    protected fun send(text: String, transcript: String? = null) {
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
+        // #437: a typed (or dictated) "/sessions" opens the session card. It left Alpha
+        // (#437, D39), so the word reaches the card for every install.
+        Sessions.commandFor(text)?.let { c ->
+            runCommand(c) {}
+            return
+        }
         val s = session ?: run { setStatus("Connect first", true); return }
         if (text.isBlank()) return
         // K2: typing /compress (or /compact) is the same native command as picking it
         // from the commands sheet — status feedback + the gateway's answer in a card,
         // instead of the word disappearing into the turn as ordinary conversation.
         if (CompressCommand.matches(text)) { compressContext(); return }
-        appendConvo("You: $text")
+        turnSeq++   // #368: a typed turn is a new trail chapter
+        appendConvo(transcript ?: "You: $text")
         val c = liveController ?: VoiceController(applicationContext, s).also {
             liveController = it
             wireSoul(it)
@@ -1398,6 +2436,10 @@ class MainActivity : AppCompatActivity() {
         override fun onState(state: String) {
             runOnUiThread {
                 if (state != "thinking") toolCount = 0   // a new turn begins
+                // #251: the agent is working from "thinking" until it answers or the turn ends;
+                // the first ping follows the THINKING cue by a full period, never on top of it.
+                if (state == "thinking" && !ambientWorking) lastPingAt = android.os.SystemClock.uptimeMillis()
+                ambientWorking = state == "thinking"
                 // K3 (0.5.0.3): scope replyBuf to the turn. "thinking" fires exactly
                 // once per turn (runStreamedTurn, beside armTranscript which resets the
                 // cursor space), but replyBuf had NO matching reset — it carried the
@@ -1408,17 +2450,48 @@ class MainActivity : AppCompatActivity() {
                 // upstream is slow." The fallback now shows only THIS turn's composed
                 // text (the arguably-correct "you see what it'll say" case, unchanged).
                 if (state == "thinking") { replyBuf = ""; revealHadCursor = false; revealBufLoggedFor = -1 }
+                // #282: a new turn retires the PREVIOUS approval card; a request that is
+                // still waiting is never hidden by its own run's state.
+                if (state == "thinking" && !approvalWaiting && !waitCardUp) approvalCard.visibility = View.GONE
                 // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
                 warmingNow = state == "warming"
-                setStatus(when (state) {
+                // #281/#280: a new turn retires the last turn's steps, a held failure included.
+                if (state == "thinking") clearOperation()
+                val words = when (state) {
                     "listening" -> "Listening…"
                     "thinking" -> "The entity is working…"
                     "speaking" -> "Speaking…"
                     "warming" -> ConnectionPhase.pill(ConnectionPhase.Phase.WARMING)
-                    else -> getString(R.string.hv_connected)
-                }, state == "warming")
+                    else -> idleStatus()
+                }
+                // The state line (docs/STATE-AUDIT.md): the being alone cannot carry a state
+                // with the being off, the sound off, or in light mode. #280 F8: the line is a
+                // property of the state, not of the call — a running step or a held failure is
+                // shown wherever it happens, typed use included; the ambient words keep their
+                // old warming/thinking/call rule.
+                val running = opStep?.let {
+                    Operations.running(it, android.os.SystemClock.uptimeMillis() - opStartedAt)
+                }
+                // #282: while a request waits, the line says so — a late state callback
+                // must not put the waiting phase back into "working".
+                val base = if (approvalWaiting) "Waiting for your approval"
+                    else StateLine.words(running, opHeld, words)
+                // #373 follow-up: the spoken-replies line outranks the ambient words but
+                // never a running step or a held failure. Without this it was overwritten
+                // by the very next Listening…/Speaking… state — present for a frame, then
+                // gone, which is indistinguishable from never raised.
+                val voiceOwnsLine = voiceLegLine.isNotBlank() && !approvalWaiting &&
+                    running == null && opHeld == null
+                val line = if (voiceOwnsLine) voiceLegLine else base
+                lastStateLine = base   // #373: what to put back when a voice leg recovers
+                setStatus(
+                    line,
+                    approvalWaiting || voiceOwnsLine ||
+                        StateLine.visible(running != null, opHeld != null, state, callLive),
+                )
+                if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
                 // renderMotion reads the real playback RMS instead.
@@ -1443,8 +2516,13 @@ class MainActivity : AppCompatActivity() {
             // Once the voice starts, the crawl is painted by the speech cursor instead —
             // appending here is what raced 3-4 sentences ahead of the audio.
             replyBuf += text
+            ambientWorking = false   // #251: the answer is arriving; the work is done
             markActivity()   // previewB: a delta is proof the provider is alive
-            if (!revealActive) reply.setText(replyBuf)
+            if (!revealActive && !compact) reply.setText(replyBuf)
+            // #223: the transcript gets the reply as it arrives, not only when the turn
+            // completes. The crawl above keeps its speech-locked reveal untouched: this
+            // is the reading surface, and a reader must not wait on the audio.
+            appendReplyDelta(text)
         } }
         override fun onLog(line: String) { runOnUiThread {
             appendStream(line)
@@ -1476,11 +2554,12 @@ class MainActivity : AppCompatActivity() {
                 // a full prefill + generation of GPU time, thrown away, competing with
                 // the being's render loop. (09-10 log: five such wasted renders in one
                 // tool-heavy turn.)
-                // Narration is the soul's, so it exists only in Enhanced Realtime: in Realtime the
-                // line was rendered for a status pill that is hidden, which was pure GPU waste. The
-                // tool is NAMED so the line can be topical, and the soul may decline — the token
-                // means silence, and it is parsed, never spoken.
-                val narrationWanted = modeIsEnhanced() && prefs.getBoolean("presence", true) &&
+                // Narration is the soul's, so it exists only when Presence runs: with the
+                // layer off the line was rendered for a status pill that is hidden, which
+                // was pure GPU waste. The tool is NAMED so the aside can be topical, and
+                // the soul may decline — the token means silence, and it is parsed, never
+                // spoken.
+                val narrationWanted = presenceActive() && prefs.getBoolean("presence", true) &&
                     liveController?.glueBlocked() != true
                 if (narrationWanted) {
                     val args = line.removePrefix("◆ tool: ").substringAfter(' ', "").take(60)
@@ -1501,31 +2580,302 @@ class MainActivity : AppCompatActivity() {
             // finished with the surface (the stream completes seconds before the audio
             // does — setting it here is the clobber that erased the reveal mid-sentence).
             replyBuf = finalText
+            lastTurnFailed = false   // #284: a reply landed; nothing to fix
             markActivity()
             feed(MotionState.Signal.RETIRE)   // previewB: a natural end settles, never recoils
             // #156: "reply ready" is a cue only when no speech will follow — otherwise
             // the voice IS the signal, and a cue must never run into TTS (D7).
             if (liveController?.voiceWillSpeak() != true) cues?.play(CueSynth.Cue.REPLY_READY)
-            if (!revealActive) reply.setText(replyBuf)
-            appendConvo("Agent: $finalText")
+            // #368: no speech to wait for -> the reply is finished now; move it into the
+            // trail. With speech, stopReveal() seals it when the voice has finished (or is
+            // frozen by a cut), so the screen is never left with a duplicate.
+            if (!revealActive) { if (!compact) reply.setText(replyBuf); sealLiveReply(replyBuf) }
+            appendReplyFinal(finalText)
+            // §B: only the agent can say the bytes did not match. Its reply settles the
+            // file's state; the app never turns silence into success. Guarded by the ref so
+            // an ordinary conversation never constructs the flow.
+            fileShareRef?.agentReplied(finalText)
         } }
         override fun onError(msg: String) { runOnUiThread {
-            setStatus(if (msg.contains("interrupt")) "You interrupted" else msg, !msg.contains("interrupt"))
+            // a cut or failed turn ends its step; a failed turn outranks a held step failure
+            mainHandler.removeCallbacks(opTicker); opStep = null; opHeld = null
+            // #284: a failed turn's line offers the command that usually fixes it, in place.
+            // A host that says "Unknown or unconfigured profile" gets the exact fact, not a
+            // generic error: the profile named in the address is not on that host.
+            val (line, offer) = if (ProfileReach.isMissing()) ProfileReach.line() to true
+                else Discovery.errorLine(msg)
+            setStatus(line, offer)
+            // #280 F7: a pocketed call must still learn that the turn failed — onError used
+            // to write the pill only, and the notification kept the last happy state.
+            if (callLive) VoiceService.update(this@MainActivity, line)
+            if (offer) {
+                lastTurnFailed = true; statusOfferShown = true
+                status.setOnClickListener { reconnect() }
+            }
             feed(MotionState.Signal.REST); appendStream("// $msg")
             // A barge/stop is not a failure: the being was interrupted, it did not err.
             if (!msg.contains("interrupt")) cues?.play(CueSynth.Cue.ERROR)
         } }
+        override fun onTool(name: String, arguments: String) { runOnUiThread {
+            val step = Operations.step(name, arguments)
+            opStep = step; opHeld = null   // new work supersedes an earlier step's failure
+            opStartedAt = android.os.SystemClock.uptimeMillis()
+            mainHandler.removeCallbacks(opTicker)
+            showOperation(Operations.running(step, 0))
+            mainHandler.postDelayed(opTicker, 1000)
+        } }
+        override fun onToolOutput(output: String) { runOnUiThread {
+            val step = opStep ?: return@runOnUiThread
+            mainHandler.removeCallbacks(opTicker); opStep = null
+            val reason = Operations.failure(output)
+            if (reason == null) showOperation(Operations.finished(step))
+            else {
+                val l = Operations.failed(step, reason); opHeld = l
+                // #280 F2: a failed step gets the being's own failure ending — the hourglass
+                // in the waiting colour — not the success shimmer the log event just fed it.
+                // Done keeps the shimmer; the two outcomes stop looking alike.
+                val e = CommandMotion.Ending.FAILED
+                avatar.endVerb(e.shape, e.state, e.ms)
+                showOperation(l)
+            }
+        } }
         override fun onHeard(text: String) { runOnUiThread {
+            lastHeardFromAt = android.os.SystemClock.uptimeMillis(); idleFired = false   // #251: input
+            callTurns++   // #284: the caller has spoken; no stuck hint this call
+            turnSeq++   // #368: a new spoken turn; a repeated "yes" is not a duplicate
             // Conversation mode already IS a transcript: the words go there, in memory
-            // only (convoBuf is never persisted). Presence mode gets the fading line.
+            // only (the transcript is never persisted). Presence mode gets the fading line.
             appendConvo("You: $text")
             if (conversation.visibility != View.VISIBLE) showHeard(text)
         } }
+        override fun onReplyCut(heard: String) { runOnUiThread { appendReplyCut(heard) } }
+        override fun onPresenceSpoke(text: String, source: String) { runOnUiThread {
+            // #223: the Presence path's own speech — the soul's answer (the turn's reply)
+            // and its asides (beats, working asides, fillers, greeting). Only lines that
+            // were actually voiced reach here, so the transcript is what was heard.
+            // #368: the same funnel feeds the crawl's trail. The soul's answer IS the
+            // turn's reply; every other source is an aside. Recording here (once, when
+            // voiced) is what keeps a scroll from losing or duplicating a Presence line.
+            val kind = if (source == Transcript.SOURCE_SOUL_ANSWER)
+                CrawlHistory.Kind.REPLY else CrawlHistory.Kind.ASIDE
+            recordTrailLine(text, kind)
+            appendPresence(text, source)
+        } }
+        override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
+            approvalBusy = false
+            approvalWaiting = true
+            waitCardUp = false
+            phoneApprovalId = ""
+            approvalCard.visibility = View.VISIBLE
+            approvalTitle.text = "APPROVAL NEEDED"
+            approvalLine.text = prompt.line
+            approvalLine.contentDescription = prompt.line
+            approvalState.text = ""
+            approvalState.visibility = View.GONE
+            buildApprovalButtons(prompt)
+            // The state audit (#280) asked for exactly this: a request is not "work".
+            setStatus("Waiting for your approval", true)
+            if (callLive) VoiceService.update(this@MainActivity, "Waiting for your approval")
+            // The transcript is the record; a timed-out request must stay in it rather
+            // than vanish when the card is replaced by the next turn.
+            appendConvo("! Approval needed: ${prompt.action}")
+        } }
+        override fun onApprovalResolved(prompt: ApprovalPrompt, choice: String, timedOut: Boolean) { runOnUiThread {
+            approvalBusy = false
+            approvalWaiting = false
+            approvalState.visibility = View.VISIBLE
+            approvalState.text = when {
+                timedOut -> "TIMED OUT — DENIED"
+                choice == "deny" -> "DENIED"
+                else -> "APPROVED · ${ApprovalChoices.label(choice)}"
+            }
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            appendConvo(
+                when {
+                    timedOut -> "! Approval timed out — denied: ${prompt.action}"
+                    choice == "deny" -> "! Approval denied: ${prompt.action}"
+                    else -> "! Approved ${ApprovalChoices.spoken(choice)}: ${prompt.action}"
+                }
+            )
+            if (timedOut) {
+                // The card and the transcript carry the timeout; the run itself continues
+                // (the agent adapts to the deny), so the state line returns to work.
+                appendStream("// approval timed out — denied")
+            }
+            setStatus("The entity is working…", true)
+            if (callLive) VoiceService.update(this@MainActivity, "The entity is working…")
+        } }
+        override fun onApprovalClosed(prompt: ApprovalPrompt, reason: String) { runOnUiThread {
+            approvalBusy = false
+            approvalWaiting = false
+            approvalState.visibility = View.VISIBLE
+            approvalState.text = "ENDED WITH THE RUN"
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            appendConvo("! Approval ended with the run: ${prompt.action}")
+        } }
+        /**
+         * The silent ceiling's question. It uses the approval card's layout and tap-or-voice
+         * interaction, but it is not a consent request: [WaitPromptCard] has no id, no
+         * action and authorises nothing, and it is never shown over an approval.
+         */
+        override fun onWaitPrompt(card: WaitPromptCard) { runOnUiThread {
+            if (approvalWaiting) return@runOnUiThread   // the approval owns the screen
+            approvalBusy = false
+            waitCardUp = true
+            phoneApprovalId = ""
+            approvalCard.visibility = View.VISIBLE
+            approvalTitle.text = card.title
+            approvalLine.text = card.question
+            approvalLine.contentDescription = card.question
+            approvalState.text = "10 seconds — then I stop"
+            approvalState.visibility = View.VISIBLE
+            buildWaitButtons(card)
+            setStatus("Still working — keep waiting or stop?", true)
+            if (callLive) VoiceService.update(this@MainActivity, "Still working — keep waiting or stop?")
+        } }
+        override fun onWaitPromptResolved(card: WaitPromptCard, outcome: WaitPrompt.Outcome) { runOnUiThread {
+            waitCardUp = false
+            approvalBusy = false
+            // If an approval took the screen while this dismissal was in flight, the
+            // approval owns it now; do not hide its card.
+            if (approvalWaiting) return@runOnUiThread
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            approvalCard.visibility = View.GONE
+            when (outcome) {
+                WaitPrompt.Outcome.KEEP -> {
+                    setStatus("The entity is working…", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "The entity is working…")
+                }
+                WaitPrompt.Outcome.STOP -> {
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.NO_ANSWER -> {
+                    appendStream("// no answer — stopped waiting")
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.EXTENDED -> {
+                    appendStream("// still silent after the extra time — stopped")
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.DISMISSED -> {
+                    // The stream resumed, a new turn started, or an approval took the screen.
+                    // Hide silently; the ordinary state line owns what comes next.
+                }
+            }
+        } }
+        /**
+         * #373: the spoken-replies leg changed. Both directions land here: a fallback that
+         * dies shows the reason, and one that recovers puts the call's own line back — the
+         * screen used to learn this exactly once, at call open.
+         */
+        override fun onSpokenReplies(line: String, degraded: Boolean) { runOnUiThread {
+            if (line.isBlank()) {
+                // Recovered: clear the sticky line and put back the state this screen was
+                // already showing.
+                voiceLegLine = ""
+                if (callLive) {
+                    val back = lastStateLine.ifBlank { "Listening…" }
+                    setStatus(back, false)
+                    VoiceService.update(this@MainActivity, back)
+                }
+                return@runOnUiThread
+            }
+            val shown = if (degraded) "Spoken replies off — $line" else line
+            voiceLegLine = shown
+            setStatus(shown, true)
+            if (callLive) VoiceService.update(this@MainActivity, shown)
+        } }
+    }
+
+    /**
+     * #282: one button per choice the gateway offered — never a fixed four. Deny is the
+     * filled, safe-default control and sits last; the positive choices stay outlined
+     * with the accent colour. A tap disables the row before handing the choice to the
+     * controller (belt; the gate is the braces).
+     */
+    private fun buildApprovalButtons(prompt: ApprovalPrompt) {
+        approvalChoices.removeAllViews()
+        val density = resources.displayMetrics.density
+        for (choice in prompt.choices) {
+            val deny = choice == "deny"
+            val b = Button(this)
+            b.text = prompt.label(choice)
+            b.textSize = 12f
+            b.isAllCaps = false
+            b.letterSpacing = 0.06f
+            b.setTextColor(ContextCompat.getColor(this, if (deny) R.color.hv_text else R.color.hv_cyan))
+            b.background = ContextCompat.getDrawable(this, if (deny) R.drawable.bg_chip else R.drawable.bg_button_ghost)
+            b.contentDescription = if (deny) "No — deny this action"
+                else "Approve — ${ApprovalChoices.spoken(choice)}"
+            b.layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, (44 * density).toInt(), 1f).apply { marginEnd = (6 * density).toInt() }
+            b.setOnClickListener {
+                if (approvalBusy) return@setOnClickListener
+                approvalBusy = true
+                for (i in 0 until approvalChoices.childCount) approvalChoices.getChildAt(i).isEnabled = false
+                approvalState.text = "SENDING…"
+                approvalState.visibility = View.VISIBLE
+                val phoneId = phoneApprovalId
+                if (phoneId.isNotEmpty()) {
+                    // The phone action's answer; the desk withdraws the card when it lands.
+                    when (PhoneApprovals.answer(phoneId, choice != "deny", "tap")) {
+                        PhoneApprovals.Outcome.LOCKED -> approvalState.text = "LOCKED"
+                        PhoneApprovals.Outcome.NOT_PENDING -> approvalState.text = "EXPIRED"
+                        else -> Unit
+                    }
+                } else {
+                    liveController?.answerApproval(choice)
+                }
+            }
+            approvalChoices.addView(b)
+        }
+        approvalChoices.visibility = if (prompt.choices.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * The wait card's two choices, on the same row the approval card uses. STOP is the
+     * filled, safe-default control and sits last for the same reason deny does: doing
+     * nothing must cost no more than stopping. Nothing here is an approval answer and the
+     * controller never hands it to the approval gate.
+     */
+    private fun buildWaitButtons(card: WaitPromptCard) {
+        approvalChoices.removeAllViews()
+        val density = resources.displayMetrics.density
+        for (answer in card.answers) {
+            val stop = answer == WaitPrompt.Answer.STOP
+            val b = Button(this)
+            b.text = card.label(answer)
+            b.textSize = 12f
+            b.isAllCaps = false
+            b.letterSpacing = 0.06f
+            b.setTextColor(ContextCompat.getColor(this, if (stop) R.color.hv_text else R.color.hv_cyan))
+            b.background = ContextCompat.getDrawable(this, if (stop) R.drawable.bg_chip else R.drawable.bg_button_ghost)
+            b.contentDescription = if (stop) "Stop waiting" else "Keep waiting"
+            b.layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, (44 * density).toInt(), 1f).apply { marginEnd = (6 * density).toInt() }
+            b.setOnClickListener {
+                if (approvalBusy) return@setOnClickListener
+                approvalBusy = true
+                for (i in 0 until approvalChoices.childCount) approvalChoices.getChildAt(i).isEnabled = false
+                approvalState.text = if (stop) "STOPPING…" else "KEEPING WAITING…"
+                approvalState.visibility = View.VISIBLE
+                liveController?.answerWaitPrompt(answer)
+            }
+            approvalChoices.addView(b)
+        }
+        approvalChoices.visibility = View.VISIBLE
     }
 
     /** Show the heard line: fade in, hold for its reading time (longer when a
      *  screen reader asks for it), fade out. A new turn replaces the old line. */
     private fun showHeard(text: String) {
+        if (compact) return   // no words in the compact window, heard or otherwise
         mainHandler.removeCallbacks(fadeHeard)
         heardLine.animate().cancel()
         heardLine.text = HeardLine.displayText(text)
@@ -1554,108 +2904,454 @@ class MainActivity : AppCompatActivity() {
         else -> null
     }
 
-    private fun openSettings() { startActivity(Intent(this, SettingsActivity::class.java)); overridePendingTransition(R.anim.slide_in, R.anim.fade_out) }
+    private fun openSettings() = launchOutside {
+        startActivity(Intent(this, SettingsActivity::class.java))
+        overridePendingTransition(R.anim.slide_in, R.anim.fade_out)
+    }
 
     /** Expose the Hermes instance's /commands. For the MVP a curated set; the
      *  live command list is a follow-up (query the gateway). WS4b: the /models,
      *  /health, /new, /reconnect commands open NATIVE mini-UIs fed by real gateway
      *  data — the agent only does conversation, never command-UI strings. */
-    private fun showCommands() {
-        val cmds = arrayOf(
-            "/models", "/health", "/compress", "/new", "/reconnect", "/clear", "/reset", "/status", "/help")
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Commands")
-            .setItems(cmds) { _, w ->
-                when (cmds[w]) {
-                    "/models"    -> showModelChooser()
-                    "/health",
-                    "/status"    -> showHealthCard()
-                    CompressCommand.NAME,
-                    CompressCommand.ALIAS -> compressContext()
-                    "/new"       -> newSession()
-                    "/reconnect" -> reconnect()
-                    "/clear",
-                    "/reset" -> {
-                        liveController?.stop(); liveController = null
-                        session?.resetConversation()
-                        LatencyStats.resetSessionTurns()   // C3: cleared conversation = fresh session
-                        revealActive = false; mainHandler.removeCallbacks(revealTask)
-                        replyBuf = ""; reply.setText("")
-                        feed(MotionState.Signal.REST); setStatus(getString(R.string.hv_connected), false)
-                    }
-                    else         -> showHelpCard()   // /help
-                }
-            }
-            .show()
+    /** #226: the commands screen — grouped, each row saying what it does, with its running
+     *  state on the row. The command names keep their meaning for anyone who types them. */
+    private val commandsSheet by lazy {
+        CommandsSheet(
+            act = this,
+            situation = {
+                CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
+                    lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
+            },
+            run = { c, done -> runCommand(c, done) },
+        )
+    }
+    // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
+    private var lastTurnFailed = false
+    private var stuckShownThisCall = false
+    private var callTurns = 0L
+    protected fun showCommands() = commandsSheet.show()
+
+    // ---- #437: sessions — the conversations the host already has -------------------------
+
+    /**
+     * #437: which session this phone is talking in, and the transcript the host last served
+     * for it. The state and its rules are pure ([Sessions.Adoption]) so "a switch clears it"
+     * and "a gap re-reads it" are proven off-device.
+     */
+    private val adoption = Sessions.Adoption()
+
+    /** The gateway behind the active profile: a session list is a property of the host, not
+     *  of the profile ([Sessions.rootBase]), so this is the base every session request uses. */
+    private fun profileBase(): String = prefs.getString("url", "").orEmpty()
+
+    private val sessionsSheet by lazy {
+        SessionsSheet(
+            act = this,
+            fetch = { limit, offset -> SessionsClient.list(profileBase(), storedKey(), limit, offset) },
+            inUse = { adoption.id.ifEmpty { session?.conversationId().orEmpty() } },
+            onPick = { row -> adoptSession(row) },
+        )
     }
 
-    /** /models — native chooser from the REAL gateway catalog (GET /api/model/options).
-     *  Selecting a model sets the app model+provider prefs that the /v1/responses
-     *  client sends per request (the blessed LIGHT PATH) — the gateway overrides the
-     *  entity's inference backend, while the entity's memory/skills/context stay. */
-    private fun showModelChooser() {
-        val s = session ?: run { setStatus("Connect first", true); return }
-        setStatus("Loading gateway models…", true)
-        kotlin.concurrent.thread {
-            val raw = try { s.modelOptions() } catch (e: Throwable) { null }
+    /** `/sessions`, and the typed word. Sessions left Alpha (#437, D39): the command is in
+     *  the catalogue for every install, and this door opens the card. */
+    protected fun showSessions() {
+        if (missingKeyPrompt()) return
+        sessionsSheet.show()
+    }
+
+    /**
+     * Pick up [row]: its id becomes the conversation for every following turn — streamed and
+     * stored, `/compress` included — because `POST /v1/runs` ranks an explicit body
+     * `session_id` above the chain and above the declared key. Nothing is forked and nothing
+     * is copied; the host already treats it as the same conversation.
+     *
+     * The call and the profile are deliberately untouched: resuming a session is not a
+     * profile switch, and the live call is the same agent.
+     */
+    private fun adoptSession(row: Sessions.Row): Boolean {
+        val s = session ?: run { setStatus("Connect first", true); return false }
+        s.adoptConversation(row.id)
+        adoption.adopt(row)
+        // The screen now belongs to the adopted session: nothing from the thread just left
+        // stays behind it (and a stored turn's id was rotated with the session object).
+        clearConversationUi()
+        VoxLog.d("event=session-adopt id=${row.id} source=${row.source}")
+        // A session switch announces itself in blue: the session's own title, once. The
+        // model pill underneath is unchanged — the mind is the same.
+        showHeaderNotice(row.label)
+        fetchResumed(row.id)
+        return true
+    }
+
+    /**
+     * Read the adopted session's transcript and put it on screen.
+     *
+     * The host owns this transcript and another surface may be writing it while the phone
+     * reads it, so every fetch replaces the block: [Sessions.merge] keeps what the host
+     * served, drops anything of ours it has now accounted for, and keeps a turn of ours the
+     * host has not recorded yet. Nothing is ever appended to what the app believes it has,
+     * which is what makes a re-fetch after a reconnect unable to duplicate a conversation.
+     */
+    private fun fetchResumed(id: String) {
+        // Marked at the start: a slow answer must still throttle the next foreground return.
+        adoption.markFetched(System.currentTimeMillis())
+        val base = profileBase()
+        val key = storedKey()
+        Thread({
+            val answer = Sessions.transcript(SessionsClient.messages(base, key, id))
             runOnUiThread {
-                setStatus(getString(R.string.hv_connected), false)
-                if (raw.isNullOrBlank()) { toast("Couldn't reach the model catalog"); return@runOnUiThread }
-                val providers = org.json.JSONObject(raw).optJSONArray("providers") ?: return@runOnUiThread
-                val labels = mutableListOf<String>(); val ids = mutableListOf<String>(); val provs = mutableListOf<String>()
-                for (p in 0 until providers.length()) {
-                    val prov = providers.optJSONObject(p) ?: continue
-                    val pname = prov.optString("name").ifEmpty { prov.optString("slug") }
-                    val cur = prov.optBoolean("is_current", false)
-                    val auth = prov.optString("source", "")
-                    val models = prov.optJSONArray("models")
-                    if (models == null || models.length() == 0) {
-                        labels += ((if (cur) "* " else "") + pname + " - " + prov.optInt("total_models", 0) + " models")
-                        ids += prov.optString("slug"); provs += prov.optString("slug")
-                    } else {
-                        for (m in 0 until models.length()) {
-                            // The live gateway /api/model/options returns model IDs as plain
-                            // STRINGS (e.g. "minimax-m3", "kimi-k3"); other builds may return
-                            // model OBJECTS ({id,slug,name}). Read both shapes so the chooser
-                            // renders the real models instead of silently dropping them (the
-                            // old optJSONObject-only path yielded an empty list for every
-                            // configured provider).
-                            val entry = models.opt(m)
-                            val mLabel: String
-                            val mId: String
-                            if (entry is String) { mLabel = entry; mId = entry }
-                            else if (entry is org.json.JSONObject) {
-                                mLabel = entry.optString("name").ifEmpty { entry.optString("id").ifEmpty { entry.optString("slug") } }
-                                mId = entry.optString("id").ifEmpty { entry.optString("slug").ifEmpty { entry.optString("name") } }
-                            } else continue
-                            labels += ((if (cur) "* " else "") + pname + " - " + mLabel + (if (auth.isNotBlank()) " ($auth)" else ""))
-                            ids += mId; provs += prov.optString("slug")
-                        }
+                // A later pick, a new conversation or a profile switch wins over this answer.
+                if (adoption.id != id || isFinishing || isDestroyed) return@runOnUiThread
+                when (answer) {
+                    is Sessions.Transcript.Ok -> {
+                        adoption.settle(answer.messages)
+                        renderResumed()
+                        VoxLog.d("event=session-transcript id=$id messages=${answer.messages.size} shown=${adoption.resumed.size}")
+                    }
+                    Sessions.Transcript.KeyRejected -> {
+                        VoxLog.w("event=session-transcript id=$id state=key-rejected")
+                        setStatus(Sessions.KEY_REJECTED, true)
+                    }
+                    Sessions.Transcript.NoAnswer -> {
+                        VoxLog.w("event=session-transcript id=$id state=no-answer")
+                        setStatus(Sessions.TRANSCRIPT_FAILED, true)
                     }
                 }
-                if (labels.isEmpty()) { toast("No models in catalog"); return@runOnUiThread }
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Gateway models (choose your agent's brain)")
-                    .setSingleChoiceItems(labels.toTypedArray(), 0) { d, which ->
-                        d.dismiss()
-                        val modelId = ids[which]; val prov = provs[which]
-                        // Persist the choice so it survives restart; then set it on the
-                        // LIVE session so the next turn sends provider+model per request.
-                        prefs.edit().putString("model", modelId).putString("provider", prov).apply()
-                        val ok = try {
-                            s.setModel(modelId); s.setProvider(prov); true
-                        } catch (e: Throwable) { false }
-                        runOnUiThread {
-                            toast(if (ok) "Model set -> $prov/$modelId" else "Couldn't set the model")
-                            s.resetConversation()   // re-init the session under the new backend
-                            LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
-                            sesModel = modelId; sesProvider = prov
-                            agentName.text = prefs.getString("agent_name", "").orEmpty().ifBlank { modelId }.uppercase()
-                        }
-                    }
-                    .setNegativeButton("Cancel", null).show()
+            }
+        }, "sessions-transcript").start()
+    }
+
+    /** The resumed block, in the crawl's own gaps and bounded from the tail. */
+    private fun resumedBlock(maxChars: Int = Sessions.TRAIL_MAX): String =
+        Sessions.trail(adoption.resumed, maxChars)
+
+    /** The crawl's document: the resumed session's history, then this call's own scrollback. */
+    private fun paintTrail() {
+        if (compact) return   // the trail is words; the window draws none
+        reply.setHistory(CrawlDocument.join(resumedBlock(), crawlHistory.text()))
+    }
+
+    /** The resumed transcript, on both reading surfaces: the crawl and the transcript view. */
+    private fun renderResumed() {
+        paintTrail()
+        transcript.setHistory(resumedBlock(Transcript.MAX_CHARS))
+        paintTranscript()
+    }
+
+    /**
+     * Forget the adopted session and everything read from it. Called where the conversation
+     * really ends — `/new`, `/clear`, a profile switch, a saved connection — and never by a
+     * reconnect, which re-dials the same conversation and re-fetches it (#437 §5, §6).
+     */
+    private fun clearAdoptedSession() {
+        if (!adoption.active) return
+        VoxLog.d("event=session-clear id=${adoption.id}")
+        adoption.clear()
+        // A listing belongs to one host: the next card asks again rather than showing this
+        // host's answer under another profile's name.
+        sessionsSheet.invalidate()
+    }
+
+    // ---- #370: share with agent — the clipboard, a file, or another app's share ----
+    //
+    // The artifact is the unit. The clipboard is not pasted text: it is a real file with a
+    // generated name. Another app's share is not sent on arrival: it lands on the same
+    // confirmation card as a picked file, and only SEND hands it to the #386 mechanism.
+
+    /** The chooser and the confirmation. It never sends; SEND hands the draft to [FileShare]. */
+    private val shareSheet by lazy {
+        ShareSheet(
+            act = this,
+            onClipboard = { shareClipboard() },
+            onPick = { pickFile() },
+            onSend = { staged -> beginStaged(staged) },
+            onCancel = { stageSeq++ },
+        )
+    }
+
+    protected fun showShare() {
+        if (missingKeyPrompt()) return
+        if (session == null) { setStatus("Connect first", true); return }
+        shareSheet.show()
+    }
+
+    /**
+     * The clipboard, rendered as a file. Text — a URL, a path, a code block — becomes a
+     * `.txt`; a URI (an image) keeps its bytes and takes its extension from the mime. An
+     * empty or unreadable clip is a stated refusal, never an empty send.
+     */
+    private fun shareClipboard() {
+        val cm = getSystemService(android.content.ClipboardManager::class.java)
+        val clip = try { cm?.primaryClip } catch (_: Throwable) { null }
+        val item = if (clip != null && clip.itemCount > 0) clip.getItemAt(0) else null
+        val text = item?.text?.toString()
+        val uri = item?.uri
+        val mime = uri?.let { runCatching { contentResolver.getType(it) }.getOrNull() }
+        val plan = ShareSurface.clipboardPlan(text, mime, uri != null, System.currentTimeMillis())
+        when (plan.kind) {
+            ShareSurface.ClipKind.TEXT ->
+                stageDraft(plan.name, ShareSurface.Source.CLIPBOARD) {
+                    FileStage.stageText(this, plan.name, plan.text.orEmpty(), plan.mime)
+                }
+            ShareSurface.ClipKind.URI -> {
+                val u = uri ?: run { shareSheet.refuse(ShareSurface.EMPTY_CLIPBOARD); return }
+                stageDraft(plan.name, ShareSurface.Source.CLIPBOARD) {
+                    FileStage.stage(this, u, nameOverride = plan.name)
+                }
+            }
+            ShareSurface.ClipKind.EMPTY -> shareSheet.refuse(plan.line)
+        }
+    }
+
+    /** The system picker. ACTION_OPEN_DOCUMENT needs no permission and hands back a readable
+     *  URI; the copy into private staging is [FileStage]'s job. */
+    private fun pickFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            @Suppress("DEPRECATION")
+            launchOutside { startActivityForResult(intent, REQ_FILE) }
+        } catch (_: Throwable) {
+            setStatus("No file picker on this device", true)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        // #429 lane 2: the Phone tools sheet's folder picker, when the sheet was opened here.
+        if (PhoneToolsSheet.handleActivityResult(this, requestCode, resultCode, data)) return
+        if (requestCode != REQ_FILE) return
+        if (resultCode != RESULT_OK) return
+        @Suppress("DEPRECATION")
+        draftUri(data?.data, ShareSurface.Source.PICKER)
+    }
+
+    /**
+     * Stage a URI as a draft. The provider's display name is used when it has one; otherwise
+     * the name is generated from the mime. The name is passed through to the copy so the card
+     * and the turn cannot disagree about what was shared.
+     */
+    private fun draftUri(uri: android.net.Uri?, source: ShareSurface.Source) {
+        if (uri == null) { shareSheet.refuse(ShareSurface.NOTHING_SHARED); return }
+        // L4 (0.9.1 review): never read a URI that points into this app's own private
+        // storage. Another app can hand us one; our own rights would do the reading.
+        FileStage.privateUriRefusal(this, uri)?.let { shareSheet.refuse(it); return }
+        val name = runCatching { FileStage.displayName(this, uri) }.getOrNull()?.takeIf { it.isNotBlank() }
+        val mime = runCatching { contentResolver.getType(uri) }.getOrNull()
+            ?.takeIf { it.isNotBlank() } ?: ShareSurface.BINARY_MIME
+        val shown = name ?: ShareSurface.sharedName(mime, System.currentTimeMillis())
+        stageDraft(shown, source) { FileStage.stage(this, uri, nameOverride = shown) }
+    }
+
+    /** A shared text block (or a viewed link) becomes a real `.txt`, never a hidden string. */
+    private fun draftText(text: String, source: ShareSurface.Source) {
+        if (text.isBlank()) { shareSheet.refuse(ShareSurface.NOTHING_SHARED); return }
+        val now = System.currentTimeMillis()
+        val name = if (source == ShareSurface.Source.LINK) ShareSurface.linkName(now)
+            else ShareSurface.textName(ShareSurface.SHARED, now)
+        stageDraft(name, source) { FileStage.stageText(this, name, text) }
+    }
+
+    /**
+     * Copy and hash off the main thread, then **wait** on the confirmation card. [stageSeq]
+     * is the guard: a copy that finishes after the sheet was closed, after another item was
+     * chosen, or after the screen went away is deleted and never offered. Closing is never a
+     * send, including on the slow path.
+     */
+    protected fun stageDraft(
+        name: String,
+        source: ShareSurface.Source,
+        produce: () -> FileStage.Result,
+    ) {
+        if (missingKeyPrompt()) return
+        if (session == null) { setStatus("Connect first", true); return }
+        shareSheet.showReading(name)
+        val mine = ++stageSeq
+        Thread({
+            val result = produce()
+            runOnUiThread {
+                val abandoned = mine != stageSeq ||
+                    !shareSheet.isShowing() ||
+                    isFinishing || isDestroyed
+                if (abandoned) {
+                    (result as? FileStage.Result.Ok)?.staged?.file?.delete()
+                    return@runOnUiThread
+                }
+                when (result) {
+                    is FileStage.Result.Ok -> shareSheet.showReady(result.staged, source)
+                    is FileStage.Result.TooBig -> shareSheet.refuse(result.line)
+                    is FileStage.Result.Failed -> shareSheet.refuse(result.line)
+                }
+            }
+        }, "share-stage").start()
+    }
+
+    /** The confirmed draft becomes an offer: the #386 flow takes the copy from here. */
+    private fun beginStaged(staged: FileStage.Staged) {
+        fileOfferSheet.show()
+        fileShare.begin(staged.offer, staged.file, staged.inlineText)
+    }
+
+    // ---- SPEC-conversational-bridge §B: a file offered by the phone, fetched by the agent ----
+
+    /** The one flow for the screen. All decisions live in [FileOffer]/[FileShare]; this holds
+     *  the three Android edges — the picker, the staging copy, and the ordinary turn send. */
+    private var fileShareRef: FileShare? = null
+
+    /** Bumped for every staging run; a result from an older run is deleted, never offered. */
+    private var stageSeq = 0L
+    private val fileShare: FileShare by lazy {
+        FileShare(
+            sendTurn = { text, transcript -> send(text, transcript = transcript) },
+            onState = { s -> mainHandler.post { fileOfferSheet.render(s) } },
+            log = { VoxLog.d(it) },
+        ).also { fileShareRef = it }
+    }
+    private val fileOfferSheet: FileOfferSheet by lazy {
+        FileOfferSheet(this, fileShare) { showShare() }
+    }
+
+    /**
+     * A share from another app lands here. Every entry point (ACTION_SEND, SEND_MULTIPLE,
+     * VIEW) stages and then **confirms** on the same card; none of them sends on arrival.
+     * Deferred to the main thread because onNewIntent runs inside dispatch.
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (action != Intent.ACTION_SEND &&
+            action != Intent.ACTION_SEND_MULTIPLE &&
+            action != Intent.ACTION_VIEW
+        ) return
+        mainHandler.post { routeShareIntent(intent) }
+    }
+
+    private fun routeShareIntent(intent: Intent) {
+        if (missingKeyPrompt()) return
+        if (session == null) { setStatus("Connect first", true); return }
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                // One share is one offer, not one per dispatch.
+                intent.removeExtra(Intent.EXTRA_STREAM)
+                intent.removeExtra(Intent.EXTRA_TEXT)
+                when {
+                    uri != null -> draftUri(uri, ShareSurface.Source.SHARE)
+                    !text.isNullOrBlank() -> draftText(text, ShareSurface.Source.SHARE)
+                    else -> shareSheet.refuse(ShareSurface.NOTHING_SHARED)
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val uris = intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                intent.removeExtra(Intent.EXTRA_STREAM)
+                val files = uris?.filterNotNull().orEmpty()
+                val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                intent.removeExtra(Intent.EXTRA_TEXT)
+                when {
+                    files.size == 1 -> draftUri(files[0], ShareSurface.Source.SHARE)
+                    files.size > 1 -> shareSheet.refuse(ShareSurface.multipleLine(files.size))
+                    !text.isNullOrBlank() -> draftText(text, ShareSurface.Source.SHARE)
+                    else -> shareSheet.refuse(ShareSurface.NOTHING_SHARED)
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data
+                intent.data = null
+                val scheme = uri?.scheme?.lowercase()
+                when {
+                    uri == null -> shareSheet.refuse(ShareSurface.NOTHING_SHARED)
+                    scheme == "content" || scheme == "file" ->
+                        draftUri(uri, ShareSurface.Source.SHARE)
+                    scheme == "http" || scheme == "https" ->
+                        draftText(uri.toString(), ShareSurface.Source.LINK)
+                    else -> shareSheet.refuse(ShareSurface.unsupportedView(scheme))
+                }
             }
         }
+    }
+
+    private fun runCommand(c: CommandCatalog.Command, finished: (Boolean) -> Unit) {
+        // #227: the being shows the command in its own language — the verb its category maps
+        // to, held while it runs, ended by the outcome.
+        val verb = CommandMotion.verbFor(c.category)
+        if (c.kind == CommandCatalog.Kind.CARD) avatar.holdVerb(verb.shape, CommandMotion.CARD_MS)
+        else avatar.holdVerb(verb.shape)
+        val done: (Boolean) -> Unit = { ok ->
+            val e = CommandMotion.ending(ok)
+            avatar.endVerb(e.shape, e.state, e.ms)
+            VoxLog.d("event=command-motion name=${c.name} verb=${verb.name.lowercase()} ending=${e.name.lowercase()}")
+            finished(ok)
+        }
+        when (c.name) {
+            // #370: an artifact action, not a slash command. The verb is CHOOSE → pulse,
+            // inherited from the closed six-verb grammar; the card is the share sheet.
+            CommandCatalog.SHARE.name -> { showShare(); done(true) }
+            "/models" -> showModelChooser()
+            // Per-profile pass: the switcher is a command — the commands sheet is where a
+            // person goes to change the agent, and this row opens it on the sheets' own
+            // scaffold. Profiles left Alpha (#436, D39), so every install has it.
+            "/profiles" -> {
+                profiles.showSwitcher()
+                done(true)
+            }
+            "/health" -> showHealthCard()
+            // #437: the session browser. Sessions left Alpha (#437, D39), so the card is the
+            // command's whole behaviour for every install.
+            Sessions.COMMAND -> {
+                showSessions()
+                done(true)
+            }
+            CompressCommand.NAME -> compressContext(done)
+            "/new" -> newSession(onDone = done)
+            "/reconnect" -> reconnect(done)
+            "/clear" -> newSession(ConversationReset.Trigger.CLEAR, done)
+            else -> showHelpCard()   // /help
+        }
+    }
+
+    /** /models — the model switcher (UI/UX pass): the REAL gateway catalog (GET
+     *  /api/model/options) as provider → model in [ModelSheet] (#5 dropped the category
+     *  level: a provider opens onto all its models, each carrying the capability flags the
+     *  gateway states), on the
+     *  app's ground, instead of a stock list of raw strings. Selecting a model sets the app
+     *  model+provider prefs that the /v1/responses client sends per request (the blessed
+     *  LIGHT PATH) — the gateway overrides the entity's inference backend, while the entity's
+     *  memory/skills/context stay. */
+    private fun showModelChooser() {
+        val s = session ?: run { setStatus("Connect first", true); return }
+        ModelSheet(this,
+            load = { s.modelOptions() },
+            current = { prefs.getString("model", "").orEmpty() to prefs.getString("provider", "").orEmpty() },
+        ) { p, m -> applyModelChoice(s, p, m) }.show()
+    }
+
+    private fun applyModelChoice(s: HermesSession, p: ModelChoices.Provider, m: ModelChoices.Model?) {
+        // A provider the gateway lists no models for is chosen as itself (its slug as the
+        // model route) — the behaviour the stock chooser had for that case.
+        val modelId = m?.id ?: p.slug
+        val prov = p.slug
+        // Persist the choice so it survives restart; then set it on the LIVE session so the
+        // next turn sends provider+model per request.
+        prefs.edit().putString("model", modelId).putString("provider", prov).apply()
+        val ok = try { s.setModel(modelId); s.setProvider(prov); true } catch (e: Throwable) { false }
+        if (!ok) { setStatus("Couldn't switch the model", true); return }
+        s.resetConversation()   // re-init the session under the new backend
+        LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
+        sesModel = modelId; sesProvider = prov
+        agentName.text = headerLabel(modelId)
+        // The outcome: the catalogue's own name for the model, plainly. The pill rests on
+        // it and a blue notice announces the change, then fades back to the same name.
+        val line = ModelChoices.switchedLine(p, m)
+        modelLabel = Header.modelLine(line)
+        paintRestingLine()
+        showHeaderNotice(line)
+        VoxLog.d("event=model-switch provider=$prov model=$modelId")
     }
 
     /** /health — native health card (GET /v1/health). */
@@ -1664,14 +3360,18 @@ class MainActivity : AppCompatActivity() {
         kotlin.concurrent.thread {
             val raw = try { s.gatewayHealth() } catch (e: Throwable) { null }
             runOnUiThread {
-                val card = if (raw.isNullOrBlank()) "Health: unreachable\n(debug: check network + address)"
-                            else try {
-                                val o = org.json.JSONObject(raw)
-                                "Status: " + o.optString("status", "?") +
-                                "\nVersion: " + o.optString("version", o.optString("service_version", "?"))
-                            } catch (e: Throwable) { "Health: ok\n$raw" }
+                // In words: whether the agent answered, and which version answered. No "?" for a
+                // missing field and no "(debug: …)" — a missing version is simply not said.
+                val (title, card) = if (raw.isNullOrBlank())
+                    "The agent did not answer" to "The gateway could not be reached. Check the network and the address in Settings › Entity & Connection."
+                else try {
+                    val o = org.json.JSONObject(raw)
+                    val status = o.optString("status").ifBlank { "answering" }
+                    val version = o.optString("version").ifBlank { o.optString("service_version") }
+                    "The agent is $status" to (if (version.isBlank()) "It answered, without a version." else "Version $version")
+                } catch (e: Throwable) { "The agent answered" to raw.take(400) }
                 androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Agent health").setMessage(card).setPositiveButton("OK", null).show()
+                    .setTitle(title).setMessage(card).setPositiveButton("OK", null).show()
             }
         }
     }
@@ -1690,9 +3390,9 @@ class MainActivity : AppCompatActivity() {
      * Same shape as the other native commands: status pill while it runs, native card
      * with the gateway's answer, off the UI thread (turnStored blocks up to 120s).
      */
-    private fun compressContext() {
-        if (missingKeyPrompt()) return   // C0: empty key -> the clear Settings prompt
-        val s = session ?: run { setStatus("Connect first", true); return }
+    private fun compressContext(onDone: (Boolean) -> Unit = {}) {
+        if (missingKeyPrompt()) { onDone(false); return }   // C0: empty key -> the clear Settings prompt
+        val s = session ?: run { setStatus("Connect first", true); onDone(false); return }
         setStatus(CompressCommand.RUNNING, true)
         kotlin.concurrent.thread {
             val reply = try { s.turnStored(CompressCommand.DIRECTIVE) } catch (e: Throwable) {
@@ -1702,6 +3402,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 setStatus(if (ok) CompressCommand.DONE else CompressCommand.FAILED, true)
+                onDone(ok)
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle(CompressCommand.TITLE)
                     .setMessage(CompressCommand.card(reply))
@@ -1710,38 +3411,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** /new — reset the app session chain + DELETE /v1/responses/{id} + fresh state.
-     *  The server-side response id must be captured on the bg thread BEFORE the
-     *  client chain is dropped (resetConversation clears lastID), so the delete and
-     *  the reset run on the SAME thread, in order. */
-    private fun newSession() {
+    /** /new — reset the app session chain and start fresh. Local only: the host is
+     *  read-only, so a reset drops this app's chain head, never a stored response. */
+    private fun newSession(trigger: ConversationReset.Trigger = ConversationReset.Trigger.NEW, onDone: (Boolean) -> Unit = {}) {
         val s = session
+        val plan = ConversationReset.plan(trigger, callLive)
         // #252: /new tore the voice layer down by hand — four of the six lines of endCall(),
         // minus the two that matter. `callLive` was never cleared and the call UI never
         // exited, so startCall()'s `if (callLive) return` refused to re-arm and a live call
         // went permanently deaf until the user hung up. One teardown now, and it re-arms
         // through openVoiceLine(), the same path a route change uses.
         val wasLive = callLive
-        if (wasLive) endCall()
+        if (plan.endCall) endCall()
         if (s != null) {
-            kotlin.concurrent.thread {
-                try { s.deleteLastResponse() } catch (_: Throwable) {}   // uses s.lastID before the drop
-                s.resetConversation()   // then drop the client chain + lastID
-                LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
-                // Re-arm only after the chain is actually reset, and only if a call was live.
-                if (wasLive) runOnUiThread { startCall() }
+            // The plan IS the order (#351): reset first, then re-arm. Neither step waits on
+            // the gateway, and neither sends it a request.
+            for (step in plan.steps) when (step) {
+                ConversationReset.Step.RESET_CHAIN -> {
+                    s.resetConversation()   // drop the client chain + lastID
+                    LatencyStats.resetSessionTurns()   // C3: a new session restarts the turn count
+                }
+                ConversationReset.Step.REARM_CALL -> runOnUiThread { startCall() }
             }
-        }
-        VoxLog.d("event=session-reset callLive=$callLive rearm=$wasLive")
+            runOnUiThread { onDone(true) }
+        } else onDone(true)
+        VoxLog.d("event=session-reset trigger=${trigger.name.lowercase()} callLive=$callLive rearm=${plan.rearm} steps=${plan.steps.joinToString(",") { it.name.lowercase() }}")
         stopVoiceWake()
         releaseVoiceFocus()        // C3: abandon symmetrically with the wake-lock release
         unregisterRouteCallback()  // C3: no line -> no route rebuilds
+        clearAdoptedSession()      // #437: /new and /clear leave the host's session behind
         clearConversationUi()
         if (!wasLive) setStatus("New session started", true)
     }
 
     /** /reconnect — re-ping /v1/health (via gateway) + re-init the session. */
-    private fun reconnect() {
+    private fun reconnect(onDone: (Boolean) -> Unit = {}) {
         setStatus("Reconnecting…", true)
         kotlin.concurrent.thread {
             val u = prefs.getString("url", "").orEmpty()
@@ -1749,9 +3453,21 @@ class MainActivity : AppCompatActivity() {
             val m = prefs.getString("model", "hermes-agent").orEmpty()
             val ok = try { HermesSession(u, k, m).gatewayHealth(); true } catch (e: Throwable) { false }
             runOnUiThread {
-                resetActiveConversation()
+                val wasLive = callLive
+                // #437: a reconnect re-dials the SAME conversation — resetActiveConversation
+                // rotates the id, so an adopted session is taken again afterwards, and its
+                // transcript is read again: the other surface may have written to it.
+                val rejoin = adoption.row
+                resetActiveConversation()   // ends a live call properly (#252's class)
                 connectFromPrefs()   // re-init session from prefs (incl. the provider override)
+                if (rejoin != null) {
+                    session?.adoptConversation(rejoin.id)
+                    adoption.adopt(rejoin)
+                    fetchResumed(rejoin.id)
+                }
+                if (ConversationReset.plan(ConversationReset.Trigger.RECONNECT, wasLive, ok).rearm) startCall()   // and re-arms it, as /new does
                 setStatus(if (ok) "Reconnected" else "Reconnect failed — check network + address", true)
+                onDone(ok)
             }
         }
     }
@@ -1759,13 +3475,7 @@ class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage("/models - choose the gateway model (provider + model)\n" +
-                "/health - agent health (status + version)\n" +
-                "/new - reset the conversation + server chain\n" +
-                "/reconnect - re-ping the gateway\n" +
-                CompressCommand.HELP_LINE + "\n" +
-                "/clear /reset - clear the local conversation\n" +
-                "/status - agent health")
+            .setMessage(CommandCatalog.helpText())   // #226: written from the catalogue, never out of step
             .setPositiveButton("OK", null).show()
     }
 
@@ -1775,17 +3485,45 @@ class MainActivity : AppCompatActivity() {
     // (a11y: Conversation gives a persistent, readable transcript instead of the
     // fading crawl). Persisted via Settings layout_mode (presence|conversation).
     private fun applyLayoutMode() {
+        if (compact) return   // restored on leaveCompact, when the words can be seen
         val conv = prefs.getString("layout_mode", "presence") == "conversation"
         conversation.visibility = if (conv) View.VISIBLE else View.GONE
         reply.visibility = if (conv) View.GONE else View.VISIBLE
-        if (conv) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
+        if (conv) { reply.resetScroll(); convoText.text = transcript.text; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
     }
     private fun appendConvo(line: String) {
-        convoBuf = (convoBuf + "\n" + line).trim().takeLast(4000)
-        if (conversation.visibility == View.VISIBLE) { convoText.text = convoBuf; conversation.post { conversation.scrollTo(0, conversation.bottom) } }
+        transcript.line(line)
+        paintTranscript()
+    }
+    /** #223: the mind's reply, as it streams in — a reader does not wait for the turn to end. */
+    private fun appendReplyDelta(text: String) {
+        transcript.delta(text)
+        paintTranscript()
+    }
+    /** #223: the reply was cut; the transcript keeps what was heard, not what was written. */
+    private fun appendReplyCut(heard: String) {
+        transcript.replyCut(heard)
+        paintTranscript()
+    }
+    /** #223: the turn is complete; the final text reconciles the streamed block. */
+    private fun appendReplyFinal(text: String) {
+        transcript.replyFinal(text)
+        paintTranscript()
+    }
+    /** #223: a line the Presence layer voiced on its own (the soul's answer or an aside). */
+    private fun appendPresence(text: String, source: String) {
+        transcript.presence(text, source)
+        paintTranscript()
+    }
+    private fun paintTranscript() {
+        if (compact) return   // the transcript is words; the window draws none
+        if (conversation.visibility != View.VISIBLE) return
+        convoText.text = transcript.text
+        conversation.post { conversation.scrollTo(0, conversation.bottom) }
     }
 
     private fun appendStream(line: String) {
+        if (compact) return                          // nothing exists in the window but the being
         if (stream.visibility == View.GONE) return   // dev console off
         sseBuf = (sseBuf + "\n" + line).trim().takeLast(1600)
         stream.setText(sseBuf)
@@ -1813,26 +3551,96 @@ class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks() } }
+    override fun onResume() { super.onResume(); runOnUiThread { answerPendingApproval(); updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
 
-    // Voice mode: Realtime vs Enhanced Realtime — both share ONE hands-free open
-    // line (VAD + barge-in); Enhanced adds the on-device Gemma presence layer.
-    private fun handleModeUi() {
-        applyLayoutMode()
-        refreshModelsGate()   // the ER requirement pill follows the mode
-        val mode = prefs.getString(ModelCatalog.KEY_VOICE_MODE, ModelCatalog.MODE_REALTIME) ?: ModelCatalog.MODE_REALTIME
-        if (mode == ModelCatalog.MODE_ENHANCED) {
-            val g = express as? GemmaExpress
-            // Load the on-device model once. A model that is installed but cannot start (no
-            // supported accelerator/CPU path on this device) is said out loud, not hidden.
-            if (g != null && !g.available && ModelCatalog.isInstalled(this, "gemma-e2b")) g.load { ok ->
-                if (!ok && g.loadFailed) runOnUiThread {
-                    modelsMissingPill("⚠ The presence model could not start on this device — Enhanced Realtime is running as Realtime")
+    /**
+     * #437 §5: a resumed session may be written by another surface while the phone is in a
+     * pocket. Coming back to the app after a gap longer than [Sessions.GAP_MS] reads the
+     * transcript again, so what is on screen is what the host has, not what it had.
+     */
+    private fun maybeRefetchResumed() {
+        if (!adoption.due(System.currentTimeMillis())) return
+        fetchResumed(adoption.id)
+    }
+
+    /** Load the on-device presence model once, if Presence is on and it is not up.
+     *  A model that is installed but cannot start (no supported accelerator/CPU path on
+     *  this device) leaves the app in normal operation: the model verdict is recorded for
+     *  the Settings presence row, which is the only place the absence is explained. No
+     *  pill, no "running as" label. Extracted from handleModeUi so a call start can ask as
+     *  well: after a Phase-4 unload the engine is gone while the activity is already
+     *  resumed, and only a resume would otherwise bring it back. */
+    private fun ensurePresenceLoading() {
+        val g = express as? GemmaExpress ?: return
+        if (g.available || !ModelCatalog.isInstalled(this, "gemma-e2b")) return
+        // Phase 5: a load is about to run, so a pending idle release would undo the work it
+        // is paying for. Cancelled only on the load path — a resident engine left idle keeps
+        // its timer (that is the arm's whole point).
+        g.cancelIdleUnload("presence-load")
+        // #191: the load's cost on this phone, from the memory it started under to how
+        // long it took — the two numbers the field report could not give.
+        val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
+        val t0 = android.os.SystemClock.uptimeMillis()
+        VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
+        g.load { ok ->
+            // A second caller while a load is in flight is chained onto it and told false at once
+            // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
+            val chained = !ok && !g.loadFailed
+            VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
+            if (!chained) runOnUiThread {
+                // #403 stage two: the first real load is the hardware check's second half. A
+                // failure demotes the Presence selection (off, never on); the Alpha panel says why.
+                if (HardwareCheck.noteFirstLoad(HardwareCheck.store(prefs), !g.loadFailed)) {
+                    VoxLog.d("event=hw-check stage=first-load ok=${!g.loadFailed} " +
+                        "demoted=${g.loadFailed}")
                 }
+                // The Settings row reads this verdict; nothing is announced on the main
+                // screen. Normal operation is not a degraded mode.
+                PresenceGate.modelCanStart = !g.loadFailed
+                if (g.loadFailed) VoxLog.w("event=presence-unavailable reason=start-failed")
+                liveController?.presenceActive = presenceActive()
+                // Release while the app is open (MemoryBudget.PREF_IDLE_OPEN_MIN, default 0 =
+                // never): a load that finishes with no call live arms the same release the
+                // hangup path arms. A call start cancels it, so it can only fire when nothing
+                // wants the engine.
+                if (!callLive) g.armIdleWhileOpen()
             }
         }
-        // 0.6.7: the presence-voice mode is a live read — a Settings change
-        // lands on the next tick without rebuilding the controller.
+    }
+
+    // #222/D16: there is ONE normal operation — a hands-free open line (VAD + barge-in).
+    // Presence is a layer on it, on by default, running only when its model is downloaded
+    // and able to start. There is no mode to switch.
+    private fun handleModeUi() {
+        applyLayoutMode()
+        refreshModelsGate()
+        PresenceGate.modelCanStart = (express as? GemmaExpress)?.loadFailed != true
+        val presence = presenceActive()
+        if (presence) {
+            // Deferred load (MemoryBudget.PREF_LAZY_LOAD, default off = today): the engine is
+            // NOT built at launch. It is built when a call starts — the only place the soul
+            // speaks — and the call path already knows how to wait for it and to offer a skip.
+            // Off, this branch is the old unconditional load.
+            val lazy = MemoryBudget.lazyLoad(prefs.getBoolean(MemoryBudget.PREF_LAZY_LOAD, false))
+            val g = express as? GemmaExpress
+            if (lazy && g != null && !g.available && !g.isLoading) {
+                if (!deferLogged) {
+                    deferLogged = true
+                    VoxLog.d("event=presence-deferred reason=launch — the model loads when a call starts")
+                }
+            } else {
+                ensurePresenceLoading()
+            }
+        } else {
+            // The layer is off (by choice, or because its model cannot run). The engine
+            // has nothing to do; unload it. Off by default (MemoryBudget.release); the
+            // delayed arm applies here too, so a trip to Settings and back does not pay a
+            // cold load.
+            (express as? GemmaExpress)?.requestUnload("presence-off")
+        }
+        liveController?.presenceActive = presence
+        // 0.6.7: the narration voice is a live read — a Settings change lands on the
+        // next tick without rebuilding the controller.
         liveController?.erPresence?.voiceMode =
             prefs.getString("er_presence_voice", "sounds") ?: "sounds"
     }
@@ -1840,25 +3648,11 @@ class MainActivity : AppCompatActivity() {
     // Presence appearance: the visual CATEGORY (what the being is made of, in every
     // state) + the idle shape/theme + auto-cycle. Settings -> Visuals. This stays the
     // one controller: Settings only writes prefs, the feed applies them.
-    private fun applyParticlePrefs() {
-        val theme = prefs.getString("particles_theme", "aura") ?: "aura"
-        avatar.setIdleTheme(theme)
-        avatar.setCycleThemes(prefs.getBoolean("particles_cycle", true))
-        // video-statewire: the active-state shape picks, fed the SAME way as the idle
-        // theme (cached in AvatarView.applyStateShapes, never read per frame). Defaults
-        // are the Wave 1 semantic fits and agree with the Settings pickers.
-        avatar.applyStateShapes(
-            prefs.getString(AvatarView.KEY_SHAPE_SPEAKING, AvatarView.DEFAULT_SHAPE_SPEAKING)
-                ?: AvatarView.DEFAULT_SHAPE_SPEAKING,
-            prefs.getString(AvatarView.KEY_SHAPE_LISTENING, AvatarView.DEFAULT_SHAPE_LISTENING)
-                ?: AvatarView.DEFAULT_SHAPE_LISTENING,
-            prefs.getString(AvatarView.KEY_SHAPE_THINKING, AvatarView.DEFAULT_SHAPE_THINKING)
-                ?: AvatarView.DEFAULT_SHAPE_THINKING,
-        )
-        avatar.setVisualCategory(prefs.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT)
-            ?: VisualStyle.DEFAULT)
-        avatar.setVisualEnergy(prefs.getFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY))
-        avatar.setVisualGlow(prefs.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
+    protected fun applyParticlePrefs() {
+        avatar.applyLookPrefs(prefs)   // #225: one reader for the main screen and the Settings preview
+        // The compact being is a second view of the SAME look: a prefs change while a call
+        // floats must not leave the PiP window on the previous shape or palette.
+        if (::pipAvatar.isInitialized) pipAvatar.applyLookPrefs(prefs)
     }
 
     /** ~30 fps for the being, with slack so the check lands on the right vsync at 60/90/120 Hz. */
@@ -1882,7 +3676,7 @@ class MainActivity : AppCompatActivity() {
                 val now = System.nanoTime()
                 if (now - lastDrawNs >= FRAME_BUDGET_NS - FRAME_SLACK_NS) {
                     lastDrawNs = now
-                    motionTick(); avatar.invalidate()
+                    motionTick(); being.invalidate()
                 }
                 avatar.postOnAnimation(this)
             }
@@ -1929,9 +3723,67 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         revealActive = false
         mainHandler.removeCallbacks(revealTask)   // the loop reposts itself — never outlive the view
+        // The Stop receiver lives with the surface; a window that cannot exist has none.
+        if (pipReceiverRegistered) {
+            try { unregisterReceiver(pipReceiver) } catch (_: Throwable) { }
+            pipReceiverRegistered = false
+        }
+        // §B: the screen owns the offer. Leaving it stops the server and deletes the staged
+        // copy — the spec's "deleted however the flow ends" includes this one.
+        fileShareRef?.close()
         cues?.release()                           // #156: free the cue AudioTrack with the surface
         cues = null
+        PhoneHandoff.detach(phoneHost)            // a dead window answers no handoff
+        if (PhoneApprovals.ui === phoneApprovalUi) PhoneApprovals.ui = null
         if (active === this) active = null
         super.onDestroy()
+    }
+
+    /**
+     * #371: the host can populate the registry while the user is doing something else, and
+     * the header's shape (and the notification title) depend on how many profiles there are —
+     * so the registry tells the header when it moves. Called on the UI thread; it never
+     * switches a profile, so it can never end a live call.
+     */
+    private fun refreshHeaderFromRegistry() {
+        if (!::agentName.isInitialized) return
+        agentName.text = headerLabel(prefs.getString("model", "hermes-agent").orEmpty())
+    }
+
+    /**
+     * #368: the live reply becomes the trail's newest line. The live slot is cleared in
+     * the same frame, so the same words are not drawn twice; `CrawlDocument` keeps the
+     * on-screen shape unchanged (history + gap + live becomes history + gap + nothing).
+     *
+     * [text] is what was actually shown, not necessarily the streamed final: a barge
+     * seals the frozen part that was on screen, which is what the caller can re-read.
+     */
+    private fun sealLiveReply(text: String) {
+        replyBuf = ""
+        reply.setText("")
+        if (text.isBlank()) return
+        recordTrailLine(text, CrawlHistory.Kind.REPLY)
+    }
+
+    /**
+     * #437: one funnel for a finished line in the trail.
+     *
+     * While a session is adopted, a REPLY belongs to the host's transcript: it is recorded as
+     * this app's own echo *inside* the resumed block and the block is repainted, never added
+     * to the ring beside it. That is the rule that makes a reconnect safe — the host serves
+     * the same turn on the next fetch, the echo is dropped by identity, and the screen shows
+     * one copy of it either way. An ASIDE (Presence speaking on its own) is this device's own
+     * line and stays in the ring, because the host's transcript has no such thing.
+     */
+    private fun recordTrailLine(text: String, kind: CrawlHistory.Kind): Boolean {
+        if (text.isBlank()) return false
+        if (adoption.active && kind == CrawlHistory.Kind.REPLY) {
+            adoption.echo(text)
+            renderResumed()
+            return true
+        }
+        if (!crawlHistory.add(text, kind, turnSeq)) return false
+        paintTrail()
+        return true
     }
 }

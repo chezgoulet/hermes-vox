@@ -92,8 +92,9 @@ class ErSoulTurnTest {
     }
 
     @Test fun an_unsafe_opener_escalates_silently() {
-        // A number is a fact: the Contract is enforced in code, not trusted to the model.
-        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} It's 72 degrees"))
+        // A claimed result is refused in code, not trusted to the model (D29/#406: numbers no
+        // longer are — "It's 72 degrees" would be a beat now, and #256 observes it).
+        assertEquals(ErSoulTurn.Outcome.Escalate, ErSoulTurn.parse("${ErSoulTurn.ESCALATE} It's booked"))
         // Too long to be a beat — that is an answer the soul must not give.
         assertEquals(ErSoulTurn.Outcome.Escalate,
             ErSoulTurn.parse("${ErSoulTurn.ESCALATE} well I think the forecast says it will rain all day"))
@@ -145,10 +146,11 @@ class ErSoulTurnTest {
         assertTrue("must forbid the service-desk greeting", g.contains("Do not ask what they need"))
     }
 
-    @Test fun both_directives_bound_the_margin() {
-        // Maintainer: tighten the margins on soul utterances so the line is short enough to
-        // hand over cleanly rather than compete with a healthy gateway.
-        assertTrue(ErSoulTurn.directive("hi").contains("under about twenty words"))
+    @Test fun the_turn_asks_for_a_beat_and_the_greeting_for_a_line() {
+        // D30: a turn is the mind's, so the soul's turn render is two to six words and never a
+        // sentence; the greeting has no mind turn to compete with and keeps its full line.
+        assertTrue(ErSoulTurn.directive("hi").contains("two to six words"))
+        assertFalse(ErSoulTurn.directive("hi").contains("under about twenty words"))
         assertTrue(ErSoulTurn.greetingDirective().contains("under about twenty words"))
     }
 
@@ -164,7 +166,7 @@ class ErSoulTurnTest {
         assertTrue(d.contains("terminal (sleep 70)"))
         assertTrue("silence must be offered", d.contains(ErSoulTurn.ESCALATE))
         assertTrue("the run's lines ride the directive", d.contains("\"Checking on it now...\""))
-        assertTrue(d.contains("never a result, a fact"))
+        assertTrue(d.contains("nothing is done until the mind says it is done"))
         assertFalse(ErSoulTurn.workingDirective("x").contains("already said"))
     }
 
@@ -180,8 +182,8 @@ class ErSoulTurnTest {
     }
 
     @Test fun a_working_line_obeys_the_contract_in_code() {
-        // A number is a fact; a long line is not one clause.
-        assertNull(ErSoulTurn.workingLine("Your server has 3 errors"))
+        // A claimed result is not the working lane's to give; a long line is not one clause.
+        assertNull(ErSoulTurn.workingLine("I've fixed your server"))
         assertNull(ErSoulTurn.workingLine("I am still checking the system status for you right now, hang on"))
     }
 
@@ -195,7 +197,9 @@ class ErSoulTurnTest {
         assertNull(ErSoulTurn.workingReject("Reading the logs now"))
         assertEquals("not-spoken", ErSoulTurn.workingReject(ErSoulTurn.ESCALATE))
         assertEquals("empty", ErSoulTurn.workingReject(""))
-        assertEquals("digits-or-markup", ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
+        // D29/#406: a number is not a reason any more; only a claimed result is.
+        assertNull(ErSoulTurn.workingReject("Three minutes and 40 seconds in"))
+        assertEquals(ErSoulTurn.REASON_UNBACKED_RESULT, ErSoulTurn.workingReject("I've booked it"))
         assertEquals(
             "too-many-words",
             ErSoulTurn.workingReject("I am still reading through the logs for you right now")

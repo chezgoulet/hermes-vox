@@ -1,0 +1,7 @@
+Sure, here is what is in the directory:
+
+```bash
+$ ls
+VOX.md
+SOUL.md
+```

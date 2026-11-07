@@ -25,8 +25,9 @@ object VoiceSpeakers {
     /** The engine's default voice: Piper 0 (the historical behaviour), Supertonic F2
      *  (DEFAULT_SPEAKER: clean in the bake-off's intelligibility check). */
     fun defaultId(engine: SherpaVoice): Int = when (engine) {
-        SherpaVoice.PIPER -> 0
         SherpaVoice.SUPERTONIC -> 1
+        // Every Piper voice — en-US and fr-FR — starts at speaker 0.
+        else -> 0
     }
 
     /** Per-engine storage keys. The modelId is stable and unique per engine. */
@@ -38,7 +39,16 @@ object VoiceSpeakers {
     fun knownCount(engine: SherpaVoice): Int = when (engine) {
         SherpaVoice.PIPER -> 904        // vits-piper-en_US-libritts_r-medium
         SherpaVoice.SUPERTONIC -> 10    // ten built-in voices
+        SherpaVoice.PIPER_SIWIS -> 1    // num_speakers: 1 (fr_FR-siwis-medium)
+        SherpaVoice.PIPER_TOM -> 1      // num_speakers: 1 (fr_FR-tom-medium)
+        SherpaVoice.PIPER_UPMC -> 2     // num_speakers: 2 (fr_FR-upmc-medium)
     }
+
+    /** UPMC's two speakers, in the order `speaker_id_map` declares them in
+     *  `fr_FR-upmc-medium.onnx.json` (index 0 = jessica, 1 = pierre). Named because
+     *  "Voice 0" tells a French speaker nothing; this is the one French voice with a
+     *  real choice, and the row offers both. */
+    val UPMC_SPEAKERS: List<Pair<Int, String>> = listOf(0 to "Jessica", 1 to "Pierre")
 
     /** The curated Piper voices offered by the Settings picker (8 of the model's 904).
      *

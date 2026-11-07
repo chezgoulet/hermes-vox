@@ -2,6 +2,11 @@
 <resources>
     <style name="HvRow">
         <item name="android:background">@drawable/bg_surface</item>
+        <!-- #224: rows carry a one-line hint under the title, so the title is often
+             two or three lines. Baseline-aligning it with the row's help chip or
+             switch pushes it past the padding box, where clipToPadding cuts the last
+             line in half. Top-align instead: every child starts inside the padding. -->
+        <item name="android:baselineAligned">false</item>
         <item name="android:padding">16dp</item>
         <item name="android:layout_marginBottom">8dp</item>
     </style>
@@ -19,5 +24,13 @@
         <item name="android:textSize">14sp</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>
+    </style>
+    <!-- A block header inside a Settings section (Listening / Recognition, Speaking /
+         Sound cues, Screen / Being): the same tag face the commands sheet uses for its
+         groups, so a section reads as named blocks, not one long list. -->
+    <style name="HvSubhead" parent="TextVox.Tag">
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingStart">4dp</item>
     </style>
 </resources>

@@ -1,5 +1,7 @@
 # Hermes Vox 0.4.0.1 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > The barge-telemetry release: measurement-only probes for the missed-barge defect
 > (deaf turns over long playback tails), a truthful gate-timeout warn, and the
 > phantom turn on hangup fixed. Zero behavior change to barge, endpointing,

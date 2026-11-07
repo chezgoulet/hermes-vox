@@ -1,5 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- #346: Android 11+ package visibility. A TTS engine is another package's service,
+         and without this intent the app cannot see or bind to it — TextToSpeech init then
+         returns ERROR (-1) even though every other app on the phone can speak. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- #329: Android 11+ package visibility again. The Settings row names the app that
+             currently receives the assistant gesture, so it must be allowed to resolve the
+             assist intent it also handles. Where several apps qualify, Android answers with
+             the platform resolver and the row says "another app" rather than guessing. -->
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
+        <!-- #429 handoff lane: `launch` resolves an app only among LAUNCHABLE activities, and
+             the `apps` action lists the same set. This is a declared visibility question — the
+             app may see launcher entries, not every installed package — and it is why a package
+             with no launcher entry is no_app. QUERY_ALL_PACKAGES is deliberately not requested:
+             "what's installed" means what a person can open. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- The two resolvers `message` and `dial` ask before they hand off: is there an app
+             for a text, and is there a dialer? Visibility only; no permission. -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- `open` resolves the URI's handler. http/https are the declared common case; a deep
+             link whose app Android cannot see still refuses no_app rather than guessing a
+             package, and naming `package` asks for exactly one target. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
     <!-- #346: Android 11+ package visibility. A TTS engine is another package's service,
          and without this intent the app cannot see or bind to it — TextToSpeech init then
@@ -18,12 +65,45 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- #325/#421: Do Not Disturb is a SPECIAL access, not a runtime grant: the user gives it on
+         Android's own screen. The phone shows whether it is granted and opens that screen; an
+         action that needs it refuses with reason=permission. -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- #429 lane 2: the calendar group. Both are runtime permissions: the sheet asks when the
+         group is turned on, and an action that lacks one refuses with reason=permission naming the
+         exact string. Read is needed to find a writable calendar, write to insert. Only
+         CalendarContract is used; no provider-specific access. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- #429 read lane: the contacts group. A runtime permission, asked when Contacts is turned
+         on; a missing one is a `permission` refusal naming this exact string. ContactsContract
+         only, and the lookup returns names, numbers and labels — never notes, addresses, photos
+         or email. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- `apps` running half: usage access is a SPECIAL access, not a runtime dialog. Declaring
+         PACKAGE_USAGE_STATS is what makes Vox appear in Settings → Special app access → Usage
+         access; the action itself reports the system's AppOps answer (AppsAccess.usageAllowed)
+         and says "cannot see what is running" until the owner grants it there. It is not
+         QUERY_ALL_PACKAGES: it reveals recent usage, not every installed package. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <!-- #429 lane 2: the Storage Access Framework is the deliberate default, so no storage
+         permission is declared for it (not READ_EXTERNAL_STORAGE, not MANAGE_EXTERNAL_STORAGE).
+         Files are read through a tree the owner picks with ACTION_OPEN_DOCUMENT_TREE; an all-files
+         opt-in would be a separate decision taken on Android's own screen. See
+         docs/MCP-SURFACE.md. -->
+    <!-- #421: deliberately NO SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM. Timers and alarms use
+         AlarmManager's OnAlarmListener form, which the exact-alarm restriction exempts; the
+         Clock app's intents were rejected because they cannot return a verifiable result or an
+         undo. See docs/MCP-PHONE.md, "Permissions". -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Model downloads keep running with the Models screen closed (ModelDownloadService). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
+        android:name=".VoxApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Hermes Vox"
@@ -46,10 +126,60 @@
             android:exported="true"
             android:screenOrientation="portrait"
             android:launchMode="singleTop"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- #370: Vox is a share target. Anything another app can hand over — a file, an
+                 image, a text block, a link — arrives at the confirmation card and is not
+                 sent until SEND. The offer copies the stream into private staging and serves
+                 it once over the tailnet; nothing is uploaded, and no new permission is asked
+                 for, because the sharing app already grants read on what it hands over.
+                 Multiple files are listed (so the share sheet still finds Vox) and refused in
+                 words until the "one per share" decision changes. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- Opening a file or a link with Vox is the same draft-and-confirm path. Only
+                 content/file schemes are registered: Vox is not a browser and must not appear
+                 as one for every http(s) link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- #329: the digital-assistant entry point. Handling android.intent.action.ASSIST
+             (+ CATEGORY_DEFAULT) is what makes an app eligible for
+             android.app.role.ASSISTANT; the role is what the assist gesture (a long press of
+             the side button, where the maker wires it to the assistant) actually invokes.
+             Translucent, no history, its own task: it exists only to hand off to the call
+             screen and must never appear as a second UI or in Recents. It is exported because
+             the system — not this app — is what starts it. -->
+        <activity
+            android:name=".AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="com.hermesvox.assist"
+            android:theme="@style/Theme.HermesVox.Assist">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
@@ -73,11 +203,31 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- The uninstall card's notification buttons. Explicit intents only; not exported. -->
+        <receiver
+            android:name=".PhoneApprovalReceiver"
+            android:exported="false" />
+
         <!-- #45: wake-word enrolment (preview) — records takes only; no service. -->
         <activity
             android:name=".WakeEnrolActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+
+        <!-- #429 media: the notification-listener access `now_playing` uses to name the active
+             session. This is a SPECIAL access: the service declaration is what makes the app
+             appear in Settings → Notification access, and only the owner can enable it there.
+             The service itself reads nothing; MediaListen asks MediaSessionManager for the
+             session list only while the grant is held. -->
+        <service
+            android:name=".MediaListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".VoiceService"
@@ -90,7 +240,7 @@
             android:foregroundServiceType="dataSync" />
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.hermesvox.fileprovider"
+            android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

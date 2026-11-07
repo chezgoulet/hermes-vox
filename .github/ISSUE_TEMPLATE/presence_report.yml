@@ -1,0 +1,102 @@
+name: Presence configuration report
+description: You changed a Presence setting and want to say what happened. The most useful report in the project right now.
+title: "[presence] <preset or setting> — <what changed>"
+labels: ["presence-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Presence has settings that trade speed, chattiness and memory against each other, and no one
+        knows the right defaults yet. A report from real use is worth more than any benchmark.
+
+        The one thing that makes a report usable is that **the configuration travels with it**. A note
+        that says "felt better" cannot be compared with anything; one that names the preset, the phone
+        and the numbers can.
+
+  - type: dropdown
+    id: preset
+    attributes:
+      label: Which configuration were you running?
+      options:
+        - Companion (default)
+        - Beat only (phone holds the line, agent answers everything)
+        - Voice answers small talk
+        - Voice answers as much as it can
+        - Custom (describe below)
+        - I did not change anything
+    validations:
+      required: true
+
+  - type: textarea
+    id: changes
+    attributes:
+      label: What did you change, and from what?
+      description: Preset name, or the individual settings and their values.
+      placeholder: "Switched from Companion to Beat only; turn-end patience 700 ms → 1000 ms."
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Phone
+      placeholder: "Pixel 7, Android 16, model installed: Gemma 4 E2B"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mind
+    attributes:
+      label: Where the agent runs
+      options:
+        - My own machine on the same network
+        - A remote server
+        - A cloud provider
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What did it feel like?
+      description: >
+        The most useful thing you can write. How long you wait before hearing anything, whether it
+        interrupts you, whether it ever went quiet after it said it would do something, whether it
+        answered things it should have looked up.
+    validations:
+      required: true
+
+  - type: textarea
+    id: numbers
+    attributes:
+      label: Numbers, if you have them
+      description: >
+        Settings → Presence → Advanced → Copy diagnostic summary. Paste it here; it carries the
+        configuration and the numbers the app actually measured. If a number is not there, the
+        build could not measure it — do not fill it in.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostic summary
+      description: >
+        Copy the diagnostic summary from the app (it contains the configuration and the measured
+        numbers, not your conversations). Attach a log file instead if you prefer — but read it first:
+        transcript logging can be on.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: honesty
+    attributes:
+      label: Before you send
+      options:
+        - label: I have removed anything personal from the log I am attaching.
+          required: false
+        - label: I am reporting what I observed, not what I assume the cause is.
+          required: false

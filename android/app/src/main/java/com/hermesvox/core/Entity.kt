@@ -79,7 +79,14 @@ internal object Entity {
     }
 
     fun open(method: String, url: String, headers: Map<String, String>, connectTimeoutMs: Int, readTimeoutMs: Int): HttpURLConnection {
+        // M4 (0.9.1 review): never send the bearer key over plain HTTP while the tunnel is
+        // down. UI paths say the same thing earlier; this is the backstop every request
+        // (a resync, a first-call ask) goes through.
+        CleartextPolicy.refusal(url)?.let { throw HermesException(it) }
         val c = URL(url).openConnection() as HttpURLConnection
+        if (c is javax.net.ssl.HttpsURLConnection) {
+            MtlsConfig.applyIfConfigured(c, url)
+        }
         c.requestMethod = method
         c.connectTimeout = connectTimeoutMs
         c.readTimeout = readTimeoutMs

@@ -1,5 +1,7 @@
 # Hermes Vox 0.3.32.2 — release notes
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Fixes
 - **Immediate silence on barge/hush/hangup**: previously up to 4s of audio kept
   playing after the cut (the stream worker resurrected playback after every stop).

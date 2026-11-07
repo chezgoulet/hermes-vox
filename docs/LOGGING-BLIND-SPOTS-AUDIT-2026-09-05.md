@@ -1,4 +1,8 @@
 # Hermes Vox — Logging Blind-Spot Audit & Patch Spec
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 **Scope:** `chezgoulet/hermes-vox` @ main. Kotlin app under `android/app/src/main/java/com/hermesvox/` (22 files) + Go `voice/`, `mobile/`, `cmd/` packages. Read-only audit; no files modified.
 

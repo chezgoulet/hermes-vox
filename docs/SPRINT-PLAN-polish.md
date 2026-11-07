@@ -1,4 +1,8 @@
 # Hermes Vox — Sprint 6: Polish / UX Sprint (before Enhanced Realtime)
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 **Repo:** chezgoulet/hermes-vox · **Branch:** feature/polish
 **Model:** `deepseek/deepseek-v4-flash-vision-exp` · **Owner/approver:** Torc

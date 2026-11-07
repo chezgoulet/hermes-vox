@@ -1,0 +1,114 @@
+{
+  "fixture": "runs-approval",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "response.created",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "",
+          "done": false
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "I need to delete the scratch directory.",
+          "commentary": "",
+          "text": "I need to delete the scratch directory.",
+          "done": false
+        },
+        {
+          "type": "approval.request",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "I need to delete the scratch directory.",
+          "done": false,
+          "approval": {
+            "run_id": "run_parity",
+            "request_id": "req_1",
+            "command": "rm -rf /tmp/vox-scratch",
+            "description": "delete the scratch directory",
+            "reason": "",
+            "choices": [
+              "once",
+              "session",
+              "deny"
+            ]
+          }
+        },
+        {
+          "type": "response.output_text.delta",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": " It is gone.",
+          "commentary": "",
+          "text": "I need to delete the scratch directory. It is gone.",
+          "done": false
+        },
+        {
+          "type": "response.completed",
+          "response_id": "",
+          "item_type": "",
+          "item_id": "",
+          "name": "",
+          "arguments": "",
+          "output": "",
+          "delta": "",
+          "commentary": "",
+          "text": "I need to delete the scratch directory. It is gone.",
+          "done": true
+        }
+      ],
+      "snapshots": [
+        {
+          "done": true,
+          "error": "",
+          "response_id": "",
+          "text": "I need to delete the scratch directory. It is gone.",
+          "transcript": "I need to delete the scratch directory. It is gone."
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/runs",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "model": "hermes-agent",
+      "input": "hi",
+      "provider": "",
+      "previous_response_id": ""
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/run_parity/events",
+      "authorization": "Bearer parity-key",
+      "session_key": "agent:vox:parity",
+      "accept": "text/event-stream"
+    }
+  ]
+}

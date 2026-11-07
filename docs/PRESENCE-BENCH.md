@@ -1,5 +1,7 @@
 # Presence bench — Qwen 3.5 0.8B and the lighter candidates on a Pixel 7
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 D4 (`docs/DECISIONS.md`) makes `Qwen3.5-0.8B_int8.litertlm` the default presence model, on the
 runtime we already ship, and commits to measuring load time and resident memory on the Pixel
 before calling it done. This is that measurement, plus SmolLM2 360M and the current Gemma 4 E2B,
@@ -77,7 +79,7 @@ bash scripts/presence-bench-gpu-probe.sh                  # memory during an ini
 python3 scripts/presence-bench-report.py presence-bench-results
 ```
 
-The drivers take `/home/c/phone.lock` for the whole install-and-measure window: the phone is
+The drivers take `$HOME/phone.lock` for the whole install-and-measure window: the phone is
 shared with other agents, and the first attempt at this bench died because another agent's
 install landed under the instrumented process mid-run.
 
@@ -127,7 +129,7 @@ to Qwen would put that prefill back on every turn.
 
 ### What the numbers say about the budget
 
-A presence line is 8–15 tokens. At the measured rates:
+An aside is 8–15 tokens. At the measured rates:
 
 | Model/backend | First token | 12-token line | Budget (300 / 700 ms) |
 |---|---|---|---|

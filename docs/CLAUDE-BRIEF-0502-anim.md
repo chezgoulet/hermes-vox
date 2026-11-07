@@ -1,5 +1,7 @@
 # BRIEF — 0.5.0.2: the animation facelift. YOU are the motion designer.
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## SCOPE WARNING — read this first (this is the #1 trap)
 You are working in a repo that is a **Go module at the root** (`go.mod`, root
 `AGENTS.md` about the Go voice stack, a top-level `app` WASM binary, MANY `build_*.log`,

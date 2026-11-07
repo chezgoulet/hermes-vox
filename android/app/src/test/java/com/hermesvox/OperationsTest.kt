@@ -1,0 +1,138 @@
+package com.hermesvox
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** #281: the state line's words for a tool step, from the stream's own two facts. */
+class OperationsTest {
+
+    @Test fun builtInToolIsNamedInPlainLanguageWithItsTarget() {
+        val s = Operations.step("web_search", """{"query":"trail conditions Mount Monadnock"}""")
+        assertEquals("Searching the web · trail conditions Mount Monadnock", Operations.running(s, 0))
+        assertEquals("Searched the web · trail conditions Mount Monadnock", Operations.finished(s))
+    }
+
+    @Test fun urlIsNamedByHostAndPathByFile() {
+        assertEquals("Reading a web page · example.org",
+            Operations.running(Operations.step("web_extract", """{"urls":["x"],"url":"https://www.example.org/a/b"}"""), 0))
+        assertEquals("Reading a file · notes.md",
+            Operations.running(Operations.step("read_file", """{"path":"/srv/notes/notes.md"}"""), 0))
+    }
+
+    @Test fun calendarAndEmailToolsAreNamedByWhatTheyTouch() {
+        assertEquals("Checking your calendar · today",
+            Operations.running(Operations.step("mcp_google_calendar_list_events", """{"date":"today"}"""), 0))
+        assertEquals("Changing your calendar",
+            Operations.running(Operations.step("mcp_google_calendar_delete_event", "{}"), 0))
+        assertEquals("Sending an email · Can't make it today",
+            Operations.running(Operations.step("mcp_gmail_send", """{"subject":"Can't make it today","body":"long private text"}"""), 0))
+        assertEquals("Drafting an email", Operations.running(Operations.step("gmail_create_draft", ""), 0))
+    }
+
+    @Test fun contentIsNeverTheTarget() {
+        // An email body or a file's contents is not what the line names.
+        val s = Operations.step("write_file", """{"content":"secret plans"}""")
+        assertEquals("Writing a file", Operations.running(s, 0))
+    }
+
+    @Test fun unknownToolIsHumanisedFromItsName() {
+        assertEquals("Using github: list issues", Operations.running(Operations.step("mcp_github_list_issues", "{}"), 0))
+        assertEquals("Using home assistant", Operations.running(Operations.step("home_assistant", ""), 0))
+        // #404: free text is the runs route's preview of the primary argument — a subject.
+        assertEquals("Using home assistant · lights off", Operations.running(Operations.step("home_assistant", "lights off"), 0))
+        // An identifier must still read as words, even when no table knows the tool.
+        assertEquals("Using some new tool", Operations.running(Operations.step("some_new_tool", "{}"), 0))
+        assertEquals("Using odd server do the thing", Operations.running(Operations.step("odd.server-do_the.thing", "{}"), 0))
+    }
+
+    @Test fun memoryWriteIsNotACheck() {
+        assertEquals("Updating memory", Operations.running(Operations.step("memory", """{"action":"add","content":"x"}"""), 0))
+        assertEquals("Checking memory", Operations.running(Operations.step("memory", "{}"), 0))
+    }
+
+    @Test fun commandRunSaysWhatItRan() {
+        // #377 / T27: this is verbatim the argument text the stream hands the app for the
+        // `terminal` call in `testdata/stream/tools.sse` — Stream.dispatch keeps the JSON
+        // string's source text with only the quotes trimmed, so the escapes survive and the
+        // text is not itself an object. It used to fail the parse, and the line fell back to
+        // the bare terminal verb with nothing in it.
+        val args = """{\"command\":\"date\"}"""
+        val s = Operations.step("terminal", args)
+        assertEquals("Running a command · date", Operations.running(s, 0))
+        assertEquals("Ran a command · date", Operations.finished(s))
+        assertNotEquals("Running a command", Operations.running(s, 0))
+        assertNotEquals("Ran a command", Operations.finished(s))
+    }
+
+    @Test fun everyStepKeepsItsSubjectFromTheStreamsArgumentText() {
+        // The same escaping reached every tool, so each step lost the thing it acts on.
+        assertEquals("Searching the web · trail conditions",
+            Operations.running(Operations.step("web_search", """{\"query\":\"trail conditions\"}"""), 0))
+        assertEquals("Checking your calendar · today",
+            Operations.running(Operations.step("mcp_google_calendar_list_events", """{\"date\":\"today\"}"""), 0))
+        // The clean object is still read: the line does not depend on which form arrives.
+        assertEquals("Running a command · date",
+            Operations.running(Operations.step("terminal", """{"command":"date"}"""), 0))
+    }
+
+    @Test fun longStepShowsThatItIsStillMoving() {
+        val s = Operations.step("terminal", """{"command":"gws calendar events list"}""")
+        assertEquals("Running a command · gws calendar events list", Operations.running(s, Operations.LONG_MS - 1))
+        // The first move is indeterminate: no count exists yet, and no progress is claimed.
+        assertEquals("Running a command · gws calendar events list · still working", Operations.running(s, Operations.LONG_MS))
+        assertEquals("Running a command · gws calendar events list · still working, 10 s", Operations.running(s, 12_400))
+        assertEquals("Running a command · gws calendar events list · still working, 15 s", Operations.running(s, 15_000))
+    }
+
+    @Test fun longWordsMoveBeforeTheBeingStalls() {
+        // #280 #281 item 4: the line is proof; the aura is only a sign. The words start
+        // moving at 2 s, the being's stall is 2.5 s — so the line never waits on the aura.
+        assertTrue(Operations.LONG_MS < MotionState.STALL_MS)
+        val s = Operations.step("web_search", """{"query":"x"}""")
+        val base = Operations.running(s, 0)
+        val moved = Operations.running(s, Operations.LONG_MS)
+        assertNotEquals(base, moved)
+        assertTrue("the line says it is still moving", moved.contains("still working"))
+        assertFalse("no percentage we cannot justify", moved.contains("%"))
+    }
+
+    @Test fun longTargetIsCutToOneShortLine() {
+        val s = Operations.step("web_search", """{"query":"a\nvery long query that goes on and on and on forever"}""")
+        val line = Operations.running(s, 0)
+        assertEquals("Searching the web · a very long query that goes on and on a…", line)
+    }
+
+    @Test fun failureIsOnlyWhatHermesReportsAsOne() {
+        assertEquals("permission denied", Operations.failure("""{"error":"permission denied"}"""))
+        assertEquals("exit code 2", Operations.failure("""{"output":"","exit_code":2,"error":null}"""))
+        assertEquals("quota", Operations.failure("""{"error":{"message":"quota"}}"""))
+        assertNull(Operations.failure("""{"output":"ok","exit_code":0,"error":null}"""))
+        // Prose is never read for failure words.
+        assertNull(Operations.failure("Error: this text merely mentions an error"))
+        assertNull(Operations.failure(""))
+    }
+
+    @Test fun failedLineSaysWhatFailedAndWhy() {
+        val s = Operations.step("mcp_gmail_send", "{}")
+        assertEquals("✕ Sending an email failed — permission denied", Operations.failed(s, "permission denied"))
+    }
+
+    /** #404: the runs route's tool.started carries a text preview, not JSON arguments.
+     *  The line must keep its subject either way. */
+    @Test
+    fun `a runs preview names the subject the arguments would have`() {
+        assertEquals(Operations.running(Operations.step("terminal", """{"command":"date"}"""), 0),
+            Operations.running(Operations.step("terminal", "date"), 0))
+        assertEquals(Operations.running(Operations.step("read_file", """{"path":"/srv/notes/notes.md"}"""), 0),
+            Operations.running(Operations.step("read_file", "/srv/notes/notes.md"), 0))
+        assertEquals(Operations.running(Operations.step("web_extract", """{"url":"https://www.example.org/a/b"}"""), 0),
+            Operations.running(Operations.step("web_extract", "https://www.example.org/a/b"), 0))
+        // An unparseable JSON-looking blob is not a subject.
+        assertEquals(Operations.running(Operations.step("terminal", ""), 0),
+            Operations.running(Operations.step("terminal", "{broken"), 0))
+    }
+}

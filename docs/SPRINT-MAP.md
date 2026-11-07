@@ -1,4 +1,8 @@
 # SPRINT MAP — 0.5.3 fix batch (from Opus review). For delegation to a CHEAP model.
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 Target: chezgoulet/hermes-vox, base = main HEAD 9c1a95f5 (0.5.2). All findings from
 docs/REVIEW-0.5.2-findings.md. Plan produced by Torc after a planner-model attempt

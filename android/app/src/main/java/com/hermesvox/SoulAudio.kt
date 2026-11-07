@@ -13,7 +13,7 @@ package com.hermesvox
  * The audio never leaves the phone: it goes to the on-device model and nowhere else.
  */
 object SoulAudio {
-    /** Settings switch (Enhanced Realtime): the soul hears the caller's tone. Default on. */
+    /** Settings switch (Presence): the soul hears the caller's tone. Default on. */
     const val PREF = "er_soul_hears"
     const val MAX_SECONDS = 8
     /** Below this there is too little voice to read a tone from. */

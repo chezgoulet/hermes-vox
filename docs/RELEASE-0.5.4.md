@@ -1,5 +1,7 @@
 # Hermes Vox 0.5.4 — reliability batch part 2 + Kotlin 2.2 toolchain
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## The six review findings (deepseek-v4-flash sub-agents, the mechanical half)
 Built from the Opus review sprint map. Each from an isolated clone, KEEP-list verified.
 

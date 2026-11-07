@@ -27,14 +27,34 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     override val available: Boolean get() = loaded
 
+    /** The KV cache this engine is built with (Phase 2 of the memory budget): the shipped
+     *  8192 unless a debug pref names 4096 or 2048. `maxNumTokens` IS the cache, so this is
+     *  read at load and cannot change under a running engine. */
+    private val kvTokens: Int
+        get() = MemoryBudget.kvTokens(
+            context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+                .getInt(MemoryBudget.PREF_KV_TOKENS, MemoryBudget.KV_DEFAULT))
+
+    /** Whether THIS load builds the audio encoder (MemoryBudget.PREF_HEARS, default true).
+     *  Off is the "the soul speaks, it does not listen" arm: the engine comes up text-only and
+     *  `hears` is false for the session, so a caller's audio is never sent to it either. */
+    private val hearingEnabled: Boolean
+        get() = MemoryBudget.hears(
+            context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+                .getBoolean(MemoryBudget.PREF_HEARS, true))
+
     private val modelFile get() = File(context.filesDir, "models/gemma-e2b/gemma-4-E2B-it.litertlm")
 
     /**
-     * The soul prompt (ER Phases 2-4): the mirrored VOX.md, when a valid one
-     * exists, IS the persona — the agent's own distilled identity (Contract +
-     * Soul) wrapped by the voice-not-mind prelude. Without a mirror, the
-     * built-in generic persona holds the line (ER degrades, never breaks).
-     * Read per generation: a Resync takes effect without a reload.
+     * The soul prompt (ER Phases 2-4): the ACTIVE PROFILE's mirrored VOX.md, when a valid
+     * one exists, IS the persona — the agent's own distilled identity (Contract + Soul)
+     * wrapped by the voice-not-mind prelude. Without a mirror, the built-in generic persona
+     * holds the line (ER degrades, never breaks).
+     *
+     * Read per generation, from `filesDir/vox/<active profile>/VOX.md` (VoxMirror.file):
+     * a Resync or a profile switch takes effect without a reload. The warm conversation is
+     * rebuilt when this string changes — see [generateWarm] — and a switch re-primes it
+     * eagerly through [reprime] so the new entity is the one the next render speaks as.
      */
     private val persona: String
         get() = VoxSoul.soulPrompt(VoxMirror.read(context) ?: "")
@@ -80,7 +100,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 // "warm-up renders over turn 1"). The soul is available once it is primed.
                 warmUp()
                 loaded = true
-                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears (primed)")
+                VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears kv=$kvTokens (primed)")
                 onReady(true)
                 // The full-vs-minimal prefill probe is diagnostic and holds the engine for
                 // seconds, so it runs only for a verbose-log field session, after ready.
@@ -100,6 +120,11 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      *  device, instead of leaving it to inference from frame drops. */
     @Volatile var activeBackend: String = "none"
         private set
+
+    /** True between a load thread's start and its callback. The call-open path uses it so it
+     *  never opens a second `event=presence-load` pair for a load it did not start — those
+     *  `ms=` values are quoted in docs/BASELINE.md and must stay one per real load. */
+    val isLoading: Boolean get() = loading
 
     /** A real load failure this session (no backend could start the model) — distinct from the
      *  `false` a caller gets while another load is already in flight. */
@@ -174,9 +199,19 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         // Each accelerator is tried WITH the audio encoder first (the soul hears the caller's
         // tone), then text-only: a model file or device without a working audio path must cost
         // the soul its ears, never its voice.
-        val attempts: List<Triple<String, () -> Backend, Boolean>> = listOf(
+        //
+        // The audio encoder and its adapter are two of the bundle's sections (`static_audio_encoder`
+        // -> XNNPack on the CPU, `audio_adapter`), and the layer only EXPRESSES: the caller's words
+        // arrive as text from the gateway and the mic belongs to the call's own recogniser. So
+        // "does presence need ears" is a measurement, not a guess, and it is measured by building
+        // the engine without them (MemoryBudget.PREF_HEARS, default true = today's behaviour).
+        val withAudioAttempts = listOf(
             Triple("gpu", { Backend.GPU() }, true), Triple("gpu", { Backend.GPU() }, false),
             Triple("cpu", { Backend.CPU() }, true), Triple("cpu", { Backend.CPU() }, false))
+        val deafAttempts = listOf(
+            Triple("gpu", { Backend.GPU() }, false), Triple("cpu", { Backend.CPU() }, false))
+        val attempts: List<Triple<String, () -> Backend, Boolean>> =
+            if (hearingEnabled) withAudioAttempts else deafAttempts
         var lastError: Throwable? = null
         for ((name, backend, withAudio) in attempts) {
             try {
@@ -192,7 +227,10 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     // the persona is ~600 tokens and a render is capped at 256 output.
                     // 8k keeps real headroom for a growing VOX.md and for bounded
                     // conversation reuse later, while cutting the cache 4x.
-                    maxNumTokens = SoulBudget.MAX_TOKENS,
+                    // Phase 2 (memory budget): 8192 is the shipped default; 4096/2048 are
+                    // reachable only through the debug pref, and the value is logged so a
+                    // run can be attributed to an arm without trusting the settings screen.
+                    maxNumTokens = kvTokens,
                     // 0.8/M2.1: LiteRT-LM's docs call this out ("Pick a writable dir.
                     // This can improve 2nd load time.") and its published benchmarks are
                     // cache-enabled — we were paying the uncached first-load path on
@@ -217,6 +255,154 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     private val loadLock = Object()
     @Volatile private var loading = false
+
+    /**
+     * Phase 4: release the Engine. This is the only code path in the app that returns the
+     * presence layer's memory — measured on a Pixel 7 at ~2.2 GB of MemAvailable between
+     * "resident" and "released" (docs/BASELINE.md). It is NOT on by default: [requestUnload]
+     * consults [MemoryBudget.release], so a phone with no pref behaves exactly as 0.9.1
+     * (load at resume, keep forever). The trade is the reload: 5.6–7.7 s measured cold, the
+     * next call paying it inside the warm gate.
+     *
+     * Ordering: flip [loaded] false FIRST so a render that arrives during the teardown falls
+     * back to the routed line instead of touching a closed engine, then close the rolling
+     * conversation under [genLock] (the same lock a render holds), then the engine.
+     */
+    fun unload(reason: String) {
+        synchronized(loadLock) { if (loading) { VoxLog.d("event=presence-unload reason=$reason skipped=loading"); return } }
+        if (!loaded && llm == null) return
+        // A release disarms any pending idle release: there is nothing left to release, and a
+        // stale arm would log a second `presence-unload` after the next load.
+        idleArmed = false
+        try { idleHandler.removeCallbacks(idleTask) } catch (_: Throwable) {}
+        openIdleArmed = false
+        try { idleHandler.removeCallbacks(openIdleTask) } catch (_: Throwable) {}
+        loaded = false
+        val freed = try {
+            synchronized(genLock) {
+                closeSoul()
+                val e = llm
+                llm = null
+                try { e?.close() } catch (t: Throwable) { VoxLog.e("GemmaExpress unload: engine close failed (${t.message})") }
+                e != null
+            }
+        } catch (t: Throwable) {
+            VoxLog.e("GemmaExpress unload failed: ${t.message}"); false
+        }
+        loadFailed = false   // a released engine is not a device that cannot run one
+        activeBackend = "none"
+        val mi = android.app.ActivityManager.MemoryInfo().also {
+            context.getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it)
+        }
+        VoxLog.d("event=presence-unload reason=$reason released=$freed availMb=${mi.availMem / 1048576}")
+    }
+
+    /**
+     * Phase 5 — the DELAYED arm (docs/BASELINE.md, "Memory"). Called at call end and when the
+     * Presence is switched off; [MemoryBudget.release] decides what actually happens:
+     *
+     *  - [MemoryBudget.Release.KEEP]        — the off switch: nothing at all (pref 0);
+     *  - [MemoryBudget.Release.ON_HANGUP]   — release now (the arm that charges 7.7 s to every
+     *    redial, measured in Phase 4 — never shipped);
+     *  - [MemoryBudget.Release.AFTER_DELAY] — arm a timer for N minutes and release then. **This
+     *    is the shipped default, at one minute (D27):** the memory comes back while the phone sits
+     *    in a pocket, and a redial inside the window still finds the engine warm
+     *    ([cancelIdleUnload] on call start).
+     *
+     * The timer is read at the trigger, not per render, so changing the pref takes effect at the
+     * next hangup without a reload.
+     */
+    fun requestUnload(trigger: String) {
+        val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val delayMin = prefs.getInt(MemoryBudget.PREF_UNLOAD_DELAY, MemoryBudget.DELAY_DEFAULT)
+        when (MemoryBudget.release(prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false), delayMin)) {
+            MemoryBudget.Release.KEEP -> cancelIdleUnload("policy-keep")
+            MemoryBudget.Release.ON_HANGUP -> {
+                cancelIdleUnload("policy-on-hangup")
+                unloadAsync(trigger)
+            }
+            MemoryBudget.Release.AFTER_DELAY -> armIdleUnload(trigger, MemoryBudget.unloadDelayMinutes(delayMin))
+        }
+    }
+
+    /** Main-thread handler for the idle timer: a call can start from the UI, and the timer must
+     *  be cancelled by the same thread discipline that posted it. */
+    private val idleHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+    @Volatile private var idleArmed = false
+
+    /** Fires at the end of the delay. The log line the field run greps for is
+     *  `event=presence-unload reason=idle` — emitted by [unload] itself, so a delayed release
+     *  and an immediate one are told apart by their reason, not by two log shapes. */
+    private val idleTask = Runnable {
+        idleArmed = false
+        VoxLog.d("event=presence-unload-due reason=idle")
+        unloadAsync("idle")
+    }
+
+    private fun armIdleUnload(trigger: String, minutes: Int) {
+        idleHandler.removeCallbacks(idleTask)
+        idleArmed = true
+        VoxLog.d("event=presence-unload-arm trigger=$trigger minutes=$minutes")
+        idleHandler.postDelayed(idleTask, MemoryBudget.unloadDelayMs(minutes))
+    }
+
+    /** A call starting, or a load being asked for, beats the clock: the delayed arm exists so
+     *  that it never charges the reload to a redial, so anything that wants the engine cancels
+     *  the pending release. Logged, because "the release never happened" must be explainable
+     *  from the field log rather than look like a timer that silently died. */
+    fun cancelIdleUnload(reason: String) {
+        cancelIdleWhileOpen(reason)
+        if (!idleArmed) return
+        idleArmed = false
+        idleHandler.removeCallbacks(idleTask)
+        VoxLog.d("event=presence-unload-cancel reason=$reason")
+    }
+
+    // ---- Release while the app is open (MemoryBudget.PREF_IDLE_OPEN_MIN) ------------------
+    //
+    // The arm above only exists once a call has ended: an app launched and then left on a desk
+    // never arms anything, and the measured result is a loaded engine held at ~2.7 GB PSS for
+    // as long as the process lives (docs/PRESENCE-COST.md). This arm is the same release, armed
+    // by "no call is live" instead of "a call just ended".
+    //
+    // Off by default: [MemoryBudget.idleOpenMinutes] is 0 for an absent pref, so a phone with no
+    // pref behaves exactly as 0.9.1. Off means no timer is posted at all.
+
+    @Volatile private var openIdleArmed = false
+
+    private val openIdleTask = Runnable {
+        openIdleArmed = false
+        VoxLog.d("event=presence-unload-due reason=idle-open")
+        unloadAsync("idle-open")
+    }
+
+    /** Arm the open-idle release. Called when a load finishes and no call is live; a no-op
+     *  unless the pref names a delay, so today's behaviour costs one pref read. */
+    fun armIdleWhileOpen() {
+        val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        val minutes = MemoryBudget.idleOpenMinutes(prefs.getInt(MemoryBudget.PREF_IDLE_OPEN_MIN, 0))
+        if (minutes <= 0 || !loaded) return
+        idleHandler.removeCallbacks(openIdleTask)
+        openIdleArmed = true
+        VoxLog.d("event=presence-idle-open-arm minutes=$minutes")
+        idleHandler.postDelayed(openIdleTask, MemoryBudget.idleOpenMs(minutes))
+    }
+
+    /** Nothing to release, or a call wants the engine: drop the timer. Logged when it was armed,
+     *  so the field log can explain an arm that never fired. */
+    fun cancelIdleWhileOpen(reason: String) {
+        if (!openIdleArmed) return
+        openIdleArmed = false
+        idleHandler.removeCallbacks(openIdleTask)
+        VoxLog.d("event=presence-idle-open-cancel reason=$reason")
+    }
+
+    /** Never on the caller's thread: endCall() runs on main, and closing the Engine frees
+     *  ~2 GB of GPU/native memory — that is a stall, not an operation. */
+    private fun unloadAsync(reason: String) {
+        kotlin.concurrent.thread(isDaemon = true, name = "presence-unload") { unload(reason) }
+    }
 
     /** True when the engine came up with its audio encoder; cleared for the session if a heard
      *  render fails, so one bad audio path degrades to text-only rather than failing every turn. */
@@ -246,7 +432,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         }
         val t0 = System.currentTimeMillis()
         try {
-            return render(intent, content, tone, spaced, if (hears) audio else null)
+            return render(intent, content, tone, spaced, if (hears) audio else null, t0)
         } finally {
             // 0.8/M1: the soul's OWN latency is the number that decides whether the
             // instant lane is viable (gate G2). Measured on-device, never estimated.
@@ -256,14 +442,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     }
 
     /** The render itself, timed by [express]. */
-    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true, audio: ByteArray? = null): String {
+    private fun render(intent: String, content: String, tone: String, spaced: Boolean = true, audio: ByteArray? = null, reqStartMs: Long = 0L): String {
         if (!loaded || llm == null) return fallback.express(intent, content, tone)   // soul intents -> "" (RoutedExpress)
         // The soul intents carry a complete directive (ErSoulTurn); anything else is the legacy
         // operator-directive shape.
         val prompt = if (intent in VoiceOrchestrator.SOUL_INTENTS) content
             else "Operator directive: intent=$intent. Content to render: $content"
         return try {
-            generateWarmHeard(prompt, audio)
+            generateWarmHeard(prompt, audio, reqStartMs, intent)
                 // 0.6.3: the render rails — cap runaway output, enforce spacing.
                 .let { ErGemmaGuard.checkRender(it, System.currentTimeMillis(), if (spaced) lastRenderAt else 0L) ?: "" }
                 // The soul intents are parsed by the caller: blank means "nothing", never the
@@ -295,22 +481,22 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /** A heard render; if the audio path fails, drop the soul's ears for the session and render
      *  the same directive text-only — the turn still gets its decision. */
-    private fun generateWarmHeard(prompt: String, audio: ByteArray?): String {
-        if (audio == null) return generateWarm(prompt)
+    private fun generateWarmHeard(prompt: String, audio: ByteArray?, reqStartMs: Long = 0L, tag: String = ""): String {
+        if (audio == null) return generateWarm(prompt, null, reqStartMs, tag)
         val t0 = System.currentTimeMillis()
         return try {
-            generateWarm(prompt, audio).also {
+            generateWarm(prompt, audio, reqStartMs, tag).also {
                 VoxLog.d("event=soul-heard audioBytes=${audio.size} ms=${System.currentTimeMillis() - t0}")
             }
         } catch (e: Throwable) {
             hears = false
             VoxLog.e("GemmaExpress: heard render failed (${e.message}) — the soul reads words only this session")
-            generateWarm(prompt)
+            generateWarm(prompt, null, reqStartMs, tag)
         }
     }
 
     /** Render [prompt] on the warm soul conversation, creating or rotating it as needed. */
-    private fun generateWarm(prompt: String, audio: ByteArray? = null): String {
+    private fun generateWarm(prompt: String, audio: ByteArray? = null, reqStartMs: Long = 0L, tag: String = ""): String {
         val engine = llm ?: return ""
         val p = persona
         synchronized(genLock) {
@@ -318,7 +504,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
             var conv = soulConv
             val tokens = try { conv?.getTokenCount() ?: 0 } catch (_: Throwable) { SoulBudget.MAX_TOKENS }
             val alive = try { conv?.isAlive == true } catch (_: Throwable) { false }
-            if (conv == null || !alive || soulConvPersona != p || SoulBudget.shouldRotate(tokens)) {
+            if (conv == null || !alive || soulConvPersona != p || MemoryBudget.mustRotate(tokens, kvTokens)) {
                 if (conv != null) VoxLog.d("event=soul-conv-rotate tokens=$tokens alive=$alive personaChanged=${soulConvPersona != p}")
                 closeSoul()
                 conv = engine.createConversation(ConversationConfig(
@@ -328,7 +514,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 soulConv = conv; soulConvPersona = p
             }
             return try {
-                val out = send(conv!!, prompt, audio)
+                val out = send(conv!!, prompt, audio, reqStartMs, tag)
                 if (cancelRequested) "" else out
             } catch (t: Throwable) {
                 closeSoul()   // a failed conversation is never reused
@@ -340,6 +526,35 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private fun closeSoul() {
         try { soulConv?.close() } catch (_: Throwable) {}
         soulConv = null; soulConvPersona = null
+    }
+
+    /**
+     * Re-prime the warm model on the persona of the profile that is active NOW.
+     *
+     * WHAT THE ENGINE ACTUALLY DOES (owner rule c). The persona is not re-sent per render:
+     * [generateWarm] prefills it into ONE rolling conversation when that conversation is
+     * created, and recreates the conversation only when the persona string differs
+     * (`soulConvPersona != p`). So a profile switch does change the persona — but only on
+     * the NEXT render, and that render pays the whole prefill inside the caller's turn.
+     *
+     * This closes the old entity's conversation and pays the prefill here instead, off the
+     * UI thread, so the warm model holds the new profile's document before the next render
+     * (the switch's own turn, or the next call's greeting) and cannot answer as the old
+     * entity. When the new profile has no mirror yet, the conversation is only closed: the
+     * call gate fetches the document first and never lets Presence speak an empty soul.
+     *
+     * A no-op load path: if the engine is not loaded, the next [load] primes with whatever
+     * document the active profile has by then.
+     */
+    fun reprime(reason: String) {
+        if (llm == null) { synchronized(genLock) { closeSoul() }; return }
+        kotlin.concurrent.thread(isDaemon = true, name = "soul-reprime") {
+            synchronized(genLock) { closeSoul() }
+            val ms = timed { generateWarm(PRIME_DIRECTIVE) }
+            VoxLog.d(
+                "event=soul-reprime reason=$reason profile=${VoxMirror.activeProfile(context)} " +
+                    "personaChars=${persona.length} primeMs=$ms")
+        }
     }
 
     /** Stop the render in flight (a turn decision is pre-empting a narration). Its output is
@@ -358,7 +573,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         return synchronized(genLock) {
             engine.createConversation(ConversationConfig(
                 systemInstruction = Contents.of(personaOverride),
-                    // 0.8/M3: bounds a presence line, and sits ABOVE ErGemmaGuard's char
+                    // 0.8/M3: bounds an aside, and sits ABOVE ErGemmaGuard's char
                     // cap so the guard stays the binding UX control and this is only the
                     // hard backstop against a runaway render. 256 tokens (~1.7x the char
                     // guard) leaves room for the soul to hold a short conversation rather
@@ -370,7 +585,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
 
     /** One message on [conv], collected via the callback API. [audio] (a WAV) rides the same
      *  message ahead of the text, so the model hears the caller before it reads the directive. */
-    private fun send(conv: Conversation, prompt: String, audio: ByteArray? = null): String {
+    private fun send(conv: Conversation, prompt: String, audio: ByteArray? = null, reqStartMs: Long = 0L, tag: String = ""): String {
         run {
                     // 0.6.6: the CALLBACK API, not the Flow API. The Flow overload's
                     // onDone closes the ProducerScope channel
@@ -384,12 +599,25 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                     val sb = StringBuilder()
                     val done = java.util.concurrent.CountDownLatch(1)
                     var error: Throwable? = null
+                    // Phase 1 (#209 gap 2): the presence render's FIRST TOKEN, on the same
+                    // VoxLog stream as event=turn so the two can be put side by side. Until now
+                    // only the whole render was timed (`event=er-soul ms=`), which is why
+                    // PRESENCE-BENCH's 289 ms first-token baseline could never be compared to
+                    // a field row. Logged once per request; a warm-up/probe render (no start
+                    // passed) does not log, exactly as it does not feed ErTelemetry.
+                    var firstTokenLogged = false
                     val cb = object : com.google.ai.edge.litertlm.MessageCallback {
                         override fun onMessage(m: com.google.ai.edge.litertlm.Message) {
                             // The message's Contents may carry text and/or tool
                             // calls; the presence layer only renders TEXT parts.
                             for (c in m.contents.contents) {
-                                if (c is com.google.ai.edge.litertlm.Content.Text) sb.append(c.text)
+                                if (c is com.google.ai.edge.litertlm.Content.Text) {
+                                    if (!firstTokenLogged && reqStartMs > 0L && c.text.isNotEmpty()) {
+                                        firstTokenLogged = true
+                                        VoxLog.d("event=er-soul-first-token ms=${System.currentTimeMillis() - reqStartMs} intent=$tag")
+                                    }
+                                    sb.append(c.text)
+                                }
                             }
                         }
                         override fun onDone() { done.countDown() }

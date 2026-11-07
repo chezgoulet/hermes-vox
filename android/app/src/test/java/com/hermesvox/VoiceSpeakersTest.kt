@@ -50,9 +50,30 @@ class VoiceSpeakersTest {
     @Test fun per_engine_default_is_used_when_nothing_is_stored() {
         assertEquals(0, VoiceSpeakers.defaultId(SherpaVoice.PIPER))
         assertEquals(1, VoiceSpeakers.defaultId(SherpaVoice.SUPERTONIC))
+        assertEquals(0, VoiceSpeakers.defaultId(SherpaVoice.PIPER_SIWIS))
+        assertEquals(0, VoiceSpeakers.defaultId(SherpaVoice.PIPER_TOM))
+        assertEquals(0, VoiceSpeakers.defaultId(SherpaVoice.PIPER_UPMC))
         val store = MapPrefs()
         assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER, 904))
         assertEquals(1, VoiceSpeakers.resolve(store, SherpaVoice.SUPERTONIC, 10))
+        assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER_SIWIS, 1))
+        assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER_UPMC, 2))
+    }
+
+    /** The French voices ship the speaker counts their `.onnx.json` declares: Siwis and
+     *  Tom one (their row hides), UPMC two (its row appears, with both voices). */
+    @Test fun french_voices_claim_the_speaker_counts_their_model_configs_declare() {
+        assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_SIWIS))
+        assertEquals(1, VoiceSpeakers.knownCount(SherpaVoice.PIPER_TOM))
+        assertEquals(2, VoiceSpeakers.knownCount(SherpaVoice.PIPER_UPMC))
+        assertEquals(listOf(0, 1), VoiceSpeakers.UPMC_SPEAKERS.map { it.first })
+        assertEquals(listOf("Jessica", "Pierre"), VoiceSpeakers.UPMC_SPEAKERS.map { it.second })
+        // Both UPMC voices are selectable and survive a restart, per engine.
+        val store = MapPrefs(mutableMapOf())
+        VoiceSpeakers.save(store, SherpaVoice.PIPER_UPMC, 1)
+        assertEquals(1, VoiceSpeakers.resolve(MapPrefs(store.map.toMutableMap()), SherpaVoice.PIPER_UPMC, 2))
+        // …and the en-US selection is a different namespace, not inherited.
+        assertEquals(0, VoiceSpeakers.resolve(store, SherpaVoice.PIPER, 904))
     }
 
     @Test fun default_is_clamped_by_a_tiny_engine() {

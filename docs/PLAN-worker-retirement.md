@@ -1,4 +1,8 @@
 # SPEC — Worker-owner reply retirement + start-stream provenance (0.3.32.3)
+> Historical record. This describes the state and reasoning at the time it was written; it is
+> not maintained and may describe behaviour that has since changed.
+
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
 
 ## Field evidence (2026-09-06 12:44 log)
 - Barge silence fix PROVEN: event=tts-stop reason=barge-in msSinceBarge=377 (was up to 4000).

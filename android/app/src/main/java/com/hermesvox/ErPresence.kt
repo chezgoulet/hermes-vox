@@ -5,15 +5,15 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * ErPresence — the Enhanced Realtime presence loop (ER Phase 4), owned by the
- * VoiceController. Composes the two pure pieces — [ErIntent] (the classifier)
+ * ErPresence — the presence loop (ER Phase 4), owned by the VoiceController.
+ * Composes the two pure pieces — [ErIntent] (the classifier)
  * and [ErFillers] (the filler state machine) — into the live presence:
  *
  *  - user speech → classify → BACKCHANNEL holds (no escalation, maybe a soft
  *    ack), EMOTION/SMALLTALK the soul converses directly (Gemma), INFORMATION/
  *    ACTION the soul acknowledges ("let me think…") and the MIND is engaged;
  *  - while the mind works → bounded fillers on the ~1s tick, density-capped,
- *    fail-soft after 4s; then, on the same tick, the mid-run lines [PresenceCadence]
+ *    fail-soft after 4s; then, on the same tick, the mid-run asides [PresenceCadence]
  *    paces (one soul line per interval, capped per run) so a long tool call is not
  *    71 seconds of silence;
  *  - the mind's reply preempts everything (the existing speakGlue/speak
@@ -22,7 +22,7 @@ import android.os.Looper
  * KEEP-LIST NOTE: this loop ADDS glue speech only through speakGlue (the
  * existing P3 path) — it never touches speak(), the gate, or the streaming
  * worker. When ER is off, presenceAt/erActive stay false and the loop is a
- * no-op (Realtime behavior byte-identical).
+ * no-op (normal operation byte-identical).
  */
 class ErPresence(
     /** utterance + a SOURCE tag, so the field log can name who spoke (0.8/M3). */
@@ -30,18 +30,18 @@ class ErPresence(
     /** The filler cap per window — set by the "Presence while working" register (Settings ER
      *  section). Read live per tick so a change lands on the next turn. */
     private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
-    /** The "Presence while working" register — the mid-run line interval and cap. Read live. */
+    /** The "Presence while working" register — the mid-run aside interval and cap. Read live. */
     private val density: () -> PresenceCadence.Density = { PresenceCadence.DEFAULT },
 ) {
 
-    /** A mid-run line slot: the line's number in the run, the gap since the previous line, the
+    /** A mid-run aside slot: the line's number in the run, the gap since the previous line, the
      *  register that paced it, and the run it belongs to (its start) so a late line can be told. */
     data class Slot(val line: Int, val intervalMs: Long, val density: PresenceCadence.Density, val runId: Long)
 
     /**
-     * Asked on the tick when a mid-run line is due (line 2 onward — line 1 is the lag line). The
+     * Asked on the tick when a mid-run aside is due (line 2 onward — line 1 is the lag line). The
      * owner renders the soul's line and reports back with [noteWorkingLine] / [noteWorkingSkip].
-     * Null = no mid-run lines: the loop behaves exactly as before the cadence existed.
+     * Null = no mid-run asides: the loop behaves exactly as before the cadence existed.
      */
     var onWorkingSlot: ((Slot) -> Unit)? = null
 
@@ -53,7 +53,7 @@ class ErPresence(
 
     private val main = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
-    /** 0.6.7 Tier 1: the presence-voice mode (Settings: silent / sounds / spoken).
+    /** 0.6.7 Tier 1: the narration register (Settings: silent / sounds / spoken).
      *  Read live per tick. silent = motion only; sounds = ErClips (the natural
      *  nonverbals, private track); spoken = Piper sentence fillers (the old path). */
     var clipContext: Context? = null
@@ -92,7 +92,35 @@ class ErPresence(
      *  speak before the reply" — the ER-delta numerator. Reset per window. */
     @Volatile private var spokeThisWindow = false
 
-    /** The user finished an utterance — classify it and open the window.
+    /**
+     * A3 / F5 (2026-11-04 review): the caller has just spoken a TURN — classify it and open the
+     * window, and never speak a canned line.
+     *
+     * The field's best moment was "want me to write those points to a markdown file?" → "yes" →
+     * *"okay — take the time you need"*. The backchannel list was built for the patient caller
+     * *during* the mind's work, and it was being applied at turn start, so a confirmation got a
+     * non-sequitur and no beat. At turn start the caller's words are an ANSWER: they are the
+     * mind's lane, the soul may open it with a beat, and the phone says nothing else.
+     *
+     * [onUserUtterance] keeps its meaning for real interruptions (a backchannel spoken while the
+     * mind works), which is the one place the hold line belongs.
+     */
+    fun onTurnStart(text: String, nowMs: Long): ErIntent.Route {
+        spokeThisWindow = false
+        firstWordSeen = false
+        val d = ErIntent.classify(text)
+        lastRoute = d.route
+        ErTelemetry.classify(d.route)
+        startWindow(nowMs)
+        // Null by construction (see [autoLine]): a turn start is the mind's, and the soul's
+        // contribution is the beat, not an acknowledgment.
+        autoLine(d.route, atTurnStart = true)?.let { speakGlue(it, "presence-turn-start") }
+        VoxLog.er("er:intent=${d.cls.name.lowercase()} route=turn-start lane=mind")
+        return d.route
+    }
+
+    /**
+     * The user finished an utterance — classify it and open the window.
      *  fromVoice=true only (typed sends never trigger presence). Returns the
      *  route for the caller's log line. */
     fun onUserUtterance(text: String, nowMs: Long): ErIntent.Route {
@@ -104,9 +132,13 @@ class ErPresence(
         when (d.route) {
             ErIntent.Route.HOLD_ONLY -> {
                 // The patient user. No escalation, no filler; a soft in-register
-                // ack (P3, cuttable by a real barge) at most.
-                speakGlue("okay — take the time you need", "presence-hold")
-                spokeThisWindow = true
+                // ack (P3, cuttable by a real barge) at most. This is the ONLY moment the phone
+                // acknowledges on its own — see [autoLine]: at turn start the same words are an
+                // answer, not a backchannel (F5).
+                autoLine(d.route, atTurnStart = false)?.let {
+                    speakGlue(it, "presence-hold")
+                    spokeThisWindow = true
+                }
                 VoxLog.er("er:intent=backchannel route=hold")
             }
             ErIntent.Route.ACK_AND_YIELD -> {
@@ -124,7 +156,7 @@ class ErPresence(
 
     /**
      * The soul spoke a line of its own this window — a beat or a full answer. Recorded for the
-     * mind's soul-sync (synchronously, so it is in the epilogue the mind's turn carries), and it
+     * mind's soul-sync (synchronously, so it is in the instructions the mind's turn carries), and it
      * IS the window's presence: the nonverbal preamble must not also play, and the first-word
      * metric starts here.
      */
@@ -181,7 +213,7 @@ class ErPresence(
                     if (o.state == ErFillers.State.LAG_ACK) synchronized(lagSaidCount) { lagSaidCount.value++ }
                     spokeThisWindow = true
                     synchronized(soulActions) { soulActions.add(ErDrift.SoulAction(now, "filler", o.speak!!)) }
-                    // 0.6.7 Tier 1: deliver per the presence-voice mode.
+                    // 0.6.7 Tier 1: deliver per the narration register.
                     // sounds = ErClips (private track — never Piper, never the
                     // reply's track/fence); spoken = the old speakGlue path;
                     // silent = never happens here (Tier 0 already gated it).
@@ -211,7 +243,7 @@ class ErPresence(
                 }
                 slot?.let { s ->
                     if (s.line > 1) onWorkingSlot?.invoke(s)
-                    else if (o.state == ErFillers.State.LAG_ACK) noteWorkingLine(s, "lag")
+                    else if (o.state == ErFillers.State.LAG_ACK) noteWorkingLine(s, "lag", o.speak.orEmpty())
                     else noteWorkingSkip(s, "lag-not-said")
                 }
                 if (o.state == ErFillers.State.SILENT && now - mindStartedAt > ErFillers.LAG_AFTER_MS + 8_000) {
@@ -279,13 +311,24 @@ class ErPresence(
     /** Is the run [runId] still accepting lines (no reply, barge or call end since)? */
     fun cadenceLive(runId: Long): Boolean = synchronized(cadenceLock) { runId != 0L && run.startedAt == runId }
 
-    /** A line of the run was voiced — the field log's proof that the gap was held. */
-    fun noteWorkingLine(slot: Slot, kind: String) =
-        VoxLog.er("event=er-presence line=${slot.line} interval=${slot.intervalMs} density=${slot.density.key} kind=$kind")
+    /** A line of the run was voiced — the field log's proof that the gap was held. #217: `h=` is
+     *  a short hash of the line ([lineHash]) so the session report can count repeats without the
+     *  line's text (which only appears with Log transcripts on). */
+    fun noteWorkingLine(slot: Slot, kind: String, text: String = "") =
+        VoxLog.er("event=er-presence line=${slot.line} interval=${slot.intervalMs} density=${slot.density.key} kind=$kind" +
+            (if (text.isNotBlank()) " h=${lineHash(text)}" else ""))
 
     /** A slot passed in silence, and why (the soul chose silence, the reply landed first, …). */
     fun noteWorkingSkip(slot: Slot, reason: String) =
         VoxLog.er("event=er-presence skip line=${slot.line} reason=$reason density=${slot.density.key}")
+
+    /**
+     * D20: the line was SHORTENED, not silenced. Shape repair (a clause cut, markup, a fence, a
+     * title line, a trailing courtesy) changed the render and the result was still spoken. Logged
+     * separately from `skip` so the field can tell the two apart at a glance.
+     */
+    fun noteWorkingRepair(slot: Slot, reason: String) =
+        VoxLog.er("event=er-presence repair line=${slot.line} reason=$reason density=${slot.density.key}")
 
     /** Stop the tick. */
     private fun halt() {
@@ -319,4 +362,35 @@ class ErPresence(
         }
     }
     @Volatile private var stallVoicedFor = 0L
+
+    companion object {
+        /** The line for the patient caller — the one thing the phone says on its own. */
+        const val HOLD_LINE = "okay — take the time you need"
+
+        /**
+         * A3 / F5 (2026-11-04 review): what Presence says by itself, given the classifier's route
+         * and the moment.
+         *
+         * At TURN START: nothing. The caller's words are the answer to whatever was asked, so
+         * "yes" is a turn, not a backchannel — the canned "okay — take the time you need" answered
+         * a confirmation with a non-sequitur and is deleted. The soul may still open the turn with
+         * a beat, which is a render, not a line from this list.
+         *
+         * DURING the mind's work: the hold line, for the patient caller only. That is what the
+         * list was written for.
+         */
+        fun autoLine(route: ErIntent.Route, atTurnStart: Boolean): String? = when {
+            atTurnStart -> null
+            route == ErIntent.Route.HOLD_ONLY -> HOLD_LINE
+            else -> null
+        }
+    }
+}
+
+/** #217: eight hex digits naming a spoken line, case- and punctuation-blind — "Still on it." and
+ *  "still on it" are the same line, which is what a repeat is to a listener. */
+internal fun lineHash(text: String): String {
+    val folded = text.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+    val crc = java.util.zip.CRC32().apply { update(folded.toByteArray(Charsets.UTF_8)) }
+    return "%08x".format(crc.value)
 }

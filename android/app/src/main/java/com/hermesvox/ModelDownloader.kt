@@ -60,6 +60,9 @@ class ModelDownloader(context: Context) {
      * message. [cancelled] is polled between reads; [progress] reports (phase, done, total).
      */
     fun run(spec: ModelSpec, cancelled: () -> Boolean, progress: (Phase, Long, Long) -> Unit): String? {
+        // A licensed model is fetched only after the user accepted its licence (ModelsActivity
+        // asks); this is the hard gate, so no other path can start the transfer without it.
+        ModelLicences.refusal(spec) { ModelLicences.isAccepted(context, it) }?.let { return it }
         if (spec.sha256.isBlank()) return "model has no pinned sha256"
         val url = urlFor(spec)
         val part = partFile(spec.id)
@@ -226,17 +229,20 @@ class ModelDownloader(context: Context) {
             val m = files.firstOrNull { it.name.matches(Regex(pat)) } ?: return
             if (!m.name.equals(to)) m.renameTo(File(dir, to))
         }
-        when (specId) {
-            "whisper-tiny", "whisper-base", "whisper-small" -> {
+        when {
+            specId.startsWith("whisper-") -> {
                 rename(".*-encoder\\.int8\\.onnx", "encoder.int8.onnx")
                 rename(".*-decoder\\.int8\\.onnx", "decoder.int8.onnx")
                 rename(".*-encoder\\.onnx", "encoder.onnx")
                 rename(".*-decoder\\.onnx", "decoder.onnx")
                 rename(".*-tokens\\.txt", "tokens.txt")
             }
-            "piper-lessac" -> {
+            // Every Piper voice ships one `<voice>.onnx` and one tokens file at the tarball root.
+            specId.startsWith("piper-") -> {
                 rename(".*\\.onnx", "model.onnx")
             }
+            // Already canonical (STREAMING_TRANSDUCER_FILES) once hoisted: nothing to rename.
+            specId == ModelCatalog.NEMOTRON_STREAM_ID -> Unit
         }
     }
 

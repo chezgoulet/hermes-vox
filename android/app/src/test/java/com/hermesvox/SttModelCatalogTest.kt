@@ -17,6 +17,9 @@ class SttModelCatalogTest {
     @Test fun a_multilingual_model_takes_the_pref_or_auto_detects() {
         assertEquals("de", ModelCatalog.whisperLanguage("whisper-base-multi", " DE "))
         assertEquals("", ModelCatalog.whisperLanguage("whisper-base-multi", null))   // "" = auto-detect
+        assertEquals("fr", ModelCatalog.whisperLanguage("whisper-tiny-multi", " FR "))
+        assertEquals("fr", ModelCatalog.whisperLanguage("whisper-small-multi", "fr"))
+        // The catalogue side (registration, pins, the language row) is SpokenLanguageTest.
     }
 
     @Test fun parakeet_is_a_pinned_selectable_transducer_model_and_whisper_stays_default() {

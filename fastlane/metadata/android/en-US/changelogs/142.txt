@@ -1,0 +1,6 @@
+A paired Bluetooth headset is now the call's route, at every line open and when
+one is attached mid-call. On Android 12 and newer through the communication
+device API; on older versions through the legacy SCO link, which the platform
+confirms asynchronously.
+
+Also fixes two pipeline faults found while releasing 0.8.0.

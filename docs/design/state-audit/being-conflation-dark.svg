@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="600" viewBox="0 0 880 600">
+  <rect width="880" height="600" fill="#06070B"/>
+  <text x="36" y="52" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="bold" fill="#E6EDF7">The being on: four states, two pictures</text>
+  <text x="36" y="80" font-family="DejaVu Sans, sans-serif" font-size="13.5" fill="#8B98AC">Drawn from MotionState.renderParams and AvatarView.resolvePalette. Colour, shape and motion as the code sets them.</text>
+
+  <!-- 1: thinking -->
+  <g>
+    <circle cx="120" cy="200" r="58" fill="#1F1810"/>
+    <circle cx="120" cy="200" r="40" fill="#332614"/>
+    <circle cx="120" cy="200" r="20" fill="#8F6626"/>
+    <circle cx="150" cy="176" r="5" fill="#CD5627"/>
+    <circle cx="94" cy="222" r="4" fill="#B44C24"/>
+    <circle cx="138" cy="228" r="3" fill="#E6A338"/>
+    <text x="120" y="292" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#E6EDF7">thinking</text>
+    <text x="120" y="310" font-family="DejaVu Sans Mono, monospace" font-size="10.5" text-anchor="middle" fill="#8B98AC">gather · amber · inward</text>
+  </g>
+
+  <!-- 2: tool running -->
+  <g>
+    <circle cx="320" cy="200" r="58" fill="#1F1810"/>
+    <circle cx="320" cy="200" r="40" fill="#332614"/>
+    <circle cx="320" cy="200" r="20" fill="#8F6626"/>
+    <circle cx="320" cy="138" r="4" fill="#E6A338"/>
+    <circle cx="362" cy="200" r="4" fill="#E6A338"/>
+    <circle cx="320" cy="262" r="4" fill="#E6A338"/>
+    <circle cx="278" cy="200" r="4" fill="#E6A338"/>
+    <circle cx="350" cy="170" r="3" fill="#CD5627"/>
+    <circle cx="290" cy="230" r="3" fill="#CD5627"/>
+    <text x="320" y="292" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#E6EDF7">a tool running</text>
+    <text x="320" y="310" font-family="DejaVu Sans Mono, monospace" font-size="10.5" text-anchor="middle" fill="#8B98AC">motif · amber · faster</text>
+    <!-- same colour marker -->
+    <text x="220" y="200" font-family="DejaVu Sans, sans-serif" font-size="22" text-anchor="middle" fill="#8B98AC">≈</text>
+    <text x="220" y="220" font-family="DejaVu Sans, sans-serif" font-size="9.5" text-anchor="middle" fill="#8B98AC">same palette</text>
+  </g>
+
+  <!-- 3: done -->
+  <g>
+    <circle cx="540" cy="200" r="58" fill="#1F1810"/>
+    <circle cx="540" cy="200" r="42" fill="#2E2F32"/>
+    <circle cx="540" cy="200" r="24" fill="#8F8F91"/>
+    <circle cx="540" cy="200" r="10" fill="#F3F3F3"/>
+    <text x="540" y="292" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#E6EDF7">a step done</text>
+    <text x="540" y="310" font-family="DejaVu Sans Mono, monospace" font-size="10.5" text-anchor="middle" fill="#8B98AC">TOOL_RESULT · "result" shimmer</text>
+  </g>
+
+  <!-- 4: failed (identical) -->
+  <g>
+    <circle cx="740" cy="200" r="58" fill="#1F1810"/>
+    <circle cx="740" cy="200" r="42" fill="#2E2F32"/>
+    <circle cx="740" cy="200" r="24" fill="#8F8F91"/>
+    <circle cx="740" cy="200" r="10" fill="#F3F3F3"/>
+    <text x="740" y="292" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#FF8A8A">a step failed</text>
+    <text x="740" y="310" font-family="DejaVu Sans Mono, monospace" font-size="10.5" text-anchor="middle" fill="#FF8A8A">TOOL_RESULT · "result" shimmer</text>
+    <text x="640" y="200" font-family="DejaVu Sans, sans-serif" font-size="22" text-anchor="middle" fill="#FF8A8A">=</text>
+  </g>
+
+  <!-- separator -->
+  <line x1="36" y1="352" x2="844" y2="352" stroke="#1C2A3A"/>
+
+  <!-- 5: the failure ending that exists but is unused -->
+  <g>
+    <text x="36" y="392" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="bold" fill="#E6EDF7">The failure the being can already draw — and does not, for the agent's own steps</text>
+    <path d="M 92 418 L 152 418 L 122 462 Z" fill="#2E4985"/>
+    <path d="M 92 506 L 152 506 L 122 462 Z" fill="#2E4985"/>
+    <rect x="90" y="414" width="64" height="5" rx="2" fill="#93B7FF"/>
+    <rect x="90" y="504" width="64" height="5" rx="2" fill="#93B7FF"/>
+    <text x="176" y="450" font-family="DejaVu Sans Mono, monospace" font-size="12" fill="#93B7FF">CommandMotion.Ending.FAILED</text>
+    <text x="176" y="470" font-family="DejaVu Sans Mono, monospace" font-size="12" fill="#8B98AC">hourglass, wait colour, 1400 ms</text>
+    <text x="176" y="494" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#E6EDF7">Used only when an app-local slash command fails (#227).</text>
+    <text x="176" y="514" font-family="DejaVu Sans, sans-serif" font-size="12" fill="#E6EDF7">A tool step that fails gets the success shimmer above.</text>
+  </g>
+
+  <text x="36" y="566" font-family="DejaVu Sans, sans-serif" font-size="12.5" fill="#8B98AC">So the being can say "something landed", but never "something broke" — and never "what". The words are not a fallback</text>
+  <text x="36" y="584" font-family="DejaVu Sans, sans-serif" font-size="12.5" fill="#8B98AC">here; they are the only carrier of the distinction.</text>
+</svg>

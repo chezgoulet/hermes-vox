@@ -1,5 +1,7 @@
 # Hermes Vox 0.8.0 — "the accelerator release"
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 > These notes were filed as `docs/RELEASE-0.7.3.md` while `0.7.3` was still the planned home
 > of the accelerator work. That version number went instead to the **first-run fix** release
 > (`docs/RELEASE-0.7.3.md`, version code 115), which contains none of the content below. The
@@ -206,7 +208,7 @@ device verification steps.
 
 ## Verification
 
-- Gate on the Thelio: `go vet` → `go test ./voice/...` → `gomobile bind` →
+- Gate on the the build host: `go vet` → `go test ./voice/...` → `gomobile bind` →
   `assembleRelease` + `testReleaseUnitTest` + `bundleRelease`, test roll-up, APK
   badging/signer/md5 on both boxes.
 - New unit tests: `VoxThreadsTest` (derived defaults, override passthrough, out-of-range

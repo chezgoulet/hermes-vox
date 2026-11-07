@@ -1,5 +1,7 @@
 # DESIGN — Presence & motion system (next after transcript-sync) — FOR YOUR EYES, not built yet
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 ## Headline
 You already have a generative particle-being (`AvatarView`: 320 light-bodies that
 rearrange into SHAPES = iris/listening/vortex/scan/bracket/constellation/lumen/

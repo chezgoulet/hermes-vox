@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #219: a shelf heading above its model rows (Hearing / Voice / Being / other). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="14dp"
+    android:layout_marginBottom="6dp"
+    android:orientation="vertical"
+    android:paddingHorizontal="4dp">
+
+    <TextView
+        android:id="@+id/mg_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/rajdhani_semibold"
+        android:letterSpacing="0.08"
+        android:text="Hearing"
+        android:textColor="@color/hv_text"
+        android:textSize="20sp" />
+
+    <TextView
+        android:id="@+id/mg_blurb"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:lineSpacingExtra="2dp"
+        android:text="—"
+        android:textColor="@color/hv_text_dim"
+        android:textSize="13sp" />
+</LinearLayout>

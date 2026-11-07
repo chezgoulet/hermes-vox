@@ -4,6 +4,7 @@
         <!-- LIGHT variant of the sci-fi identity. Hero is dark. -->
         <item name="colorPrimary">@color/hv_cyan</item>
         <item name="colorAccent">@color/hv_violet</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.HermesVox.Dialog</item>
         <item name="android:windowBackground">@color/hv_bg</item>
         <item name="android:colorBackground">@color/hv_bg</item>
         <item name="android:textColor">@color/hv_text</item>
@@ -11,5 +12,12 @@
         <item name="android:navigationBarColor">@color/hv_bg</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <!-- #329: the assist gesture is fired by the system, sometimes from the lock screen.
+         The bridge must be invisible: no window, no dim, no animation. -->
+    <style name="Theme.HermesVox.Assist" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
     </style>
 </resources>

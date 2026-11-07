@@ -26,7 +26,32 @@ import kotlin.concurrent.thread
  */
 enum class SherpaVoice(val modelId: String, val displayName: String) {
     PIPER("piper-lessac", "Piper"),
+    // The fr-FR voices (#477). Same VITS runtime as PIPER — only the downloaded model
+    // differs — so they share one synthesis path and one set of speaker rules
+    // ([VoiceSpeakers]); UPMC is the one with two built-in speakers.
+    PIPER_SIWIS("piper-siwis", "Piper · fr-FR (Siwis)"),
+    PIPER_TOM("piper-tom", "Piper · fr-FR (Tom)"),
+    PIPER_UPMC("piper-upmc", "Piper · fr-FR (UPMC)"),
     SUPERTONIC("supertonic", "Supertonic"),
+    ;
+
+    val isSupertonic: Boolean get() = this == SUPERTONIC
+
+    companion object {
+        /** The engine behind a catalogue model id. */
+        fun fromModelId(modelId: String): SherpaVoice? =
+            entries.firstOrNull { it.modelId == modelId.trim().lowercase() }
+
+        /** The engine behind a `tts` pref token. "piper" is the en-US LibriTTS-R voice
+         *  (the historical token); "piper-lessac" is its model id, accepted so a stored
+         *  model id and a stored token cannot disagree. Unknown tokens resolve to null —
+         *  the caller decides what an unknown voice means, this never guesses. */
+        fun fromEngineToken(token: String): SherpaVoice? {
+            val t = token.trim().lowercase()
+            if (t == "piper") return PIPER
+            return fromModelId(t)
+        }
+    }
 }
 
 /**
@@ -146,9 +171,8 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         VoiceSpeakers.resolve(speakers, voice, eng.numSpeakers())
 
     /** One phrase through the engine, with the voice's own controls. */
-    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when (voice) {
-        SherpaVoice.PIPER -> eng.generate(text, speakerFor(eng), voiceSpeed)
-        SherpaVoice.SUPERTONIC -> {
+    private fun synth(eng: OfflineTts, text: String): GeneratedAudio = when {
+        voice.isSupertonic -> {
             val m = mood
             eng.generateWithConfig(text, GenerationConfig().apply {
                 sid = speakerFor(eng)
@@ -156,6 +180,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 silenceScale = m.silenceScale
             })
         }
+        // Every Piper voice — en-US and fr-FR alike — is a VITS model with plain
+        // speaker/speed controls and no mood parameters.
+        else -> eng.generate(text, speakerFor(eng), voiceSpeed)
     }
 
     /** `tts_voice_usage` kill-switch (default false): route the playback AudioTracks
@@ -254,8 +281,13 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         }
     }
 
-    override fun speak(text: String, onDone: () -> Unit) {
-        val t = tts ?: return onDone()
+    override fun speak(text: String, onDone: () -> Unit) = speakReporting(text) { onDone() }
+
+    override fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) =
+        speakReporting(text, {}, onDone)
+
+    override fun speakReporting(text: String, onStart: () -> Unit, onDone: (TtsOutcome) -> Unit) {
+        val t = tts ?: return onDone(TtsOutcome(TtsEnd.FAILED, "model not loaded"))
         thread {
             // 0.4.0.4: capture the cancel token BEFORE synthesis. generate() takes over
             // a second for a full reply (field log: 1.4s for 199 chars), and play() has
@@ -264,14 +296,24 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             val token = streamFence.stopEpoch
             try {
                 val audio = synth(t, text)
-                val samples = audio.samples ?: return@thread onDone()
+                val samples = audio.samples ?: return@thread onDone(TtsOutcome(TtsEnd.FAILED, "no audio"))
+                if (audioIsSilent(samples)) {
+                    // A reply reached the engine and it produced nothing audible. That is a
+                    // failure the lifecycle must see, not a "spoken" outcome.
+                    VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent samples=${samples.size}")
+                    return@thread onDone(TtsOutcome(TtsEnd.FAILED, "silent audio"))
+                }
                 val sr = audio.sampleRate
                 VoxLog.d("${voice.modelId} generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
-                play(samples, sr, token, text)
-                onDone()
+                VoxLog.d("event=tts-speak engine=${voice.modelId} reason=one-shot chars=${text.length}")
+                play(samples, sr, token, text, onStart)
+                // #373: a fence bump during play means the utterance was cut (barge, hush,
+                // hang-up, or a newer utterance) — not that the engine failed.
+                onDone(if (streamFence.stopEpoch != token) TtsOutcome(TtsEnd.INTERRUPTED, "stopped")
+                    else TtsOutcome(TtsEnd.SPOKEN))
             } catch (e: Throwable) {
                 VoxLog.e("${voice.modelId} speak: ${e.message}")
-                onDone()
+                onDone(TtsOutcome(TtsEnd.FAILED, e.message ?: e::class.java.simpleName))
             }
         }
     }
@@ -297,7 +339,8 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  check (no caller does today). [text] is the utterance being played, reported to
      *  onAudioSegment so the speech-locked transcript can pace one-shot replies with the
      *  SAME cursor as streamed ones (a single segment — no special case). */
-    private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L, text: String = "") {
+    private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L, text: String = "",
+                     onStart: (() -> Unit)? = null) {
         var at = 0
         try {
             val t: AudioTrack
@@ -323,12 +366,15 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             try { onAudioSegment?.invoke(text, samples.size) } catch (_: Throwable) {}
             try {
                 val twoSec = sr * 2                    // ~2s per sub-write, as streamChunk
+                var started = false
                 while (at < samples.size) {
                     if (!streamFence.allowed) {        // stop between sub-writes -> exit fast
                         VoxLog.d("event=tts-speak-cut at=$at of=${samples.size}")
                         return
                     }
                     val n = minOf(twoSec, samples.size - at)
+                    // D30: the first write is the first audible sample — the start witness.
+                    if (!started) { started = true; try { onStart?.invoke() } catch (_: Throwable) {} }
                     t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
                     at += n
                     synchronized(trackLock) { streamWritten = at }
@@ -352,6 +398,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         return try {
             val audio = synth(t, text)
             val samples = audio.samples ?: return false
+            if (audioIsSilent(samples)) {
+                VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent-blocking samples=${samples.size}")
+                return false
+            }
             VoxLog.d("${voice.modelId} gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
             play(samples, audio.sampleRate, token, text)
             true
@@ -374,11 +424,21 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         } catch (e: Throwable) { VoxLog.e("startStreaming: ${e.message}") }
     }
 
-    /** Build + play a single persistent AudioTrack at the given rate (the actual one). */
+    /** Build + play a single persistent AudioTrack at the given rate (the actual one).
+     *
+     *  The capacity is [STREAM_BUFFER_SECS] = 4 s of float mono PCM. The number is not a
+     *  tuning knob: it is the headroom the synthesis worker needs. [streamChunk] writes each
+     *  chunk BLOCKING into this track, so the buffer must exceed the longest single write or
+     *  it blocks the worker until playback drains — that is one inference of silence at every
+     *  chunk boundary (the defect this PR fixes). The longest write is bounded by one chunk,
+     *  and chunks are capped at StreamTextChunker.CHUNK_CAP_CHARS = 30 characters ≈ 2.1–2.5 s
+     *  at the device's measured 12–16 chars/s (mean 14.2). 4 s therefore leaves ~1.5–2×
+     *  headroom. Raising that cap without raising this buffer re-introduces the boundary
+     *  silence; keep the two numbers together. */
     private fun buildStreamTrack(sr: Int): AudioTrack? {
         return try {
             val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
-            val bufBytes = maxOf(minBuf, (sr / 4) * 4)
+            val bufBytes = maxOf(minBuf, sr * STREAM_BUFFER_SECS * 4)   // 4s PCM float buffer
             val t = AudioTrack.Builder()
                 .setAudioAttributes(speechAttributes())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
@@ -396,17 +456,27 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  sentence's WRITE_BLOCKING write (F2: bounds the drain-wait to ~2s). */
     fun streamChunk(text: String): Boolean {
         if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
+        // #240: the chunk's token. A stop that lands while it synthesizes kills it for good,
+        // even if the next turn re-opens the fence before the synthesis returns.
+        val epoch = streamFence.stopEpoch
         val eng = tts ?: return false
         return try {
             val audio = synth(eng, text)
             val samples = audio.samples ?: return false
+            if (audioIsSilent(samples)) {
+                VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent-stream samples=${samples.size}")
+                return false
+            }
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
             synchronized(trackLock) {
                 // #D1: re-check under the lock — a stop that landed while we were
                 // synthesizing closed the fence, so a null track here must NOT be
                 // treated as "first chunk" (that rebuild is the resurrection bug).
-                if (!streamFence.allowed) return false
+                if (!streamFence.allows(epoch)) {
+                    if (streamFence.allowed) VoxLog.d("event=tts-drop reason=stale-epoch chars=${text.length}")
+                    return false
+                }
                 if (streamTrack == null) {
                     val built = buildStreamTrack(sr)
                     streamTrack = built; streamWritten = 0
@@ -423,6 +493,9 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 writing = true                    // the async teardown waits for this to clear (#7)
             }
             VoxLog.d("${voice.modelId} chunk ${samples.size} smp @${sr}Hz (${text.length} ch)")
+            // #373: one line per spoken utterance naming the engine, so the next field
+            // report can say WHICH engine went quiet instead of "no TTS".
+            VoxLog.d("event=tts-speak engine=${voice.modelId} reason=stream chars=${text.length}")
             // L2: this phrase is next on the track — register it BEFORE the first write so
             // the reveal can interpolate through it while the head is inside it.
             try { onAudioSegment?.invoke(text, samples.size) } catch (_: Throwable) {}
@@ -430,7 +503,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
                 var at = 0
                 while (at < samples.size) {
-                    if (!streamFence.allowed) return false   // F2: stop between sub-writes exits fast
+                    if (!streamFence.allows(epoch)) return false   // F2: stop between sub-writes exits fast
                     val n = minOf(twoSec, samples.size - at)
                     t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
                     at += n
@@ -438,7 +511,11 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 streamWritten += samples.size
                 true
             } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
-        } catch (e: Throwable) { VoxLog.e("streamChunk: ${e.message}"); false }
+        } catch (e: Throwable) {
+            VoxLog.e("streamChunk: ${e.message}")
+            VoxLog.w("event=tts-fail engine=${voice.modelId} reason=stream code=${e.message ?: e::class.java.simpleName}")
+            false
+        }
     }
 
     /** Wait for the whole reply to play out, then release the persistent track. */
@@ -513,3 +590,5 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
     @Synchronized
     override fun shutdown() { tts = null }
 }
+
+private const val STREAM_BUFFER_SECS = 4

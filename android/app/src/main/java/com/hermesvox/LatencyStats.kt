@@ -14,7 +14,27 @@ object LatencyStats {
     private val firstAudio = ArrayList<Long>()
     private val fullReply = ArrayList<Long>()
     private val stt = ArrayList<Long>()
+    // Phase-1 (#209 gap 1): the same turn, measured from the END OF SPEECH. The five rings
+    // above keep their old origins (turn launch / segment open) for continuity with every
+    // baseline already recorded; these four are the conversational ones — what D18's
+    // 700 ms / 1.4 s target is actually about, because the caller starts waiting when
+    // they stop talking, not when the client opens a buffer.
+    private val speechToText = ArrayList<Long>()
+    private val speechToAudio = ArrayList<Long>()
+    private val speechToRender = ArrayList<Long>()
+    private val sttDecode = ArrayList<Long>()
+    // Naturalness pass (2026-11-05): speech end → the FIRST thing the caller could hear this
+    // turn, whoever made it — the thinking cue, the being's beat, a wait line, the reply, or a
+    // repair. It is the number the ~700 ms target is about: silence after the caller stops is
+    // what reads as "not heard", and the reply is only one of the sounds that can end it.
+    private val speechToFirstSound = ArrayList<Long>()
+    // The session copy of speech-to-audio. The ring above is the rolling 8-turn window the
+    // per-turn log uses; it is cleared on every eighth emit, which makes it the wrong source
+    // for a diagnostic summary copied at the end of a call. This ring is cleared only where
+    // the session is (resetSessionTurns), so the block's e2 is the call's own p50.
+    private val sessionSpeechToAudio = ArrayList<Long>()
     private const val MAX = 128L
+    private const val SESSION_MAX = 512
     private var turns = 0L
     // C3 session hygiene (measurement only — NO truncation/summarization behavior):
     // turns counted since the last resetConversation / new call, surfaced on every
@@ -29,6 +49,13 @@ object LatencyStats {
     private var turnFirstText = -1L
     private var turnFirstAudio = -1L
     private var turnFullReply = -1L
+    // Phase 1: speech-end anchored + the recogniser's own time for this turn's segment.
+    private var turnSpeechToText = -1L
+    private var turnSpeechToAudio = -1L
+    private var turnSpeechToRender = -1L
+    private var turnSttDecode = -1L
+    private var turnSpeechToFirstSound = -1L
+    private var turnFirstSoundBy = ""
 
     fun pushFirstByte(ms: Long) { synchronized(lock) { firstByte.add(ms); trim(firstByte); turnFirstByte = ms } }
     fun pushFirstText(ms: Long) { synchronized(lock) { firstText.add(ms); trim(firstText); turnFirstText = ms } }
@@ -36,11 +63,53 @@ object LatencyStats {
     fun pushFullReply(ms: Long) { synchronized(lock) { fullReply.add(ms); trim(fullReply); turnFullReply = ms } }
     fun pushStt(ms: Long) { synchronized(lock) { stt.add(ms); trim(stt); turnStt = ms } }
 
+    /** speech_end → the first text delta of the reply, in ms. */
+    fun pushSpeechToText(ms: Long) { synchronized(lock) { speechToText.add(ms); trim(speechToText); turnSpeechToText = ms } }
+
+    /** speech_end → the first AUDIBLE audio write (the same seam as [pushFirstAudio]). */
+    fun pushSpeechToAudio(ms: Long) = synchronized(lock) {
+        speechToAudio.add(ms); trim(speechToAudio); turnSpeechToAudio = ms
+        sessionSpeechToAudio.add(ms); trimSession(sessionSpeechToAudio)
+    }
+
+    /** speech_end → the reply's last audio chunk finished playing ("render done"). */
+    fun pushSpeechToRender(ms: Long) { synchronized(lock) { speechToRender.add(ms); trim(speechToRender); turnSpeechToRender = ms } }
+
+    /** The recogniser's own work for this turn's segment: the live feeds plus the tail
+     *  decode, or the whole-clip decode when the live stream could not finish. It is NOT
+     *  wall clock between utterances — that is the `stt=` field's old, misleading meaning. */
+    fun pushSttDecode(ms: Long) { synchronized(lock) { sttDecode.add(ms); trim(sttDecode); turnSttDecode = ms } }
+
+    /** speech_end → the first audible sound of the turn; [by] names its source
+     *  (`cue`, `glue:<source>`, `reply`, `reply-oneshot`). One per turn — the caller enforces it. */
+    fun pushSpeechToFirstSound(ms: Long, by: String) = synchronized(lock) {
+        speechToFirstSound.add(ms); trim(speechToFirstSound)
+        turnSpeechToFirstSound = ms; turnFirstSoundBy = by
+    }
+
     private fun trim(l: ArrayList<Long>) { while (l.size > MAX) l.removeAt(0) }
+    private fun trimSession(l: ArrayList<Long>) { while (l.size > SESSION_MAX) l.removeAt(0) }
 
     /** Zero the per-session turn count. Called by the host beside every
-     *  session.resetConversation() (a new call / new conversation). */
-    fun resetSessionTurns() { synchronized(lock) { sessionTurns = 0L } }
+     *  session.resetConversation() (a new call / new conversation).
+     *
+     *  This is also where the mind-work counters (ErTelemetry) start a new session: the
+     *  diagnostic summary reports the call, not the process, so its `turns`,
+     *  `answered_by_voice` and `escalated` numbers share this boundary. */
+    fun resetSessionTurns() {
+        synchronized(lock) { sessionTurns = 0L; sessionSpeechToAudio.clear() }
+        ErTelemetry.beginSession()
+    }
+
+    /** #284: turns since the last reset — when a conversation is long enough to offer /compress. */
+    fun sessionTurns(): Long = synchronized(lock) { sessionTurns }
+
+    /** The session's speech-end → first audible reply-word p50, or null before the first
+     *  measured turn. This is E2 in the Presence report block; it never substitutes a zero
+     *  for "not measured". */
+    fun sessionSpeechToAudioP50(): Long? = synchronized(lock) {
+        if (sessionSpeechToAudio.isEmpty()) null else pct(sessionSpeechToAudio, 0.50)
+    }
 
     fun log(label: String, outcome: String, gen: Long) {
         summaryLines(label, outcome, gen).forEach { VoxLog.d(it) }
@@ -52,20 +121,44 @@ object LatencyStats {
         val out = ArrayList<String>()
         out += "event=turn label=$label gen=$gen outcome=$outcome stt=${fmt(turnStt)} " +
                "firstByte=${fmt(turnFirstByte)} firstText=${fmt(turnFirstText)} firstAudio=${fmt(turnFirstAudio)} fullReply=${fmt(turnFullReply)} " +
+               "speechEndToFirstText=${fmt(turnSpeechToText)} speechEndToFirstAudio=${fmt(turnSpeechToAudio)} " +
+               "speechEndToRenderDone=${fmt(turnSpeechToRender)} sttDecodeMs=${fmt(turnSttDecode)} " +
+               "speechEndToFirstSound=${fmt(turnSpeechToFirstSound)} firstSoundBy=${turnFirstSoundBy.ifEmpty { "-" }} " +
                "session_turns=$sessionTurns"
         turnStt = -1L; turnFirstByte = -1L; turnFirstText = -1L; turnFirstAudio = -1L; turnFullReply = -1L
+        turnSpeechToText = -1L; turnSpeechToAudio = -1L; turnSpeechToRender = -1L; turnSttDecode = -1L
+        turnSpeechToFirstSound = -1L; turnFirstSoundBy = ""
         if (turns % 8L == 0L) {
             out += "event=lat label=$label metric=first-byte p50=${pct(firstByte,0.50)} p95=${pct(firstByte,0.95)} n=${firstByte.size}"
             out += "event=lat label=$label metric=first-text p50=${pct(firstText,0.50)} p95=${pct(firstText,0.95)} n=${firstText.size}"
             out += "event=lat label=$label metric=first-audio p50=${pct(firstAudio,0.50)} p95=${pct(firstAudio,0.95)} n=${firstAudio.size}"
             out += "event=lat label=$label metric=full-reply p50=${pct(fullReply,0.50)} p95=${pct(fullReply,0.95)} n=${fullReply.size}"
             out += "event=lat label=$label metric=stt p50=${pct(stt,0.50)} p95=${pct(stt,0.95)} n=${stt.size}"
-            firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear()   // rolling window
+            out += "event=lat label=$label metric=speech-to-text p50=${pct(speechToText,0.50)} p95=${pct(speechToText,0.95)} n=${speechToText.size}"
+            out += "event=lat label=$label metric=speech-to-audio p50=${pct(speechToAudio,0.50)} p95=${pct(speechToAudio,0.95)} n=${speechToAudio.size}"
+            out += "event=lat label=$label metric=speech-to-render p50=${pct(speechToRender,0.50)} p95=${pct(speechToRender,0.95)} n=${speechToRender.size}"
+            out += "event=lat label=$label metric=stt-decode p50=${pct(sttDecode,0.50)} p95=${pct(sttDecode,0.95)} n=${sttDecode.size}"
+            out += "event=lat label=$label metric=speech-to-first-sound p50=${pct(speechToFirstSound,0.50)} p95=${pct(speechToFirstSound,0.95)} n=${speechToFirstSound.size}"
+            // rolling window
+            firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear()
+            speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear(); speechToFirstSound.clear()
         }
         out
     }
     private fun fmt(v: Long) = if (v < 0L) "-" else v.toString()
-    internal fun windowCounts(): IntArray = synchronized(lock) { intArrayOf(firstByte.size, firstText.size, firstAudio.size, fullReply.size, stt.size) }
-    fun reset() { synchronized(lock) { firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear(); turns = 0; sessionTurns = 0 } }
+    internal fun windowCounts(): IntArray = synchronized(lock) {
+        intArrayOf(firstByte.size, firstText.size, firstAudio.size, fullReply.size, stt.size,
+            speechToText.size, speechToAudio.size, speechToRender.size, sttDecode.size)
+    }
+    fun reset() {
+        synchronized(lock) {
+            firstByte.clear(); firstText.clear(); firstAudio.clear(); fullReply.clear(); stt.clear()
+            speechToText.clear(); speechToAudio.clear(); speechToRender.clear(); sttDecode.clear(); speechToFirstSound.clear()
+            sessionSpeechToAudio.clear()
+            turns = 0; sessionTurns = 0
+        }
+        ErTelemetry.beginSession()
+    }
+
     private fun pct(l: List<Long>, p: Double): Long { if (l.isEmpty()) return 0L; val s = l.sorted(); return s[(s.size - 1).toDouble().times(p).toInt()] }
 }

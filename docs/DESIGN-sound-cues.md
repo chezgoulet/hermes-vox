@@ -1,5 +1,7 @@
 # Sound cues — the being's procedural voice (#156, D7)
 
+> **Historical — kept as a record.** It describes the state of the app at the time it was written and is not a claim about the current build. See `docs/INDEX.md` for what is current.
+
 Sound cues are the fourth way the being is legible (voice, body, transcript, cue): a
 few hundred milliseconds of tone that says *what just happened* without a glance at the
 screen. They are generated on the phone, not sampled, and they are governed by one
@@ -67,7 +69,8 @@ strong two-beat / two heavier beats).
 
 ## Settings
 
-`Settings → Spoken replies`:
+`Settings → Voice & sounds → Sound cues` (since the UI/UX pass; `Settings → Being` in 0.9.1;
+*Spoken replies* before #224):
 
 - **Sound cues** (default **on** for a new install) with a **preview** button. The
   preview reports what the policy decided, because on a vibrate-only, DND or muted
@@ -75,7 +78,7 @@ strong two-beat / two heavier beats).
 - **Cue level** (10% steps, default 70%) — relative to media volume.
 - **Cues when the ringer is silent (opt-in)** — default off, per D7.
 
-"Restore defaults (Spoken replies)" resets all three.
+"Restore defaults (Being)" resets them (0.9.1, #224).
 
 ## Files
 
@@ -90,7 +93,7 @@ strong two-beat / two heavier beats).
 
 ## Device matrix (Pixel 7 (the test device), Android 17, debug build 0.8.1)
 
-Method: `adb shell am start -n com.hermesvox/.MainActivity --es cue <family>`, with the
+Method: `adb shell am start -n com.hermesvox/.DebugHarnessActivity --es cue <family>`, with the
 phone's state set beforehand (ringer through the debug `--es ringer` harness, DND through
 `cmd notification set_dnd`, media volume through the volume keys, haptics through
 `settings put system haptic_feedback_enabled`). "Heard/felt" is read back from

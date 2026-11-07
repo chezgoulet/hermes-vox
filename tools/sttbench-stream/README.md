@@ -10,6 +10,7 @@ have answers on the device.
 | `build_ab_corpus.py` | renders the sttbench clips into `quiet` / `tv` (babble proxy) / `kitchen` (pink+clatter proxy) and `accent`, and derives word onsets by forced alignment (faster-whisper `small.en` → DP against the reference). Cached in `.cache/align`. |
 | `run_ab.py` | pushes corpus + model dirs to the bench APK, launches one run per (arm, condition) over adb, waits for the `.done` marker, scores and prints the table. `--score-only` rescores raw JSON without the phone. |
 | `check_onset_stability.py` | cross-checks the onsets with a second checkpoint (`base.en`) — the ±ms uncertainty quoted in `docs/STT-AB.md`. |
+| `check_wholeclip.py` | replays the app's whole-clip streaming decode (`OnlineNemotronStt.transcribe`) on the host and checks it against the phone bench's transcripts. |
 | `../../scripts/stt-ab.sh` | the one command: build `:bench`, install under the phone lock, run everything, restore Hermes Vox to the foreground. |
 
 Device side is `android/bench/` (package `com.hermesvox.bench`).

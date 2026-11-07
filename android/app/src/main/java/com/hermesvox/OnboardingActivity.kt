@@ -13,23 +13,22 @@ import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------------------
-// #120-B: canonical one-line voice-mode comparison. There are exactly TWO voice
-// modes in this build (the walkie-talkie/PTT path was stripped in C2, 0.4.0 —
-// both modes are hands-free open lines). These strings are the single source
-// for the onboarding step and the Settings picker (agent A/C may reuse them
-// for per-option subtitles).
+// #222/D16: there is one normal operation — a hands-free open line (the
+// walkie-talkie/PTT path was stripped in C2, 0.4.0). Presence is a layer on it,
+// not a second mode, so first run describes the layer in one line instead of
+// asking the user to choose between two. #230/#403: that line is the hardware
+// check's (HardwareCheck.firstRunLine) — Presence is alpha and off at first run,
+// and when the phone falls short the line says why and where to turn it on.
 // ---------------------------------------------------------------------------
-fun voiceModeCompare(mode: String?): String = when (mode) {
-    ModelCatalog.MODE_REALTIME -> "hands-free, always listening"
-    ModelCatalog.MODE_ENHANCED -> "adds a phone-call persona"
-    else -> "hands-free, always listening"
-}
 
-/** #120-B: full "· name — what it means" line for a mode. */
-fun voiceModeLine(mode: String?): String = when (mode) {
-    ModelCatalog.MODE_ENHANCED -> "· Enhanced Realtime (alpha) — " + voiceModeCompare(mode)
-    else -> "· Realtime — " + voiceModeCompare(mode)
-}
+/** #230: first run names the three things being set up, by the names Settings uses. */
+const val FIRST_RUN_THREE_THINGS =
+    "· The connection — your Hermes gateway, where the agent's mind, memory and tools live " +
+        "(Settings → Entity & Connection).\n" +
+        "· The voice — on-device models that hear you and speak; your words do not leave the " +
+        "phone to be transcribed (Settings → Voice models).\n" +
+        "· The being — the shape on screen that listens, thinks and speaks with the agent " +
+        "(Settings → Being)."
 
 /**
  * OnboardingActivity — first-run connection flow. The user enters the entity
@@ -44,7 +43,7 @@ fun voiceModeLine(mode: String?): String = when (mode) {
  * gateway's per-transcript default.
  *
  * #120-A: a true first run opens on a short "how this works" step (what the
- * being is, the two voice modes, mic vs PTT) before the connection form, and
+ * being is, Presence as a layer, mic vs PTT) before the connection form, and
  * "Skip" now explains what it skips instead of proceeding silently.
  */
 class OnboardingActivity : AppCompatActivity() {
@@ -68,7 +67,9 @@ class OnboardingActivity : AppCompatActivity() {
         key = findViewById(R.id.key)
         model = findViewById(R.id.model)
         scope = findViewById(R.id.scope)
-        model.setText(prefs.getString("model", "hermes-agent"))
+        // T7: the entity's name is the host's, not a text field. It is shown here and
+        // adopted from the probe; the request route (`model`) stays its own value.
+        showEntityName(storedEntityName())
         url.setText(prefs.getString("url", ""))
         key.setText(SecureStore.decrypt(prefs.getString("key", "").orEmpty()).orEmpty())
         // Re-entering onboarding on an existing install shows what is declared
@@ -82,11 +83,12 @@ class OnboardingActivity : AppCompatActivity() {
             if (firstRun) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<android.view.View>(R.id.ob_step_connect).visibility =
             if (firstRun) android.view.View.GONE else android.view.View.VISIBLE
-        // #120-B: fill the per-mode comparison lines from the shared copy.
-        findViewById<TextView>(R.id.ob_mode_realtime).text =
-            voiceModeLine(ModelCatalog.MODE_REALTIME)
-        findViewById<TextView>(R.id.ob_mode_enhanced).text =
-            voiceModeLine(ModelCatalog.MODE_ENHANCED)
+        // #230: the connection, the voice and the being, named once.
+        findViewById<TextView>(R.id.ob_three_line).text = FIRST_RUN_THREE_THINGS
+        // #222/D16 + #403: one line about the layer, never a choice between two modes —
+        // and the hardware check's verdict folded in. It advises; nothing is enabled here.
+        findViewById<TextView>(R.id.ob_presence_line).text =
+            HardwareCheck.firstRunLine(HardwareCheck.store(prefs))
 
         findViewById<Button>(R.id.ob_got_it).setOnClickListener { showConnectStep() }
         findViewById<Button>(R.id.connect).setOnClickListener { connectAndVerify() }
@@ -119,7 +121,13 @@ class OnboardingActivity : AppCompatActivity() {
      * declaration itself is pinned to AVATAR_FULL_DP by OnboardingLayoutTest).
      */
     private fun applyAvatarSize() {
-        findViewById<AvatarView>(R.id.ob_avatar).setPortalShape(-1f)   // the being greets you through a portal
+        findViewById<AvatarView>(R.id.ob_avatar).apply {
+            setPortalShape(-1f)   // the being greets you through a portal
+            // #275: on the light theme, as ink on the page rather than light in a black hole.
+            val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            setLightSurface(night != android.content.res.Configuration.UI_MODE_NIGHT_YES,
+                androidx.core.content.ContextCompat.getColor(context, R.color.hv_bg))
+        }
         val cfg = resources.configuration
         val dp = OnboardingLayout.avatarSizeDp(cfg.fontScale, cfg.screenHeightDp)
         if (dp == OnboardingLayout.AVATAR_FULL_DP) return
@@ -147,9 +155,17 @@ class OnboardingActivity : AppCompatActivity() {
     private fun connectAndVerify() {
         val u = url.text.toString().trim()
         val k = key.text.toString().trim()
-        val m = model.text.toString().trim().ifEmpty { "hermes-agent" }
+        // The field is the entity's name (the host's to give), not the request route.
+        // `model` is read separately so a host-named entity can never become the route.
+        val route = modelRoute()
+        val fallback = storedEntityName()
         val sc = scope.text.toString()
         if (u.isBlank() || k.isBlank()) { Toast.makeText(this, "Enter the endpoint and API key", Toast.LENGTH_SHORT).show(); return }
+        // M4 (0.9.1 review): plain HTTP is only trusted while the tailnet is up. Refuse
+        // before the probe, so a key is never sent over a hostile network's answer.
+        com.hermesvox.core.CleartextPolicy.refusal(u, Tailnet.address() != null)?.let {
+            Toast.makeText(this, it, Toast.LENGTH_LONG).show(); return
+        }
         // Checked BEFORE the probe: a scope the gateway would reject (or one that
         // would have to be silently rewritten) must not be discovered mid-call —
         // and it must never be stored as a different identity than typed.
@@ -157,23 +173,61 @@ class OnboardingActivity : AppCompatActivity() {
         if (scopeIssue != null) { Toast.makeText(this, scopeIssue, Toast.LENGTH_LONG).show(); return }
         val btn = findViewById<Button>(R.id.connect); btn.isEnabled = false; btn.text = "Verifying…"
         thread {
-            val ok = try {
-                HermesSession(u, k, m).ping()
-                true
-            } catch (e: Throwable) { false }
+            val session = HermesSession(u, k, route)
+            val probe = try {
+                HostEntity.answer(200, session.ping())
+            } catch (e: Throwable) {
+                HostEntity.Answer.Refused(-1, e.message.orEmpty())
+            }
             runOnUiThread {
                 btn.isEnabled = true; btn.text = getString(R.string.hv_connect_verify)
-                if (ok) {
-                    prefs.edit().putString("url", u).putString("model", m).putString("key", (SecureStore.encrypt(k) ?: k))
-                        .putString(SessionScope.PREF, SessionScope.normalize(sc)).apply()
-                    Toast.makeText(this, "Connected → the entity", Toast.LENGTH_SHORT).show()
-                    goMain()
-                } else {
+                if (probe is HostEntity.Answer.Refused) {
+                    // Nothing is saved on a failed probe, exactly as before.
                     Toast.makeText(this, "Could not reach the entity — check URL + key", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
                 }
+                val name = HostEntity.name(probe, fallback).orEmpty()
+                val edit = prefs.edit().putString("url", u).putString("key", (SecureStore.encrypt(k) ?: k))
+                    .putString(SessionScope.PREF, SessionScope.normalize(sc))
+                // Only the host's own name is adopted. A 200 with no id keeps the
+                // fallback that is already displayed and stored; nothing is invented.
+                if (probe is HostEntity.Answer.Named) edit.putString(Profiles.K_AGENT, name)
+                edit.apply()
+                showEntityName(name)
+                Toast.makeText(
+                    this,
+                    if (probe is HostEntity.Answer.Named) "Connected → $name" else HostEntity.FALLBACK_LINE,
+                    Toast.LENGTH_LONG,
+                ).show()
+                // #285: the first moment an agent exists to ask — offer it the app's own
+                // description once, then go on whatever the answer was.
+                AppSkillInstall.offerOnce(this, prefs, session, versionName()) { goMain() }
             }
         }
     }
+
+    /** The host's name when a verify has adopted one; the old `model` value only while it has not. */
+    private fun storedEntityName(): String =
+        prefs.getString(Profiles.K_AGENT, "").orEmpty().ifBlank {
+            prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+        }
+
+    /** The route sent on every request. Never the entity-name field's contents. */
+    private fun modelRoute(): String =
+        prefs.getString("model", "hermes-agent").orEmpty().ifBlank { "hermes-agent" }
+
+    /** T7: show the name, do not offer it as text. Read-only, still visible. */
+    private fun showEntityName(name: String) {
+        model.setText(name)
+        model.isFocusable = false
+        model.isClickable = false
+        model.isCursorVisible = false
+        model.keyListener = null
+    }
+
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+    } catch (_: Throwable) { "" }
 
     private fun goMain() {
         startActivity(Intent(this, MainActivity::class.java))

@@ -61,6 +61,10 @@ class TestServer(private val handler: (Request, Response) -> Unit) : AutoCloseab
             return try { input.read() < 0 } catch (_: IOException) { true }.also { socket.soTimeout = 0 }
         }
 
+        /** Closes the connection without answering: the request reached the server and
+         *  the reply was lost (a socket reset after the body went out). */
+        fun drop() { headSent = true; socket.close() }
+
         internal val started get() = headSent
     }
 

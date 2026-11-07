@@ -11,25 +11,36 @@ changed (`com.hermesvox.mobile.HermesSession` → `com.hermesvox.core.HermesSess
 | Go (deleted) | Kotlin | Notes |
 |---|---|---|
 | `mobile/session.go` `HermesSession` | `core/HermesSession.kt` | Same method names and shapes. Methods throw `HermesException` (a gateway answer) or `IOException` (transport) where gomobile threw `Exception`. `waitStream` takes a `Long` (gomobile mapped Go `int` to `long`). |
-| `voice/responses.go`, `voice/ping.go` | `core/ResponsesClient.kt` | Request body, the voice prefix (`USER_TURN_PREFIX`), stored turn, ping. |
+| `voice/responses.go`, `voice/ping.go` | `core/ResponsesClient.kt` | Request body (including the per-request `instructions` and `model_options.reasoning` a voice turn sends), stored turn, ping. |
 | `voice/stream.go` | `core/Stream.kt` | The SSE framer, event dispatch, poll/wait/cancel registry, `plainText`. |
-| `voice/gateway.go` | `core/GatewayClient.kt` | `/api/model/options`, `/v1/health`, `DELETE /v1/responses/{id}`. |
+| `voice/gateway.go` | `core/GatewayClient.kt` | `/api/model/options`, `/v1/health` — GET only; the app never deletes host state. |
 | `voice/entity.go` | `core/Entity.kt` | URL joining, bearer + `X-Hermes-Session-Key`, bounded error bodies, per-exchange deadline. |
 | `encoding/json` | `core/Json.kt` | A strict reader/writer; see below. |
 | `voice/*_test.go`, `mobile/session_test.go` | `core/HermesSessionTest.kt`, `StreamTest.kt`, `JsonTest.kt`, `StreamParityTest.kt` | Ported, plus the parity harness. |
-| `voice/integration_live_test.go` | `core/LiveGatewayTest.kt` | Same env gating (`HERMES_VOX_LIVE=1` + `HERMES_VOX_HERMES_API_KEY`). |
+| `voice/integration_live_test.go` | `core/LiveGatewayTest.kt` | Six cases run in CI against `FakeGateway` (a deterministic JDK HttpServer); `HERMES_VOX_LIVE=1` + `HERMES_VOX_HERMES_API_KEY` point the same cases at the real gateway. Never skipped. |
 
 ### The four fixes, and where they live now
 
 1. **Wall-clock turn deadline (H1).** It was always app-side: `StreamPollGate` and the
-   poll loop in `VoiceController` (120 s). Unchanged. Below it, the stream's **idle
-   watchdog** (60 s without a byte, keepalives included) is now the socket read
+   poll loop in `VoiceController` (120 s). `StreamPollGate` still owns the ceiling, but
+   the clock now measures **agent time** (`core/TurnBudget.kt`): it pauses while an
+   approval the turn itself raised is pending and accumulates that time across cards,
+   so a human reading a card does not spend the turn's budget. Below it, the stream's
+   **idle watchdog** (60 s without a byte, keepalives included) is now the socket read
    timeout, which also bounds the wait for response headers.
-2. **`/compress` rides the streamed chain (H2).** One chain head,
-   `HermesSession.lastID`: every poll that carries a `response_id` moves it, and
-   `turnStored` sends it as `previous_response_id` and replaces it with the reply's id.
-   Pinned by the `compress` fixture (the third request must chain off
-   `resp_compress`).
+
+   What it means to run out is now the route's call (`core/TurnAbandon.kt`) against the
+   one switch, `StreamRoute.active` (`core/TurnRoute.kt`): on `/v1/responses` the socket
+   is closed, because the SSE request *is* the generation; on `/v1/runs` the client
+   posts `POST /v1/runs/{id}/stop` as well, because the events GET is only a subscriber
+   and closing it leaves the run working. Either way a turn is never abandoned with a
+   run still alive behind it.
+2. **`/compress` rides the session's conversation (H2).** On `/v1/responses` there is one chain
+   head, `HermesSession.lastID`: every poll that carries a `response_id` moves it, and
+   `turnStored` sends it as `previous_response_id` and replaces it with the reply's id. On
+   `/v1/runs` there is no response id: the stored turn rides the same body `session_id` as the
+   voice turns, and `StreamRoute.chainHead` returns nothing so a run is never pinned to a stale
+   response snapshot (`docs/RUNS-ROUTE.md`). Pinned by the `compress` fixture.
 3. **Cancel retires the stream (M1).** `cancelStream` removes the entry under the
    registry lock before closing the connection, so a barge-in never leaks the
    buffered state. Pinned by the `barge` fixture and `StreamTest`.
@@ -51,8 +62,10 @@ those rules against Go's own output.
 
 ## What was deliberately dropped
 
-- **The runs API** (`StartRun`, `RunStatus`, `CancelRun`, `voice/runs.go`): zero call
-  sites. Barge-in uses stream cancellation.
+- **The runs API** (`StartRun`, `RunStatus`, `CancelRun`, `voice/runs.go`): dropped with the Go
+  core, then rebuilt in Kotlin for #404. `/v1/runs` is now the **default** route, with
+  `/v1/responses` as the per-profile fallback; `core/TurnRoute.kt`, `Streams.startRun` and the
+  runs reader in `core/Stream.kt` are that return, and `docs/RUNS-ROUTE.md` is the contract.
 - **The stub backends** (`voice/backend.go`, `voice/backends.go`: `Cloud`, `Local`,
   `SelfHosted`) and `Conversation.TurnAudio`: no production caller (#47). The
   `VoiceBackend` idea in AGENTS.md is not code yet.
@@ -73,8 +86,12 @@ platform's HTTP stack instead of Go's.
   `*.ts.net` may be cleartext. On the platform stack the policy applies, so a
   cleartext LAN gateway will be refused, as the conn-test probe already was (this
   follows from the platform's documented behaviour; it was not exercised on a device
-  in #126). Likewise user-installed CAs are now trusted for HTTPS, as that file
-  intends; Go's `crypto/x509` searched the system CA directory, not the user store.
+  in #126). Go's `crypto/x509` searched the system CA directory, not the user store;
+  the platform stack also sees the user store, but since M4 (0.9.1 review) that
+  anchor is scoped to `*.ts.net` rather than trusted for every host. And cleartext to
+  `*.ts.net` is refused by `core/CleartextPolicy.kt` while the tailnet is down: with
+  the tunnel gone, MagicDNS is no longer private by construction, and a hostile
+  network could answer the name and collect the bearer key.
 - **HTTP/1.1 only.** Go negotiated HTTP/2 where offered. SSE is unaffected.
 - **Transport error text** comes from the JVM/OkHttp (`Connection refused`, …), not
   Go (`dial tcp …`). Gateway-produced errors (`hermes response failed: …`,

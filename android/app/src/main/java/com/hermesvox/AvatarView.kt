@@ -136,6 +136,14 @@ class AvatarView @JvmOverloads constructor(
     private var lastFrameNs = 0L
     private var lastNanos = 0L
     private var running = false
+    /** #225: the host screen has paused us. Rendering is held DOWN until [setPaused] lifts it,
+     *  even though the TextureView's surface is still alive — a Settings preview must not keep
+     *  a GL context and its targets resident behind another screen. */
+    private var paused = false
+    /** The live surface, kept so a paused view can build a fresh render thread on resume. */
+    private var surface: SurfaceTexture? = null
+    private var surfaceW = 1
+    private var surfaceH = 1
     private val ticker = object : Runnable {
         override fun run() {
             if (!running) return
@@ -151,23 +159,58 @@ class AvatarView @JvmOverloads constructor(
     }
 
     override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
-        thread = BeingThread(st).also { it.resize(w, h); it.start() }
-        running = true
-        lastNanos = 0L
-        postOnAnimation(ticker)
+        surface = st; surfaceW = w; surfaceH = h
+        if (paused) return
+        startRenderThread()
     }
 
-    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) { thread?.resize(w, h) }
+    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
+        surfaceW = w; surfaceH = h
+        thread?.resize(w, h)
+    }
 
     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-        running = false
-        removeCallbacks(ticker)
-        thread?.let { it.finish(); try { it.join(500) } catch (_: InterruptedException) {} }
-        thread = null
+        surface = null
+        releaseRenderThread()
         return true
     }
 
     override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+
+    /** Build the render thread (if the surface exists) and start the frame ticker. */
+    private fun startRenderThread() {
+        val st = surface ?: return
+        if (thread == null) {
+            thread = BeingThread(st).also { it.resize(surfaceW, surfaceH); it.start() }
+        }
+        if (running || !isShown) return
+        running = true
+        lastNanos = 0L
+        lastFrameNs = 0L
+        postOnAnimation(ticker)
+    }
+
+    /** Stop the ticker and hand the GPU back: the thread joins, which destroys its EGL context
+     *  and every render target it allocated. The surface is untouched, so a resume rebuilds
+     *  the same picture. */
+    private fun releaseRenderThread() {
+        running = false
+        removeCallbacks(ticker)
+        thread?.let { it.finish(); try { it.join(500) } catch (_: InterruptedException) {} }
+        thread = null
+    }
+
+    /**
+     * #225: hold rendering while the host screen is in the background. This is stricter than
+     * visibility (a paused window is still "visible" until it is stopped), and it is what makes
+     * a live preview in Settings free when Settings is not in front. Idempotent; the default is
+     * false, so every other host of this view behaves exactly as before.
+     */
+    fun setPaused(p: Boolean) {
+        if (p == paused) return
+        paused = p
+        if (p) releaseRenderThread() else startRenderThread()
+    }
 
     /** Render only while the being can be seen: a backgrounded app (or a hidden onboarding
      *  step) must not keep a 60 fps GPU pipeline running and draining the battery. */
@@ -371,6 +414,94 @@ class AvatarView @JvmOverloads constructor(
 
     fun setVisualEnergy(v: Float) { visEnergy = VisualStyle.energy(v) }
     fun setVisualGlow(v: Float) { visGlow = VisualStyle.glow(v) }
+
+    /** #275: on the light theme the being is drawn as ink on [paper] (the screen's own
+     *  background), so it sits on the page instead of in a black box. */
+    fun setLightSurface(light: Boolean, paper: Int) {
+        inkOn = if (light) 1f else 0f
+        paperR = android.graphics.Color.red(paper) / 255f
+        paperG = android.graphics.Color.green(paper) / 255f
+        paperB = android.graphics.Color.blue(paper) / 255f
+        // The rounded window was the light theme's frame for the black surface; on paper the
+        // being needs none.
+        if (light) clipToOutline = false
+        // The ground is chosen at activity creation, not animated: snap the light axes to the
+        // current family so the first rendered frame is already ink, not a white flash that
+        // eases into it. A later category change still flows through easeStyle. The dark
+        // branch is deliberately untouched — it keeps its historical identity-to-family ease,
+        // so the hero scheme is pixel-identical.
+        if (light) {
+            val l = vsty.light
+            rTintAmt = l.tintAmt
+            rSat = l.sat
+            rAccentTurn = l.accentTurn
+            rCoreHeat = l.coreHeat
+            rEdge = l.edge
+            rHalo = l.halo
+            rTint = l.tint
+            rInkValue = l.value
+            rInkCover = l.cover
+        }
+    }
+    private var inkOn = 0f
+    private var paperR = 0f; private var paperG = 0f; private var paperB = 0f
+    private var rInkValue = 1f; private var rInkCover = 1.6f
+    // #225: the fine-grained look.
+    fun setVisualDensity(v: Float) { visDensity = VisualStyle.density(v) }
+    fun setVisualSpeed(v: Float) { visSpeed = VisualStyle.speed(v) }
+    fun setVisualTrail(v: Float) { visTrail = VisualStyle.trail(v) }
+    fun setVisualHue(v: Float) { visHue = VisualStyle.hue(v) }
+    private var visDensity = VisualStyle.DEFAULT_DENSITY
+    private var visSpeed = VisualStyle.DEFAULT_SPEED
+    private var visTrail = VisualStyle.DEFAULT_TRAIL
+    private var visHue = VisualStyle.DEFAULT_HUE
+
+    /** Every look pref, read once and applied — the main screen and the Settings preview
+     *  (#225) render from the same call, so the preview cannot drift from the real thing. */
+    fun applyLookPrefs(p: android.content.SharedPreferences) {
+        setIdleTheme(p.getString("particles_theme", "aura") ?: "aura")
+        setCycleThemes(p.getBoolean("particles_cycle", true))
+        applyStateShapes(
+            p.getString(KEY_SHAPE_SPEAKING, DEFAULT_SHAPE_SPEAKING) ?: DEFAULT_SHAPE_SPEAKING,
+            p.getString(KEY_SHAPE_LISTENING, DEFAULT_SHAPE_LISTENING) ?: DEFAULT_SHAPE_LISTENING,
+            p.getString(KEY_SHAPE_THINKING, DEFAULT_SHAPE_THINKING) ?: DEFAULT_SHAPE_THINKING,
+        )
+        setVisualCategory(p.getString(VisualStyle.KEY_CATEGORY, VisualStyle.DEFAULT) ?: VisualStyle.DEFAULT)
+        setVisualEnergy(p.getFloat(VisualStyle.KEY_ENERGY, VisualStyle.DEFAULT_ENERGY))
+        setVisualGlow(p.getFloat(VisualStyle.KEY_GLOW, VisualStyle.DEFAULT_GLOW))
+        setVisualDensity(p.getFloat(VisualStyle.KEY_DENSITY, VisualStyle.DEFAULT_DENSITY))
+        setVisualSpeed(p.getFloat(VisualStyle.KEY_SPEED, VisualStyle.DEFAULT_SPEED))
+        setVisualTrail(p.getFloat(VisualStyle.KEY_TRAIL, VisualStyle.DEFAULT_TRAIL))
+        setVisualHue(p.getFloat(VisualStyle.KEY_HUE, VisualStyle.DEFAULT_HUE))
+    }
+
+    // ---- #227: a command's verb ---------------------------------------------------------
+    // While a command runs the being holds the verb's shape (CommandMotion); its ending —
+    // the bloom for done, the hourglass in the waiting colour for failed — then plays for a
+    // beat and the being returns to whatever the call is doing. Wall-clock timed, so the
+    // look's own speed setting cannot stretch an outcome.
+    private var verbArch: Int? = null
+    private var verbTheme: String? = null
+    private var verbUntilMs = -1L
+
+    /** Hold [shape] (a SHAPE_TOKENS token) until [endVerb], or for [ms] when given. */
+    fun holdVerb(shape: String, ms: Long = -1L) {
+        verbArch = themeArch(shape); verbTheme = null; seed++
+        verbUntilMs = if (ms < 0) -1L else android.os.SystemClock.uptimeMillis() + ms
+    }
+
+    /** Play the ending [shape] in [state]'s colour for [ms], then let the being go. */
+    fun endVerb(shape: String, state: String, ms: Long) {
+        verbArch = themeArch(shape)
+        verbTheme = when (state) { "waiting" -> "wait"; else -> "presence" }
+        verbUntilMs = android.os.SystemClock.uptimeMillis() + ms
+    }
+
+    private fun verbTick() {
+        if (verbArch != null && verbUntilMs >= 0 && android.os.SystemClock.uptimeMillis() >= verbUntilMs) {
+            verbArch = null; verbTheme = null; verbUntilMs = -1L
+        }
+    }
     fun visualCategory(): String = vsty.token
     fun cyclingAllCategories(): Boolean = cycleAll
 
@@ -381,7 +512,7 @@ class AvatarView @JvmOverloads constructor(
         if (width == 0 || height == 0) return
         val dt = if (lastNanos == 0L) 0.016f else ((now - lastNanos) / 1e9f).coerceIn(0.001f, 0.05f)
         lastNanos = now
-        time += dt
+        time += dt * visSpeed                    // #225: the being's own clock, scaled
         if (time > 3600f) time -= 3600f          // bounded clock: shader trig stays precise
 
         advanceCycle(dt)
@@ -400,7 +531,8 @@ class AvatarView @JvmOverloads constructor(
         if (archTo == A_SEEKER || archFrom == A_SEEKER) eyeTick(dt)
         if (archTo == A_TAKU || archFrom == A_TAKU) takuTick(dt)
 
-        resolvePalette(eTheme)
+        verbTick()
+        resolvePalette(verbTheme ?: eTheme)
         val ck = (dt * 2.6f).coerceIn(0f, 1f)
         curBase = lerpColor(curBase, tBase, ck)
         curAcc = lerpColor(curAcc, tAcc, ck)
@@ -421,8 +553,11 @@ class AvatarView @JvmOverloads constructor(
         f.size = rSize
         f.core = rCoreHeat; f.edge = rEdge
         f.glow = rHalo * visGlow
+        f.ink = inkOn; f.paperR = paperR; f.paperG = paperG; f.paperB = paperB
+        f.inkValue = rInkValue; f.inkCover = rInkCover
         f.halo = (0.45f + sBright * 0.8f) * rHalo * visGlow
-        f.trails = rTrails
+        f.trails = VisualStyle.trails(rTrails, visTrail)
+        f.density = visDensity
         f.baseR = Color.red(curBase) / 255f; f.baseG = Color.green(curBase) / 255f; f.baseB = Color.blue(curBase) / 255f
         f.accR = Color.red(curAcc) / 255f; f.accG = Color.green(curAcc) / 255f; f.accB = Color.blue(curAcc) / 255f
         t.publish(f)
@@ -477,12 +612,21 @@ class AvatarView @JvmOverloads constructor(
             "stream" -> { tBase = cCyan;   tAcc = cCyanHi }
             else     -> { tBase = lerpColor(cIdle, cCyan, 0.26f + amp * 0.22f); tAcc = cIdleHi }
         }
-        tBase = VisualStyle.shade(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
-        tAcc = VisualStyle.shade(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        if (inkOn > 0.5f) {
+            // #275: on paper the state hue is normalised and placed as ink, not shaded
+            // toward a dark-ground tint. The scalar overload is the crossfade path.
+            tBase = VisualStyle.inkHue(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
+            tAcc = VisualStyle.inkHue(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        } else {
+            tBase = VisualStyle.shade(tBase, rTintAmt, rTint, rSat, rAccentTurn, false)
+            tAcc = VisualStyle.shade(tAcc, rTintAmt, rTint, rSat, rAccentTurn, true)
+        }
+        if (visHue != 0f) { tBase = VisualStyle.turn(tBase, visHue); tAcc = VisualStyle.turn(tAcc, visHue) }   // #225
     }
 
     /** Which shape the being forms right now. */
     private fun resolveArch(): Int {
+        verbArch?.let { return it }   // #227: a running command's verb outranks the state's shape
         val st = state
         if (st == "idle" || st == "settle" || st == "bloom" || st == "drift") {
             val th = if (cycleThemes) cyclingTheme(time) else idleTheme
@@ -568,19 +712,26 @@ class AvatarView @JvmOverloads constructor(
         vsty = VisualStyle.of(VisualStyle.TOKENS[cycleIdx])
     }
 
-    /** Ease the render-style toward the target category so a change flows, never snaps. */
+    /** Ease the render-style toward the target category so a change flows, never snaps.
+     *  On the light ground the light variant's axes are the targets (#275): the palette,
+     *  the bake and the wash are all authored for paper, while motion stays the dark
+     *  family's — the ground may change what the family is made of, never what it does. */
     private fun easeStyle(dt: Float) {
         val k = (dt * 2.4f).coerceIn(0f, 1f)
-        rTintAmt += (vsty.tintAmt - rTintAmt) * k
-        rSat += (vsty.sat - rSat) * k
-        rAccentTurn += (vsty.accentTurn - rAccentTurn) * k
-        rCoreHeat += (vsty.coreHeat - rCoreHeat) * k
-        rEdge += (vsty.edge - rEdge) * k
-        rHalo += (vsty.halo - rHalo) * k
+        val light = inkOn > 0.5f
+        val l = vsty.light
+        rTintAmt += ((if (light) l.tintAmt else vsty.tintAmt) - rTintAmt) * k
+        rSat += ((if (light) l.sat else vsty.sat) - rSat) * k
+        rAccentTurn += ((if (light) l.accentTurn else vsty.accentTurn) - rAccentTurn) * k
+        rCoreHeat += ((if (light) l.coreHeat else vsty.coreHeat) - rCoreHeat) * k
+        rEdge += ((if (light) l.edge else vsty.edge) - rEdge) * k
+        rHalo += ((if (light) l.halo else vsty.halo) - rHalo) * k
         rSize += (vsty.size - rSize) * k
         rFlicker += (vsty.flicker - rFlicker) * k
         rEnergy += (vsty.energy - rEnergy) * k
-        rTint = lerpColor(rTint, vsty.tint, k)
+        rTint = lerpColor(rTint, if (light) l.tint else vsty.tint, k)
+        rInkValue += ((if (light) l.value else 1f) - rInkValue) * k
+        rInkCover += ((if (light) l.cover else 1.6f) - rInkCover) * k
         // Trails are real frame feedback now, so they ease like everything else.
         rTrails += ((if (vsty.trails) 0.78f else 0f) - rTrails) * k
     }
