@@ -853,6 +853,11 @@ object PhoneTool {
         "clip_read" -> Parsed.Run(Call.ClipRead)
         "file_read", "file_offer" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
+            // A missing name is an invalid argument, not a bad path: `badPath` answers the same
+            // way for a blank name, but this refusal names the action and the argument it needs.
+            if (name.isEmpty()) {
+                return bad(action, "name is required: the file's name inside the folder the owner granted")
+            }
             PhoneFiles.badPath(name)?.let { return refused(action, PhoneReason.BAD_PATH, it) }
             val (folder, folderError) = folderArg(args, action)
             folderError?.let { return it }
@@ -1071,7 +1076,10 @@ object PhoneTool {
     }
 
     private fun bad(action: String, detail: String): Parsed =
-        Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, detail))
+        // The action is prefixed rather than assumed: one tool with many actions means the
+        // schema's `required` can only say `action`, so the parser's refusal is the only place a
+        // mind learns *which* action wanted *which* argument. Every message here names both.
+        Parsed.Refuse(PhoneResult.refused(action, PhoneReason.INVALID, "$action: $detail"))
 
     /**
      * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
@@ -1153,7 +1161,7 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.INVALID,
-                    "uri is required and at most $MAX_URI_CHARS characters",
+                    "$action: uri is required and at most $MAX_URI_CHARS characters",
                 ),
             )
         }
@@ -1162,7 +1170,7 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.INVALID,
-                    "uri must contain no whitespace",
+                    "$action: uri must contain no whitespace",
                 ),
             )
         }
@@ -1172,8 +1180,8 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.BAD_URI,
-                    "uri has no scheme; write it in full (https://…), because nothing is " +
-                        "guessed into one",
+                    "$action: uri has no scheme; write it in full (https://…), because nothing " +
+                        "is guessed into one",
                 ),
             )
         if (scheme == "intent" || scheme == "file") {
@@ -1181,9 +1189,9 @@ object PhoneTool {
                 PhoneResult.refused(
                     action,
                     PhoneReason.BAD_URI,
-                    "the $scheme: scheme is refused; nothing was opened. A file belongs to " +
-                        "file_offer or file_read inside a granted folder, and a component is " +
-                        "never started from a URI",
+                    "$action: the $scheme: scheme is refused; nothing was opened. A file belongs " +
+                        "to file_offer or file_read inside a granted folder, and a component " +
+                        "is never started from a URI",
                 ),
             )
         }
