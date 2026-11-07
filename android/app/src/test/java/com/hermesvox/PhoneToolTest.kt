@@ -251,6 +251,48 @@ class PhoneToolTest {
         assertTrue(previousVolume.result.detail!!, previousVolume.result.detail!!.contains("previous"))
     }
 
+    @Test fun a_missing_per_action_argument_names_the_action_and_the_argument() {
+        // `required` can only name `action`: one tool carries many actions, so the per-action
+        // requirements are the parser's job. A refusal that says only "duration_ms is required"
+        // leaves a mind holding eight actions and no idea which one asked for it.
+        val cases = listOf<Pair<Map<String, Any?>, String>>(
+            mapOf("action" to "timer") to "duration_ms",
+            mapOf("action" to "alarm") to "at",
+            mapOf("action" to "dnd") to "on",
+            mapOf("action" to "volume") to "direction",
+            mapOf("action" to "note") to "text",
+            mapOf("action" to "clip") to "text",
+            mapOf("action" to "file_read") to "name",
+            mapOf("action" to "file_offer") to "name",
+            mapOf("action" to "event_create") to "title",
+            mapOf("action" to "event_create", "title" to "Standup") to "start",
+            mapOf(
+                "action" to "event_create",
+                "title" to "Standup",
+                "start" to "2026-11-06T09:00",
+            ) to "duration_min",
+            mapOf("action" to "notification_read") to "id",
+            mapOf("action" to "notification_dismiss") to "id",
+            mapOf("action" to "contact") to "name",
+            mapOf("action" to "message") to "text",
+            mapOf("action" to "message", "text" to "hello") to "to",
+            mapOf("action" to "dial") to "to",
+            mapOf("action" to "launch") to "app",
+            mapOf("action" to "open") to "uri",
+            mapOf("action" to "uninstall") to "package",
+            mapOf("action" to "undo") to "id",
+        )
+        for ((args, missing) in cases) {
+            val action = args["action"] as String
+            val parsed = PhoneTool.parse(args, open)
+            val refused = parsed as? PhoneTool.Parsed.Refuse
+                ?: throw AssertionError("$action with no `$missing` parsed into a call")
+            val detail = refused.result.detail.orEmpty()
+            assertTrue("$action's refusal does not name the action: $detail", detail.contains(action))
+            assertTrue("$action's refusal does not name `$missing`: $detail", detail.contains(missing))
+        }
+    }
+
     @Test fun every_direction_value_is_accepted_by_the_action_it_is_advertised_for() {
         val all = PhoneTool.DIRECTIONS.values.flatten().toSet()
         for ((action, values) in PhoneTool.DIRECTIONS) {
