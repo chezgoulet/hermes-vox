@@ -435,6 +435,12 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_entity).setOnClickListener {
             val view = layoutInflater.inflate(R.layout.dialog_entity, null)
+            // The client-certificate row is added HERE, not in dialog_entity.xml: the
+            // profile editor inflates that layout too, and a certificate is per gateway
+            // origin (one device setting), not per profile. In the editor the row would do
+            // nothing and describe a value unrelated to the profile being edited.
+            (view as android.view.ViewGroup)
+                .addView(layoutInflater.inflate(R.layout.mtls_certificate, view, false))
             val eurl = view.findViewById<EditText>(R.id.d_url)
             val emodel = view.findViewById<EditText>(R.id.d_model)
             val ekey = view.findViewById<EditText>(R.id.d_key)
