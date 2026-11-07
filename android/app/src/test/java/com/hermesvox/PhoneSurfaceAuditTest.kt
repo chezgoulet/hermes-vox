@@ -453,6 +453,57 @@ class PhoneSurfaceAuditTest {
         )
     }
 
+    @Test fun status_names_only_the_actions_tools_list_advertises() {
+        // Before this test, `tiers.2` was the whole Tier-2 table — including `delete`, `pay`,
+        // `purchase` and `transfer`, which are never advertised and which a direct call refuses.
+        // A mind reading `status` was told this phone could delete and pay. It cannot.
+        val sources = listOf(PhoneGrants.ALL_OFF, open) + PhoneGrants.GROUPS.map { only(it.id) }
+        for (grants in sources) {
+            val advertised = PhoneTool.offeredActions(grants).toSet()
+            val r = engine(grants).dispatch(mapOf("action" to "status"), t0, e0)
+            assertTrue(r.json(), r.ok)
+
+            @Suppress("UNCHECKED_CAST")
+            val tiers = r.facts["tiers"] as Map<String, List<String>>
+            val named = tiers.values.flatten().toSet()
+            for (action in named) {
+                assertTrue(
+                    "status named `$action`, which tools/list does not advertise and a call " +
+                        "would refuse: ${r.json()}",
+                    action in advertised,
+                )
+            }
+            assertEquals(
+                "every advertised name is reported under its own tier, and nothing else",
+                advertised,
+                named,
+            )
+            assertEquals(
+                "an advertised action sits under the tier the dispatcher reports",
+                named.all { PhoneTiers.of(it)?.let { tier -> tiers[tier.toString()]?.contains(it) } == true },
+                true,
+            )
+            @Suppress("UNCHECKED_CAST")
+            val groupsOn = (r.facts["groups_on"] as List<String>).toSet()
+            for (group in PhoneGrants.GROUPS) {
+                assertEquals(
+                    "groups_on must say whether ${group.id} is on",
+                    PhoneGrants.stateOf(grants, group) != PhoneGrants.State.OFF,
+                    group.id in groupsOn,
+                )
+            }
+        }
+
+        // The exact names the audit found: no unbuilt capability may be reported as a capability.
+        val all = engine(open).dispatch(mapOf("action" to "status"), t0, e0)
+        @Suppress("UNCHECKED_CAST")
+        val tierTwo = (all.facts["tiers"] as Map<String, List<String>>)["2"].orEmpty()
+        for (unbuilt in listOf("delete", "pay", "purchase", "transfer")) {
+            assertFalse("$unbuilt is not built and must not be reported", unbuilt in tierTwo)
+        }
+        assertEquals(setOf("uninstall", "file_offer"), tierTwo.toSet())
+    }
+
     // ---- the audit ----
 
     @Test fun every_action_writes_one_audit_row_that_names_it() {
